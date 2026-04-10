@@ -142,3 +142,8 @@ internal fun formatPlaybackTime(positionMs: Long): String {
         "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
     }
 }
+
+internal fun formatPlaybackSpeedLabel(speed: Float): String {
+    val normalized = speed.toString().trimEnd('0').trimEnd('.')
+    return "${normalized}x"
+}

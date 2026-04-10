@@ -5,6 +5,10 @@ import kotlinx.serialization.json.JsonObject
 internal expect object PlayerSettingsStorage {
     fun loadShowLoadingOverlay(): Boolean?
     fun saveShowLoadingOverlay(enabled: Boolean)
+    fun loadHoldToSpeedEnabled(): Boolean?
+    fun saveHoldToSpeedEnabled(enabled: Boolean)
+    fun loadHoldToSpeedValue(): Float?
+    fun saveHoldToSpeedValue(speed: Float)
     fun loadPreferredAudioLanguage(): String?
     fun savePreferredAudioLanguage(language: String)
     fun loadSecondaryPreferredAudioLanguage(): String?

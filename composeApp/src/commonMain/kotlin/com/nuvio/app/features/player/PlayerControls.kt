@@ -412,7 +412,7 @@ private fun ProgressControls(
                         onClick = onResizeModeClick,
                     )
                     PlayerActionPillButton(
-                        label = "${playbackSnapshot.playbackSpeed}x",
+                        label = formatPlaybackSpeedLabel(playbackSnapshot.playbackSpeed),
                         icon = Icons.Rounded.Speed,
                         onClick = onSpeedClick,
                     )

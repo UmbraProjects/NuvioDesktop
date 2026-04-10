@@ -20,6 +20,8 @@ import kotlinx.serialization.json.put
 actual object PlayerSettingsStorage {
     private const val preferencesName = "nuvio_player_settings"
     private const val showLoadingOverlayKey = "show_loading_overlay"
+    private const val holdToSpeedEnabledKey = "hold_to_speed_enabled"
+    private const val holdToSpeedValueKey = "hold_to_speed_value"
     private const val preferredAudioLanguageKey = "preferred_audio_language"
     private const val secondaryPreferredAudioLanguageKey = "secondary_preferred_audio_language"
     private const val preferredSubtitleLanguageKey = "preferred_subtitle_language"
@@ -51,6 +53,8 @@ actual object PlayerSettingsStorage {
     private const val libassRenderTypeKey = "libass_render_type"
     private val syncKeys = listOf(
         showLoadingOverlayKey,
+        holdToSpeedEnabledKey,
+        holdToSpeedValueKey,
         preferredAudioLanguageKey,
         secondaryPreferredAudioLanguageKey,
         preferredSubtitleLanguageKey,
@@ -102,6 +106,40 @@ actual object PlayerSettingsStorage {
         preferences
             ?.edit()
             ?.putBoolean(ProfileScopedKey.of(showLoadingOverlayKey), enabled)
+            ?.apply()
+    }
+
+    actual fun loadHoldToSpeedEnabled(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(holdToSpeedEnabledKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getBoolean(key, true)
+            } else {
+                null
+            }
+        }
+
+    actual fun saveHoldToSpeedEnabled(enabled: Boolean) {
+        preferences
+            ?.edit()
+            ?.putBoolean(ProfileScopedKey.of(holdToSpeedEnabledKey), enabled)
+            ?.apply()
+    }
+
+    actual fun loadHoldToSpeedValue(): Float? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(holdToSpeedValueKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getFloat(key, 2f)
+            } else {
+                null
+            }
+        }
+
+    actual fun saveHoldToSpeedValue(speed: Float) {
+        preferences
+            ?.edit()
+            ?.putFloat(ProfileScopedKey.of(holdToSpeedValueKey), speed)
             ?.apply()
     }
 
@@ -537,6 +575,8 @@ actual object PlayerSettingsStorage {
 
     actual fun exportToSyncPayload(): JsonObject = buildJsonObject {
         loadShowLoadingOverlay()?.let { put(showLoadingOverlayKey, encodeSyncBoolean(it)) }
+        loadHoldToSpeedEnabled()?.let { put(holdToSpeedEnabledKey, encodeSyncBoolean(it)) }
+        loadHoldToSpeedValue()?.let { put(holdToSpeedValueKey, encodeSyncFloat(it)) }
         loadPreferredAudioLanguage()?.let { put(preferredAudioLanguageKey, encodeSyncString(it)) }
         loadSecondaryPreferredAudioLanguage()?.let { put(secondaryPreferredAudioLanguageKey, encodeSyncString(it)) }
         loadPreferredSubtitleLanguage()?.let { put(preferredSubtitleLanguageKey, encodeSyncString(it)) }
@@ -574,6 +614,8 @@ actual object PlayerSettingsStorage {
         }?.apply()
 
         payload.decodeSyncBoolean(showLoadingOverlayKey)?.let(::saveShowLoadingOverlay)
+        payload.decodeSyncBoolean(holdToSpeedEnabledKey)?.let(::saveHoldToSpeedEnabled)
+        payload.decodeSyncFloat(holdToSpeedValueKey)?.let(::saveHoldToSpeedValue)
         payload.decodeSyncString(preferredAudioLanguageKey)?.let(::savePreferredAudioLanguage)
         payload.decodeSyncString(secondaryPreferredAudioLanguageKey)?.let(::saveSecondaryPreferredAudioLanguage)
         payload.decodeSyncString(preferredSubtitleLanguageKey)?.let(::savePreferredSubtitleLanguage)

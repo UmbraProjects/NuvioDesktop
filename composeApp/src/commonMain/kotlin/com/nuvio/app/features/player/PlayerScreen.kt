@@ -23,13 +23,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -57,9 +61,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.roundToLong
 import kotlin.math.roundToInt
 
 private const val PlaybackProgressPersistIntervalMs = 60_000L
+private const val PlayerDoubleTapSeekStepMs = 10_000L
+private const val PlayerDoubleTapSeekResetDelayMs = 800L
 private const val PlayerLeftGestureBoundary = 0.4f
 private const val PlayerRightGestureBoundary = 0.6f
 private const val PlayerVerticalGestureSensitivity = 1f
@@ -78,6 +85,23 @@ private enum class PlayerSideGesture {
     Brightness,
     Volume,
 }
+
+private enum class PlayerSeekDirection {
+    Backward,
+    Forward,
+}
+
+private enum class PlayerGestureMode {
+    HorizontalSeek,
+    Brightness,
+    Volume,
+}
+
+private data class PlayerAccumulatedSeekState(
+    val direction: PlayerSeekDirection,
+    val baselinePositionMs: Long,
+    val amountMs: Long,
+)
 
 @Composable
 fun PlayerScreen(
@@ -125,6 +149,7 @@ fun PlayerScreen(
         val sliderEdgePadding = horizontalSafePadding + metrics.horizontalPadding
         val overlayBottomPadding = sliderOverlayBottomPadding(metrics)
         val scope = rememberCoroutineScope()
+        val hapticFeedback = LocalHapticFeedback.current
         val gestureController = rememberPlayerGestureController()
         var controlsVisible by rememberSaveable { mutableStateOf(true) }
         // Active playback state (mutable to support source/episode switching)
@@ -158,8 +183,13 @@ fun PlayerScreen(
         var scrubbingPositionMs by remember { mutableStateOf<Long?>(null) }
         var pausedOverlayVisible by remember { mutableStateOf(false) }
         var gestureFeedback by remember { mutableStateOf<GestureFeedbackState?>(null) }
+        var liveGestureFeedback by remember { mutableStateOf<GestureFeedbackState?>(null) }
+        var renderedGestureFeedback by remember { mutableStateOf<GestureFeedbackState?>(null) }
         var gestureMessageJob by remember { mutableStateOf<Job?>(null) }
+        var accumulatedSeekResetJob by remember { mutableStateOf<Job?>(null) }
+        var accumulatedSeekState by remember { mutableStateOf<PlayerAccumulatedSeekState?>(null) }
         var initialLoadCompleted by remember(activeSourceUrl) { mutableStateOf(false) }
+        var speedBoostRestoreSpeed by remember(activeSourceUrl) { mutableStateOf<Float?>(null) }
         var initialSeekApplied by remember(activeSourceUrl, activeInitialPositionMs, activeInitialProgressFraction) {
             val initialProgressFraction = activeInitialProgressFraction
             mutableStateOf(
@@ -184,6 +214,13 @@ fun PlayerScreen(
         val backdropArtwork = background ?: poster
         val displayedPositionMs = scrubbingPositionMs ?: playbackSnapshot.positionMs
         val isEpisode = activeSeasonNumber != null && activeEpisodeNumber != null
+        val currentGestureFeedback = liveGestureFeedback ?: gestureFeedback
+
+        LaunchedEffect(currentGestureFeedback) {
+            if (currentGestureFeedback != null) {
+                renderedGestureFeedback = currentGestureFeedback
+            }
+        }
 
         // Sources & Episodes Panel state
         var showSourcesPanel by remember { mutableStateOf(false) }
@@ -451,6 +488,48 @@ fun PlayerScreen(
             showGestureFeedback(GestureFeedbackState(message = message))
         }
 
+        fun clearLiveGestureFeedback() {
+            liveGestureFeedback = null
+        }
+
+        fun showSeekFeedback(direction: PlayerSeekDirection, amountMs: Long) {
+            val seconds = amountMs / 1000L
+            if (seconds <= 0L) return
+            showGestureFeedback(
+                GestureFeedbackState(
+                    message = if (direction == PlayerSeekDirection.Forward) "+${seconds}s" else "-${seconds}s",
+                    icon = if (direction == PlayerSeekDirection.Forward) {
+                        GestureFeedbackIcon.SeekForward
+                    } else {
+                        GestureFeedbackIcon.SeekBackward
+                    },
+                ),
+            )
+        }
+
+        fun showHorizontalSeekPreview(previewPositionMs: Long, baselinePositionMs: Long) {
+            val deltaMs = previewPositionMs - baselinePositionMs
+            val direction = if (deltaMs < 0L) PlayerSeekDirection.Backward else PlayerSeekDirection.Forward
+            liveGestureFeedback = GestureFeedbackState(
+                message = formatPlaybackTime(previewPositionMs),
+                icon = if (direction == PlayerSeekDirection.Forward) {
+                    GestureFeedbackIcon.SeekForward
+                } else {
+                    GestureFeedbackIcon.SeekBackward
+                },
+                secondaryMessage = buildString {
+                    if (deltaMs >= 0L) append("+")
+                    append((abs(deltaMs) / 1000f).roundToInt())
+                    append("s")
+                },
+                secondaryMessageColor = if (direction == PlayerSeekDirection.Forward) {
+                    Color(0xFF6EE7A8)
+                } else {
+                    Color(0xFFFF9A76)
+                },
+            )
+        }
+
         fun showBrightnessFeedback(level: Float) {
             val percentage = (level.coerceIn(0f, 1f) * 100f).roundToInt()
             showGestureFeedback(
@@ -489,9 +568,44 @@ fun PlayerScreen(
         fun seekBy(offsetMs: Long) {
             playerController?.seekBy(offsetMs)
             controlsVisible = true
-            val seconds = offsetMs / 1000L
-            if (seconds != 0L) {
-                showGestureMessage(if (seconds > 0) "+${seconds}s" else "${seconds}s")
+            when {
+                offsetMs > 0L -> showSeekFeedback(PlayerSeekDirection.Forward, offsetMs)
+                offsetMs < 0L -> showSeekFeedback(PlayerSeekDirection.Backward, abs(offsetMs))
+            }
+        }
+
+        fun handleDoubleTapSeek(direction: PlayerSeekDirection) {
+            val currentPositionMs = playbackSnapshot.positionMs.coerceAtLeast(0L)
+            val nextState = if (accumulatedSeekState?.direction == direction) {
+                accumulatedSeekState!!.copy(amountMs = accumulatedSeekState!!.amountMs + PlayerDoubleTapSeekStepMs)
+            } else {
+                PlayerAccumulatedSeekState(
+                    direction = direction,
+                    baselinePositionMs = currentPositionMs,
+                    amountMs = PlayerDoubleTapSeekStepMs,
+                )
+            }
+            accumulatedSeekState = nextState
+
+            val maxDurationMs = playbackSnapshot.durationMs.takeIf { it > 0L }
+            val targetPositionMs = when (direction) {
+                PlayerSeekDirection.Backward -> {
+                    (nextState.baselinePositionMs - nextState.amountMs).coerceAtLeast(0L)
+                }
+
+                PlayerSeekDirection.Forward -> {
+                    val unclamped = nextState.baselinePositionMs + nextState.amountMs
+                    maxDurationMs?.let { unclamped.coerceAtMost(it) } ?: unclamped
+                }
+            }
+            playerController?.seekTo(targetPositionMs)
+            controlsVisible = true
+            showSeekFeedback(direction, nextState.amountMs)
+
+            accumulatedSeekResetJob?.cancel()
+            accumulatedSeekResetJob = scope.launch {
+                delay(PlayerDoubleTapSeekResetDelayMs)
+                accumulatedSeekState = null
             }
         }
 
@@ -506,8 +620,67 @@ fun PlayerScreen(
             val current = playbackSnapshot.playbackSpeed
             val next = speeds.firstOrNull { it > current + 0.01f } ?: speeds.first()
             playerController?.setPlaybackSpeed(next)
-            showGestureMessage("${next}x")
+            showGestureMessage(formatPlaybackSpeedLabel(next))
             controlsVisible = true
+        }
+
+        fun activateHoldToSpeed() {
+            if (!playerSettingsUiState.holdToSpeedEnabled) return
+            val controller = playerController ?: return
+            if (speedBoostRestoreSpeed != null) return
+
+            val targetSpeed = playerSettingsUiState.holdToSpeedValue
+            val currentSpeed = playbackSnapshot.playbackSpeed
+            if (abs(currentSpeed - targetSpeed) < 0.01f) return
+
+            speedBoostRestoreSpeed = currentSpeed
+            controller.setPlaybackSpeed(targetSpeed)
+            liveGestureFeedback = GestureFeedbackState(
+                message = formatPlaybackSpeedLabel(targetSpeed),
+                icon = GestureFeedbackIcon.Speed,
+            )
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+
+        fun deactivateHoldToSpeed() {
+            val restoreSpeed = speedBoostRestoreSpeed ?: return
+            playerController?.setPlaybackSpeed(restoreSpeed)
+            speedBoostRestoreSpeed = null
+            liveGestureFeedback = null
+        }
+
+        val onSurfaceTap = rememberUpdatedState { offset: Offset ->
+            val centerStart = layoutSize.width * PlayerLeftGestureBoundary
+            val centerEnd = layoutSize.width * PlayerRightGestureBoundary
+            if (controlsVisible && offset.x in centerStart..centerEnd) {
+                controlsVisible = false
+            } else {
+                controlsVisible = !controlsVisible
+            }
+        }
+        val onSurfaceDoubleTap = rememberUpdatedState { offset: Offset ->
+            when {
+                offset.x < layoutSize.width * PlayerLeftGestureBoundary -> {
+                    handleDoubleTapSeek(PlayerSeekDirection.Backward)
+                }
+
+                offset.x > layoutSize.width * PlayerRightGestureBoundary -> {
+                    handleDoubleTapSeek(PlayerSeekDirection.Forward)
+                }
+
+                else -> controlsVisible = !controlsVisible
+            }
+        }
+        val activateHoldToSpeedState = rememberUpdatedState(::activateHoldToSpeed)
+        val deactivateHoldToSpeedState = rememberUpdatedState(::deactivateHoldToSpeed)
+        val showHorizontalSeekPreviewState = rememberUpdatedState(::showHorizontalSeekPreview)
+        val showBrightnessFeedbackState = rememberUpdatedState(::showBrightnessFeedback)
+        val showVolumeFeedbackState = rememberUpdatedState(::showVolumeFeedback)
+        val clearLiveGestureFeedbackState = rememberUpdatedState(::clearLiveGestureFeedback)
+        val currentPositionMsState = rememberUpdatedState(playbackSnapshot.positionMs.coerceAtLeast(0L))
+        val currentDurationMsState = rememberUpdatedState(playbackSnapshot.durationMs)
+        val commitHorizontalSeekState = rememberUpdatedState { targetPositionMs: Long ->
+            playerController?.seekTo(targetPositionMs)
         }
 
         fun switchToSource(stream: StreamItem) {
@@ -758,9 +931,15 @@ fun PlayerScreen(
             playerControllerSourceUrl = null
             playbackSnapshot = PlayerPlaybackSnapshot()
             scrubbingPositionMs = null
+            liveGestureFeedback = null
+            renderedGestureFeedback = null
             initialLoadCompleted = false
             lastProgressPersistEpochMs = 0L
             previousIsPlaying = false
+            accumulatedSeekResetJob?.cancel()
+            accumulatedSeekResetJob = null
+            accumulatedSeekState = null
+            speedBoostRestoreSpeed = null
             preferredAudioSelectionApplied = false
             preferredSubtitleSelectionApplied = false
             showSourcesPanel = false
@@ -1021,52 +1200,45 @@ fun PlayerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .onSizeChanged { layoutSize = it }
-                .pointerInput(controlsVisible, playerController) {
+                .pointerInput(layoutSize) {
                     detectTapGestures(
-                        onTap = { offset ->
-                            val centerStart = layoutSize.width * PlayerLeftGestureBoundary
-                            val centerEnd = layoutSize.width * PlayerRightGestureBoundary
-                            if (controlsVisible && offset.x in centerStart..centerEnd) {
-                                controlsVisible = false
-                            } else {
-                                controlsVisible = !controlsVisible
-                            }
+                        onPress = {
+                            tryAwaitRelease()
+                            deactivateHoldToSpeedState.value()
                         },
-                        onDoubleTap = { offset ->
-                            when {
-                                offset.x < layoutSize.width * PlayerLeftGestureBoundary -> seekBy(-10_000L)
-                                offset.x > layoutSize.width * PlayerRightGestureBoundary -> seekBy(10_000L)
-                                else -> controlsVisible = !controlsVisible
-                            }
-                        },
+                        onTap = { offset -> onSurfaceTap.value(offset) },
+                        onDoubleTap = { offset -> onSurfaceDoubleTap.value(offset) },
+                        onLongPress = { activateHoldToSpeedState.value() },
                     )
                 }
                 .pointerInput(gestureController, layoutSize) {
-                    val controller = gestureController ?: return@pointerInput
                     awaitEachGesture {
                         val down = awaitFirstDown()
-                        val width = size.width.toFloat()
+                        val controller = gestureController
+                        val width = size.width.toFloat().takeIf { it > 0f } ?: return@awaitEachGesture
                         val height = size.height.toFloat().takeIf { it > 0f } ?: return@awaitEachGesture
                         val region = when {
                             down.position.x < width * PlayerLeftGestureBoundary -> PlayerSideGesture.Brightness
                             down.position.x > width * PlayerRightGestureBoundary -> PlayerSideGesture.Volume
                             else -> null
-                        } ?: return@awaitEachGesture
+                        }
 
                         val initialBrightness = if (region == PlayerSideGesture.Brightness) {
-                            controller.currentBrightness() ?: return@awaitEachGesture
+                            controller?.currentBrightness()
                         } else {
-                            0f
+                            null
                         }
                         val initialVolume = if (region == PlayerSideGesture.Volume) {
-                            controller.currentVolume() ?: return@awaitEachGesture
+                            controller?.currentVolume()
                         } else {
                             null
                         }
 
                         var totalDx = 0f
                         var totalDy = 0f
-                        var dragging = false
+                        var gestureMode: PlayerGestureMode? = null
+                        val horizontalSeekBaselineMs = currentPositionMsState.value
+                        var horizontalSeekPreviewMs = horizontalSeekBaselineMs
 
                         while (true) {
                             val event = awaitPointerEvent()
@@ -1077,36 +1249,78 @@ fun PlayerScreen(
                             totalDx += delta.x
                             totalDy += delta.y
 
-                            if (!dragging) {
-                                val pastVerticalSlop = abs(totalDy) > viewConfiguration.touchSlop
-                                val verticalDominant = abs(totalDy) > abs(totalDx)
+                            if (gestureMode == null) {
                                 val horizontalDominant =
                                     abs(totalDx) > viewConfiguration.touchSlop && abs(totalDx) > abs(totalDy)
+                                val verticalDominant =
+                                    abs(totalDy) > viewConfiguration.touchSlop && abs(totalDy) > abs(totalDx)
 
-                                if (horizontalDominant) {
-                                    break
+                                gestureMode = when {
+                                    horizontalDominant -> {
+                                        deactivateHoldToSpeedState.value()
+                                        PlayerGestureMode.HorizontalSeek
+                                    }
+
+                                    verticalDominant && region == PlayerSideGesture.Brightness && initialBrightness != null -> {
+                                        PlayerGestureMode.Brightness
+                                    }
+
+                                    verticalDominant && region == PlayerSideGesture.Volume && initialVolume != null -> {
+                                        PlayerGestureMode.Volume
+                                    }
+
+                                    else -> null
                                 }
-                                if (!pastVerticalSlop || !verticalDominant) {
+
+                                if (gestureMode == null) {
                                     continue
                                 }
-                                dragging = true
                             }
 
-                            val gestureDeltaFraction =
-                                (-totalDy / height) * PlayerVerticalGestureSensitivity
-
-                            when (region) {
-                                PlayerSideGesture.Brightness -> {
-                                    controller.setBrightness(initialBrightness + gestureDeltaFraction)
-                                        ?.let(::showBrightnessFeedback)
+                            when (gestureMode) {
+                                PlayerGestureMode.HorizontalSeek -> {
+                                    val sensitivitySeconds = when {
+                                        currentDurationMsState.value >= 3_600_000L -> 120f
+                                        currentDurationMsState.value >= 1_800_000L -> 90f
+                                        else -> 60f
+                                    }
+                                    val previewOffsetMs =
+                                        ((totalDx / width) * sensitivitySeconds * 1000f).roundToLong()
+                                    val unclampedPreviewMs = horizontalSeekBaselineMs + previewOffsetMs
+                                    horizontalSeekPreviewMs = currentDurationMsState.value
+                                        .takeIf { it > 0L }
+                                        ?.let { durationMs ->
+                                            unclampedPreviewMs.coerceIn(0L, durationMs)
+                                        }
+                                        ?: unclampedPreviewMs.coerceAtLeast(0L)
+                                    showHorizontalSeekPreviewState.value(
+                                        horizontalSeekPreviewMs,
+                                        horizontalSeekBaselineMs,
+                                    )
                                 }
 
-                                PlayerSideGesture.Volume -> {
-                                    controller.setVolume((initialVolume?.fraction ?: 0f) + gestureDeltaFraction)
-                                        ?.let(::showVolumeFeedback)
+                                PlayerGestureMode.Brightness -> {
+                                    val gestureDeltaFraction =
+                                        (-totalDy / height) * PlayerVerticalGestureSensitivity
+                                    controller?.setBrightness((initialBrightness ?: 0f) + gestureDeltaFraction)
+                                        ?.let(showBrightnessFeedbackState.value)
                                 }
+
+                                PlayerGestureMode.Volume -> {
+                                    val gestureDeltaFraction =
+                                        (-totalDy / height) * PlayerVerticalGestureSensitivity
+                                    controller?.setVolume((initialVolume?.fraction ?: 0f) + gestureDeltaFraction)
+                                        ?.let(showVolumeFeedbackState.value)
+                                }
+
+                                null -> Unit
                             }
                             change.consume()
+                        }
+
+                        if (gestureMode == PlayerGestureMode.HorizontalSeek) {
+                            commitHorizontalSeekState.value(horizontalSeekPreviewMs)
+                            clearLiveGestureFeedbackState.value()
                         }
                     }
                 },
@@ -1215,21 +1429,23 @@ fun PlayerScreen(
             }
 
             AnimatedVisibility(
-                visible = gestureFeedback != null,
+                visible = currentGestureFeedback != null,
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    GestureFeedbackPill(
-                        feedback = gestureFeedback ?: GestureFeedbackState(message = ""),
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Top))
-                            .padding(horizontal = horizontalSafePadding)
-                            .padding(top = 40.dp),
-                    )
+                    renderedGestureFeedback?.let { feedback ->
+                        GestureFeedbackPill(
+                            feedback = feedback,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Top))
+                                .padding(horizontal = horizontalSafePadding)
+                                .padding(top = 40.dp),
+                        )
+                    }
                 }
             }
 

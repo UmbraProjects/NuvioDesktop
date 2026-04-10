@@ -18,6 +18,8 @@ import platform.Foundation.NSUserDefaults
 
 actual object PlayerSettingsStorage {
     private const val showLoadingOverlayKey = "show_loading_overlay"
+    private const val holdToSpeedEnabledKey = "hold_to_speed_enabled"
+    private const val holdToSpeedValueKey = "hold_to_speed_value"
     private const val preferredAudioLanguageKey = "preferred_audio_language"
     private const val secondaryPreferredAudioLanguageKey = "secondary_preferred_audio_language"
     private const val preferredSubtitleLanguageKey = "preferred_subtitle_language"
@@ -49,6 +51,8 @@ actual object PlayerSettingsStorage {
     private const val libassRenderTypeKey = "libass_render_type"
     private val syncKeys = listOf(
         showLoadingOverlayKey,
+        holdToSpeedEnabledKey,
+        holdToSpeedValueKey,
         preferredAudioLanguageKey,
         secondaryPreferredAudioLanguageKey,
         preferredSubtitleLanguageKey,
@@ -92,6 +96,34 @@ actual object PlayerSettingsStorage {
 
     actual fun saveShowLoadingOverlay(enabled: Boolean) {
         NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = ProfileScopedKey.of(showLoadingOverlayKey))
+    }
+
+    actual fun loadHoldToSpeedEnabled(): Boolean? {
+        val defaults = NSUserDefaults.standardUserDefaults
+        val key = ProfileScopedKey.of(holdToSpeedEnabledKey)
+        return if (defaults.objectForKey(key) != null) {
+            defaults.boolForKey(key)
+        } else {
+            null
+        }
+    }
+
+    actual fun saveHoldToSpeedEnabled(enabled: Boolean) {
+        NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = ProfileScopedKey.of(holdToSpeedEnabledKey))
+    }
+
+    actual fun loadHoldToSpeedValue(): Float? {
+        val defaults = NSUserDefaults.standardUserDefaults
+        val key = ProfileScopedKey.of(holdToSpeedValueKey)
+        return if (defaults.objectForKey(key) != null) {
+            defaults.floatForKey(key)
+        } else {
+            null
+        }
+    }
+
+    actual fun saveHoldToSpeedValue(speed: Float) {
+        NSUserDefaults.standardUserDefaults.setFloat(speed, forKey = ProfileScopedKey.of(holdToSpeedValueKey))
     }
 
     actual fun loadPreferredAudioLanguage(): String? {
@@ -450,6 +482,8 @@ actual object PlayerSettingsStorage {
 
     actual fun exportToSyncPayload(): JsonObject = buildJsonObject {
         loadShowLoadingOverlay()?.let { put(showLoadingOverlayKey, encodeSyncBoolean(it)) }
+        loadHoldToSpeedEnabled()?.let { put(holdToSpeedEnabledKey, encodeSyncBoolean(it)) }
+        loadHoldToSpeedValue()?.let { put(holdToSpeedValueKey, encodeSyncFloat(it)) }
         loadPreferredAudioLanguage()?.let { put(preferredAudioLanguageKey, encodeSyncString(it)) }
         loadSecondaryPreferredAudioLanguage()?.let { put(secondaryPreferredAudioLanguageKey, encodeSyncString(it)) }
         loadPreferredSubtitleLanguage()?.let { put(preferredSubtitleLanguageKey, encodeSyncString(it)) }
@@ -487,6 +521,8 @@ actual object PlayerSettingsStorage {
         }
 
         payload.decodeSyncBoolean(showLoadingOverlayKey)?.let(::saveShowLoadingOverlay)
+        payload.decodeSyncBoolean(holdToSpeedEnabledKey)?.let(::saveHoldToSpeedEnabled)
+        payload.decodeSyncFloat(holdToSpeedValueKey)?.let(::saveHoldToSpeedValue)
         payload.decodeSyncString(preferredAudioLanguageKey)?.let(::savePreferredAudioLanguage)
         payload.decodeSyncString(secondaryPreferredAudioLanguageKey)?.let(::saveSecondaryPreferredAudioLanguage)
         payload.decodeSyncString(preferredSubtitleLanguageKey)?.let(::savePreferredSubtitleLanguage)

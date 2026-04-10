@@ -33,6 +33,8 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Brightness6
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -64,12 +66,16 @@ internal enum class GestureFeedbackIcon {
     Brightness,
     Volume,
     VolumeMuted,
+    SeekForward,
+    SeekBackward,
 }
 
 internal data class GestureFeedbackState(
     val message: String,
     val icon: GestureFeedbackIcon = GestureFeedbackIcon.Speed,
     val isDanger: Boolean = false,
+    val secondaryMessage: String? = null,
+    val secondaryMessageColor: Color? = null,
 )
 
 @Composable
@@ -208,7 +214,10 @@ internal fun GestureFeedbackPill(
         GestureFeedbackIcon.Brightness -> Icons.Rounded.Brightness6
         GestureFeedbackIcon.Volume -> Icons.AutoMirrored.Rounded.VolumeUp
         GestureFeedbackIcon.VolumeMuted -> Icons.AutoMirrored.Rounded.VolumeOff
+        GestureFeedbackIcon.SeekForward -> Icons.Rounded.FastForward
+        GestureFeedbackIcon.SeekBackward -> Icons.Rounded.FastRewind
     }
+    val iconTint = if (feedback.isDanger) Color(0xFFFFC1C1) else Color.White
 
     Row(
         modifier = modifier
@@ -228,7 +237,7 @@ internal fun GestureFeedbackPill(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = Color.White,
+                tint = iconTint,
                 modifier = Modifier.size(16.dp),
             )
         }
@@ -237,6 +246,13 @@ internal fun GestureFeedbackPill(
             style = MaterialTheme.nuvioTypeScale.bodyLg.copy(fontWeight = FontWeight.SemiBold),
             color = Color.White,
         )
+        feedback.secondaryMessage?.let { secondaryMessage ->
+            Text(
+                text = secondaryMessage,
+                style = MaterialTheme.nuvioTypeScale.bodyMd.copy(fontWeight = FontWeight.SemiBold),
+                color = feedback.secondaryMessageColor ?: Color.White.copy(alpha = 0.92f),
+            )
+        }
     }
 }
 

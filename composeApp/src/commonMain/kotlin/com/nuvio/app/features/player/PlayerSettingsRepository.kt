@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 data class PlayerSettingsUiState(
     val showLoadingOverlay: Boolean = true,
+    val holdToSpeedEnabled: Boolean = true,
+    val holdToSpeedValue: Float = 2f,
     val preferredAudioLanguage: String = AudioLanguageOption.DEVICE,
     val secondaryPreferredAudioLanguage: String? = null,
     val preferredSubtitleLanguage: String = SubtitleLanguageOption.NONE,
@@ -44,6 +46,8 @@ object PlayerSettingsRepository {
 
     private var hasLoaded = false
     private var showLoadingOverlay = true
+    private var holdToSpeedEnabled = true
+    private var holdToSpeedValue = 2f
     private var preferredAudioLanguage = AudioLanguageOption.DEVICE
     private var secondaryPreferredAudioLanguage: String? = null
     private var preferredSubtitleLanguage = SubtitleLanguageOption.NONE
@@ -83,6 +87,8 @@ object PlayerSettingsRepository {
     fun clearLocalState() {
         hasLoaded = false
         showLoadingOverlay = true
+        holdToSpeedEnabled = true
+        holdToSpeedValue = 2f
         preferredAudioLanguage = AudioLanguageOption.DEVICE
         secondaryPreferredAudioLanguage = null
         preferredSubtitleLanguage = SubtitleLanguageOption.NONE
@@ -115,6 +121,8 @@ object PlayerSettingsRepository {
     private fun loadFromDisk() {
         hasLoaded = true
         showLoadingOverlay = PlayerSettingsStorage.loadShowLoadingOverlay() ?: true
+        holdToSpeedEnabled = PlayerSettingsStorage.loadHoldToSpeedEnabled() ?: true
+        holdToSpeedValue = PlayerSettingsStorage.loadHoldToSpeedValue() ?: 2f
         preferredAudioLanguage =
             normalizeLanguageCode(PlayerSettingsStorage.loadPreferredAudioLanguage())
                 ?: AudioLanguageOption.DEVICE
@@ -182,6 +190,23 @@ object PlayerSettingsRepository {
         showLoadingOverlay = enabled
         publish()
         PlayerSettingsStorage.saveShowLoadingOverlay(enabled)
+    }
+
+    fun setHoldToSpeedEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (holdToSpeedEnabled == enabled) return
+        holdToSpeedEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveHoldToSpeedEnabled(enabled)
+    }
+
+    fun setHoldToSpeedValue(speed: Float) {
+        ensureLoaded()
+        val normalized = speed.coerceIn(1f, 4f)
+        if (holdToSpeedValue == normalized) return
+        holdToSpeedValue = normalized
+        publish()
+        PlayerSettingsStorage.saveHoldToSpeedValue(normalized)
     }
 
     fun setPreferredAudioLanguage(language: String) {
@@ -404,6 +429,8 @@ object PlayerSettingsRepository {
     private fun publish() {
         _uiState.value = PlayerSettingsUiState(
             showLoadingOverlay = showLoadingOverlay,
+            holdToSpeedEnabled = holdToSpeedEnabled,
+            holdToSpeedValue = holdToSpeedValue,
             preferredAudioLanguage = preferredAudioLanguage,
             secondaryPreferredAudioLanguage = secondaryPreferredAudioLanguage,
             preferredSubtitleLanguage = preferredSubtitleLanguage,
