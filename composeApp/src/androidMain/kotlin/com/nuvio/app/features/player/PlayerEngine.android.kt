@@ -45,6 +45,9 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
 import androidx.media3.ui.CaptionStyleCompat
+import com.nuvio.app.R
+import io.github.peerless2012.ass.media.kt.withAssSupport
+import io.github.peerless2012.ass.media.widget.AssSubtitleView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -90,6 +93,10 @@ actual fun PlatformPlayerSurface(
     val sanitizedSourceResponseHeaders = remember(sourceResponseHeaders) {
         sanitizePlaybackResponseHeaders(sourceResponseHeaders)
     }
+    val useLibass = playerSettings.useLibass
+    val libassRenderType = runCatching {
+        LibassRenderType.valueOf(playerSettings.libassRenderType)
+    }.getOrDefault(LibassRenderType.CUES)
 
     val exoPlayer = remember(sourceUrl, sourceAudioUrl, sanitizedSourceHeaders, sanitizedSourceResponseHeaders) {
         val renderersFactory = DefaultRenderersFactory(context)
@@ -125,11 +132,6 @@ actual fun PlatformPlayerSurface(
                 defaultResponseHeaders = sanitizedSourceResponseHeaders,
                 useYoutubeChunkedPlayback = useYoutubeChunkedPlayback,
             )
-
-        val useLibass = playerSettings.useLibass
-        val libassRenderType = runCatching {
-            LibassRenderType.valueOf(playerSettings.libassRenderType)
-        }.getOrDefault(LibassRenderType.CUES)
 
         val player = if (useLibass) {
             ExoPlayer.Builder(context)
@@ -418,6 +420,11 @@ actual fun PlatformPlayerSurface(
                 this.resizeMode = resizeMode.toExoResizeMode()
                 setShutterBackgroundColor(android.graphics.Color.BLACK)
                 playerViewRef = this
+                syncLibassOverlay(
+                    player = exoPlayer,
+                    enabled = useLibass,
+                    renderType = libassRenderType,
+                )
                 applySubtitleStyle(currentSubtitleStyle)
             }
         },
@@ -426,6 +433,11 @@ actual fun PlatformPlayerSurface(
             playerView.useController = useNativeController
             playerView.resizeMode = resizeMode.toExoResizeMode()
             playerViewRef = playerView
+            playerView.syncLibassOverlay(
+                player = exoPlayer,
+                enabled = useLibass,
+                renderType = libassRenderType,
+            )
             playerView.applySubtitleStyle(currentSubtitleStyle)
         },
     )
@@ -455,6 +467,56 @@ private fun PlayerResizeMode.toExoResizeMode(): Int =
         PlayerResizeMode.Fill -> AspectRatioFrameLayout.RESIZE_MODE_FILL
         PlayerResizeMode.Zoom -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     }
+
+private fun PlayerView.syncLibassOverlay(
+    player: ExoPlayer,
+    enabled: Boolean,
+    renderType: LibassRenderType,
+) {
+    val subtitleView = subtitleView ?: return
+    val needsOverlay = enabled && renderType.usesOverlaySubtitleView()
+    val boundPlayer = getTag(R.id.libass_overlay_bound_player) as? ExoPlayer
+    val hasOverlayChild = subtitleView.hasAssOverlayChild()
+
+    if (!needsOverlay) {
+        if (hasOverlayChild) {
+            subtitleView.removeAssOverlayChildren()
+        }
+        if (boundPlayer != null) {
+            setTag(R.id.libass_overlay_bound_player, null)
+        }
+        return
+    }
+
+    val assHandler = player.getAssHandlerCompat() ?: return
+    if (boundPlayer === player && hasOverlayChild) {
+        return
+    }
+
+    subtitleView.removeAssOverlayChildren()
+    subtitleView.withAssSupport(assHandler)
+    setTag(R.id.libass_overlay_bound_player, player)
+}
+
+private fun LibassRenderType.usesOverlaySubtitleView(): Boolean =
+    this == LibassRenderType.OVERLAY_CANVAS || this == LibassRenderType.OVERLAY_OPEN_GL
+
+private fun SubtitleView.hasAssOverlayChild(): Boolean {
+    for (index in 0 until childCount) {
+        if (getChildAt(index) is AssSubtitleView) {
+            return true
+        }
+    }
+    return false
+}
+
+private fun SubtitleView.removeAssOverlayChildren() {
+    for (index in childCount - 1 downTo 0) {
+        if (getChildAt(index) is AssSubtitleView) {
+            removeViewAt(index)
+        }
+    }
+}
 
 private fun PlayerView.applySubtitleStyle(style: SubtitleStyleState) {
     subtitleView?.apply {
