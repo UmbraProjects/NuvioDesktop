@@ -75,16 +75,6 @@ object TraktWatchedSyncAdapter : WatchedSyncAdapter {
             val showId = normalizeId(show.ids) ?: return@forEach
             val showName = show.title ?: showId
 
-            // Add a series-level watched entry
-            result += WatchedItem(
-                id = showId,
-                type = "series",
-                name = showName,
-                season = null,
-                episode = null,
-                markedAtEpochMs = rankedTimestamp(item.lastWatchedAt),
-            )
-
             // Add per-episode watched entries
             item.seasons.orEmpty().forEach seasonLoop@{ season ->
                 val seasonNumber = season.number ?: return@seasonLoop
