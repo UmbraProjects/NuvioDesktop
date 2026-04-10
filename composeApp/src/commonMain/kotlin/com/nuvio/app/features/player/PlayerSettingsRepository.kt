@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 data class PlayerSettingsUiState(
     val showLoadingOverlay: Boolean = true,
+    val resizeMode: PlayerResizeMode = PlayerResizeMode.Fit,
     val holdToSpeedEnabled: Boolean = true,
     val holdToSpeedValue: Float = 2f,
     val preferredAudioLanguage: String = AudioLanguageOption.DEVICE,
@@ -46,6 +47,7 @@ object PlayerSettingsRepository {
 
     private var hasLoaded = false
     private var showLoadingOverlay = true
+    private var resizeMode = PlayerResizeMode.Fit
     private var holdToSpeedEnabled = true
     private var holdToSpeedValue = 2f
     private var preferredAudioLanguage = AudioLanguageOption.DEVICE
@@ -87,6 +89,7 @@ object PlayerSettingsRepository {
     fun clearLocalState() {
         hasLoaded = false
         showLoadingOverlay = true
+        resizeMode = PlayerResizeMode.Fit
         holdToSpeedEnabled = true
         holdToSpeedValue = 2f
         preferredAudioLanguage = AudioLanguageOption.DEVICE
@@ -121,6 +124,9 @@ object PlayerSettingsRepository {
     private fun loadFromDisk() {
         hasLoaded = true
         showLoadingOverlay = PlayerSettingsStorage.loadShowLoadingOverlay() ?: true
+        resizeMode = PlayerSettingsStorage.loadResizeMode()
+            ?.let { runCatching { PlayerResizeMode.valueOf(it) }.getOrNull() }
+            ?: PlayerResizeMode.Fit
         holdToSpeedEnabled = PlayerSettingsStorage.loadHoldToSpeedEnabled() ?: true
         holdToSpeedValue = PlayerSettingsStorage.loadHoldToSpeedValue() ?: 2f
         preferredAudioLanguage =
@@ -190,6 +196,14 @@ object PlayerSettingsRepository {
         showLoadingOverlay = enabled
         publish()
         PlayerSettingsStorage.saveShowLoadingOverlay(enabled)
+    }
+
+    fun setResizeMode(mode: PlayerResizeMode) {
+        ensureLoaded()
+        if (resizeMode == mode) return
+        resizeMode = mode
+        publish()
+        PlayerSettingsStorage.saveResizeMode(mode.name)
     }
 
     fun setHoldToSpeedEnabled(enabled: Boolean) {
@@ -429,6 +443,7 @@ object PlayerSettingsRepository {
     private fun publish() {
         _uiState.value = PlayerSettingsUiState(
             showLoadingOverlay = showLoadingOverlay,
+            resizeMode = resizeMode,
             holdToSpeedEnabled = holdToSpeedEnabled,
             holdToSpeedValue = holdToSpeedValue,
             preferredAudioLanguage = preferredAudioLanguage,

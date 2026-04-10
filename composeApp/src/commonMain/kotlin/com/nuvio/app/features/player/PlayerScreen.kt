@@ -174,7 +174,9 @@ fun PlayerScreen(
         var activeInitialPositionMs by rememberSaveable { mutableStateOf(initialPositionMs) }
         var activeInitialProgressFraction by rememberSaveable { mutableStateOf(initialProgressFraction) }
         var shouldPlay by rememberSaveable(activeSourceUrl) { mutableStateOf(true) }
-        var resizeMode by rememberSaveable { mutableStateOf(PlayerResizeMode.Fit) }
+        var resizeMode by rememberSaveable(playerSettingsUiState.resizeMode) {
+            mutableStateOf(playerSettingsUiState.resizeMode)
+        }
         var layoutSize by remember { mutableStateOf(IntSize.Zero) }
         var playbackSnapshot by remember { mutableStateOf(PlayerPlaybackSnapshot()) }
         var playerController by remember { mutableStateOf<PlayerEngineController?>(null) }
@@ -610,8 +612,10 @@ fun PlayerScreen(
         }
 
         fun cycleResizeMode() {
-            resizeMode = resizeMode.next()
-            showGestureMessage(resizeMode.label)
+            val nextMode = resizeMode.next()
+            resizeMode = nextMode
+            PlayerSettingsRepository.setResizeMode(nextMode)
+            showGestureMessage(nextMode.label)
             controlsVisible = true
         }
 
