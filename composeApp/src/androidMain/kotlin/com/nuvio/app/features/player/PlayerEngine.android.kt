@@ -178,6 +178,10 @@ actual fun PlatformPlayerSurface(
     var subtitleSelectionJob by remember { mutableStateOf<Job?>(null) }
 
     DisposableEffect(exoPlayer) {
+        PlayerPictureInPictureManager.registerPausePlaybackCallback {
+            exoPlayer.pause()
+        }
+
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 latestOnError.value(error.localizedMessage ?: "Unable to play this stream.")
@@ -227,6 +231,7 @@ actual fun PlatformPlayerSurface(
         }
         exoPlayer.addListener(listener)
         onDispose {
+            PlayerPictureInPictureManager.registerPausePlaybackCallback(null)
             exoPlayer.removeListener(listener)
             subtitleSelectionJob?.cancel()
         }

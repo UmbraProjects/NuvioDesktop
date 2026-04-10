@@ -3,8 +3,12 @@ package com.nuvio.app.features.player
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Rational
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.unit.IntSize
+import androidx.lifecycle.Lifecycle
 
 internal object PlayerPictureInPictureManager {
     private data class SessionState(
@@ -14,6 +18,10 @@ internal object PlayerPictureInPictureManager {
     )
 
     private var sessionState = SessionState()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var wasInPictureInPictureMode = false
+    private var pendingPictureInPictureExitCheck: Runnable? = null
+    private var pausePlaybackCallback: (() -> Unit)? = null
 
     fun updateSession(
         activity: Activity,
@@ -31,7 +39,16 @@ internal object PlayerPictureInPictureManager {
 
     fun clearSession(activity: Activity) {
         sessionState = SessionState()
+        wasInPictureInPictureMode = false
+        clearPendingPictureInPictureExitCheck()
         applyPictureInPictureParams(activity)
+    }
+
+    fun registerPausePlaybackCallback(callback: (() -> Unit)?) {
+        pausePlaybackCallback = callback
+        if (callback == null) {
+            clearPendingPictureInPictureExitCheck()
+        }
     }
 
     fun onUserLeaveHint(activity: Activity): Boolean {
@@ -39,6 +56,28 @@ internal object PlayerPictureInPictureManager {
             return false
         }
         return enterIfEligible(activity)
+    }
+
+    fun onPictureInPictureModeChanged(
+        activity: ComponentActivity,
+        isInPictureInPictureMode: Boolean,
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        val wasInPictureInPicture = wasInPictureInPictureMode
+        wasInPictureInPictureMode = isInPictureInPictureMode
+        clearPendingPictureInPictureExitCheck()
+
+        if (!wasInPictureInPicture || isInPictureInPictureMode) return
+
+        val exitCheck = Runnable {
+            val returnedToForeground = activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            if (!returnedToForeground || activity.isFinishing || activity.isDestroyed) {
+                pausePlaybackCallback?.invoke()
+            }
+        }
+        pendingPictureInPictureExitCheck = exitCheck
+        mainHandler.postDelayed(exitCheck, 250L)
     }
 
     private fun applyPictureInPictureParams(activity: Activity) {
@@ -76,6 +115,11 @@ internal object PlayerPictureInPictureManager {
             ratio < MinPictureInPictureAspectRatio -> Rational(100, 239)
             else -> Rational(width, height)
         }
+    }
+
+    private fun clearPendingPictureInPictureExitCheck() {
+        pendingPictureInPictureExitCheck?.let(mainHandler::removeCallbacks)
+        pendingPictureInPictureExitCheck = null
     }
 }
 

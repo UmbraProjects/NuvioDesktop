@@ -1,6 +1,7 @@
 package com.nuvio.app
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -87,6 +88,14 @@ class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         PlayerPictureInPictureManager.onUserLeaveHint(this)
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        PlayerPictureInPictureManager.onPictureInPictureModeChanged(this, isInPictureInPictureMode)
     }
 
     override fun onDestroy() {
