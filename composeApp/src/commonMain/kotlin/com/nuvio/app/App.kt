@@ -1446,22 +1446,7 @@ private fun MainAppContent(
                 onAction = {
                     val item = resumePromptItem ?: return@NuvioFloatingPrompt
                     resumePromptItem = null
-                    onPlay(
-                        item.parentMetaType,
-                        item.videoId,
-                        item.parentMetaId,
-                        item.parentMetaType,
-                        item.title,
-                        item.logo,
-                        item.poster,
-                        item.background,
-                        item.seasonNumber,
-                        item.episodeNumber,
-                        item.episodeTitle,
-                        item.episodeThumbnail,
-                        item.pauseDescription,
-                        item.resumePositionMs,
-                    )
+                    openContinueWatching(item, false, false)
                 },
                 onDismiss = { resumePromptItem = null },
                 modifier = Modifier
