@@ -39,9 +39,9 @@ actual object AddonStorage {
 
 private val addonHttpClient = HttpClient(Darwin) {
     install(HttpTimeout) {
-        requestTimeoutMillis = 10_000
-        connectTimeoutMillis = 10_000
-        socketTimeoutMillis = 10_000
+        requestTimeoutMillis = 60_000
+        connectTimeoutMillis = 60_000
+        socketTimeoutMillis = 60_000
     }
     expectSuccess = false
 }
