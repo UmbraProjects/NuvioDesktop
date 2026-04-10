@@ -58,7 +58,10 @@ private fun rememberHomeSkeletonBrush(): Brush {
 }
 
 @Composable
-fun HomeSkeletonHero(modifier: Modifier = Modifier) {
+fun HomeSkeletonHero(
+    modifier: Modifier = Modifier,
+    viewportHeight: Dp? = null,
+) {
     val brush = rememberHomeSkeletonBrush()
 
     BoxWithConstraints(
@@ -66,7 +69,10 @@ fun HomeSkeletonHero(modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
     ) {
-        val layout = homeHeroLayout(maxWidth.value)
+        val layout = homeHeroLayout(
+            maxWidthDp = maxWidth.value,
+            viewportHeightDp = viewportHeight?.value,
+        )
         val containerWidth = maxWidth
 
         Box(

@@ -2,6 +2,8 @@ package com.nuvio.app.features.home.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
@@ -25,12 +28,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -41,12 +50,19 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.features.home.MetaPreview
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 private const val HERO_BACKGROUND_PARALLAX = 0.055f
 private const val HERO_BACKGROUND_SCALE = 1.14f
 private const val HERO_CONTENT_PARALLAX = 0.18f
+private const val HERO_SCROLL_PARALLAX = 0.3f
+private const val HERO_SCROLL_DOWN_SCALE_MULTIPLIER = 0.0001f
+private const val HERO_SCROLL_UP_SCALE_MULTIPLIER = 0.002f
+private const val HERO_SCROLL_MAX_SCALE = 1.3f
+private const val HERO_SWIPE_THRESHOLD_FRACTION = 0.16f
+private const val HERO_SWIPE_VELOCITY_THRESHOLD = 300f
 
 internal data class HomeHeroLayout(
     val isTablet: Boolean,
@@ -63,6 +79,8 @@ internal data class HomeHeroLayout(
 fun HomeHeroSection(
     items: List<MetaPreview>,
     modifier: Modifier = Modifier,
+    viewportHeight: Dp? = null,
+    listState: LazyListState? = null,
     onItemClick: ((MetaPreview) -> Unit)? = null,
 ) {
     if (items.isEmpty()) return
@@ -73,10 +91,30 @@ fun HomeHeroSection(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
+            .homeHeroPagerGesture(
+                pagerState = pagerState,
+                itemCount = items.size,
+                coroutineScope = coroutineScope,
+            )
             .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
     ) {
-        val layout = homeHeroLayout(maxWidth.value)
+        val layout = homeHeroLayout(
+            maxWidthDp = maxWidth.value,
+            viewportHeightDp = viewportHeight?.value,
+        )
         val heroWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
+        val heroHeightPx = with(LocalDensity.current) { layout.heroHeight.toPx() }
+        val scrollOffsetPx by remember(listState, heroHeightPx) {
+            derivedStateOf {
+                when {
+                    listState == null -> 0f
+                    listState.firstVisibleItemIndex > 0 -> heroHeightPx
+                    else -> listState.firstVisibleItemScrollOffset.toFloat()
+                }
+            }
+        }
+        val heroScrollScale = heroBackgroundScrollScale(scrollOffsetPx)
+        val heroScrollTranslationY = heroBackgroundScrollTranslationY(scrollOffsetPx)
         val currentPage = pagerState.currentPage.coerceIn(items.indices)
         val visiblePages = listOf(
             currentPage,
@@ -110,6 +148,7 @@ fun HomeHeroSection(
         ) {
             HorizontalPager(
                 state = pagerState,
+                userScrollEnabled = false,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer { alpha = 0.01f },
@@ -129,8 +168,9 @@ fun HomeHeroSection(
                             .graphicsLayer {
                                 alpha = layer.visibility
                                 translationX = -layer.offset * heroWidthPx * HERO_BACKGROUND_PARALLAX
-                                scaleX = HERO_BACKGROUND_SCALE
-                                scaleY = HERO_BACKGROUND_SCALE
+                                translationY = heroScrollTranslationY
+                                scaleX = HERO_BACKGROUND_SCALE * heroScrollScale
+                                scaleY = HERO_BACKGROUND_SCALE * heroScrollScale
                             },
                         alignment = if (layout.isTablet) Alignment.TopCenter else Alignment.Center,
                         contentScale = ContentScale.Crop,
@@ -270,13 +310,19 @@ private fun heroPageVisibility(
 }
 
 @Composable
-fun HomeHeroReservedSpace(modifier: Modifier = Modifier) {
+fun HomeHeroReservedSpace(
+    modifier: Modifier = Modifier,
+    viewportHeight: Dp? = null,
+) {
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
     ) {
-        val layout = homeHeroLayout(maxWidth.value)
+        val layout = homeHeroLayout(
+            maxWidthDp = maxWidth.value,
+            viewportHeightDp = viewportHeight?.value,
+        )
 
         Spacer(
             modifier = Modifier
@@ -365,7 +411,10 @@ private fun HeroMetaText(text: String) {
     )
 }
 
-internal fun homeHeroLayout(maxWidthDp: Float): HomeHeroLayout =
+internal fun homeHeroLayout(
+    maxWidthDp: Float,
+    viewportHeightDp: Float? = null,
+): HomeHeroLayout =
     when {
         maxWidthDp >= 1200f -> HomeHeroLayout(
             isTablet = true,
@@ -399,7 +448,7 @@ internal fun homeHeroLayout(maxWidthDp: Float): HomeHeroLayout =
         )
         else -> HomeHeroLayout(
             isTablet = false,
-            heroHeight = (maxWidthDp * 1.22f).dp.coerceIn(440.dp, 800.dp),
+            heroHeight = viewportHeightDp?.let { (it * 0.85f).dp } ?: (maxWidthDp * 1.22f).dp.coerceIn(440.dp, 800.dp),
             contentMaxWidth = 480.dp,
             contentWidthFraction = 1f,
             contentHorizontalPadding = 24.dp,
@@ -417,4 +466,99 @@ private fun HeroMetaDot() {
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)),
     )
+}
+
+private fun heroBackgroundScrollScale(scrollOffsetPx: Float): Float {
+    val scaleIncrease = if (scrollOffsetPx < 0f) {
+        abs(scrollOffsetPx) * HERO_SCROLL_UP_SCALE_MULTIPLIER
+    } else {
+        scrollOffsetPx * HERO_SCROLL_DOWN_SCALE_MULTIPLIER
+    }
+    return (1f + scaleIncrease).coerceAtMost(HERO_SCROLL_MAX_SCALE)
+}
+
+private fun heroBackgroundScrollTranslationY(scrollOffsetPx: Float): Float {
+    return scrollOffsetPx * HERO_SCROLL_PARALLAX
+}
+
+private fun Modifier.homeHeroPagerGesture(
+    pagerState: PagerState,
+    itemCount: Int,
+    coroutineScope: CoroutineScope,
+): Modifier {
+    if (itemCount <= 1) return this
+
+    return pointerInput(pagerState, itemCount) {
+        awaitEachGesture {
+            val down = awaitFirstDown(pass = PointerEventPass.Initial)
+            val widthPx = size.width.toFloat().takeIf { it > 0f } ?: return@awaitEachGesture
+            val velocityTracker = VelocityTracker().apply {
+                addPosition(down.uptimeMillis, down.position)
+            }
+            val startPage = pagerState.currentPage
+            var totalDx = 0f
+            var totalDy = 0f
+            var dragging = false
+
+            while (true) {
+                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                velocityTracker.addPosition(change.uptimeMillis, change.position)
+
+                if (!change.pressed) {
+                    if (dragging) {
+                        val targetPage = resolveHeroTargetPage(
+                            startPage = startPage,
+                            itemCount = itemCount,
+                            totalDx = totalDx,
+                            velocityX = velocityTracker.calculateVelocity().x,
+                            widthPx = widthPx,
+                        )
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(targetPage)
+                        }
+                    }
+                    break
+                }
+
+                val delta = change.position - change.previousPosition
+                totalDx += delta.x
+                totalDy += delta.y
+
+                if (!dragging) {
+                    val horizontalDrag =
+                        abs(totalDx) > viewConfiguration.touchSlop && abs(totalDx) > abs(totalDy)
+                    val verticalDrag =
+                        abs(totalDy) > viewConfiguration.touchSlop && abs(totalDy) > abs(totalDx)
+
+                    when {
+                        verticalDrag -> break
+                        horizontalDrag -> dragging = true
+                        else -> continue
+                    }
+                }
+
+                pagerState.dispatchRawDelta(-delta.x)
+                change.consume()
+            }
+        }
+    }
+}
+
+private fun resolveHeroTargetPage(
+    startPage: Int,
+    itemCount: Int,
+    totalDx: Float,
+    velocityX: Float,
+    widthPx: Float,
+): Int {
+    val thresholdPassed = abs(totalDx) > widthPx * HERO_SWIPE_THRESHOLD_FRACTION ||
+        abs(velocityX) > HERO_SWIPE_VELOCITY_THRESHOLD
+    if (!thresholdPassed) return startPage
+
+    return when {
+        totalDx > 0f -> (startPage - 1).coerceAtLeast(0)
+        totalDx < 0f -> (startPage + 1).coerceAtMost(itemCount - 1)
+        else -> startPage
+    }
 }

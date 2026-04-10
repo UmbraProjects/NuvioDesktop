@@ -3,6 +3,7 @@ package com.nuvio.app.features.home
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,6 +73,7 @@ fun HomeScreen(
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val homeUiState by HomeRepository.uiState.collectAsStateWithLifecycle()
     val homeSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val homeListState = rememberLazyListState()
     val collections by CollectionRepository.collections.collectAsStateWithLifecycle()
     val continueWatchingPreferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
@@ -325,21 +327,28 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize(),
             horizontalPadding = 0.dp,
             topPadding = if (showHeroSlot) 0.dp else null,
+            listState = homeListState,
         ) {
             if (showHeroSlot) {
                 item {
                     when {
                         showHeroSkeleton -> HomeSkeletonHero(
                             modifier = Modifier,
+                            viewportHeight = maxHeight,
                         )
 
                         homeUiState.heroItems.isNotEmpty() -> HomeHeroSection(
                             items = homeUiState.heroItems,
                             modifier = Modifier,
+                            viewportHeight = maxHeight,
+                            listState = homeListState,
                             onItemClick = onPosterClick,
                         )
 
-                        else -> HomeHeroReservedSpace(modifier = Modifier)
+                        else -> HomeHeroReservedSpace(
+                            modifier = Modifier,
+                            viewportHeight = maxHeight,
+                        )
                     }
                 }
             }
