@@ -81,6 +81,10 @@ fun ProfileSwitcherTab(
     val profiles = profileState.profiles
     val avatars by AvatarRepository.avatars.collectAsStateWithLifecycle()
 
+    LaunchedEffect(Unit) {
+        AvatarRepository.fetchAvatars()
+    }
+
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
