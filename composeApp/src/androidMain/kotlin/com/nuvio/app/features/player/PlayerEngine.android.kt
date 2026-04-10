@@ -240,7 +240,8 @@ actual fun PlatformPlayerSurface(
                 Lifecycle.Event.ON_STOP -> {
                     val isInPictureInPicture =
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity?.isInPictureInPictureMode == true
-                    if (!isInPictureInPicture) {
+                    val isFinishing = activity?.isFinishing == true
+                    if (!isInPictureInPicture || isFinishing) {
                         exoPlayer.pause()
                     }
                 }
