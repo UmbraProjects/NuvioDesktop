@@ -448,7 +448,7 @@ internal fun homeHeroLayout(
         )
         else -> HomeHeroLayout(
             isTablet = false,
-            heroHeight = viewportHeightDp?.let { (it * 0.85f).dp } ?: (maxWidthDp * 1.22f).dp.coerceIn(440.dp, 800.dp),
+            heroHeight = viewportHeightDp?.let { (it * 0.78f).dp } ?: (maxWidthDp * 1.16f).dp.coerceIn(420.dp, 760.dp),
             contentMaxWidth = 480.dp,
             contentWidthFraction = 1f,
             contentHorizontalPadding = 24.dp,

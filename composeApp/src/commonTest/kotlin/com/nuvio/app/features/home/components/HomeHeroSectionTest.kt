@@ -13,7 +13,7 @@ class HomeHeroSectionTest {
         )
 
         assertEquals(false, layout.isTablet)
-        assertEquals(717.4f, layout.heroHeight.value, 0.001f)
+        assertEquals(692.08f, layout.heroHeight.value, 0.001f)
     }
 
     @Test
