@@ -408,13 +408,16 @@ private fun InstalledAddonCard(
 
             manifest != null -> {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = manifest.description,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                manifest.description.takeIf { it.isNotBlank() }?.let { description ->
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+
                 Text(
                     text = manifestSummary(manifest),
                     style = MaterialTheme.typography.bodyMedium,

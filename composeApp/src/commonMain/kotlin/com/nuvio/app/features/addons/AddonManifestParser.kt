@@ -25,7 +25,7 @@ internal object AddonManifestParser {
         return AddonManifest(
             id = root.requiredString("id"),
             name = root.requiredString("name"),
-            description = root.requiredString("description"),
+            description = root.optionalString("description").orEmpty(),
             version = root.requiredString("version"),
             logoUrl = root.optionalString("logo")?.resolveAgainstManifest(manifestUrl),
             resources = root.resources(defaultTypes, defaultPrefixes),
