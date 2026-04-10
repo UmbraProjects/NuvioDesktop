@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +24,7 @@ import com.nuvio.app.core.ui.NuvioViewAllPillSize
 import com.nuvio.app.core.ui.NuvioShelfSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomePosterCard
+import com.nuvio.app.features.home.components.HomeSkeletonRow
 
 @Composable
 fun LibraryScreen(
@@ -58,12 +58,18 @@ fun LibraryScreen(
         }
 
         when {
-            !uiState.isLoaded -> {
+            !uiState.isLoaded || (uiState.isLoading && uiState.sections.isEmpty()) -> {
+                items(3) {
+                    HomeSkeletonRow(modifier = Modifier.padding(horizontal = 16.dp))
+                }
+            }
+
+            !uiState.errorMessage.isNullOrBlank() && uiState.sections.isEmpty() -> {
                 item {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
+                    HomeEmptyStateCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        title = if (isTraktSource) "Couldn't load Trakt library" else "Couldn't load library",
+                        message = uiState.errorMessage.orEmpty(),
                     )
                 }
             }

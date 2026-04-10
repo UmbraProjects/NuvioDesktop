@@ -286,7 +286,9 @@ object LibraryRepository {
                 sourceMode = LibrarySourceMode.TRAKT,
                 items = traktState.allItems,
                 sections = sections,
-                isLoaded = true,
+                isLoaded = traktState.hasLoaded,
+                isLoading = traktState.isLoading,
+                errorMessage = traktState.errorMessage,
             )
             return
         }
@@ -309,6 +311,8 @@ object LibraryRepository {
             items = items,
             sections = sections,
             isLoaded = true,
+            isLoading = false,
+            errorMessage = null,
         )
     }
 

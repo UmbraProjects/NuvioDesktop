@@ -37,6 +37,8 @@ data class LibraryUiState(
     val items: List<LibraryItem> = emptyList(),
     val sections: List<LibrarySection> = emptyList(),
     val isLoaded: Boolean = false,
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
 )
 
 fun MetaDetails.toLibraryItem(savedAtEpochMs: Long): LibraryItem =

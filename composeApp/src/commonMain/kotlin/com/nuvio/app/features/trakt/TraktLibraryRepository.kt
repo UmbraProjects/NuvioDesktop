@@ -35,8 +35,10 @@ private const val WATCHLIST_KEY = "trakt:watchlist"
 private const val PERSONAL_LIST_PREFIX = "trakt:list:"
 private const val METADATA_FETCH_TIMEOUT_MS = 3_500L
 private const val METADATA_FETCH_CONCURRENCY = 5
+private const val LIST_FETCH_CONCURRENCY = 4
 private const val SNAPSHOT_CACHE_TTL_MS = 60_000L
 private const val LIST_TABS_CACHE_TTL_MS = 60_000L
+private const val FORCE_REFRESH_DEDUP_MS = 10_000L
 
 data class TraktLibraryUiState(
     val listTabs: List<TraktListTab> = emptyList(),
@@ -44,6 +46,7 @@ data class TraktLibraryUiState(
     val allItems: List<LibraryItem> = emptyList(),
     val membershipByContent: Map<String, Set<String>> = emptyMap(),
     val isLoading: Boolean = false,
+    val hasLoaded: Boolean = false,
     val errorMessage: String? = null,
 )
 
@@ -127,18 +130,16 @@ object TraktLibraryRepository {
         refreshMutex.withLock {
             val now = TraktPlatformClock.nowEpochMs()
             val current = _uiState.value
+            val cacheWindowMs = if (force) FORCE_REFRESH_DEDUP_MS else SNAPSHOT_CACHE_TTL_MS
             if (
-                !force &&
-                current.listTabs.isNotEmpty() &&
-                now - lastRefreshAtMs <= SNAPSHOT_CACHE_TTL_MS
+                current.hasLoaded &&
+                current.errorMessage == null &&
+                now - lastRefreshAtMs <= cacheWindowMs
             ) {
                 return
             }
 
             AddonRepository.initialize()
-            withTimeoutOrNull(4_000L) {
-                AddonRepository.awaitManifestsLoaded()
-            }
 
             val headers = TraktAuthRepository.authorizedHeaders()
             if (headers == null) {
@@ -158,11 +159,19 @@ object TraktLibraryRepository {
             }.getOrNull()
 
             if (result == null) {
-                _uiState.value = current.copy(isLoading = false, errorMessage = "Failed to load Trakt library")
+                _uiState.value = current.copy(
+                    isLoading = false,
+                    hasLoaded = true,
+                    errorMessage = "Failed to load Trakt library",
+                )
                 return
             }
 
-            _uiState.value = result.copy(isLoading = false, errorMessage = null)
+            _uiState.value = result.copy(
+                isLoading = false,
+                hasLoaded = true,
+                errorMessage = null,
+            )
             lastRefreshAtMs = now
         }
     }
@@ -331,13 +340,7 @@ object TraktLibraryRepository {
             }
         }
 
-        val entriesByList = linkedMapOf<String, List<LibraryItem>>()
-        entriesByList[WATCHLIST_KEY] = fetchWatchlistItems(headers)
-
-        allTabs.filter { it.type == TraktListType.PERSONAL }.forEach { tab ->
-            val listId = tab.traktListId?.toString() ?: return@forEach
-            entriesByList[tab.key] = fetchPersonalListItems(headers, listId)
-        }
+        val entriesByList = fetchEntriesByList(headers, allTabs)
 
         val hydratedEntriesByList = hydrateEntriesFromAddonMeta(entriesByList)
 
@@ -374,6 +377,39 @@ object TraktLibraryRepository {
         return watchlistTabs + fetchPersonalLists(headers)
     }
 
+    private suspend fun fetchEntriesByList(
+        headers: Map<String, String>,
+        allTabs: List<TraktListTab>,
+    ): Map<String, List<LibraryItem>> = coroutineScope {
+        val entriesByList = linkedMapOf<String, List<LibraryItem>>()
+        val listSemaphore = Semaphore(LIST_FETCH_CONCURRENCY)
+        val personalTabs = allTabs.filter { it.type == TraktListType.PERSONAL }
+
+        val watchlistDeferred = async {
+            listSemaphore.withPermit {
+                fetchWatchlistItems(headers)
+            }
+        }
+        val personalEntries = personalTabs.associate { tab ->
+            tab.key to async {
+                val listId = tab.traktListId?.toString().orEmpty()
+                if (listId.isBlank()) {
+                    emptyList()
+                } else {
+                    listSemaphore.withPermit {
+                        fetchPersonalListItems(headers, listId)
+                    }
+                }
+            }
+        }
+
+        entriesByList[WATCHLIST_KEY] = watchlistDeferred.await()
+        personalTabs.forEach { tab ->
+            entriesByList[tab.key] = personalEntries.getValue(tab.key).await()
+        }
+        entriesByList
+    }
+
     private suspend fun hydrateEntriesFromAddonMeta(
         entriesByList: Map<String, List<LibraryItem>>,
     ): Map<String, List<LibraryItem>> = coroutineScope {
@@ -403,14 +439,7 @@ object TraktLibraryRepository {
     }
 
     private suspend fun hydrateItemFromAddonMeta(item: LibraryItem): LibraryItem {
-        if (
-            !item.poster.isNullOrBlank() &&
-            !item.banner.isNullOrBlank() &&
-            !item.logo.isNullOrBlank() &&
-            !item.description.isNullOrBlank() &&
-            !item.imdbRating.isNullOrBlank() &&
-            item.genres.isNotEmpty()
-        ) {
+        if (!shouldHydrateTraktLibraryItem(item)) {
             return item
         }
 
@@ -478,14 +507,21 @@ object TraktLibraryRepository {
     }
 
     private suspend fun fetchWatchlistItems(headers: Map<String, String>): List<LibraryItem> {
-        val moviesPayload = httpGetTextWithHeaders(
-            url = "$BASE_URL/sync/watchlist/movies?extended=full,images",
-            headers = headers,
-        )
-        val showsPayload = httpGetTextWithHeaders(
-            url = "$BASE_URL/sync/watchlist/shows?extended=full,images",
-            headers = headers,
-        )
+        val (moviesPayload, showsPayload) = coroutineScope {
+            val moviesDeferred = async {
+                httpGetTextWithHeaders(
+                    url = "$BASE_URL/sync/watchlist/movies?extended=full,images",
+                    headers = headers,
+                )
+            }
+            val showsDeferred = async {
+                httpGetTextWithHeaders(
+                    url = "$BASE_URL/sync/watchlist/shows?extended=full,images",
+                    headers = headers,
+                )
+            }
+            moviesDeferred.await() to showsDeferred.await()
+        }
         val movieItems = json.decodeFromString<List<TraktListItemDto>>(moviesPayload)
         val showItems = json.decodeFromString<List<TraktListItemDto>>(showsPayload)
         return (movieItems + showItems)
@@ -497,14 +533,21 @@ object TraktLibraryRepository {
         headers: Map<String, String>,
         listId: String,
     ): List<LibraryItem> {
-        val moviesPayload = httpGetTextWithHeaders(
-            url = "$BASE_URL/users/me/lists/$listId/items/movies?extended=full,images",
-            headers = headers,
-        )
-        val showsPayload = httpGetTextWithHeaders(
-            url = "$BASE_URL/users/me/lists/$listId/items/shows?extended=full,images",
-            headers = headers,
-        )
+        val (moviesPayload, showsPayload) = coroutineScope {
+            val moviesDeferred = async {
+                httpGetTextWithHeaders(
+                    url = "$BASE_URL/users/me/lists/$listId/items/movies?extended=full,images",
+                    headers = headers,
+                )
+            }
+            val showsDeferred = async {
+                httpGetTextWithHeaders(
+                    url = "$BASE_URL/users/me/lists/$listId/items/shows?extended=full,images",
+                    headers = headers,
+                )
+            }
+            moviesDeferred.await() to showsDeferred.await()
+        }
 
         val movieItems = json.decodeFromString<List<TraktListItemDto>>(moviesPayload)
         val showItems = json.decodeFromString<List<TraktListItemDto>>(showsPayload)
@@ -680,6 +723,11 @@ object TraktLibraryRepository {
     }
 
     private val imdbRegex = Regex("tt\\d+")
+}
+
+internal fun shouldHydrateTraktLibraryItem(item: LibraryItem): Boolean {
+    val missingDisplayName = item.name.isBlank() || item.name == item.id
+    return missingDisplayName || item.poster.isNullOrBlank() || item.releaseInfo.isNullOrBlank()
 }
 
 @Serializable
