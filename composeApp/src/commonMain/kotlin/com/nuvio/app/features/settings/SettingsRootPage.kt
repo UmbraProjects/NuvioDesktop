@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Notifications
@@ -26,6 +27,7 @@ internal fun LazyListScope.settingsRootContent(
     onContentDiscoveryClick: () -> Unit,
     onIntegrationsClick: () -> Unit,
     onTraktClick: () -> Unit,
+    onDownloadsClick: () -> Unit,
     onAccountClick: () -> Unit,
     onSwitchProfileClick: (() -> Unit)? = null,
     showAccountSection: Boolean = true,
@@ -96,6 +98,14 @@ internal fun LazyListScope.settingsRootContent(
                         icon = Icons.Rounded.PlayArrow,
                         isTablet = isTablet,
                         onClick = onPlaybackClick,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = "Downloads",
+                        description = "Manage your downloaded movies and episodes.",
+                        icon = Icons.Rounded.CloudDownload,
+                        isTablet = isTablet,
+                        onClick = onDownloadsClick,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(

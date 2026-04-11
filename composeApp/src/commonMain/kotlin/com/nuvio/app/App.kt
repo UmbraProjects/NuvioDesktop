@@ -88,6 +88,7 @@ import com.nuvio.app.features.auth.AuthScreen
 import com.nuvio.app.features.catalog.CatalogRepository
 import com.nuvio.app.features.catalog.CatalogScreen
 import com.nuvio.app.features.catalog.INTERNAL_LIBRARY_MANIFEST_URL
+import com.nuvio.app.features.downloads.DownloadsScreen
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaDetailsScreen
 import com.nuvio.app.features.details.MetaPerson
@@ -191,6 +192,9 @@ object MetaScreenSettingsRoute
 
 @Serializable
 object ContinueWatchingSettingsRoute
+
+@Serializable
+object DownloadsSettingsRoute
 
 @Serializable
 object AddonsSettingsRoute
@@ -710,6 +714,7 @@ private fun MainAppContent(
                                     onHomescreenSettingsClick = { navController.navigate(HomescreenSettingsRoute) },
                                     onMetaScreenSettingsClick = { navController.navigate(MetaScreenSettingsRoute) },
                                     onContinueWatchingSettingsClick = { navController.navigate(ContinueWatchingSettingsRoute) },
+                                    onDownloadsSettingsClick = { navController.navigate(DownloadsSettingsRoute) },
                                     onAddonsSettingsClick = { navController.navigate(AddonsSettingsRoute) },
                                     onPluginsSettingsClick = {
                                         if (AppFeaturePolicy.pluginsEnabled) {
@@ -1236,6 +1241,43 @@ private fun MainAppContent(
                         onBack = onBack,
                     )
                 }
+                composable<DownloadsSettingsRoute> { backStackEntry ->
+                    val onBack = rememberGuardedPopBackStack(
+                        navController = navController,
+                        backStackEntry = backStackEntry,
+                    )
+                    DownloadsScreen(
+                        onBack = onBack,
+                        onOpenDownload = { item ->
+                            val sourceUrl = item.localFileUri ?: return@DownloadsScreen
+                            val launchId = PlayerLaunchStore.put(
+                                PlayerLaunch(
+                                    title = item.title,
+                                    sourceUrl = sourceUrl,
+                                    sourceHeaders = emptyMap(),
+                                    sourceResponseHeaders = emptyMap(),
+                                    logo = item.logo,
+                                    poster = item.poster,
+                                    background = item.background,
+                                    seasonNumber = item.seasonNumber,
+                                    episodeNumber = item.episodeNumber,
+                                    episodeTitle = item.episodeTitle,
+                                    episodeThumbnail = item.episodeThumbnail,
+                                    streamTitle = item.streamTitle,
+                                    streamSubtitle = item.streamSubtitle,
+                                    providerName = item.providerName,
+                                    providerAddonId = item.providerAddonId,
+                                    contentType = item.contentType,
+                                    videoId = item.videoId,
+                                    parentMetaId = item.parentMetaId,
+                                    parentMetaType = item.parentMetaType,
+                                    initialPositionMs = 0L,
+                                ),
+                            )
+                            navController.navigate(PlayerRoute(launchId = launchId))
+                        },
+                    )
+                }
                 composable<AddonsSettingsRoute> { backStackEntry ->
                     val onBack = rememberGuardedPopBackStack(
                         navController = navController,
@@ -1511,6 +1553,7 @@ private fun AppTabHost(
     onHomescreenSettingsClick: () -> Unit = {},
     onMetaScreenSettingsClick: () -> Unit = {},
     onContinueWatchingSettingsClick: () -> Unit = {},
+    onDownloadsSettingsClick: () -> Unit = {},
     onAddonsSettingsClick: () -> Unit = {},
     onPluginsSettingsClick: () -> Unit = {},
     onAccountSettingsClick: () -> Unit = {},
@@ -1559,6 +1602,7 @@ private fun AppTabHost(
                         onHomescreenClick = onHomescreenSettingsClick,
                         onMetaScreenClick = onMetaScreenSettingsClick,
                         onContinueWatchingClick = onContinueWatchingSettingsClick,
+                        onDownloadsClick = onDownloadsSettingsClick,
                         onAddonsClick = onAddonsSettingsClick,
                         onPluginsClick = onPluginsSettingsClick,
                         onAccountClick = onAccountSettingsClick,

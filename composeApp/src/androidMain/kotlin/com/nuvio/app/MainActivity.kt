@@ -13,6 +13,8 @@ import com.nuvio.app.core.deeplink.handleAppUrl
 import com.nuvio.app.core.storage.PlatformLocalAccountDataCleaner
 import com.nuvio.app.features.addons.AddonStorage
 import com.nuvio.app.features.collection.CollectionStorage
+import com.nuvio.app.features.downloads.DownloadsPlatformDownloader
+import com.nuvio.app.features.downloads.DownloadsStorage
 import com.nuvio.app.features.library.LibraryStorage
 import com.nuvio.app.features.details.MetaScreenSettingsStorage
 import com.nuvio.app.features.home.HomeCatalogSettingsStorage
@@ -69,6 +71,8 @@ class MainActivity : ComponentActivity() {
         StreamLinkCacheStorage.initialize(applicationContext)
         PluginStorage.initialize(applicationContext)
         CollectionStorage.initialize(applicationContext)
+        DownloadsStorage.initialize(applicationContext)
+        DownloadsPlatformDownloader.initialize(applicationContext)
         PlatformLocalAccountDataCleaner.initialize(applicationContext)
         EpisodeReleaseNotificationPlatform.initialize(applicationContext)
         EpisodeReleaseNotificationPlatform.bindActivity(this)
