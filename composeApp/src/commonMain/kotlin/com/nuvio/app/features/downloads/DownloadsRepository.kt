@@ -34,6 +34,46 @@ object DownloadsRepository {
         _uiState.value = DownloadsUiState()
     }
 
+    fun findPlayableDownloadByVideoId(videoId: String?): DownloadItem? {
+        ensureLoaded()
+        val normalizedVideoId = videoId?.trim().orEmpty()
+        if (normalizedVideoId.isBlank()) return null
+        return _uiState.value.items.firstOrNull { item ->
+            item.videoId == normalizedVideoId && item.isPlayable && !item.localFileUri.isNullOrBlank()
+        }
+    }
+
+    fun findPlayableDownload(
+        parentMetaId: String,
+        seasonNumber: Int? = null,
+        episodeNumber: Int? = null,
+        videoId: String? = null,
+    ): DownloadItem? {
+        ensureLoaded()
+        val items = _uiState.value.items
+        val normalizedParentMetaId = parentMetaId.trim()
+
+        findPlayableDownloadByVideoId(videoId)?.let { return it }
+
+        return if (seasonNumber != null && episodeNumber != null) {
+            items.firstOrNull { item ->
+                item.parentMetaId == normalizedParentMetaId &&
+                    item.seasonNumber == seasonNumber &&
+                    item.episodeNumber == episodeNumber &&
+                    item.isPlayable &&
+                    !item.localFileUri.isNullOrBlank()
+            }
+        } else {
+            items.firstOrNull { item ->
+                item.parentMetaId == normalizedParentMetaId &&
+                    item.seasonNumber == null &&
+                    item.episodeNumber == null &&
+                    item.isPlayable &&
+                    !item.localFileUri.isNullOrBlank()
+            }
+        }
+    }
+
     fun enqueueFromStream(
         contentType: String,
         videoId: String,

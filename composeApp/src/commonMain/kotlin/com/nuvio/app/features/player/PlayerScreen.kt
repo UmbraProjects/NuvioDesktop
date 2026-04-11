@@ -40,6 +40,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.downloads.DownloadItem
+import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.player.skip.NextEpisodeCard
 import com.nuvio.app.features.player.skip.NextEpisodeInfo
 import com.nuvio.app.features.player.skip.PlayerNextEpisodeRules
@@ -793,10 +795,69 @@ fun PlayerScreen(
             controlsVisible = true
         }
 
+        fun switchToDownloadedEpisode(downloadItem: DownloadItem, episode: MetaVideo) {
+            val localFileUri = downloadItem.localFileUri ?: return
+            showNextEpisodeCard = false
+            showSourcesPanel = false
+            showEpisodesPanel = false
+            episodeStreamsPanelState = EpisodeStreamsPanelState()
+            nextEpisodeAutoPlayJob?.cancel()
+            nextEpisodeAutoPlaySearching = false
+            nextEpisodeAutoPlaySourceName = null
+            nextEpisodeAutoPlayCountdown = null
+            PlayerStreamsRepository.clearEpisodeStreams()
+            flushWatchProgress()
+
+            val fallbackVideoId = buildPlaybackVideoId(
+                parentMetaId = parentMetaId,
+                seasonNumber = episode.season,
+                episodeNumber = episode.episode,
+                fallbackVideoId = episode.id,
+            )
+            val resolvedVideoId = episode.id.takeIf { it.isNotBlank() } ?: fallbackVideoId
+            val epEntry = WatchProgressRepository.progressForVideo(resolvedVideoId)
+                ?.takeIf { !it.isCompleted }
+            val epResumeFraction = epEntry?.progressPercent
+                ?.takeIf { it > 0f }
+                ?.let { (it / 100f).coerceIn(0f, 1f) }
+            val epResumePositionMs = epEntry?.lastPositionMs?.takeIf { it > 0L } ?: 0L
+
+            activeSourceUrl = localFileUri
+            activeSourceAudioUrl = null
+            activeSourceHeaders = emptyMap()
+            activeSourceResponseHeaders = emptyMap()
+            activeStreamTitle = downloadItem.streamTitle.ifBlank {
+                episode.title.ifBlank { title }
+            }
+            activeStreamSubtitle = downloadItem.streamSubtitle
+            activeProviderName = downloadItem.providerName.ifBlank { "Downloaded" }
+            activeProviderAddonId = downloadItem.providerAddonId
+            currentStreamBingeGroup = null
+            activeSeasonNumber = episode.season
+            activeEpisodeNumber = episode.episode
+            activeEpisodeTitle = episode.title
+            activeEpisodeThumbnail = episode.thumbnail
+            activeVideoId = resolvedVideoId
+            activeInitialPositionMs = epResumePositionMs
+            activeInitialProgressFraction = epResumeFraction
+            controlsVisible = true
+        }
+
         fun playNextEpisode() {
             val nextVideoId = nextEpisodeInfo?.videoId ?: return
             val nextVideo = allEpisodes.firstOrNull { video -> video.id == nextVideoId } ?: return
             if (nextEpisodeInfo?.hasAired != true) return
+
+            val downloadedNextEpisode = DownloadsRepository.findPlayableDownload(
+                parentMetaId = parentMetaId,
+                seasonNumber = nextVideo.season,
+                episodeNumber = nextVideo.episode,
+                videoId = nextVideo.id,
+            )
+            if (downloadedNextEpisode != null) {
+                switchToDownloadedEpisode(downloadedNextEpisode, nextVideo)
+                return
+            }
 
             nextEpisodeAutoPlayJob?.cancel()
             nextEpisodeAutoPlaySearching = true
@@ -1596,6 +1657,17 @@ fun PlayerScreen(
                     ),
                     onSeasonSelected = { /* season tab change handled internally */ },
                     onEpisodeSelected = { episode ->
+                        val downloadedEpisode = DownloadsRepository.findPlayableDownload(
+                            parentMetaId = parentMetaId,
+                            seasonNumber = episode.season,
+                            episodeNumber = episode.episode,
+                            videoId = episode.id,
+                        )
+                        if (downloadedEpisode != null) {
+                            switchToDownloadedEpisode(downloadedEpisode, episode)
+                            return@PlayerEpisodesPanel
+                        }
+
                         val type = contentType ?: parentMetaType
                         PlayerStreamsRepository.loadEpisodeStreams(
                             type = type,

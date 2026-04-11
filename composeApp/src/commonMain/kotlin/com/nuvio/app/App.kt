@@ -88,6 +88,7 @@ import com.nuvio.app.features.auth.AuthScreen
 import com.nuvio.app.features.catalog.CatalogRepository
 import com.nuvio.app.features.catalog.CatalogScreen
 import com.nuvio.app.features.catalog.INTERNAL_LIBRARY_MANIFEST_URL
+import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.downloads.DownloadsScreen
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaDetailsScreen
@@ -495,56 +496,137 @@ private fun MainAppContent(
             }
         }
 
+        fun launchPlaybackWithDownloadPreference(
+            type: String,
+            videoId: String,
+            parentMetaId: String,
+            parentMetaType: String,
+            title: String,
+            logo: String?,
+            poster: String?,
+            background: String?,
+            seasonNumber: Int?,
+            episodeNumber: Int?,
+            episodeTitle: String?,
+            episodeThumbnail: String?,
+            pauseDescription: String?,
+            resumePositionMs: Long?,
+            resumeProgressFraction: Float?,
+            manualSelection: Boolean,
+            startFromBeginning: Boolean,
+        ) {
+            val targetResumePositionMs = if (startFromBeginning) 0L else (resumePositionMs ?: 0L)
+            val targetResumeProgressFraction = if (startFromBeginning) null else resumeProgressFraction
+
+            if (!manualSelection) {
+                val downloadedItem = DownloadsRepository.findPlayableDownload(
+                    parentMetaId = parentMetaId,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    videoId = videoId,
+                )
+                val localSourceUrl = downloadedItem?.localFileUri
+                if (!localSourceUrl.isNullOrBlank()) {
+                    val launchId = PlayerLaunchStore.put(
+                        PlayerLaunch(
+                            title = title,
+                            sourceUrl = localSourceUrl,
+                            sourceHeaders = emptyMap(),
+                            sourceResponseHeaders = emptyMap(),
+                            logo = logo,
+                            poster = poster,
+                            background = background,
+                            seasonNumber = seasonNumber,
+                            episodeNumber = episodeNumber,
+                            episodeTitle = episodeTitle,
+                            episodeThumbnail = episodeThumbnail,
+                            streamTitle = downloadedItem.streamTitle.ifBlank { title },
+                            streamSubtitle = downloadedItem.streamSubtitle,
+                            pauseDescription = pauseDescription,
+                            providerName = downloadedItem.providerName.ifBlank { "Downloaded" },
+                            providerAddonId = downloadedItem.providerAddonId,
+                            contentType = type,
+                            videoId = videoId,
+                            parentMetaId = parentMetaId,
+                            parentMetaType = parentMetaType,
+                            initialPositionMs = targetResumePositionMs,
+                            initialProgressFraction = targetResumeProgressFraction,
+                        ),
+                    )
+                    navController.navigate(PlayerRoute(launchId = launchId))
+                    return
+                }
+            }
+
+            val streamContextId = pauseDescription
+                ?.takeIf { it.isNotBlank() }
+                ?.let { StreamContextStore.put(StreamContext(pauseDescription = it)) }
+            navController.navigate(
+                StreamRoute(
+                    type = type,
+                    videoId = videoId,
+                    parentMetaId = parentMetaId,
+                    parentMetaType = parentMetaType,
+                    title = title,
+                    logo = logo,
+                    poster = poster,
+                    background = background,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    episodeTitle = episodeTitle,
+                    episodeThumbnail = episodeThumbnail,
+                    streamContextId = streamContextId,
+                    resumePositionMs = if (startFromBeginning) 0L else resumePositionMs,
+                    resumeProgressFraction = targetResumeProgressFraction,
+                    manualSelection = manualSelection,
+                    startFromBeginning = startFromBeginning,
+                ),
+            )
+        }
+
         val onPlay: (String, String, String, String, String, String?, String?, String?, Int?, Int?, String?, String?, String?, Long?) -> Unit =
             { type, videoId, parentMetaId, parentMetaType, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail, pauseDescription, resumePositionMs ->
-                val streamContextId = pauseDescription
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { StreamContextStore.put(StreamContext(pauseDescription = it)) }
-                navController.navigate(
-                    StreamRoute(
-                        type = type,
-                        videoId = videoId,
-                        parentMetaId = parentMetaId,
-                        parentMetaType = parentMetaType,
-                        title = title,
-                        logo = logo,
-                        poster = poster,
-                        background = background,
-                        seasonNumber = seasonNumber,
-                        episodeNumber = episodeNumber,
-                        episodeTitle = episodeTitle,
-                        episodeThumbnail = episodeThumbnail,
-                        streamContextId = streamContextId,
-                        resumePositionMs = resumePositionMs,
-                        resumeProgressFraction = null,
-                    )
+                launchPlaybackWithDownloadPreference(
+                    type = type,
+                    videoId = videoId,
+                    parentMetaId = parentMetaId,
+                    parentMetaType = parentMetaType,
+                    title = title,
+                    logo = logo,
+                    poster = poster,
+                    background = background,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    episodeTitle = episodeTitle,
+                    episodeThumbnail = episodeThumbnail,
+                    pauseDescription = pauseDescription,
+                    resumePositionMs = resumePositionMs,
+                    resumeProgressFraction = null,
+                    manualSelection = false,
+                    startFromBeginning = false,
                 )
             }
 
         val onPlayManually: (String, String, String, String, String, String?, String?, String?, Int?, Int?, String?, String?, String?, Long?) -> Unit =
             { type, videoId, parentMetaId, parentMetaType, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail, pauseDescription, resumePositionMs ->
-                val streamContextId = pauseDescription
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { StreamContextStore.put(StreamContext(pauseDescription = it)) }
-                navController.navigate(
-                    StreamRoute(
-                        type = type,
-                        videoId = videoId,
-                        parentMetaId = parentMetaId,
-                        parentMetaType = parentMetaType,
-                        title = title,
-                        logo = logo,
-                        poster = poster,
-                        background = background,
-                        seasonNumber = seasonNumber,
-                        episodeNumber = episodeNumber,
-                        episodeTitle = episodeTitle,
-                        episodeThumbnail = episodeThumbnail,
-                        streamContextId = streamContextId,
-                        resumePositionMs = resumePositionMs,
-                        resumeProgressFraction = null,
-                        manualSelection = true,
-                    )
+                launchPlaybackWithDownloadPreference(
+                    type = type,
+                    videoId = videoId,
+                    parentMetaId = parentMetaId,
+                    parentMetaType = parentMetaType,
+                    title = title,
+                    logo = logo,
+                    poster = poster,
+                    background = background,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    episodeTitle = episodeTitle,
+                    episodeThumbnail = episodeThumbnail,
+                    pauseDescription = pauseDescription,
+                    resumePositionMs = resumePositionMs,
+                    resumeProgressFraction = null,
+                    manualSelection = true,
+                    startFromBeginning = false,
                 )
             }
 
@@ -579,29 +661,24 @@ private fun MainAppContent(
         }
 
         val openContinueWatching: (ContinueWatchingItem, Boolean, Boolean) -> Unit = { item, manualSelection, startFromBeginning ->
-            val streamContextId = item.pauseDescription
-                ?.takeIf { it.isNotBlank() }
-                ?.let { StreamContextStore.put(StreamContext(pauseDescription = it)) }
-            navController.navigate(
-                StreamRoute(
-                    type = item.parentMetaType,
-                    videoId = item.videoId,
-                    parentMetaId = item.parentMetaId,
-                    parentMetaType = item.parentMetaType,
-                    title = item.title,
-                    logo = item.logo,
-                    poster = item.poster,
-                    background = item.background,
-                    seasonNumber = item.seasonNumber,
-                    episodeNumber = item.episodeNumber,
-                    episodeTitle = item.episodeTitle,
-                    episodeThumbnail = item.episodeThumbnail,
-                    streamContextId = streamContextId,
-                    resumePositionMs = if (startFromBeginning) 0L else item.resumePositionMs,
-                    resumeProgressFraction = if (startFromBeginning) null else item.resumeProgressFraction,
-                    manualSelection = manualSelection,
-                    startFromBeginning = startFromBeginning,
-                ),
+            launchPlaybackWithDownloadPreference(
+                type = item.parentMetaType,
+                videoId = item.videoId,
+                parentMetaId = item.parentMetaId,
+                parentMetaType = item.parentMetaType,
+                title = item.title,
+                logo = item.logo,
+                poster = item.poster,
+                background = item.background,
+                seasonNumber = item.seasonNumber,
+                episodeNumber = item.episodeNumber,
+                episodeTitle = item.episodeTitle,
+                episodeThumbnail = item.episodeThumbnail,
+                pauseDescription = item.pauseDescription,
+                resumePositionMs = item.resumePositionMs,
+                resumeProgressFraction = item.resumeProgressFraction,
+                manualSelection = manualSelection,
+                startFromBeginning = startFromBeginning,
             )
         }
 
