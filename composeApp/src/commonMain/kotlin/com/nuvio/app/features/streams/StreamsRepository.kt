@@ -127,19 +127,22 @@ object StreamsRepository {
             return
         }
 
-        val addonDisplayNames = installedAddons.associate {
-            (it.manifest?.id ?: it.manifestUrl) to it.displayTitle
-        }
-
         val streamAddons = installedAddons
-            .mapNotNull { it.manifest }
-            .filter { manifest ->
-                manifest.resources.any { resource ->
+            .mapNotNull { addon ->
+                val manifest = addon.manifest ?: return@mapNotNull null
+                val supportsRequestedStream = manifest.resources.any { resource ->
                     resource.name == "stream" &&
                         resource.types.contains(type) &&
                         (resource.idPrefixes.isEmpty() ||
                             resource.idPrefixes.any { videoId.startsWith(it) })
                 }
+                if (!supportsRequestedStream) return@mapNotNull null
+
+                InstalledStreamAddonTarget(
+                    addonName = addon.displayTitle.ifBlank { manifest.name },
+                    addonId = addon.streamAddonInstanceId(manifest.id),
+                    manifest = manifest,
+                )
             }
 
         log.d { "Found ${streamAddons.size} addons for stream type=$type id=$videoId" }
@@ -153,10 +156,10 @@ object StreamsRepository {
         }
 
         // Initialise loading placeholders
-        val initialGroups = streamAddons.map { manifest ->
+        val initialGroups = streamAddons.map { addon ->
             AddonStreamGroup(
-                addonName = addonDisplayNames[manifest.id] ?: manifest.name,
-                addonId = manifest.id,
+                addonName = addon.addonName,
+                addonId = addon.addonId,
                 streams = emptyList(),
                 isLoading = true,
             )
@@ -232,29 +235,29 @@ object StreamsRepository {
                 null
             }
 
-            streamAddons.forEach { manifest ->
+            streamAddons.forEach { addon ->
                 launch {
                     val encodedId = videoId.encodeForPath()
-                    val baseUrl = manifest.transportUrl
+                    val baseUrl = addon.manifest.transportUrl
                         .substringBefore("?")
                         .removeSuffix("/manifest.json")
                     val url = "$baseUrl/stream/$type/$encodedId.json"
                     log.d { "Fetching streams from: $url" }
 
-                    val displayName = addonDisplayNames[manifest.id] ?: manifest.name
+                    val displayName = addon.addonName
                     val group = runCatching {
                         val payload = httpGetText(url)
                         StreamParser.parse(
                             payload = payload,
                             addonName = displayName,
-                            addonId = manifest.id,
+                            addonId = addon.addonId,
                         )
                     }.fold(
                         onSuccess = { streams ->
                             log.d { "Got ${streams.size} streams from ${displayName}" }
                             AddonStreamGroup(
                                 addonName = displayName,
-                                addonId = manifest.id,
+                                addonId = addon.addonId,
                                 streams = streams,
                                 isLoading = false,
                             )
@@ -263,7 +266,7 @@ object StreamsRepository {
                             log.w(err) { "Failed to fetch streams from ${displayName}" }
                             AddonStreamGroup(
                                 addonName = displayName,
-                                addonId = manifest.id,
+                                addonId = addon.addonId,
                                 streams = emptyList(),
                                 isLoading = false,
                                 error = err.message,
@@ -422,6 +425,15 @@ object StreamsRepository {
     private fun String.encodeForPath(): String =
         replace("%", "%25").replace(" ", "%20")
 }
+
+private data class InstalledStreamAddonTarget(
+    val addonName: String,
+    val addonId: String,
+    val manifest: com.nuvio.app.features.addons.AddonManifest,
+)
+
+private fun com.nuvio.app.features.addons.ManagedAddon.streamAddonInstanceId(manifestId: String): String =
+    "addon:$manifestId:$manifestUrl"
 
 private data class PluginProviderGroup(
     val addonId: String,

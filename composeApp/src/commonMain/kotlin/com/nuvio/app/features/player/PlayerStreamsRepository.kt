@@ -165,19 +165,22 @@ object PlayerStreamsRepository {
             return
         }
 
-        val addonDisplayNames = installedAddons.associate {
-            (it.manifest?.id ?: it.manifestUrl) to it.displayTitle
-        }
-
         val streamAddons = installedAddons
-            .mapNotNull { it.manifest }
-            .filter { manifest ->
-                manifest.resources.any { resource ->
+            .mapNotNull { addon ->
+                val manifest = addon.manifest ?: return@mapNotNull null
+                val supportsRequestedStream = manifest.resources.any { resource ->
                     resource.name == "stream" &&
                         resource.types.contains(type) &&
                         (resource.idPrefixes.isEmpty() ||
                             resource.idPrefixes.any { videoId.startsWith(it) })
                 }
+                if (!supportsRequestedStream) return@mapNotNull null
+
+                PlayerInstalledStreamAddonTarget(
+                    addonName = addon.displayTitle.ifBlank { manifest.name },
+                    addonId = addon.streamAddonInstanceId(manifest.id),
+                    manifest = manifest,
+                )
             }
 
         if (streamAddons.isEmpty() && pluginScrapers.isEmpty()) {
@@ -188,10 +191,10 @@ object PlayerStreamsRepository {
             return
         }
 
-        val initialGroups = streamAddons.map { manifest ->
+        val initialGroups = streamAddons.map { addon ->
             AddonStreamGroup(
-                addonName = addonDisplayNames[manifest.id] ?: manifest.name,
-                addonId = manifest.id,
+                addonName = addon.addonName,
+                addonId = addon.addonId,
                 streams = emptyList(),
                 isLoading = true,
             )
@@ -210,25 +213,25 @@ object PlayerStreamsRepository {
         )
 
         val job = scope.launch {
-            val addonJobs = streamAddons.map { manifest ->
+            val addonJobs = streamAddons.map { addon ->
                 async {
                     val encodedId = videoId.replace("%", "%25").replace(" ", "%20")
-                    val baseUrl = manifest.transportUrl
+                    val baseUrl = addon.manifest.transportUrl
                         .substringBefore("?")
                         .removeSuffix("/manifest.json")
                     val url = "$baseUrl/stream/$type/$encodedId.json"
 
-                    val displayName = addonDisplayNames[manifest.id] ?: manifest.name
+                    val displayName = addon.addonName
                     runCatching {
                         val payload = httpGetText(url)
-                        StreamParser.parse(payload, displayName, manifest.id)
+                        StreamParser.parse(payload, displayName, addon.addonId)
                     }.fold(
                         onSuccess = { streams ->
-                            AddonStreamGroup(displayName, manifest.id, streams, isLoading = false)
+                            AddonStreamGroup(displayName, addon.addonId, streams, isLoading = false)
                         },
                         onFailure = { err ->
                             log.w(err) { "Failed: ${displayName}" }
-                            AddonStreamGroup(displayName, manifest.id, emptyList(), isLoading = false, error = err.message)
+                            AddonStreamGroup(displayName, addon.addonId, emptyList(), isLoading = false, error = err.message)
                         },
                     )
                 }
@@ -288,6 +291,15 @@ object PlayerStreamsRepository {
         setJob(job)
     }
 }
+
+private data class PlayerInstalledStreamAddonTarget(
+    val addonName: String,
+    val addonId: String,
+    val manifest: com.nuvio.app.features.addons.AddonManifest,
+)
+
+private fun com.nuvio.app.features.addons.ManagedAddon.streamAddonInstanceId(manifestId: String): String =
+    "addon:$manifestId:$manifestUrl"
 
 private fun PluginRuntimeResult.toStreamItem(scraper: PluginScraper): StreamItem {
     val subtitleParts = listOfNotNull(

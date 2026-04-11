@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -195,7 +196,10 @@ fun PlayerSourcesPanel(
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp),
                                 ) {
-                                    items(streams, key = { "${it.addonId}::${it.url ?: it.name}" }) { stream ->
+                                    itemsIndexed(
+                                        items = streams,
+                                        key = { index, stream -> "${stream.addonId}::${index}::${stream.url ?: stream.infoHash ?: stream.name}" },
+                                    ) { _, stream ->
                                         val isCurrent = isCurrentStream(
                                             stream = stream,
                                             currentUrl = currentStreamUrl,
