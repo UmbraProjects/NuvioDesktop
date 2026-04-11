@@ -1,6 +1,9 @@
 package com.nuvio.app.features.details
 
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -96,6 +99,7 @@ import com.nuvio.app.features.watching.application.WatchingState
 import kotlinx.coroutines.launch
 
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 fun MetaDetailsScreen(
     type: String,
     id: String,
@@ -105,6 +109,8 @@ fun MetaDetailsScreen(
     onOpenMeta: ((MetaPreview) -> Unit)? = null,
     onCastClick: ((MetaPerson) -> Unit)? = null,
     onCompanyClick: ((MetaCompany, String) -> Unit)? = null,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     val uiState by MetaDetailsRepository.uiState.collectAsStateWithLifecycle()
@@ -639,6 +645,8 @@ fun MetaDetailsScreen(
                                     onOpenMeta = onOpenMeta,
                                     onCastClick = onCastClick,
                                     onCompanyClick = onCompanyClick,
+                                    sharedTransitionScope = sharedTransitionScope,
+                                    animatedVisibilityScope = animatedVisibilityScope,
                                 )
 
                                 Spacer(modifier = Modifier.height(32.dp + nuvioPlatformExtraBottomPadding))
@@ -877,6 +885,7 @@ fun MetaDetailsScreen(
 }
 
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 private fun ConfiguredMetaSections(
     settings: MetaScreenSettingsUiState,
     meta: MetaDetails,
@@ -912,6 +921,8 @@ private fun ConfiguredMetaSections(
     onOpenMeta: ((MetaPreview) -> Unit)?,
     onCastClick: ((MetaPerson) -> Unit)?,
     onCompanyClick: ((MetaCompany, String) -> Unit)?,
+    sharedTransitionScope: SharedTransitionScope?,
+    animatedVisibilityScope: AnimatedVisibilityScope?,
 ) {
     val enabledItems = settings.items.filter { it.enabled }
 
@@ -954,7 +965,13 @@ private fun ConfiguredMetaSections(
                 }
             }
             MetaScreenSectionKey.CAST -> {
-                DetailCastSection(cast = meta.cast, showHeader = showHeader, onCastClick = onCastClick)
+                DetailCastSection(
+                    cast = meta.cast,
+                    showHeader = showHeader,
+                    onCastClick = onCastClick,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                )
             }
             MetaScreenSectionKey.COMMENTS -> {
                 if (shouldShowComments && (isCommentsLoading || comments.isNotEmpty() || !commentsError.isNullOrBlank())) {

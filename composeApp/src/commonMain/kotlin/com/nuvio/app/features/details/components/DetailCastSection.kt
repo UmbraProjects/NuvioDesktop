@@ -1,5 +1,8 @@
 package com.nuvio.app.features.details.components
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,13 +30,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.nuvio.app.features.details.MetaPerson
+import com.nuvio.app.features.details.castAvatarSharedTransitionKey
 
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 fun DetailCastSection(
     cast: List<MetaPerson>,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
     onCastClick: ((MetaPerson) -> Unit)? = null,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     if (cast.isEmpty()) return
 
@@ -55,6 +62,8 @@ fun DetailCastSection(
                     CastItem(
                         person = person,
                         sizing = sizing,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
                         onClick = if (onCastClick != null && person.tmdbId != null && person.tmdbId > 0) {
                             { onCastClick(person) }
                         } else {
@@ -68,12 +77,33 @@ fun DetailCastSection(
 }
 
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 private fun CastItem(
     person: MetaPerson,
     modifier: Modifier = Modifier,
     sizing: CastSectionSizing,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     onClick: (() -> Unit)? = null,
 ) {
+    val avatarSharedElementModifier = if (
+        sharedTransitionScope != null &&
+            animatedVisibilityScope != null &&
+            person.tmdbId != null &&
+            person.tmdbId > 0
+    ) {
+        with(sharedTransitionScope) {
+            Modifier.sharedElement(
+                sharedContentState = rememberSharedContentState(
+                    key = castAvatarSharedTransitionKey(person.tmdbId),
+                ),
+                animatedVisibilityScope = animatedVisibilityScope,
+            )
+        }
+    } else {
+        Modifier
+    }
+
     Column(
         modifier = modifier
             .width(sizing.itemWidth)
@@ -83,6 +113,7 @@ private fun CastItem(
     ) {
         Box(
             modifier = Modifier
+                .then(avatarSharedElementModifier)
                 .size(sizing.avatarSize)
                 .clip(CircleShape)
                 .background(

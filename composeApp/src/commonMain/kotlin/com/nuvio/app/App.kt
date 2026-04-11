@@ -1,6 +1,8 @@
 package com.nuvio.app
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -168,6 +170,7 @@ data class DetailRoute(val type: String, val id: String)
 data class PersonDetailRoute(
     val personId: Int,
     val personName: String,
+    val personPhoto: String? = null,
     val preferCrew: Boolean = false,
 )
 
@@ -387,7 +390,7 @@ fun App() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 private fun MainAppContent(
     onSwitchProfile: () -> Unit = {},
@@ -619,11 +622,12 @@ private fun MainAppContent(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
         ) {
-            NavHost(
-                navController = navController,
-                startDestination = TabsRoute,
-                modifier = Modifier.fillMaxSize(),
-            ) {
+            SharedTransitionLayout {
+                NavHost(
+                    navController = navController,
+                    startDestination = TabsRoute,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
                 composable<TabsRoute> {
                     PlatformBackHandler(
                         enabled = selectedTab != AppScreenTab.Home,
@@ -769,6 +773,7 @@ private fun MainAppContent(
                                     PersonDetailRoute(
                                         personId = tmdbId,
                                         personName = person.name,
+                                        personPhoto = person.photo,
                                         preferCrew = person.role?.let {
                                             it.equals("Director", ignoreCase = true) ||
                                                 it.equals("Writer", ignoreCase = true) ||
@@ -791,6 +796,8 @@ private fun MainAppContent(
                                 )
                             }
                         },
+                        sharedTransitionScope = this@SharedTransitionLayout,
+                        animatedVisibilityScope = this,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -799,6 +806,7 @@ private fun MainAppContent(
                     PersonDetailScreen(
                         personId = route.personId,
                         personName = route.personName,
+                        initialProfilePhoto = route.personPhoto,
                         preferCrew = route.preferCrew,
                         onBack = { navController.popBackStack() },
                         onOpenMeta = { preview ->
@@ -822,6 +830,8 @@ private fun MainAppContent(
                                 )
                             }
                         },
+                        sharedTransitionScope = this@SharedTransitionLayout,
+                        animatedVisibilityScope = this,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -1289,6 +1299,7 @@ private fun MainAppContent(
                             navController.navigate(DetailRoute(type = meta.type, id = meta.id))
                         },
                     )
+                }
                 }
             }
 

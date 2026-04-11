@@ -1,7 +1,9 @@
 package com.nuvio.app.features.details
 
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -64,12 +66,16 @@ private sealed interface PersonDetailUiState {
 }
 
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 fun PersonDetailScreen(
     personId: Int,
     personName: String,
+    initialProfilePhoto: String? = null,
     preferCrew: Boolean = false,
     onBack: () -> Unit,
     onOpenMeta: (MetaPreview) -> Unit,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     var uiState by remember(personId) { mutableStateOf<PersonDetailUiState>(PersonDetailUiState.Loading) }
@@ -92,25 +98,29 @@ fun PersonDetailScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        Crossfade(
-            targetState = uiState,
-            label = "PersonDetailCrossfade",
-        ) { state ->
-            when (state) {
-                is PersonDetailUiState.Loading -> PersonDetailSkeleton(personName = personName)
-                is PersonDetailUiState.Error -> PersonDetailError(
-                    message = state.message,
-                    onRetry = {
-                        uiState = PersonDetailUiState.Loading
-                        // Retry will be triggered by the LaunchedEffect above if we reset
-                    },
-                )
-                is PersonDetailUiState.Success -> PersonDetailContent(
-                    person = state.personDetail,
-                    onOpenMeta = onOpenMeta,
-                )
+        when (val state = uiState) {
+            is PersonDetailUiState.Loading -> PersonDetailSkeleton(
+                personId = personId,
+                personName = personName,
+                profilePhoto = initialProfilePhoto,
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope,
+            )
+            is PersonDetailUiState.Error -> PersonDetailError(
+                message = state.message,
+                onRetry = {
+                    uiState = PersonDetailUiState.Loading
+                    // Retry will be triggered by the LaunchedEffect above if we reset
+                },
+            )
+            is PersonDetailUiState.Success -> PersonDetailContent(
+                person = state.personDetail,
+                onOpenMeta = onOpenMeta,
+                initialProfilePhoto = initialProfilePhoto,
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope,
+            )
             }
-        }
 
         // Back button overlaid on top
         IconButton(
@@ -130,9 +140,13 @@ fun PersonDetailScreen(
 }
 
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 private fun PersonDetailContent(
     person: PersonDetail,
     onOpenMeta: (MetaPreview) -> Unit,
+    initialProfilePhoto: String? = null,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val accentColor = MaterialTheme.colorScheme.primary
 
@@ -223,6 +237,9 @@ private fun PersonDetailContent(
                 HeroSection(
                     person = person,
                     collapseProgress = collapseProgress,
+                    fallbackProfilePhoto = initialProfilePhoto,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
                 )
 
                 if (popularCredits.isNotEmpty()) {
@@ -268,13 +285,30 @@ private const val HERO_COLLAPSE_SCROLL_RANGE = 220f
 private const val HAPTIC_TRIGGER_SCROLL_THRESHOLD_PX = 56
 
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 private fun HeroSection(
     person: PersonDetail,
     collapseProgress: Float = 0f,
+    fallbackProfilePhoto: String? = null,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val avatarSize = lerp(140.dp, 72.dp, collapseProgress)
     val heroScale = 1f - (collapseProgress * 0.12f)
     val heroAlpha = 1f - (collapseProgress * 0.35f)
+    val avatarUrl = person.profilePhoto?.takeIf { it.isNotBlank() } ?: fallbackProfilePhoto
+    val avatarSharedElementModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+        with(sharedTransitionScope) {
+            Modifier.sharedElement(
+                sharedContentState = rememberSharedContentState(
+                    key = castAvatarSharedTransitionKey(person.tmdbId),
+                ),
+                animatedVisibilityScope = animatedVisibilityScope,
+            )
+        }
+    } else {
+        Modifier
+    }
 
     Column(
         modifier = Modifier
@@ -291,14 +325,15 @@ private fun HeroSection(
         // Profile Photo
         Box(
             modifier = Modifier
+                .then(avatarSharedElementModifier)
                 .size(avatarSize)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
-            if (!person.profilePhoto.isNullOrBlank()) {
+            if (!avatarUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = person.profilePhoto,
+                    model = avatarUrl,
                     contentDescription = person.name,
                     modifier = Modifier.matchParentSize(),
                     contentScale = ContentScale.Crop,
@@ -378,7 +413,14 @@ private fun HeroSection(
 // ─── Loading / Error States ───
 
 @Composable
-private fun PersonDetailSkeleton(personName: String) {
+@OptIn(ExperimentalSharedTransitionApi::class)
+private fun PersonDetailSkeleton(
+    personId: Int,
+    personName: String,
+    profilePhoto: String? = null,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
+) {
     val accentColor = MaterialTheme.colorScheme.primary
     val accentGradient = remember(accentColor) {
         Brush.verticalGradient(
@@ -416,12 +458,41 @@ private fun PersonDetailSkeleton(personName: String) {
                     .padding(horizontal = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                val avatarSharedElementModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+                    with(sharedTransitionScope) {
+                        Modifier.sharedElement(
+                            sharedContentState = rememberSharedContentState(
+                                key = castAvatarSharedTransitionKey(personId),
+                            ),
+                            animatedVisibilityScope = animatedVisibilityScope,
+                        )
+                    }
+                } else {
+                    Modifier
+                }
                 Box(
                     modifier = Modifier
+                        .then(avatarSharedElementModifier)
                         .size(140.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant),
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (!profilePhoto.isNullOrBlank()) {
+                        AsyncImage(
+                            model = profilePhoto,
+                            contentDescription = personName,
+                            modifier = Modifier.matchParentSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Text(
+                            text = personName.firstOrNull()?.uppercase() ?: "?",
+                            style = MaterialTheme.typography.displayMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
