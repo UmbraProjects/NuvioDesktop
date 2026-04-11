@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioScreen
@@ -44,10 +45,12 @@ import com.nuvio.app.features.watching.domain.buildPlaybackVideoId
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.home.components.HomeCollectionRowSection
 import com.nuvio.app.features.watching.domain.isReleasedBy
+import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import com.nuvio.app.features.home.components.ContinueWatchingLayout
 import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
 import com.nuvio.app.features.home.components.rememberContinueWatchingLayout
 
@@ -322,6 +325,21 @@ fun HomeScreen(
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val homeSectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value)
         val continueWatchingLayout = rememberContinueWatchingLayout(maxWidth.value)
+        val mobileHeroBelowSectionHeightHint = remember(
+            maxWidth.value,
+            continueWatchingPreferences.isVisible,
+            continueWatchingPreferences.style,
+            continueWatchingItems.isNotEmpty(),
+            continueWatchingLayout,
+        ) {
+            heroMobileBelowSectionHeightHint(
+                maxWidthDp = maxWidth.value,
+                continueWatchingVisible = continueWatchingPreferences.isVisible,
+                hasContinueWatchingItems = continueWatchingItems.isNotEmpty(),
+                continueWatchingStyle = continueWatchingPreferences.style,
+                continueWatchingLayout = continueWatchingLayout,
+            )
+        }
 
         NuvioScreen(
             modifier = Modifier.fillMaxSize(),
@@ -335,12 +353,14 @@ fun HomeScreen(
                         showHeroSkeleton -> HomeSkeletonHero(
                             modifier = Modifier,
                             viewportHeight = maxHeight,
+                            mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
                         )
 
                         homeUiState.heroItems.isNotEmpty() -> HomeHeroSection(
                             items = homeUiState.heroItems,
                             modifier = Modifier,
                             viewportHeight = maxHeight,
+                            mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
                             listState = homeListState,
                             onItemClick = onPosterClick,
                         )
@@ -348,6 +368,7 @@ fun HomeScreen(
                         else -> HomeHeroReservedSpace(
                             modifier = Modifier,
                             viewportHeight = maxHeight,
+                            mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
                         )
                     }
                 }
@@ -466,6 +487,22 @@ fun HomeScreen(
 
 private const val HOME_CATALOG_PREVIEW_LIMIT = 18
 private const val TRAKT_CONTINUE_WATCHING_DAYS_CAP_DEFAULT = 60
+
+private fun heroMobileBelowSectionHeightHint(
+    maxWidthDp: Float,
+    continueWatchingVisible: Boolean,
+    hasContinueWatchingItems: Boolean,
+    continueWatchingStyle: ContinueWatchingSectionStyle,
+    continueWatchingLayout: ContinueWatchingLayout,
+): Dp? {
+    if (maxWidthDp >= 600f || !continueWatchingVisible || !hasContinueWatchingItems) return null
+
+    return when (continueWatchingStyle) {
+        ContinueWatchingSectionStyle.Wide -> continueWatchingLayout.wideCardHeight + 56.dp
+        ContinueWatchingSectionStyle.Poster ->
+            continueWatchingLayout.posterCardHeight + continueWatchingLayout.posterTitleBlockHeight + 70.dp
+    }
+}
 
 internal fun buildHomeContinueWatchingItems(
     visibleEntries: List<WatchProgressEntry>,

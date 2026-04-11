@@ -61,6 +61,7 @@ private fun rememberHomeSkeletonBrush(): Brush {
 fun HomeSkeletonHero(
     modifier: Modifier = Modifier,
     viewportHeight: Dp? = null,
+    mobileBelowSectionHeightHint: Dp? = null,
 ) {
     val brush = rememberHomeSkeletonBrush()
 
@@ -72,6 +73,7 @@ fun HomeSkeletonHero(
         val layout = homeHeroLayout(
             maxWidthDp = maxWidth.value,
             viewportHeightDp = viewportHeight?.value,
+            mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
         )
         val containerWidth = maxWidth
 

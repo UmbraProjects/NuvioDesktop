@@ -63,6 +63,9 @@ private const val HERO_SCROLL_UP_SCALE_MULTIPLIER = 0.002f
 private const val HERO_SCROLL_MAX_SCALE = 1.3f
 private const val HERO_SWIPE_THRESHOLD_FRACTION = 0.16f
 private const val HERO_SWIPE_VELOCITY_THRESHOLD = 300f
+private const val MOBILE_HERO_VIEWPORT_RATIO = 0.78f
+private const val MOBILE_HERO_MIN_HEIGHT_DP = 360f
+private const val MOBILE_HERO_MAX_HEIGHT_DP = 760f
 
 internal data class HomeHeroLayout(
     val isTablet: Boolean,
@@ -80,6 +83,7 @@ fun HomeHeroSection(
     items: List<MetaPreview>,
     modifier: Modifier = Modifier,
     viewportHeight: Dp? = null,
+    mobileBelowSectionHeightHint: Dp? = null,
     listState: LazyListState? = null,
     onItemClick: ((MetaPreview) -> Unit)? = null,
 ) {
@@ -101,6 +105,7 @@ fun HomeHeroSection(
         val layout = homeHeroLayout(
             maxWidthDp = maxWidth.value,
             viewportHeightDp = viewportHeight?.value,
+            mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
         )
         val heroWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
         val heroHeightPx = with(LocalDensity.current) { layout.heroHeight.toPx() }
@@ -313,6 +318,7 @@ private fun heroPageVisibility(
 fun HomeHeroReservedSpace(
     modifier: Modifier = Modifier,
     viewportHeight: Dp? = null,
+    mobileBelowSectionHeightHint: Dp? = null,
 ) {
     BoxWithConstraints(
         modifier = modifier
@@ -322,6 +328,7 @@ fun HomeHeroReservedSpace(
         val layout = homeHeroLayout(
             maxWidthDp = maxWidth.value,
             viewportHeightDp = viewportHeight?.value,
+            mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
         )
 
         Spacer(
@@ -414,6 +421,7 @@ private fun HeroMetaText(text: String) {
 internal fun homeHeroLayout(
     maxWidthDp: Float,
     viewportHeightDp: Float? = null,
+    mobileBelowSectionHeightHintDp: Float? = null,
 ): HomeHeroLayout =
     when {
         maxWidthDp >= 1200f -> HomeHeroLayout(
@@ -448,7 +456,11 @@ internal fun homeHeroLayout(
         )
         else -> HomeHeroLayout(
             isTablet = false,
-            heroHeight = viewportHeightDp?.let { (it * 0.78f).dp } ?: (maxWidthDp * 1.16f).dp.coerceIn(420.dp, 760.dp),
+            heroHeight = mobileHeroHeight(
+                maxWidthDp = maxWidthDp,
+                viewportHeightDp = viewportHeightDp,
+                mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHintDp,
+            ),
             contentMaxWidth = 480.dp,
             contentWidthFraction = 1f,
             contentHorizontalPadding = 24.dp,
@@ -457,6 +469,25 @@ internal fun homeHeroLayout(
             logoWidthFraction = 0.62f,
         )
     }
+
+private fun mobileHeroHeight(
+    maxWidthDp: Float,
+    viewportHeightDp: Float?,
+    mobileBelowSectionHeightHintDp: Float?,
+): Dp {
+    val viewportDrivenHeight = viewportHeightDp?.let { (it * MOBILE_HERO_VIEWPORT_RATIO).dp }
+    val widthFallbackHeight = (maxWidthDp * 1.16f).dp
+    val baseHeight = viewportDrivenHeight ?: widthFallbackHeight
+
+    val cappedHeight = if (viewportHeightDp != null && mobileBelowSectionHeightHintDp != null) {
+        val maxAllowedFromViewport = (viewportHeightDp - mobileBelowSectionHeightHintDp).dp
+        baseHeight.coerceAtMost(maxAllowedFromViewport)
+    } else {
+        baseHeight
+    }
+
+    return cappedHeight.coerceIn(MOBILE_HERO_MIN_HEIGHT_DP.dp, MOBILE_HERO_MAX_HEIGHT_DP.dp)
+}
 
 @Composable
 private fun HeroMetaDot() {
