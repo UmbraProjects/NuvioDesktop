@@ -293,6 +293,7 @@ fun NuvioInputField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
+    trailingContent: (@Composable (() -> Unit))? = null,
 ) {
     OutlinedTextField(
         value = value,
@@ -308,6 +309,7 @@ fun NuvioInputField(
             )
         },
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+        trailingIcon = trailingContent,
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = MaterialTheme.colorScheme.outline,
             unfocusedBorderColor = MaterialTheme.colorScheme.outline,

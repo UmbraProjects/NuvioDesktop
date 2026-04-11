@@ -179,6 +179,19 @@ fun SearchScreen(
                         value = query,
                         onValueChange = { query = it },
                         placeholder = "Search movies, shows...",
+                        trailingContent = if (query.isNotBlank()) {
+                            {
+                                IconButton(onClick = { query = "" }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "Clear search",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        } else {
+                            null
+                        },
                     )
                 }
                     androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(14.dp))
