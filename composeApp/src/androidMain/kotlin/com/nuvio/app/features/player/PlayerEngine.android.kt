@@ -128,6 +128,7 @@ actual fun PlatformPlayerSurface(
             .setTsExtractorTimestampSearchBytes(1500 * TsExtractor.TS_PACKET_SIZE)
 
         val dataSourceFactory = PlatformPlaybackDataSourceFactory.create(
+            context = context,
                 defaultRequestHeaders = sanitizedSourceHeaders,
                 defaultResponseHeaders = sanitizedSourceResponseHeaders,
                 useYoutubeChunkedPlayback = useYoutubeChunkedPlayback,

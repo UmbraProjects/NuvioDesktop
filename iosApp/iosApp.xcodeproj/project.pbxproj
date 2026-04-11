@@ -7,14 +7,47 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0A1B2C3D4E5F60718293A4BD /* DownloadsWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A4B5 /* DownloadsWidgetExtension.appex */; };
 		7397CF462F80FE3A00AC0F84 /* MPVKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* MPVKit */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		0A1B2C3D4E5F60718293A4C1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E819B502921EC7C68AC4965A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0A1B2C3D4E5F60718293A4B8;
+			remoteInfo = DownloadsWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		0A1B2C3D4E5F60718293A4BC /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				0A1B2C3D4E5F60718293A4BD /* DownloadsWidgetExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		0A1B2C3D4E5F60718293A4B5 /* DownloadsWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DownloadsWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		07921B4E8F8546BEE682C2FE /* Nuvio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nuvio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0A1B2C3D4E5F60718293A4B7 /* Exceptions for "DownloadsWidgetExtension" folder in "DownloadsWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 0A1B2C3D4E5F60718293A4B8 /* DownloadsWidgetExtension */;
+		};
 		77B823F8A18A09B45EA3C7D4 /* Exceptions for "iosApp" folder in "iosApp" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -25,6 +58,14 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		0A1B2C3D4E5F60718293A4B6 /* DownloadsWidgetExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0A1B2C3D4E5F60718293A4B7 /* Exceptions for "DownloadsWidgetExtension" folder in "DownloadsWidgetExtension" target */,
+			);
+			path = DownloadsWidgetExtension;
+			sourceTree = "<group>";
+		};
 		69649F6DF5D3AF53A24CA9C3 /* Configuration */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Configuration;
@@ -41,6 +82,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		0A1B2C3D4E5F60718293A4BA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B8D8368DBB6E1F38F403E5AA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -57,6 +105,7 @@
 			children = (
 				69649F6DF5D3AF53A24CA9C3 /* Configuration */,
 				A2F97F59D21EB4D4B662C8D1 /* iosApp */,
+				0A1B2C3D4E5F60718293A4B6 /* DownloadsWidgetExtension */,
 				AD93033A33973C81BB77B73A /* Products */,
 			);
 			sourceTree = "<group>";
@@ -65,6 +114,7 @@
 			isa = PBXGroup;
 			children = (
 				07921B4E8F8546BEE682C2FE /* Nuvio.app */,
+				0A1B2C3D4E5F60718293A4B5 /* DownloadsWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -72,6 +122,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0A1B2C3D4E5F60718293A4B8 /* DownloadsWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0A1B2C3D4E5F60718293A4BE /* Build configuration list for PBXNativeTarget "DownloadsWidgetExtension" */;
+			buildPhases = (
+				0A1B2C3D4E5F60718293A4B9 /* Sources */,
+				0A1B2C3D4E5F60718293A4BA /* Frameworks */,
+				0A1B2C3D4E5F60718293A4BB /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0A1B2C3D4E5F60718293A4B6 /* DownloadsWidgetExtension */,
+			);
+			name = DownloadsWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = DownloadsWidgetExtension;
+			productReference = 0A1B2C3D4E5F60718293A4B5 /* DownloadsWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		E1B229BC363ABB711AF255E3 /* iosApp */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = E4075507B4A6F771FEF44E6F /* Build configuration list for PBXNativeTarget "iosApp" */;
@@ -79,11 +151,13 @@
 				8C96BAEBBE1F4269A0BADC2B /* Compile Kotlin Framework */,
 				79E42700D221AF24510E3E09 /* Sources */,
 				B8D8368DBB6E1F38F403E5AA /* Frameworks */,
+				0A1B2C3D4E5F60718293A4BC /* Embed App Extensions */,
 				2DAFDB313E32F227766A2072 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				0A1B2C3D4E5F60718293A4C2 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A2F97F59D21EB4D4B662C8D1 /* iosApp */,
@@ -106,6 +180,9 @@
 				LastSwiftUpdateCheck = 1620;
 				LastUpgradeCheck = 1620;
 				TargetAttributes = {
+					0A1B2C3D4E5F60718293A4B8 = {
+						CreatedOnToolsVersion = 16.2;
+					};
 					E1B229BC363ABB711AF255E3 = {
 						CreatedOnToolsVersion = 16.2;
 					};
@@ -128,12 +205,20 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				0A1B2C3D4E5F60718293A4B8 /* DownloadsWidgetExtension */,
 				E1B229BC363ABB711AF255E3 /* iosApp */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		0A1B2C3D4E5F60718293A4BB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		2DAFDB313E32F227766A2072 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -166,6 +251,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0A1B2C3D4E5F60718293A4B9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		79E42700D221AF24510E3E09 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -175,7 +267,63 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		0A1B2C3D4E5F60718293A4C2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0A1B2C3D4E5F60718293A4B8 /* DownloadsWidgetExtension */;
+			targetProxy = 0A1B2C3D4E5F60718293A4C1 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		0A1B2C3D4E5F60718293A4BF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8QBDZ766S3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DownloadsWidgetExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nuvio.app.Nuvio.DownloadsWidgetExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		0A1B2C3D4E5F60718293A4C0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8QBDZ766S3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DownloadsWidgetExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nuvio.app.Nuvio.DownloadsWidgetExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		08C6158BC74ED5D18954BFD9 /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 69649F6DF5D3AF53A24CA9C3 /* Configuration */;
@@ -358,6 +506,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0A1B2C3D4E5F60718293A4BE /* Build configuration list for PBXNativeTarget "DownloadsWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A1B2C3D4E5F60718293A4BF /* Debug */,
+				0A1B2C3D4E5F60718293A4C0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		BC8D3A48007CFD75F9C7AB47 /* Build configuration list for PBXProject "iosApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

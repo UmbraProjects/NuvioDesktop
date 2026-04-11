@@ -66,6 +66,7 @@ fun SettingsScreen(
     onContinueWatchingClick: () -> Unit = {},
     onAddonsClick: () -> Unit = {},
     onPluginsClick: () -> Unit = {},
+    onDownloadsClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onCollectionsClick: () -> Unit = {},
 ) {
@@ -179,6 +180,7 @@ fun SettingsScreen(
                 metaScreenSettingsUiState = metaScreenSettingsUiState,
                 continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
                 onSwitchProfile = onSwitchProfile,
+                onDownloadsClick = onDownloadsClick,
                 onCollectionsClick = onCollectionsClick,
             )
         } else {
@@ -218,6 +220,7 @@ fun SettingsScreen(
                 onContinueWatchingClick = onContinueWatchingClick,
                 onAddonsClick = onAddonsClick,
                 onPluginsClick = onPluginsClick,
+                onDownloadsClick = onDownloadsClick,
                 onAccountClick = onAccountClick,
                 onCollectionsClick = onCollectionsClick,
             )
@@ -262,6 +265,7 @@ private fun MobileSettingsScreen(
     onContinueWatchingClick: () -> Unit = {},
     onAddonsClick: () -> Unit = {},
     onPluginsClick: () -> Unit = {},
+    onDownloadsClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onCollectionsClick: () -> Unit = {},
 ) {
@@ -283,6 +287,7 @@ private fun MobileSettingsScreen(
                 onContentDiscoveryClick = { onPageChange(SettingsPage.ContentDiscovery) },
                 onIntegrationsClick = { onPageChange(SettingsPage.Integrations) },
                 onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
+                onDownloadsClick = onDownloadsClick,
                 onAccountClick = onAccountClick,
                 onSwitchProfileClick = onSwitchProfile,
             )
@@ -400,6 +405,7 @@ private fun TabletSettingsScreen(
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
     onSwitchProfile: (() -> Unit)? = null,
+    onDownloadsClick: () -> Unit = {},
     onCollectionsClick: () -> Unit = {},
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.General.name) }
@@ -487,6 +493,7 @@ private fun TabletSettingsScreen(
                     onContentDiscoveryClick = { openInlinePage(SettingsPage.ContentDiscovery) },
                     onIntegrationsClick = { openInlinePage(SettingsPage.Integrations) },
                     onTraktClick = { openInlinePage(SettingsPage.TraktAuthentication) },
+                    onDownloadsClick = onDownloadsClick,
                     onAccountClick = { openInlinePage(SettingsPage.Account) },
                     onSwitchProfileClick = onSwitchProfile,
                     showAccountSection = activeCategory == SettingsCategory.Account,

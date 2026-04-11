@@ -7,6 +7,7 @@ import com.nuvio.app.core.auth.isAnonymous
 import com.nuvio.app.core.network.SupabaseProvider
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.collection.CollectionRepository
+import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.library.LibraryRepository
@@ -147,6 +148,7 @@ object ProfileRepository {
         TraktAuthRepository.onProfileChanged()
         SearchHistoryRepository.onProfileChanged()
         CollectionRepository.onProfileChanged()
+        DownloadsRepository.onProfileChanged()
     }
 
     suspend fun pushProfiles(profiles: List<ProfilePushPayload>) {

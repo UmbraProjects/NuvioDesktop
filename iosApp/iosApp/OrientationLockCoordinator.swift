@@ -11,6 +11,7 @@ final class OrientationLockAppDelegate: NSObject, UIApplicationDelegate, UNUserN
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         OrientationLockCoordinator.shared.start()
+        DownloadsLiveActivityManager.shared.start()
         UNUserNotificationCenter.current().delegate = self
         return true
     }

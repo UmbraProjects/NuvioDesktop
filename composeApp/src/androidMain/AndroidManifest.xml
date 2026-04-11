@@ -35,6 +35,10 @@
                     android:path="/trakt" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".features.downloads.DownloadsNotificationActionReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

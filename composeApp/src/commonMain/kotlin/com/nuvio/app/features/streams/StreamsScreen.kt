@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,12 +69,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import com.nuvio.app.core.ui.NuvioBackButton
+import com.nuvio.app.core.ui.NuvioBottomSheetActionRow
+import com.nuvio.app.core.ui.NuvioBottomSheetDivider
+import com.nuvio.app.core.ui.NuvioModalBottomSheet
+import com.nuvio.app.core.ui.NuvioToastController
+import com.nuvio.app.core.ui.dismissNuvioBottomSheet
+import com.nuvio.app.features.downloads.DownloadsRepository
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberModalBottomSheetState
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
-import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
+import kotlinx.coroutines.launch
 import kotlin.math.round
 import kotlin.math.roundToInt
 
@@ -105,7 +119,12 @@ fun StreamsScreen(
         WatchProgressRepository.ensureLoaded()
         WatchProgressRepository.uiState
     }.collectAsStateWithLifecycle()
+    remember {
+        DownloadsRepository.ensureLoaded()
+    }
     val isEpisode = seasonNumber != null && episodeNumber != null
+    val clipboardManager = LocalClipboardManager.current
+    var streamActionsTarget by remember(videoId) { mutableStateOf<StreamItem?>(null) }
     var preferredFilterApplied by remember(videoId) { mutableStateOf(false) }
     val storedProgress = if (startFromBeginning) {
         null
@@ -180,6 +199,7 @@ fun StreamsScreen(
                 resumePositionMs = effectiveResumePositionMs,
                 resumeProgressFraction = effectiveResumeProgressFraction,
                 onStreamSelected = onStreamSelected,
+                onStreamLongPress = { stream -> streamActionsTarget = stream },
             )
         } else {
             MobileStreamsLayout(
@@ -194,6 +214,7 @@ fun StreamsScreen(
                 resumePositionMs = effectiveResumePositionMs,
                 resumeProgressFraction = effectiveResumeProgressFraction,
                 onStreamSelected = onStreamSelected,
+                onStreamLongPress = { stream -> streamActionsTarget = stream },
             )
         }
 
@@ -279,6 +300,38 @@ fun StreamsScreen(
                 }
             }
         }
+
+        StreamActionsSheet(
+            stream = streamActionsTarget,
+            onDismiss = { streamActionsTarget = null },
+            onCopyLink = { stream ->
+                val directUrl = stream.directPlaybackUrl
+                if (!directUrl.isNullOrBlank()) {
+                    clipboardManager.setText(AnnotatedString(directUrl))
+                    NuvioToastController.show("Stream link copied")
+                } else {
+                    NuvioToastController.show("No direct stream link available")
+                }
+            },
+            onDownload = { stream ->
+                val result = DownloadsRepository.enqueueFromStream(
+                    contentType = type,
+                    videoId = videoId,
+                    parentMetaId = parentMetaId,
+                    parentMetaType = parentMetaType,
+                    title = title,
+                    logo = logo,
+                    poster = poster,
+                    background = background,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    episodeTitle = episodeTitle,
+                    episodeThumbnail = episodeThumbnail,
+                    stream = stream,
+                )
+                NuvioToastController.show(result.toastMessage)
+            },
+        )
     }
 }
 
@@ -295,6 +348,7 @@ private fun MobileStreamsLayout(
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
+    onStreamLongPress: (StreamItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -372,6 +426,7 @@ private fun MobileStreamsLayout(
                     StreamList(
                         uiState = uiState,
                         onStreamSelected = onStreamSelected,
+                        onStreamLongPress = onStreamLongPress,
                         resumePositionMs = resumePositionMs,
                         resumeProgressFraction = resumeProgressFraction,
                         modifier = Modifier.weight(1f),
@@ -658,6 +713,7 @@ private fun FilterChip(
 internal fun StreamList(
     uiState: StreamsUiState,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
+    onStreamLongPress: (StreamItem) -> Unit,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
     modifier: Modifier = Modifier,
@@ -694,6 +750,7 @@ internal fun StreamList(
                         group = group,
                         showHeader = uiState.selectedFilter == null,
                         onStreamSelected = onStreamSelected,
+                        onStreamLongPress = onStreamLongPress,
                         resumePositionMs = resumePositionMs,
                         resumeProgressFraction = resumeProgressFraction,
                     )
@@ -715,6 +772,7 @@ private fun LazyListScope.streamSection(
     group: AddonStreamGroup,
     showHeader: Boolean,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
+    onStreamLongPress: (StreamItem) -> Unit,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
 ) {
@@ -754,6 +812,11 @@ private fun LazyListScope.streamSection(
                 onClick = {
                     if (stream.directPlaybackUrl != null) {
                         onStreamSelected(stream, resumePositionMs, resumeProgressFraction)
+                    }
+                },
+                onLongClick = {
+                    if (stream.directPlaybackUrl != null) {
+                        onStreamLongPress(stream)
                     }
                 },
             )
@@ -830,6 +893,7 @@ private fun StreamSourceHeader(
 private fun StreamCard(
     stream: StreamItem,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isEnabled = stream.directPlaybackUrl != null
@@ -846,7 +910,11 @@ private fun StreamCard(
             )
             .clip(cardShape)
             .background(Color.White.copy(alpha = 0.05f))
-            .clickable(enabled = isEnabled, onClick = onClick)
+            .combinedClickable(
+                enabled = isEnabled,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             .padding(14.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -879,6 +947,85 @@ private fun StreamCard(
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 StreamFileSizeBadge(stream = stream)
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StreamActionsSheet(
+    stream: StreamItem?,
+    onDismiss: () -> Unit,
+    onCopyLink: (StreamItem) -> Unit,
+    onDownload: (StreamItem) -> Unit,
+) {
+    if (stream == null) return
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val coroutineScope = rememberCoroutineScope()
+
+    NuvioModalBottomSheet(
+        onDismissRequest = {
+            coroutineScope.launch {
+                dismissNuvioBottomSheet(sheetState = sheetState, onDismiss = onDismiss)
+            }
+        },
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp + nuvioPlatformExtraBottomPadding),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stream.streamLabel,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                stream.streamSubtitle
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { subtitle ->
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+            }
+
+            NuvioBottomSheetDivider()
+            NuvioBottomSheetActionRow(
+                icon = Icons.Rounded.ContentCopy,
+                title = "Copy stream link",
+                onClick = {
+                    onCopyLink(stream)
+                    coroutineScope.launch {
+                        dismissNuvioBottomSheet(sheetState = sheetState, onDismiss = onDismiss)
+                    }
+                },
+            )
+            NuvioBottomSheetDivider()
+            NuvioBottomSheetActionRow(
+                icon = Icons.Rounded.Download,
+                title = "Download file",
+                onClick = {
+                    onDownload(stream)
+                    coroutineScope.launch {
+                        dismissNuvioBottomSheet(sheetState = sheetState, onDismiss = onDismiss)
+                    }
+                },
+            )
         }
     }
 }
