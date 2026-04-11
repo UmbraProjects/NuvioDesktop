@@ -32,6 +32,7 @@ object DownloadsRepository {
         activeHandles.clear()
         hasLoaded = false
         _uiState.value = DownloadsUiState()
+        notifyLiveStatusPlatform()
     }
 
     fun findPlayableDownloadByVideoId(videoId: String?): DownloadItem? {
@@ -225,6 +226,7 @@ object DownloadsRepository {
         val payload = DownloadsStorage.loadPayload().orEmpty().trim()
         if (payload.isEmpty()) {
             _uiState.value = DownloadsUiState()
+            notifyLiveStatusPlatform()
             return
         }
 
@@ -242,6 +244,7 @@ object DownloadsRepository {
             .sortedByDescending { it.updatedAtEpochMs }
 
         _uiState.value = DownloadsUiState(normalized)
+        notifyLiveStatusPlatform()
     }
 
     private fun startDownload(item: DownloadItem) {
@@ -331,6 +334,13 @@ object DownloadsRepository {
         _uiState.value = DownloadsUiState(
             items = items.sortedByDescending { it.updatedAtEpochMs },
         )
+        notifyLiveStatusPlatform()
+    }
+
+    private fun notifyLiveStatusPlatform() {
+        runCatching {
+            DownloadsLiveStatusPlatform.onItemsChanged(_uiState.value.items)
+        }
     }
 
     private fun persist() {

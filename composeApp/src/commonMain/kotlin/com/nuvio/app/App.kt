@@ -491,6 +491,14 @@ private fun MainAppContent(
                         AppDeepLinkRepository.markConsumed(deepLink)
                     }
 
+                    AppDeepLink.Downloads -> {
+                        selectedTab = AppScreenTab.Settings
+                        navController.navigate(DownloadsSettingsRoute) {
+                            launchSingleTop = true
+                        }
+                        AppDeepLinkRepository.markConsumed(deepLink)
+                    }
+
                     null -> Unit
                 }
             }

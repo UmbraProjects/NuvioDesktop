@@ -12,6 +12,8 @@ sealed interface AppDeepLink {
         val type: String,
         val id: String,
     ) : AppDeepLink
+
+    data object Downloads : AppDeepLink
 }
 
 object AppDeepLinkRepository {
@@ -49,6 +51,8 @@ fun buildMetaDeepLinkUrl(
     append(id.trim().encodeURLParameter())
 }
 
+fun buildDownloadsDeepLinkUrl(): String = "nuvio://downloads"
+
 private fun parseAppDeepLink(url: String): AppDeepLink? {
     val parsedUrl = runCatching { Url(url) }.getOrNull() ?: return null
     if (!parsedUrl.protocol.name.equals("nuvio", ignoreCase = true)) return null
@@ -59,6 +63,8 @@ private fun parseAppDeepLink(url: String): AppDeepLink? {
             val id = parsedUrl.parameters["id"]?.trim().orEmpty()
             if (type.isBlank() || id.isBlank()) null else AppDeepLink.Meta(type = type, id = id)
         }
+
+        "downloads" -> AppDeepLink.Downloads
 
         else -> null
     }
