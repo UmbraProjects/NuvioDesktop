@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +60,7 @@ import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.features.details.MetaDetails
+import com.nuvio.app.features.details.MetaEpisodeCardStyle
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.SeasonViewMode
 import com.nuvio.app.features.details.SeasonViewModeStorage
@@ -76,6 +79,7 @@ fun DetailSeriesContent(
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
     preferredSeasonNumber: Int? = null,
+    episodeCardStyle: MetaEpisodeCardStyle = MetaEpisodeCardStyle.Horizontal,
     progressByVideoId: Map<String, WatchProgressEntry> = emptyMap(),
     watchedKeys: Set<String> = emptySet(),
     onEpisodeClick: ((MetaVideo) -> Unit)? = null,
@@ -155,6 +159,7 @@ fun DetailSeriesContent(
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val sizing = seriesContentSizing(maxWidth.value)
+        val containerWidthDp = maxWidth.value
 
         Column(
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -253,31 +258,46 @@ fun DetailSeriesContent(
                     DetailSectionTitle(
                         title = sectionTitle,
                     )
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(sizing.cardGap),
-                    ) {
-                        groupedEpisodes.getValue(seasonForContent).forEach { episode ->
-                            val episodeVideoId = buildPlaybackVideoId(
-                                parentMetaId = meta.id,
-                                seasonNumber = episode.season,
-                                episodeNumber = episode.episode,
-                                fallbackVideoId = episode.id,
-                            )
-                            EpisodeCard(
-                                video = episode,
-                                fallbackImage = meta.background ?: meta.poster,
-                                progressEntry = progressByVideoId[episodeVideoId],
-                                isWatched = progressByVideoId[episodeVideoId]?.isCompleted == true ||
-                                    WatchingState.isEpisodeWatched(
-                                        watchedKeys = watchedKeys,
-                                        metaType = meta.type,
-                                        metaId = meta.id,
-                                        episode = episode,
-                                    ),
-                                sizing = sizing,
-                                onClick = { onEpisodeClick?.invoke(episode) },
-                                onLongPress = { onEpisodeLongPress?.invoke(episode) },
-                            )
+                    val seasonEpisodes = groupedEpisodes.getValue(seasonForContent)
+                    if (episodeCardStyle == MetaEpisodeCardStyle.Horizontal) {
+                        EpisodeHorizontalRow(
+                            episodes = seasonEpisodes,
+                            maxWidthDp = containerWidthDp,
+                            parentMetaId = meta.id,
+                            metaType = meta.type,
+                            watchedKeys = watchedKeys,
+                            fallbackImage = meta.background ?: meta.poster,
+                            progressByVideoId = progressByVideoId,
+                            onEpisodeClick = onEpisodeClick,
+                            onEpisodeLongPress = onEpisodeLongPress,
+                        )
+                    } else {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(sizing.cardGap),
+                        ) {
+                            seasonEpisodes.forEach { episode ->
+                                val episodeVideoId = buildPlaybackVideoId(
+                                    parentMetaId = meta.id,
+                                    seasonNumber = episode.season,
+                                    episodeNumber = episode.episode,
+                                    fallbackVideoId = episode.id,
+                                )
+                                EpisodeListCard(
+                                    video = episode,
+                                    fallbackImage = meta.background ?: meta.poster,
+                                    progressEntry = progressByVideoId[episodeVideoId],
+                                    isWatched = progressByVideoId[episodeVideoId]?.isCompleted == true ||
+                                        WatchingState.isEpisodeWatched(
+                                            watchedKeys = watchedKeys,
+                                            metaType = meta.type,
+                                            metaId = meta.id,
+                                            episode = episode,
+                                        ),
+                                    sizing = sizing,
+                                    onClick = { onEpisodeClick?.invoke(episode) },
+                                    onLongPress = { onEpisodeLongPress?.invoke(episode) },
+                                )
+                            }
                         }
                     }
                 }
@@ -512,7 +532,330 @@ private fun SeasonPosterButton(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun EpisodeCard(
+private fun EpisodeHorizontalRow(
+    episodes: List<MetaVideo>,
+    maxWidthDp: Float,
+    parentMetaId: String,
+    metaType: String,
+    watchedKeys: Set<String>,
+    fallbackImage: String?,
+    progressByVideoId: Map<String, WatchProgressEntry>,
+    onEpisodeClick: ((MetaVideo) -> Unit)?,
+    onEpisodeLongPress: ((MetaVideo) -> Unit)?,
+) {
+    val rowMetrics = rememberEpisodeHorizontalCardMetrics(maxWidthDp)
+
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = rowMetrics.rowHorizontalPadding, vertical = rowMetrics.rowVerticalPadding),
+        horizontalArrangement = Arrangement.spacedBy(rowMetrics.itemSpacing),
+    ) {
+        items(episodes, key = { it.id }) { episode ->
+            val episodeVideoId = buildPlaybackVideoId(
+                parentMetaId = parentMetaId,
+                seasonNumber = episode.season,
+                episodeNumber = episode.episode,
+                fallbackVideoId = episode.id,
+            )
+            EpisodeHorizontalCard(
+                video = episode,
+                fallbackImage = fallbackImage,
+                progressEntry = progressByVideoId[episodeVideoId],
+                isWatched = progressByVideoId[episodeVideoId]?.isCompleted == true ||
+                    WatchingState.isEpisodeWatched(
+                        watchedKeys = watchedKeys,
+                        metaType = metaType,
+                        metaId = parentMetaId,
+                        episode = episode,
+                    ),
+                metrics = rowMetrics,
+                onClick = { onEpisodeClick?.invoke(episode) },
+                onLongPress = { onEpisodeLongPress?.invoke(episode) },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun EpisodeHorizontalCard(
+    video: MetaVideo,
+    fallbackImage: String?,
+    progressEntry: WatchProgressEntry?,
+    isWatched: Boolean,
+    metrics: EpisodeHorizontalCardMetrics,
+    onClick: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
+) {
+    val cardShape = RoundedCornerShape(metrics.cornerRadius)
+    Box(
+        modifier = Modifier
+            .width(metrics.cardWidth)
+            .height(metrics.cardHeight)
+            .clip(cardShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.12f),
+                shape = cardShape,
+            )
+            .combinedClickable(
+                enabled = onClick != null || onLongPress != null,
+                onClick = { onClick?.invoke() },
+                onLongClick = onLongPress,
+            ),
+    ) {
+        val imageUrl = video.thumbnail ?: fallbackImage
+        if (imageUrl != null) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = video.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.10f),
+                            Color.Black.copy(alpha = 0.42f),
+                            Color.Black.copy(alpha = 0.78f),
+                        ),
+                    ),
+                ),
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = metrics.contentPadding, top = metrics.contentPadding)
+                .clip(RoundedCornerShape(metrics.badgeRadius))
+                .background(Color.Black.copy(alpha = 0.75f))
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(metrics.badgeRadius),
+                )
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            Text(
+                text = video.episodeBadge(),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontSize = metrics.badgeTextSize,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.5.sp,
+                ),
+                color = Color.White,
+            )
+        }
+
+        NuvioAnimatedWatchedBadge(
+            isVisible = isWatched,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(metrics.contentPadding),
+        )
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(
+                    start = metrics.contentPadding,
+                    end = metrics.contentPadding,
+                    top = metrics.contentPadding,
+                    bottom = metrics.contentBottomPadding,
+                ),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = video.title,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = metrics.titleTextSize,
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = metrics.titleLineHeight,
+                ),
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            if (!video.overview.isNullOrBlank()) {
+                Text(
+                    text = video.overview,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = metrics.bodyTextSize,
+                        lineHeight = metrics.bodyLineHeight,
+                    ),
+                    color = Color.White.copy(alpha = 0.86f),
+                    maxLines = metrics.overviewMaxLines,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                video.runtime?.takeIf { it > 0 }?.let { runtimeMinutes ->
+                    Text(
+                        text = formatEpisodeRuntime(runtimeMinutes),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.metaTextSize),
+                        color = Color.White.copy(alpha = 0.78f),
+                        maxLines = 1,
+                    )
+                }
+                video.released?.let { formatReleaseDateForDisplay(it) }?.let { formattedDate ->
+                    Text(
+                        text = formattedDate,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.metaTextSize),
+                        color = Color.White.copy(alpha = 0.78f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+
+        progressEntry
+            ?.takeIf { it.durationMs > 0L && !it.isCompleted }
+            ?.let { entry ->
+                NuvioProgressBar(
+                    progress = entry.progressFraction,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .padding(horizontal = metrics.contentPadding, vertical = 8.dp),
+                    height = 4.dp,
+                    trackColor = Color.White.copy(alpha = 0.22f),
+                    fillColor = MaterialTheme.colorScheme.primary,
+                )
+            }
+    }
+}
+
+private data class EpisodeHorizontalCardMetrics(
+    val rowHorizontalPadding: Dp,
+    val rowVerticalPadding: Dp,
+    val itemSpacing: Dp,
+    val cardWidth: Dp,
+    val cardHeight: Dp,
+    val cornerRadius: Dp,
+    val contentPadding: Dp,
+    val contentBottomPadding: Dp,
+    val titleTextSize: androidx.compose.ui.unit.TextUnit,
+    val titleLineHeight: androidx.compose.ui.unit.TextUnit,
+    val bodyTextSize: androidx.compose.ui.unit.TextUnit,
+    val bodyLineHeight: androidx.compose.ui.unit.TextUnit,
+    val overviewMaxLines: Int,
+    val metaTextSize: androidx.compose.ui.unit.TextUnit,
+    val badgeTextSize: androidx.compose.ui.unit.TextUnit,
+    val badgeRadius: Dp,
+)
+
+@Composable
+private fun rememberEpisodeHorizontalCardMetrics(maxWidthDp: Float): EpisodeHorizontalCardMetrics {
+    return remember(maxWidthDp) {
+        when {
+            maxWidthDp >= 1300f -> EpisodeHorizontalCardMetrics(
+                rowHorizontalPadding = 0.dp,
+                rowVerticalPadding = 0.dp,
+                itemSpacing = 18.dp,
+                cardWidth = 420.dp,
+                cardHeight = 256.dp,
+                cornerRadius = 18.dp,
+                contentPadding = 16.dp,
+                contentBottomPadding = 18.dp,
+                titleTextSize = 18.sp,
+                titleLineHeight = 24.sp,
+                bodyTextSize = 14.sp,
+                bodyLineHeight = 20.sp,
+                overviewMaxLines = 3,
+                metaTextSize = 12.sp,
+                badgeTextSize = 11.sp,
+                badgeRadius = 6.dp,
+            )
+
+            maxWidthDp >= 1000f -> EpisodeHorizontalCardMetrics(
+                rowHorizontalPadding = 0.dp,
+                rowVerticalPadding = 0.dp,
+                itemSpacing = 16.dp,
+                cardWidth = 384.dp,
+                cardHeight = 236.dp,
+                cornerRadius = 16.dp,
+                contentPadding = 14.dp,
+                contentBottomPadding = 16.dp,
+                titleTextSize = 17.sp,
+                titleLineHeight = 22.sp,
+                bodyTextSize = 13.sp,
+                bodyLineHeight = 18.sp,
+                overviewMaxLines = 3,
+                metaTextSize = 12.sp,
+                badgeTextSize = 10.sp,
+                badgeRadius = 6.dp,
+            )
+
+            maxWidthDp >= 760f -> EpisodeHorizontalCardMetrics(
+                rowHorizontalPadding = 0.dp,
+                rowVerticalPadding = 0.dp,
+                itemSpacing = 14.dp,
+                cardWidth = 340.dp,
+                cardHeight = 212.dp,
+                cornerRadius = 14.dp,
+                contentPadding = 12.dp,
+                contentBottomPadding = 14.dp,
+                titleTextSize = 16.sp,
+                titleLineHeight = 21.sp,
+                bodyTextSize = 12.sp,
+                bodyLineHeight = 17.sp,
+                overviewMaxLines = 2,
+                metaTextSize = 11.sp,
+                badgeTextSize = 10.sp,
+                badgeRadius = 5.dp,
+            )
+
+            else -> EpisodeHorizontalCardMetrics(
+                rowHorizontalPadding = 0.dp,
+                rowVerticalPadding = 0.dp,
+                itemSpacing = 12.dp,
+                cardWidth = 296.dp,
+                cardHeight = 184.dp,
+                cornerRadius = 14.dp,
+                contentPadding = 10.dp,
+                contentBottomPadding = 12.dp,
+                titleTextSize = 14.sp,
+                titleLineHeight = 19.sp,
+                bodyTextSize = 11.sp,
+                bodyLineHeight = 15.sp,
+                overviewMaxLines = 2,
+                metaTextSize = 10.sp,
+                badgeTextSize = 9.sp,
+                badgeRadius = 5.dp,
+            )
+        }
+    }
+}
+
+private fun formatEpisodeRuntime(runtimeMinutes: Int): String {
+    if (runtimeMinutes <= 0) return ""
+    val hours = runtimeMinutes / 60
+    val minutes = runtimeMinutes % 60
+    return when {
+        hours > 0 && minutes > 0 -> "${hours}h ${minutes}m"
+        hours > 0 -> "${hours}h"
+        else -> "${minutes}m"
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun EpisodeListCard(
     video: MetaVideo,
     fallbackImage: String?,
     progressEntry: WatchProgressEntry?,

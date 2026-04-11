@@ -40,7 +40,27 @@ data class MetaScreenSettingsUiState(
     val items: List<MetaScreenSectionItem> = emptyList(),
     val cinematicBackground: Boolean = false,
     val tabLayout: Boolean = false,
+    val episodeCardStyle: MetaEpisodeCardStyle = MetaEpisodeCardStyle.Horizontal,
 )
+
+enum class MetaEpisodeCardStyle {
+    Horizontal,
+    List,
+    ;
+
+    companion object {
+        fun parse(raw: String?): MetaEpisodeCardStyle? = when (raw?.lowercase()) {
+            "horizontal" -> Horizontal
+            "list" -> List
+            else -> null
+        }
+
+        fun persist(style: MetaEpisodeCardStyle): String = when (style) {
+            Horizontal -> "horizontal"
+            List -> "list"
+        }
+    }
+}
 
 @Serializable
 private data class StoredMetaScreenSectionPreference(
@@ -56,6 +76,7 @@ private data class StoredMetaScreenSettingsPayload(
     val cinematicBackground: Boolean = false,
     @SerialName("tvStyleLayout")
     val tabLayout: Boolean = false,
+    val episodeCardStyle: String = "horizontal",
 )
 
 private data class MetaScreenSectionDefinition(
@@ -130,6 +151,7 @@ object MetaScreenSettingsRepository {
     private var preferences: MutableMap<MetaScreenSectionKey, StoredMetaScreenSectionPreference> = mutableMapOf()
     private var cinematicBackground: Boolean = false
     private var tabLayout: Boolean = false
+    private var episodeCardStyle: MetaEpisodeCardStyle = MetaEpisodeCardStyle.Horizontal
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -143,6 +165,8 @@ object MetaScreenSettingsRepository {
             if (parsed != null) {
                 cinematicBackground = parsed.cinematicBackground
                 tabLayout = parsed.tabLayout
+                episodeCardStyle = MetaEpisodeCardStyle.parse(parsed.episodeCardStyle)
+                    ?: MetaEpisodeCardStyle.Horizontal
                 preferences = parsed.items.mapNotNull { item ->
                     val key = runCatching { MetaScreenSectionKey.valueOf(item.key) }.getOrNull() ?: return@mapNotNull null
                     key to item
@@ -160,6 +184,7 @@ object MetaScreenSettingsRepository {
         preferences.clear()
         cinematicBackground = false
         tabLayout = false
+        episodeCardStyle = MetaEpisodeCardStyle.Horizontal
         _uiState.value = MetaScreenSettingsUiState()
         ensureLoaded()
     }
@@ -174,6 +199,13 @@ object MetaScreenSettingsRepository {
     fun setTabLayout(enabled: Boolean) {
         ensureLoaded()
         tabLayout = enabled
+        publish()
+        persist()
+    }
+
+    fun setEpisodeCardStyle(style: MetaEpisodeCardStyle) {
+        ensureLoaded()
+        episodeCardStyle = style
         publish()
         persist()
     }
@@ -203,10 +235,12 @@ object MetaScreenSettingsRepository {
         items: List<MetaScreenSectionItem>,
         cinematicBackground: Boolean,
         tabLayout: Boolean,
+        episodeCardStyle: MetaEpisodeCardStyle = MetaEpisodeCardStyle.Horizontal,
     ) {
         ensureLoaded()
         this.cinematicBackground = cinematicBackground
         this.tabLayout = tabLayout
+        this.episodeCardStyle = episodeCardStyle
         preferences = items.associate { item ->
             item.key to StoredMetaScreenSectionPreference(
                 key = item.key.name,
@@ -231,6 +265,7 @@ object MetaScreenSettingsRepository {
         preferences.clear()
         cinematicBackground = false
         tabLayout = false
+        episodeCardStyle = MetaEpisodeCardStyle.Horizontal
         normalizePreferences()
         publish()
         persist()
@@ -296,6 +331,7 @@ object MetaScreenSettingsRepository {
                 },
             cinematicBackground = cinematicBackground,
             tabLayout = tabLayout,
+            episodeCardStyle = episodeCardStyle,
         )
     }
 
@@ -306,6 +342,7 @@ object MetaScreenSettingsRepository {
                     items = preferences.values.sortedBy { it.order },
                     cinematicBackground = cinematicBackground,
                     tabLayout = tabLayout,
+                    episodeCardStyle = MetaEpisodeCardStyle.persist(episodeCardStyle),
                 ),
             ),
         )

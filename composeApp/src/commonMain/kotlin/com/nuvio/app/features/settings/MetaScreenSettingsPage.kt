@@ -4,7 +4,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,9 +15,11 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -44,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioActionLabel
+import com.nuvio.app.features.details.MetaEpisodeCardStyle
 import com.nuvio.app.features.details.MetaScreenSectionItem
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsUiState
@@ -75,6 +80,12 @@ internal fun LazyListScope.metaScreenSettingsContent(
                     checked = uiState.tabLayout,
                     isTablet = isTablet,
                     onCheckedChange = { MetaScreenSettingsRepository.setTabLayout(it) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                MetaEpisodeCardStyleSelector(
+                    isTablet = isTablet,
+                    selectedStyle = uiState.episodeCardStyle,
+                    onStyleSelected = MetaScreenSettingsRepository::setEpisodeCardStyle,
                 )
             }
         }
@@ -308,4 +319,215 @@ private fun TabGroupChip(
             selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
     )
+}
+
+@Composable
+private fun MetaEpisodeCardStyleSelector(
+    isTablet: Boolean,
+    selectedStyle: MetaEpisodeCardStyle,
+    onStyleSelected: (MetaEpisodeCardStyle) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = if (isTablet) 20.dp else 16.dp, vertical = if (isTablet) 18.dp else 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = "Episode Cards",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = "Choose how episodes are rendered on the metadata screen.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            MetaEpisodeCardStyle.entries.forEach { style ->
+                Box(modifier = Modifier.weight(1f)) {
+                    MetaEpisodeCardStyleOption(
+                        style = style,
+                        selected = selectedStyle == style,
+                        isTablet = isTablet,
+                        onClick = { onStyleSelected(style) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetaEpisodeCardStyleOption(
+    style: MetaEpisodeCardStyle,
+    selected: Boolean,
+    isTablet: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(148.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                MetaEpisodeCardStylePreview(
+                    style = style,
+                    isSelected = selected,
+                )
+            }
+            Text(
+                text = if (style == MetaEpisodeCardStyle.Horizontal) "Horizontal" else "List",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = if (style == MetaEpisodeCardStyle.Horizontal) {
+                    "Backdrop-style row cards"
+                } else {
+                    "Detail-first stacked cards"
+                },
+                style = if (isTablet) MaterialTheme.typography.bodySmall else MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetaEpisodeCardStylePreview(
+    style: MetaEpisodeCardStyle,
+    isSelected: Boolean,
+) {
+    val borderColor = if (isSelected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    }
+    val backgroundColor = if (isSelected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(backgroundColor)
+            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        when (style) {
+            MetaEpisodeCardStyle.Horizontal -> {
+                Box(
+                    modifier = Modifier
+                        .width(128.dp)
+                        .height(80.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(26.dp)
+                            .align(Alignment.BottomCenter)
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.36f)),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(42.dp)
+                            .height(7.dp)
+                            .align(Alignment.TopStart)
+                            .padding(start = 6.dp, top = 6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.26f)),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(72.dp)
+                            .height(6.dp)
+                            .align(Alignment.BottomStart)
+                            .padding(start = 8.dp, bottom = 8.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)),
+                    )
+                }
+            }
+
+            MetaEpisodeCardStyle.List -> {
+                Row(
+                    modifier = Modifier
+                        .width(132.dp)
+                        .height(78.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(48.dp)
+                            .height(78.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
+                    )
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.82f)
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f)),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.52f)
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

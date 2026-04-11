@@ -999,6 +999,7 @@ private fun ConfiguredMetaSections(
                         meta = meta,
                         showHeader = showHeader,
                         preferredSeasonNumber = preferredEpisodeSeasonNumber,
+                        episodeCardStyle = settings.episodeCardStyle,
                         progressByVideoId = progressByVideoId,
                         watchedKeys = watchedKeys,
                         onEpisodeClick = onEpisodeClick,
