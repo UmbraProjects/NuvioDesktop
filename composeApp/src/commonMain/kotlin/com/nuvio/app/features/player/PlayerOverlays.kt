@@ -362,73 +362,51 @@ internal fun PauseMetadataOverlay(
 internal fun ErrorModal(
     message: String,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    val colorScheme = MaterialTheme.colorScheme
-
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(colorScheme.scrim.copy(alpha = 0.56f)),
+            .background(Color.Black.copy(alpha = 0.9f)),
         contentAlignment = Alignment.Center,
     ) {
-        Surface(
-            modifier = modifier
-                .fillMaxWidth(0.8f)
-                .widthIn(max = 400.dp),
-            shape = RoundedCornerShape(20.dp),
-            color = colorScheme.surface,
-            border = BorderStroke(1.dp, colorScheme.outlineVariant.copy(alpha = 0.8f)),
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Column(
+            Text(
+                text = "Playback error",
+                style = MaterialTheme.nuvioTypeScale.displaySm.copy(fontWeight = FontWeight.Bold),
+                color = Color.White,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.nuvioTypeScale.bodyLg.copy(lineHeight = 24.sp),
+                color = Color.White.copy(alpha = 0.72f),
+                textAlign = TextAlign.Center,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .padding(top = 4.dp)
+                    .widthIn(min = 180.dp, max = 260.dp)
+                    .clickable(onClick = onDismiss),
+                color = MaterialTheme.colorScheme.primary,
+                shape = RoundedCornerShape(12.dp),
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(colorScheme.errorContainer.copy(alpha = 0.55f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.ErrorOutline,
-                        contentDescription = null,
-                        tint = colorScheme.error,
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
                 Text(
-                    text = "Playback error",
-                    style = MaterialTheme.nuvioTypeScale.titleMd.copy(fontWeight = FontWeight.Bold),
-                    color = colorScheme.onSurface,
-                )
-                Text(
-                    text = message,
-                    style = MaterialTheme.nuvioTypeScale.bodyLg.copy(lineHeight = 22.sp),
-                    color = colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Surface(
+                    text = "Go back",
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(onClick = onDismiss),
-                    color = colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(12.dp),
-                ) {
-                    Text(
-                        text = "Dismiss",
-                        modifier = Modifier.padding(vertical = 12.dp),
-                        style = MaterialTheme.nuvioTypeScale.bodyLg.copy(fontWeight = FontWeight.Bold),
-                        color = colorScheme.onPrimaryContainer,
-                        textAlign = TextAlign.Center,
-                    )
-                }
+                        .padding(vertical = 12.dp),
+                    style = MaterialTheme.nuvioTypeScale.bodyLg.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }

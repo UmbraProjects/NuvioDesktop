@@ -1565,7 +1565,6 @@ fun PlayerScreen(
                 ErrorModal(
                     message = errorMessage.orEmpty(),
                     onDismiss = onBackWithProgress,
-                    modifier = Modifier.align(Alignment.Center),
                 )
             }
 

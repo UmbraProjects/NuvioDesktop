@@ -26,8 +26,10 @@ struct DownloadsLiveActivityWidget: Widget {
         } dynamicIsland: { context in
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    AccentGlyphView()
-                        .frame(width: 26, height: 26)
+                    Text(statusLabel(context.state.status))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.88))
+                        .lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(progressLabel(context.state.progressPercent))
