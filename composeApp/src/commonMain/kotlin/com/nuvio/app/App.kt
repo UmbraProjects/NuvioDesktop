@@ -1250,6 +1250,11 @@ private fun MainAppContent(
                         onBack = onBack,
                         onOpenDownload = { item ->
                             val sourceUrl = item.localFileUri ?: return@DownloadsScreen
+                            val resumeEntry = item.videoId
+                                .takeIf { it.isNotBlank() }
+                                ?.let(WatchProgressRepository::progressForVideo)
+                                ?.takeIf { it.isResumable }
+
                             val launchId = PlayerLaunchStore.put(
                                 PlayerLaunch(
                                     title = item.title,
@@ -1271,7 +1276,8 @@ private fun MainAppContent(
                                     videoId = item.videoId,
                                     parentMetaId = item.parentMetaId,
                                     parentMetaType = item.parentMetaType,
-                                    initialPositionMs = 0L,
+                                    initialPositionMs = resumeEntry?.lastPositionMs?.takeIf { it > 0L } ?: 0L,
+                                    initialProgressFraction = resumeEntry?.progressFraction?.takeIf { it > 0f },
                                 ),
                             )
                             navController.navigate(PlayerRoute(launchId = launchId))

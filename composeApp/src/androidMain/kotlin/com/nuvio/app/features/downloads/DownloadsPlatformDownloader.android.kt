@@ -92,7 +92,8 @@ internal actual object DownloadsPlatformDownloader {
                         tempFile.delete()
                     }
 
-                    onSuccess(destination.toURI().toString(), totalBytes)
+                    val finalSize = destination.length()
+                    onSuccess(destination.toURI().toString(), totalBytes ?: finalSize)
                 }
             } catch (_: CancellationException) {
                 tempFile.delete()

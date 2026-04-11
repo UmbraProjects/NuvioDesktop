@@ -88,7 +88,8 @@ internal actual object DownloadsPlatformDownloader {
                 }
 
                 val localFileUri = NSURL.fileURLWithPath(destinationPath).absoluteString ?: "file://$destinationPath"
-                onSuccess(localFileUri, totalBytes)
+                val finalSize = fileSizeOrNull(destinationPath)
+                onSuccess(localFileUri, totalBytes ?: finalSize)
             } catch (_: CancellationException) {
                 removePathIfExists(tempPath)
             } catch (error: Throwable) {
@@ -171,6 +172,17 @@ private suspend fun writeChannelToFile(
         true
     } finally {
         fclose(file)
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun fileSizeOrNull(path: String): Long? {
+    val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(path, error = null)
+    val value = attrs?.get("NSFileSize")
+    return when (value) {
+        is Long -> value
+        is Number -> value.toLong()
+        else -> null
     }
 }
 
