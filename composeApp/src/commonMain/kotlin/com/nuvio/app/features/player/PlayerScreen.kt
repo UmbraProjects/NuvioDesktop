@@ -192,6 +192,7 @@ fun PlayerScreen(
         var accumulatedSeekState by remember { mutableStateOf<PlayerAccumulatedSeekState?>(null) }
         var initialLoadCompleted by remember(activeSourceUrl) { mutableStateOf(false) }
         var speedBoostRestoreSpeed by remember(activeSourceUrl) { mutableStateOf<Float?>(null) }
+        var isHoldToSpeedGestureActive by remember(activeSourceUrl) { mutableStateOf(false) }
         var initialSeekApplied by remember(activeSourceUrl, activeInitialPositionMs, activeInitialProgressFraction) {
             val initialProgressFraction = activeInitialProgressFraction
             mutableStateOf(
@@ -637,6 +638,7 @@ fun PlayerScreen(
             val currentSpeed = playbackSnapshot.playbackSpeed
             if (abs(currentSpeed - targetSpeed) < 0.01f) return
 
+            isHoldToSpeedGestureActive = true
             speedBoostRestoreSpeed = currentSpeed
             controller.setPlaybackSpeed(targetSpeed)
             liveGestureFeedback = GestureFeedbackState(
@@ -647,6 +649,7 @@ fun PlayerScreen(
         }
 
         fun deactivateHoldToSpeed() {
+            isHoldToSpeedGestureActive = false
             val restoreSpeed = speedBoostRestoreSpeed ?: return
             playerController?.setPlaybackSpeed(restoreSpeed)
             speedBoostRestoreSpeed = null
@@ -681,6 +684,7 @@ fun PlayerScreen(
         val showBrightnessFeedbackState = rememberUpdatedState(::showBrightnessFeedback)
         val showVolumeFeedbackState = rememberUpdatedState(::showVolumeFeedback)
         val clearLiveGestureFeedbackState = rememberUpdatedState(::clearLiveGestureFeedback)
+        val isHoldToSpeedGestureActiveState = rememberUpdatedState(isHoldToSpeedGestureActive)
         val currentPositionMsState = rememberUpdatedState(playbackSnapshot.positionMs.coerceAtLeast(0L))
         val currentDurationMsState = rememberUpdatedState(playbackSnapshot.durationMs)
         val commitHorizontalSeekState = rememberUpdatedState { targetPositionMs: Long ->
@@ -1255,7 +1259,9 @@ fun PlayerScreen(
 
                             if (gestureMode == null) {
                                 val horizontalDominant =
-                                    abs(totalDx) > viewConfiguration.touchSlop && abs(totalDx) > abs(totalDy)
+                                    !isHoldToSpeedGestureActiveState.value &&
+                                        abs(totalDx) > viewConfiguration.touchSlop &&
+                                        abs(totalDx) > abs(totalDy)
                                 val verticalDominant =
                                     abs(totalDy) > viewConfiguration.touchSlop && abs(totalDy) > abs(totalDx)
 
@@ -1322,7 +1328,7 @@ fun PlayerScreen(
                             change.consume()
                         }
 
-                        if (gestureMode == PlayerGestureMode.HorizontalSeek) {
+                        if (gestureMode == PlayerGestureMode.HorizontalSeek && !isHoldToSpeedGestureActiveState.value) {
                             commitHorizontalSeekState.value(horizontalSeekPreviewMs)
                             clearLiveGestureFeedbackState.value()
                         }
