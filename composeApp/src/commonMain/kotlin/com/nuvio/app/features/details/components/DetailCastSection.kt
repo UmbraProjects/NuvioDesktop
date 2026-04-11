@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -29,6 +30,8 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
 import com.nuvio.app.features.details.MetaPerson
 import com.nuvio.app.features.details.castAvatarSharedTransitionKey
 
@@ -86,6 +89,21 @@ private fun CastItem(
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     onClick: (() -> Unit)? = null,
 ) {
+    val avatarCacheKey = person.tmdbId?.takeIf { it > 0 }?.let(::castAvatarSharedTransitionKey)
+    val platformContext = LocalPlatformContext.current
+    val avatarRequest = if (!person.photo.isNullOrBlank() && !avatarCacheKey.isNullOrBlank()) {
+        remember(platformContext, person.photo, avatarCacheKey) {
+            ImageRequest.Builder(platformContext)
+                .data(person.photo)
+                .memoryCacheKey(avatarCacheKey)
+                .placeholderMemoryCacheKey(avatarCacheKey)
+                .diskCacheKey(person.photo)
+                .build()
+        }
+    } else {
+        null
+    }
+
     val avatarSharedElementModifier = if (
         sharedTransitionScope != null &&
             animatedVisibilityScope != null &&
@@ -124,7 +142,7 @@ private fun CastItem(
         ) {
             if (person.photo != null) {
                 AsyncImage(
-                    model = person.photo,
+                    model = avatarRequest ?: person.photo,
                     contentDescription = person.name,
                     modifier = Modifier.matchParentSize(),
                     contentScale = ContentScale.Crop,

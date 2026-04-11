@@ -22,3 +22,4 @@ Docs
 keystore/
 scripts/build-distribution.sh
 asset
+scripts/scrape_android_compose_animation_docs.py

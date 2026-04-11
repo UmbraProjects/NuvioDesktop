@@ -54,6 +54,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
 import com.nuvio.app.features.details.components.DetailPosterRailSection
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.tmdb.TmdbMetadataService
@@ -297,6 +299,20 @@ private fun HeroSection(
     val heroScale = 1f - (collapseProgress * 0.12f)
     val heroAlpha = 1f - (collapseProgress * 0.35f)
     val avatarUrl = person.profilePhoto?.takeIf { it.isNotBlank() } ?: fallbackProfilePhoto
+    val avatarCacheKey = castAvatarSharedTransitionKey(person.tmdbId)
+    val platformContext = LocalPlatformContext.current
+    val avatarRequest = if (!avatarUrl.isNullOrBlank()) {
+        remember(platformContext, avatarUrl, avatarCacheKey) {
+            ImageRequest.Builder(platformContext)
+                .data(avatarUrl)
+                .memoryCacheKey(avatarCacheKey)
+                .placeholderMemoryCacheKey(avatarCacheKey)
+                .diskCacheKey(avatarUrl)
+                .build()
+        }
+    } else {
+        null
+    }
     val avatarSharedElementModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
         with(sharedTransitionScope) {
             Modifier.sharedElement(
@@ -333,7 +349,7 @@ private fun HeroSection(
         ) {
             if (!avatarUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = avatarUrl,
+                    model = avatarRequest ?: avatarUrl,
                     contentDescription = person.name,
                     modifier = Modifier.matchParentSize(),
                     contentScale = ContentScale.Crop,
@@ -422,6 +438,20 @@ private fun PersonDetailSkeleton(
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val accentColor = MaterialTheme.colorScheme.primary
+    val avatarCacheKey = castAvatarSharedTransitionKey(personId)
+    val platformContext = LocalPlatformContext.current
+    val avatarRequest = if (!profilePhoto.isNullOrBlank()) {
+        remember(platformContext, profilePhoto, avatarCacheKey) {
+            ImageRequest.Builder(platformContext)
+                .data(profilePhoto)
+                .memoryCacheKey(avatarCacheKey)
+                .placeholderMemoryCacheKey(avatarCacheKey)
+                .diskCacheKey(profilePhoto)
+                .build()
+        }
+    } else {
+        null
+    }
     val accentGradient = remember(accentColor) {
         Brush.verticalGradient(
             colorStops = arrayOf(
@@ -480,7 +510,7 @@ private fun PersonDetailSkeleton(
                 ) {
                     if (!profilePhoto.isNullOrBlank()) {
                         AsyncImage(
-                            model = profilePhoto,
+                            model = avatarRequest ?: profilePhoto,
                             contentDescription = personName,
                             modifier = Modifier.matchParentSize(),
                             contentScale = ContentScale.Crop,
