@@ -73,6 +73,7 @@ fun PersonDetailScreen(
     personId: Int,
     personName: String,
     initialProfilePhoto: String? = null,
+    avatarTransitionKey: String? = null,
     preferCrew: Boolean = false,
     onBack: () -> Unit,
     onOpenMeta: (MetaPreview) -> Unit,
@@ -81,6 +82,7 @@ fun PersonDetailScreen(
     modifier: Modifier = Modifier,
 ) {
     var uiState by remember(personId) { mutableStateOf<PersonDetailUiState>(PersonDetailUiState.Loading) }
+    val resolvedAvatarTransitionKey = avatarTransitionKey ?: castAvatarSharedTransitionKey(personId)
 
     LaunchedEffect(personId) {
         uiState = PersonDetailUiState.Loading
@@ -105,6 +107,7 @@ fun PersonDetailScreen(
                 personId = personId,
                 personName = personName,
                 profilePhoto = initialProfilePhoto,
+                avatarTransitionKey = resolvedAvatarTransitionKey,
                 sharedTransitionScope = sharedTransitionScope,
                 animatedVisibilityScope = animatedVisibilityScope,
             )
@@ -119,6 +122,7 @@ fun PersonDetailScreen(
                 person = state.personDetail,
                 onOpenMeta = onOpenMeta,
                 initialProfilePhoto = initialProfilePhoto,
+                avatarTransitionKey = resolvedAvatarTransitionKey,
                 sharedTransitionScope = sharedTransitionScope,
                 animatedVisibilityScope = animatedVisibilityScope,
             )
@@ -147,6 +151,7 @@ private fun PersonDetailContent(
     person: PersonDetail,
     onOpenMeta: (MetaPreview) -> Unit,
     initialProfilePhoto: String? = null,
+    avatarTransitionKey: String,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
@@ -240,6 +245,7 @@ private fun PersonDetailContent(
                     person = person,
                     collapseProgress = collapseProgress,
                     fallbackProfilePhoto = initialProfilePhoto,
+                    avatarTransitionKey = avatarTransitionKey,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                 )
@@ -292,6 +298,7 @@ private fun HeroSection(
     person: PersonDetail,
     collapseProgress: Float = 0f,
     fallbackProfilePhoto: String? = null,
+    avatarTransitionKey: String,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
@@ -299,7 +306,7 @@ private fun HeroSection(
     val heroScale = 1f - (collapseProgress * 0.12f)
     val heroAlpha = 1f - (collapseProgress * 0.35f)
     val avatarUrl = person.profilePhoto?.takeIf { it.isNotBlank() } ?: fallbackProfilePhoto
-    val avatarCacheKey = castAvatarSharedTransitionKey(person.tmdbId)
+    val avatarCacheKey = avatarTransitionKey
     val platformContext = LocalPlatformContext.current
     val avatarRequest = if (!avatarUrl.isNullOrBlank()) {
         remember(platformContext, avatarUrl, avatarCacheKey) {
@@ -317,7 +324,7 @@ private fun HeroSection(
         with(sharedTransitionScope) {
             Modifier.sharedElement(
                 sharedContentState = rememberSharedContentState(
-                    key = castAvatarSharedTransitionKey(person.tmdbId),
+                    key = avatarTransitionKey,
                 ),
                 animatedVisibilityScope = animatedVisibilityScope,
             )
@@ -434,11 +441,12 @@ private fun PersonDetailSkeleton(
     personId: Int,
     personName: String,
     profilePhoto: String? = null,
+    avatarTransitionKey: String,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val accentColor = MaterialTheme.colorScheme.primary
-    val avatarCacheKey = castAvatarSharedTransitionKey(personId)
+    val avatarCacheKey = avatarTransitionKey
     val platformContext = LocalPlatformContext.current
     val avatarRequest = if (!profilePhoto.isNullOrBlank()) {
         remember(platformContext, profilePhoto, avatarCacheKey) {
@@ -492,7 +500,7 @@ private fun PersonDetailSkeleton(
                     with(sharedTransitionScope) {
                         Modifier.sharedElement(
                             sharedContentState = rememberSharedContentState(
-                                key = castAvatarSharedTransitionKey(personId),
+                                key = avatarTransitionKey,
                             ),
                             animatedVisibilityScope = animatedVisibilityScope,
                         )

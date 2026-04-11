@@ -41,7 +41,7 @@ fun DetailCastSection(
     cast: List<MetaPerson>,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
-    onCastClick: ((MetaPerson) -> Unit)? = null,
+    onCastClick: ((MetaPerson, String?) -> Unit)? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
@@ -61,14 +61,18 @@ fun DetailCastSection(
                 itemsIndexed(
                     items = cast,
                     key = { index, person -> "${person.name}-${person.role.orEmpty()}-${person.photo.orEmpty()}-$index" },
-                ) { _, person ->
+                ) { index, person ->
+                    val sharedTransitionKey = person.tmdbId
+                        ?.takeIf { it > 0 }
+                        ?.let { castAvatarSharedTransitionKey(it, occurrenceIndex = index) }
                     CastItem(
                         person = person,
+                        sharedTransitionKey = sharedTransitionKey,
                         sizing = sizing,
                         sharedTransitionScope = sharedTransitionScope,
                         animatedVisibilityScope = animatedVisibilityScope,
                         onClick = if (onCastClick != null && person.tmdbId != null && person.tmdbId > 0) {
-                            { onCastClick(person) }
+                            { onCastClick(person, sharedTransitionKey) }
                         } else {
                             null
                         },
@@ -84,12 +88,13 @@ fun DetailCastSection(
 private fun CastItem(
     person: MetaPerson,
     modifier: Modifier = Modifier,
+    sharedTransitionKey: String? = null,
     sizing: CastSectionSizing,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     onClick: (() -> Unit)? = null,
 ) {
-    val avatarCacheKey = person.tmdbId?.takeIf { it > 0 }?.let(::castAvatarSharedTransitionKey)
+    val avatarCacheKey = sharedTransitionKey
     val platformContext = LocalPlatformContext.current
     val avatarRequest = if (!person.photo.isNullOrBlank() && !avatarCacheKey.isNullOrBlank()) {
         remember(platformContext, person.photo, avatarCacheKey) {
@@ -107,13 +112,12 @@ private fun CastItem(
     val avatarSharedElementModifier = if (
         sharedTransitionScope != null &&
             animatedVisibilityScope != null &&
-            person.tmdbId != null &&
-            person.tmdbId > 0
+            !sharedTransitionKey.isNullOrBlank()
     ) {
         with(sharedTransitionScope) {
             Modifier.sharedElement(
                 sharedContentState = rememberSharedContentState(
-                    key = castAvatarSharedTransitionKey(person.tmdbId),
+                    key = sharedTransitionKey,
                 ),
                 animatedVisibilityScope = animatedVisibilityScope,
             )

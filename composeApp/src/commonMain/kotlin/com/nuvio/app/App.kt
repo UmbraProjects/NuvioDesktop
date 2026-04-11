@@ -171,6 +171,7 @@ data class PersonDetailRoute(
     val personId: Int,
     val personName: String,
     val personPhoto: String? = null,
+    val castAvatarTransitionKey: String? = null,
     val preferCrew: Boolean = false,
 )
 
@@ -766,7 +767,7 @@ private fun MainAppContent(
                                 )
                             }
                         },
-                        onCastClick = { person ->
+                        onCastClick = { person, avatarTransitionKey ->
                             val tmdbId = person.tmdbId
                             if (tmdbId != null && tmdbId > 0) {
                                 navController.navigate(
@@ -774,6 +775,7 @@ private fun MainAppContent(
                                         personId = tmdbId,
                                         personName = person.name,
                                         personPhoto = person.photo,
+                                        castAvatarTransitionKey = avatarTransitionKey,
                                         preferCrew = person.role?.let {
                                             it.equals("Director", ignoreCase = true) ||
                                                 it.equals("Writer", ignoreCase = true) ||
@@ -807,6 +809,7 @@ private fun MainAppContent(
                         personId = route.personId,
                         personName = route.personName,
                         initialProfilePhoto = route.personPhoto,
+                        avatarTransitionKey = route.castAvatarTransitionKey,
                         preferCrew = route.preferCrew,
                         onBack = { navController.popBackStack() },
                         onOpenMeta = { preview ->
