@@ -12,60 +12,68 @@ struct DownloadsLiveActivityAttributes: ActivityAttributes {
     let downloadId: String
     let title: String
     let subtitle: String
-    let posterUrl: String?
 }
 
 @available(iOSApplicationExtension 16.1, *)
 struct DownloadsLiveActivityWidget: Widget {
+    private let downloadsUrl = URL(string: "nuvio://downloads")
+    private let appBlue = Color(red: 30.0 / 255.0, green: 136.0 / 255.0, blue: 229.0 / 255.0)
+
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: DownloadsLiveActivityAttributes.self) { context in
             DownloadActivityLockScreenView(context: context)
+                .widgetURL(downloadsUrl)
         } dynamicIsland: { context in
-            DynamicIsland {
+            return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    PosterThumbnailView(urlString: context.attributes.posterUrl)
-                        .frame(width: 44, height: 64)
+                    AccentGlyphView()
+                        .frame(width: 26, height: 26)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    VStack(alignment: .trailing, spacing: 3) {
-                        Text(progressLabel(context.state.progressPercent))
-                            .font(.headline.monospacedDigit())
-                            .foregroundStyle(.primary)
-                        Text(statusLabel(context.state.status))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(progressLabel(context.state.progressPercent))
+                        .font(.title3.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.white)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(context.attributes.title)
                             .font(.subheadline.weight(.semibold))
                             .lineLimit(1)
+                            .minimumScaleFactor(0.86)
+                            .truncationMode(.tail)
                         Text(context.attributes.subtitle)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.white.opacity(0.82))
                             .lineLimit(1)
+                            .minimumScaleFactor(0.9)
+                            .truncationMode(.tail)
                         ProgressView(value: normalizedProgress(context.state.progressPercent))
                             .progressViewStyle(.linear)
+                            .tint(appBlue)
                         HStack {
                             Text(context.state.transferredText)
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.white.opacity(0.86))
                             Spacer(minLength: 6)
-                            Text(statusLabel(context.state.status))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            Label(statusLabel(context.state.status), systemImage: "arrow.down")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.86))
                         }
                     }
+                    .padding(.top, 4)
+                    .padding(.horizontal, 10)
                 }
             } compactLeading: {
-                PosterGlyphView()
+                AccentGlyphView()
             } compactTrailing: {
                 Text(progressLabel(context.state.progressPercent))
                     .font(.caption2.monospacedDigit())
+                    .foregroundStyle(appBlue)
             } minimal: {
-                PosterGlyphView()
+                AccentGlyphView()
             }
+            .widgetURL(downloadsUrl)
+            .keylineTint(appBlue)
         }
     }
 
@@ -87,6 +95,7 @@ struct DownloadsLiveActivityWidget: Widget {
         default: return "Active"
         }
     }
+
 }
 
 @available(iOSApplicationExtension 16.1, *)
@@ -94,39 +103,58 @@ private struct DownloadActivityLockScreenView: View {
     let context: ActivityViewContext<DownloadsLiveActivityAttributes>
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            PosterThumbnailView(urlString: context.attributes.posterUrl)
-                .frame(width: 62, height: 92)
+        ZStack {
+            LinearGradient(
+                colors: backgroundGradientColors,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing,
+            )
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(context.attributes.title)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(context.attributes.title)
+                            .font(.headline.weight(.semibold))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(context.attributes.subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.82))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 10)
                     Text(progressLabel(context.state.progressPercent))
-                        .font(.headline.monospacedDigit())
+                        .font(.title3.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.top, 1)
                 }
-                Text(context.attributes.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+
                 ProgressView(value: normalizedProgress(context.state.progressPercent))
                     .progressViewStyle(.linear)
+                    .tint(.white)
+
                 HStack {
-                    Text(statusLabel(context.state.status))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    Label(statusLabel(context.state.status), systemImage: "arrow.down")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.86))
                     Spacer()
                     Text(context.state.transferredText)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.86))
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .activityBackgroundTint(Color(red: 0.10, green: 0.11, blue: 0.16).opacity(0.88))
+        .frame(maxWidth: .infinity, minHeight: 168, maxHeight: .infinity, alignment: .top)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1),
+        )
+        .activityBackgroundTint(.clear)
         .activitySystemActionForegroundColor(.white)
     }
 
@@ -148,73 +176,26 @@ private struct DownloadActivityLockScreenView: View {
         default: return "Active"
         }
     }
+
+    private var backgroundGradientColors: [Color] {
+        let accent = Color(red: 30.0 / 255.0, green: 136.0 / 255.0, blue: 229.0 / 255.0)
+        return [
+            accent.opacity(0.92),
+            accent.opacity(0.42),
+            Color.black.opacity(0.97),
+        ]
+    }
 }
 
-private struct PosterGlyphView: View {
+private struct AccentGlyphView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.white.opacity(0.14))
-            Image(systemName: "film")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.9))
+                .fill(Color(red: 30.0 / 255.0, green: 136.0 / 255.0, blue: 229.0 / 255.0).opacity(0.88))
+            Image(systemName: "arrow.down")
+                .font(.caption2.bold())
+                .foregroundStyle(.white)
         }
         .frame(width: 22, height: 22)
-    }
-}
-
-private struct PosterThumbnailView: View {
-    let urlString: String?
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.16, green: 0.17, blue: 0.22), Color(red: 0.09, green: 0.10, blue: 0.14)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing,
-                    ),
-                )
-
-            if let url = imageUrl {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                            .tint(.white.opacity(0.85))
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    case .failure:
-                        fallbackIcon
-                    @unknown default:
-                        fallbackIcon
-                    }
-                }
-            } else {
-                fallbackIcon
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1),
-        )
-        .shadow(color: .black.opacity(0.24), radius: 6, x: 0, y: 3)
-    }
-
-    private var imageUrl: URL? {
-        guard let urlString, let url = URL(string: urlString), !urlString.isEmpty else {
-            return nil
-        }
-        return url
-    }
-
-    private var fallbackIcon: some View {
-        Image(systemName: "film")
-            .font(.title3)
-            .foregroundStyle(.white.opacity(0.82))
     }
 }

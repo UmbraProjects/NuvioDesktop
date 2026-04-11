@@ -35,10 +35,6 @@ internal actual object DownloadsLiveStatusPlatform {
                     id = item.id,
                     title = item.title,
                     subtitle = item.displaySubtitle,
-                    posterUrl = item.episodeThumbnail
-                        ?.takeIf { it.isNotBlank() }
-                        ?: item.poster?.takeIf { it.isNotBlank() }
-                        ?: item.background?.takeIf { it.isNotBlank() },
                     status = item.status.name,
                     downloadedBytes = item.downloadedBytes,
                     totalBytes = item.totalBytes,
@@ -79,7 +75,6 @@ private data class DownloadsLiveStatusPayload(
     val id: String,
     val title: String,
     val subtitle: String,
-    val posterUrl: String? = null,
     val status: String,
     val downloadedBytes: Long,
     val totalBytes: Long? = null,
