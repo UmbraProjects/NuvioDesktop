@@ -7,6 +7,14 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import com.nuvio.app.features.trailer.YoutubeChunkedDataSourceFactory
 
 internal object PlatformPlaybackDataSourceFactory {
+
+    private val DEFAULT_STREAM_HEADERS = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                        "Chrome/120.0.0.0 Safari/537.36",
+        "Referer"    to "https://www.strem.io/"
+    )
+
     fun create(
         context: Context,
         defaultRequestHeaders: Map<String, String>,
@@ -16,7 +24,9 @@ internal object PlatformPlaybackDataSourceFactory {
         val networkFactory: DataSource.Factory = if (useYoutubeChunkedPlayback) {
             YoutubeChunkedDataSourceFactory(defaultRequestHeaders = defaultRequestHeaders)
         } else {
-            DefaultHttpDataSource.Factory().setDefaultRequestProperties(defaultRequestHeaders)
+            DefaultHttpDataSource.Factory()
+                .setAllowCrossProtocolRedirects(true)
+                .setDefaultRequestProperties(DEFAULT_STREAM_HEADERS + defaultRequestHeaders)
         }
         val baseFactory: DataSource.Factory = DefaultDataSource.Factory(context, networkFactory)
         return if (defaultResponseHeaders.isEmpty()) {
