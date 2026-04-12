@@ -217,12 +217,13 @@ object MetaDetailsRepository {
         id: String,
         includeMdbList: Boolean,
     ): MetaDetails? {
+        val baseUrl = manifest.transportUrl
+            .substringBefore("?")
+            .removeSuffix("/manifest.json")
+        val url = "$baseUrl/meta/$type/$id.json"
+
         return try {
             TmdbSettingsRepository.ensureLoaded()
-            val baseUrl = manifest.transportUrl
-                .substringBefore("?")
-                .removeSuffix("/manifest.json")
-            val url = "$baseUrl/meta/$type/$id.json"
             log.d { "Fetching meta from: $url" }
             val payload = httpGetText(url)
             log.d { "Raw payload length=${payload.length}, first 500 chars: ${payload.take(500)}" }
@@ -254,7 +255,7 @@ object MetaDetailsRepository {
             enriched
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
-            log.e(e) { "Failed to fetch/parse meta from ${manifest.transportUrl}" }
+            log.e(e) { "Failed to fetch/parse meta from $url (manifest=${manifest.transportUrl})" }
             null
         }
     }

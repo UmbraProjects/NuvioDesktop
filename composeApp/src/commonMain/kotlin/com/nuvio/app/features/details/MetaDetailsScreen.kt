@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -140,7 +141,7 @@ fun MetaDetailsScreen(
         PlayerSettingsRepository.ensureLoaded()
         PlayerSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
-    val needsFreshLoad = displayedMeta == null && !uiState.isLoading
+    var autoLoadAttempted by remember(type, id) { mutableStateOf(false) }
     var selectedEpisodeForActions by remember(type, id) { mutableStateOf<MetaVideo?>(null) }
     val commentsEnabled by remember {
         TraktCommentsSettings.ensureLoaded()
@@ -186,8 +187,11 @@ fun MetaDetailsScreen(
         isCommentsLoading = false
     }
 
-    LaunchedEffect(type, id, needsFreshLoad) {
-        if (needsFreshLoad) MetaDetailsRepository.load(type, id)
+    LaunchedEffect(type, id, displayedMeta, uiState.isLoading, autoLoadAttempted) {
+        if (!autoLoadAttempted && displayedMeta == null && !uiState.isLoading) {
+            autoLoadAttempted = true
+            MetaDetailsRepository.load(type, id)
+        }
     }
 
     Box(
@@ -221,6 +225,12 @@ fun MetaDetailsScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = { MetaDetailsRepository.load(type, id) },
+                    ) {
+                        Text("Retry")
+                    }
                 }
             }
 
