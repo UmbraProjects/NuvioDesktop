@@ -16,7 +16,9 @@ internal object PlatformPlaybackDataSourceFactory {
         val networkFactory: DataSource.Factory = if (useYoutubeChunkedPlayback) {
             YoutubeChunkedDataSourceFactory(defaultRequestHeaders = defaultRequestHeaders)
         } else {
-            DefaultHttpDataSource.Factory().setDefaultRequestProperties(defaultRequestHeaders)
+            DefaultHttpDataSource.Factory()
+                .setAllowCrossProtocolRedirects(true)
+                .setDefaultRequestProperties(defaultRequestHeaders)
         }
         val baseFactory: DataSource.Factory = DefaultDataSource.Factory(context, networkFactory)
         return if (defaultResponseHeaders.isEmpty()) {
