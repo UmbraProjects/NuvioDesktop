@@ -14,7 +14,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.network.NetworkCondition
+import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.ui.NuvioScreen
+import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.sortedPlayableEpisodes
@@ -81,10 +84,33 @@ fun HomeScreen(
     val continueWatchingPreferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
     val watchProgressUiState by WatchProgressRepository.uiState.collectAsStateWithLifecycle()
+    val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
     val isTraktAuthenticated by remember {
         TraktAuthRepository.ensureLoaded()
         TraktAuthRepository.isAuthenticated
     }.collectAsStateWithLifecycle()
+    var observedOfflineState by remember { mutableStateOf(false) }
+
+    LaunchedEffect(networkStatusUiState.condition) {
+        when (networkStatusUiState.condition) {
+            NetworkCondition.NoInternet,
+            NetworkCondition.ServersUnreachable,
+            -> {
+                observedOfflineState = true
+            }
+
+            NetworkCondition.Online -> {
+                if (observedOfflineState) {
+                    observedOfflineState = false
+                    HomeRepository.refresh(addonsUiState.addons, force = true)
+                }
+            }
+
+            NetworkCondition.Unknown,
+            NetworkCondition.Checking,
+            -> Unit
+        }
+    }
 
     val effectiveWatchProgressEntries = remember(watchProgressUiState.entries, isTraktAuthenticated) {
         if (!isTraktAuthenticated) {
@@ -420,12 +446,23 @@ fun HomeScreen(
                 homeUiState.sections.isEmpty() && homeUiState.heroItems.isEmpty() &&
                     (!continueWatchingPreferences.isVisible || continueWatchingItems.isEmpty()) -> {
                     item {
-                        HomeEmptyStateCard(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            title = "No home rows available",
-                            message = homeUiState.errorMessage
-                                ?: "Installed addons do not currently expose board-compatible catalogs without required extras.",
-                        )
+                        if (networkStatusUiState.isOfflineLike) {
+                            NuvioNetworkOfflineCard(
+                                condition = networkStatusUiState.condition,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                onRetry = {
+                                    NetworkStatusRepository.requestRefresh(force = true)
+                                    HomeRepository.refresh(addonsUiState.addons, force = true)
+                                },
+                            )
+                        } else {
+                            HomeEmptyStateCard(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                title = "No home rows available",
+                                message = homeUiState.errorMessage
+                                    ?: "Installed addons do not currently expose board-compatible catalogs without required extras.",
+                            )
+                        }
                     }
                 }
 

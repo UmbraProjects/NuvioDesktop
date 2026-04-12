@@ -38,8 +38,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.network.NetworkCondition
+import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioScreen
+import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.home.MetaPreview
@@ -70,8 +73,10 @@ fun SearchScreen(
     val discoverUiState by SearchRepository.discoverUiState.collectAsStateWithLifecycle()
     val recentSearches by SearchHistoryRepository.uiState.collectAsStateWithLifecycle()
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
+    val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var lastRequestedQuery by rememberSaveable { mutableStateOf<String?>(null) }
+    var observedOfflineState by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val headerTitle by remember(query, listState) {
         derivedStateOf {
@@ -148,6 +153,35 @@ fun SearchScreen(
         SearchHistoryRepository.recordSearch(normalizedQuery)
     }
 
+    LaunchedEffect(networkStatusUiState.condition, query, addonRefreshKey) {
+        when (networkStatusUiState.condition) {
+            NetworkCondition.NoInternet,
+            NetworkCondition.ServersUnreachable,
+            -> {
+                observedOfflineState = true
+            }
+
+            NetworkCondition.Online -> {
+                if (!observedOfflineState) return@LaunchedEffect
+                observedOfflineState = false
+
+                val normalizedQuery = query.trim()
+                if (normalizedQuery.isBlank()) {
+                    SearchRepository.refreshDiscover(addonsUiState.addons)
+                } else {
+                    SearchRepository.search(
+                        query = normalizedQuery,
+                        addons = addonsUiState.addons,
+                    )
+                }
+            }
+
+            NetworkCondition.Unknown,
+            NetworkCondition.Checking,
+            -> Unit
+        }
+    }
+
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
     ) {
@@ -211,9 +245,14 @@ fun SearchScreen(
                 discoverContent(
                     state = discoverUiState,
                     columns = discoverColumns,
+                    networkCondition = networkStatusUiState.condition,
                     onTypeSelected = SearchRepository::selectDiscoverType,
                     onCatalogSelected = SearchRepository::selectDiscoverCatalog,
                     onGenreSelected = SearchRepository::selectDiscoverGenre,
+                    onRetry = {
+                        NetworkStatusRepository.requestRefresh(force = true)
+                        SearchRepository.refreshDiscover(addonsUiState.addons)
+                    },
                     watchedKeys = watchedUiState.watchedKeys,
                     onPosterClick = onPosterClick,
                     onPosterLongClick = onPosterLongClick,
@@ -231,6 +270,17 @@ fun SearchScreen(
                         SearchEmptyStateCard(
                             reason = uiState.emptyStateReason,
                             errorMessage = uiState.errorMessage,
+                            networkCondition = networkStatusUiState.condition,
+                            onRetry = {
+                                val normalizedQuery = query.trim()
+                                if (normalizedQuery.isNotBlank()) {
+                                    NetworkStatusRepository.requestRefresh(force = true)
+                                    SearchRepository.search(
+                                        query = normalizedQuery,
+                                        addons = addonsUiState.addons,
+                                    )
+                                }
+                            },
                         )
                     }
                 }
@@ -268,8 +318,19 @@ private fun discoverColumnCountForWidth(screenWidth: Dp): Int =
 private fun SearchEmptyStateCard(
     reason: SearchEmptyStateReason?,
     errorMessage: String?,
+    networkCondition: NetworkCondition,
+    onRetry: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    if (networkCondition == NetworkCondition.NoInternet || networkCondition == NetworkCondition.ServersUnreachable) {
+        NuvioNetworkOfflineCard(
+            condition = networkCondition,
+            modifier = modifier,
+            onRetry = onRetry,
+        )
+        return
+    }
+
     val title: String
     val message: String
 

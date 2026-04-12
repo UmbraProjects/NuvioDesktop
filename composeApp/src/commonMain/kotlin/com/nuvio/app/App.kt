@@ -72,6 +72,8 @@ import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.deeplink.AppDeepLink
 import com.nuvio.app.core.deeplink.AppDeepLinkRepository
+import com.nuvio.app.core.network.NetworkCondition
+import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.sync.AppForegroundMonitor
 import com.nuvio.app.core.sync.ProfileSettingsSync
 import com.nuvio.app.core.sync.SyncManager
@@ -81,10 +83,12 @@ import com.nuvio.app.core.ui.NuvioPosterActionSheet
 import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.core.ui.configurePlatformImageLoader
 import com.nuvio.app.core.ui.NuvioToastHost
+import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.NuvioFloatingPrompt
 import com.nuvio.app.core.ui.TraktListPickerDialog
 import com.nuvio.app.core.ui.NuvioTheme
 import com.nuvio.app.features.auth.AuthScreen
+import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.catalog.CatalogRepository
 import com.nuvio.app.features.catalog.CatalogScreen
 import com.nuvio.app.features.catalog.INTERNAL_LIBRARY_MANIFEST_URL
@@ -426,6 +430,10 @@ private fun MainAppContent(
         var pickerMembership by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
         var pickerPending by remember { mutableStateOf(false) }
         var pickerError by remember { mutableStateOf<String?>(null) }
+        val addonsUiState by remember {
+            AddonRepository.initialize()
+            AddonRepository.uiState
+        }.collectAsStateWithLifecycle()
         val libraryUiState by remember {
             LibraryRepository.ensureLoaded()
             LibraryRepository.uiState
@@ -444,13 +452,112 @@ private fun MainAppContent(
         WatchedRepository.ensureLoaded()
         WatchedRepository.uiState
     }.collectAsStateWithLifecycle()
+    val downloadsUiState by remember {
+        DownloadsRepository.ensureLoaded()
+        DownloadsRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val networkStatusUiState by remember {
+        NetworkStatusRepository.uiState
+    }.collectAsStateWithLifecycle()
     val isTraktConnected = traktAuthUiState.mode == TraktConnectionMode.CONNECTED
     var initialHomeReady by rememberSaveable { mutableStateOf(false) }
+    var offlineLaunchRouteHandled by rememberSaveable { mutableStateOf(false) }
+    var networkToastBaselineReady by rememberSaveable { mutableStateOf(false) }
+    var lastNetworkToastCondition by rememberSaveable { mutableStateOf(NetworkCondition.Unknown.name) }
+
+    val addonProbeTargets = remember(addonsUiState.addons) {
+        addonsUiState.addons
+            .mapNotNull { it.manifest?.transportUrl }
+            .distinct()
+            .sorted()
+    }
+
     LaunchedEffect(Unit) {
+        NetworkStatusRepository.ensureStarted()
         EpisodeReleaseNotificationsRepository.refreshAsync()
         kotlinx.coroutines.delay(5_000)
         initialHomeReady = true
     }
+
+    LaunchedEffect(addonProbeTargets) {
+        NetworkStatusRepository.updateAddonProbeTargets(addonProbeTargets)
+    }
+
+    LaunchedEffect(Unit) {
+        AppForegroundMonitor.events().collect {
+            NetworkStatusRepository.requestRefresh(force = true)
+        }
+    }
+
+    LaunchedEffect(networkStatusUiState.condition) {
+        val condition = networkStatusUiState.condition
+        if (!networkToastBaselineReady) {
+            networkToastBaselineReady = true
+            lastNetworkToastCondition = condition.name
+            return@LaunchedEffect
+        }
+
+        val previousConditionName = lastNetworkToastCondition
+        if (previousConditionName == condition.name) return@LaunchedEffect
+
+        when (condition) {
+            NetworkCondition.NoInternet -> {
+                NuvioToastController.show("No internet connection")
+            }
+
+            NetworkCondition.ServersUnreachable -> {
+                NuvioToastController.show("Cannot reach servers")
+            }
+
+            NetworkCondition.Online -> {
+                if (
+                    previousConditionName == NetworkCondition.NoInternet.name ||
+                    previousConditionName == NetworkCondition.ServersUnreachable.name
+                ) {
+                    NuvioToastController.show("Back online")
+                }
+            }
+
+            NetworkCondition.Unknown,
+            NetworkCondition.Checking,
+            -> Unit
+        }
+
+        lastNetworkToastCondition = condition.name
+    }
+
+    LaunchedEffect(
+        initialHomeReady,
+        offlineLaunchRouteHandled,
+        networkStatusUiState.condition,
+        downloadsUiState.completedItems,
+    ) {
+        if (!initialHomeReady || offlineLaunchRouteHandled) return@LaunchedEffect
+
+        when (networkStatusUiState.condition) {
+            NetworkCondition.Unknown,
+            NetworkCondition.Checking,
+            -> return@LaunchedEffect
+
+            NetworkCondition.Online -> {
+                offlineLaunchRouteHandled = true
+            }
+
+            NetworkCondition.NoInternet,
+            NetworkCondition.ServersUnreachable,
+            -> {
+                offlineLaunchRouteHandled = true
+                val hasPlayableDownload = downloadsUiState.completedItems.any { it.isPlayable }
+                if (hasPlayableDownload) {
+                    selectedTab = AppScreenTab.Settings
+                    navController.navigate(DownloadsSettingsRoute) {
+                        launchSingleTop = true
+                    }
+                }
+            }
+        }
+    }
+
     LaunchedEffect(authState, profileState.activeProfile?.profileIndex) {
         val authenticatedState = authState as? AuthState.Authenticated ?: return@LaunchedEffect
         if (authenticatedState.isAnonymous) return@LaunchedEffect

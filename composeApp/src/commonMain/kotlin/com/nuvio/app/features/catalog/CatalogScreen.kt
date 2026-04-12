@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -40,6 +41,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.network.NetworkCondition
+import com.nuvio.app.core.network.NetworkStatusRepository
+import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.ui.NuvioBackButton
@@ -66,8 +70,10 @@ fun CatalogScreen(
     modifier: Modifier = Modifier,
 ) {
     val uiState by CatalogRepository.uiState.collectAsStateWithLifecycle()
+    val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
     val gridState = rememberLazyGridState()
     var headerHeightPx by remember { mutableIntStateOf(0) }
+    var observedOfflineState by remember { mutableStateOf(false) }
 
     LaunchedEffect(manifestUrl, type, catalogId, genre, supportsPagination) {
         CatalogRepository.load(
@@ -91,6 +97,33 @@ fun CatalogScreen(
             .collect {
                 CatalogRepository.loadMore()
             }
+    }
+
+    LaunchedEffect(networkStatusUiState.condition, manifestUrl, type, catalogId, genre, supportsPagination) {
+        when (networkStatusUiState.condition) {
+            NetworkCondition.NoInternet,
+            NetworkCondition.ServersUnreachable,
+            -> {
+                observedOfflineState = true
+            }
+
+            NetworkCondition.Online -> {
+                if (!observedOfflineState) return@LaunchedEffect
+                observedOfflineState = false
+                CatalogRepository.load(
+                    manifestUrl = manifestUrl,
+                    type = type,
+                    catalogId = catalogId,
+                    genre = genre,
+                    supportsPagination = supportsPagination,
+                    force = true,
+                )
+            }
+
+            NetworkCondition.Unknown,
+            NetworkCondition.Checking,
+            -> Unit
+        }
     }
 
     BoxWithConstraints(
@@ -118,7 +151,21 @@ fun CatalogScreen(
                     items(columns * 3) { CatalogSkeletonTile() }
                 } else if (uiState.items.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        CatalogEmptyState(errorMessage = uiState.errorMessage)
+                        CatalogEmptyState(
+                            errorMessage = uiState.errorMessage,
+                            networkCondition = networkStatusUiState.condition,
+                            onRetry = {
+                                NetworkStatusRepository.requestRefresh(force = true)
+                                CatalogRepository.load(
+                                    manifestUrl = manifestUrl,
+                                    type = type,
+                                    catalogId = catalogId,
+                                    genre = genre,
+                                    supportsPagination = supportsPagination,
+                                    force = true,
+                                )
+                            },
+                        )
                     }
                 } else {
                     items(
@@ -251,7 +298,19 @@ private fun CatalogSkeletonTile() {
 }
 
 @Composable
-private fun CatalogEmptyState(errorMessage: String?) {
+private fun CatalogEmptyState(
+    errorMessage: String?,
+    networkCondition: NetworkCondition,
+    onRetry: (() -> Unit)? = null,
+) {
+    if (networkCondition == NetworkCondition.NoInternet || networkCondition == NetworkCondition.ServersUnreachable) {
+        NuvioNetworkOfflineCard(
+            condition = networkCondition,
+            onRetry = onRetry,
+        )
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()

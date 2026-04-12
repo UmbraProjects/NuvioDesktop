@@ -57,6 +57,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.build.TrailerPlaybackMode
+import com.nuvio.app.core.network.NetworkCondition
+import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.TraktListPickerDialog
 import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
@@ -141,7 +143,9 @@ fun MetaDetailsScreen(
         PlayerSettingsRepository.ensureLoaded()
         PlayerSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
+    val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
     var autoLoadAttempted by remember(type, id) { mutableStateOf(false) }
+    var observedOfflineState by remember(type, id) { mutableStateOf(false) }
     var selectedEpisodeForActions by remember(type, id) { mutableStateOf<MetaVideo?>(null) }
     val commentsEnabled by remember {
         TraktCommentsSettings.ensureLoaded()
@@ -194,6 +198,28 @@ fun MetaDetailsScreen(
         }
     }
 
+    LaunchedEffect(networkStatusUiState.condition, displayedMeta, uiState.isLoading, type, id) {
+        when (networkStatusUiState.condition) {
+            NetworkCondition.NoInternet,
+            NetworkCondition.ServersUnreachable,
+            -> {
+                observedOfflineState = true
+            }
+
+            NetworkCondition.Online -> {
+                if (!observedOfflineState) return@LaunchedEffect
+                observedOfflineState = false
+                if (displayedMeta == null && !uiState.isLoading) {
+                    MetaDetailsRepository.load(type, id)
+                }
+            }
+
+            NetworkCondition.Unknown,
+            NetworkCondition.Checking,
+            -> Unit
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -221,13 +247,20 @@ fun MetaDetailsScreen(
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Text(
-                        text = uiState.errorMessage.orEmpty(),
+                        text = when (networkStatusUiState.condition) {
+                            NetworkCondition.NoInternet -> "Check your Wi-Fi or mobile data connection and try again."
+                            NetworkCondition.ServersUnreachable -> "Your device is online, but Nuvio could not reach required servers."
+                            else -> uiState.errorMessage.orEmpty()
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
-                        onClick = { MetaDetailsRepository.load(type, id) },
+                        onClick = {
+                            NetworkStatusRepository.requestRefresh(force = true)
+                            MetaDetailsRepository.load(type, id)
+                        },
                     ) {
                         Text("Retry")
                     }

@@ -47,7 +47,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
+import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
 import com.nuvio.app.core.ui.NuvioBottomSheetActionRow
 import com.nuvio.app.core.ui.NuvioBottomSheetDivider
@@ -64,9 +66,11 @@ import kotlinx.coroutines.launch
 internal fun LazyListScope.discoverContent(
     state: DiscoverUiState,
     columns: Int,
+    networkCondition: NetworkCondition,
     onTypeSelected: (String) -> Unit,
     onCatalogSelected: (String) -> Unit,
     onGenreSelected: (String?) -> Unit,
+    onRetry: (() -> Unit)? = null,
     watchedKeys: Set<String> = emptySet(),
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
@@ -112,6 +116,8 @@ internal fun LazyListScope.discoverContent(
                 DiscoverEmptyStateCard(
                     reason = state.emptyStateReason,
                     errorMessage = state.errorMessage,
+                    networkCondition = networkCondition,
+                    onRetry = onRetry,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -454,8 +460,19 @@ private fun CatalogLoadingFooter(modifier: Modifier = Modifier) {
 private fun DiscoverEmptyStateCard(
     reason: DiscoverEmptyStateReason?,
     errorMessage: String?,
+    networkCondition: NetworkCondition,
+    onRetry: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    if (networkCondition == NetworkCondition.NoInternet || networkCondition == NetworkCondition.ServersUnreachable) {
+        NuvioNetworkOfflineCard(
+            condition = networkCondition,
+            modifier = modifier,
+            onRetry = onRetry,
+        )
+        return
+    }
+
     val title: String
     val message: String
 
