@@ -1,0 +1,39 @@
+# Project-specific ProGuard rules for composeApp Android release builds.
+
+# Keep useful metadata for crash reports.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
+# Preserve Kotlin metadata/signatures needed by reflection/generics-heavy libraries.
+-keepattributes *Annotation*
+-keepattributes Signature
+-keepattributes InnerClasses
+-keepattributes EnclosingMethod
+-keepattributes RuntimeVisibleAnnotations
+
+# Ktor / Supabase client stack (runtime reflective paths in serializers/plugins).
+-keep class io.github.jan.supabase.** { *; }
+-keep class io.ktor.** { *; }
+-dontwarn io.ktor.**
+
+# Keep @Serializable generated serializers.
+-keepclassmembers class * {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+
+# QuickJS plugin runtime is dynamic; keep runtime and app plugin classes.
+-keep class com.dokar.quickjs.** { *; }
+-keep class com.nuvio.app.features.plugins.** { *; }
+
+# Media3 / ExoPlayer classes from local AAR decoders and stock modules.
+-dontwarn androidx.media3.**
+-keep class androidx.media3.** { *; }
+-keep interface androidx.media3.** { *; }
+-keep class com.google.android.exoplayer2.** { *; }
+-keep interface com.google.android.exoplayer2.** { *; }
+
+# Common optional security providers used by okhttp on some devices.
+-dontwarn okhttp3.internal.platform.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
