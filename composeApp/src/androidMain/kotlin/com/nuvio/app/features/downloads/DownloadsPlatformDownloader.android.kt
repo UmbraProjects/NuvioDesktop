@@ -51,26 +51,61 @@ internal actual object DownloadsPlatformDownloader {
             val downloadsDir = File(context.filesDir, "downloads").apply { mkdirs() }
             val destination = File(downloadsDir, request.destinationFileName)
             val tempFile = File(downloadsDir, "${request.destinationFileName}.part")
-            if (tempFile.exists()) tempFile.delete()
-
-            val requestBuilder = Request.Builder().url(request.sourceUrl)
-            request.sourceHeaders.forEach { (key, value) ->
-                requestBuilder.header(key, value)
-            }
-            val httpRequest = requestBuilder.get().build()
-            call = downloadHttpClient.newCall(httpRequest)
 
             try {
-                call?.execute()?.use { response ->
+                var resumeFromBytes = tempFile.takeIf { it.exists() }?.length()?.coerceAtLeast(0L) ?: 0L
+
+                fun buildRequest(rangeStart: Long?): Request {
+                    val requestBuilder = Request.Builder().url(request.sourceUrl)
+                    request.sourceHeaders.forEach { (key, value) ->
+                        requestBuilder.header(key, value)
+                    }
+                    if (rangeStart != null && rangeStart > 0L) {
+                        requestBuilder.header("Range", "bytes=$rangeStart-")
+                    }
+                    return requestBuilder.get().build()
+                }
+
+                var attemptedRangeRequest = resumeFromBytes > 0L
+                var httpRequest = buildRequest(if (attemptedRangeRequest) resumeFromBytes else null)
+                call = downloadHttpClient.newCall(httpRequest)
+                var response = call?.execute() ?: error("Download request failed")
+
+                if (attemptedRangeRequest && response.code == 416) {
+                    response.close()
+                    tempFile.delete()
+                    resumeFromBytes = 0L
+                    attemptedRangeRequest = false
+                    httpRequest = buildRequest(null)
+                    call = downloadHttpClient.newCall(httpRequest)
+                    response = call?.execute() ?: error("Download request failed")
+                }
+
+                response.use { response ->
                     if (!response.isSuccessful) {
                         error("Request failed with HTTP ${response.code}")
                     }
+
+                    val isPartialResume = attemptedRangeRequest && response.code == 206 && resumeFromBytes > 0L
+                    val appendToTemp = isPartialResume
+                    val startingBytes = if (appendToTemp) resumeFromBytes else 0L
+
+                    if (!appendToTemp && tempFile.exists()) {
+                        tempFile.delete()
+                    }
+
                     val body = response.body ?: error("Empty response body")
-                    val totalBytes = body.contentLength().takeIf { it > 0L }
-                    var downloadedBytes = 0L
+                    val totalBytes = resolveTotalBytes(
+                        startingBytes = startingBytes,
+                        isPartialResume = isPartialResume,
+                        contentRangeHeader = response.header("Content-Range"),
+                        contentLength = body.contentLength().takeIf { it > 0L },
+                    )
+                    var downloadedBytes = startingBytes
+                    onProgress(downloadedBytes, totalBytes)
 
                     body.byteStream().use { input ->
-                        FileOutputStream(tempFile, false).use { output ->
+                        FileOutputStream(tempFile, appendToTemp).use { output ->
                             val buffer = ByteArray(16 * 1024)
                             while (true) {
                                 ensureActive()
@@ -95,10 +130,7 @@ internal actual object DownloadsPlatformDownloader {
                     val finalSize = destination.length()
                     onSuccess(destination.toURI().toString(), totalBytes ?: finalSize)
                 }
-            } catch (_: CancellationException) {
-                tempFile.delete()
             } catch (error: Throwable) {
-                tempFile.delete()
                 onFailure(error.message ?: "Download failed")
             }
         }
@@ -114,6 +146,14 @@ internal actual object DownloadsPlatformDownloader {
         if (localFileUri.isNullOrBlank()) return false
         val file = localFileUri.toLocalFileOrNull() ?: return false
         return runCatching { file.delete() }.getOrDefault(false)
+    }
+
+    actual fun removePartialFile(destinationFileName: String): Boolean {
+        val context = appContext ?: return false
+        val downloadsDir = File(context.filesDir, "downloads")
+        val tempFile = File(downloadsDir, "$destinationFileName.part")
+        if (!tempFile.exists()) return true
+        return runCatching { tempFile.delete() }.getOrDefault(false)
     }
 }
 
@@ -133,4 +173,29 @@ private fun String.toLocalFileOrNull(): File? {
             File(this)
         }
     }.getOrNull()
+}
+
+private fun resolveTotalBytes(
+    startingBytes: Long,
+    isPartialResume: Boolean,
+    contentRangeHeader: String?,
+    contentLength: Long?,
+): Long? {
+    parseContentRangeTotal(contentRangeHeader)?.let { return it }
+    val normalizedLength = contentLength?.takeIf { it > 0L } ?: return null
+    return if (isPartialResume && startingBytes > 0L) {
+        startingBytes + normalizedLength
+    } else {
+        normalizedLength
+    }
+}
+
+private fun parseContentRangeTotal(headerValue: String?): Long? {
+    val value = headerValue?.trim().orEmpty()
+    if (value.isBlank()) return null
+    val slashIndex = value.lastIndexOf('/')
+    if (slashIndex == -1 || slashIndex == value.lastIndex) return null
+    val totalPart = value.substring(slashIndex + 1).trim()
+    if (totalPart == "*") return null
+    return totalPart.toLongOrNull()?.takeIf { it > 0L }
 }

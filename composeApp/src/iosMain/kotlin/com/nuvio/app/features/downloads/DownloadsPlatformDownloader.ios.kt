@@ -52,24 +52,52 @@ internal actual object DownloadsPlatformDownloader {
             val destinationPath = "$downloadsDirectory/${request.destinationFileName}"
             val tempPath = "$downloadsDirectory/${request.destinationFileName}.part"
 
-            removePathIfExists(tempPath)
-
             try {
-                val response = downloadHttpClient.get(request.sourceUrl) {
+                var resumeFromBytes = fileSizeOrNull(tempPath)?.coerceAtLeast(0L) ?: 0L
+
+                suspend fun performRequest(rangeStart: Long?) = downloadHttpClient.get(request.sourceUrl) {
                     request.sourceHeaders.forEach { (key, value) ->
                         header(key, value)
                     }
+                    if (rangeStart != null && rangeStart > 0L) {
+                        header("Range", "bytes=$rangeStart-")
+                    }
+                }
+
+                var attemptedRangeRequest = resumeFromBytes > 0L
+                var response = performRequest(if (attemptedRangeRequest) resumeFromBytes else null)
+
+                if (attemptedRangeRequest && response.status.value == 416) {
+                    removePathIfExists(tempPath)
+                    resumeFromBytes = 0L
+                    attemptedRangeRequest = false
+                    response = performRequest(null)
                 }
 
                 if (!response.status.isSuccess()) {
                     error("Request failed with HTTP ${response.status.value}")
                 }
 
-                val totalBytes = response.headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
+                val isPartialResume = attemptedRangeRequest && response.status.value == 206 && resumeFromBytes > 0L
+                val appendToTemp = isPartialResume
+                val startingBytes = if (appendToTemp) resumeFromBytes else 0L
+
+                if (!appendToTemp) {
+                    removePathIfExists(tempPath)
+                }
+
+                val totalBytes = resolveTotalBytes(
+                    startingBytes = startingBytes,
+                    isPartialResume = isPartialResume,
+                    contentRangeHeader = response.headers["Content-Range"],
+                    contentLength = response.headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L },
+                )
                 val channel = response.bodyAsChannel()
                 val wrote = writeChannelToFile(
                     channel = channel,
                     path = tempPath,
+                    append = appendToTemp,
+                    initialDownloadedBytes = startingBytes,
                     totalBytes = totalBytes,
                     onProgress = onProgress,
                 )
@@ -90,10 +118,7 @@ internal actual object DownloadsPlatformDownloader {
                 val localFileUri = NSURL.fileURLWithPath(destinationPath).absoluteString ?: "file://$destinationPath"
                 val finalSize = fileSizeOrNull(destinationPath)
                 onSuccess(localFileUri, totalBytes ?: finalSize)
-            } catch (_: CancellationException) {
-                removePathIfExists(tempPath)
             } catch (error: Throwable) {
-                removePathIfExists(tempPath)
                 onFailure(error.message ?: "Download failed")
             }
         }
@@ -105,6 +130,11 @@ internal actual object DownloadsPlatformDownloader {
         if (localFileUri.isNullOrBlank()) return false
         val path = localFileUri.toLocalPath() ?: return false
         return removePathIfExists(path)
+    }
+
+    actual fun removePartialFile(destinationFileName: String): Boolean {
+        val tempPath = "${downloadsDirectoryPath()}/$destinationFileName.part"
+        return removePathIfExists(tempPath)
     }
 }
 
@@ -139,12 +169,15 @@ private fun removePathIfExists(path: String): Boolean {
 private suspend fun writeChannelToFile(
     channel: ByteReadChannel,
     path: String,
+    append: Boolean,
+    initialDownloadedBytes: Long,
     totalBytes: Long?,
     onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit,
 ): Boolean {
-    val file = fopen(path, "wb") ?: return false
+    val file = fopen(path, if (append) "ab" else "wb") ?: return false
     val buffer = ByteArray(16 * 1024)
-    var downloadedBytes = 0L
+    var downloadedBytes = initialDownloadedBytes
+    onProgress(downloadedBytes, totalBytes)
 
     return try {
         while (true) {
@@ -191,4 +224,29 @@ private fun String.toLocalPath(): String? {
         return removePrefix("file://")
     }
     return takeIf { it.isNotBlank() }
+}
+
+private fun resolveTotalBytes(
+    startingBytes: Long,
+    isPartialResume: Boolean,
+    contentRangeHeader: String?,
+    contentLength: Long?,
+): Long? {
+    parseContentRangeTotal(contentRangeHeader)?.let { return it }
+    val normalizedLength = contentLength?.takeIf { it > 0L } ?: return null
+    return if (isPartialResume && startingBytes > 0L) {
+        startingBytes + normalizedLength
+    } else {
+        normalizedLength
+    }
+}
+
+private fun parseContentRangeTotal(headerValue: String?): Long? {
+    val value = headerValue?.trim().orEmpty()
+    if (value.isBlank()) return null
+    val slashIndex = value.lastIndexOf('/')
+    if (slashIndex == -1 || slashIndex == value.lastIndex) return null
+    val totalPart = value.substring(slashIndex + 1).trim()
+    if (totalPart == "*") return null
+    return totalPart.toLongOrNull()?.takeIf { it > 0L }
 }

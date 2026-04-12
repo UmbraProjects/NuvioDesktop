@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Pause
@@ -116,8 +117,10 @@ private fun LazyListScope.downloadsRootContent(
         item {
             SectionTitle("ACTIVE")
         }
-        items(activeItems.size) { index ->
-            val item = activeItems[index]
+        items(
+            items = activeItems,
+            key = { it.id },
+        ) { item ->
             DownloadRow(
                 item = item,
                 onOpen = { onOpenDownload(item) },
@@ -133,8 +136,10 @@ private fun LazyListScope.downloadsRootContent(
         item {
             SectionTitle("MOVIES")
         }
-        items(completedMovies.size) { index ->
-            val item = completedMovies[index]
+        items(
+            items = completedMovies,
+            key = { it.id },
+        ) { item ->
             DownloadRow(
                 item = item,
                 onOpen = { onOpenDownload(item) },
@@ -150,8 +155,10 @@ private fun LazyListScope.downloadsRootContent(
         item {
             SectionTitle("SHOWS")
         }
-        items(completedShows.size) { index ->
-            val (item, episodes) = completedShows[index]
+        items(
+            items = completedShows,
+            key = { (item, _) -> item.parentMetaId },
+        ) { (item, episodes) ->
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -262,8 +269,10 @@ private fun LazyListScope.downloadsShowContent(
                 .thenByDescending { it.updatedAtEpochMs },
         )
 
-        items(sortedEpisodes.size) { index ->
-            val item = sortedEpisodes[index]
+        items(
+            items = sortedEpisodes,
+            key = { it.id },
+        ) { item ->
             DownloadRow(
                 item = item,
                 onOpen = { onOpenDownload(item) },

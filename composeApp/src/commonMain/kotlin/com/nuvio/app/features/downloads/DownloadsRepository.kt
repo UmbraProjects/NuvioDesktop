@@ -115,6 +115,7 @@ object DownloadsRepository {
             replacedExisting = true
             activeHandles.remove(existing.id)?.cancel()
             DownloadsPlatformDownloader.removeFile(existing.localFileUri)
+            DownloadsPlatformDownloader.removePartialFile(existing.fileName)
             currentItems.removeAll { it.id == existing.id }
         }
 
@@ -194,8 +195,6 @@ object DownloadsRepository {
 
         val reset = item.copy(
             status = DownloadStatus.Downloading,
-            downloadedBytes = 0L,
-            totalBytes = null,
             errorMessage = null,
             localFileUri = null,
             updatedAtEpochMs = DownloadsClock.nowEpochMs(),
@@ -216,6 +215,7 @@ object DownloadsRepository {
 
         activeHandles.remove(downloadId)?.cancel()
         DownloadsPlatformDownloader.removeFile(item.localFileUri)
+        DownloadsPlatformDownloader.removePartialFile(item.fileName)
 
         publish(_uiState.value.items.filterNot { it.id == downloadId })
         persist()
@@ -241,7 +241,6 @@ object DownloadsRepository {
                     item
                 }
             }
-            .sortedByDescending { it.updatedAtEpochMs }
 
         _uiState.value = DownloadsUiState(normalized)
         notifyLiveStatusPlatform()
@@ -332,7 +331,7 @@ object DownloadsRepository {
 
     private fun publish(items: List<DownloadItem>) {
         _uiState.value = DownloadsUiState(
-            items = items.sortedByDescending { it.updatedAtEpochMs },
+            items = items,
         )
         notifyLiveStatusPlatform()
     }
@@ -378,7 +377,7 @@ private object DownloadsCodec {
     fun encodeItems(items: Collection<DownloadItem>): String =
         json.encodeToString(
             StoredDownloadsPayload(
-                items = items.toList().sortedByDescending { it.updatedAtEpochMs },
+                items = items.toList(),
             ),
         )
 }

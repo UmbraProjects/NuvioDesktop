@@ -19,4 +19,6 @@ internal expect object DownloadsPlatformDownloader {
     ): DownloadsTaskHandle
 
     fun removeFile(localFileUri: String?): Boolean
+
+    fun removePartialFile(destinationFileName: String): Boolean
 }
