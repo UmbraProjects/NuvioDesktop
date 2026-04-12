@@ -96,7 +96,23 @@ object SyncManager {
             if (currentAuthState !is AuthState.Authenticated || currentAuthState.isAnonymous) return@launch
 
             lastForegroundPullAtMs = TraktPlatformClock.nowEpochMs()
-            pullAllForProfile(profileId)
+            pullForegroundForProfile(profileId)
+        }
+    }
+
+    private fun pullForegroundForProfile(profileId: Int) {
+        scope.launch {
+            log.i { "pullForegroundForProfile($profileId) — syncing watch progress + library" }
+
+            launch {
+                runCatching { LibraryRepository.pullFromServer(profileId) }
+                    .onFailure { log.e(it) { "Foreground library pull failed" } }
+            }
+
+            launch {
+                runCatching { WatchProgressRepository.pullFromServer(profileId) }
+                    .onFailure { log.e(it) { "Foreground watch progress pull failed" } }
+            }
         }
     }
 }
