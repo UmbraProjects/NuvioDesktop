@@ -64,6 +64,7 @@ import com.nuvio.app.features.details.MetaEpisodeCardStyle
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.SeasonViewMode
 import com.nuvio.app.features.details.SeasonViewModeStorage
+import com.nuvio.app.features.details.formatRuntimeFromMinutes
 import com.nuvio.app.features.details.metaVideoSeasonEpisodeComparator
 import com.nuvio.app.features.details.normalizeSeasonNumber
 import com.nuvio.app.features.details.seasonSortKey
@@ -843,14 +844,7 @@ private fun rememberEpisodeHorizontalCardMetrics(maxWidthDp: Float): EpisodeHori
 }
 
 private fun formatEpisodeRuntime(runtimeMinutes: Int): String {
-    if (runtimeMinutes <= 0) return ""
-    val hours = runtimeMinutes / 60
-    val minutes = runtimeMinutes % 60
-    return when {
-        hours > 0 && minutes > 0 -> "${hours}h ${minutes}m"
-        hours > 0 -> "${hours}h"
-        else -> "${minutes}m"
-    }
+    return formatRuntimeFromMinutes(runtimeMinutes)
 }
 
 @OptIn(ExperimentalFoundationApi::class)

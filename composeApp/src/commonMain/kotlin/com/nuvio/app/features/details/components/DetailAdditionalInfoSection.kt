@@ -18,6 +18,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.features.details.MetaDetails
+import com.nuvio.app.features.details.formatRuntimeForDisplay
 
 @Composable
 fun DetailAdditionalInfoSection(
@@ -30,7 +31,7 @@ fun DetailAdditionalInfoSection(
     val rows = buildList {
         meta.status?.let { add("Status" to it) }
         meta.releaseInfo?.let { add("Release Info" to formatReleaseDateForDisplay(it)) }
-        meta.runtime?.let { add("Runtime" to it.uppercase()) }
+        formatRuntimeForDisplay(meta.runtime)?.let { add("Runtime" to it) }
         meta.ageRating?.let { add("Certification" to it) }
         meta.country?.let { add("Origin Country" to it) }
         meta.language?.let { add("Original Language" to it.uppercase()) }

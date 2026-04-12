@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaExternalRating
+import com.nuvio.app.features.details.formatRuntimeForDisplay
 import com.nuvio.app.features.details.formatMetaReleaseLineForDetails
 import com.nuvio.app.features.mdblist.MdbListMetadataService.PROVIDER_AUDIENCE
 import com.nuvio.app.features.mdblist.MdbListMetadataService.PROVIDER_IMDB
@@ -73,7 +74,7 @@ fun DetailMetaInfo(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         val releaseLine = formatMetaReleaseLineForDetails(meta)
-        val runtimeText = meta.runtime?.trim()?.takeIf { it.isNotBlank() }?.uppercase()
+        val runtimeText = formatRuntimeForDisplay(meta.runtime)
         val ageBadge = meta.ageRating?.trim()?.takeIf { it.isNotBlank() }
         val hasMdbImdbRating = meta.externalRatings.any { it.source == PROVIDER_IMDB }
         val hasMetaRow = releaseLine != null ||
