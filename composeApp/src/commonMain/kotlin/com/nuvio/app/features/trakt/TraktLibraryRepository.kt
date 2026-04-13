@@ -8,8 +8,10 @@ import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.tmdb.TmdbService
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -22,6 +24,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
@@ -52,7 +55,10 @@ data class TraktLibraryUiState(
 
 object TraktLibraryRepository {
     private val log = Logger.withTag("TraktLibrary")
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val _uiState = MutableStateFlow(TraktLibraryUiState())
@@ -60,12 +66,14 @@ object TraktLibraryRepository {
 
     private var hasLoaded = false
     private val refreshMutex = Mutex()
+    private var hydrationJob: Job? = null
     private var lastRefreshAtMs: Long = 0L
     private var lastListTabsRefreshAtMs: Long = 0L
 
     fun ensureLoaded() {
         if (hasLoaded) return
         hasLoaded = true
+        loadSnapshotFromDisk()
     }
 
     fun preloadListTabsAsync() {
@@ -81,6 +89,8 @@ object TraktLibraryRepository {
     }
 
     fun onProfileChanged() {
+        hydrationJob?.cancel()
+        hydrationJob = null
         hasLoaded = false
         lastRefreshAtMs = 0L
         lastListTabsRefreshAtMs = 0L
@@ -89,10 +99,13 @@ object TraktLibraryRepository {
     }
 
     fun clearLocalState() {
+        hydrationJob?.cancel()
+        hydrationJob = null
         hasLoaded = false
         lastRefreshAtMs = 0L
         lastListTabsRefreshAtMs = 0L
         _uiState.value = TraktLibraryUiState()
+        TraktLibraryStorage.savePayload("")
     }
 
     fun currentListTabs(): List<TraktListTab> = _uiState.value.listTabs
@@ -152,7 +165,14 @@ object TraktLibraryRepository {
             _uiState.value = current.copy(isLoading = true, errorMessage = null)
 
             val result = runCatching {
-                fetchSnapshot(headers)
+                fetchSnapshot(headers) { partialState ->
+                    _uiState.value = partialState.copy(
+                        isLoading = true,
+                        hasLoaded = true,
+                        errorMessage = null,
+                    )
+                    hydrateMissingMetadataAsync(_uiState.value)
+                }
             }.onFailure { error ->
                 if (error is CancellationException) throw error
                 log.w { "Failed to refresh Trakt library: ${error.message}" }
@@ -172,6 +192,8 @@ object TraktLibraryRepository {
                 hasLoaded = true,
                 errorMessage = null,
             )
+            persistSnapshot(_uiState.value)
+            hydrateMissingMetadataAsync(_uiState.value)
             lastRefreshAtMs = now
         }
     }
@@ -322,11 +344,15 @@ object TraktLibraryRepository {
             allItems = allItems,
             membershipByContent = membershipByContent.mapValues { it.value.toSet() },
             isLoading = false,
+            hasLoaded = true,
             errorMessage = null,
         )
     }
 
-    private suspend fun fetchSnapshot(headers: Map<String, String>): TraktLibraryUiState = withContext(Dispatchers.Default) {
+    private suspend fun fetchSnapshot(
+        headers: Map<String, String>,
+        onPartialState: ((TraktLibraryUiState) -> Unit)? = null,
+    ): TraktLibraryUiState = withContext(Dispatchers.Default) {
         val now = TraktPlatformClock.nowEpochMs()
         val cachedTabs = _uiState.value.listTabs
         val allTabs = if (
@@ -340,12 +366,23 @@ object TraktLibraryRepository {
             }
         }
 
-        val entriesByList = fetchEntriesByList(headers, allTabs)
-
-        val hydratedEntriesByList = hydrateEntriesFromAddonMeta(entriesByList)
+        val entriesByList = fetchEntriesByList(
+            headers = headers,
+            allTabs = allTabs,
+            onProgress = onPartialState?.let { emitPartial ->
+                { partialEntriesByList ->
+                    emitPartial(
+                        rebuildUiState(
+                            listTabs = allTabs,
+                            entriesByList = partialEntriesByList,
+                        ),
+                    )
+                }
+            },
+        )
 
         val membershipByContent = mutableMapOf<String, MutableSet<String>>()
-        hydratedEntriesByList.forEach { (listKey, entries) ->
+        entriesByList.forEach { (listKey, entries) ->
             entries.forEach { entry ->
                 membershipByContent
                     .getOrPut(contentKey(entry.id, entry.type)) { mutableSetOf() }
@@ -353,17 +390,97 @@ object TraktLibraryRepository {
             }
         }
 
-        val allItems = hydratedEntriesByList.values
+        val allItems = entriesByList.values
             .flatten()
             .distinctBy { contentKey(it.id, it.type) }
             .sortedByDescending { it.savedAtEpochMs }
 
         TraktLibraryUiState(
             listTabs = allTabs,
-            entriesByList = hydratedEntriesByList,
+            entriesByList = entriesByList,
             allItems = allItems,
             membershipByContent = membershipByContent.mapValues { it.value.toSet() },
+            hasLoaded = true,
         )
+    }
+
+    private fun loadSnapshotFromDisk() {
+        val payload = TraktLibraryStorage.loadPayload().orEmpty().trim()
+        if (payload.isBlank()) return
+
+        val cached = runCatching {
+            json.decodeFromString<StoredTraktLibraryPayload>(payload)
+        }.onFailure {
+            log.w { "Failed to parse cached Trakt library payload: ${it.message}" }
+        }.getOrNull() ?: return
+
+        val state = rebuildUiState(
+            listTabs = cached.listTabs,
+            entriesByList = cached.entriesByList,
+        )
+        _uiState.value = state.copy(isLoading = false, errorMessage = null, hasLoaded = true)
+        hydrateMissingMetadataAsync(_uiState.value)
+    }
+
+    private fun persistSnapshot(state: TraktLibraryUiState) {
+        val payload = StoredTraktLibraryPayload(
+            listTabs = state.listTabs,
+            entriesByList = state.entriesByList,
+        )
+        TraktLibraryStorage.savePayload(json.encodeToString(payload))
+    }
+
+    private fun hydrateMissingMetadataAsync(state: TraktLibraryUiState) {
+        if (state.entriesByList.isEmpty()) return
+        if (state.allItems.none(::shouldHydrateTraktLibraryItem)) return
+
+        hydrationJob?.cancel()
+        hydrationJob = scope.launch {
+            val hydratedEntriesByList = runCatching {
+                hydrateEntriesFromAddonMeta(state.entriesByList)
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                log.w { "Background Trakt metadata hydration failed: ${error.message}" }
+            }.getOrNull() ?: return@launch
+
+            refreshMutex.withLock {
+                val current = _uiState.value
+                if (current.entriesByList.isEmpty()) return@withLock
+
+                val mergedEntriesByList = mergeHydratedEntries(
+                    currentEntriesByList = current.entriesByList,
+                    hydratedEntriesByList = hydratedEntriesByList,
+                )
+                if (mergedEntriesByList == current.entriesByList) return@withLock
+
+                val rebuilt = rebuildUiState(
+                    listTabs = current.listTabs,
+                    entriesByList = mergedEntriesByList,
+                ).copy(
+                    isLoading = current.isLoading,
+                    hasLoaded = current.hasLoaded,
+                    errorMessage = current.errorMessage,
+                )
+
+                _uiState.value = rebuilt
+                persistSnapshot(rebuilt)
+            }
+        }
+    }
+
+    private fun mergeHydratedEntries(
+        currentEntriesByList: Map<String, List<LibraryItem>>,
+        hydratedEntriesByList: Map<String, List<LibraryItem>>,
+    ): Map<String, List<LibraryItem>> {
+        val hydratedByContentKey = hydratedEntriesByList.values
+            .flatten()
+            .associateBy { contentKey(it.id, it.type) }
+
+        return currentEntriesByList.mapValues { (_, entries) ->
+            entries.map { entry ->
+                hydratedByContentKey[contentKey(entry.id, entry.type)] ?: entry
+            }
+        }
     }
 
     private suspend fun fetchListTabs(headers: Map<String, String>): List<TraktListTab> {
@@ -380,8 +497,12 @@ object TraktLibraryRepository {
     private suspend fun fetchEntriesByList(
         headers: Map<String, String>,
         allTabs: List<TraktListTab>,
+        onProgress: ((Map<String, List<LibraryItem>>) -> Unit)? = null,
     ): Map<String, List<LibraryItem>> = coroutineScope {
         val entriesByList = linkedMapOf<String, List<LibraryItem>>()
+        allTabs.forEach { tab ->
+            entriesByList[tab.key] = emptyList()
+        }
         val listSemaphore = Semaphore(LIST_FETCH_CONCURRENCY)
         val personalTabs = allTabs.filter { it.type == TraktListType.PERSONAL }
 
@@ -404,10 +525,21 @@ object TraktLibraryRepository {
         }
 
         entriesByList[WATCHLIST_KEY] = watchlistDeferred.await()
-        personalTabs.forEach { tab ->
-            entriesByList[tab.key] = personalEntries.getValue(tab.key).await()
+        onProgress?.invoke(entriesByList.toMap())
+
+        val pendingEntries = personalEntries.toMutableMap()
+        while (pendingEntries.isNotEmpty()) {
+            val (listKey, listItems) = select<Pair<String, List<LibraryItem>>> {
+                pendingEntries.forEach { (key, deferred) ->
+                    deferred.onAwait { key to it }
+                }
+            }
+            entriesByList[listKey] = listItems
+            pendingEntries.remove(listKey)
+            onProgress?.invoke(entriesByList.toMap())
         }
-        entriesByList
+
+        entriesByList.toMap()
     }
 
     private suspend fun hydrateEntriesFromAddonMeta(
@@ -653,6 +785,7 @@ object TraktLibraryRepository {
             ?: return null
 
         val poster = media.images?.poster.firstNonBlankImageUrl()
+            ?: media.images?.fanart.firstNonBlankImageUrl()
         val banner = media.images?.banner.firstNonBlankImageUrl()
         val logo = media.images?.logo.firstNonBlankImageUrl()
 
@@ -724,6 +857,12 @@ object TraktLibraryRepository {
 
     private val imdbRegex = Regex("tt\\d+")
 }
+
+@Serializable
+private data class StoredTraktLibraryPayload(
+    val listTabs: List<TraktListTab> = emptyList(),
+    val entriesByList: Map<String, List<LibraryItem>> = emptyMap(),
+)
 
 internal fun shouldHydrateTraktLibraryItem(item: LibraryItem): Boolean {
     val missingDisplayName = item.name.isBlank() || item.name == item.id

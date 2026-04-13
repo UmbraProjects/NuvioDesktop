@@ -40,11 +40,13 @@ enum class TraktBrandAsset {
     Wordmark,
 }
 
+@Serializable
 enum class TraktListType {
     WATCHLIST,
     PERSONAL,
 }
 
+@Serializable
 data class TraktListTab(
     val key: String,
     val title: String,
