@@ -479,7 +479,12 @@ private fun PlayerView.syncLibassOverlay(
     enabled: Boolean,
     renderType: LibassRenderType,
 ) {
-    val overlayContainer = findViewById<android.widget.FrameLayout>(R.id.libass_overlay_container) ?: return
+    val containerId = if (renderType == LibassRenderType.OVERLAY_OPEN_GL) {
+        R.id.libass_overlay_container_gl
+    } else {
+        R.id.libass_overlay_container
+    }
+    val overlayContainer = findViewById<android.widget.FrameLayout>(containerId) ?: return
     val needsOverlay = enabled && renderType.usesOverlaySubtitleView()
     val boundPlayer = getTag(R.id.libass_overlay_bound_player) as? ExoPlayer
     val hasOverlayChild = overlayContainer.hasAssOverlayChild()
