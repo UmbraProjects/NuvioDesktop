@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioShelfSection
 import com.nuvio.app.core.ui.posterCardClickable
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.collection.CollectionFolder
 import com.nuvio.app.features.home.PosterShape
@@ -86,6 +87,7 @@ private fun CollectionFolderCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
     val shape = folder.posterShape
     val cardWidth: Dp
     val aspectRatio: Float
@@ -109,7 +111,7 @@ private fun CollectionFolderCard(
         modifier = modifier.width(cardWidth),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        val shapeCorner = RoundedCornerShape(16.dp)
+        val shapeCorner = RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp)
         val imageUrl = collectionFolderCardImageUrl(folder)
         Card(
             modifier = Modifier

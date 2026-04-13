@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.rounded.Style
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,6 +42,7 @@ internal fun LazyListScope.appearanceSettingsContent(
     amoledEnabled: Boolean,
     onAmoledToggle: (Boolean) -> Unit,
     onContinueWatchingClick: () -> Unit,
+    onPosterCustomizationClick: () -> Unit,
 ) {
     item {
         SettingsSection(
@@ -100,6 +102,14 @@ internal fun LazyListScope.appearanceSettingsContent(
                     icon = Icons.Rounded.Style,
                     isTablet = isTablet,
                     onClick = onContinueWatchingClick,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Poster Customization",
+                    description = "Adjust shared poster card width and corner radius presets.",
+                    icon = Icons.Rounded.Tune,
+                    isTablet = isTablet,
+                    onClick = onPosterCustomizationClick,
                 )
             }
         }

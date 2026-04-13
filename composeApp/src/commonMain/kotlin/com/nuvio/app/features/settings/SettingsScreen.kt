@@ -42,6 +42,8 @@ import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsUiState
+import com.nuvio.app.core.ui.PosterCardStyleRepository
+import com.nuvio.app.core.ui.PosterCardStyleUiState
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.mdblist.MdbListSettings
@@ -129,6 +131,10 @@ fun SettingsScreen(
             ContinueWatchingPreferencesRepository.ensureLoaded()
             ContinueWatchingPreferencesRepository.uiState
         }.collectAsStateWithLifecycle()
+        val posterCardStyleUiState by remember {
+            PosterCardStyleRepository.ensureLoaded()
+            PosterCardStyleRepository.uiState
+        }.collectAsStateWithLifecycle()
         val episodeReleaseNotificationsUiState by remember {
             EpisodeReleaseNotificationsRepository.ensureLoaded()
             EpisodeReleaseNotificationsRepository.uiState
@@ -179,6 +185,7 @@ fun SettingsScreen(
                 homescreenItems = homescreenSettingsUiState.items,
                 metaScreenSettingsUiState = metaScreenSettingsUiState,
                 continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
+                posterCardStyleUiState = posterCardStyleUiState,
                 onSwitchProfile = onSwitchProfile,
                 onDownloadsClick = onDownloadsClick,
                 onCollectionsClick = onCollectionsClick,
@@ -214,6 +221,7 @@ fun SettingsScreen(
                 homescreenItems = homescreenSettingsUiState.items,
                 metaScreenSettingsUiState = metaScreenSettingsUiState,
                 continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
+                posterCardStyleUiState = posterCardStyleUiState,
                 onSwitchProfile = onSwitchProfile,
                 onHomescreenClick = onHomescreenClick,
                 onMetaScreenClick = onMetaScreenClick,
@@ -259,6 +267,7 @@ private fun MobileSettingsScreen(
     homescreenItems: List<HomeCatalogSettingsItem>,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
+    posterCardStyleUiState: PosterCardStyleUiState,
     onSwitchProfile: (() -> Unit)? = null,
     onHomescreenClick: () -> Unit = {},
     onMetaScreenClick: () -> Unit = {},
@@ -318,6 +327,7 @@ private fun MobileSettingsScreen(
                 amoledEnabled = amoledEnabled,
                 onAmoledToggle = onAmoledToggle,
                 onContinueWatchingClick = onContinueWatchingClick,
+                onPosterCustomizationClick = { onPageChange(SettingsPage.PosterCustomization) },
             )
             SettingsPage.Notifications -> notificationsSettingsContent(
                 isTablet = false,
@@ -329,6 +339,10 @@ private fun MobileSettingsScreen(
                 style = continueWatchingPreferencesUiState.style,
                 upNextFromFurthestEpisode = continueWatchingPreferencesUiState.upNextFromFurthestEpisode,
                 showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
+            )
+            SettingsPage.PosterCustomization -> posterCustomizationSettingsContent(
+                isTablet = false,
+                uiState = posterCardStyleUiState,
             )
             SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                 isTablet = false,
@@ -404,6 +418,7 @@ private fun TabletSettingsScreen(
     homescreenItems: List<HomeCatalogSettingsItem>,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
+    posterCardStyleUiState: PosterCardStyleUiState,
     onSwitchProfile: (() -> Unit)? = null,
     onDownloadsClick: () -> Unit = {},
     onCollectionsClick: () -> Unit = {},
@@ -526,6 +541,7 @@ private fun TabletSettingsScreen(
                     amoledEnabled = amoledEnabled,
                     onAmoledToggle = onAmoledToggle,
                     onContinueWatchingClick = { openInlinePage(SettingsPage.ContinueWatching) },
+                    onPosterCustomizationClick = { openInlinePage(SettingsPage.PosterCustomization) },
                 )
                 SettingsPage.Notifications -> notificationsSettingsContent(
                     isTablet = true,
@@ -537,6 +553,10 @@ private fun TabletSettingsScreen(
                     style = continueWatchingPreferencesUiState.style,
                     upNextFromFurthestEpisode = continueWatchingPreferencesUiState.upNextFromFurthestEpisode,
                     showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
+                )
+                SettingsPage.PosterCustomization -> posterCustomizationSettingsContent(
+                    isTablet = true,
+                    uiState = posterCardStyleUiState,
                 )
                 SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                     isTablet = true,

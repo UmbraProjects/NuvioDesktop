@@ -140,6 +140,8 @@ fun NuvioAnimatedWatchedBadge(
 private fun PosterSheetHeader(
     item: MetaPreview,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -150,7 +152,7 @@ private fun PosterSheetHeader(
         Box(
             modifier = Modifier
                 .size(width = 64.dp, height = 92.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {

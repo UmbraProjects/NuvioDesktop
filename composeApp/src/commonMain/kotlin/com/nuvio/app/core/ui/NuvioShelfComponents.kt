@@ -102,15 +102,19 @@ fun NuvioPosterCard(
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
+    val cardWidth = shape.cardWidth(basePosterWidthDp = posterCardStyle.widthDp)
+    val cardShape = RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp)
+
     Column(
-        modifier = modifier.width(shape.cardWidth),
+        modifier = modifier.width(cardWidth),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(shape.aspectRatio)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(cardShape)
                 .background(MaterialTheme.colorScheme.surface)
                 .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
             contentAlignment = Alignment.Center,
@@ -254,11 +258,13 @@ private val NuvioPosterShape.aspectRatio: Float
         NuvioPosterShape.Landscape -> 1.77f
     }
 
-private val NuvioPosterShape.cardWidth: Dp
-    get() = when (this) {
-        NuvioPosterShape.Poster -> 110.dp
-        NuvioPosterShape.Square -> 110.dp
-        NuvioPosterShape.Landscape -> 180.dp
+private const val LandscapeWidthScale = 180f / 110f
+
+private fun NuvioPosterShape.cardWidth(basePosterWidthDp: Int): Dp =
+    when (this) {
+        NuvioPosterShape.Poster -> basePosterWidthDp.dp
+        NuvioPosterShape.Square -> basePosterWidthDp.dp
+        NuvioPosterShape.Landscape -> (basePosterWidthDp * LandscapeWidthScale).dp
     }
 
 @OptIn(ExperimentalFoundationApi::class)

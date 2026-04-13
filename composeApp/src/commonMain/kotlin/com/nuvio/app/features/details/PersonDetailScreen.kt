@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.details.components.DetailPosterRailSection
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.tmdb.TmdbMetadataService
@@ -155,6 +156,7 @@ private fun PersonDetailContent(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
     val accentColor = MaterialTheme.colorScheme.primary
 
     val allCredits = remember(person.movieCredits, person.tvCredits) {
@@ -445,6 +447,7 @@ private fun PersonDetailSkeleton(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
     val accentColor = MaterialTheme.colorScheme.primary
     val avatarCacheKey = avatarTransitionKey
     val platformContext = LocalPlatformContext.current
@@ -604,7 +607,7 @@ private fun PersonDetailSkeleton(
                             modifier = Modifier
                                 .width(110.dp)
                                 .height(163.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                         )
                         Spacer(modifier = Modifier.height(6.dp))

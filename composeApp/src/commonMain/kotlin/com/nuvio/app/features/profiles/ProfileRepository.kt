@@ -10,6 +10,7 @@ import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.core.ui.PosterCardStyleRepository
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
@@ -138,6 +139,7 @@ object ProfileRepository {
             PluginRepository.onProfileChanged(profileIndex)
         }
         ThemeSettingsRepository.onProfileChanged()
+        PosterCardStyleRepository.onProfileChanged()
         PlayerSettingsRepository.onProfileChanged()
         HomeCatalogSettingsRepository.onProfileChanged()
         MetaScreenSettingsRepository.onProfileChanged()

@@ -47,6 +47,7 @@ import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.ui.NuvioBackButton
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
 import com.nuvio.app.features.home.MetaPreview
@@ -70,6 +71,7 @@ fun CatalogScreen(
     modifier: Modifier = Modifier,
 ) {
     val uiState by CatalogRepository.uiState.collectAsStateWithLifecycle()
+    val posterCardStyle = rememberPosterCardStyleUiState()
     val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
     val gridState = rememberLazyGridState()
     var headerHeightPx by remember { mutableIntStateOf(0) }
@@ -148,7 +150,9 @@ fun CatalogScreen(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 if (uiState.items.isEmpty() && uiState.isLoading) {
-                    items(columns * 3) { CatalogSkeletonTile() }
+                    items(columns * 3) {
+                        CatalogSkeletonTile(cornerRadiusDp = posterCardStyle.cornerRadiusDp)
+                    }
                 } else if (uiState.items.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         CatalogEmptyState(
@@ -174,6 +178,7 @@ fun CatalogScreen(
                     ) { item ->
                         CatalogPosterTile(
                             item = item,
+                            cornerRadiusDp = posterCardStyle.cornerRadiusDp,
                             onClick = onPosterClick?.let { { it(item) } },
                         )
                     }
@@ -242,6 +247,7 @@ private fun CatalogHeader(
 @Composable
 private fun CatalogPosterTile(
     item: MetaPreview,
+    cornerRadiusDp: Int,
     onClick: (() -> Unit)? = null,
 ) {
     Column(
@@ -251,7 +257,7 @@ private fun CatalogPosterTile(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(item.posterShape.catalogAspectRatio())
-                .clip(RoundedCornerShape(22.dp))
+                .clip(RoundedCornerShape(cornerRadiusDp.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .posterCardClickable(onClick = onClick, onLongClick = null),
         ) {
@@ -287,12 +293,12 @@ private fun CatalogPosterTile(
 }
 
 @Composable
-private fun CatalogSkeletonTile() {
+private fun CatalogSkeletonTile(cornerRadiusDp: Int) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(0.68f)
-            .clip(RoundedCornerShape(22.dp))
+            .clip(RoundedCornerShape(cornerRadiusDp.dp))
             .background(MaterialTheme.colorScheme.surface),
     )
 }

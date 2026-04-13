@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.details.components.DetailPosterRailSection
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.tmdb.TmdbEntityBrowseData
@@ -297,6 +298,8 @@ private fun EntityHeroSection(
 
 @Composable
 private fun EntityBrowseSkeleton() {
+    val posterCardStyle = rememberPosterCardStyleUiState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -354,7 +357,7 @@ private fun EntityBrowseSkeleton() {
                             modifier = Modifier
                                 .width(110.dp)
                                 .height(163.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
                         )
                     }
