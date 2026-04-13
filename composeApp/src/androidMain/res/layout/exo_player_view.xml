@@ -26,6 +26,11 @@
 
     </androidx.media3.ui.AspectRatioFrameLayout>
 
+    <FrameLayout
+        android:id="@+id/libass_overlay_container_gl"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
     <androidx.media3.ui.SubtitleView
         android:id="@id/exo_subtitles"
         android:layout_width="match_parent"
