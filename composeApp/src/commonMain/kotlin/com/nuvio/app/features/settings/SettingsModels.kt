@@ -49,6 +49,11 @@ internal enum class SettingsPage(
         category = SettingsCategory.General,
         parentPage = Appearance,
     ),
+    PosterCustomization(
+        title = "Poster Customization",
+        category = SettingsCategory.General,
+        parentPage = Appearance,
+    ),
     ContentDiscovery(
         title = "Content & Discovery",
         category = SettingsCategory.General,

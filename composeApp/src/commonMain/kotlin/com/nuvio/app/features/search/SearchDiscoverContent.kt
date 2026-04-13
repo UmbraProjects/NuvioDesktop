@@ -56,6 +56,7 @@ import com.nuvio.app.core.ui.NuvioBottomSheetDivider
 import com.nuvio.app.core.ui.NuvioModalBottomSheet
 import com.nuvio.app.core.ui.dismissNuvioBottomSheet
 import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
@@ -338,6 +339,8 @@ private fun DiscoverGridRow(
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
+
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -346,6 +349,8 @@ private fun DiscoverGridRow(
         items.forEach { item ->
             DiscoverPosterTile(
                 item = item,
+                cornerRadiusDp = posterCardStyle.cornerRadiusDp,
+                hideLabels = posterCardStyle.hideLabelsEnabled,
                 modifier = Modifier.weight(1f),
                 isWatched = WatchingState.isPosterWatched(
                     watchedKeys = watchedKeys,
@@ -365,6 +370,8 @@ private fun DiscoverGridRow(
 @Composable
 private fun DiscoverPosterTile(
     item: MetaPreview,
+    cornerRadiusDp: Int,
+    hideLabels: Boolean,
     modifier: Modifier = Modifier,
     isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
@@ -378,7 +385,7 @@ private fun DiscoverPosterTile(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(item.posterShape.discoverAspectRatio())
-                .clip(RoundedCornerShape(22.dp))
+                .clip(RoundedCornerShape(cornerRadiusDp.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
         ) {
@@ -397,24 +404,26 @@ private fun DiscoverPosterTile(
                     .padding(6.dp),
             )
         }
-        Text(
-            text = item.name,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        val detail = item.releaseInfo?.let { formatReleaseDateForDisplay(it) }
-        if (detail != null) {
+        if (!hideLabels) {
             Text(
-                text = detail,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                text = item.name,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-        } else {
-            Spacer(modifier = Modifier.height(8.dp))
+            val detail = item.releaseInfo?.let { formatReleaseDateForDisplay(it) }
+            if (detail != null) {
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
     }
 }
@@ -424,6 +433,8 @@ private fun DiscoverSkeletonRow(
     columns: Int,
     modifier: Modifier = Modifier,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
+
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -433,7 +444,7 @@ private fun DiscoverSkeletonRow(
                 modifier = Modifier
                     .weight(1f)
                     .aspectRatio(0.68f)
-                    .clip(RoundedCornerShape(22.dp))
+                    .clip(RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp))
                     .background(MaterialTheme.colorScheme.surface),
             )
         }

@@ -20,6 +20,7 @@ import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.streams.StreamContextStore
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
+import com.nuvio.app.core.ui.PosterCardStyleRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watched.WatchedRepository
@@ -43,6 +44,7 @@ internal object LocalAccountDataCleaner {
         EpisodeReleaseNotificationsRepository.clearLocalState()
         CollectionRepository.clearLocalState()
         ThemeSettingsRepository.clearLocalState()
+        PosterCardStyleRepository.clearLocalState()
         TraktAuthRepository.clearLocalState()
         PlayerSettingsRepository.clearLocalState()
         CatalogRepository.clear()

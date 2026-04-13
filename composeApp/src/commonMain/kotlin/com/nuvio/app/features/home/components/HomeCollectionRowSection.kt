@@ -1,6 +1,5 @@
 package com.nuvio.app.features.home.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,7 +24,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioShelfSection
+import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
+import com.nuvio.app.core.ui.landscapePosterWidth
 import com.nuvio.app.core.ui.posterCardClickable
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.collection.CollectionFolder
 import com.nuvio.app.features.home.PosterShape
@@ -86,21 +88,23 @@ private fun CollectionFolderCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
 ) {
-    val shape = folder.posterShape
+    val posterCardStyle = rememberPosterCardStyleUiState()
+    val isLandscapeMode = posterCardStyle.catalogLandscapeModeEnabled
+    val shape = if (isLandscapeMode) PosterShape.Landscape else folder.posterShape
     val cardWidth: Dp
     val aspectRatio: Float
 
     when (shape) {
         PosterShape.Poster -> {
-            cardWidth = 110.dp
+            cardWidth = posterCardStyle.widthDp.dp
             aspectRatio = 0.675f
         }
         PosterShape.Landscape -> {
-            cardWidth = 180.dp
-            aspectRatio = 1.77f
+            cardWidth = landscapePosterWidth(posterCardStyle.widthDp)
+            aspectRatio = PosterLandscapeAspectRatio
         }
         PosterShape.Square -> {
-            cardWidth = 120.dp
+            cardWidth = posterCardStyle.widthDp.dp
             aspectRatio = 1f
         }
     }
@@ -109,7 +113,7 @@ private fun CollectionFolderCard(
         modifier = modifier.width(cardWidth),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        val shapeCorner = RoundedCornerShape(16.dp)
+        val shapeCorner = RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp)
         val imageUrl = collectionFolderCardImageUrl(folder)
         Card(
             modifier = Modifier

@@ -10,6 +10,7 @@ internal actual object PlatformLocalAccountDataCleaner {
         "nuvio_player_settings",
         "nuvio_profile_cache",
         "nuvio_theme_settings",
+        "nuvio_poster_card_style",
         "nuvio_mdblist_settings",
         "nuvio_trakt_auth",
         "nuvio_watched",

@@ -56,6 +56,9 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
+import com.nuvio.app.core.ui.landscapePosterHeightForWidth
+import com.nuvio.app.core.ui.landscapePosterWidth
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.details.components.DetailPosterRailSection
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.tmdb.TmdbMetadataService
@@ -155,6 +158,18 @@ private fun PersonDetailContent(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
+    val isLandscapeShelfMode = posterCardStyle.catalogLandscapeModeEnabled
+    val skeletonPosterWidth = if (isLandscapeShelfMode) {
+        landscapePosterWidth(posterCardStyle.widthDp)
+    } else {
+        posterCardStyle.widthDp.dp
+    }
+    val skeletonPosterHeight = if (isLandscapeShelfMode) {
+        landscapePosterHeightForWidth(skeletonPosterWidth)
+    } else {
+        posterCardStyle.heightDp.dp
+    }
     val accentColor = MaterialTheme.colorScheme.primary
 
     val allCredits = remember(person.movieCredits, person.tvCredits) {
@@ -445,6 +460,18 @@ private fun PersonDetailSkeleton(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
+    val isLandscapeShelfMode = posterCardStyle.catalogLandscapeModeEnabled
+    val skeletonPosterWidth = if (isLandscapeShelfMode) {
+        landscapePosterWidth(posterCardStyle.widthDp)
+    } else {
+        posterCardStyle.widthDp.dp
+    }
+    val skeletonPosterHeight = if (isLandscapeShelfMode) {
+        landscapePosterHeightForWidth(skeletonPosterWidth)
+    } else {
+        posterCardStyle.heightDp.dp
+    }
     val accentColor = MaterialTheme.colorScheme.primary
     val avatarCacheKey = avatarTransitionKey
     val platformContext = LocalPlatformContext.current
@@ -599,24 +626,26 @@ private fun PersonDetailSkeleton(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 repeat(4) {
-                    Column(modifier = Modifier.width(110.dp)) {
+                    Column(modifier = Modifier.width(skeletonPosterWidth)) {
                         Box(
                             modifier = Modifier
-                                .width(110.dp)
-                                .height(163.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                                .width(skeletonPosterWidth)
+                                .height(skeletonPosterHeight)
+                                .clip(RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        SkeletonLine(
-                            widthFraction = 1f,
-                            height = 16.dp,
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        SkeletonLine(
-                            widthFraction = 0.56f,
-                            height = 12.dp,
-                        )
+                        if (!isLandscapeShelfMode) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            SkeletonLine(
+                                widthFraction = 1f,
+                                height = 16.dp,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            SkeletonLine(
+                                widthFraction = 0.56f,
+                                height = 12.dp,
+                            )
+                        }
                     }
                 }
             }

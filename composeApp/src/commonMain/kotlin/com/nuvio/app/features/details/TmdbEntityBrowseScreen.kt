@@ -43,6 +43,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.landscapePosterHeightForWidth
+import com.nuvio.app.core.ui.landscapePosterWidth
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.details.components.DetailPosterRailSection
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.tmdb.TmdbEntityBrowseData
@@ -297,6 +300,19 @@ private fun EntityHeroSection(
 
 @Composable
 private fun EntityBrowseSkeleton() {
+    val posterCardStyle = rememberPosterCardStyleUiState()
+    val isLandscapeShelfMode = posterCardStyle.catalogLandscapeModeEnabled
+    val skeletonPosterWidth = if (isLandscapeShelfMode) {
+        landscapePosterWidth(posterCardStyle.widthDp)
+    } else {
+        posterCardStyle.widthDp.dp
+    }
+    val skeletonPosterHeight = if (isLandscapeShelfMode) {
+        landscapePosterHeightForWidth(skeletonPosterWidth)
+    } else {
+        posterCardStyle.heightDp.dp
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -352,9 +368,9 @@ private fun EntityBrowseSkeleton() {
                     repeat(4) {
                         Box(
                             modifier = Modifier
-                                .width(110.dp)
-                                .height(163.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                                .width(skeletonPosterWidth)
+                                .height(skeletonPosterHeight)
+                                .clip(RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
                         )
                     }

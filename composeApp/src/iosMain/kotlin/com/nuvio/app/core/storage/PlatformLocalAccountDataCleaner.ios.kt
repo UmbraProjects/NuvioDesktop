@@ -14,6 +14,7 @@ internal actual object PlatformLocalAccountDataCleaner {
     private val profileScopedBaseKeys = listOf(
         "catalog_settings_payload",
         "continue_watching_preferences_payload",
+        "poster_card_style_payload",
         "episode_release_notifications_payload",
         "episode_release_notification_scheduled_ids",
         "selected_theme",
