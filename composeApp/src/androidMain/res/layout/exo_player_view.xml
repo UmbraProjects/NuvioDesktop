@@ -19,10 +19,13 @@
             android:layout_height="match_parent"
             android:scaleType="fitXY" />
 
+        <FrameLayout
+            android:id="@+id/libass_overlay_container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
     </androidx.media3.ui.AspectRatioFrameLayout>
 
-    <!-- SubtitleView is OUTSIDE the AspectRatioFrameLayout so it spans the
-         full player area and does not shift when the resize-mode changes. -->
     <androidx.media3.ui.SubtitleView
         android:id="@id/exo_subtitles"
         android:layout_width="match_parent"
