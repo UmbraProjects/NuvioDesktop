@@ -3,6 +3,7 @@ package com.nuvio.app.features.settings
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,9 +55,11 @@ internal fun LazyListScope.posterCustomizationSettingsContent(
                     widthDp = uiState.widthDp,
                     cornerRadiusDp = uiState.cornerRadiusDp,
                     catalogLandscapeModeEnabled = uiState.catalogLandscapeModeEnabled,
+                    hideLabelsEnabled = uiState.hideLabelsEnabled,
                     onWidthSelected = PosterCardStyleRepository::setWidthDp,
                     onCornerRadiusSelected = PosterCardStyleRepository::setCornerRadiusDp,
                     onCatalogLandscapeModeChange = PosterCardStyleRepository::setCatalogLandscapeModeEnabled,
+                    onHideLabelsChange = PosterCardStyleRepository::setHideLabelsEnabled,
                 )
             }
         }
@@ -70,9 +73,11 @@ private fun PosterCardStyleControls(
     widthDp: Int,
     cornerRadiusDp: Int,
     catalogLandscapeModeEnabled: Boolean,
+    hideLabelsEnabled: Boolean,
     onWidthSelected: (Int) -> Unit,
     onCornerRadiusSelected: (Int) -> Unit,
     onCatalogLandscapeModeChange: (Boolean) -> Unit,
+    onHideLabelsChange: (Boolean) -> Unit,
 ) {
     val widthOptions = listOf(
         PresetOption("Compact", 104),
@@ -121,11 +126,29 @@ private fun PosterCardStyleControls(
             checked = catalogLandscapeModeEnabled,
             onCheckedChange = onCatalogLandscapeModeChange,
         )
+        PosterToggleRow(
+            title = "Hide labels",
+            checked = hideLabelsEnabled,
+            onCheckedChange = onHideLabelsChange,
+        )
     }
 }
 
 @Composable
 private fun PosterLandscapeModeToggleRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    PosterToggleRow(
+        title = "Landscape mode for shelf posters",
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+    )
+}
+
+@Composable
+private fun PosterToggleRow(
+    title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
@@ -135,7 +158,7 @@ private fun PosterLandscapeModeToggleRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "Landscape mode for shelf posters",
+            text = title,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Medium,
@@ -203,26 +226,13 @@ private fun PosterCardLivePreview(
                         .width(animatedWidth.value)
                         .height(animatedHeight.value)
                         .clip(RoundedCornerShape(animatedCornerRadius.value))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(10.dp)
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(10.dp)
-                            .width(70.dp)
-                            .height(7.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)),
-                    )
-                }
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            shape = RoundedCornerShape(animatedCornerRadius.value),
+                        ),
+                )
             }
 
             Column(

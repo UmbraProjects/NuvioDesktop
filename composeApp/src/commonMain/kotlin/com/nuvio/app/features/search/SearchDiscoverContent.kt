@@ -350,6 +350,7 @@ private fun DiscoverGridRow(
             DiscoverPosterTile(
                 item = item,
                 cornerRadiusDp = posterCardStyle.cornerRadiusDp,
+                hideLabels = posterCardStyle.hideLabelsEnabled,
                 modifier = Modifier.weight(1f),
                 isWatched = WatchingState.isPosterWatched(
                     watchedKeys = watchedKeys,
@@ -370,6 +371,7 @@ private fun DiscoverGridRow(
 private fun DiscoverPosterTile(
     item: MetaPreview,
     cornerRadiusDp: Int,
+    hideLabels: Boolean,
     modifier: Modifier = Modifier,
     isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
@@ -402,24 +404,26 @@ private fun DiscoverPosterTile(
                     .padding(6.dp),
             )
         }
-        Text(
-            text = item.name,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        val detail = item.releaseInfo?.let { formatReleaseDateForDisplay(it) }
-        if (detail != null) {
+        if (!hideLabels) {
             Text(
-                text = detail,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                text = item.name,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-        } else {
-            Spacer(modifier = Modifier.height(8.dp))
+            val detail = item.releaseInfo?.let { formatReleaseDateForDisplay(it) }
+            if (detail != null) {
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
     }
 }

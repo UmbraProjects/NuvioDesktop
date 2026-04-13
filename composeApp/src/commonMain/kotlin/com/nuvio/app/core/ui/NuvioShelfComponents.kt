@@ -109,7 +109,11 @@ fun NuvioPosterCard(
     val posterCardStyle = rememberPosterCardStyleUiState()
     val cardWidth = shape.cardWidth(basePosterWidthDp = posterCardStyle.widthDp)
     val cardShape = RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp)
-    val catalogLogoOverlaySize = catalogLogoOverlaySize(basePosterWidthDp = posterCardStyle.widthDp)
+    val catalogLogoOverlaySize = catalogLogoOverlaySize(
+        basePosterWidthDp = posterCardStyle.widthDp,
+        shape = shape,
+    )
+    val shouldShowTitleBelow = showTitleBelow && !posterCardStyle.hideLabelsEnabled
 
     Column(
         modifier = modifier.width(cardWidth),
@@ -178,7 +182,7 @@ fun NuvioPosterCard(
                     .padding(6.dp),
             )
         }
-        if (showTitleBelow) {
+        if (shouldShowTitleBelow) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium,
@@ -302,12 +306,24 @@ private data class CatalogLogoOverlaySize(
     val textMaxWidth: Dp,
 )
 
-private fun catalogLogoOverlaySize(basePosterWidthDp: Int): CatalogLogoOverlaySize =
-    when {
-        basePosterWidthDp <= 108 -> CatalogLogoOverlaySize(width = 72.dp, height = 18.dp, textMaxWidth = 92.dp)
-        basePosterWidthDp <= 120 -> CatalogLogoOverlaySize(width = 80.dp, height = 20.dp, textMaxWidth = 104.dp)
-        basePosterWidthDp <= 132 -> CatalogLogoOverlaySize(width = 88.dp, height = 22.dp, textMaxWidth = 112.dp)
-        else -> CatalogLogoOverlaySize(width = 96.dp, height = 24.dp, textMaxWidth = 124.dp)
+private fun catalogLogoOverlaySize(
+    basePosterWidthDp: Int,
+    shape: NuvioPosterShape,
+): CatalogLogoOverlaySize =
+    if (shape == NuvioPosterShape.Landscape) {
+        when {
+            basePosterWidthDp <= 108 -> CatalogLogoOverlaySize(width = 92.dp, height = 24.dp, textMaxWidth = 120.dp)
+            basePosterWidthDp <= 120 -> CatalogLogoOverlaySize(width = 104.dp, height = 28.dp, textMaxWidth = 132.dp)
+            basePosterWidthDp <= 132 -> CatalogLogoOverlaySize(width = 116.dp, height = 30.dp, textMaxWidth = 144.dp)
+            else -> CatalogLogoOverlaySize(width = 128.dp, height = 34.dp, textMaxWidth = 156.dp)
+        }
+    } else {
+        when {
+            basePosterWidthDp <= 108 -> CatalogLogoOverlaySize(width = 72.dp, height = 18.dp, textMaxWidth = 92.dp)
+            basePosterWidthDp <= 120 -> CatalogLogoOverlaySize(width = 80.dp, height = 20.dp, textMaxWidth = 104.dp)
+            basePosterWidthDp <= 132 -> CatalogLogoOverlaySize(width = 88.dp, height = 22.dp, textMaxWidth = 112.dp)
+            else -> CatalogLogoOverlaySize(width = 96.dp, height = 24.dp, textMaxWidth = 124.dp)
+        }
     }
 
 private fun NuvioPosterShape.cardWidth(basePosterWidthDp: Int): Dp =

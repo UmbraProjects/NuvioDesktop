@@ -179,6 +179,7 @@ fun CatalogScreen(
                         CatalogPosterTile(
                             item = item,
                             cornerRadiusDp = posterCardStyle.cornerRadiusDp,
+                            hideLabels = posterCardStyle.hideLabelsEnabled,
                             onClick = onPosterClick?.let { { it(item) } },
                         )
                     }
@@ -248,6 +249,7 @@ private fun CatalogHeader(
 private fun CatalogPosterTile(
     item: MetaPreview,
     cornerRadiusDp: Int,
+    hideLabels: Boolean,
     onClick: (() -> Unit)? = null,
 ) {
     Column(
@@ -270,24 +272,26 @@ private fun CatalogPosterTile(
                 )
             }
         }
-        Text(
-            text = item.name,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        val detail = item.releaseInfo?.let { formatReleaseDateForDisplay(it) }
-        if (detail != null) {
+        if (!hideLabels) {
             Text(
-                text = detail,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                text = item.name,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-        } else {
-            Spacer(modifier = Modifier.height(8.dp))
+            val detail = item.releaseInfo?.let { formatReleaseDateForDisplay(it) }
+            if (detail != null) {
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
     }
 }
