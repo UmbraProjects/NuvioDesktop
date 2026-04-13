@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import com.nuvio.app.core.ui.NuvioShelfSection
 import com.nuvio.app.core.ui.NuvioViewAllPillSize
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.stableKey
@@ -62,6 +63,8 @@ private fun HomeCatalogRowSectionContent(
     onPosterClick: ((MetaPreview) -> Unit)?,
     onPosterLongClick: ((MetaPreview) -> Unit)?,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
+
     NuvioShelfSection(
         title = section.title,
         entries = entries,
@@ -74,6 +77,7 @@ private fun HomeCatalogRowSectionContent(
     ) { item ->
         HomePosterCard(
             item = item,
+            useLandscapeBackdropMode = posterCardStyle.catalogLandscapeModeEnabled,
             isWatched = WatchingState.isPosterWatched(
                 watchedKeys = watchedKeys,
                 item = item,

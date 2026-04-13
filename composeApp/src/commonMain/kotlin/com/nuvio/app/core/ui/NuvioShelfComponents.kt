@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -98,6 +99,9 @@ fun NuvioPosterCard(
     modifier: Modifier = Modifier,
     shape: NuvioPosterShape = NuvioPosterShape.Poster,
     detailLine: String? = null,
+    showTitleBelow: Boolean = true,
+    bottomLeftLogoUrl: String? = null,
+    bottomLeftText: String? = null,
     isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
@@ -105,6 +109,7 @@ fun NuvioPosterCard(
     val posterCardStyle = rememberPosterCardStyleUiState()
     val cardWidth = shape.cardWidth(basePosterWidthDp = posterCardStyle.widthDp)
     val cardShape = RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp)
+    val catalogLogoOverlaySize = catalogLogoOverlaySize(basePosterWidthDp = posterCardStyle.widthDp)
 
     Column(
         modifier = modifier.width(cardWidth),
@@ -137,6 +142,35 @@ fun NuvioPosterCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+
+            if (!bottomLeftLogoUrl.isNullOrBlank() || !bottomLeftText.isNullOrBlank()) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                ) {
+                    if (!bottomLeftLogoUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = bottomLeftLogoUrl,
+                            contentDescription = "$title logo",
+                            modifier = Modifier
+                                .width(catalogLogoOverlaySize.width)
+                                .height(catalogLogoOverlaySize.height),
+                            contentScale = ContentScale.Fit,
+                        )
+                    } else {
+                        Text(
+                            text = bottomLeftText.orEmpty(),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = catalogLogoOverlaySize.textMaxWidth),
+                        )
+                    }
+                }
+            }
+
             NuvioAnimatedWatchedBadge(
                 isVisible = isWatched,
                 modifier = Modifier
@@ -144,21 +178,25 @@ fun NuvioPosterCard(
                     .padding(6.dp),
             )
         }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (!detailLine.isNullOrBlank()) {
+        if (showTitleBelow) {
             Text(
-                text = detailLine,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (!detailLine.isNullOrBlank()) {
+                Text(
+                    text = detailLine,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Box(modifier = Modifier.height(0.dp))
+            }
         } else {
             Box(modifier = Modifier.height(0.dp))
         }
@@ -255,16 +293,28 @@ private val NuvioPosterShape.aspectRatio: Float
     get() = when (this) {
         NuvioPosterShape.Poster -> 0.675f
         NuvioPosterShape.Square -> 1f
-        NuvioPosterShape.Landscape -> 1.77f
+        NuvioPosterShape.Landscape -> PosterLandscapeAspectRatio
     }
 
-private const val LandscapeWidthScale = 180f / 110f
+private data class CatalogLogoOverlaySize(
+    val width: Dp,
+    val height: Dp,
+    val textMaxWidth: Dp,
+)
+
+private fun catalogLogoOverlaySize(basePosterWidthDp: Int): CatalogLogoOverlaySize =
+    when {
+        basePosterWidthDp <= 108 -> CatalogLogoOverlaySize(width = 72.dp, height = 18.dp, textMaxWidth = 92.dp)
+        basePosterWidthDp <= 120 -> CatalogLogoOverlaySize(width = 80.dp, height = 20.dp, textMaxWidth = 104.dp)
+        basePosterWidthDp <= 132 -> CatalogLogoOverlaySize(width = 88.dp, height = 22.dp, textMaxWidth = 112.dp)
+        else -> CatalogLogoOverlaySize(width = 96.dp, height = 24.dp, textMaxWidth = 124.dp)
+    }
 
 private fun NuvioPosterShape.cardWidth(basePosterWidthDp: Int): Dp =
     when (this) {
         NuvioPosterShape.Poster -> basePosterWidthDp.dp
         NuvioPosterShape.Square -> basePosterWidthDp.dp
-        NuvioPosterShape.Landscape -> (basePosterWidthDp * LandscapeWidthScale).dp
+        NuvioPosterShape.Landscape -> landscapePosterWidth(basePosterWidthDp)
     }
 
 @OptIn(ExperimentalFoundationApi::class)

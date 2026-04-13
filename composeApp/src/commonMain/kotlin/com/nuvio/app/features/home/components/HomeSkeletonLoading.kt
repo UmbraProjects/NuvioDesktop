@@ -32,6 +32,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.landscapePosterHeightForWidth
+import com.nuvio.app.core.ui.landscapePosterWidth
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 
 @Composable
@@ -182,6 +184,16 @@ fun HomeSkeletonHero(
 fun HomeSkeletonRow(modifier: Modifier = Modifier) {
     val brush = rememberHomeSkeletonBrush()
     val posterCardStyle = rememberPosterCardStyleUiState()
+    val skeletonWidth = if (posterCardStyle.catalogLandscapeModeEnabled) {
+        landscapePosterWidth(posterCardStyle.widthDp)
+    } else {
+        posterCardStyle.widthDp.dp
+    }
+    val skeletonHeight = if (posterCardStyle.catalogLandscapeModeEnabled) {
+        landscapePosterHeightForWidth(skeletonWidth)
+    } else {
+        posterCardStyle.heightDp.dp
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -211,8 +223,8 @@ fun HomeSkeletonRow(modifier: Modifier = Modifier) {
             repeat(4) {
                 Box(
                     modifier = Modifier
-                        .width(posterCardStyle.widthDp.dp)
-                        .height(posterCardStyle.heightDp.dp)
+                        .width(skeletonWidth)
+                        .height(skeletonHeight)
                         .clip(RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp))
                         .background(brush),
                 )

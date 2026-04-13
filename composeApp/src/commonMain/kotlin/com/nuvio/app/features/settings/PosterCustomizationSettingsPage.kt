@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -51,8 +53,10 @@ internal fun LazyListScope.posterCustomizationSettingsContent(
                     isTablet = isTablet,
                     widthDp = uiState.widthDp,
                     cornerRadiusDp = uiState.cornerRadiusDp,
+                    catalogLandscapeModeEnabled = uiState.catalogLandscapeModeEnabled,
                     onWidthSelected = PosterCardStyleRepository::setWidthDp,
                     onCornerRadiusSelected = PosterCardStyleRepository::setCornerRadiusDp,
+                    onCatalogLandscapeModeChange = PosterCardStyleRepository::setCatalogLandscapeModeEnabled,
                 )
             }
         }
@@ -65,8 +69,10 @@ private fun PosterCardStyleControls(
     isTablet: Boolean,
     widthDp: Int,
     cornerRadiusDp: Int,
+    catalogLandscapeModeEnabled: Boolean,
     onWidthSelected: (Int) -> Unit,
     onCornerRadiusSelected: (Int) -> Unit,
+    onCatalogLandscapeModeChange: (Boolean) -> Unit,
 ) {
     val widthOptions = listOf(
         PresetOption("Compact", 104),
@@ -110,6 +116,39 @@ private fun PosterCardStyleControls(
             selectedValue = cornerRadiusDp,
             options = radiusOptions,
             onSelected = onCornerRadiusSelected,
+        )
+        PosterLandscapeModeToggleRow(
+            checked = catalogLandscapeModeEnabled,
+            onCheckedChange = onCatalogLandscapeModeChange,
+        )
+    }
+}
+
+@Composable
+private fun PosterLandscapeModeToggleRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Landscape mode for shelf posters",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium,
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
+            ),
         )
     }
 }

@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.ui.NuvioPosterCard
 import com.nuvio.app.core.ui.NuvioPosterShape
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 
@@ -12,16 +13,23 @@ import com.nuvio.app.features.home.PosterShape
 fun HomePosterCard(
     item: MetaPreview,
     modifier: Modifier = Modifier,
+    useLandscapeBackdropMode: Boolean = false,
     isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
+    val isLandscapeMode = useLandscapeBackdropMode || posterCardStyle.catalogLandscapeModeEnabled
+
     NuvioPosterCard(
         title = item.name,
-        imageUrl = item.poster,
+        imageUrl = if (isLandscapeMode) (item.banner ?: item.poster) else item.poster,
         modifier = modifier,
-        shape = item.posterShape.toNuvioPosterShape(),
-        detailLine = item.releaseInfo?.let { formatReleaseDateForDisplay(it) },
+        shape = if (isLandscapeMode) NuvioPosterShape.Landscape else item.posterShape.toNuvioPosterShape(),
+        detailLine = if (isLandscapeMode) null else item.releaseInfo?.let { formatReleaseDateForDisplay(it) },
+        showTitleBelow = !isLandscapeMode,
+        bottomLeftLogoUrl = if (isLandscapeMode) item.logo else null,
+        bottomLeftText = if (isLandscapeMode && item.logo.isNullOrBlank()) item.name else null,
         isWatched = isWatched,
         onClick = onClick,
         onLongClick = onLongClick,

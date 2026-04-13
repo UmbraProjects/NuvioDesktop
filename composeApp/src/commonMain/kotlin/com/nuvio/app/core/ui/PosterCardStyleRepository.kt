@@ -17,12 +17,14 @@ private data class StoredPosterCardStylePreferences(
     val widthDp: Int = DefaultPosterCardWidthDp,
     val heightDp: Int = DefaultPosterCardHeightDp,
     val cornerRadiusDp: Int = DefaultPosterCardCornerRadiusDp,
+    val catalogLandscapeModeEnabled: Boolean = false,
 )
 
 data class PosterCardStyleUiState(
     val widthDp: Int = DefaultPosterCardWidthDp,
     val heightDp: Int = DefaultPosterCardHeightDp,
     val cornerRadiusDp: Int = DefaultPosterCardCornerRadiusDp,
+    val catalogLandscapeModeEnabled: Boolean = false,
 )
 
 object PosterCardStyleRepository {
@@ -69,6 +71,13 @@ object PosterCardStyleRepository {
         persist()
     }
 
+    fun setCatalogLandscapeModeEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (_uiState.value.catalogLandscapeModeEnabled == enabled) return
+        _uiState.value = _uiState.value.copy(catalogLandscapeModeEnabled = enabled)
+        persist()
+    }
+
     fun resetToDefaults() {
         ensureLoaded()
         if (_uiState.value == PosterCardStyleUiState()) return
@@ -97,6 +106,7 @@ object PosterCardStyleRepository {
                 widthDp = widthDp,
                 heightDp = heightDp,
                 cornerRadiusDp = cornerRadiusDp,
+                catalogLandscapeModeEnabled = stored.catalogLandscapeModeEnabled,
             )
         } else {
             PosterCardStyleUiState()
@@ -110,6 +120,7 @@ object PosterCardStyleRepository {
                     widthDp = _uiState.value.widthDp,
                     heightDp = _uiState.value.heightDp,
                     cornerRadiusDp = _uiState.value.cornerRadiusDp,
+                    catalogLandscapeModeEnabled = _uiState.value.catalogLandscapeModeEnabled,
                 ),
             ),
         )

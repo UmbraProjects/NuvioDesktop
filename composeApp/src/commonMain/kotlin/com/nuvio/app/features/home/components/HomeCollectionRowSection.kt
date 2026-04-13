@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioShelfSection
+import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.collection.Collection
@@ -99,7 +100,7 @@ private fun CollectionFolderCard(
         }
         PosterShape.Landscape -> {
             cardWidth = 180.dp
-            aspectRatio = 1.77f
+            aspectRatio = PosterLandscapeAspectRatio
         }
         PosterShape.Square -> {
             cardWidth = 120.dp
