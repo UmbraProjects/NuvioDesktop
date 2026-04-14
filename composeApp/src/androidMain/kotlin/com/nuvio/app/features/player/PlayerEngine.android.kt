@@ -46,7 +46,6 @@ import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
 import androidx.media3.ui.CaptionStyleCompat
 import com.nuvio.app.R
-import io.github.peerless2012.ass.media.kt.withAssSupport
 import io.github.peerless2012.ass.media.widget.AssSubtitleView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -480,14 +479,19 @@ private fun PlayerView.syncLibassOverlay(
     enabled: Boolean,
     renderType: LibassRenderType,
 ) {
-    val subtitleView = subtitleView ?: return
+    val containerId = if (renderType == LibassRenderType.OVERLAY_OPEN_GL) {
+        R.id.libass_overlay_container_gl
+    } else {
+        R.id.libass_overlay_container
+    }
+    val overlayContainer = findViewById<android.widget.FrameLayout>(containerId) ?: return
     val needsOverlay = enabled && renderType.usesOverlaySubtitleView()
     val boundPlayer = getTag(R.id.libass_overlay_bound_player) as? ExoPlayer
-    val hasOverlayChild = subtitleView.hasAssOverlayChild()
+    val hasOverlayChild = overlayContainer.hasAssOverlayChild()
 
     if (!needsOverlay) {
         if (hasOverlayChild) {
-            subtitleView.removeAssOverlayChildren()
+            overlayContainer.removeAssOverlayChildren()
         }
         if (boundPlayer != null) {
             setTag(R.id.libass_overlay_bound_player, null)
@@ -500,15 +504,19 @@ private fun PlayerView.syncLibassOverlay(
         return
     }
 
-    subtitleView.removeAssOverlayChildren()
-    subtitleView.withAssSupport(assHandler)
+    overlayContainer.removeAssOverlayChildren()
+    val assSubtitleView = AssSubtitleView(overlayContainer.context, assHandler)
+    overlayContainer.addView(
+        assSubtitleView,
+        android.widget.FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+    )
     setTag(R.id.libass_overlay_bound_player, player)
 }
 
 private fun LibassRenderType.usesOverlaySubtitleView(): Boolean =
     this == LibassRenderType.OVERLAY_CANVAS || this == LibassRenderType.OVERLAY_OPEN_GL
 
-private fun SubtitleView.hasAssOverlayChild(): Boolean {
+private fun android.widget.FrameLayout.hasAssOverlayChild(): Boolean {
     for (index in 0 until childCount) {
         if (getChildAt(index) is AssSubtitleView) {
             return true
@@ -517,7 +525,7 @@ private fun SubtitleView.hasAssOverlayChild(): Boolean {
     return false
 }
 
-private fun SubtitleView.removeAssOverlayChildren() {
+private fun android.widget.FrameLayout.removeAssOverlayChildren() {
     for (index in childCount - 1 downTo 0) {
         if (getChildAt(index) is AssSubtitleView) {
             removeViewAt(index)
