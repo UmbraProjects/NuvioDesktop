@@ -80,7 +80,9 @@ import com.nuvio.app.core.sync.SyncManager
 import com.nuvio.app.core.ui.NuvioNavigationBar
 import com.nuvio.app.core.ui.NuvioContinueWatchingActionSheet
 import com.nuvio.app.core.ui.NuvioPosterActionSheet
+import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.PlatformBackHandler
+import com.nuvio.app.core.ui.platformExitApp
 import com.nuvio.app.core.ui.configurePlatformImageLoader
 import com.nuvio.app.core.ui.NuvioToastHost
 import com.nuvio.app.core.ui.NuvioToastController
@@ -421,6 +423,7 @@ private fun MainAppContent(
         val hapticFeedback = LocalHapticFeedback.current
         val coroutineScope = rememberCoroutineScope()
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
+        var showExitConfirmation by rememberSaveable { mutableStateOf(false) }
         var selectedPosterForActions by remember { mutableStateOf<MetaPreview?>(null) }
         var selectedContinueWatchingForActions by remember { mutableStateOf<ContinueWatchingItem?>(null) }
         var showLibraryListPicker by remember { mutableStateOf(false) }
@@ -827,8 +830,14 @@ private fun MainAppContent(
                 ) {
                 composable<TabsRoute> {
                     PlatformBackHandler(
-                        enabled = selectedTab != AppScreenTab.Home,
-                        onBack = { selectedTab = AppScreenTab.Home },
+                        enabled = true,
+                        onBack = {
+                            if (selectedTab != AppScreenTab.Home) {
+                                selectedTab = AppScreenTab.Home
+                            } else {
+                                showExitConfirmation = !showExitConfirmation
+                            }
+                        },
                     )
 
                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -1670,6 +1679,21 @@ private fun MainAppContent(
                         }
                         pickerPending = false
                     }
+                },
+            )
+
+            NuvioStatusModal(
+                title = "Exit app",
+                message = "Do you want to exit the app?",
+                isVisible = showExitConfirmation,
+                confirmText = "Yes",
+                dismissText = "No",
+                onConfirm = {
+                    showExitConfirmation = false
+                    platformExitApp()
+                },
+                onDismiss = {
+                    showExitConfirmation = false
                 },
             )
 
