@@ -27,6 +27,7 @@ data class CollectionCatalogSource(
     val addonId: String,
     val type: String,
     val catalogId: String,
+    val genre: String? = null,
 )
 
 @Immutable
@@ -73,6 +74,8 @@ data class AvailableCatalog(
     val type: String,
     val catalogId: String,
     val catalogName: String,
+    val genreOptions: List<String> = emptyList(),
+    val genreRequired: Boolean = false,
 )
 
 @Serializable

@@ -24,6 +24,7 @@ data class FolderTab(
     val manifestUrl: String? = null,
     val type: String = "",
     val catalogId: String = "",
+    val genre: String? = null,
     val supportsPagination: Boolean = false,
     val items: List<MetaPreview> = emptyList(),
     val isLoading: Boolean = true,
@@ -123,13 +124,15 @@ object FolderDetailRepository {
                 val typeLabel = source.type.replaceFirstChar {
                     if (it.isLowerCase()) it.titlecase() else it.toString()
                 }
+                val genreSuffix = if (source.genre != null) " · ${source.genre}" else ""
                 add(
                     FolderTab(
-                        label = "$label ($typeLabel)",
+                        label = "$label ($typeLabel)$genreSuffix",
                         typeLabel = typeLabel,
                         manifestUrl = addon?.manifestUrl,
                         type = source.type,
                         catalogId = source.catalogId,
+                        genre = source.genre,
                         supportsPagination = catalog?.supportsPagination() == true,
                         isLoading = true,
                     ),
@@ -236,6 +239,7 @@ object FolderDetailRepository {
                     manifestUrl = manifestUrl,
                     type = currentTab.type,
                     catalogId = currentTab.catalogId,
+                    genre = currentTab.genre,
                     skip = requestedSkip.takeIf { it > 0 },
                 )
             }.onSuccess { page ->

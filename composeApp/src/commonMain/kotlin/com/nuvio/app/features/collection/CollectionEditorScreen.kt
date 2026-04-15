@@ -697,6 +697,10 @@ private fun FolderEditorSheet(
             }
 
             itemsIndexed(folder.catalogSources) { index, source ->
+                val matchingCatalog = state.availableCatalogs.find {
+                    it.addonId == source.addonId && it.type == source.type && it.catalogId == source.catalogId
+                }
+                val genreOptions = matchingCatalog?.genreOptions.orEmpty()
                 NuvioSurfaceCard {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -711,7 +715,10 @@ private fun FolderEditorSheet(
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                text = source.addonId,
+                                text = buildString {
+                                    append(source.addonId)
+                                    if (source.genre != null) append(" · ${source.genre}")
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -728,6 +735,51 @@ private fun FolderEditorSheet(
                                 modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.error,
                             )
+                        }
+                    }
+                    if (genreOptions.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Genre",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            FilterChip(
+                                selected = source.genre == null,
+                                onClick = { CollectionEditorRepository.updateCatalogSourceGenre(index, null) },
+                                label = { Text("All") },
+                                leadingIcon = if (source.genre == null) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                } else null,
+                            )
+                            genreOptions.forEach { genre ->
+                                FilterChip(
+                                    selected = source.genre == genre,
+                                    onClick = { CollectionEditorRepository.updateCatalogSourceGenre(index, genre) },
+                                    label = { Text(genre) },
+                                    leadingIcon = if (source.genre == genre) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                    } else null,
+                                )
+                            }
                         }
                     }
                 }

@@ -202,10 +202,12 @@ object CollectionEditorRepository {
 
     fun addCatalogSource(catalog: AvailableCatalog) {
         val folder = _uiState.value.editingFolder ?: return
+        val defaultGenre = if (catalog.genreRequired) catalog.genreOptions.firstOrNull() else null
         val source = CollectionCatalogSource(
             addonId = catalog.addonId,
             type = catalog.type,
             catalogId = catalog.catalogId,
+            genre = defaultGenre,
         )
         if (folder.catalogSources.any {
                 it.addonId == source.addonId && it.type == source.type && it.catalogId == source.catalogId
@@ -222,6 +224,16 @@ object CollectionEditorRepository {
             editingFolder = folder.copy(
                 catalogSources = folder.catalogSources.toMutableList().apply { removeAt(index) },
             ),
+        )
+    }
+
+    fun updateCatalogSourceGenre(index: Int, genre: String?) {
+        val folder = _uiState.value.editingFolder ?: return
+        if (index !in folder.catalogSources.indices) return
+        val updated = folder.catalogSources.toMutableList()
+        updated[index] = updated[index].copy(genre = genre)
+        _uiState.value = _uiState.value.copy(
+            editingFolder = folder.copy(catalogSources = updated),
         )
     }
 

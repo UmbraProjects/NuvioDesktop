@@ -157,14 +157,17 @@ object CollectionRepository {
             addon to manifest
         }.flatMap { (addon, manifest) ->
             manifest.catalogs
-                .filter { catalog -> catalog.extra.none { it.isRequired } }
+                .filter { catalog -> catalog.extra.none { it.isRequired && it.name != "genre" } }
                 .map { catalog ->
+                    val genreExtra = catalog.extra.firstOrNull { it.name == "genre" }
                     AvailableCatalog(
                         addonId = manifest.id,
                         addonName = addon.displayTitle,
                         type = catalog.type,
                         catalogId = catalog.id,
                         catalogName = catalog.name,
+                        genreOptions = genreExtra?.options.orEmpty(),
+                        genreRequired = genreExtra?.isRequired == true,
                     )
                 }
         }
