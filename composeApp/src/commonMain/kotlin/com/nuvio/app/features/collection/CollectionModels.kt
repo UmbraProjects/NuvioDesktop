@@ -59,7 +59,6 @@ data class Collection(
     val title: String,
     val backdropImageUrl: String? = null,
     val pinToTop: Boolean = false,
-    val focusGlowEnabled: Boolean = true,
     val viewMode: String = "TABBED_GRID",
     val showAllTab: Boolean = true,
     val folders: List<CollectionFolder> = emptyList(),

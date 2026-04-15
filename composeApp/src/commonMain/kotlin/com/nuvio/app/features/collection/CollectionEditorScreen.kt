@@ -197,42 +197,7 @@ fun CollectionEditorScreen(
                 }
             }
 
-            // Focus Glow
-        item {
-                NuvioSurfaceCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { CollectionEditorRepository.setFocusGlowEnabled(!state.focusGlowEnabled) },
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(
-                                text = "Always-On Card Glow",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = "Show glow for home folder cards all the time on touch devices.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = state.focusGlowEnabled,
-                            onCheckedChange = { CollectionEditorRepository.setFocusGlowEnabled(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
-                            ),
-                        )
-                    }
-                }
-            }
+
 
             // View Mode
         item {
