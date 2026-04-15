@@ -202,32 +202,29 @@ fun HomeScreen(
             nextUpItemsBySeries = effectivNextUpItems,
         )
     }
-    val allManifestsSettled = addonsUiState.addons.isNotEmpty() &&
-        addonsUiState.addons.none { it.isRefreshing }
+    val availableManifests = remember(addonsUiState.addons) {
+        addonsUiState.addons.mapNotNull { addon -> addon.manifest }
+    }
 
-    val metaProviderKey = remember(addonsUiState.addons, allManifestsSettled) {
-        if (!allManifestsSettled) return@remember emptyList<String>()
-        addonsUiState.addons
-            .mapNotNull { addon ->
-                addon.manifest?.takeIf { manifest ->
-                    manifest.resources.any { resource -> resource.name == "meta" }
-                }?.transportUrl
-            }
+    val metaProviderKey = remember(availableManifests) {
+        availableManifests
+            .filter { manifest -> manifest.resources.any { resource -> resource.name == "meta" } }
+            .map { manifest -> manifest.transportUrl }
             .sorted()
     }
 
-    val catalogRefreshKey = remember(addonsUiState.addons, allManifestsSettled) {
-        if (!allManifestsSettled) return@remember emptyList<String>()
-        addonsUiState.addons.mapNotNull { addon ->
-            val manifest = addon.manifest ?: return@mapNotNull null
-            buildString {
-                append(manifest.transportUrl)
-                append(':')
-                append(manifest.catalogs.joinToString(separator = ",") { catalog ->
-                    "${catalog.type}:${catalog.id}:${catalog.extra.count { it.isRequired }}"
-                })
+    val catalogRefreshKey = remember(availableManifests) {
+        availableManifests
+            .map { manifest ->
+                buildString {
+                    append(manifest.transportUrl)
+                    append(':')
+                    append(manifest.catalogs.joinToString(separator = ",") { catalog ->
+                        "${catalog.type}:${catalog.id}:${catalog.extra.count { it.isRequired }}"
+                    })
+                }
             }
-        }
+            .sorted()
     }
 
     LaunchedEffect(catalogRefreshKey) {
