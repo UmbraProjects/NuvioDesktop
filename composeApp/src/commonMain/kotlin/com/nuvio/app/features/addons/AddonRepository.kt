@@ -51,6 +51,7 @@ object AddonRepository {
     private var pulledFromServer = false
     private var currentProfileId: Int = 1
     private val activeRefreshJobs = mutableMapOf<String, Job>()
+    private var manifestCacheByUrl: Map<String, AddonManifestCacheEntry> = emptyMap()
 
     fun initialize() {
         val effectiveProfileId = resolveEffectiveProfileId(ProfileRepository.activeProfileId)
@@ -61,21 +62,12 @@ object AddonRepository {
 
         val storedUrls = dedupeManifestUrls(AddonStorage.loadInstalledAddonUrls(currentProfileId))
         log.d { "initialize() — local addon count: ${storedUrls.size}" }
-        if (storedUrls.isEmpty()) return
-
-        val existingByUrl = _uiState.value.addons.associateBy(ManagedAddon::manifestUrl)
-        _uiState.value = AddonsUiState(
-            addons = storedUrls.map { manifestUrl ->
-                existingByUrl[manifestUrl].toPendingAddon(manifestUrl)
-            },
-        )
-
-        storedUrls.forEach { manifestUrl ->
-            val existing = existingByUrl[manifestUrl]
-            if (existing == null || (existing.manifest == null && !existing.isRefreshing)) {
-                refreshAddon(manifestUrl)
-            }
+        if (storedUrls.isEmpty()) {
+            manifestCacheByUrl = emptyMap()
+            return
         }
+
+        applyAddonsFromUrls(storedUrls)
     }
 
     fun onProfileChanged(profileId: Int) {
@@ -85,11 +77,15 @@ object AddonRepository {
         currentProfileId = effectiveProfileId
         initialized = false
         pulledFromServer = false
+        manifestCacheByUrl = emptyMap()
         _uiState.value = AddonsUiState()
     }
 
     fun clearLocalState() {
+        val profileToClear = currentProfileId
         cancelActiveRefreshes()
+        manifestCacheByUrl = emptyMap()
+        AddonStorage.saveManifestCachePayload(profileToClear, AddonManifestCacheCodec.encode(emptyList()))
         currentProfileId = 1
         initialized = false
         pulledFromServer = false
@@ -149,38 +145,16 @@ object AddonRepository {
                 val localUrls = dedupeManifestUrls(AddonStorage.loadInstalledAddonUrls(currentProfileId))
                 if (localUrls.isNotEmpty()) {
                     log.w { "pullFromServer() — remote empty while local has ${localUrls.size} addons; preserving local addons" }
-                    val existingByUrl = _uiState.value.addons.associateBy(ManagedAddon::manifestUrl)
-                    _uiState.value = AddonsUiState(
-                        addons = localUrls.map { url ->
-                            existingByUrl[url].toPendingAddon(url)
-                        },
-                    )
+                    applyAddonsFromUrls(localUrls)
                     persist()
-                    localUrls.forEach { url ->
-                        val existing = existingByUrl[url]
-                        if (existing == null || (existing.manifest == null && !existing.isRefreshing)) {
-                            refreshAddon(url)
-                        }
-                    }
                     pulledFromServer = true
                     initialized = true
                     return
                 }
             }
 
-            val existingByUrl = _uiState.value.addons.associateBy(ManagedAddon::manifestUrl)
-            _uiState.value = AddonsUiState(
-                addons = urls.map { url ->
-                    existingByUrl[url].toPendingAddon(url, namesByUrl[url])
-                },
-            )
+            applyAddonsFromUrls(urls, namesByUrl)
             persist()
-            urls.forEach { url ->
-                val existing = existingByUrl[url]
-                if (existing == null || (existing.manifest == null && !existing.isRefreshing)) {
-                    refreshAddon(url)
-                }
-            }
             pulledFromServer = true
             initialized = true
             log.i { "pullFromServer() — applied ${urls.size} addons to state" }
@@ -211,17 +185,19 @@ object AddonRepository {
             return AddAddonResult.Error("That addon is already installed.")
         }
 
-        val manifest = try {
+        val fetched = try {
             withContext(Dispatchers.Default) {
                 val payload = httpGetText(manifestUrl)
-                AddonManifestParser.parse(
+                val manifest = AddonManifestParser.parse(
                     manifestUrl = manifestUrl,
                     payload = payload,
                 )
+                payload to manifest
             }
         } catch (error: Throwable) {
             return AddAddonResult.Error(error.message ?: "Unable to load manifest")
         }
+        val (payload, manifest) = fetched
 
         _uiState.update { current ->
             current.copy(
@@ -233,6 +209,7 @@ object AddonRepository {
                 ),
             )
         }
+        updateManifestCache(manifestUrl, payload)
         persist()
         pushToServer()
         return AddAddonResult.Success(manifest)
@@ -241,10 +218,15 @@ object AddonRepository {
     fun removeAddon(manifestUrl: String) {
         if (isUsingPrimaryAddonsFromSecondaryProfile()) return
         log.i { "removeAddon() — $manifestUrl" }
+        val normalizedUrl = ensureManifestSuffix(manifestUrl)
         _uiState.update { current ->
             current.copy(
-                addons = current.addons.filterNot { it.manifestUrl == manifestUrl },
+                addons = current.addons.filterNot { it.manifestUrl == normalizedUrl },
             )
+        }
+        if (manifestCacheByUrl.containsKey(normalizedUrl)) {
+            manifestCacheByUrl = manifestCacheByUrl - normalizedUrl
+            persistManifestCache()
         }
         persist()
         pushToServer()
@@ -257,29 +239,34 @@ object AddonRepository {
     }
 
     fun refreshAddon(manifestUrl: String) {
-        val existingJob = activeRefreshJobs[manifestUrl]
+        val normalizedUrl = ensureManifestSuffix(manifestUrl)
+        val existingJob = activeRefreshJobs[normalizedUrl]
         if (existingJob?.isActive == true) return
 
-        markRefreshing(manifestUrl)
+        markRefreshing(normalizedUrl)
         var refreshJob: Job? = null
         refreshJob = scope.launch {
             try {
                 val result = runCatching {
-                    val payload = httpGetText(manifestUrl)
-                    AddonManifestParser.parse(
-                        manifestUrl = manifestUrl,
+                    val payload = httpGetText(normalizedUrl)
+                    val manifest = AddonManifestParser.parse(
+                        manifestUrl = normalizedUrl,
                         payload = payload,
                     )
+                    payload to manifest
+                }
+                result.onSuccess { (payload, _) ->
+                    updateManifestCache(normalizedUrl, payload)
                 }
 
                 _uiState.update { current ->
                     current.copy(
                         addons = current.addons.map { addon ->
-                            if (addon.manifestUrl != manifestUrl) {
+                            if (addon.manifestUrl != normalizedUrl) {
                                 addon
                             } else {
                                 result.fold(
-                                    onSuccess = { manifest ->
+                                    onSuccess = { (_, manifest) ->
                                         addon.copy(
                                             manifest = manifest,
                                             isRefreshing = false,
@@ -289,7 +276,7 @@ object AddonRepository {
                                     onFailure = { error ->
                                         addon.copy(
                                             isRefreshing = false,
-                                            errorMessage = error.message ?: "Unable to load manifest",
+                                            errorMessage = error.message ?: addon.errorMessage ?: "Unable to load manifest",
                                         )
                                     },
                                 )
@@ -298,12 +285,111 @@ object AddonRepository {
                     )
                 }
             } finally {
-                if (activeRefreshJobs[manifestUrl] === refreshJob) {
-                    activeRefreshJobs.remove(manifestUrl)
+                if (activeRefreshJobs[normalizedUrl] === refreshJob) {
+                    activeRefreshJobs.remove(normalizedUrl)
                 }
             }
         }
-        activeRefreshJobs[manifestUrl] = refreshJob
+        activeRefreshJobs[normalizedUrl] = refreshJob
+    }
+
+    private fun applyAddonsFromUrls(
+        urls: List<String>,
+        namesByUrl: Map<String, String> = emptyMap(),
+    ) {
+        val normalizedUrls = dedupeManifestUrls(urls)
+        val normalizedUrlSet = normalizedUrls.toSet()
+        val now = addonEpochMs()
+        val existingByUrl = _uiState.value.addons.associateBy(ManagedAddon::manifestUrl)
+        val loadedCache = loadManifestCacheByUrl()
+        val nextCache = loadedCache.filterKeys { key -> key in normalizedUrlSet }.toMutableMap()
+
+        val addons = normalizedUrls.map { manifestUrl ->
+            val existing = existingByUrl[manifestUrl]
+            val cachedEntry = nextCache[manifestUrl]
+            val cachedManifest = cachedEntry
+                ?.takeIf { it.payload.isNotBlank() }
+                ?.let { entry ->
+                    runCatching {
+                        AddonManifestParser.parse(
+                            manifestUrl = manifestUrl,
+                            payload = entry.payload,
+                        )
+                    }.getOrNull()
+                }
+
+            if (cachedEntry != null && cachedManifest == null) {
+                nextCache.remove(manifestUrl)
+            }
+
+            val manifest = existing?.manifest ?: cachedManifest
+            val shouldRefresh = when {
+                manifest == null -> true
+                existing?.manifest != null && !existing.isRefreshing -> false
+                cachedEntry == null -> true
+                cachedEntry.fetchedAtEpochMs <= 0L -> true
+                now - cachedEntry.fetchedAtEpochMs >= MANIFEST_CACHE_TTL_MS -> true
+                else -> false
+            }
+
+            ManagedAddon(
+                manifestUrl = manifestUrl,
+                manifest = manifest,
+                userSetName = namesByUrl[manifestUrl] ?: existing?.userSetName,
+                isRefreshing = shouldRefresh,
+                errorMessage = if (manifest != null) null else existing?.errorMessage,
+            )
+        }
+
+        manifestCacheByUrl = nextCache.toMap()
+        persistManifestCache()
+
+        _uiState.value = AddonsUiState(addons = addons)
+        addons.filter { it.isRefreshing }.forEach { addon ->
+            refreshAddon(addon.manifestUrl)
+        }
+    }
+
+    private fun loadManifestCacheByUrl(): Map<String, AddonManifestCacheEntry> {
+        val payload = AddonStorage.loadManifestCachePayload(currentProfileId).orEmpty()
+        if (payload.isBlank()) {
+            manifestCacheByUrl = emptyMap()
+            return manifestCacheByUrl
+        }
+
+        val decoded = AddonManifestCacheCodec.decode(payload)
+            ?.mapNotNull { entry ->
+                val normalizedUrl = ensureManifestSuffix(entry.manifestUrl)
+                if (entry.payload.isBlank()) {
+                    null
+                } else {
+                    entry.copy(manifestUrl = normalizedUrl)
+                }
+            }
+            ?.associateBy(AddonManifestCacheEntry::manifestUrl)
+            .orEmpty()
+        manifestCacheByUrl = decoded
+        return decoded
+    }
+
+    private fun updateManifestCache(manifestUrl: String, payload: String) {
+        if (payload.isBlank()) return
+        val normalizedUrl = ensureManifestSuffix(manifestUrl)
+        manifestCacheByUrl = manifestCacheByUrl + (
+            normalizedUrl to AddonManifestCacheEntry(
+                manifestUrl = normalizedUrl,
+                payload = payload,
+                fetchedAtEpochMs = addonEpochMs(),
+            )
+            )
+        persistManifestCache()
+    }
+
+    private fun persistManifestCache() {
+        AddonStorage.saveManifestCachePayload(
+            profileId = currentProfileId,
+            payload = AddonManifestCacheCodec.encode(manifestCacheByUrl.values),
+        )
     }
 
     private fun pushToServer() {
@@ -376,30 +462,6 @@ object AddonRepository {
     }
 }
 
-private fun ManagedAddon?.toPendingAddon(manifestUrl: String, userSetName: String? = null): ManagedAddon =
-    when {
-        this == null -> ManagedAddon(
-            manifestUrl = manifestUrl,
-            isRefreshing = true,
-            userSetName = userSetName,
-        )
-        manifest != null -> copy(
-            manifestUrl = manifestUrl,
-            isRefreshing = false,
-            userSetName = userSetName ?: this.userSetName,
-        )
-        isRefreshing -> copy(
-            manifestUrl = manifestUrl,
-            userSetName = userSetName ?: this.userSetName,
-        )
-        else -> copy(
-            manifestUrl = manifestUrl,
-            isRefreshing = true,
-            errorMessage = null,
-            userSetName = userSetName ?: this.userSetName,
-        )
-    }
-
 private fun dedupeManifestUrls(urls: List<String>): List<String> =
     urls.map(::ensureManifestSuffix).distinct()
 
@@ -431,3 +493,5 @@ private fun normalizeManifestUrl(rawUrl: String): String {
 
     return if (query.isEmpty()) manifestPath else "$manifestPath?$query"
 }
+
+private const val MANIFEST_CACHE_TTL_MS = 12L * 60L * 60L * 1000L
