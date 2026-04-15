@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,7 +35,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -57,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.animateDpAsState
 import com.nuvio.app.core.ui.NuvioInputField
+import com.nuvio.app.core.ui.NuvioModalBottomSheet
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioScreenHeader
@@ -81,11 +80,49 @@ fun CollectionEditorScreen(
         CollectionEditorRepository.initialize(collectionId)
     }
 
-    if (state.showFolderEditor && state.editingFolder != null) {
-        FolderEditorSheet(
+    val editingFolder = state.editingFolder
+    if (state.showFolderEditor && editingFolder != null) {
+        val genrePickerIndex = state.genrePickerSourceIndex
+        val genrePickerSource = genrePickerIndex?.let { editingFolder.catalogSources.getOrNull(it) }
+        val genrePickerCatalog = genrePickerSource?.let { source ->
+            state.availableCatalogs.find {
+                it.addonId == source.addonId && it.type == source.type && it.catalogId == source.catalogId
+            }
+        }
+
+        FolderEditorPage(
             state = state,
-            onDismiss = { CollectionEditorRepository.cancelFolderEdit() },
+            onBack = { CollectionEditorRepository.cancelFolderEdit() },
         )
+
+        if (state.showCatalogPicker) {
+            CatalogPickerSheet(
+                availableCatalogs = state.availableCatalogs,
+                selectedSources = editingFolder.catalogSources,
+                onToggle = { CollectionEditorRepository.toggleCatalogSource(it) },
+                onDismiss = { CollectionEditorRepository.hideCatalogPicker() },
+            )
+        }
+
+        if (
+            genrePickerIndex != null &&
+            genrePickerSource != null &&
+            genrePickerCatalog != null &&
+            genrePickerCatalog.genreOptions.isNotEmpty()
+        ) {
+            GenrePickerSheet(
+                title = genrePickerCatalog.catalogName,
+                selectedGenre = genrePickerSource.genre,
+                genreOptions = genrePickerCatalog.genreOptions,
+                allowAll = !genrePickerCatalog.genreRequired,
+                onSelect = {
+                    CollectionEditorRepository.updateCatalogSourceGenre(genrePickerIndex, it)
+                    CollectionEditorRepository.hideGenrePicker()
+                },
+                onDismiss = { CollectionEditorRepository.hideGenrePicker() },
+            )
+        }
+        return
     }
 
     if (state.showCatalogPicker) {
@@ -494,290 +531,203 @@ private fun FolderListItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FolderEditorSheet(
+private fun FolderEditorPage(
     state: CollectionEditorUiState,
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
 ) {
     val folder = state.editingFolder ?: return
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val bottomInset = nuvioPlatformExtraBottomPadding
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-    ) {
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            item {
-                Text(
-                    text = "Edit Folder",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+    Box(modifier = Modifier.fillMaxSize()) {
+        NuvioScreen(modifier = Modifier.fillMaxSize()) {
+            stickyHeader {
+                NuvioScreenHeader(
+                    title = if (state.folders.any { it.id == folder.id }) "Edit Folder" else "New Folder",
+                    onBack = onBack,
                 )
             }
 
             item {
-                NuvioInputField(
-                    value = folder.title,
-                    onValueChange = { CollectionEditorRepository.updateFolderTitle(it) },
-                    placeholder = "Folder Title",
-                )
-            }
-
-            // Cover (emoji or image url)
-            item {
-                Column {
-                    Text(
-                        text = "Cover",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = folder.coverEmoji == null && folder.coverImageUrl == null,
-                            onClick = { CollectionEditorRepository.clearFolderCover() },
-                            label = { Text("None") },
-                        )
-                        FilterChip(
-                            selected = folder.coverEmoji != null,
-                            onClick = {
-                                if (folder.coverEmoji == null) {
-                                    CollectionEditorRepository.updateFolderCoverEmoji("📁")
-                                }
-                            },
-                            label = { Text("Emoji") },
-                        )
-                        FilterChip(
-                            selected = folder.coverImageUrl != null,
-                            onClick = {
-                                if (folder.coverImageUrl == null) {
-                                    CollectionEditorRepository.updateFolderCoverImage("")
-                                }
-                            },
-                            label = { Text("Image") },
-                        )
-                    }
-                    if (folder.coverEmoji != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        NuvioInputField(
-                            value = folder.coverEmoji,
-                            onValueChange = { CollectionEditorRepository.updateFolderCoverEmoji(it) },
-                            placeholder = "Emoji",
-                            modifier = Modifier.width(100.dp),
-                        )
-                    }
-                    if (folder.coverImageUrl != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        NuvioInputField(
-                            value = folder.coverImageUrl,
-                            onValueChange = { CollectionEditorRepository.updateFolderCoverImage(it) },
-                            placeholder = "Image URL",
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    NuvioInputField(
-                        value = folder.focusGifUrl.orEmpty(),
-                        onValueChange = { CollectionEditorRepository.updateFolderFocusGifUrl(it) },
-                        placeholder = "Always-play GIF URL (optional)",
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                CollectionEditorRepository.updateFolderFocusGifEnabled(!folder.focusGifEnabled)
-                            }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "Show GIF When Configured",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Switch(
-                            checked = folder.focusGifEnabled,
-                            onCheckedChange = { CollectionEditorRepository.updateFolderFocusGifEnabled(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                            ),
-                        )
-                    }
-                }
-            }
-
-            // Tile Shape
-            item {
-                Column {
-                    Text(
-                        text = "Tile Shape",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PosterShape.entries.forEach { shape ->
-                            FilterChip(
-                                selected = folder.posterShape == shape,
-                                onClick = { CollectionEditorRepository.updateFolderTileShape(shape) },
-                                label = { Text(shape.name) },
-                                leadingIcon = if (folder.posterShape == shape) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    }
-                                } else null,
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Hide Title
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { CollectionEditorRepository.updateFolderHideTitle(!folder.hideTitle) }
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "Hide Title",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Switch(
-                        checked = folder.hideTitle,
-                        onCheckedChange = { CollectionEditorRepository.updateFolderHideTitle(it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                            checkedTrackColor = MaterialTheme.colorScheme.primary,
-                            uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
-                        ),
-                    )
-                }
-            }
-
-            // Catalog Sources
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    NuvioSectionLabel(text = "CATALOG SOURCES")
-                    TextButton(onClick = { CollectionEditorRepository.showCatalogPicker() }) {
-                        Icon(
-                            imageVector = Icons.Rounded.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add")
-                    }
-                }
-            }
-
-            itemsIndexed(folder.catalogSources) { index, source ->
-                val matchingCatalog = state.availableCatalogs.find {
-                    it.addonId == source.addonId && it.type == source.type && it.catalogId == source.catalogId
-                }
-                val genreOptions = matchingCatalog?.genreOptions.orEmpty()
                 NuvioSurfaceCard {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "${source.catalogId} (${source.type})",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                text = buildString {
-                                    append(source.addonId)
-                                    if (source.genre != null) append(" · ${source.genre}")
-                                },
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        IconButton(
-                            onClick = { CollectionEditorRepository.removeCatalogSource(index) },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Remove",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.error,
+                    Text(
+                        text = "Set the folder identity, presentation, and catalog sources with the same structure as the main collections editor.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            item {
+                FolderEditorSection(title = "BASICS") {
+                    NuvioSurfaceCard {
+                        NuvioInputField(
+                            value = folder.title,
+                            onValueChange = { CollectionEditorRepository.updateFolderTitle(it) },
+                            placeholder = "Folder Title",
+                        )
+                    }
+                }
+            }
+
+            item {
+                FolderEditorSection(title = "APPEARANCE") {
+                    NuvioSurfaceCard {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "Cover",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    FilterChip(
+                                        selected = folder.coverEmoji == null && folder.coverImageUrl == null,
+                                        onClick = { CollectionEditorRepository.clearFolderCover() },
+                                        label = { Text("None") },
+                                    )
+                                    FilterChip(
+                                        selected = folder.coverEmoji != null,
+                                        onClick = {
+                                            if (folder.coverEmoji == null) {
+                                                CollectionEditorRepository.updateFolderCoverEmoji("📁")
+                                            }
+                                        },
+                                        label = { Text("Emoji") },
+                                    )
+                                    FilterChip(
+                                        selected = folder.coverImageUrl != null,
+                                        onClick = {
+                                            if (folder.coverImageUrl == null) {
+                                                CollectionEditorRepository.updateFolderCoverImage("")
+                                            }
+                                        },
+                                        label = { Text("Image") },
+                                    )
+                                }
+                            }
+
+                            if (folder.coverEmoji != null) {
+                                NuvioInputField(
+                                    value = folder.coverEmoji,
+                                    onValueChange = { CollectionEditorRepository.updateFolderCoverEmoji(it) },
+                                    placeholder = "Emoji",
+                                    modifier = Modifier.width(100.dp),
+                                )
+                            }
+
+                            if (folder.coverImageUrl != null) {
+                                NuvioInputField(
+                                    value = folder.coverImageUrl,
+                                    onValueChange = { CollectionEditorRepository.updateFolderCoverImage(it) },
+                                    placeholder = "Image URL",
+                                )
+                            }
+
+                            NuvioInputField(
+                                value = folder.focusGifUrl.orEmpty(),
+                                onValueChange = { CollectionEditorRepository.updateFolderFocusGifUrl(it) },
+                                placeholder = "Always-play GIF URL (optional)",
                             )
                         }
                     }
-                    if (genreOptions.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Genre",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            FilterChip(
-                                selected = source.genre == null,
-                                onClick = { CollectionEditorRepository.updateCatalogSourceGenre(index, null) },
-                                label = { Text("All") },
-                                leadingIcon = if (source.genre == null) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp),
+
+                    NuvioSurfaceCard {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "Tile Shape",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    PosterShape.entries.forEach { shape ->
+                                        FilterChip(
+                                            selected = folder.posterShape == shape,
+                                            onClick = { CollectionEditorRepository.updateFolderTileShape(shape) },
+                                            label = { Text(shape.name) },
+                                            leadingIcon = if (folder.posterShape == shape) {
+                                                {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Check,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                }
+                                            } else null,
                                         )
                                     }
-                                } else null,
+                                }
+                            }
+
+                            FolderEditorToggleRow(
+                                title = "Show GIF When Configured",
+                                subtitle = "Play the configured GIF instead of the static cover when available.",
+                                checked = folder.focusGifEnabled,
+                                onCheckedChange = { CollectionEditorRepository.updateFolderFocusGifEnabled(it) },
                             )
-                            genreOptions.forEach { genre ->
-                                FilterChip(
-                                    selected = source.genre == genre,
-                                    onClick = { CollectionEditorRepository.updateCatalogSourceGenre(index, genre) },
-                                    label = { Text(genre) },
-                                    leadingIcon = if (source.genre == genre) {
-                                        {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Check,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(18.dp),
-                                            )
-                                        }
-                                    } else null,
+
+                            FolderEditorToggleRow(
+                                title = "Hide Title",
+                                subtitle = "Only show the artwork or emoji for this folder tile.",
+                                checked = folder.hideTitle,
+                                onCheckedChange = { CollectionEditorRepository.updateFolderHideTitle(it) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                FolderEditorSection(
+                    title = "CATALOG SOURCES",
+                    actions = {
+                        TextButton(onClick = { CollectionEditorRepository.showCatalogPicker() }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add")
+                        }
+                    },
+                ) {
+                    if (folder.catalogSources.isEmpty()) {
+                        NuvioSurfaceCard {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "No catalog sources yet",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = "Add catalogs from your installed addons to define what this folder shows.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            folder.catalogSources.forEachIndexed { index, source ->
+                                FolderCatalogSourceCard(
+                                    source = source,
+                                    matchingCatalog = state.availableCatalogs.find {
+                                        it.addonId == source.addonId && it.type == source.type && it.catalogId == source.catalogId
+                                    },
+                                    onRemove = { CollectionEditorRepository.removeCatalogSource(index) },
+                                    onOpenGenrePicker = { CollectionEditorRepository.showGenrePicker(index) },
                                 )
                             }
                         }
@@ -785,45 +735,30 @@ private fun FolderEditorSheet(
                 }
             }
 
-            if (folder.catalogSources.isEmpty()) {
-                item {
-                    Text(
-                        text = "No catalog sources. Tap \"Add\" to select from installed addons.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                    )
-                }
-            }
-
-            // Save / Cancel
             item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    NuvioPrimaryButton(
-                        text = "Save Folder",
-                        enabled = folder.title.isNotBlank(),
-                        onClick = { CollectionEditorRepository.saveFolderEdit() },
-                    )
-                    androidx.compose.material3.Button(
-                        onClick = { CollectionEditorRepository.cancelFolderEdit() },
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                    ) {
-                        Text(
-                            text = "Cancel",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                    }
-                }
+                Spacer(modifier = Modifier.height(96.dp + bottomInset))
+            }
+        }
+
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            color = MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
+            tonalElevation = 6.dp,
+            shadowElevation = 10.dp,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(bottom = bottomInset),
+            ) {
+                NuvioPrimaryButton(
+                    text = "Save Folder",
+                    enabled = folder.title.isNotBlank(),
+                    onClick = { CollectionEditorRepository.saveFolderEdit() },
+                )
             }
         }
     }
@@ -839,7 +774,7 @@ private fun CatalogPickerSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(
+    NuvioModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -866,6 +801,12 @@ private fun CatalogPickerSheet(
                         Text("Done")
                     }
                 }
+                Text(
+                    text = "Choose the addon catalogs this folder should aggregate.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
             }
 
             val grouped = availableCatalogs.groupBy { it.addonName }
@@ -933,6 +874,268 @@ private fun CatalogPickerSheet(
             item {
                 Spacer(modifier = Modifier.height(24.dp))
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GenrePickerSheet(
+    title: String,
+    selectedGenre: String?,
+    genreOptions: List<String>,
+    allowAll: Boolean,
+    onSelect: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    NuvioModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Genre Filter",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            if (allowAll) {
+                item {
+                    GenrePickerOptionRow(
+                        title = "All genres",
+                        selected = selectedGenre == null,
+                        onClick = { onSelect(null) },
+                    )
+                }
+            }
+
+            itemsIndexed(genreOptions) { _, genre ->
+                GenrePickerOptionRow(
+                    title = genre,
+                    selected = selectedGenre == genre,
+                    onClick = { onSelect(genre) },
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun FolderEditorSection(
+    title: String,
+    actions: @Composable (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NuvioSectionLabel(text = title)
+            actions?.invoke()
+        }
+        content()
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FolderEditorToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) },
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
+            ),
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FolderCatalogSourceCard(
+    source: CollectionCatalogSource,
+    matchingCatalog: AvailableCatalog?,
+    onRemove: () -> Unit,
+    onOpenGenrePicker: () -> Unit,
+) {
+    val typeLabel = source.type.replaceFirstChar {
+        if (it.isLowerCase()) it.titlecase() else it.toString()
+    }
+    val metaLine = buildString {
+        append(typeLabel)
+        append(" · ${source.catalogId}")
+    }
+    val genreOptions = matchingCatalog?.genreOptions.orEmpty()
+    val selectedGenreLabel = source.genre ?: if (matchingCatalog?.genreRequired == true) "Select genre" else "All genres"
+
+    NuvioSurfaceCard {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = matchingCatalog?.catalogName ?: source.catalogId,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = matchingCatalog?.addonName ?: source.addonId,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(
+                    onClick = onRemove,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Remove",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
+            Text(
+                text = metaLine,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            if (genreOptions.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenGenrePicker),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = "Genre Filter",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = selectedGenreLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = onOpenGenrePicker) {
+                        Text("Choose")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GenrePickerOptionRow(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val bgColor = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    }
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+    } else {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(bgColor)
+            .border(1.dp, borderColor, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }

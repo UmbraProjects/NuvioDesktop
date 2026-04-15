@@ -23,6 +23,7 @@ data class CollectionEditorUiState(
     val editingFolder: CollectionFolder? = null,
     val showFolderEditor: Boolean = false,
     val showCatalogPicker: Boolean = false,
+    val genrePickerSourceIndex: Int? = null,
 )
 
 object CollectionEditorRepository {
@@ -224,6 +225,7 @@ object CollectionEditorRepository {
             editingFolder = folder.copy(
                 catalogSources = folder.catalogSources.toMutableList().apply { removeAt(index) },
             ),
+            genrePickerSourceIndex = null,
         )
     }
 
@@ -250,11 +252,27 @@ object CollectionEditorRepository {
     }
 
     fun showCatalogPicker() {
-        _uiState.value = _uiState.value.copy(showCatalogPicker = true)
+        _uiState.value = _uiState.value.copy(
+            showCatalogPicker = true,
+            genrePickerSourceIndex = null,
+        )
     }
 
     fun hideCatalogPicker() {
         _uiState.value = _uiState.value.copy(showCatalogPicker = false)
+    }
+
+    fun showGenrePicker(index: Int) {
+        val folder = _uiState.value.editingFolder ?: return
+        if (index !in folder.catalogSources.indices) return
+        _uiState.value = _uiState.value.copy(
+            genrePickerSourceIndex = index,
+            showCatalogPicker = false,
+        )
+    }
+
+    fun hideGenrePicker() {
+        _uiState.value = _uiState.value.copy(genrePickerSourceIndex = null)
     }
 
     fun saveFolderEdit() {
@@ -270,6 +288,7 @@ object CollectionEditorRepository {
             editingFolder = null,
             showFolderEditor = false,
             showCatalogPicker = false,
+            genrePickerSourceIndex = null,
         )
     }
 
@@ -278,6 +297,7 @@ object CollectionEditorRepository {
             editingFolder = null,
             showFolderEditor = false,
             showCatalogPicker = false,
+            genrePickerSourceIndex = null,
         )
     }
 
