@@ -75,6 +75,7 @@ object CatalogRepository {
                     ?.items
                     .orEmpty()
                     .map { it.toMetaPreview() }
+                    .let(::dedupeCatalogItems)
             }.fold(
                 onSuccess = { items ->
                     if (activeRequest != request) return@fold
@@ -127,7 +128,7 @@ object CatalogRepository {
                     if (activeRequest != request) return@fold
 
                     val mergedItems = if (reset) {
-                        page.items
+                        dedupeCatalogItems(page.items)
                     } else {
                         mergeCatalogItems(_uiState.value.items, page.items)
                     }

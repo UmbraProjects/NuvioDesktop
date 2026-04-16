@@ -102,6 +102,18 @@ fun mergeCatalogItems(
     }
 }
 
+fun dedupeCatalogItems(items: List<MetaPreview>): List<MetaPreview> {
+    if (items.size < 2) return items
+    val seen = mutableSetOf<String>()
+    return buildList(items.size) {
+        items.forEach { item ->
+            if (seen.add(item.stableKey())) {
+                add(item)
+            }
+        }
+    }
+}
+
 internal fun buildCatalogUrl(
     manifestUrl: String,
     type: String,
