@@ -15,13 +15,10 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.isSuccess
-import platform.Foundation.NSDate
 import platform.Foundation.NSUserDefaults
-import platform.Foundation.timeIntervalSince1970
 
 actual object AddonStorage {
     private const val addonUrlsKey = "installed_manifest_urls"
-    private const val manifestCacheKey = "manifest_cache_payload"
 
     actual fun loadInstalledAddonUrls(profileId: Int): List<String> =
         NSUserDefaults.standardUserDefaults
@@ -38,17 +35,7 @@ actual object AddonStorage {
             forKey = "${addonUrlsKey}_$profileId",
         )
     }
-
-    actual fun loadManifestCachePayload(profileId: Int): String? =
-        NSUserDefaults.standardUserDefaults.stringForKey("${manifestCacheKey}_$profileId")
-
-    actual fun saveManifestCachePayload(profileId: Int, payload: String) {
-        NSUserDefaults.standardUserDefaults.setObject(payload, forKey = "${manifestCacheKey}_$profileId")
-    }
 }
-
-internal actual fun addonEpochMs(): Long =
-    (NSDate().timeIntervalSince1970 * 1000.0).toLong()
 
 private val addonHttpClient = HttpClient(Darwin) {
     install(HttpTimeout) {

@@ -19,7 +19,6 @@ import java.util.concurrent.TimeUnit
 actual object AddonStorage {
     private const val preferencesName = "nuvio_addons"
     private const val addonUrlsKey = "installed_manifest_urls"
-    private const val manifestCacheKey = "manifest_cache_payload"
 
     private var preferences: SharedPreferences? = null
 
@@ -42,19 +41,7 @@ actual object AddonStorage {
             ?.putString("${addonUrlsKey}_$profileId", urls.joinToString(separator = "\n"))
             ?.apply()
     }
-
-    actual fun loadManifestCachePayload(profileId: Int): String? =
-        preferences?.getString("${manifestCacheKey}_$profileId", null)
-
-    actual fun saveManifestCachePayload(profileId: Int, payload: String) {
-        preferences
-            ?.edit()
-            ?.putString("${manifestCacheKey}_$profileId", payload)
-            ?.apply()
-    }
 }
-
-internal actual fun addonEpochMs(): Long = System.currentTimeMillis()
 
 private val addonHttpClient = OkHttpClient.Builder()
     .dns(IPv4FirstDns())

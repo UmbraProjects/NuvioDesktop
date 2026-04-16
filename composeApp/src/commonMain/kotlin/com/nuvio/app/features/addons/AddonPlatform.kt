@@ -3,11 +3,7 @@ package com.nuvio.app.features.addons
 internal expect object AddonStorage {
     fun loadInstalledAddonUrls(profileId: Int): List<String>
     fun saveInstalledAddonUrls(profileId: Int, urls: List<String>)
-    fun loadManifestCachePayload(profileId: Int): String?
-    fun saveManifestCachePayload(profileId: Int, payload: String)
 }
-
-internal expect fun addonEpochMs(): Long
 
 data class RawHttpResponse(
     val status: Int,
