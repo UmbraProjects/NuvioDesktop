@@ -40,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -55,6 +56,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
@@ -139,9 +142,9 @@ import com.nuvio.app.features.collection.CollectionSyncService
 import com.nuvio.app.features.home.HomeCatalogSettingsSyncService
 import com.nuvio.app.features.collection.FolderDetailScreen
 import com.nuvio.app.features.collection.FolderDetailRepository
-import com.nuvio.app.features.streams.StreamContext
-import com.nuvio.app.features.streams.StreamContextStore
 import com.nuvio.app.features.streams.StreamAutoPlayPolicy
+import com.nuvio.app.features.streams.StreamLaunch
+import com.nuvio.app.features.streams.StreamLaunchStore
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
@@ -223,23 +226,7 @@ data class FolderDetailRoute(val collectionId: String, val folderId: String)
 
 @Serializable
 data class StreamRoute(
-    val type: String,
-    val videoId: String,
-    val parentMetaId: String? = null,
-    val parentMetaType: String? = null,
-    val title: String,
-    val logo: String? = null,
-    val poster: String? = null,
-    val background: String? = null,
-    val seasonNumber: Int? = null,
-    val episodeNumber: Int? = null,
-    val episodeTitle: String? = null,
-    val episodeThumbnail: String? = null,
-    val streamContextId: Long? = null,
-    val resumePositionMs: Long? = null,
-    val resumeProgressFraction: Float? = null,
-    val manualSelection: Boolean = false,
-    val startFromBeginning: Boolean = false,
+    val launchId: Long,
 )
 
 @Serializable
@@ -676,11 +663,8 @@ private fun MainAppContent(
                 }
             }
 
-            val streamContextId = pauseDescription
-                ?.takeIf { it.isNotBlank() }
-                ?.let { StreamContextStore.put(StreamContext(pauseDescription = it)) }
-            navController.navigate(
-                StreamRoute(
+            val streamLaunchId = StreamLaunchStore.put(
+                StreamLaunch(
                     type = type,
                     videoId = videoId,
                     parentMetaId = parentMetaId,
@@ -693,12 +677,15 @@ private fun MainAppContent(
                     episodeNumber = episodeNumber,
                     episodeTitle = episodeTitle,
                     episodeThumbnail = episodeThumbnail,
-                    streamContextId = streamContextId,
+                    pauseDescription = pauseDescription,
                     resumePositionMs = if (startFromBeginning) 0L else resumePositionMs,
                     resumeProgressFraction = targetResumeProgressFraction,
                     manualSelection = manualSelection,
                     startFromBeginning = startFromBeginning,
                 ),
+            )
+            navController.navigate(
+                StreamRoute(launchId = streamLaunchId),
             )
         }
 
@@ -1078,61 +1065,79 @@ private fun MainAppContent(
                 }
                 composable<StreamRoute> { backStackEntry ->
                     val route = backStackEntry.toRoute<StreamRoute>()
-                    val pauseDescription = remember(route.streamContextId) {
-                        route.streamContextId?.let { contextId ->
-                            StreamContextStore.get(contextId)?.pauseDescription
+                    val launch = remember(route.launchId) {
+                        StreamLaunchStore.get(route.launchId)
+                    }
+                    if (launch == null) {
+                        LaunchedEffect(route.launchId) {
+                            StreamsRepository.clear()
+                            navController.popBackStack()
+                        }
+                        return@composable
+                    }
+                    val pauseDescription = launch.pauseDescription
+                    val lifecycleOwner = backStackEntry
+                    DisposableEffect(lifecycleOwner, route.launchId) {
+                        val observer = LifecycleEventObserver { _, event ->
+                            if (event == Lifecycle.Event.ON_DESTROY) {
+                                StreamLaunchStore.remove(route.launchId)
+                            }
+                        }
+                        lifecycleOwner.lifecycle.addObserver(observer)
+                        onDispose {
+                            lifecycleOwner.lifecycle.removeObserver(observer)
                         }
                     }
                     val shouldResolveEpisodeVideoId =
-                        route.parentMetaId != null &&
-                            route.seasonNumber != null &&
-                            route.episodeNumber != null
+                        launch.parentMetaId != null &&
+                            launch.seasonNumber != null &&
+                            launch.episodeNumber != null
                     var effectiveVideoId by rememberSaveable(
-                        route.videoId,
-                        route.parentMetaId,
-                        route.seasonNumber,
-                        route.episodeNumber,
+                        launch.videoId,
+                        launch.parentMetaId,
+                        launch.seasonNumber,
+                        launch.episodeNumber,
                     ) {
-                        mutableStateOf(route.videoId)
+                        mutableStateOf(launch.videoId)
                     }
                     var hasResolvedVideoId by rememberSaveable(
-                        route.videoId,
-                        route.parentMetaId,
-                        route.seasonNumber,
-                        route.episodeNumber,
+                        launch.videoId,
+                        launch.parentMetaId,
+                        launch.seasonNumber,
+                        launch.episodeNumber,
                     ) {
                         mutableStateOf(!shouldResolveEpisodeVideoId)
                     }
 
                     LaunchedEffect(
-                        route.videoId,
-                        route.parentMetaId,
-                        route.parentMetaType,
-                        route.type,
-                        route.seasonNumber,
-                        route.episodeNumber,
+                        launch.videoId,
+                        launch.parentMetaId,
+                        launch.parentMetaType,
+                        launch.type,
+                        launch.seasonNumber,
+                        launch.episodeNumber,
                     ) {
-                        effectiveVideoId = route.videoId
+                        effectiveVideoId = launch.videoId
                         if (!shouldResolveEpisodeVideoId) {
                             hasResolvedVideoId = true
                             return@LaunchedEffect
                         }
 
                         hasResolvedVideoId = false
-                        val metaType = route.parentMetaType ?: route.type
-                        val metaId = route.parentMetaId ?: return@LaunchedEffect
+                        val metaType = launch.parentMetaType ?: launch.type
+                        val metaId = launch.parentMetaId ?: return@LaunchedEffect
                         val resolvedVideoId = runCatching {
                             MetaDetailsRepository.fetch(metaType, metaId)
                         }.getOrNull()
                             ?.videos
                             ?.firstOrNull { video ->
-                                video.season == route.seasonNumber &&
-                                    video.episode == route.episodeNumber
+                                video.season == launch.seasonNumber &&
+                                    video.episode == launch.episodeNumber
                             }
                             ?.id
                             ?.takeIf { it.isNotBlank() }
 
-                        effectiveVideoId = resolvedVideoId ?: route.videoId
+                        effectiveVideoId = resolvedVideoId ?: launch.videoId
                         hasResolvedVideoId = true
                     }
 
@@ -1142,15 +1147,15 @@ private fun MainAppContent(
                     }.collectAsStateWithLifecycle()
 
                     // Reuse Last Link: auto-play from cache if enabled (only on first entry)
-                    var reuseHandled by rememberSaveable(route.videoId, effectiveVideoId) { mutableStateOf(false) }
+                    var reuseHandled by rememberSaveable(launch.videoId, effectiveVideoId) { mutableStateOf(false) }
                     var reuseNavigated by remember { mutableStateOf(false) }
-                    LaunchedEffect(effectiveVideoId, hasResolvedVideoId, playerSettings.streamReuseLastLinkEnabled, route.manualSelection) {
+                    LaunchedEffect(effectiveVideoId, hasResolvedVideoId, playerSettings.streamReuseLastLinkEnabled, launch.manualSelection) {
                         if (!hasResolvedVideoId) return@LaunchedEffect
                         if (reuseHandled) return@LaunchedEffect
                         reuseHandled = true
-                        if (route.manualSelection) return@LaunchedEffect
+                        if (launch.manualSelection) return@LaunchedEffect
                         if (!playerSettings.streamReuseLastLinkEnabled) return@LaunchedEffect
-                        val cacheKey = StreamLinkCacheRepository.contentKey(route.type, effectiveVideoId)
+                        val cacheKey = StreamLinkCacheRepository.contentKey(launch.type, effectiveVideoId)
                         val maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
                         val cached = StreamLinkCacheRepository.getValid(cacheKey, maxAgeMs)
                         if (cached != null) {
@@ -1158,32 +1163,31 @@ private fun MainAppContent(
                             StreamsRepository.clear()
                             val launchId = PlayerLaunchStore.put(
                                 PlayerLaunch(
-                                    title = route.title,
+                                    title = launch.title,
                                     sourceUrl = cached.url,
                                     sourceHeaders = sanitizePlaybackHeaders(cached.requestHeaders),
                                     sourceResponseHeaders = sanitizePlaybackResponseHeaders(cached.responseHeaders),
-                                    logo = route.logo,
-                                    poster = route.poster,
-                                    background = route.background,
-                                    seasonNumber = route.seasonNumber,
-                                    episodeNumber = route.episodeNumber,
-                                    episodeTitle = route.episodeTitle,
-                                    episodeThumbnail = route.episodeThumbnail,
+                                    logo = launch.logo,
+                                    poster = launch.poster,
+                                    background = launch.background,
+                                    seasonNumber = launch.seasonNumber,
+                                    episodeNumber = launch.episodeNumber,
+                                    episodeTitle = launch.episodeTitle,
+                                    episodeThumbnail = launch.episodeThumbnail,
                                     streamTitle = cached.streamName,
                                     streamSubtitle = null,
                                     bingeGroup = cached.bingeGroup,
                                     pauseDescription = pauseDescription,
                                     providerName = cached.addonName,
                                     providerAddonId = cached.addonId,
-                                    contentType = route.type,
+                                    contentType = launch.type,
                                     videoId = effectiveVideoId,
-                                    parentMetaId = route.parentMetaId ?: effectiveVideoId,
-                                    parentMetaType = route.parentMetaType ?: route.type,
-                                    initialPositionMs = route.resumePositionMs ?: 0L,
-                                    initialProgressFraction = route.resumeProgressFraction,
+                                    parentMetaId = launch.parentMetaId ?: effectiveVideoId,
+                                    parentMetaType = launch.parentMetaType ?: launch.type,
+                                    initialPositionMs = launch.resumePositionMs ?: 0L,
+                                    initialProgressFraction = launch.resumeProgressFraction,
                                 )
                             )
-                            route.streamContextId?.let(StreamContextStore::remove)
                             navController.navigate(PlayerRoute(launchId = launchId)) {
                                 popUpTo<StreamRoute> { inclusive = true }
                             }
@@ -1191,17 +1195,17 @@ private fun MainAppContent(
                     }
 
                     val streamsUiState by StreamsRepository.uiState.collectAsStateWithLifecycle()
-                    var autoPlayHandled by rememberSaveable(route.videoId, effectiveVideoId) { mutableStateOf(false) }
-                    LaunchedEffect(streamsUiState.autoPlayStream, reuseHandled, route.manualSelection) {
+                    var autoPlayHandled by rememberSaveable(launch.videoId, effectiveVideoId) { mutableStateOf(false) }
+                    LaunchedEffect(streamsUiState.autoPlayStream, reuseHandled, launch.manualSelection) {
                         if (!reuseHandled) return@LaunchedEffect
-                        if (route.manualSelection) return@LaunchedEffect
+                        if (launch.manualSelection) return@LaunchedEffect
                         if (reuseNavigated) return@LaunchedEffect
                         if (autoPlayHandled) return@LaunchedEffect
                         val stream = streamsUiState.autoPlayStream ?: return@LaunchedEffect
                         val sourceUrl = stream.directPlaybackUrl ?: return@LaunchedEffect
                         autoPlayHandled = true
                         if (playerSettings.streamReuseLastLinkEnabled) {
-                            val cacheKey = StreamLinkCacheRepository.contentKey(route.type, effectiveVideoId)
+                            val cacheKey = StreamLinkCacheRepository.contentKey(launch.type, effectiveVideoId)
                             StreamLinkCacheRepository.save(
                                 contentKey = cacheKey,
                                 url = sourceUrl,
@@ -1217,33 +1221,32 @@ private fun MainAppContent(
                         }
                         val launchId = PlayerLaunchStore.put(
                             PlayerLaunch(
-                                title = route.title,
+                                title = launch.title,
                                 sourceUrl = sourceUrl,
                                 sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
                                 sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
-                                logo = route.logo,
-                                poster = route.poster,
-                                background = route.background,
-                                seasonNumber = route.seasonNumber,
-                                episodeNumber = route.episodeNumber,
-                                episodeTitle = route.episodeTitle,
-                                episodeThumbnail = route.episodeThumbnail,
+                                logo = launch.logo,
+                                poster = launch.poster,
+                                background = launch.background,
+                                seasonNumber = launch.seasonNumber,
+                                episodeNumber = launch.episodeNumber,
+                                episodeTitle = launch.episodeTitle,
+                                episodeThumbnail = launch.episodeThumbnail,
                                 streamTitle = stream.streamLabel,
                                 streamSubtitle = stream.streamSubtitle,
                                 bingeGroup = stream.behaviorHints.bingeGroup,
                                 pauseDescription = pauseDescription,
                                 providerName = stream.addonName,
                                 providerAddonId = stream.addonId,
-                                contentType = route.type,
+                                contentType = launch.type,
                                 videoId = effectiveVideoId,
-                                parentMetaId = route.parentMetaId ?: effectiveVideoId,
-                                parentMetaType = route.parentMetaType ?: route.type,
-                                initialPositionMs = route.resumePositionMs ?: 0L,
-                                initialProgressFraction = route.resumeProgressFraction,
+                                parentMetaId = launch.parentMetaId ?: effectiveVideoId,
+                                parentMetaType = launch.parentMetaType ?: launch.type,
+                                initialPositionMs = launch.resumePositionMs ?: 0L,
+                                initialProgressFraction = launch.resumeProgressFraction,
                             )
                         )
                         StreamsRepository.consumeAutoPlay()
-                        route.streamContextId?.let(StreamContextStore::remove)
                         navController.navigate(PlayerRoute(launchId = launchId)) {
                             popUpTo<StreamRoute> { inclusive = true }
                         }
@@ -1260,28 +1263,28 @@ private fun MainAppContent(
                     }
 
                     StreamsScreen(
-                        type = route.type,
+                        type = launch.type,
                         videoId = effectiveVideoId,
-                        parentMetaId = route.parentMetaId ?: effectiveVideoId,
-                        parentMetaType = route.parentMetaType ?: route.type,
-                        title = route.title,
-                        logo = route.logo,
-                        poster = route.poster,
-                        background = route.background,
-                        seasonNumber = route.seasonNumber,
-                        episodeNumber = route.episodeNumber,
-                        episodeTitle = route.episodeTitle,
-                        episodeThumbnail = route.episodeThumbnail,
-                        resumePositionMs = route.resumePositionMs,
-                        resumeProgressFraction = route.resumeProgressFraction,
-                        manualSelection = route.manualSelection,
-                        startFromBeginning = route.startFromBeginning,
+                        parentMetaId = launch.parentMetaId ?: effectiveVideoId,
+                        parentMetaType = launch.parentMetaType ?: launch.type,
+                        title = launch.title,
+                        logo = launch.logo,
+                        poster = launch.poster,
+                        background = launch.background,
+                        seasonNumber = launch.seasonNumber,
+                        episodeNumber = launch.episodeNumber,
+                        episodeTitle = launch.episodeTitle,
+                        episodeThumbnail = launch.episodeThumbnail,
+                        resumePositionMs = launch.resumePositionMs,
+                        resumeProgressFraction = launch.resumeProgressFraction,
+                        manualSelection = launch.manualSelection,
+                        startFromBeginning = launch.startFromBeginning,
                         onStreamSelected = { stream, resolvedResumePositionMs, resolvedResumeProgressFraction ->
                             val sourceUrl = stream.directPlaybackUrl
                             if (sourceUrl != null) {
                                 // Persist for Reuse Last Link
                                 if (playerSettings.streamReuseLastLinkEnabled) {
-                                    val cacheKey = StreamLinkCacheRepository.contentKey(route.type, effectiveVideoId)
+                                    val cacheKey = StreamLinkCacheRepository.contentKey(launch.type, effectiveVideoId)
                                     StreamLinkCacheRepository.save(
                                         contentKey = cacheKey,
                                         url = sourceUrl,
@@ -1297,39 +1300,37 @@ private fun MainAppContent(
                                 }
                                 val launchId = PlayerLaunchStore.put(
                                     PlayerLaunch(
-                                        title = route.title,
+                                        title = launch.title,
                                         sourceUrl = sourceUrl,
                                         sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
                                         sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
-                                        logo = route.logo,
-                                        poster = route.poster,
-                                        background = route.background,
-                                        seasonNumber = route.seasonNumber,
-                                        episodeNumber = route.episodeNumber,
-                                        episodeTitle = route.episodeTitle,
-                                        episodeThumbnail = route.episodeThumbnail,
+                                        logo = launch.logo,
+                                        poster = launch.poster,
+                                        background = launch.background,
+                                        seasonNumber = launch.seasonNumber,
+                                        episodeNumber = launch.episodeNumber,
+                                        episodeTitle = launch.episodeTitle,
+                                        episodeThumbnail = launch.episodeThumbnail,
                                         streamTitle = stream.streamLabel,
                                         streamSubtitle = stream.streamSubtitle,
                                         bingeGroup = stream.behaviorHints.bingeGroup,
                                         pauseDescription = pauseDescription,
                                         providerName = stream.addonName,
                                         providerAddonId = stream.addonId,
-                                        contentType = route.type,
+                                        contentType = launch.type,
                                         videoId = effectiveVideoId,
-                                        parentMetaId = route.parentMetaId ?: effectiveVideoId,
-                                        parentMetaType = route.parentMetaType ?: route.type,
+                                        parentMetaId = launch.parentMetaId ?: effectiveVideoId,
+                                        parentMetaType = launch.parentMetaType ?: launch.type,
                                         initialPositionMs = resolvedResumePositionMs ?: 0L,
                                         initialProgressFraction = resolvedResumeProgressFraction,
                                     )
                                 )
-                                route.streamContextId?.let(StreamContextStore::remove)
                                 navController.navigate(
                                     PlayerRoute(launchId = launchId)
                                 )
                             }
                         },
                         onBack = {
-                            route.streamContextId?.let(StreamContextStore::remove)
                             StreamsRepository.clear()
                             navController.popBackStack()
                         },

@@ -18,6 +18,7 @@ import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.search.SearchRepository
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.streams.StreamContextStore
+import com.nuvio.app.features.streams.StreamLaunchStore
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.core.ui.PosterCardStyleRepository
@@ -53,6 +54,7 @@ internal object LocalAccountDataCleaner {
         SearchRepository.reset()
         SubtitleRepository.clear()
         PlayerLaunchStore.clear()
+        StreamLaunchStore.clear()
         StreamContextStore.clear()
     }
 }
