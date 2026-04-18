@@ -70,6 +70,7 @@ fun SettingsScreen(
     onPluginsClick: () -> Unit = {},
     onDownloadsClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
+    onSupportersContributorsClick: () -> Unit = {},
     onCollectionsClick: () -> Unit = {},
 ) {
     BoxWithConstraints(
@@ -188,6 +189,7 @@ fun SettingsScreen(
                 posterCardStyleUiState = posterCardStyleUiState,
                 onSwitchProfile = onSwitchProfile,
                 onDownloadsClick = onDownloadsClick,
+                onSupportersContributorsClick = onSupportersContributorsClick,
                 onCollectionsClick = onCollectionsClick,
             )
         } else {
@@ -230,6 +232,7 @@ fun SettingsScreen(
                 onPluginsClick = onPluginsClick,
                 onDownloadsClick = onDownloadsClick,
                 onAccountClick = onAccountClick,
+                onSupportersContributorsClick = onSupportersContributorsClick,
                 onCollectionsClick = onCollectionsClick,
             )
         }
@@ -276,6 +279,7 @@ private fun MobileSettingsScreen(
     onPluginsClick: () -> Unit = {},
     onDownloadsClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
+    onSupportersContributorsClick: () -> Unit = {},
     onCollectionsClick: () -> Unit = {},
 ) {
     NuvioScreen {
@@ -296,11 +300,15 @@ private fun MobileSettingsScreen(
                 onContentDiscoveryClick = { onPageChange(SettingsPage.ContentDiscovery) },
                 onIntegrationsClick = { onPageChange(SettingsPage.Integrations) },
                 onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
+                onSupportersContributorsClick = onSupportersContributorsClick,
                 onDownloadsClick = onDownloadsClick,
                 onAccountClick = onAccountClick,
                 onSwitchProfileClick = onSwitchProfile,
             )
             SettingsPage.Account -> accountSettingsContent(
+                isTablet = false,
+            )
+            SettingsPage.SupportersContributors -> supportersContributorsContent(
                 isTablet = false,
             )
             SettingsPage.Playback -> playbackSettingsContent(
@@ -421,6 +429,7 @@ private fun TabletSettingsScreen(
     posterCardStyleUiState: PosterCardStyleUiState,
     onSwitchProfile: (() -> Unit)? = null,
     onDownloadsClick: () -> Unit = {},
+    onSupportersContributorsClick: () -> Unit = {},
     onCollectionsClick: () -> Unit = {},
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.General.name) }
@@ -508,13 +517,18 @@ private fun TabletSettingsScreen(
                     onContentDiscoveryClick = { openInlinePage(SettingsPage.ContentDiscovery) },
                     onIntegrationsClick = { openInlinePage(SettingsPage.Integrations) },
                     onTraktClick = { openInlinePage(SettingsPage.TraktAuthentication) },
+                    onSupportersContributorsClick = { openInlinePage(SettingsPage.SupportersContributors) },
                     onDownloadsClick = onDownloadsClick,
                     onAccountClick = { openInlinePage(SettingsPage.Account) },
                     onSwitchProfileClick = onSwitchProfile,
                     showAccountSection = activeCategory == SettingsCategory.Account,
                     showGeneralSection = activeCategory == SettingsCategory.General,
+                    showAboutSection = activeCategory == SettingsCategory.About,
                 )
                 SettingsPage.Account -> accountSettingsContent(
+                    isTablet = true,
+                )
+                SettingsPage.SupportersContributors -> supportersContributorsContent(
                     isTablet = true,
                 )
                 SettingsPage.Playback -> playbackSettingsContent(

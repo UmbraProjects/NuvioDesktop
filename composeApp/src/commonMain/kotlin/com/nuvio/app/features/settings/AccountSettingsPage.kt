@@ -40,7 +40,9 @@ internal fun LazyListScope.accountSettingsContent(
 }
 
 @Composable
-private fun AccountSettingsBody(isTablet: Boolean) {
+private fun AccountSettingsBody(
+    isTablet: Boolean,
+) {
     val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var showDeleteConfirm by remember { mutableStateOf(false) }

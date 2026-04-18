@@ -2,6 +2,7 @@ package com.nuvio.app.features.settings
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -12,6 +13,7 @@ internal enum class SettingsCategory(
 ) {
     Account("Account", Icons.Rounded.AccountCircle),
     General("General", Icons.Rounded.Settings),
+    About("About", Icons.Rounded.Info),
 }
 
 internal enum class SettingsPage(
@@ -27,6 +29,11 @@ internal enum class SettingsPage(
     Account(
         title = "Account",
         category = SettingsCategory.Account,
+        parentPage = Root,
+    ),
+    SupportersContributors(
+        title = "Supporters & Contributors",
+        category = SettingsCategory.About,
         parentPage = Root,
     ),
     Playback(

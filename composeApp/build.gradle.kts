@@ -89,6 +89,20 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 """.trimMargin()
             )
         }
+
+        outDir.resolve("com/nuvio/app/features/settings").apply {
+            mkdirs()
+            resolve("CommunityConfig.kt").writeText(
+                """
+                |package com.nuvio.app.features.settings
+                |
+                |object CommunityConfig {
+                |    const val DONATIONS_BASE_URL = "${props.getProperty("DONATIONS_BASE_URL", "")}" 
+                |    const val DONATIONS_DONATE_URL = "${props.getProperty("DONATIONS_DONATE_URL", "")}" 
+                |}
+                """.trimMargin()
+            )
+        }
     }
 }
 
