@@ -34,7 +34,7 @@ import androidx.compose.ui.draw.clip
 import com.nuvio.app.core.ui.NuvioBottomSheetDivider
 import com.nuvio.app.core.ui.NuvioModalBottomSheet
 import com.nuvio.app.core.ui.dismissNuvioBottomSheet
-import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
+import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.player.PlatformPlayerSurface
 import com.nuvio.app.features.player.PlayerResizeMode
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
@@ -87,7 +87,7 @@ fun TrailerPlayerPopup(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 14.dp + nuvioPlatformExtraBottomPadding),
+                .padding(bottom = nuvioSafeBottomPadding(14.dp)),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(

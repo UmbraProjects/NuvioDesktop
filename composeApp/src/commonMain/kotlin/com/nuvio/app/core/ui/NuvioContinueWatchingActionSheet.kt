@@ -64,7 +64,7 @@ fun NuvioContinueWatchingActionSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp + nuvioPlatformExtraBottomPadding),
+                .padding(bottom = nuvioSafeBottomPadding(16.dp)),
         ) {
             ContinueWatchingSheetHeader(item = item)
             NuvioBottomSheetDivider()

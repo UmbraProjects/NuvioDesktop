@@ -49,7 +49,7 @@ import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.core.ui.posterCardClickable
-import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
+import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.stableKey
@@ -144,7 +144,7 @@ fun CatalogScreen(
                     start = 16.dp,
                     top = with(androidx.compose.ui.platform.LocalDensity.current) { headerHeightPx.toDp() } + 12.dp,
                     end = 16.dp,
-                    bottom = nuvioPlatformExtraBottomPadding + 28.dp,
+                    bottom = nuvioSafeBottomPadding(28.dp),
                 ),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),

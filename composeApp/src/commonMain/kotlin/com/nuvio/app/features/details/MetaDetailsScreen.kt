@@ -61,7 +61,7 @@ import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.TraktListPickerDialog
-import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
+import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.details.components.DetailActionButtons
 import com.nuvio.app.features.details.components.CommentDetailSheet
 import com.nuvio.app.features.details.components.DetailAdditionalInfoSection
@@ -692,7 +692,7 @@ fun MetaDetailsScreen(
                                     animatedVisibilityScope = animatedVisibilityScope,
                                 )
 
-                                Spacer(modifier = Modifier.height(32.dp + nuvioPlatformExtraBottomPadding))
+                                Spacer(modifier = Modifier.height(nuvioSafeBottomPadding(32.dp)))
                             }
                         }
 

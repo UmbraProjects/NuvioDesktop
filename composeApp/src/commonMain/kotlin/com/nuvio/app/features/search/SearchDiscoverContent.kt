@@ -55,7 +55,7 @@ import com.nuvio.app.core.ui.NuvioBottomSheetActionRow
 import com.nuvio.app.core.ui.NuvioBottomSheetDivider
 import com.nuvio.app.core.ui.NuvioModalBottomSheet
 import com.nuvio.app.core.ui.dismissNuvioBottomSheet
-import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
+import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.features.home.MetaPreview
@@ -292,7 +292,7 @@ private fun DiscoverOptionsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp + nuvioPlatformExtraBottomPadding),
+                .padding(bottom = nuvioSafeBottomPadding(16.dp)),
         ) {
             Text(
                 text = title,

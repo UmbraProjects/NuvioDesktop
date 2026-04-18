@@ -28,8 +28,8 @@ import com.nuvio.app.core.ui.NuvioBottomSheetActionRow
 import com.nuvio.app.core.ui.NuvioBottomSheetDivider
 import com.nuvio.app.core.ui.NuvioModalBottomSheet
 import com.nuvio.app.core.ui.dismissNuvioBottomSheet
+import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.details.MetaVideo
-import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,7 +62,7 @@ fun EpisodeWatchedActionSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp + nuvioPlatformExtraBottomPadding),
+                .padding(bottom = nuvioSafeBottomPadding(16.dp)),
         ) {
             EpisodeActionSheetHeader(
                 episode = episode,

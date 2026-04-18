@@ -61,7 +61,7 @@ import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.NuvioSectionLabel
 import com.nuvio.app.core.ui.NuvioSurfaceCard
-import com.nuvio.app.core.ui.nuvioPlatformExtraBottomPadding
+import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.features.home.PosterShape
 import sh.calvin.reorderable.ReorderableCollectionItemScope
@@ -75,7 +75,7 @@ fun CollectionEditorScreen(
     onBack: () -> Unit,
 ) {
     val state by CollectionEditorRepository.uiState.collectAsState()
-    val bottomInset = nuvioPlatformExtraBottomPadding
+    val bottomInset = nuvioSafeBottomPadding()
 
     LaunchedEffect(collectionId) {
         CollectionEditorRepository.initialize(collectionId)
@@ -504,7 +504,7 @@ private fun FolderEditorPage(
     onBack: () -> Unit,
 ) {
     val folder = state.editingFolder ?: return
-    val bottomInset = nuvioPlatformExtraBottomPadding
+    val bottomInset = nuvioSafeBottomPadding()
 
     PlatformBackHandler(enabled = true) {
         onBack()
