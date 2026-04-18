@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -909,7 +911,7 @@ private fun ErrorState(
 }
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 private fun CommunityDetailsDialog(
     title: String,
     subtitle: String,
@@ -946,9 +948,10 @@ private fun CommunityDetailsDialog(
 
                 content()
 
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     if (primaryActionLabel != null && onPrimaryAction != null) {
                         Button(onClick = onPrimaryAction) {
@@ -959,15 +962,6 @@ private fun CommunityDetailsDialog(
                         Button(onClick = onSecondaryAction) {
                             Text(secondaryActionLabel)
                         }
-                    }
-                    Button(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                    ) {
-                        Text("Close")
                     }
                 }
             }
