@@ -20,6 +20,7 @@ import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.details.filterUnavailableFutureSeasons
 import com.nuvio.app.features.details.sortedPlayableEpisodes
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
@@ -568,6 +569,7 @@ internal fun buildHomeContinueWatchingItems(
             compareByDescending<HomeContinueWatchingCandidate> { it.lastUpdatedEpochMs }
                 .thenByDescending { it.isProgressEntry },
         )
+        .filter { candidate -> candidate.item.shouldDisplayInContinueWatching() }
         .distinctBy { it.item.videoId }
         .map(HomeContinueWatchingCandidate::item)
 }
@@ -627,6 +629,7 @@ private fun com.nuvio.app.features.details.MetaDetails.nextReleasedEpisodeAfter(
         }
         .drop(1)
         .filter { episode -> (episode.season ?: 0) > 0 }
+        .filterUnavailableFutureSeasons(todayIsoDate = todayIsoDate)
 
     if (showUnairedNextUp) {
         return ordered.firstOrNull()
@@ -636,6 +639,9 @@ private fun com.nuvio.app.features.details.MetaDetails.nextReleasedEpisodeAfter(
         isReleasedBy(todayIsoDate = todayIsoDate, releasedDate = episode.released)
     }
 }
+
+private fun ContinueWatchingItem.shouldDisplayInContinueWatching(): Boolean =
+    isNextUp || progressFraction < 0.995f
 
 private fun CachedNextUpItem.toContinueWatchingItem(): ContinueWatchingItem? {
     val subtitle = buildString {

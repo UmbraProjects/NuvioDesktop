@@ -21,6 +21,26 @@ internal fun MetaDetails.sortedPlayableEpisodes(): List<MetaVideo> =
         .filter { it.season != null || it.episode != null }
         .sortedWith(metaVideoSeasonEpisodeComparator)
 
+internal fun List<MetaVideo>.filterUnavailableFutureSeasons(
+    todayIsoDate: String,
+): List<MetaVideo> {
+    val unavailableSeasons = groupBy { episode -> normalizeSeasonNumber(episode.season) }
+        .filter { (seasonNumber, episodes) ->
+            if (seasonNumber <= 0) return@filter false
+            val firstEpisode = episodes.minWithOrNull(
+                compareBy<MetaVideo>({ it.episode ?: Int.MAX_VALUE }, { it.released.orEmpty() }),
+            ) ?: return@filter false
+            !isReleasedBy(todayIsoDate = todayIsoDate, releasedDate = firstEpisode.released)
+        }
+        .keys
+
+    return if (unavailableSeasons.isEmpty()) {
+        this
+    } else {
+        filter { episode -> normalizeSeasonNumber(episode.season) !in unavailableSeasons }
+    }
+}
+
 internal fun MetaDetails.firstPlayableEpisode(): MetaVideo? =
     sortedPlayableEpisodes().firstOrNull()
 

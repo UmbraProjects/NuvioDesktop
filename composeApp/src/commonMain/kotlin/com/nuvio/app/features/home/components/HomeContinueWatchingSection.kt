@@ -44,6 +44,9 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import kotlin.math.roundToInt
 
+private fun continueWatchingProgressPercent(progressFraction: Float): Int =
+    (progressFraction * 100f).roundToInt().coerceIn(1, 99)
+
 @Composable
 internal fun HomeContinueWatchingSection(
     items: List<ContinueWatchingItem>,
@@ -361,7 +364,7 @@ private fun ContinueWatchingWideCard(
                         trackColor = Color.White.copy(alpha = 0.10f),
                     )
                     Text(
-                        text = "${(item.progressFraction * 100).roundToInt()}% watched",
+                        text = "${continueWatchingProgressPercent(item.progressFraction)}% watched",
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontSize = layout.progressLabelSize,
                             fontWeight = FontWeight.Medium,
