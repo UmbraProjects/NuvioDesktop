@@ -60,20 +60,23 @@ object ProfileRepository {
 
     val activeProfileId: Int get() = activeProfileIndex
 
+    fun loadCachedProfiles(): Boolean {
+        val stored = decodeStoredPayload() ?: return false
+        loadedCacheForUserId = stored.userId
+        applyStoredPayload(stored)
+        return _state.value.profiles.isNotEmpty()
+    }
+
     fun ensureLoaded(userId: String) {
         if (loadedCacheForUserId == userId && _state.value.isLoaded) return
 
+        val stored = decodeStoredPayload()
         loadedCacheForUserId = userId
-        val payload = ProfileStorage.loadPayload().orEmpty().trim()
-        if (payload.isEmpty()) {
+        if (stored == null) {
             _state.value = ProfileState()
             activeProfileIndex = 1
             return
         }
-
-        val stored = runCatching {
-            json.decodeFromString<StoredProfilePayload>(payload)
-        }.getOrNull() ?: return
 
         if (stored.userId != userId) {
             _state.value = ProfileState()
@@ -81,14 +84,7 @@ object ProfileRepository {
             return
         }
 
-        val profiles = stored.profiles.sortedBy { it.profileIndex }
-        activeProfileIndex = stored.activeProfileIndex
-        _state.value = ProfileState(
-            profiles = profiles,
-            activeProfile = profiles.find { it.profileIndex == activeProfileIndex } ?: profiles.firstOrNull(),
-            isLoaded = profiles.isNotEmpty(),
-        )
-        _state.value.activeProfile?.let { activeProfileIndex = it.profileIndex }
+        applyStoredPayload(stored)
     }
 
     fun clearInMemory() {
@@ -344,6 +340,26 @@ object ProfileRepository {
             activeProfileIndex = _state.value.activeProfile!!.profileIndex
         }
         persist()
+    }
+
+    private fun decodeStoredPayload(): StoredProfilePayload? {
+        val payload = ProfileStorage.loadPayload().orEmpty().trim()
+        if (payload.isEmpty()) return null
+
+        return runCatching {
+            json.decodeFromString<StoredProfilePayload>(payload)
+        }.getOrNull()
+    }
+
+    private fun applyStoredPayload(stored: StoredProfilePayload) {
+        val profiles = stored.profiles.sortedBy { it.profileIndex }
+        activeProfileIndex = stored.activeProfileIndex
+        _state.value = ProfileState(
+            profiles = profiles,
+            activeProfile = profiles.find { it.profileIndex == activeProfileIndex } ?: profiles.firstOrNull(),
+            isLoaded = profiles.isNotEmpty(),
+        )
+        _state.value.activeProfile?.let { activeProfileIndex = it.profileIndex }
     }
 
     private fun persist() {

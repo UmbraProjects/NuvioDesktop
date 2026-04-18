@@ -83,6 +83,7 @@ fun ProfileSwitcherTab(
 
     LaunchedEffect(Unit) {
         AvatarRepository.fetchAvatars()
+        AvatarRepository.refreshAvatars()
     }
 
     val haptic = LocalHapticFeedback.current

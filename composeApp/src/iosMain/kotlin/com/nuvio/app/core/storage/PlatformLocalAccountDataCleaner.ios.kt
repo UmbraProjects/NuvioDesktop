@@ -3,7 +3,10 @@ package com.nuvio.app.core.storage
 import platform.Foundation.NSUserDefaults
 
 internal actual object PlatformLocalAccountDataCleaner {
-    private val plainKeys = listOf("profile_payload")
+    private val plainKeys = listOf(
+        "profile_payload",
+        "avatar_catalog_payload",
+    )
     private val profileIndexedPrefixes = listOf(
         "installed_manifest_urls_",
         "plugins_state_",
