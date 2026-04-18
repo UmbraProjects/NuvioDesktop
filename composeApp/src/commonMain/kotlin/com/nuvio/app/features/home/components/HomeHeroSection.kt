@@ -66,7 +66,6 @@ private const val HERO_SWIPE_VELOCITY_THRESHOLD = 300f
 private const val MOBILE_HERO_VIEWPORT_RATIO = 0.78f
 private const val MOBILE_HERO_MIN_HEIGHT_DP = 360f
 private const val MOBILE_HERO_MAX_HEIGHT_DP = 760f
-private const val TABLET_HERO_VIEWPORT_RATIO = 0.62f
 
 internal data class HomeHeroLayout(
     val isTablet: Boolean,
@@ -427,13 +426,7 @@ internal fun homeHeroLayout(
     when {
         maxWidthDp >= 1200f -> HomeHeroLayout(
             isTablet = true,
-            heroHeight = tabletHeroHeight(
-                maxWidthDp = maxWidthDp,
-                viewportHeightDp = viewportHeightDp,
-                widthRatio = 0.42f,
-                minHeight = 500.dp,
-                maxHeight = 640.dp,
-            ),
+            heroHeight = (maxWidthDp * 0.42f).dp.coerceIn(360.dp, 440.dp),
             contentMaxWidth = 640.dp,
             contentWidthFraction = 0.56f,
             contentHorizontalPadding = 56.dp,
@@ -443,13 +436,7 @@ internal fun homeHeroLayout(
         )
         maxWidthDp >= 840f -> HomeHeroLayout(
             isTablet = true,
-            heroHeight = tabletHeroHeight(
-                maxWidthDp = maxWidthDp,
-                viewportHeightDp = viewportHeightDp,
-                widthRatio = 0.46f,
-                minHeight = 460.dp,
-                maxHeight = 580.dp,
-            ),
+            heroHeight = (maxWidthDp * 0.46f).dp.coerceIn(340.dp, 420.dp),
             contentMaxWidth = 560.dp,
             contentWidthFraction = 0.62f,
             contentHorizontalPadding = 40.dp,
@@ -459,13 +446,7 @@ internal fun homeHeroLayout(
         )
         maxWidthDp >= 600f -> HomeHeroLayout(
             isTablet = true,
-            heroHeight = tabletHeroHeight(
-                maxWidthDp = maxWidthDp,
-                viewportHeightDp = viewportHeightDp,
-                widthRatio = 0.58f,
-                minHeight = 420.dp,
-                maxHeight = 520.dp,
-            ),
+            heroHeight = (maxWidthDp * 0.58f).dp.coerceIn(320.dp, 380.dp),
             contentMaxWidth = 520.dp,
             contentWidthFraction = 0.72f,
             contentHorizontalPadding = 32.dp,
@@ -506,19 +487,6 @@ private fun mobileHeroHeight(
     }
 
     return cappedHeight.coerceIn(MOBILE_HERO_MIN_HEIGHT_DP.dp, MOBILE_HERO_MAX_HEIGHT_DP.dp)
-}
-
-private fun tabletHeroHeight(
-    maxWidthDp: Float,
-    viewportHeightDp: Float?,
-    widthRatio: Float,
-    minHeight: Dp,
-    maxHeight: Dp,
-): Dp {
-    val widthDrivenHeight = (maxWidthDp * widthRatio).dp
-    val viewportDrivenHeight = viewportHeightDp?.let { (it * TABLET_HERO_VIEWPORT_RATIO).dp }
-    val baseHeight = maxOf(widthDrivenHeight, viewportDrivenHeight ?: widthDrivenHeight)
-    return baseHeight.coerceIn(minHeight, maxHeight)
 }
 
 @Composable
