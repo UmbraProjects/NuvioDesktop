@@ -745,8 +745,9 @@ internal fun StreamList(
             }
 
             else -> {
-                filteredGroups.forEach { group ->
+                filteredGroups.forEachIndexed { groupIndex, group ->
                     streamSection(
+                        sectionKey = streamSectionRenderKey(groupIndex = groupIndex, group = group),
                         group = group,
                         showHeader = uiState.selectedFilter == null,
                         onStreamSelected = onStreamSelected,
@@ -769,6 +770,7 @@ internal fun StreamList(
 }
 
 private fun LazyListScope.streamSection(
+    sectionKey: String,
     group: AddonStreamGroup,
     showHeader: Boolean,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
@@ -779,7 +781,7 @@ private fun LazyListScope.streamSection(
     if (group.streams.isEmpty() && !group.isLoading) return
 
     if (showHeader) {
-        item(key = "header_${group.addonId}") {
+        item(key = "header_$sectionKey") {
             StreamSectionHeader(
                 addonName = group.addonName,
                 isLoading = group.isLoading,
@@ -793,10 +795,10 @@ private fun LazyListScope.streamSection(
     val sortedSources = streamsBySource.keys.sortedBy { it.lowercase() }
     val showSourceHeaders = sortedSources.size > 1
 
-    sortedSources.forEach { sourceName ->
+    sortedSources.forEachIndexed { sourceIndex, sourceName ->
         val sourceStreams = streamsBySource[sourceName].orEmpty()
         if (showSourceHeaders) {
-            item(key = "source_${group.addonId}_${sourceName}") {
+            item(key = "source_${sectionKey}_$sourceIndex") {
                 StreamSourceHeader(sourceName = sourceName)
             }
         }
@@ -804,7 +806,12 @@ private fun LazyListScope.streamSection(
         itemsIndexed(
             items = sourceStreams,
             key = { index, stream ->
-                "${group.addonId}_${sourceName}_${index}_${stream.url ?: stream.infoHash ?: stream.streamLabel}"
+                streamCardRenderKey(
+                    sectionKey = sectionKey,
+                    sourceIndex = sourceIndex,
+                    itemIndex = index,
+                    stream = stream,
+                )
             },
         ) { _, stream ->
             StreamCard(
@@ -823,6 +830,26 @@ private fun LazyListScope.streamSection(
             Spacer(modifier = Modifier.height(10.dp))
         }
     }
+}
+
+internal fun streamSectionRenderKey(
+    groupIndex: Int,
+    group: AddonStreamGroup,
+): String = "$groupIndex:${group.addonId}"
+
+internal fun streamCardRenderKey(
+    sectionKey: String,
+    sourceIndex: Int,
+    itemIndex: Int,
+    stream: StreamItem,
+): String = buildString {
+    append(sectionKey)
+    append(':')
+    append(sourceIndex)
+    append(':')
+    append(itemIndex)
+    append(':')
+    append(stream.url ?: stream.infoHash ?: stream.streamLabel)
 }
 
 // ---------------------------------------------------------------------------
