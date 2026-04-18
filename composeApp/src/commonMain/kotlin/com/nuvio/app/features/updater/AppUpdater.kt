@@ -257,8 +257,11 @@ class AppUpdaterController internal constructor(
                 _uiState.update { state ->
                     state.copy(
                         isChecking = false,
-                        update = update,
+                        update = update.takeIf { remoteNewer },
                         isUpdateAvailable = remoteNewer,
+                        isDownloading = false,
+                        downloadProgress = null,
+                        downloadedApkPath = state.downloadedApkPath.takeIf { remoteNewer },
                         showDialog = shouldShowDialog,
                         showUnknownSourcesDialog = false,
                         errorMessage = null,
@@ -272,6 +275,9 @@ class AppUpdaterController internal constructor(
                 _uiState.update { state ->
                     state.copy(
                         isChecking = false,
+                        isDownloading = false,
+                        downloadProgress = null,
+                        downloadedApkPath = null,
                         update = null,
                         isUpdateAvailable = false,
                         showDialog = force && error !is NoChannelReleaseException,
@@ -404,6 +410,9 @@ fun AppUpdaterHost(
     }
 
     if (!state.showDialog) return
+
+    val showPrimaryAction =
+        state.showUnknownSourcesDialog || state.isDownloading || state.downloadedApkPath != null || state.isUpdateAvailable
 
     BasicAlertDialog(
         onDismissRequest = {
@@ -540,29 +549,31 @@ fun AppUpdaterHost(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            when {
-                                state.showUnknownSourcesDialog -> controller.resumeInstallation()
-                                state.downloadedApkPath != null -> controller.installDownloadedUpdate()
-                                else -> controller.downloadUpdate()
-                            }
-                        },
-                        enabled = if (state.showUnknownSourcesDialog || state.downloadedApkPath != null) {
-                            true
-                        } else {
-                            !state.isChecking && !state.isDownloading && state.update != null
-                        },
-                    ) {
-                        Text(
-                            when {
-                                state.showUnknownSourcesDialog -> "Continue"
-                                state.downloadedApkPath != null -> "Install"
-                                state.isDownloading -> "Downloading"
-                                else -> "Update"
+                    if (showPrimaryAction) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                when {
+                                    state.showUnknownSourcesDialog -> controller.resumeInstallation()
+                                    state.downloadedApkPath != null -> controller.installDownloadedUpdate()
+                                    else -> controller.downloadUpdate()
+                                }
                             },
-                        )
+                            enabled = if (state.showUnknownSourcesDialog || state.downloadedApkPath != null) {
+                                true
+                            } else {
+                                !state.isChecking && !state.isDownloading && state.isUpdateAvailable
+                            },
+                        ) {
+                            Text(
+                                when {
+                                    state.showUnknownSourcesDialog -> "Continue"
+                                    state.downloadedApkPath != null -> "Install"
+                                    state.isDownloading -> "Downloading"
+                                    else -> "Update"
+                                },
+                            )
+                        }
                     }
 
                     if (state.isUpdateAvailable && !state.isDownloading && !state.showUnknownSourcesDialog) {
