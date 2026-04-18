@@ -30,6 +30,7 @@ internal fun LazyListScope.settingsRootContent(
     onIntegrationsClick: () -> Unit,
     onTraktClick: () -> Unit,
     onSupportersContributorsClick: () -> Unit,
+    onCheckForUpdatesClick: (() -> Unit)? = null,
     onDownloadsClick: () -> Unit,
     onAccountClick: () -> Unit,
     onSwitchProfileClick: (() -> Unit)? = null,
@@ -145,6 +146,16 @@ internal fun LazyListScope.settingsRootContent(
                         isTablet = isTablet,
                         onClick = onSupportersContributorsClick,
                     )
+                    if (onCheckForUpdatesClick != null) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsNavigationRow(
+                            title = "Check for updates",
+                            description = "Check for new versions of the app.",
+                            icon = Icons.Rounded.CloudDownload,
+                            isTablet = isTablet,
+                            onClick = onCheckForUpdatesClick,
+                        )
+                    }
                 }
             }
         }

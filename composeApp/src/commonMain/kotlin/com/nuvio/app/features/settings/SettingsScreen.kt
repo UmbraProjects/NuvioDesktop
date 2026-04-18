@@ -71,6 +71,7 @@ fun SettingsScreen(
     onDownloadsClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
+    onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsClick: () -> Unit = {},
 ) {
     BoxWithConstraints(
@@ -190,6 +191,7 @@ fun SettingsScreen(
                 onSwitchProfile = onSwitchProfile,
                 onDownloadsClick = onDownloadsClick,
                 onSupportersContributorsClick = onSupportersContributorsClick,
+                onCheckForUpdatesClick = onCheckForUpdatesClick,
                 onCollectionsClick = onCollectionsClick,
             )
         } else {
@@ -233,6 +235,7 @@ fun SettingsScreen(
                 onDownloadsClick = onDownloadsClick,
                 onAccountClick = onAccountClick,
                 onSupportersContributorsClick = onSupportersContributorsClick,
+                onCheckForUpdatesClick = onCheckForUpdatesClick,
                 onCollectionsClick = onCollectionsClick,
             )
         }
@@ -280,6 +283,7 @@ private fun MobileSettingsScreen(
     onDownloadsClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
+    onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsClick: () -> Unit = {},
 ) {
     NuvioScreen {
@@ -301,6 +305,7 @@ private fun MobileSettingsScreen(
                 onIntegrationsClick = { onPageChange(SettingsPage.Integrations) },
                 onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
                 onSupportersContributorsClick = onSupportersContributorsClick,
+                onCheckForUpdatesClick = onCheckForUpdatesClick,
                 onDownloadsClick = onDownloadsClick,
                 onAccountClick = onAccountClick,
                 onSwitchProfileClick = onSwitchProfile,
@@ -430,6 +435,7 @@ private fun TabletSettingsScreen(
     onSwitchProfile: (() -> Unit)? = null,
     onDownloadsClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
+    onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsClick: () -> Unit = {},
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.General.name) }
@@ -518,6 +524,7 @@ private fun TabletSettingsScreen(
                     onIntegrationsClick = { openInlinePage(SettingsPage.Integrations) },
                     onTraktClick = { openInlinePage(SettingsPage.TraktAuthentication) },
                     onSupportersContributorsClick = { openInlinePage(SettingsPage.SupportersContributors) },
+                    onCheckForUpdatesClick = onCheckForUpdatesClick,
                     onDownloadsClick = onDownloadsClick,
                     onAccountClick = { openInlinePage(SettingsPage.Account) },
                     onSwitchProfileClick = onSwitchProfile,

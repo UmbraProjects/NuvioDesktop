@@ -154,6 +154,8 @@ import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktConnectionMode
 import com.nuvio.app.features.trakt.TraktListTab
+import com.nuvio.app.features.updater.AppUpdaterHost
+import com.nuvio.app.features.updater.rememberAppUpdaterController
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
@@ -442,6 +444,7 @@ private fun MainAppContent(
     onSwitchProfile: () -> Unit = {},
 ) {
         val navController = rememberNavController()
+        val appUpdaterController = rememberAppUpdaterController()
         remember {
             EpisodeReleaseNotificationsRepository.ensureLoaded()
         }
@@ -959,6 +962,16 @@ private fun MainAppContent(
                                     onAccountSettingsClick = { navController.navigate(AccountSettingsRoute) },
                                     onSupportersContributorsSettingsClick = {
                                         navController.navigate(SupportersContributorsSettingsRoute)
+                                    },
+                                    onCheckForUpdatesClick = if (AppFeaturePolicy.inAppUpdaterEnabled) {
+                                        {
+                                            appUpdaterController.checkForUpdates(
+                                                force = true,
+                                                showNoUpdateFeedback = true,
+                                            )
+                                        }
+                                    } else {
+                                        null
                                     },
                                     onCollectionsSettingsClick = { navController.navigate(CollectionsRoute) },
                                     onFolderClick = { collectionId, folderId ->
@@ -1797,6 +1810,13 @@ private fun MainAppContent(
                     .align(Alignment.TopCenter)
                     .zIndex(20f),
             )
+
+            AppUpdaterHost(
+                controller = appUpdaterController,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .zIndex(25f),
+            )
         }
 }
 
@@ -1840,6 +1860,7 @@ private fun AppTabHost(
     onPluginsSettingsClick: () -> Unit = {},
     onAccountSettingsClick: () -> Unit = {},
     onSupportersContributorsSettingsClick: () -> Unit = {},
+    onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsSettingsClick: () -> Unit = {},
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
     onInitialHomeContentRendered: () -> Unit = {},
@@ -1890,6 +1911,7 @@ private fun AppTabHost(
                         onPluginsClick = onPluginsSettingsClick,
                         onAccountClick = onAccountSettingsClick,
                         onSupportersContributorsClick = onSupportersContributorsSettingsClick,
+                        onCheckForUpdatesClick = onCheckForUpdatesClick,
                         onCollectionsClick = onCollectionsSettingsClick,
                     )
                 }
