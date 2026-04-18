@@ -316,6 +316,7 @@ android {
         }
     }
     sourceSets.getByName("full") {
+        manifest.srcFile("src/androidFull/AndroidManifest.xml")
         java.srcDir(fullCommonSourceDir)
     }
     packaging {

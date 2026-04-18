@@ -91,7 +91,12 @@ object AndroidAppUpdaterPlatform {
     fun canRequestPackageInstalls(): Boolean {
         val context = appContext ?: return false
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.packageManager.canRequestPackageInstalls()
+            try {
+                context.packageManager.canRequestPackageInstalls()
+            } catch (_: SecurityException) {
+            
+                true
+            }
         } else {
             true
         }

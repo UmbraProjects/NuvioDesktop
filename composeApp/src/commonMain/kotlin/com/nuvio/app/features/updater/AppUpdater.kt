@@ -536,25 +536,12 @@ fun AppUpdaterHost(
                     }
                 }
 
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (state.isUpdateAvailable && !state.isDownloading && !state.showUnknownSourcesDialog) {
-                        OutlinedButton(onClick = controller::ignoreThisVersion) {
-                            Text("Ignore")
-                        }
-                    }
-
-                    OutlinedButton(
-                        onClick = controller::dismissDialog,
-                        enabled = !state.isDownloading,
-                    ) {
-                        Text(if (state.isDownloading) "Downloading" else "Later")
-                    }
-
                     Button(
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = {
                             when {
                                 state.showUnknownSourcesDialog -> controller.resumeInstallation()
@@ -576,6 +563,37 @@ fun AppUpdaterHost(
                                 else -> "Update"
                             },
                         )
+                    }
+
+                    if (state.isUpdateAvailable && !state.isDownloading && !state.showUnknownSourcesDialog) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                onClick = controller::ignoreThisVersion,
+                            ) {
+                                Text("Ignore")
+                            }
+
+                            OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                onClick = controller::dismissDialog,
+                                enabled = !state.isDownloading,
+                            ) {
+                                Text(if (state.isDownloading) "Downloading" else "Later")
+                            }
+                        }
+                    } else {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = controller::dismissDialog,
+                            enabled = !state.isDownloading,
+                        ) {
+                            Text(if (state.isDownloading) "Downloading" else "Later")
+                        }
                     }
                 }
             }
