@@ -3,6 +3,7 @@ package com.nuvio.app.features.player
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.plugins.PluginRepository
@@ -215,11 +216,12 @@ object PlayerStreamsRepository {
         val job = scope.launch {
             val addonJobs = streamAddons.map { addon ->
                 async {
-                    val encodedId = videoId.replace("%", "%25").replace(" ", "%20")
-                    val baseUrl = addon.manifest.transportUrl
-                        .substringBefore("?")
-                        .removeSuffix("/manifest.json")
-                    val url = "$baseUrl/stream/$type/$encodedId.json"
+                    val url = buildAddonResourceUrl(
+                        manifestUrl = addon.manifest.transportUrl,
+                        resource = "stream",
+                        type = type,
+                        id = videoId,
+                    )
 
                     val displayName = addon.addonName
                     runCatching {

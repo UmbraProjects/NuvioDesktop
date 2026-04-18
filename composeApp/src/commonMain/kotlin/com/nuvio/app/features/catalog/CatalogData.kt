@@ -1,6 +1,7 @@
 package com.nuvio.app.features.catalog
 
 import com.nuvio.app.features.addons.AddonCatalog
+import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.home.HomeCatalogParser
 import com.nuvio.app.features.home.MetaPreview
@@ -122,21 +123,19 @@ internal fun buildCatalogUrl(
     search: String?,
     skip: Int?,
 ): String {
-    val baseUrl = manifestUrl
-        .substringBefore("?")
-        .removeSuffix("/manifest.json")
-
     val extraParts = buildList {
         if (!search.isNullOrBlank()) add("search=${search.encodeCatalogExtra()}")
         if (!genre.isNullOrBlank()) add("genre=${genre.encodeCatalogExtra()}")
         if (skip != null && skip > 0) add("skip=$skip")
     }
 
-    return if (extraParts.isEmpty()) {
-        "$baseUrl/catalog/$type/$catalogId.json"
-    } else {
-        "$baseUrl/catalog/$type/$catalogId/${extraParts.joinToString(separator = "&")}.json"
-    }
+    return buildAddonResourceUrl(
+        manifestUrl = manifestUrl,
+        resource = "catalog",
+        type = type,
+        id = catalogId,
+        extraPathSegment = extraParts.joinToString(separator = "&").ifBlank { null },
+    )
 }
 
 private fun String.encodeCatalogExtra(): String =

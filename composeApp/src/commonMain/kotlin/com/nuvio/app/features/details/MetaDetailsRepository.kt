@@ -3,6 +3,7 @@ package com.nuvio.app.features.details
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.AddonManifest
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.mdblist.MdbListMetadataService
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
@@ -217,10 +218,12 @@ object MetaDetailsRepository {
         id: String,
         includeMdbList: Boolean,
     ): MetaDetails? {
-        val baseUrl = manifest.transportUrl
-            .substringBefore("?")
-            .removeSuffix("/manifest.json")
-        val url = "$baseUrl/meta/$type/$id.json"
+        val url = buildAddonResourceUrl(
+            manifestUrl = manifest.transportUrl,
+            resource = "meta",
+            type = type,
+            id = id,
+        )
 
         return try {
             TmdbSettingsRepository.ensureLoaded()

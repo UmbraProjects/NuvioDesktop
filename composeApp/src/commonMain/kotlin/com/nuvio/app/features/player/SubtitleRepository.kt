@@ -1,6 +1,7 @@
 package com.nuvio.app.features.player
 
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.httpGetText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,8 +50,12 @@ object SubtitleRepository {
                     subtitleResource.idPrefixes.any { videoId.startsWith(it) }
                 if (!prefixMatch) continue
 
-                val baseUrl = manifest.transportUrl.substringBeforeLast("/manifest.json")
-                val subtitleUrl = "$baseUrl/subtitles/$type/$videoId.json"
+                val subtitleUrl = buildAddonResourceUrl(
+                    manifestUrl = manifest.transportUrl,
+                    resource = "subtitles",
+                    type = type,
+                    id = videoId,
+                )
 
                 try {
                     val response = withContext(Dispatchers.Default) {
