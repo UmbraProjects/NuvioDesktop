@@ -1,35 +1,101 @@
-This is a Kotlin Multiplatform project targeting Android, iOS.
+<div align="center">
 
-* [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./composeApp/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./composeApp/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./composeApp/src/jvmMain/kotlin)
-    folder is the appropriate location.
+  <img src="https://raw.githubusercontent.com/NuvioMedia/NuvioMobile/main/composeApp/src/commonMain/composeResources/drawable/app_logo_wordmark.png" alt="Nuvio" width="300" />
+  <br />
+  <br />
 
-* [/iosApp](./iosApp/iosApp) contains iOS applications. Even if you’re sharing your UI with Compose Multiplatform,
-  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+  [![Contributors][contributors-shield]][contributors-url]
+  [![Forks][forks-shield]][forks-url]
+  [![Stargazers][stars-shield]][stars-url]
+  [![Issues][issues-shield]][issues-url]
+  [![License][license-shield]][license-url]
 
-### Build and Run Android Application
+  <p>
+    A modern media hub for Android and iOS built with Kotlin Multiplatform and Compose Multiplatform.
+    <br />
+    Stremio addon ecosystem • Cross-platform
+  </p>
 
-To build and run the development version of the Android app, use the run configuration from the run widget
-in your IDE’s toolbar or build it directly from the terminal:
-- on macOS/Linux
-  ```shell
-  ./gradlew :composeApp:assembleDebug
-  ```
-- on Windows
-  ```shell
-  .\gradlew.bat :composeApp:assembleDebug
-  ```
+</div>
 
-### Build and Run iOS Application
+## About
 
-To build and run the development version of the iOS app, use the run configuration from the run widget
-in your IDE’s toolbar or open the [/iosApp](./iosApp) directory in Xcode and run it from there.
+Nuvio is the current Kotlin Multiplatform rewrite of the original React Native app. It delivers a shared Compose UI for Android and iOS while keeping the playback-focused experience, collection tools, watch progress flows, downloads, and Stremio addon ecosystem integration that shaped the earlier app.
 
----
+The mobile app is built from a single shared codebase in [composeApp](./composeApp), with native platform entry points for Android and iOS.
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
+## Installation
+
+### Android
+
+Download the latest Android build from [GitHub Releases](https://github.com/NuvioMedia/NuvioMobile/releases/latest).
+
+### iOS
+
+- [TestFlight](https://testflight.apple.com/join/u4y7MHK9)
+
+## Development
+
+```bash
+git clone https://github.com/NuvioMedia/NuvioMobile.git
+cd NuvioMobile
+./scripts/run-mobile.sh android
+# or
+./scripts/run-mobile.sh ios
+```
+
+### Project Structure
+
+- `composeApp/` contains the shared Kotlin Multiplatform and Compose Multiplatform app code.
+- `composeApp/src/commonMain/` contains shared UI, features, repositories, and platform-agnostic logic.
+- `composeApp/src/androidMain/` contains Android-specific integrations.
+- `composeApp/src/iosMain/` contains iOS-specific integrations.
+- `iosApp/` contains the native Xcode project and iOS entry point.
+
+Useful commands:
+
+```bash
+./gradlew :composeApp:assembleDebug
+./gradlew :composeApp:compileKotlinIosSimulatorArm64
+./scripts/build-distribution.sh
+```
+
+Versioning is driven from `iosApp/Configuration/Version.xcconfig`, which is used as the shared source of truth for both iOS and Android builds.
+
+## Legal & DMCA
+
+Nuvio functions solely as a client-side interface for browsing metadata and playing media provided by user-installed extensions and/or user-provided sources. It is intended for content the user owns or is otherwise authorized to access.
+
+Nuvio is not affiliated with any third-party extensions, catalogs, sources, or content providers. It does not host, store, or distribute any media content.
+
+For comprehensive legal information, including our full disclaimer, third-party extension policy, and DMCA/Copyright information, please visit our [Legal & Disclaimer Page](https://nuvioapp.space/legal).
+
+## Built With
+
+- Kotlin Multiplatform
+- Compose Multiplatform
+- Kotlin
+- AndroidX Media3
+- AVFoundation and native iOS integrations
+
+## Star History
+
+<a href="https://www.star-history.com/#NuvioMedia/NuvioMobile&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=NuvioMedia/NuvioMobile&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=NuvioMedia/NuvioMobile&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=NuvioMedia/NuvioMobile&type=date&legend=top-left" />
+ </picture>
+</a>
+
+<!-- MARKDOWN LINKS & IMAGES -->
+[contributors-shield]: https://img.shields.io/github/contributors/NuvioMedia/NuvioMobile.svg?style=for-the-badge
+[contributors-url]: https://github.com/NuvioMedia/NuvioMobile/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/NuvioMedia/NuvioMobile.svg?style=for-the-badge
+[forks-url]: https://github.com/NuvioMedia/NuvioMobile/network/members
+[stars-shield]: https://img.shields.io/github/stars/NuvioMedia/NuvioMobile.svg?style=for-the-badge
+[stars-url]: https://github.com/NuvioMedia/NuvioMobile/stargazers
+[issues-shield]: https://img.shields.io/github/issues/NuvioMedia/NuvioMobile.svg?style=for-the-badge
+[issues-url]: https://github.com/NuvioMedia/NuvioMobile/issues
+[license-shield]: https://img.shields.io/github/license/NuvioMedia/NuvioMobile.svg?style=for-the-badge
+[license-url]: https://github.com/NuvioMedia/NuvioMobile/blob/main/LICENSE
