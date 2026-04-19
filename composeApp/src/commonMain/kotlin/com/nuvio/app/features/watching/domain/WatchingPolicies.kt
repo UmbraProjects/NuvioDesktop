@@ -104,7 +104,10 @@ private fun isoCalendarDateOrNull(value: String?): String? {
     val year = parts[0].toIntOrNull() ?: return null
     val month = parts[1].toIntOrNull()?.takeIf { it in 1..12 } ?: return null
     val day = parts[2].toIntOrNull()?.takeIf { it in 1..31 } ?: return null
-    return "%04d-%02d-%02d".format(year, month, day)
+    val normalizedYear = year.toString().padStart(4, '0')
+    val normalizedMonth = month.toString().padStart(2, '0')
+    val normalizedDay = day.toString().padStart(2, '0')
+    return "$normalizedYear-$normalizedMonth-$normalizedDay"
 }
 
 private fun isoEpochDay(date: String): Long {
