@@ -1,0 +1,218 @@
+name: Bug report
+description: Report a reproducible bug (one per issue).
+title: "[Bug]: short summary here"
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug.
+
+        If we can reproduce it, we can usually fix it. This form is just to get the basics in one place.
+        Please replace the default title with a short summary of the actual problem.
+
+        If the app crashes, logs are required. Crash reports without logs may be labeled `needs-info`.
+
+  - type: markdown
+    attributes:
+      value: |
+        ## Quick checks
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I can reproduce this on the latest release or latest main build.
+          required: false
+        - label: This issue is limited to a single bug (not multiple unrelated problems).
+          required: true
+        - label: This is not a source/stream-specific error (the issue happens regardless of which source is used).
+          required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ## Version & device
+
+  - type: input
+    id: app_version
+    attributes:
+      label: App version / commit
+      description: Release version (e.g. 1.2.3) or commit hash. If unsure, say where you got the build from.
+      placeholder: "e.g. 1.2.3, or main@abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      options:
+        - GitHub Release / App Store / Play Store
+        - TestFlight
+        - CI build / Nightly
+        - Built from source
+        - Other (please describe below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android (phone/tablet)
+        - iOS (iPhone)
+        - iOS (iPad)
+        - macOS (desktop)
+        - Windows (desktop)
+        - Linux (desktop)
+        - Android emulator
+        - iOS simulator
+        - Other (please describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: device_model
+    attributes:
+      label: Device model
+      description: "Example: iPhone 15 Pro, Pixel 8, MacBook Air M2, etc."
+      placeholder: "e.g. iPhone 15 Pro"
+    validations:
+      required: true
+
+  - type: input
+    id: os_version
+    attributes:
+      label: OS version
+      placeholder: "e.g. iOS 18.1, Android 14, macOS 15.2"
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ## What happened?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area (tag)
+      description: Pick the closest match. It helps triage.
+      options:
+        - Playback (start/stop/buffering)
+        - Streams / Sources (selection, loading, errors)
+        - Next Episode / Auto-play
+        - Watch Progress (resume, watched state, history)
+        - Subtitles (download, styling, sync)
+        - Audio tracks
+        - Navigation / Gestures
+        - UI / Layout
+        - Settings
+        - Sync (Trakt / remote)
+        - Downloads / Offline
+        - Platform-specific (iOS only / Android only / Desktop only)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps. If it depends on specific content, describe it (movie/series, season/episode, source/addon name) without sharing private links.
+      placeholder: |
+        1. Open ...
+        2. Navigate to ...
+        3. Tap / Click ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "What you expected to happen."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: "What actually happened (include any on-screen error text/codes)."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Frequency
+      options:
+        - Always
+        - Often (more than 50%)
+        - Sometimes
+        - Rarely
+        - Once
+    validations:
+      required: true
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Did this work before?
+      options:
+        - Not sure
+        - Yes, it used to work
+        - No, it never worked
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ## Extra context (optional)
+
+  - type: textarea
+    id: media_details
+    attributes:
+      label: Media details (optional)
+      description: Only include what you can safely share.
+      placeholder: |
+        - Content type: series/movie
+        - Season/Episode: S1E2
+        - Stream/source: (addon name / source label)
+        - Video format: (if known)
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (required for crash reports)
+      description: |
+        Required if the app crashes or force closes.
+        For other bug reports, logs are optional but still helpful.
+
+        **Android:** `adb logcat -d | tail -n 300`
+        **iOS:** Crash log from Xcode Organizer or Console.app
+        **Desktop:** Terminal/console output from around the time the issue occurred
+      render: shell
+      placeholder: |
+        Paste logs here
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else? (optional)
+      description: Screenshots/recordings, related issues, workarounds, etc.
+    validations:
+      required: false
