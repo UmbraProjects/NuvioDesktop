@@ -3,6 +3,7 @@ package com.nuvio.app.features.watching.domain
 private const val InProgressStartThresholdFraction = 0.02f
 private const val CompletionThresholdFraction = 0.85
 private const val InProgressStartThresholdMinMs = 30_000L
+private const val UpcomingNextSeasonWindowDays = 7
 
 fun watchedKey(
     content: WatchingContentRef,
@@ -46,6 +47,78 @@ fun isReleasedBy(
         ?.takeIf { it.length == 10 }
         ?: return true
     return isoDate <= todayIsoDate
+}
+
+internal fun shouldSurfaceNextEpisode(
+    watchedSeasonNumber: Int?,
+    candidateSeasonNumber: Int?,
+    todayIsoDate: String,
+    releasedDate: String?,
+    showUnairedNextUp: Boolean,
+): Boolean {
+    val isSeasonRollover = normalizeSeasonNumber(candidateSeasonNumber) != normalizeSeasonNumber(watchedSeasonNumber)
+    if (!isSeasonRollover) {
+        if (showUnairedNextUp) return true
+        return isReleasedBy(todayIsoDate = todayIsoDate, releasedDate = releasedDate)
+    }
+
+    if (isExplicitlyReleasedBy(todayIsoDate = todayIsoDate, releasedDate = releasedDate)) {
+        return true
+    }
+    if (!showUnairedNextUp) {
+        return false
+    }
+
+    val daysUntilRelease = daysUntilExplicitRelease(
+        todayIsoDate = todayIsoDate,
+        releasedDate = releasedDate,
+    ) ?: return false
+    return daysUntilRelease in 0..UpcomingNextSeasonWindowDays
+}
+
+private fun isExplicitlyReleasedBy(
+    todayIsoDate: String,
+    releasedDate: String?,
+): Boolean {
+    val isoDate = isoCalendarDateOrNull(releasedDate) ?: return false
+    return isoDate <= todayIsoDate
+}
+
+private fun daysUntilExplicitRelease(
+    todayIsoDate: String,
+    releasedDate: String?,
+): Int? {
+    val startDate = isoCalendarDateOrNull(todayIsoDate) ?: return null
+    val targetDate = isoCalendarDateOrNull(releasedDate) ?: return null
+    return (isoEpochDay(targetDate) - isoEpochDay(startDate)).toInt()
+}
+
+private fun isoCalendarDateOrNull(value: String?): String? {
+    val datePart = value
+        ?.trim()
+        ?.substringBefore('T')
+        ?.takeIf { it.length == 10 }
+        ?: return null
+    val parts = datePart.split('-')
+    if (parts.size != 3) return null
+    val year = parts[0].toIntOrNull() ?: return null
+    val month = parts[1].toIntOrNull()?.takeIf { it in 1..12 } ?: return null
+    val day = parts[2].toIntOrNull()?.takeIf { it in 1..31 } ?: return null
+    return "%04d-%02d-%02d".format(year, month, day)
+}
+
+private fun isoEpochDay(date: String): Long {
+    val year = date.substring(0, 4).toLong()
+    val month = date.substring(5, 7).toLong()
+    val day = date.substring(8, 10).toLong()
+
+    val adjustedYear = year - if (month <= 2L) 1L else 0L
+    val era = if (adjustedYear >= 0L) adjustedYear / 400L else (adjustedYear - 399L) / 400L
+    val yearOfEra = adjustedYear - era * 400L
+    val adjustedMonth = month + if (month > 2L) -3L else 9L
+    val dayOfYear = (153L * adjustedMonth + 2L) / 5L + day - 1L
+    val dayOfEra = yearOfEra * 365L + yearOfEra / 4L - yearOfEra / 100L + dayOfYear
+    return era * 146_097L + dayOfEra - 719_468L
 }
 
 fun releasedEpisodes(

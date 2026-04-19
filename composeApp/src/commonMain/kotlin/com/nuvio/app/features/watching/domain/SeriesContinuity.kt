@@ -45,7 +45,15 @@ fun nextReleasedEpisodeAfter(
     val candidates = sortedEpisodes
         .dropWhile { episode -> buildPlaybackVideoId(content, episode.seasonNumber, episode.episodeNumber, episode.videoId) != watchedVideoId }
         .drop(1)
-        .filter { episode -> isReleasedBy(todayIsoDate = todayIsoDate, releasedDate = episode.releasedDate) }
+        .filter { episode ->
+            shouldSurfaceNextEpisode(
+                watchedSeasonNumber = seasonNumber,
+                candidateSeasonNumber = episode.seasonNumber,
+                todayIsoDate = todayIsoDate,
+                releasedDate = episode.releasedDate,
+                showUnairedNextUp = false,
+            )
+        }
     return candidates.firstOrNull { normalizeSeasonNumber(it.seasonNumber) > 0 }
 }
 

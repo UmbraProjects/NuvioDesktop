@@ -14,6 +14,7 @@ import com.nuvio.app.features.watching.domain.isReleasedBy
 import com.nuvio.app.features.watching.domain.latestCompletedSeriesEpisode
 import com.nuvio.app.features.watching.domain.playLabel
 import com.nuvio.app.features.watching.domain.resumeLabel
+import com.nuvio.app.features.watching.domain.shouldSurfaceNextEpisode
 import com.nuvio.app.features.watching.domain.upNextLabel
 
 internal fun MetaDetails.sortedPlayableEpisodes(): List<MetaVideo> =
@@ -64,6 +65,20 @@ internal fun MetaDetails.nextReleasedEpisodeAfter(
     episodeNumber: Int?,
     todayIsoDate: String,
 ): MetaVideo? {
+    return nextReleasedEpisodeAfter(
+        seasonNumber = seasonNumber,
+        episodeNumber = episodeNumber,
+        todayIsoDate = todayIsoDate,
+        showUnairedNextUp = false,
+    )
+}
+
+internal fun MetaDetails.nextReleasedEpisodeAfter(
+    seasonNumber: Int?,
+    episodeNumber: Int?,
+    todayIsoDate: String,
+    showUnairedNextUp: Boolean,
+): MetaVideo? {
     val sortedEpisodes = sortedPlayableEpisodes()
     val watchedVideoId = buildPlaybackVideoId(
         content = WatchingContentRef(type = type, id = id),
@@ -81,7 +96,13 @@ internal fun MetaDetails.nextReleasedEpisodeAfter(
         }
         .drop(1)
         .filter { episode ->
-            isReleasedBy(todayIsoDate = todayIsoDate, releasedDate = episode.released)
+            shouldSurfaceNextEpisode(
+                watchedSeasonNumber = seasonNumber,
+                candidateSeasonNumber = episode.season,
+                todayIsoDate = todayIsoDate,
+                releasedDate = episode.released,
+                showUnairedNextUp = showUnairedNextUp,
+            )
         }
     return candidates.firstOrNull { normalizeSeasonNumber(it.season) > 0 }
 }

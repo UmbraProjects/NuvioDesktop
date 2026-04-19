@@ -20,8 +20,7 @@ import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.details.MetaDetailsRepository
-import com.nuvio.app.features.details.filterUnavailableFutureSeasons
-import com.nuvio.app.features.details.sortedPlayableEpisodes
+import com.nuvio.app.features.details.nextReleasedEpisodeAfter
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
@@ -45,10 +44,8 @@ import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import com.nuvio.app.features.watchprogress.toUpNextContinueWatchingItem
 import com.nuvio.app.features.watching.application.WatchingState
 import com.nuvio.app.features.watching.domain.WatchingContentRef
-import com.nuvio.app.features.watching.domain.buildPlaybackVideoId
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.home.components.HomeCollectionRowSection
-import com.nuvio.app.features.watching.domain.isReleasedBy
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -604,41 +601,6 @@ private fun CompletedSeriesCandidate.toContinueWatchingSeed(meta: com.nuvio.app.
         lastUpdatedEpochMs = markedAtEpochMs,
         isCompleted = true,
     )
-
-private fun com.nuvio.app.features.details.MetaDetails.nextReleasedEpisodeAfter(
-    seasonNumber: Int?,
-    episodeNumber: Int?,
-    todayIsoDate: String,
-    showUnairedNextUp: Boolean,
-): com.nuvio.app.features.details.MetaVideo? {
-    val content = WatchingContentRef(type = type, id = id)
-    val watchedVideoId = buildPlaybackVideoId(
-        content = content,
-        seasonNumber = seasonNumber,
-        episodeNumber = episodeNumber,
-    )
-
-    val ordered = sortedPlayableEpisodes()
-        .dropWhile { episode ->
-            buildPlaybackVideoId(
-                content = content,
-                seasonNumber = episode.season,
-                episodeNumber = episode.episode,
-                fallbackVideoId = episode.id,
-            ) != watchedVideoId
-        }
-        .drop(1)
-        .filter { episode -> (episode.season ?: 0) > 0 }
-        .filterUnavailableFutureSeasons(todayIsoDate = todayIsoDate)
-
-    if (showUnairedNextUp) {
-        return ordered.firstOrNull()
-    }
-
-    return ordered.firstOrNull { episode ->
-        isReleasedBy(todayIsoDate = todayIsoDate, releasedDate = episode.released)
-    }
-}
 
 private fun ContinueWatchingItem.shouldDisplayInContinueWatching(): Boolean =
     isNextUp || progressFraction < 0.995f
