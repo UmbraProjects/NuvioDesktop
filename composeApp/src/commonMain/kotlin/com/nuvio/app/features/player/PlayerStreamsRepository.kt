@@ -7,6 +7,7 @@ import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.plugins.PluginRepository
+import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.plugins.PluginRuntimeResult
 import com.nuvio.app.features.plugins.PluginScraper
 import com.nuvio.app.features.streams.AddonStreamGroup
@@ -243,7 +244,11 @@ object PlayerStreamsRepository {
                 async {
                     PluginRepository.executeScraper(
                         scraper = scraper,
-                        tmdbId = videoId.toPluginTmdbId(),
+                        tmdbId = pluginContentId(
+                            videoId = videoId,
+                            season = season,
+                            episode = episode,
+                        ),
                         mediaType = type,
                         season = season,
                         episode = episode,
@@ -338,12 +343,4 @@ private fun PluginRuntimeResult.toStreamItem(scraper: PluginScraper): StreamItem
             )
         },
     )
-}
-
-private fun String.toPluginTmdbId(): String {
-    return when {
-        startsWith("tmdb:") -> removePrefix("tmdb:").substringBefore(":").ifBlank { this }
-        startsWith("tmdb/") -> removePrefix("tmdb/").substringBefore('/').ifBlank { this }
-        else -> this
-    }
 }
