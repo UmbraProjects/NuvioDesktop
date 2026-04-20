@@ -179,8 +179,12 @@ object CollectionRepository {
                             },
                         )
                     }
-                    f.catalogSources.forEachIndexed { si, s ->
-                        if (s.addonId.isBlank() || s.type.isBlank() || s.catalogId.isBlank()) {
+                    f.resolvedSources.forEachIndexed { si, s ->
+                        val invalidAddon = !s.isTmdb &&
+                            (s.addonId.isNullOrBlank() || s.type.isNullOrBlank() || s.catalogId.isNullOrBlank())
+                        val invalidTmdb = s.isTmdb &&
+                            s.tmdbSourceType.isNullOrBlank()
+                        if (invalidAddon || invalidTmdb) {
                             return ValidationResult(
                                 valid = false,
                                 error = runBlocking {

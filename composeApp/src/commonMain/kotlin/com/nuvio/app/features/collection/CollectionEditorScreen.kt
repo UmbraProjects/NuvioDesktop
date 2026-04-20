@@ -6,10 +6,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,9 +31,11 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -85,9 +89,28 @@ fun CollectionEditorScreen(
 
     val editingFolder = state.editingFolder
     if (state.showFolderEditor && editingFolder != null) {
+        if (state.showCatalogPicker) {
+            CatalogPickerScreen(
+                availableCatalogs = state.availableCatalogs,
+                selectedSources = editingFolder.resolvedCatalogSources,
+                onToggle = { CollectionEditorRepository.toggleCatalogSource(it) },
+                onBack = { CollectionEditorRepository.hideCatalogPicker() },
+            )
+            return
+        }
+
+        if (state.showTmdbSourcePicker) {
+            TmdbSourcePickerScreen(
+                state = state,
+                onBack = { CollectionEditorRepository.hideTmdbSourcePicker() },
+            )
+            return
+        }
+
         val genrePickerIndex = state.genrePickerSourceIndex
-        val genrePickerSource = genrePickerIndex?.let { editingFolder.catalogSources.getOrNull(it) }
-        val genrePickerCatalog = genrePickerSource?.let { source ->
+        val genrePickerSource = genrePickerIndex?.let { editingFolder.resolvedSources.getOrNull(it) }
+        val genrePickerCatalogSource = genrePickerSource?.addonCatalogSource()
+        val genrePickerCatalog = genrePickerCatalogSource?.let { source ->
             state.availableCatalogs.find {
                 it.addonId == source.addonId && it.type == source.type && it.catalogId == source.catalogId
             }
@@ -98,24 +121,15 @@ fun CollectionEditorScreen(
             onBack = { CollectionEditorRepository.cancelFolderEdit() },
         )
 
-        if (state.showCatalogPicker) {
-            CatalogPickerSheet(
-                availableCatalogs = state.availableCatalogs,
-                selectedSources = editingFolder.catalogSources,
-                onToggle = { CollectionEditorRepository.toggleCatalogSource(it) },
-                onDismiss = { CollectionEditorRepository.hideCatalogPicker() },
-            )
-        }
-
         if (
             genrePickerIndex != null &&
-            genrePickerSource != null &&
+            genrePickerCatalogSource != null &&
             genrePickerCatalog != null &&
             genrePickerCatalog.genreOptions.isNotEmpty()
         ) {
             GenrePickerSheet(
                 title = genrePickerCatalog.catalogName,
-                selectedGenre = genrePickerSource.genre,
+                selectedGenre = genrePickerCatalogSource.genre,
                 genreOptions = genrePickerCatalog.genreOptions,
                 allowAll = !genrePickerCatalog.genreRequired,
                 onSelect = {
@@ -129,12 +143,21 @@ fun CollectionEditorScreen(
     }
 
     if (state.showCatalogPicker) {
-        CatalogPickerSheet(
+        CatalogPickerScreen(
             availableCatalogs = state.availableCatalogs,
-            selectedSources = state.editingFolder?.catalogSources.orEmpty(),
+            selectedSources = state.editingFolder?.resolvedCatalogSources.orEmpty(),
             onToggle = { CollectionEditorRepository.toggleCatalogSource(it) },
-            onDismiss = { CollectionEditorRepository.hideCatalogPicker() },
+            onBack = { CollectionEditorRepository.hideCatalogPicker() },
         )
+        return
+    }
+
+    if (state.showTmdbSourcePicker) {
+        TmdbSourcePickerScreen(
+            state = state,
+            onBack = { CollectionEditorRepository.hideTmdbSourcePicker() },
+        )
+        return
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -451,7 +474,7 @@ private fun FolderListItem(
             Column(modifier = Modifier.weight(1f)) {
                 val summary = stringResource(
                     Res.string.collections_editor_source_count,
-                    folder.catalogSources.size,
+                    folder.resolvedSources.size,
                     posterShapeLabel(folder.posterShape),
                 )
                 Text(
@@ -683,18 +706,30 @@ private fun FolderEditorPage(
                 FolderEditorSection(
                     title = stringResource(Res.string.collections_editor_section_catalog_sources),
                     actions = {
-                        TextButton(onClick = { CollectionEditorRepository.showCatalogPicker() }) {
-                            Icon(
-                                imageVector = Icons.Rounded.Add,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(stringResource(Res.string.collections_editor_add_catalog))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { CollectionEditorRepository.showTmdbSourcePicker() }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("TMDB")
+                            }
+                            TextButton(onClick = { CollectionEditorRepository.showCatalogPicker() }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(stringResource(Res.string.collections_editor_add_catalog))
+                            }
                         }
                     },
                 ) {
-                    if (folder.catalogSources.isEmpty()) {
+                    val sources = folder.resolvedSources
+                    if (sources.isEmpty()) {
                         NuvioSurfaceCard {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
@@ -712,15 +747,25 @@ private fun FolderEditorPage(
                         }
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            folder.catalogSources.forEachIndexed { index, source ->
-                                FolderCatalogSourceCard(
-                                    source = source,
-                                    matchingCatalog = state.availableCatalogs.find {
-                                        it.addonId == source.addonId && it.type == source.type && it.catalogId == source.catalogId
-                                    },
-                                    onRemove = { CollectionEditorRepository.removeCatalogSource(index) },
-                                    onOpenGenrePicker = { CollectionEditorRepository.showGenrePicker(index) },
-                                )
+                            sources.forEachIndexed { index, source ->
+                                val addonSource = source.addonCatalogSource()
+                                if (source.isTmdb) {
+                                    FolderTmdbSourceCard(
+                                        source = source,
+                                        onRemove = { CollectionEditorRepository.removeCatalogSource(index) },
+                                    )
+                                } else if (addonSource != null) {
+                                    FolderCatalogSourceCard(
+                                        source = addonSource,
+                                        matchingCatalog = state.availableCatalogs.find {
+                                            it.addonId == addonSource.addonId &&
+                                                it.type == addonSource.type &&
+                                                it.catalogId == addonSource.catalogId
+                                        },
+                                        onRemove = { CollectionEditorRepository.removeCatalogSource(index) },
+                                        onOpenGenrePicker = { CollectionEditorRepository.showGenrePicker(index) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -756,118 +801,753 @@ private fun FolderEditorPage(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CatalogPickerSheet(
+private fun CatalogPickerScreen(
     availableCatalogs: List<AvailableCatalog>,
     selectedSources: List<CollectionCatalogSource>,
     onToggle: (AvailableCatalog) -> Unit,
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    PlatformBackHandler(enabled = true) {
+        onBack()
+    }
 
-    NuvioModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-    ) {
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+    NuvioScreen(modifier = Modifier.fillMaxSize()) {
+        stickyHeader {
+            NuvioScreenHeader(
+                title = stringResource(Res.string.collections_editor_select_catalogs),
+                onBack = onBack,
+            )
+        }
+
+        item {
+            NuvioSurfaceCard {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = stringResource(Res.string.collections_editor_select_catalogs),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        text = stringResource(Res.string.collections_editor_select_catalogs_description),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    TextButton(onClick = onDismiss) {
-                        Text(stringResource(Res.string.collections_editor_done))
+                    Text(
+                        text = "${selectedSources.size} selected",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+
+        val grouped = availableCatalogs.groupBy { it.addonName }
+        grouped.forEach { (addonName, catalogs) ->
+            item {
+                val selectedCount = catalogs.count { catalog ->
+                    selectedSources.any {
+                        it.addonId == catalog.addonId &&
+                            it.type == catalog.type &&
+                            it.catalogId == catalog.catalogId
                     }
                 }
-                Text(
-                    text = stringResource(Res.string.collections_editor_select_catalogs_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp),
+                PickerPanel(
+                    title = addonName,
+                    subtitle = if (selectedCount > 0) "$selectedCount selected" else "${catalogs.size} catalogs",
+                ) {
+                    catalogs.forEachIndexed { index, catalog ->
+                        val isSelected = selectedSources.any {
+                            it.addonId == catalog.addonId &&
+                                it.type == catalog.type &&
+                                it.catalogId == catalog.catalogId
+                        }
+                        PickerOptionRow(
+                            title = catalog.catalogName,
+                            subtitle = catalog.type.replaceFirstChar {
+                                if (it.isLowerCase()) it.titlecase() else it.toString()
+                            },
+                            selected = isSelected,
+                            onClick = { onToggle(catalog) },
+                        )
+                        if (index != catalogs.lastIndex) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(24.dp + nuvioSafeBottomPadding()))
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TmdbSourcePickerScreen(
+    state: CollectionEditorUiState,
+    onBack: () -> Unit,
+) {
+    val bottomInset = nuvioSafeBottomPadding()
+    val sourceType = when (state.tmdbBuilderMode) {
+        TmdbBuilderMode.PRESETS -> TmdbCollectionSourceType.DISCOVER
+        TmdbBuilderMode.LIST -> TmdbCollectionSourceType.LIST
+        TmdbBuilderMode.COLLECTION -> TmdbCollectionSourceType.COLLECTION
+        TmdbBuilderMode.PRODUCTION -> TmdbCollectionSourceType.COMPANY
+        TmdbBuilderMode.NETWORK -> TmdbCollectionSourceType.NETWORK
+        TmdbBuilderMode.DISCOVER -> TmdbCollectionSourceType.DISCOVER
+    }
+    val requiresId = sourceType != TmdbCollectionSourceType.DISCOVER
+
+    PlatformBackHandler(enabled = true) {
+        onBack()
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        NuvioScreen(modifier = Modifier.fillMaxSize()) {
+            stickyHeader {
+                NuvioScreenHeader(
+                    title = "TMDB Sources",
+                    onBack = onBack,
                 )
             }
 
-            val grouped = availableCatalogs.groupBy { it.addonName }
-            grouped.forEach { (addonName, catalogs) ->
-                item {
-                    NuvioSectionLabel(
-                        text = addonName.uppercase(),
-                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-                    )
-                }
-                catalogs.forEach { catalog ->
-                    val isSelected = selectedSources.any {
-                        it.addonId == catalog.addonId && it.type == catalog.type && it.catalogId == catalog.catalogId
-                    }
-                    item(key = "${catalog.addonId}:${catalog.type}:${catalog.catalogId}") {
-                        val bgColor = if (isSelected) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                        }
-                        val borderColor = if (isSelected) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                        } else {
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(bgColor)
-                                .border(1.dp, borderColor, RoundedCornerShape(10.dp))
-                                .clickable { onToggle(catalog) }
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = catalog.catalogName,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Text(
-                                    text = catalog.type.replaceFirstChar {
-                                        if (it.isLowerCase()) it.titlecase() else it.toString()
-                                    },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Check,
-                                    contentDescription = stringResource(Res.string.cd_selected),
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
-                        }
+            item {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TmdbBuilderMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = state.tmdbBuilderMode == mode,
+                            onClick = { CollectionEditorRepository.setTmdbBuilderMode(mode) },
+                            label = { Text(tmdbBuilderModeLabel(mode)) },
+                            leadingIcon = if (state.tmdbBuilderMode == mode) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            } else null,
+                        )
                     }
                 }
             }
 
             item {
-                Spacer(modifier = Modifier.height(24.dp))
+                NuvioSurfaceCard {
+                    Text(
+                        text = tmdbModeHelpText(state.tmdbBuilderMode),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            if (state.tmdbBuilderMode != TmdbBuilderMode.PRESETS) item {
+                NuvioSurfaceCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (requiresId) {
+                            TmdbLabeledField(
+                                label = tmdbInputLabel(state.tmdbBuilderMode),
+                                value = state.tmdbInput,
+                                onValueChange = { CollectionEditorRepository.setTmdbInput(it) },
+                                placeholder = tmdbInputPlaceholder(state.tmdbBuilderMode),
+                                helper = tmdbInputHelper(state.tmdbBuilderMode),
+                            )
+                        }
+                        TmdbLabeledField(
+                            label = "Display title",
+                            value = state.tmdbTitleInput,
+                            onValueChange = { CollectionEditorRepository.setTmdbTitleInput(it) },
+                            placeholder = tmdbTitlePlaceholder(state.tmdbBuilderMode),
+                            helper = "Shown as the row/tab name. If blank, Nuvio creates one from the source.",
+                        )
+                        if (state.tmdbSearchError != null) {
+                            Text(
+                                text = state.tmdbSearchError,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (state.tmdbBuilderMode == TmdbBuilderMode.PRODUCTION && state.tmdbCompanyResults.isNotEmpty()) {
+                item {
+                    PickerSectionLabel("Search Results")
+                }
+                itemsIndexed(state.tmdbCompanyResults) { _, result ->
+                    val title = result.name ?: "TMDB Company ${result.id}"
+                    PickerOptionRow(
+                        title = title,
+                        subtitle = listOfNotNull("Production", result.originCountry).joinToString(" • "),
+                        selected = false,
+                        onClick = {
+                            val sources = tmdbSelectedMediaTypes(state).map { mediaType ->
+                                CollectionSource(
+                                    provider = "tmdb",
+                                    tmdbSourceType = TmdbCollectionSourceType.COMPANY.name,
+                                    title = tmdbTitleForMedia(title, mediaType, state.tmdbMediaBoth),
+                                    tmdbId = result.id,
+                                    mediaType = mediaType.name,
+                                    sortBy = state.tmdbSortBy,
+                                    filters = state.tmdbFilters,
+                                )
+                            }
+                            CollectionEditorRepository.addTmdbSourcesFromPicker(sources)
+                        },
+                    )
+                }
+            }
+
+            if (state.tmdbBuilderMode == TmdbBuilderMode.COLLECTION && state.tmdbCollectionResults.isNotEmpty()) {
+                item {
+                    PickerSectionLabel("Search Results")
+                }
+                itemsIndexed(state.tmdbCollectionResults) { _, result ->
+                    val title = result.name ?: "TMDB Collection ${result.id}"
+                    PickerOptionRow(
+                        title = title,
+                        subtitle = "TMDB Movie Collection",
+                        selected = false,
+                        onClick = {
+                            CollectionEditorRepository.addTmdbSource(
+                                CollectionSource(
+                                    provider = "tmdb",
+                                    tmdbSourceType = TmdbCollectionSourceType.COLLECTION.name,
+                                    title = title,
+                                    tmdbId = result.id,
+                                    mediaType = TmdbCollectionMediaType.MOVIE.name,
+                                    sortBy = state.tmdbSortBy,
+                                ),
+                            )
+                        },
+                    )
+                }
+            }
+
+            if (sourceType == TmdbCollectionSourceType.COMPANY || sourceType == TmdbCollectionSourceType.DISCOVER) {
+                item {
+                    PickerPanel(
+                        title = "Media",
+                        subtitle = "Create one source or split it into movie and series feeds.",
+                    ) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                FilterChip(
+                                    selected = state.tmdbMediaType == TmdbCollectionMediaType.MOVIE && !state.tmdbMediaBoth,
+                                    onClick = {
+                                        CollectionEditorRepository.setTmdbMediaBoth(false)
+                                        CollectionEditorRepository.setTmdbMediaType(TmdbCollectionMediaType.MOVIE)
+                                    },
+                                    label = { Text("Movies") },
+                                )
+                                FilterChip(
+                                    selected = state.tmdbMediaType == TmdbCollectionMediaType.TV && !state.tmdbMediaBoth,
+                                    onClick = {
+                                        CollectionEditorRepository.setTmdbMediaBoth(false)
+                                        CollectionEditorRepository.setTmdbMediaType(TmdbCollectionMediaType.TV)
+                                    },
+                                    label = { Text("Series") },
+                                )
+                                FilterChip(
+                                    selected = state.tmdbMediaBoth,
+                                    onClick = { CollectionEditorRepository.setTmdbMediaBoth(true) },
+                                    label = { Text("Both") },
+                                )
+                            }
+                    }
+                }
+            }
+
+            if (sourceType == TmdbCollectionSourceType.COMPANY ||
+                sourceType == TmdbCollectionSourceType.NETWORK ||
+                sourceType == TmdbCollectionSourceType.DISCOVER
+            ) {
+                item {
+                    PickerPanel(
+                        title = "Sort",
+                        subtitle = "Controls the default order TMDB returns.",
+                    ) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                val sorts = listOf(
+                                    TmdbCollectionSort.POPULAR_DESC,
+                                    TmdbCollectionSort.VOTE_AVERAGE_DESC,
+                                    if (state.tmdbMediaType == TmdbCollectionMediaType.TV && !state.tmdbMediaBoth) {
+                                        TmdbCollectionSort.FIRST_AIR_DATE_DESC
+                                    } else {
+                                        TmdbCollectionSort.RELEASE_DATE_DESC
+                                    },
+                                )
+                                sorts.forEach { sort ->
+                                    FilterChip(
+                                        selected = state.tmdbSortBy == sort.value,
+                                        onClick = { CollectionEditorRepository.setTmdbSortBy(sort.value) },
+                                        label = { Text(tmdbSortLabel(sort)) },
+                                    )
+                                }
+                            }
+                    }
+                }
+
+                item {
+                    PickerPanel(
+                        title = "Filters",
+                        subtitle = "Combine TMDB IDs and date/rating constraints for exact feeds.",
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            TmdbQuickChips(
+                                label = "Quick genres",
+                                chips = tmdbGenreQuickChips(state.tmdbMediaType),
+                                onSelect = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters { it.copy(withGenres = value) }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.withGenres.orEmpty(),
+                                placeholder = "Genre IDs, comma-separated",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(withGenres = value.ifBlank { null })
+                                    }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.year?.toString().orEmpty(),
+                                placeholder = "Year",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(year = value.toIntOrNull())
+                                    }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.releaseDateGte.orEmpty(),
+                                placeholder = "Release from YYYY-MM-DD",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(releaseDateGte = value.ifBlank { null })
+                                    }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.releaseDateLte.orEmpty(),
+                                placeholder = "Release until YYYY-MM-DD",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(releaseDateLte = value.ifBlank { null })
+                                    }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.voteAverageGte?.toString().orEmpty(),
+                                placeholder = "Minimum rating",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(voteAverageGte = value.toDoubleOrNull())
+                                    }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.voteCountGte?.toString().orEmpty(),
+                                placeholder = "Minimum vote count",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(voteCountGte = value.toIntOrNull())
+                                    }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.voteAverageLte?.toString().orEmpty(),
+                                placeholder = "Maximum rating",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(voteAverageLte = value.toDoubleOrNull())
+                                    }
+                                },
+                            )
+                            TmdbQuickChips(
+                                label = "Quick languages",
+                                chips = listOf("English" to "en", "Korean" to "ko", "Japanese" to "ja", "Hindi" to "hi", "Spanish" to "es"),
+                                onSelect = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters { it.copy(withOriginalLanguage = value) }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.withOriginalLanguage.orEmpty(),
+                                placeholder = "Original language, e.g. en",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(withOriginalLanguage = value.ifBlank { null })
+                                    }
+                                },
+                            )
+                            TmdbQuickChips(
+                                label = "Quick countries",
+                                chips = listOf("United States" to "US", "Korea" to "KR", "Japan" to "JP", "India" to "IN", "United Kingdom" to "GB"),
+                                onSelect = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters { it.copy(withOriginCountry = value) }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.withOriginCountry.orEmpty(),
+                                placeholder = "Origin country, e.g. US",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(withOriginCountry = value.ifBlank { null })
+                                    }
+                                },
+                            )
+                            TmdbQuickChips(
+                                label = "Quick keywords",
+                                chips = listOf("Superhero" to "9715", "Based on Novel" to "818", "Time Travel" to "4379", "Space" to "9882"),
+                                onSelect = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters { it.copy(withKeywords = value) }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.withKeywords.orEmpty(),
+                                placeholder = "Keyword IDs",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(withKeywords = value.ifBlank { null })
+                                    }
+                                },
+                            )
+                            TmdbQuickChips(
+                                label = "Quick companies",
+                                chips = listOf("Marvel" to "420", "Disney" to "2", "Pixar" to "3", "Lucasfilm" to "1", "Warner Bros." to "174"),
+                                onSelect = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters { it.copy(withCompanies = value) }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.withCompanies.orEmpty(),
+                                placeholder = "Company IDs, e.g. 420",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(withCompanies = value.ifBlank { null })
+                                    }
+                                },
+                            )
+                            TmdbQuickChips(
+                                label = "Quick networks",
+                                chips = listOf("Netflix" to "213", "HBO" to "49", "Disney+" to "2739", "Prime Video" to "1024", "Hulu" to "453"),
+                                onSelect = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters { it.copy(withNetworks = value) }
+                                },
+                            )
+                            TmdbFilterField(
+                                value = state.tmdbFilters.withNetworks.orEmpty(),
+                                placeholder = "Network IDs, e.g. 213",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(withNetworks = value.ifBlank { null })
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (state.tmdbBuilderMode == TmdbBuilderMode.PRESETS) item {
+                PickerSectionLabel("Presets")
+            }
+            if (state.tmdbBuilderMode == TmdbBuilderMode.PRESETS) {
+                itemsIndexed(TmdbCollectionSourceResolver.presets()) { _, preset ->
+                    PickerOptionRow(
+                        title = preset.label,
+                        subtitle = tmdbSourceSubtitle(preset.source),
+                        selected = false,
+                        onClick = { CollectionEditorRepository.addTmdbPreset(preset.source) },
+                    )
+                }
+            }
+
+            item {
+                val spacerHeight = if (state.tmdbBuilderMode == TmdbBuilderMode.PRESETS) {
+                    24.dp + bottomInset
+                } else {
+                    96.dp + bottomInset
+                }
+                Spacer(modifier = Modifier.height(spacerHeight))
+            }
+        }
+
+        if (state.tmdbBuilderMode != TmdbBuilderMode.PRESETS) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(),
+                color = MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
+                tonalElevation = 6.dp,
+                shadowElevation = 10.dp,
+            ) {
+                PickerActionBar(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(bottom = bottomInset),
+                ) {
+                    if (sourceType == TmdbCollectionSourceType.COMPANY || sourceType == TmdbCollectionSourceType.COLLECTION) {
+                        TextButton(
+                            onClick = {
+                                if (sourceType == TmdbCollectionSourceType.COMPANY) {
+                                    CollectionEditorRepository.searchTmdbCompanies()
+                                } else {
+                                    CollectionEditorRepository.searchTmdbCollections()
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Search")
+                        }
+                    }
+                    NuvioPrimaryButton(
+                        text = "Add TMDB source",
+                        modifier = Modifier.weight(1f),
+                        enabled = !requiresId || state.tmdbInput.isNotBlank(),
+                        onClick = { CollectionEditorRepository.addTmdbSourceFromInput() },
+                    )
+                }
             }
         }
     }
+}
+
+@Composable
+private fun PickerPanel(
+    title: String,
+    subtitle: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    NuvioSurfaceCard {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun PickerOptionRow(
+    title: String,
+    subtitle: String? = null,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val rowShape = RoundedCornerShape(12.dp)
+    val bgColor = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(rowShape)
+            .background(bgColor)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (selected) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = stringResource(Res.string.cd_selected),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PickerSectionLabel(text: String) {
+    NuvioSectionLabel(
+        text = text.uppercase(),
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun PickerActionBar(
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content,
+    )
+}
+
+@Composable
+private fun TmdbLabeledField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    helper: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        NuvioInputField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = placeholder,
+        )
+        if (helper.isNotBlank()) {
+            Text(
+                text = helper,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TmdbFilterField(
+    label: String,
+    helper: String,
+    value: String,
+    placeholder: String,
+    onValueChange: (String) -> Unit,
+) {
+    TmdbLabeledField(
+        label = label,
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = placeholder,
+        helper = helper,
+    )
+}
+
+@Composable
+private fun TmdbQuickChips(
+    label: String,
+    chips: List<Pair<String, String>>,
+    onSelect: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            chips.forEach { (chipLabel, value) ->
+                FilterChip(
+                    selected = false,
+                    onClick = { onSelect(value) },
+                    label = { Text(chipLabel) },
+                )
+            }
+        }
+    }
+}
+
+private fun tmdbGenreQuickChips(mediaType: TmdbCollectionMediaType): List<Pair<String, String>> =
+    when (mediaType) {
+        TmdbCollectionMediaType.MOVIE -> listOf(
+            "Action" to "28",
+            "Adventure" to "12",
+            "Animation" to "16",
+            "Comedy" to "35",
+            "Horror" to "27",
+            "Sci-Fi" to "878",
+        )
+        TmdbCollectionMediaType.TV -> listOf(
+            "Drama" to "18",
+            "Comedy" to "35",
+            "Animation" to "16",
+            "Crime" to "80",
+            "Sci-Fi" to "10765",
+            "Reality" to "10764",
+        )
+    }
+
+private fun tmdbSelectedMediaTypes(state: CollectionEditorUiState): List<TmdbCollectionMediaType> =
+    if (state.tmdbMediaBoth) {
+        listOf(TmdbCollectionMediaType.MOVIE, TmdbCollectionMediaType.TV)
+    } else {
+        listOf(state.tmdbMediaType)
+    }
+
+private fun tmdbTitleForMedia(
+    title: String,
+    mediaType: TmdbCollectionMediaType,
+    addSuffix: Boolean,
+): String {
+    if (!addSuffix) return title
+    val suffix = when (mediaType) {
+        TmdbCollectionMediaType.MOVIE -> "Movies"
+        TmdbCollectionMediaType.TV -> "Series"
+    }
+    return "$title $suffix"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -997,6 +1677,51 @@ private fun FolderEditorToggleRow(
     }
 }
 
+@Composable
+private fun FolderTmdbSourceCard(
+    source: CollectionSource,
+    onRemove: () -> Unit,
+) {
+    NuvioSurfaceCard {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = source.title?.takeIf { it.isNotBlank() } ?: "TMDB",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "TMDB",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(
+                    onClick = onRemove,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = stringResource(Res.string.action_remove),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
+            Text(
+                text = tmdbSourceSubtitle(source),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FolderCatalogSourceCard(
@@ -1088,6 +1813,44 @@ private fun FolderCatalogSourceCard(
                 }
             }
         }
+    }
+}
+
+private fun tmdbBuilderModeLabel(mode: TmdbBuilderMode): String =
+    when (mode) {
+        TmdbBuilderMode.PRESETS -> "Presets"
+        TmdbBuilderMode.LIST -> "List"
+        TmdbBuilderMode.COLLECTION -> "Collection"
+        TmdbBuilderMode.PRODUCTION -> "Production"
+        TmdbBuilderMode.NETWORK -> "Network"
+        TmdbBuilderMode.DISCOVER -> "Discover"
+    }
+
+private fun tmdbSortLabel(sort: TmdbCollectionSort): String =
+    when (sort) {
+        TmdbCollectionSort.POPULAR_DESC -> "Popular"
+        TmdbCollectionSort.VOTE_AVERAGE_DESC -> "Top rated"
+        TmdbCollectionSort.RELEASE_DATE_DESC -> "Newest movies"
+        TmdbCollectionSort.FIRST_AIR_DATE_DESC -> "Newest series"
+    }
+
+private fun tmdbSourceSubtitle(source: CollectionSource): String {
+    val media = when (TmdbCollectionMediaType.fromString(source.mediaType)) {
+        TmdbCollectionMediaType.MOVIE -> "Movies"
+        TmdbCollectionMediaType.TV -> "Series"
+    }
+    val sort = source.sortBy?.let { value ->
+        TmdbCollectionSort.entries.firstOrNull { it.value == value }?.let(::tmdbSortLabel)
+    } ?: "Popular"
+    val sourceType = runCatching {
+        TmdbCollectionSourceType.valueOf(source.tmdbSourceType.orEmpty())
+    }.getOrDefault(TmdbCollectionSourceType.DISCOVER)
+    return when (sourceType) {
+        TmdbCollectionSourceType.LIST -> "TMDB List"
+        TmdbCollectionSourceType.COLLECTION -> "TMDB Movie Collection"
+        TmdbCollectionSourceType.COMPANY -> listOf("Production", media, sort).joinToString(" • ")
+        TmdbCollectionSourceType.NETWORK -> listOf("Network", "Series", sort).joinToString(" • ")
+        TmdbCollectionSourceType.DISCOVER -> listOf("TMDB Discover", media, sort).joinToString(" • ")
     }
 }
 
