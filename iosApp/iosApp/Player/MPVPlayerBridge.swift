@@ -167,6 +167,22 @@ final class MPVPlayerViewController: UIViewController {
     }
     private var _currentErrorMessage: String?
 
+    override var prefersHomeIndicatorAutoHidden: Bool {
+        true
+    }
+
+    override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge {
+        [.bottom, .left, .right]
+    }
+
+    override var prefersStatusBarHidden: Bool {
+        true
+    }
+
+    override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation {
+        .fade
+    }
+
     // MARK: - Lifecycle
 
     override func viewDidLoad() {
@@ -181,11 +197,27 @@ final class MPVPlayerViewController: UIViewController {
 
         setupMpv()
         setupNotifications()
+        refreshImmersiveSystemUI()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        refreshImmersiveSystemUI()
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         metalLayer.frame = view.bounds
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        refreshImmersiveSystemUI()
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        refreshImmersiveSystemUI()
     }
 
     // MARK: - MPV Setup
@@ -632,6 +664,23 @@ final class MPVPlayerViewController: UIViewController {
             }
             .joined(separator: ",")
         checkError(mpv_set_property_string(mpv, "http-header-fields", serialized))
+    }
+
+    private func refreshImmersiveSystemUI() {
+        setNeedsUpdateOfHomeIndicatorAutoHidden()
+        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+        setNeedsStatusBarAppearanceUpdate()
+
+        var currentParent = parent
+        while let controller = currentParent {
+            controller.setNeedsUpdateOfHomeIndicatorAutoHidden()
+            controller.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+            controller.setNeedsStatusBarAppearanceUpdate()
+            if let rootController = controller as? RootComposeViewController {
+                rootController.refreshImmersiveSystemUI()
+            }
+            currentParent = controller.parent
+        }
     }
 }
 
