@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SwapHoriz
@@ -29,6 +32,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -61,6 +65,8 @@ internal fun PlayerControlsShell(
     displayedPositionMs: Long,
     metrics: PlayerLayoutMetrics,
     resizeMode: PlayerResizeMode,
+    isLocked: Boolean,
+    onLockToggle: () -> Unit,
     onBack: () -> Unit,
     onTogglePlayback: () -> Unit,
     onSeekBack: () -> Unit,
@@ -120,6 +126,8 @@ internal fun PlayerControlsShell(
                 episodeNumber = episodeNumber,
                 episodeTitle = episodeTitle,
                 metrics = metrics,
+                isLocked = isLocked,
+                onLockToggle = onLockToggle,
                 onBack = onBack,
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -175,6 +183,8 @@ private fun PlayerHeader(
     episodeNumber: Int?,
     episodeTitle: String?,
     metrics: PlayerLayoutMetrics,
+    isLocked: Boolean,
+    onLockToggle: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -240,15 +250,52 @@ private fun PlayerHeader(
                 }
             }
 
-            NuvioBackButton(
-                onClick = onBack,
-                containerColor = Color.Black.copy(alpha = 0.35f),
-                contentColor = Color.White,
-                buttonSize = metrics.headerIconSize + 16.dp,
-                iconSize = metrics.headerIconSize,
-                contentDescription = "Close player",
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PlayerHeaderIconButton(
+                    icon = if (isLocked) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
+                    contentDescription = if (isLocked) "Unlock player controls" else "Lock player controls",
+                    buttonSize = metrics.headerIconSize + 16.dp,
+                    iconSize = metrics.headerIconSize,
+                    onClick = onLockToggle,
+                )
+                NuvioBackButton(
+                    onClick = onBack,
+                    containerColor = Color.Black.copy(alpha = 0.35f),
+                    contentColor = Color.White,
+                    buttonSize = metrics.headerIconSize + 16.dp,
+                    iconSize = metrics.headerIconSize,
+                    contentDescription = "Close player",
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun PlayerHeaderIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    buttonSize: androidx.compose.ui.unit.Dp,
+    iconSize: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(buttonSize)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.35f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = Color.White,
+            modifier = Modifier.size(iconSize),
+        )
     }
 }
 
@@ -441,6 +488,105 @@ private fun ProgressControls(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun LockedPlayerOverlay(
+    playbackSnapshot: PlayerPlaybackSnapshot,
+    displayedPositionMs: Long,
+    metrics: PlayerLayoutMetrics,
+    horizontalSafePadding: androidx.compose.ui.unit.Dp,
+    onUnlock: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val durationMs = playbackSnapshot.durationMs.coerceAtLeast(1L)
+    val sliderColors = SliderDefaults.colors(
+        thumbColor = Color.White,
+        activeTrackColor = Color.White,
+        inactiveTrackColor = Color.White.copy(alpha = 0.28f),
+        disabledThumbColor = Color.White,
+        disabledActiveTrackColor = Color.White,
+        disabledInactiveTrackColor = Color.White.copy(alpha = 0.28f),
+    )
+
+    Box(modifier = modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.72f),
+                        ),
+                    ),
+                ),
+        )
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(78.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.52f))
+                    .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape)
+                    .clickable(onClick = onUnlock),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Lock,
+                    contentDescription = "Unlock player controls",
+                    tint = Color.White,
+                    modifier = Modifier.size(34.dp),
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Tap to unlock",
+                style = MaterialTheme.nuvioTypeScale.bodyMd.copy(fontWeight = FontWeight.SemiBold),
+                color = Color.White.copy(alpha = 0.92f),
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = horizontalSafePadding + metrics.horizontalPadding)
+                .padding(bottom = metrics.sliderBottomOffset),
+        ) {
+            Slider(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(metrics.sliderTouchHeight)
+                    .graphicsLayer(scaleY = metrics.sliderScaleY),
+                value = displayedPositionMs.coerceIn(0L, durationMs).toFloat(),
+                onValueChange = {},
+                onValueChangeFinished = {},
+                valueRange = 0f..durationMs.toFloat(),
+                enabled = false,
+                colors = sliderColors,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TimePill(text = formatPlaybackTime(displayedPositionMs), fontSize = metrics.timeSize)
+                TimePill(text = formatPlaybackTime(durationMs), fontSize = metrics.timeSize)
             }
         }
     }

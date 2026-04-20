@@ -69,6 +69,7 @@ import kotlin.math.roundToInt
 private const val PlaybackProgressPersistIntervalMs = 60_000L
 private const val PlayerDoubleTapSeekStepMs = 10_000L
 private const val PlayerDoubleTapSeekResetDelayMs = 800L
+private const val PlayerLockedOverlayDurationMs = 2_000L
 private const val PlayerLeftGestureBoundary = 0.4f
 private const val PlayerRightGestureBoundary = 0.6f
 private const val PlayerVerticalGestureSensitivity = 1f
@@ -154,6 +155,7 @@ fun PlayerScreen(
         val hapticFeedback = LocalHapticFeedback.current
         val gestureController = rememberPlayerGestureController()
         var controlsVisible by rememberSaveable { mutableStateOf(true) }
+        var playerControlsLocked by rememberSaveable { mutableStateOf(false) }
         // Active playback state (mutable to support source/episode switching)
         var activeSourceUrl by rememberSaveable { mutableStateOf(sourceUrl) }
         var activeSourceAudioUrl by rememberSaveable { mutableStateOf(sourceAudioUrl) }
@@ -189,6 +191,7 @@ fun PlayerScreen(
         var gestureFeedback by remember { mutableStateOf<GestureFeedbackState?>(null) }
         var liveGestureFeedback by remember { mutableStateOf<GestureFeedbackState?>(null) }
         var renderedGestureFeedback by remember { mutableStateOf<GestureFeedbackState?>(null) }
+        var lockedOverlayVisible by remember { mutableStateOf(false) }
         var gestureMessageJob by remember { mutableStateOf<Job?>(null) }
         var accumulatedSeekResetJob by remember { mutableStateOf<Job?>(null) }
         var accumulatedSeekState by remember { mutableStateOf<PlayerAccumulatedSeekState?>(null) }
@@ -497,6 +500,35 @@ fun PlayerScreen(
             liveGestureFeedback = null
         }
 
+        fun revealLockedOverlay() {
+            controlsVisible = false
+            lockedOverlayVisible = true
+        }
+
+        fun lockPlayerControls() {
+            playerControlsLocked = true
+            controlsVisible = false
+            lockedOverlayVisible = false
+            pausedOverlayVisible = false
+            scrubbingPositionMs = null
+            gestureMessageJob?.cancel()
+            gestureFeedback = null
+            liveGestureFeedback = null
+            renderedGestureFeedback = null
+            showAudioModal = false
+            showSubtitleModal = false
+            showSourcesPanel = false
+            showEpisodesPanel = false
+            episodeStreamsPanelState = EpisodeStreamsPanelState()
+            PlayerStreamsRepository.clearEpisodeStreams()
+        }
+
+        fun unlockPlayerControls() {
+            playerControlsLocked = false
+            lockedOverlayVisible = false
+            controlsVisible = true
+        }
+
         fun showSeekFeedback(direction: PlayerSeekDirection, amountMs: Long) {
             val seconds = amountMs / 1000L
             if (seconds <= 0L) return
@@ -659,6 +691,10 @@ fun PlayerScreen(
         }
 
         val onSurfaceTap = rememberUpdatedState { offset: Offset ->
+            if (playerControlsLocked) {
+                revealLockedOverlay()
+                return@rememberUpdatedState
+            }
             val centerStart = layoutSize.width * PlayerLeftGestureBoundary
             val centerEnd = layoutSize.width * PlayerRightGestureBoundary
             if (controlsVisible && offset.x in centerStart..centerEnd) {
@@ -668,6 +704,10 @@ fun PlayerScreen(
             }
         }
         val onSurfaceDoubleTap = rememberUpdatedState { offset: Offset ->
+            if (playerControlsLocked) {
+                revealLockedOverlay()
+                return@rememberUpdatedState
+            }
             when {
                 offset.x < layoutSize.width * PlayerLeftGestureBoundary -> {
                     handleDoubleTapSeek(PlayerSeekDirection.Backward)
@@ -686,7 +726,9 @@ fun PlayerScreen(
         val showBrightnessFeedbackState = rememberUpdatedState(::showBrightnessFeedback)
         val showVolumeFeedbackState = rememberUpdatedState(::showVolumeFeedback)
         val clearLiveGestureFeedbackState = rememberUpdatedState(::clearLiveGestureFeedback)
+        val revealLockedOverlayState = rememberUpdatedState(::revealLockedOverlay)
         val isHoldToSpeedGestureActiveState = rememberUpdatedState(isHoldToSpeedGestureActive)
+        val playerControlsLockedState = rememberUpdatedState(playerControlsLocked)
         val currentPositionMsState = rememberUpdatedState(playbackSnapshot.positionMs.coerceAtLeast(0L))
         val currentDurationMsState = rememberUpdatedState(playbackSnapshot.durationMs)
         val commitHorizontalSeekState = rememberUpdatedState { targetPositionMs: Long ->
@@ -1002,6 +1044,7 @@ fun PlayerScreen(
             scrubbingPositionMs = null
             liveGestureFeedback = null
             renderedGestureFeedback = null
+            lockedOverlayVisible = false
             initialLoadCompleted = false
             lastProgressPersistEpochMs = 0L
             previousIsPlaying = false
@@ -1094,6 +1137,14 @@ fun PlayerScreen(
             }
             delay(3500)
             controlsVisible = false
+        }
+
+        LaunchedEffect(playerControlsLocked, lockedOverlayVisible) {
+            if (!playerControlsLocked || !lockedOverlayVisible) {
+                return@LaunchedEffect
+            }
+            delay(PlayerLockedOverlayDurationMs)
+            lockedOverlayVisible = false
         }
 
         LaunchedEffect(playbackSnapshot.isPlaying, playbackSnapshot.isLoading, playbackSnapshot.durationMs, errorMessage) {
@@ -1277,12 +1328,27 @@ fun PlayerScreen(
                         },
                         onTap = { offset -> onSurfaceTap.value(offset) },
                         onDoubleTap = { offset -> onSurfaceDoubleTap.value(offset) },
-                        onLongPress = { activateHoldToSpeedState.value() },
+                        onLongPress = {
+                            if (playerControlsLockedState.value) {
+                                revealLockedOverlayState.value()
+                            } else {
+                                activateHoldToSpeedState.value()
+                            }
+                        },
                     )
                 }
                 .pointerInput(gestureController, layoutSize) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
+                        if (playerControlsLockedState.value) {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) break
+                                change.consume()
+                            }
+                            return@awaitEachGesture
+                        }
                         val controller = gestureController
                         val width = size.width.toFloat().takeIf { it > 0f } ?: return@awaitEachGesture
                         val height = size.height.toFloat().takeIf { it > 0f } ?: return@awaitEachGesture
@@ -1415,18 +1481,18 @@ fun PlayerScreen(
                     }
                     if (snapshot.isEnded) {
                         shouldPlay = false
-                        controlsVisible = true
+                        controlsVisible = !playerControlsLocked
                     }
                 },
                 onError = { message ->
                     errorMessage = message
                     if (message != null) {
-                        controlsVisible = true
+                        controlsVisible = !playerControlsLocked
                     }
                 },
             )
 
-            if (pausedOverlayVisible && !controlsVisible) {
+            if (pausedOverlayVisible && !controlsVisible && !playerControlsLocked) {
                 PauseMetadataOverlay(
                     title = title,
                     logo = logo,
@@ -1443,7 +1509,7 @@ fun PlayerScreen(
             }
 
             AnimatedVisibility(
-                visible = controlsVisible,
+                visible = controlsVisible && !playerControlsLocked,
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
@@ -1458,6 +1524,14 @@ fun PlayerScreen(
                     displayedPositionMs = displayedPositionMs,
                     metrics = metrics,
                     resizeMode = resizeMode,
+                    isLocked = playerControlsLocked,
+                    onLockToggle = {
+                        if (playerControlsLocked) {
+                            unlockPlayerControls()
+                        } else {
+                            lockPlayerControls()
+                        }
+                    },
                     onBack = onBackWithProgress,
                     onTogglePlayback = ::togglePlayback,
                     onSeekBack = { seekBy(-10_000L) },
@@ -1480,6 +1554,21 @@ fun PlayerScreen(
                         playerController?.seekTo(positionMs)
                     },
                     horizontalSafePadding = horizontalSafePadding,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            AnimatedVisibility(
+                visible = playerControlsLocked && lockedOverlayVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                LockedPlayerOverlay(
+                    playbackSnapshot = playbackSnapshot,
+                    displayedPositionMs = displayedPositionMs,
+                    metrics = metrics,
+                    horizontalSafePadding = horizontalSafePadding,
+                    onUnlock = ::unlockPlayerControls,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1521,23 +1610,25 @@ fun PlayerScreen(
             }
 
             // Skip intro/recap/outro button
-            SkipIntroButton(
-                interval = activeSkipInterval,
-                dismissed = skipIntervalDismissed,
-                controlsVisible = controlsVisible,
-                onSkip = {
-                    val interval = activeSkipInterval ?: return@SkipIntroButton
-                    playerController?.seekTo((interval.endTime * 1000).toLong())
-                    skipIntervalDismissed = true
-                },
-                onDismiss = { skipIntervalDismissed = true },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = sliderEdgePadding, bottom = overlayBottomPadding),
-            )
+            if (!playerControlsLocked) {
+                SkipIntroButton(
+                    interval = activeSkipInterval,
+                    dismissed = skipIntervalDismissed,
+                    controlsVisible = controlsVisible,
+                    onSkip = {
+                        val interval = activeSkipInterval ?: return@SkipIntroButton
+                        playerController?.seekTo((interval.endTime * 1000).toLong())
+                        skipIntervalDismissed = true
+                    },
+                    onDismiss = { skipIntervalDismissed = true },
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = sliderEdgePadding, bottom = overlayBottomPadding),
+                )
+            }
 
             // Next episode card
-            if (isSeries) {
+            if (isSeries && !playerControlsLocked) {
                 NextEpisodeCard(
                     nextEpisode = nextEpisodeInfo,
                     visible = showNextEpisodeCard,
