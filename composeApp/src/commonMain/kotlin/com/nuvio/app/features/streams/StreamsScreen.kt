@@ -131,7 +131,9 @@ fun StreamsScreen(
     } else {
         watchProgressUiState.byVideoId[videoId]
     }
-    val storedProgressFraction = storedProgress?.progressPercent
+    val storedProgressFraction = storedProgress
+        ?.takeIf { it.isResumable }
+        ?.progressPercent
         ?.takeIf { it > 0f }
         ?.let { explicitPercent -> (explicitPercent / 100f).coerceIn(0f, 1f) }
     val effectiveResumeProgressFraction = if (startFromBeginning) {
@@ -148,7 +150,7 @@ fun StreamsScreen(
         if (startFromBeginning) {
             null
         } else {
-            (resumePositionMs ?: storedProgress?.lastPositionMs)?.takeIf { it > 0L }
+            (resumePositionMs ?: storedProgress?.takeIf { it.isResumable }?.lastPositionMs)?.takeIf { it > 0L }
         }
     }
 
