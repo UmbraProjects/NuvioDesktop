@@ -65,13 +65,8 @@ internal fun TabletStreamsLayout(
     modifier: Modifier = Modifier,
 ) {
     val hazeState = rememberHazeState()
-    val tabletBackdrop = remember(isEpisode, episodeThumbnail, background, poster) {
-        resolveTabletBackdrop(
-            isEpisode = isEpisode,
-            episodeThumbnail = episodeThumbnail,
-            background = background,
-            poster = poster,
-        )
+    val tabletBackdrop = remember(background, poster) {
+        background ?: poster
     }
     var backdropVisible by remember(tabletBackdrop) { mutableStateOf(false) }
 
@@ -381,16 +376,3 @@ private fun ActiveScrapersStatusBlock(
     }
 }
 
-private fun resolveTabletBackdrop(
-    isEpisode: Boolean,
-    episodeThumbnail: String?,
-    background: String?,
-    poster: String?,
-): String? {
-    if (!isEpisode) return background ?: poster
-
-    val preferredEpisodeThumbnail = episodeThumbnail?.takeIf {
-        it.isNotBlank() && it != poster
-    }
-    return preferredEpisodeThumbnail ?: background ?: poster
-}
