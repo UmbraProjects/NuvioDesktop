@@ -80,6 +80,7 @@ fun DetailSeriesContent(
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
     preferredSeasonNumber: Int? = null,
+    preferredEpisodeNumber: Int? = null,
     episodeCardStyle: MetaEpisodeCardStyle = MetaEpisodeCardStyle.Horizontal,
     progressByVideoId: Map<String, WatchProgressEntry> = emptyMap(),
     watchedKeys: Set<String> = emptySet(),
@@ -269,6 +270,7 @@ fun DetailSeriesContent(
                             watchedKeys = watchedKeys,
                             fallbackImage = meta.background ?: meta.poster,
                             progressByVideoId = progressByVideoId,
+                            preferredEpisodeNumber = preferredEpisodeNumber,
                             onEpisodeClick = onEpisodeClick,
                             onEpisodeLongPress = onEpisodeLongPress,
                         )
@@ -541,12 +543,32 @@ private fun EpisodeHorizontalRow(
     watchedKeys: Set<String>,
     fallbackImage: String?,
     progressByVideoId: Map<String, WatchProgressEntry>,
+    preferredEpisodeNumber: Int? = null,
     onEpisodeClick: ((MetaVideo) -> Unit)?,
     onEpisodeLongPress: ((MetaVideo) -> Unit)?,
 ) {
     val rowMetrics = rememberEpisodeHorizontalCardMetrics(maxWidthDp)
+    val listState = rememberLazyListState()
+    var hasPositioned by remember(episodes) { mutableStateOf(false) }
+
+    LaunchedEffect(episodes, preferredEpisodeNumber) {
+        val targetIndex = if (preferredEpisodeNumber != null) {
+            episodes.indexOfFirst { it.episode == preferredEpisodeNumber }
+        } else {
+            -1
+        }
+        if (targetIndex >= 0) {
+            if (hasPositioned) {
+                listState.animateScrollToItem(targetIndex)
+            } else {
+                listState.scrollToItem(targetIndex)
+                hasPositioned = true
+            }
+        }
+    }
 
     LazyRow(
+        state = listState,
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = rowMetrics.rowHorizontalPadding, vertical = rowMetrics.rowVerticalPadding),
         horizontalArrangement = Arrangement.spacedBy(rowMetrics.itemSpacing),
