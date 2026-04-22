@@ -1488,6 +1488,14 @@ fun PlayerScreen(
                     errorMessage = message
                     if (message != null) {
                         controlsVisible = !playerControlsLocked
+                        val currentVideoId = activeVideoId
+                        if (currentVideoId != null) {
+                            val cacheKey = StreamLinkCacheRepository.contentKey(
+                                contentType ?: parentMetaType,
+                                currentVideoId,
+                            )
+                            StreamLinkCacheRepository.remove(cacheKey)
+                        }
                     }
                 },
             )
