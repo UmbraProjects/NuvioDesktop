@@ -166,7 +166,7 @@ private fun DiscoverFilterRow(
 ) {
     Row(
         modifier = modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         DiscoverDropdownChip(
             title = "Select Type",
@@ -221,7 +221,7 @@ private fun DiscoverDropdownChip(
 
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surface)
             .then(
                 if (enabled) {
@@ -230,13 +230,13 @@ private fun DiscoverDropdownChip(
                     Modifier
                 },
             )
-            .padding(horizontal = 18.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.labelLarge,
             color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -244,6 +244,7 @@ private fun DiscoverDropdownChip(
         Icon(
             imageVector = Icons.Rounded.KeyboardArrowDown,
             contentDescription = null,
+            modifier = Modifier.size(18.dp),
             tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline,
         )
     }
