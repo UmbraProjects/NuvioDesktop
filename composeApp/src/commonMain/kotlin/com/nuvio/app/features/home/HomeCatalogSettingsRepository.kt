@@ -346,10 +346,12 @@ object HomeCatalogSettingsRepository {
         HomeRepository.applyCurrentSettings()
     }
 
-    private fun selectedHeroSourceCount(excludingKey: String? = null): Int =
-        preferences.count { (itemKey, preference) ->
-            itemKey != excludingKey && preference.heroSourceEnabled
+    private fun selectedHeroSourceCount(excludingKey: String? = null): Int {
+        val catalogKeys = definitions.mapTo(mutableSetOf()) { it.key }
+        return preferences.count { (itemKey, preference) ->
+            itemKey != excludingKey && itemKey in catalogKeys && preference.heroSourceEnabled
         }
+    }
 
     private fun move(
         key: String,
