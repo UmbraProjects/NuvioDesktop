@@ -4,7 +4,6 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.details.MetaDetailsRepository
-import com.nuvio.app.features.watchprogress.WatchProgressCompletionPercentThreshold
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import kotlinx.coroutines.CancellationException
@@ -28,6 +27,7 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
 private const val BASE_URL = "https://api.trakt.tv"
+private const val TRAKT_COMPLETION_PERCENT_THRESHOLD = 80f
 private const val HISTORY_LIMIT = 250
 private const val METADATA_FETCH_TIMEOUT_MS = 3_500L
 private const val METADATA_FETCH_CONCURRENCY = 5
@@ -468,7 +468,7 @@ object TraktProgressRepository {
             lastPositionMs = 0L,
             durationMs = 0L,
             lastUpdatedEpochMs = rankedTimestamp(item.pausedAt, fallbackIndex),
-            isCompleted = progressPercent >= WatchProgressCompletionPercentThreshold,
+            isCompleted = progressPercent >= TRAKT_COMPLETION_PERCENT_THRESHOLD,
             progressPercent = progressPercent,
         ).normalizedCompletion()
     }
@@ -502,7 +502,7 @@ object TraktProgressRepository {
             lastPositionMs = 0L,
             durationMs = 0L,
             lastUpdatedEpochMs = rankedTimestamp(item.pausedAt, fallbackIndex),
-            isCompleted = progressPercent >= WatchProgressCompletionPercentThreshold,
+            isCompleted = progressPercent >= TRAKT_COMPLETION_PERCENT_THRESHOLD,
             progressPercent = progressPercent,
         ).normalizedCompletion()
     }

@@ -138,7 +138,7 @@ object WatchProgressRepository {
                     lastStreamSubtitle = cached?.lastStreamSubtitle,
                     pauseDescription = cached?.pauseDescription,
                     lastSourceUrl = cached?.lastSourceUrl,
-                    isCompleted = entry.duration > 0 && entry.position >= entry.duration,
+                    isCompleted = isWatchProgressComplete(entry.position, entry.duration, false),
                 )
             }
 
