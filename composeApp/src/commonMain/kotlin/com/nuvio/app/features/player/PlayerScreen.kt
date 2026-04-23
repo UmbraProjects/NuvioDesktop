@@ -1036,6 +1036,12 @@ fun PlayerScreen(
             controlsVisible = false
         }
 
+        fun fetchAddonSubtitlesForActiveItem() {
+            val type = contentType ?: return
+            val videoId = activeVideoId ?: return
+            SubtitleRepository.fetchAddonSubtitles(type, videoId)
+        }
+
         LaunchedEffect(activeSourceUrl, activeSourceAudioUrl, activeSourceHeaders, activeSourceResponseHeaders) {
             errorMessage = null
             playerController = null
@@ -1064,6 +1070,13 @@ fun PlayerScreen(
 
         LaunchedEffect(playerController, subtitleStyle) {
             playerController?.applySubtitleStyle(subtitleStyle)
+        }
+
+        LaunchedEffect(showSubtitleModal, activeSubtitleTab, contentType, activeVideoId) {
+            if (!showSubtitleModal || activeSubtitleTab != SubtitleTab.Addons) return@LaunchedEffect
+            if (!isLoadingAddonSubtitles && addonSubtitles.isEmpty()) {
+                fetchAddonSubtitlesForActiveItem()
+            }
         }
 
         LaunchedEffect(playbackSnapshot.isLoading, playerController) {
@@ -1709,11 +1722,7 @@ fun PlayerScreen(
                     useCustomSubtitles = true
                     playerController?.setSubtitleUri(addon.url)
                 },
-                onFetchAddonSubtitles = {
-                    if (contentType != null && activeVideoId != null) {
-                        SubtitleRepository.fetchAddonSubtitles(contentType, activeVideoId!!)
-                    }
-                },
+                onFetchAddonSubtitles = ::fetchAddonSubtitlesForActiveItem,
                 onStyleChanged = PlayerSettingsRepository::setSubtitleStyle,
                 onDismiss = { showSubtitleModal = false },
             )
