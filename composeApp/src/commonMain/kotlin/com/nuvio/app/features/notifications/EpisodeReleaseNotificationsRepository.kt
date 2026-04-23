@@ -24,6 +24,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -44,8 +45,10 @@ object EpisodeReleaseNotificationsRepository {
     private val _uiState = MutableStateFlow(EpisodeReleaseNotificationsUiState())
     val uiState: StateFlow<EpisodeReleaseNotificationsUiState> = _uiState.asStateFlow()
 
+    @Volatile
     private var hasLoaded = false
-    private var trackedShowsByKey: MutableMap<String, TrackedFollowedShow> = mutableMapOf()
+    @Volatile
+    private var trackedShowsByKey: Map<String, TrackedFollowedShow> = emptyMap()
 
     init {
         scope.launch {
@@ -81,7 +84,7 @@ object EpisodeReleaseNotificationsRepository {
 
     fun clearLocalState() {
         hasLoaded = false
-        trackedShowsByKey.clear()
+        trackedShowsByKey = emptyMap()
         _uiState.value = EpisodeReleaseNotificationsUiState()
         scope.launch {
             runCatching { EpisodeReleaseNotificationPlatform.clearScheduledEpisodeReleaseNotifications() }
@@ -239,7 +242,6 @@ object EpisodeReleaseNotificationsRepository {
 
     private fun loadFromDisk() {
         hasLoaded = true
-        trackedShowsByKey.clear()
 
         val payload = EpisodeReleaseNotificationsStorage.loadPayload().orEmpty().trim()
         val stored = payload.takeIf { it.isNotEmpty() }
@@ -251,11 +253,11 @@ object EpisodeReleaseNotificationsRepository {
                 }.getOrNull()
             }
 
-        stored?.followedShows
-            .orEmpty()
-            .forEach { trackedShow ->
-                trackedShowsByKey[buildTrackedShowKey(trackedShow.contentType, trackedShow.contentId)] = trackedShow
+        trackedShowsByKey = buildMap {
+            stored?.followedShows.orEmpty().forEach { trackedShow ->
+                put(buildTrackedShowKey(trackedShow.contentType, trackedShow.contentId), trackedShow)
             }
+        }
 
         _uiState.value = EpisodeReleaseNotificationsUiState(
             isEnabled = stored?.enabled ?: false,
@@ -318,7 +320,7 @@ object EpisodeReleaseNotificationsRepository {
 
         val changed = nextTrackedShows != trackedShowsByKey
         if (changed) {
-            trackedShowsByKey = nextTrackedShows.toMutableMap()
+            trackedShowsByKey = nextTrackedShows.toMap()
         }
         updateTestTargetState()
         return changed
