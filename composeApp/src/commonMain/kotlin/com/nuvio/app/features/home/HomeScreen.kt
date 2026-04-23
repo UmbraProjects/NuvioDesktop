@@ -45,6 +45,7 @@ import com.nuvio.app.features.watchprogress.toUpNextContinueWatchingItem
 import com.nuvio.app.features.watching.application.WatchingState
 import com.nuvio.app.features.watching.domain.WatchingContentRef
 import com.nuvio.app.features.collection.CollectionRepository
+import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.home.components.HomeCollectionRowSection
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import kotlinx.coroutines.async
@@ -149,9 +150,12 @@ fun HomeScreen(
             latestCompletedBySeries = latestCompletedBySeries,
         )
     }
-    var nextUpItemsBySeries by remember { mutableStateOf<Map<String, Pair<Long, ContinueWatchingItem>>>(emptyMap()) }
+    val profileState by ProfileRepository.state.collectAsStateWithLifecycle()
+    val activeProfileId = profileState.activeProfile?.profileIndex ?: 1
 
-    val cachedSnapshots = remember { ContinueWatchingEnrichmentCache.getSnapshots() }
+    var nextUpItemsBySeries by remember(activeProfileId) { mutableStateOf<Map<String, Pair<Long, ContinueWatchingItem>>>(emptyMap()) }
+
+    val cachedSnapshots = remember(activeProfileId) { ContinueWatchingEnrichmentCache.getSnapshots() }
     val cachedNextUpItems = remember(cachedSnapshots.first, continueWatchingPreferences.dismissedNextUpKeys) {
         cachedSnapshots.first.mapNotNull { cached ->
             if (nextUpDismissKey(cached.contentId, cached.seedSeason, cached.seedEpisode) in continueWatchingPreferences.dismissedNextUpKeys) {
