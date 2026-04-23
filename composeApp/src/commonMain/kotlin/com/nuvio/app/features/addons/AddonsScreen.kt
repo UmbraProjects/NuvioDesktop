@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -80,6 +83,7 @@ internal fun AddonsSettingsPageContent(
     }
 
     val uiState by AddonRepository.uiState.collectAsStateWithLifecycle()
+    val uriHandler = LocalUriHandler.current
     val coroutineScope = rememberCoroutineScope()
     var addonUrl by rememberSaveable { mutableStateOf("") }
     var formMessage by rememberSaveable { mutableStateOf<String?>(null) }
@@ -131,10 +135,34 @@ internal fun AddonsSettingsPageContent(
         if (uiState.addons.isEmpty()) {
             EmptyStateCard()
         } else {
-            uiState.addons.forEach { addon ->
+            val lastIndex = uiState.addons.lastIndex
+            uiState.addons.forEachIndexed { index, addon ->
+                val manifest = addon.manifest
+                val behaviorHints = manifest?.behaviorHints
+                val showConfigureAction = behaviorHints?.configurable == true || behaviorHints?.configurationRequired == true
+                val configureUrl = addon.manifestUrl.toConfigureUrl()
                 InstalledAddonCard(
                     addon = addon,
+                    onMoveUpClick = if (index > 0) {
+                        { AddonRepository.moveAddon(index, index - 1) }
+                    } else {
+                        null
+                    },
+                    onMoveDownClick = if (index < lastIndex) {
+                        { AddonRepository.moveAddon(index, index + 1) }
+                    } else {
+                        null
+                    },
                     onRefreshClick = { AddonRepository.refreshAddon(addon.manifestUrl) },
+                    onConfigureClick = if (showConfigureAction && !configureUrl.isNullOrBlank()) {
+                        {
+                            runCatching {
+                                uriHandler.openUri(configureUrl)
+                            }
+                        }
+                    } else {
+                        null
+                    },
                     onDeleteClick = { AddonRepository.removeAddon(addon.manifestUrl) },
                 )
             }
@@ -307,7 +335,10 @@ private fun EmptyStateCard() {
 @Composable
 private fun InstalledAddonCard(
     addon: ManagedAddon,
+    onMoveUpClick: (() -> Unit)?,
+    onMoveDownClick: (() -> Unit)?,
     onRefreshClick: () -> Unit,
+    onConfigureClick: (() -> Unit)?,
     onDeleteClick: () -> Unit,
 ) {
     val manifest = addon.manifest
@@ -315,54 +346,79 @@ private fun InstalledAddonCard(
     NuvioSurfaceCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top,
         ) {
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.Top,
-            ) {
-                AddonIconBadge(
-                    imageUrl = manifest?.logoUrl,
-                    icon = Icons.Rounded.Extension,
-                    tint = if (manifest != null) Color(0xFF71BDE8) else MaterialTheme.colorScheme.onSurfaceVariant,
+            AddonIconBadge(
+                imageUrl = manifest?.logoUrl,
+                icon = Icons.Rounded.Extension,
+                tint = if (manifest != null) Color(0xFF71BDE8) else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = addon.displayTitle,
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                manifest?.version?.let { version ->
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = addon.displayTitle,
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        text = "Version $version",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    manifest?.version?.let { version ->
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Version $version",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                 }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                NuvioIconActionButton(
-                    icon = Icons.Rounded.Refresh,
-                    contentDescription = "Refresh addon",
-                    tint = MaterialTheme.colorScheme.primary,
-                    onClick = onRefreshClick,
-                )
-                NuvioIconActionButton(
-                    icon = Icons.Rounded.Delete,
-                    contentDescription = "Delete addon",
-                    tint = MaterialTheme.colorScheme.error,
-                    onClick = onDeleteClick,
-                )
             }
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            onMoveUpClick?.let { onMoveUp ->
+                NuvioIconActionButton(
+                    icon = Icons.Rounded.ArrowUpward,
+                    contentDescription = "Move addon up",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    onClick = onMoveUp,
+                )
+            }
+            onMoveDownClick?.let { onMoveDown ->
+                NuvioIconActionButton(
+                    icon = Icons.Rounded.ArrowDownward,
+                    contentDescription = "Move addon down",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    onClick = onMoveDown,
+                )
+            }
+            NuvioIconActionButton(
+                icon = Icons.Rounded.Refresh,
+                contentDescription = "Refresh addon",
+                tint = MaterialTheme.colorScheme.primary,
+                onClick = onRefreshClick,
+            )
+            onConfigureClick?.let { onConfigure ->
+                NuvioIconActionButton(
+                    icon = Icons.Rounded.Settings,
+                    contentDescription = "Configure addon",
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    onClick = onConfigure,
+                )
+            }
+            NuvioIconActionButton(
+                icon = Icons.Rounded.Delete,
+                contentDescription = "Delete addon",
+                tint = MaterialTheme.colorScheme.error,
+                onClick = onDeleteClick,
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
         Spacer(modifier = Modifier.height(18.dp))
 
@@ -482,5 +538,14 @@ private fun manifestSummary(manifest: AddonManifest): String {
         if (manifest.behaviorHints.p2p) {
             append(" • P2P")
         }
+    }
+}
+
+private fun String.toConfigureUrl(): String {
+    val base = substringBefore("?").trimEnd('/')
+    return if (base.endsWith("/manifest.json")) {
+        base.removeSuffix("/manifest.json") + "/configure"
+    } else {
+        "$base/configure"
     }
 }

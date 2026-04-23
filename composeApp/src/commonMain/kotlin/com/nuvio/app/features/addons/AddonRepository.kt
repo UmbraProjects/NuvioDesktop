@@ -250,6 +250,27 @@ object AddonRepository {
         pushToServer()
     }
 
+    fun moveAddon(fromIndex: Int, toIndex: Int) {
+        if (isUsingPrimaryAddonsFromSecondaryProfile()) return
+        _uiState.update { current ->
+            val addons = current.addons
+            if (
+                fromIndex !in addons.indices ||
+                toIndex !in addons.indices ||
+                fromIndex == toIndex
+            ) {
+                return@update current
+            }
+
+            val reordered = addons.toMutableList()
+            val movingAddon = reordered.removeAt(fromIndex)
+            reordered.add(toIndex, movingAddon)
+            current.copy(addons = reordered)
+        }
+        persist()
+        pushToServer()
+    }
+
     fun refreshAll() {
         _uiState.value.addons.distinctBy { it.manifestUrl }.forEach { addon ->
             refreshAddon(addon.manifestUrl)
