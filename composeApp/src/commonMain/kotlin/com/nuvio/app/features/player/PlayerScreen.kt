@@ -1,6 +1,7 @@
 package com.nuvio.app.features.player
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -586,7 +587,7 @@ fun PlayerScreen(
             showGestureFeedback(
                 GestureFeedbackState(
                     messageRes = Res.string.compose_player_brightness_level,
-                    messageArgs = listOf(percentage),
+                    messageArgs = listOf("$percentage%"),
                     icon = GestureFeedbackIcon.Brightness,
                 ),
             )
@@ -601,7 +602,7 @@ fun PlayerScreen(
                     } else {
                         Res.string.compose_player_volume_level
                     },
-                    messageArgs = if (level.isMuted) emptyList() else listOf(percentage),
+                    messageArgs = if (level.isMuted) emptyList() else listOf("$percentage%"),
                     icon = if (level.isMuted) GestureFeedbackIcon.VolumeMuted else GestureFeedbackIcon.Volume,
                     isDanger = level.isMuted,
                 ),
@@ -1539,7 +1540,11 @@ fun PlayerScreen(
                 },
             )
 
-            if (pausedOverlayVisible && !controlsVisible && !playerControlsLocked) {
+            AnimatedVisibility(
+                visible = pausedOverlayVisible && !controlsVisible && !playerControlsLocked,
+                enter = fadeIn(animationSpec = tween(durationMillis = 220)),
+                exit = fadeOut(animationSpec = tween(durationMillis = 180)),
+            ) {
                 PauseMetadataOverlay(
                     title = title,
                     logo = logo,

@@ -182,8 +182,8 @@
     <string name="compose_player_style">Στυλ</string>
     <string name="compose_player_subs">Υπότιτλοι</string>
     <string name="compose_player_subtitles">Υπότιτλοι</string>
-    <string name="compose_player_brightness_level">Φωτεινότητα %1$d%%</string>
-    <string name="compose_player_volume_level">Ένταση ήχου %1$d%%</string>
+    <string name="compose_player_brightness_level">Φωτεινότητα %1$s</string>
+    <string name="compose_player_volume_level">Ένταση ήχου %1$s</string>
     <string name="compose_player_muted">Σε σίγαση</string>
     <string name="compose_player_downloaded">Κατέβηκε</string>
     <string name="compose_player_airs_prefix">Προβάλλεται</string>

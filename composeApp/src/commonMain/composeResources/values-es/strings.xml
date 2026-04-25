@@ -300,8 +300,8 @@
     <string name="compose_player_style">Estilo</string>
     <string name="compose_player_subs">Subs</string>
     <string name="compose_player_subtitles">Subtítulos</string>
-    <string name="compose_player_brightness_level">Brillo %1$d%%</string>
-    <string name="compose_player_volume_level">Volumen %1$d%%</string>
+    <string name="compose_player_brightness_level">Brillo %1$s</string>
+    <string name="compose_player_volume_level">Volumen %1$s</string>
     <string name="compose_player_muted">Silenciado</string>
     <string name="compose_player_downloaded">Descargado</string>
     <string name="compose_player_airs_prefix">Se emite</string>

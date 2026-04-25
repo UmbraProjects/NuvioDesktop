@@ -182,8 +182,8 @@
   <string name="compose_player_style">Stile</string>
   <string name="compose_player_subs">Sub</string>
   <string name="compose_player_subtitles">Sottotitoli</string>
-  <string name="compose_player_brightness_level">Luminosità %1$d%%</string>
-  <string name="compose_player_volume_level">Volume %1$d%%</string>
+  <string name="compose_player_brightness_level">Luminosità %1$s</string>
+  <string name="compose_player_volume_level">Volume %1$s</string>
   <string name="compose_player_muted">Muto</string>
   <string name="compose_player_downloaded">Scaricato</string>
   <string name="compose_player_airs_prefix">In onda</string>

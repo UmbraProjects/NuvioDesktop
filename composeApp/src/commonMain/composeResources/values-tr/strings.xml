@@ -182,8 +182,8 @@
     <string name="compose_player_style">Stil</string>
     <string name="compose_player_subs">Altyazı</string>
     <string name="compose_player_subtitles">Altyazılar</string>
-    <string name="compose_player_brightness_level">Parlaklık %1$d%%</string>
-    <string name="compose_player_volume_level">Ses %1$d%%</string>
+    <string name="compose_player_brightness_level">Parlaklık %1$s</string>
+    <string name="compose_player_volume_level">Ses %1$s</string>
     <string name="compose_player_muted">Sessizde</string>
     <string name="compose_player_downloaded">İndirildi</string>
     <string name="compose_player_airs_prefix">Yayınlanma</string>
@@ -1041,4 +1041,3 @@
     <string name="unit_bytes_mb">MB</string>
     <string name="unit_bytes_gb">GB</string>
 </resources>
-

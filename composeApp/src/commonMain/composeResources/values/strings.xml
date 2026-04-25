@@ -300,8 +300,8 @@
     <string name="compose_player_style">Style</string>
     <string name="compose_player_subs">Subs</string>
     <string name="compose_player_subtitles">Subtitles</string>
-    <string name="compose_player_brightness_level">Brightness %1$d%%</string>
-    <string name="compose_player_volume_level">Volume %1$d%%</string>
+    <string name="compose_player_brightness_level">Brightness %1$s</string>
+    <string name="compose_player_volume_level">Volume %1$s</string>
     <string name="compose_player_muted">Muted</string>
     <string name="compose_player_downloaded">Downloaded</string>
     <string name="compose_player_airs_prefix">Airs</string>
