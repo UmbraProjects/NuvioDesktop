@@ -16,6 +16,7 @@ enum class AppLanguage(
     SPANISH("es", Res.string.lang_spanish),
     TURKISH("tr", Res.string.lang_turkish),
     ITALIAN("it", Res.string.lang_italian),
+    GREEK("el", Res.string.lang_greek),
     ;
 
     companion object {
