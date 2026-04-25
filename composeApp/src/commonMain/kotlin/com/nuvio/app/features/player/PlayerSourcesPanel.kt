@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamsUiState
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun PlayerSourcesPanel(
@@ -108,19 +110,19 @@ fun PlayerSourcesPanel(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "Sources",
+                                text = stringResource(Res.string.compose_player_panel_sources),
                                 color = colorScheme.onSurface,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 PanelChipButton(
-                                    label = "Reload",
+                                    label = stringResource(Res.string.compose_action_reload),
                                     icon = Icons.Rounded.Refresh,
                                     onClick = onReload,
                                 )
                                 PanelChipButton(
-                                    label = "Close",
+                                    label = stringResource(Res.string.action_close),
                                     onClick = onDismiss,
                                 )
                             }
@@ -140,7 +142,7 @@ fun PlayerSourcesPanel(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 AddonFilterChip(
-                                    label = "All",
+                                    label = stringResource(Res.string.collections_tab_all),
                                     isSelected = streamsUiState.selectedFilter == null,
                                     onClick = { onFilterSelected(null) },
                                 )
@@ -182,7 +184,7 @@ fun PlayerSourcesPanel(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
-                                        text = "No streams found",
+                                        text = stringResource(Res.string.compose_player_no_streams_found),
                                         color = colorScheme.onSurfaceVariant,
                                         fontSize = 14.sp,
                                     )
@@ -270,7 +272,7 @@ private fun SourceStreamRow(
                             .padding(horizontal = 8.dp, vertical = 3.dp),
                     ) {
                         Text(
-                            text = "Playing",
+                            text = stringResource(Res.string.compose_player_playing),
                             color = colorScheme.onPrimaryContainer,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -301,7 +303,7 @@ private fun SourceStreamRow(
         if (isCurrent) {
             Icon(
                 imageVector = Icons.Rounded.Check,
-                contentDescription = "Currently playing",
+                contentDescription = stringResource(Res.string.compose_player_currently_playing),
                 tint = colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )

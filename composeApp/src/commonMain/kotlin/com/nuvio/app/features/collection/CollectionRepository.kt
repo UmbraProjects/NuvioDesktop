@@ -6,9 +6,19 @@ import com.nuvio.app.features.addons.ManagedAddon
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.collections_import_error_collection_blank_id
+import nuvio.composeapp.generated.resources.collections_import_error_collection_blank_title
+import nuvio.composeapp.generated.resources.collections_import_error_empty_json
+import nuvio.composeapp.generated.resources.collections_import_error_folder_blank_id
+import nuvio.composeapp.generated.resources.collections_import_error_folder_blank_title
+import nuvio.composeapp.generated.resources.collections_import_error_invalid_json
+import nuvio.composeapp.generated.resources.collections_import_error_source_blank_fields
+import org.jetbrains.compose.resources.getString
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -110,28 +120,68 @@ object CollectionRepository {
 
     fun validateJson(jsonString: String): ValidationResult {
         if (jsonString.isBlank()) {
-            return ValidationResult(valid = false, error = "JSON is empty.")
+            return ValidationResult(
+                valid = false,
+                error = runBlocking { getString(Res.string.collections_import_error_empty_json) },
+            )
         }
         return try {
             val collections = json.decodeFromString<List<Collection>>(jsonString)
             var totalFolders = 0
             collections.forEachIndexed { ci, c ->
                 if (c.id.isBlank()) {
-                    return ValidationResult(valid = false, error = "Collection ${ci + 1} has blank id.")
+                    return ValidationResult(
+                        valid = false,
+                        error = runBlocking {
+                            getString(Res.string.collections_import_error_collection_blank_id, ci + 1)
+                        },
+                    )
                 }
                 if (c.title.isBlank()) {
-                    return ValidationResult(valid = false, error = "Collection '${c.id}' has blank title.")
+                    return ValidationResult(
+                        valid = false,
+                        error = runBlocking {
+                            getString(Res.string.collections_import_error_collection_blank_title, c.id)
+                        },
+                    )
                 }
                 c.folders.forEachIndexed { fi, f ->
                     if (f.id.isBlank()) {
-                        return ValidationResult(valid = false, error = "Folder ${fi + 1} in '${c.title}' has blank id.")
+                        return ValidationResult(
+                            valid = false,
+                            error = runBlocking {
+                                getString(
+                                    Res.string.collections_import_error_folder_blank_id,
+                                    fi + 1,
+                                    c.title,
+                                )
+                            },
+                        )
                     }
                     if (f.title.isBlank()) {
-                        return ValidationResult(valid = false, error = "Folder '${f.id}' in '${c.title}' has blank title.")
+                        return ValidationResult(
+                            valid = false,
+                            error = runBlocking {
+                                getString(
+                                    Res.string.collections_import_error_folder_blank_title,
+                                    f.id,
+                                    c.title,
+                                )
+                            },
+                        )
                     }
                     f.catalogSources.forEachIndexed { si, s ->
                         if (s.addonId.isBlank() || s.type.isBlank() || s.catalogId.isBlank()) {
-                            return ValidationResult(valid = false, error = "Source ${si + 1} in folder '${f.title}' has blank fields.")
+                            return ValidationResult(
+                                valid = false,
+                                error = runBlocking {
+                                    getString(
+                                        Res.string.collections_import_error_source_blank_fields,
+                                        si + 1,
+                                        f.title,
+                                    )
+                                },
+                            )
                         }
                     }
                     totalFolders++
@@ -143,7 +193,12 @@ object CollectionRepository {
                 folderCount = totalFolders,
             )
         } catch (e: Exception) {
-            ValidationResult(valid = false, error = "Invalid JSON: ${e.message}")
+            ValidationResult(
+                valid = false,
+                error = runBlocking {
+                    getString(Res.string.collections_import_error_invalid_json, e.message.orEmpty())
+                },
+            )
         }
     }
 
