@@ -714,7 +714,7 @@ private fun FolderEditorPage(
                                     modifier = Modifier.size(18.dp),
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("TMDB")
+                                Text(stringResource(Res.string.source_tmdb))
                             }
                             TextButton(onClick = { CollectionEditorRepository.showCatalogPicker() }) {
                                 Icon(
@@ -829,7 +829,7 @@ private fun CatalogPickerScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = "${selectedSources.size} selected",
+                        text = stringResource(Res.string.collections_editor_selected_count, selectedSources.size),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
@@ -850,7 +850,11 @@ private fun CatalogPickerScreen(
                 }
                 PickerPanel(
                     title = addonName,
-                    subtitle = if (selectedCount > 0) "$selectedCount selected" else "${catalogs.size} catalogs",
+                    subtitle = if (selectedCount > 0) {
+                        stringResource(Res.string.collections_editor_catalog_selected_count, selectedCount)
+                    } else {
+                        stringResource(Res.string.collections_editor_catalog_count, catalogs.size)
+                    },
                 ) {
                     catalogs.forEachIndexed { index, catalog ->
                         val isSelected = selectedSources.any {
@@ -896,6 +900,12 @@ private fun TmdbSourcePickerScreen(
         TmdbBuilderMode.DISCOVER -> TmdbCollectionSourceType.DISCOVER
     }
     val requiresId = sourceType != TmdbCollectionSourceType.DISCOVER
+    val showMediaControls = state.tmdbBuilderMode == TmdbBuilderMode.PRODUCTION ||
+        state.tmdbBuilderMode == TmdbBuilderMode.DISCOVER
+    val showSortControls = state.tmdbBuilderMode == TmdbBuilderMode.PRODUCTION ||
+        state.tmdbBuilderMode == TmdbBuilderMode.NETWORK ||
+        state.tmdbBuilderMode == TmdbBuilderMode.DISCOVER
+    val showFilterControls = state.tmdbBuilderMode == TmdbBuilderMode.DISCOVER
 
     PlatformBackHandler(enabled = true) {
         onBack()
@@ -905,7 +915,7 @@ private fun TmdbSourcePickerScreen(
         NuvioScreen(modifier = Modifier.fillMaxSize()) {
             stickyHeader {
                 NuvioScreenHeader(
-                    title = "TMDB Sources",
+                    title = stringResource(Res.string.collections_editor_tmdb_sources),
                     onBack = onBack,
                 )
             }
@@ -957,11 +967,11 @@ private fun TmdbSourcePickerScreen(
                             )
                         }
                         TmdbLabeledField(
-                            label = "Display title",
+                            label = stringResource(Res.string.collections_editor_tmdb_display_title),
                             value = state.tmdbTitleInput,
                             onValueChange = { CollectionEditorRepository.setTmdbTitleInput(it) },
                             placeholder = tmdbTitlePlaceholder(state.tmdbBuilderMode),
-                            helper = "Shown as the row/tab name. If blank, Nuvio creates one from the source.",
+                            helper = stringResource(Res.string.collections_editor_tmdb_title_helper),
                         )
                         if (state.tmdbSearchError != null) {
                             Text(
@@ -976,20 +986,25 @@ private fun TmdbSourcePickerScreen(
 
             if (state.tmdbBuilderMode == TmdbBuilderMode.PRODUCTION && state.tmdbCompanyResults.isNotEmpty()) {
                 item {
-                    PickerSectionLabel("Search Results")
+                    PickerSectionLabel(stringResource(Res.string.collections_editor_tmdb_search_results))
                 }
                 itemsIndexed(state.tmdbCompanyResults) { _, result ->
-                    val title = result.name ?: "TMDB Company ${result.id}"
+                    val title = result.name ?: stringResource(Res.string.collections_editor_tmdb_company_fallback, result.id)
+                    val movieSuffix = stringResource(Res.string.collections_editor_tmdb_movies)
+                    val seriesSuffix = stringResource(Res.string.collections_editor_tmdb_series)
                     PickerOptionRow(
                         title = title,
-                        subtitle = listOfNotNull("Production", result.originCountry).joinToString(" • "),
+                        subtitle = listOfNotNull(
+                            stringResource(Res.string.collections_editor_tmdb_subtitle_production),
+                            result.originCountry,
+                        ).joinToString(" • "),
                         selected = false,
                         onClick = {
                             val sources = tmdbSelectedMediaTypes(state).map { mediaType ->
                                 CollectionSource(
                                     provider = "tmdb",
                                     tmdbSourceType = TmdbCollectionSourceType.COMPANY.name,
-                                    title = tmdbTitleForMedia(title, mediaType, state.tmdbMediaBoth),
+                                    title = tmdbTitleForMedia(title, mediaType, state.tmdbMediaBoth, movieSuffix, seriesSuffix),
                                     tmdbId = result.id,
                                     mediaType = mediaType.name,
                                     sortBy = state.tmdbSortBy,
@@ -1004,13 +1019,13 @@ private fun TmdbSourcePickerScreen(
 
             if (state.tmdbBuilderMode == TmdbBuilderMode.COLLECTION && state.tmdbCollectionResults.isNotEmpty()) {
                 item {
-                    PickerSectionLabel("Search Results")
+                    PickerSectionLabel(stringResource(Res.string.collections_editor_tmdb_search_results))
                 }
                 itemsIndexed(state.tmdbCollectionResults) { _, result ->
-                    val title = result.name ?: "TMDB Collection ${result.id}"
+                    val title = result.name ?: stringResource(Res.string.collections_editor_tmdb_collection_fallback, result.id)
                     PickerOptionRow(
                         title = title,
-                        subtitle = "TMDB Movie Collection",
+                        subtitle = stringResource(Res.string.collections_editor_tmdb_collection),
                         selected = false,
                         onClick = {
                             CollectionEditorRepository.addTmdbSource(
@@ -1028,11 +1043,10 @@ private fun TmdbSourcePickerScreen(
                 }
             }
 
-            if (sourceType == TmdbCollectionSourceType.COMPANY || sourceType == TmdbCollectionSourceType.DISCOVER) {
+            if (showMediaControls) {
                 item {
                     PickerPanel(
-                        title = "Media",
-                        subtitle = "Create one source or split it into movie and series feeds.",
+                        title = stringResource(Res.string.collections_editor_tmdb_type),
                     ) {
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1044,7 +1058,7 @@ private fun TmdbSourcePickerScreen(
                                         CollectionEditorRepository.setTmdbMediaBoth(false)
                                         CollectionEditorRepository.setTmdbMediaType(TmdbCollectionMediaType.MOVIE)
                                     },
-                                    label = { Text("Movies") },
+                                    label = { Text(stringResource(Res.string.collections_editor_tmdb_movies)) },
                                 )
                                 FilterChip(
                                     selected = state.tmdbMediaType == TmdbCollectionMediaType.TV && !state.tmdbMediaBoth,
@@ -1052,26 +1066,22 @@ private fun TmdbSourcePickerScreen(
                                         CollectionEditorRepository.setTmdbMediaBoth(false)
                                         CollectionEditorRepository.setTmdbMediaType(TmdbCollectionMediaType.TV)
                                     },
-                                    label = { Text("Series") },
+                                    label = { Text(stringResource(Res.string.collections_editor_tmdb_series)) },
                                 )
                                 FilterChip(
                                     selected = state.tmdbMediaBoth,
                                     onClick = { CollectionEditorRepository.setTmdbMediaBoth(true) },
-                                    label = { Text("Both") },
+                                    label = { Text(stringResource(Res.string.collections_editor_tmdb_both)) },
                                 )
                             }
                     }
                 }
             }
 
-            if (sourceType == TmdbCollectionSourceType.COMPANY ||
-                sourceType == TmdbCollectionSourceType.NETWORK ||
-                sourceType == TmdbCollectionSourceType.DISCOVER
-            ) {
+            if (showSortControls) {
                 item {
                     PickerPanel(
-                        title = "Sort",
-                        subtitle = "Controls the default order TMDB returns.",
+                        title = stringResource(Res.string.collections_editor_tmdb_sort),
                     ) {
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1096,23 +1106,27 @@ private fun TmdbSourcePickerScreen(
                             }
                     }
                 }
+            }
 
+            if (showFilterControls) {
                 item {
                     PickerPanel(
-                        title = "Filters",
-                        subtitle = "Combine TMDB IDs and date/rating constraints for exact feeds.",
+                        title = stringResource(Res.string.collections_editor_tmdb_filters),
+                        subtitle = stringResource(Res.string.collections_editor_tmdb_filters_helper),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             TmdbQuickChips(
-                                label = "Quick genres",
+                                label = stringResource(Res.string.collections_editor_tmdb_quick_genres),
                                 chips = tmdbGenreQuickChips(state.tmdbMediaType),
                                 onSelect = { value ->
                                     CollectionEditorRepository.updateTmdbFilters { it.copy(withGenres = value) }
                                 },
                             )
                             TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_genres),
+                                helper = stringResource(Res.string.collections_editor_tmdb_genres_helper),
                                 value = state.tmdbFilters.withGenres.orEmpty(),
-                                placeholder = "Genre IDs, comma-separated",
+                                placeholder = if (state.tmdbMediaType == TmdbCollectionMediaType.MOVIE) "28,12" else "18,35",
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(withGenres = value.ifBlank { null })
@@ -1120,17 +1134,10 @@ private fun TmdbSourcePickerScreen(
                                 },
                             )
                             TmdbFilterField(
-                                value = state.tmdbFilters.year?.toString().orEmpty(),
-                                placeholder = "Year",
-                                onValueChange = { value ->
-                                    CollectionEditorRepository.updateTmdbFilters {
-                                        it.copy(year = value.toIntOrNull())
-                                    }
-                                },
-                            )
-                            TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_date_from),
+                                helper = stringResource(Res.string.collections_editor_tmdb_date_helper),
                                 value = state.tmdbFilters.releaseDateGte.orEmpty(),
-                                placeholder = "Release from YYYY-MM-DD",
+                                placeholder = "2020-01-01",
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(releaseDateGte = value.ifBlank { null })
@@ -1138,8 +1145,10 @@ private fun TmdbSourcePickerScreen(
                                 },
                             )
                             TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_date_to),
+                                helper = stringResource(Res.string.collections_editor_tmdb_date_helper),
                                 value = state.tmdbFilters.releaseDateLte.orEmpty(),
-                                placeholder = "Release until YYYY-MM-DD",
+                                placeholder = "2024-12-31",
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(releaseDateLte = value.ifBlank { null })
@@ -1147,8 +1156,10 @@ private fun TmdbSourcePickerScreen(
                                 },
                             )
                             TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_rating_min),
+                                helper = stringResource(Res.string.collections_editor_tmdb_rating_helper),
                                 value = state.tmdbFilters.voteAverageGte?.toString().orEmpty(),
-                                placeholder = "Minimum rating",
+                                placeholder = "7.0",
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(voteAverageGte = value.toDoubleOrNull())
@@ -1156,33 +1167,45 @@ private fun TmdbSourcePickerScreen(
                                 },
                             )
                             TmdbFilterField(
-                                value = state.tmdbFilters.voteCountGte?.toString().orEmpty(),
-                                placeholder = "Minimum vote count",
-                                onValueChange = { value ->
-                                    CollectionEditorRepository.updateTmdbFilters {
-                                        it.copy(voteCountGte = value.toIntOrNull())
-                                    }
-                                },
-                            )
-                            TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_rating_max),
+                                helper = stringResource(Res.string.collections_editor_tmdb_rating_helper),
                                 value = state.tmdbFilters.voteAverageLte?.toString().orEmpty(),
-                                placeholder = "Maximum rating",
+                                placeholder = "10",
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(voteAverageLte = value.toDoubleOrNull())
                                     }
                                 },
                             )
+                            TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_votes_min),
+                                helper = stringResource(Res.string.collections_editor_tmdb_votes_helper),
+                                value = state.tmdbFilters.voteCountGte?.toString().orEmpty(),
+                                placeholder = "100",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(voteCountGte = value.toIntOrNull())
+                                    }
+                                },
+                            )
                             TmdbQuickChips(
-                                label = "Quick languages",
-                                chips = listOf("English" to "en", "Korean" to "ko", "Japanese" to "ja", "Hindi" to "hi", "Spanish" to "es"),
+                                label = stringResource(Res.string.collections_editor_tmdb_quick_languages),
+                                chips = listOf(
+                                    stringResource(Res.string.collections_editor_tmdb_language_english) to "en",
+                                    stringResource(Res.string.collections_editor_tmdb_language_korean) to "ko",
+                                    stringResource(Res.string.collections_editor_tmdb_language_japanese) to "ja",
+                                    stringResource(Res.string.collections_editor_tmdb_language_hindi) to "hi",
+                                    stringResource(Res.string.collections_editor_tmdb_language_spanish) to "es",
+                                ),
                                 onSelect = { value ->
                                     CollectionEditorRepository.updateTmdbFilters { it.copy(withOriginalLanguage = value) }
                                 },
                             )
                             TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_language),
+                                helper = stringResource(Res.string.collections_editor_tmdb_language_helper),
                                 value = state.tmdbFilters.withOriginalLanguage.orEmpty(),
-                                placeholder = "Original language, e.g. en",
+                                placeholder = "en, ko, ja, hi",
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(withOriginalLanguage = value.ifBlank { null })
@@ -1190,15 +1213,23 @@ private fun TmdbSourcePickerScreen(
                                 },
                             )
                             TmdbQuickChips(
-                                label = "Quick countries",
-                                chips = listOf("United States" to "US", "Korea" to "KR", "Japan" to "JP", "India" to "IN", "United Kingdom" to "GB"),
+                                label = stringResource(Res.string.collections_editor_tmdb_quick_countries),
+                                chips = listOf(
+                                    stringResource(Res.string.collections_editor_tmdb_country_us) to "US",
+                                    stringResource(Res.string.collections_editor_tmdb_country_korea) to "KR",
+                                    stringResource(Res.string.collections_editor_tmdb_country_japan) to "JP",
+                                    stringResource(Res.string.collections_editor_tmdb_country_india) to "IN",
+                                    stringResource(Res.string.collections_editor_tmdb_country_uk) to "GB",
+                                ),
                                 onSelect = { value ->
                                     CollectionEditorRepository.updateTmdbFilters { it.copy(withOriginCountry = value) }
                                 },
                             )
                             TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_country),
+                                helper = stringResource(Res.string.collections_editor_tmdb_country_helper),
                                 value = state.tmdbFilters.withOriginCountry.orEmpty(),
-                                placeholder = "Origin country, e.g. US",
+                                placeholder = "US, KR, JP, IN",
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(withOriginCountry = value.ifBlank { null })
@@ -1206,15 +1237,22 @@ private fun TmdbSourcePickerScreen(
                                 },
                             )
                             TmdbQuickChips(
-                                label = "Quick keywords",
-                                chips = listOf("Superhero" to "9715", "Based on Novel" to "818", "Time Travel" to "4379", "Space" to "9882"),
+                                label = stringResource(Res.string.collections_editor_tmdb_quick_keywords),
+                                chips = listOf(
+                                    stringResource(Res.string.collections_editor_tmdb_keyword_superhero) to "9715",
+                                    stringResource(Res.string.collections_editor_tmdb_keyword_based_on_novel) to "818",
+                                    stringResource(Res.string.collections_editor_tmdb_keyword_time_travel) to "4379",
+                                    stringResource(Res.string.collections_editor_tmdb_keyword_space) to "9882",
+                                ),
                                 onSelect = { value ->
                                     CollectionEditorRepository.updateTmdbFilters { it.copy(withKeywords = value) }
                                 },
                             )
                             TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_keywords),
+                                helper = stringResource(Res.string.collections_editor_tmdb_keywords_helper),
                                 value = state.tmdbFilters.withKeywords.orEmpty(),
-                                placeholder = "Keyword IDs",
+                                placeholder = stringResource(Res.string.collections_editor_tmdb_keywords_placeholder),
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(withKeywords = value.ifBlank { null })
@@ -1222,15 +1260,23 @@ private fun TmdbSourcePickerScreen(
                                 },
                             )
                             TmdbQuickChips(
-                                label = "Quick companies",
-                                chips = listOf("Marvel" to "420", "Disney" to "2", "Pixar" to "3", "Lucasfilm" to "1", "Warner Bros." to "174"),
+                                label = stringResource(Res.string.collections_editor_tmdb_quick_studios),
+                                chips = listOf(
+                                    stringResource(Res.string.collections_editor_tmdb_studio_marvel) to "420",
+                                    stringResource(Res.string.collections_editor_tmdb_studio_disney) to "2",
+                                    stringResource(Res.string.collections_editor_tmdb_studio_pixar) to "3",
+                                    stringResource(Res.string.collections_editor_tmdb_studio_lucasfilm) to "1",
+                                    stringResource(Res.string.collections_editor_tmdb_studio_warner) to "174",
+                                ),
                                 onSelect = { value ->
                                     CollectionEditorRepository.updateTmdbFilters { it.copy(withCompanies = value) }
                                 },
                             )
                             TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_companies),
+                                helper = stringResource(Res.string.collections_editor_tmdb_companies_helper),
                                 value = state.tmdbFilters.withCompanies.orEmpty(),
-                                placeholder = "Company IDs, e.g. 420",
+                                placeholder = stringResource(Res.string.collections_editor_tmdb_companies_placeholder),
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(withCompanies = value.ifBlank { null })
@@ -1238,18 +1284,37 @@ private fun TmdbSourcePickerScreen(
                                 },
                             )
                             TmdbQuickChips(
-                                label = "Quick networks",
-                                chips = listOf("Netflix" to "213", "HBO" to "49", "Disney+" to "2739", "Prime Video" to "1024", "Hulu" to "453"),
+                                label = stringResource(Res.string.collections_editor_tmdb_quick_networks),
+                                chips = listOf(
+                                    stringResource(Res.string.collections_editor_tmdb_network_netflix) to "213",
+                                    stringResource(Res.string.collections_editor_tmdb_network_hbo) to "49",
+                                    stringResource(Res.string.collections_editor_tmdb_network_disney_plus) to "2739",
+                                    stringResource(Res.string.collections_editor_tmdb_network_prime_video) to "1024",
+                                    stringResource(Res.string.collections_editor_tmdb_network_hulu) to "453",
+                                ),
                                 onSelect = { value ->
                                     CollectionEditorRepository.updateTmdbFilters { it.copy(withNetworks = value) }
                                 },
                             )
                             TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_networks),
+                                helper = stringResource(Res.string.collections_editor_tmdb_networks_helper),
                                 value = state.tmdbFilters.withNetworks.orEmpty(),
-                                placeholder = "Network IDs, e.g. 213",
+                                placeholder = stringResource(Res.string.collections_editor_tmdb_networks_placeholder),
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(withNetworks = value.ifBlank { null })
+                                    }
+                                },
+                            )
+                            TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_year),
+                                helper = stringResource(Res.string.collections_editor_tmdb_year_helper),
+                                value = state.tmdbFilters.year?.toString().orEmpty(),
+                                placeholder = "2024",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(year = value.toIntOrNull())
                                     }
                                 },
                             )
@@ -1259,7 +1324,7 @@ private fun TmdbSourcePickerScreen(
             }
 
             if (state.tmdbBuilderMode == TmdbBuilderMode.PRESETS) item {
-                PickerSectionLabel("Presets")
+                PickerSectionLabel(stringResource(Res.string.collections_editor_tmdb_presets))
             }
             if (state.tmdbBuilderMode == TmdbBuilderMode.PRESETS) {
                 itemsIndexed(TmdbCollectionSourceResolver.presets()) { _, preset ->
@@ -1313,11 +1378,11 @@ private fun TmdbSourcePickerScreen(
                                 modifier = Modifier.size(18.dp),
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Search")
+                            Text(stringResource(Res.string.collections_editor_tmdb_search))
                         }
                     }
                     NuvioPrimaryButton(
-                        text = "Add TMDB source",
+                        text = stringResource(Res.string.collections_editor_add_source),
                         modifier = Modifier.weight(1f),
                         enabled = !requiresId || state.tmdbInput.isNotBlank(),
                         onClick = { CollectionEditorRepository.addTmdbSourceFromInput() },
@@ -1510,23 +1575,24 @@ private fun TmdbQuickChips(
     }
 }
 
+@Composable
 private fun tmdbGenreQuickChips(mediaType: TmdbCollectionMediaType): List<Pair<String, String>> =
     when (mediaType) {
         TmdbCollectionMediaType.MOVIE -> listOf(
-            "Action" to "28",
-            "Adventure" to "12",
-            "Animation" to "16",
-            "Comedy" to "35",
-            "Horror" to "27",
-            "Sci-Fi" to "878",
+            stringResource(Res.string.collections_editor_tmdb_genre_action) to "28",
+            stringResource(Res.string.collections_editor_tmdb_genre_adventure) to "12",
+            stringResource(Res.string.collections_editor_tmdb_genre_animation) to "16",
+            stringResource(Res.string.collections_editor_tmdb_genre_comedy) to "35",
+            stringResource(Res.string.collections_editor_tmdb_genre_horror) to "27",
+            stringResource(Res.string.collections_editor_tmdb_genre_scifi) to "878",
         )
         TmdbCollectionMediaType.TV -> listOf(
-            "Drama" to "18",
-            "Comedy" to "35",
-            "Animation" to "16",
-            "Crime" to "80",
-            "Sci-Fi" to "10765",
-            "Reality" to "10764",
+            stringResource(Res.string.collections_editor_tmdb_genre_drama) to "18",
+            stringResource(Res.string.collections_editor_tmdb_genre_comedy) to "35",
+            stringResource(Res.string.collections_editor_tmdb_genre_animation) to "16",
+            stringResource(Res.string.collections_editor_tmdb_genre_crime) to "80",
+            stringResource(Res.string.collections_editor_tmdb_genre_scifi) to "10765",
+            stringResource(Res.string.collections_editor_tmdb_genre_reality) to "10764",
         )
     }
 
@@ -1541,11 +1607,13 @@ private fun tmdbTitleForMedia(
     title: String,
     mediaType: TmdbCollectionMediaType,
     addSuffix: Boolean,
+    movieSuffix: String,
+    seriesSuffix: String,
 ): String {
     if (!addSuffix) return title
     val suffix = when (mediaType) {
-        TmdbCollectionMediaType.MOVIE -> "Movies"
-        TmdbCollectionMediaType.TV -> "Series"
+        TmdbCollectionMediaType.MOVIE -> movieSuffix
+        TmdbCollectionMediaType.TV -> seriesSuffix
     }
     return "$title $suffix"
 }
@@ -1687,7 +1755,7 @@ private fun FolderTmdbSourceCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        text = source.title?.takeIf { it.isNotBlank() } ?: "TMDB",
+                        text = source.title?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.source_tmdb),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1695,7 +1763,7 @@ private fun FolderTmdbSourceCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "TMDB",
+                        text = stringResource(Res.string.source_tmdb),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1816,41 +1884,106 @@ private fun FolderCatalogSourceCard(
     }
 }
 
+@Composable
 private fun tmdbBuilderModeLabel(mode: TmdbBuilderMode): String =
     when (mode) {
-        TmdbBuilderMode.PRESETS -> "Presets"
-        TmdbBuilderMode.LIST -> "List"
-        TmdbBuilderMode.COLLECTION -> "Collection"
-        TmdbBuilderMode.PRODUCTION -> "Production"
-        TmdbBuilderMode.NETWORK -> "Network"
-        TmdbBuilderMode.DISCOVER -> "Discover"
+        TmdbBuilderMode.PRESETS -> stringResource(Res.string.collections_editor_tmdb_presets)
+        TmdbBuilderMode.LIST -> stringResource(Res.string.collections_editor_tmdb_public_list_mode)
+        TmdbBuilderMode.PRODUCTION -> stringResource(Res.string.collections_editor_tmdb_production_mode)
+        TmdbBuilderMode.NETWORK -> stringResource(Res.string.collections_editor_tmdb_network_mode)
+        TmdbBuilderMode.COLLECTION -> stringResource(Res.string.collections_editor_tmdb_collection_mode)
+        TmdbBuilderMode.DISCOVER -> stringResource(Res.string.collections_editor_tmdb_custom_mode)
     }
 
+@Composable
+private fun tmdbModeHelpText(mode: TmdbBuilderMode): String =
+    when (mode) {
+        TmdbBuilderMode.PRESETS -> stringResource(Res.string.collections_editor_tmdb_help_presets)
+        TmdbBuilderMode.LIST -> stringResource(Res.string.collections_editor_tmdb_help_list)
+        TmdbBuilderMode.PRODUCTION -> stringResource(Res.string.collections_editor_tmdb_help_production)
+        TmdbBuilderMode.NETWORK -> stringResource(Res.string.collections_editor_tmdb_help_network)
+        TmdbBuilderMode.COLLECTION -> stringResource(Res.string.collections_editor_tmdb_help_collection)
+        TmdbBuilderMode.DISCOVER -> stringResource(Res.string.collections_editor_tmdb_help_discover)
+    }
+
+@Composable
+private fun tmdbInputLabel(mode: TmdbBuilderMode): String =
+    when (mode) {
+        TmdbBuilderMode.LIST -> stringResource(Res.string.collections_editor_tmdb_public_list)
+        TmdbBuilderMode.NETWORK -> stringResource(Res.string.collections_editor_tmdb_network_id)
+        TmdbBuilderMode.COLLECTION -> stringResource(Res.string.collections_editor_tmdb_collection_id)
+        TmdbBuilderMode.PRODUCTION -> stringResource(Res.string.collections_editor_tmdb_company_search)
+        else -> stringResource(Res.string.collections_editor_tmdb_id_or_url)
+    }
+
+@Composable
+private fun tmdbInputPlaceholder(mode: TmdbBuilderMode): String =
+    when (mode) {
+        TmdbBuilderMode.LIST -> stringResource(Res.string.collections_editor_tmdb_list_placeholder)
+        TmdbBuilderMode.NETWORK -> stringResource(Res.string.collections_editor_tmdb_network_placeholder)
+        TmdbBuilderMode.COLLECTION -> stringResource(Res.string.collections_editor_tmdb_collection_placeholder)
+        TmdbBuilderMode.PRODUCTION -> stringResource(Res.string.collections_editor_tmdb_company_placeholder)
+        else -> stringResource(Res.string.collections_editor_tmdb_id_or_url)
+    }
+
+@Composable
+private fun tmdbInputHelper(mode: TmdbBuilderMode): String =
+    when (mode) {
+        TmdbBuilderMode.PRODUCTION -> stringResource(Res.string.collections_editor_tmdb_search_helper)
+        TmdbBuilderMode.COLLECTION -> stringResource(Res.string.collections_editor_tmdb_collection_helper)
+        TmdbBuilderMode.NETWORK -> stringResource(Res.string.collections_editor_tmdb_network_helper)
+        TmdbBuilderMode.LIST -> stringResource(Res.string.collections_editor_tmdb_list_helper)
+        else -> ""
+    }
+
+@Composable
+private fun tmdbTitlePlaceholder(mode: TmdbBuilderMode): String =
+    when (mode) {
+        TmdbBuilderMode.DISCOVER -> stringResource(Res.string.collections_editor_tmdb_discover_title_placeholder)
+        else -> stringResource(Res.string.collections_editor_tmdb_title_placeholder)
+    }
+
+@Composable
 private fun tmdbSortLabel(sort: TmdbCollectionSort): String =
     when (sort) {
-        TmdbCollectionSort.POPULAR_DESC -> "Popular"
-        TmdbCollectionSort.VOTE_AVERAGE_DESC -> "Top rated"
-        TmdbCollectionSort.RELEASE_DATE_DESC -> "Newest movies"
-        TmdbCollectionSort.FIRST_AIR_DATE_DESC -> "Newest series"
+        TmdbCollectionSort.POPULAR_DESC -> stringResource(Res.string.collections_editor_tmdb_sort_popular)
+        TmdbCollectionSort.VOTE_AVERAGE_DESC -> stringResource(Res.string.collections_editor_tmdb_sort_top_rated)
+        TmdbCollectionSort.RELEASE_DATE_DESC -> stringResource(Res.string.collections_editor_tmdb_sort_recent)
+        TmdbCollectionSort.FIRST_AIR_DATE_DESC -> stringResource(Res.string.collections_editor_tmdb_sort_recent)
     }
 
+@Composable
 private fun tmdbSourceSubtitle(source: CollectionSource): String {
     val media = when (TmdbCollectionMediaType.fromString(source.mediaType)) {
-        TmdbCollectionMediaType.MOVIE -> "Movies"
-        TmdbCollectionMediaType.TV -> "Series"
+        TmdbCollectionMediaType.MOVIE -> stringResource(Res.string.collections_editor_tmdb_movies)
+        TmdbCollectionMediaType.TV -> stringResource(Res.string.collections_editor_tmdb_series)
     }
     val sort = source.sortBy?.let { value ->
-        TmdbCollectionSort.entries.firstOrNull { it.value == value }?.let(::tmdbSortLabel)
-    } ?: "Popular"
+        TmdbCollectionSort.entries.firstOrNull { it.value == value }?.let { sort ->
+            tmdbSortLabel(sort)
+        }
+    } ?: stringResource(Res.string.collections_editor_tmdb_sort_popular)
     val sourceType = runCatching {
         TmdbCollectionSourceType.valueOf(source.tmdbSourceType.orEmpty())
     }.getOrDefault(TmdbCollectionSourceType.DISCOVER)
     return when (sourceType) {
-        TmdbCollectionSourceType.LIST -> "TMDB List"
-        TmdbCollectionSourceType.COLLECTION -> "TMDB Movie Collection"
-        TmdbCollectionSourceType.COMPANY -> listOf("Production", media, sort).joinToString(" • ")
-        TmdbCollectionSourceType.NETWORK -> listOf("Network", "Series", sort).joinToString(" • ")
-        TmdbCollectionSourceType.DISCOVER -> listOf("TMDB Discover", media, sort).joinToString(" • ")
+        TmdbCollectionSourceType.LIST -> stringResource(Res.string.collections_editor_tmdb_subtitle_list)
+        TmdbCollectionSourceType.COLLECTION -> stringResource(Res.string.collections_editor_tmdb_subtitle_movie_collection)
+        TmdbCollectionSourceType.COMPANY -> listOf(
+            stringResource(Res.string.collections_editor_tmdb_subtitle_production),
+            media,
+            sort,
+        ).joinToString(" • ")
+        TmdbCollectionSourceType.NETWORK -> listOf(
+            stringResource(Res.string.collections_editor_tmdb_subtitle_network),
+            stringResource(Res.string.collections_editor_tmdb_series),
+            sort,
+        ).joinToString(" • ")
+        TmdbCollectionSourceType.DISCOVER -> listOf(
+            stringResource(Res.string.collections_editor_tmdb_subtitle_discover),
+            media,
+            sort,
+        ).joinToString(" • ")
     }
 }
 
