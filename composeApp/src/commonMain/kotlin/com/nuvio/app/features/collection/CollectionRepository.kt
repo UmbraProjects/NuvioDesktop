@@ -10,6 +10,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.collections_import_error_collection_blank_id
 import nuvio.composeapp.generated.resources.collections_import_error_collection_blank_title
@@ -31,6 +33,7 @@ object CollectionRepository {
 
     private val _collections = MutableStateFlow<List<Collection>>(emptyList())
     val collections: StateFlow<List<Collection>> = _collections.asStateFlow()
+    private var rawCollectionsJson: JsonElement = JsonArray(emptyList())
 
     private var hasLoaded = false
 
@@ -41,6 +44,8 @@ object CollectionRepository {
         if (payload.isNullOrBlank()) return
 
         runCatching {
+            val parsed = json.parseToJsonElement(payload)
+            rawCollectionsJson = parsed
             _collections.value = json.decodeFromString<List<Collection>>(payload)
         }.onFailure { e ->
             log.e(e) { "Failed to load collections from storage" }
@@ -50,11 +55,13 @@ object CollectionRepository {
     fun onProfileChanged() {
         hasLoaded = false
         _collections.value = emptyList()
+        rawCollectionsJson = JsonArray(emptyList())
     }
 
     fun clearLocalState() {
         hasLoaded = false
         _collections.value = emptyList()
+        rawCollectionsJson = JsonArray(emptyList())
     }
 
     fun getCollection(id: String): Collection? =
@@ -81,6 +88,7 @@ object CollectionRepository {
     }
 
     fun setCollections(collections: List<Collection>) {
+        ensureLoaded()
         _collections.value = collections
         persist()
     }
@@ -106,11 +114,12 @@ object CollectionRepository {
 
     fun exportToJson(): String {
         ensureLoaded()
-        return json.encodeToString(_collections.value)
+        return mergedCollectionsJson().toString()
     }
 
     fun importFromJson(jsonString: String): Result<List<Collection>> {
         return runCatching {
+            rawCollectionsJson = json.parseToJsonElement(jsonString)
             val imported = json.decodeFromString<List<Collection>>(jsonString)
             _collections.value = imported
             persist()
@@ -228,7 +237,8 @@ object CollectionRepository {
         }
     }
 
-    internal fun applyFromRemote(collections: List<Collection>) {
+    internal fun applyFromRemote(collections: List<Collection>, rawJson: JsonElement) {
+        rawCollectionsJson = rawJson
         _collections.value = collections
         persist()
     }
@@ -239,9 +249,14 @@ object CollectionRepository {
 
     private fun persist() {
         runCatching {
-            CollectionStorage.savePayload(json.encodeToString(_collections.value))
+            CollectionStorage.savePayload(mergedCollectionsJson().toString())
         }.onFailure { e ->
             log.e(e) { "Failed to persist collections" }
         }
     }
+
+    private fun mergedCollectionsJson(): JsonArray =
+        CollectionJsonPreserver.merge(json, rawCollectionsJson, _collections.value).also {
+            rawCollectionsJson = it
+        }
 }
