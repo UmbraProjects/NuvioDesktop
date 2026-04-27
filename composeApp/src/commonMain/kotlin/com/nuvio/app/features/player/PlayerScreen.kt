@@ -657,7 +657,6 @@ fun PlayerScreen(
                 }
             }
             playerController?.seekTo(targetPositionMs)
-            controlsVisible = true
             showSeekFeedback(direction, nextState.amountMs)
 
             accumulatedSeekResetJob?.cancel()
