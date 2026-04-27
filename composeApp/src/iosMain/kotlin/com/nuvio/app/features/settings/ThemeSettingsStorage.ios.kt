@@ -38,8 +38,13 @@ actual object ThemeSettingsStorage {
         NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = ProfileScopedKey.of(amoledEnabledKey))
     }
 
-    actual fun loadSelectedAppLanguage(): String? =
-        NSUserDefaults.standardUserDefaults.stringForKey(selectedAppLanguageKey)
+    actual fun loadSelectedAppLanguage(): String? {
+        val value = NSUserDefaults.standardUserDefaults.stringForKey(selectedAppLanguageKey)
+        if (value != null) return value
+        val legacy = NSUserDefaults.standardUserDefaults.stringForKey(ProfileScopedKey.of(selectedAppLanguageKey))
+        if (legacy != null) saveSelectedAppLanguage(legacy)
+        return legacy
+    }
 
     actual fun saveSelectedAppLanguage(languageCode: String) {
         NSUserDefaults.standardUserDefaults.setObject(languageCode, forKey = selectedAppLanguageKey)

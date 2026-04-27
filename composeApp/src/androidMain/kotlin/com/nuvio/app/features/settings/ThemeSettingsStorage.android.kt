@@ -51,8 +51,13 @@ actual object ThemeSettingsStorage {
             ?.apply()
     }
 
-    actual fun loadSelectedAppLanguage(): String? =
-        preferences?.getString(selectedAppLanguageKey, null)
+    actual fun loadSelectedAppLanguage(): String? {
+        val value = preferences?.getString(selectedAppLanguageKey, null)
+        if (value != null) return value
+        val legacy = preferences?.getString(ProfileScopedKey.of(selectedAppLanguageKey), null)
+        if (legacy != null) saveSelectedAppLanguage(legacy)
+        return legacy
+    }
 
     actual fun saveSelectedAppLanguage(languageCode: String) {
         preferences
