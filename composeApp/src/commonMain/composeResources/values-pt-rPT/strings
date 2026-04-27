@@ -661,8 +661,8 @@
     <string name="settings_playback_selected_count">%1$d selecionados</string>
     <string name="settings_playback_show_loading_overlay">Mostrar Sobreposição de Carga</string>
     <string name="settings_playback_show_loading_overlay_description">Mostra a animação de carregamento inicial enquanto uma transmissão começa.</string>
-    <string name="settings_playback_skip_intro_outro_recap">Saltar Intro/Outro/Resumo</string>
-    <string name="settings_playback_skip_intro_outro_recap_description">Mostra o botão de saltar durante segmentos detetados de intro, final e resumo.</string>
+    <string name="settings_playback_skip_intro_outro_recap">Saltar Introdução/Créditos/Resumo</string>
+    <string name="settings_playback_skip_intro_outro_recap_description">Mostra o botão de saltar durante segmentos detetados de introdução, créditos e resumo.</string>
     <string name="settings_playback_source_scope">Âmbito da Fonte</string>
     <string name="settings_playback_source_scope_all_addons">Todos os Addons</string>
     <string name="settings_playback_source_scope_all_addons_description">Considerar transmissões de todos os addons instalados.</string>
@@ -765,8 +765,8 @@
     <string name="player_next_episode_thumbnail">Miniatura do próximo episódio</string>
     <string name="player_next_episode_unaired">Não emitido</string>
     <string name="player_skip">Saltar</string>
-    <string name="player_skip_intro">Saltar Intro</string>
-    <string name="player_skip_outro">Saltar Final</string>
+    <string name="player_skip_intro">Saltar Introdução</string>
+    <string name="player_skip_outro">Saltar Créditos</string>
     <string name="player_skip_recap">Saltar Resumo</string>
     <string name="compose_player_no_subtitles_found">Nenhuma legenda encontrada</string>
     <string name="lang_afrikaans">Africâner</string>
