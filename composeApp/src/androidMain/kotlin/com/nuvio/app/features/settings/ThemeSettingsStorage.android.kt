@@ -18,7 +18,8 @@ actual object ThemeSettingsStorage {
     private const val selectedThemeKey = "selected_theme"
     private const val amoledEnabledKey = "amoled_enabled"
     private const val selectedAppLanguageKey = "selected_app_language"
-    private val syncKeys = listOf(selectedThemeKey, amoledEnabledKey, selectedAppLanguageKey)
+    private val profileScopedSyncKeys = listOf(selectedThemeKey, amoledEnabledKey)
+    private val globalSyncKeys = listOf(selectedAppLanguageKey)
 
     private var preferences: SharedPreferences? = null
 
@@ -51,12 +52,12 @@ actual object ThemeSettingsStorage {
     }
 
     actual fun loadSelectedAppLanguage(): String? =
-        preferences?.getString(ProfileScopedKey.of(selectedAppLanguageKey), null)
+        preferences?.getString(selectedAppLanguageKey, null)
 
     actual fun saveSelectedAppLanguage(languageCode: String) {
         preferences
             ?.edit()
-            ?.putString(ProfileScopedKey.of(selectedAppLanguageKey), languageCode)
+            ?.putString(selectedAppLanguageKey, languageCode)
             ?.apply()
     }
 
@@ -74,7 +75,8 @@ actual object ThemeSettingsStorage {
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
         preferences?.edit()?.apply {
-            syncKeys.forEach { remove(ProfileScopedKey.of(it)) }
+            profileScopedSyncKeys.forEach { remove(ProfileScopedKey.of(it)) }
+            globalSyncKeys.forEach { remove(it) }
         }?.apply()
 
         payload.decodeSyncString(selectedThemeKey)?.let(::saveSelectedTheme)
