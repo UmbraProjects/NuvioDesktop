@@ -133,6 +133,7 @@ data class CollectionFolder(
     val sources: List<CollectionSource> = emptyList(),
     val catalogSources: List<CollectionCatalogSource> = emptyList(),
     val heroBackdropUrl: String? = null,
+    val heroVideoUrl: String? = null,
     val titleLogoUrl: String? = null,
 ) {
     val posterShape: PosterShape
