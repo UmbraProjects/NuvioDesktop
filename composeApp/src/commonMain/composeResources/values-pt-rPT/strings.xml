@@ -687,7 +687,7 @@
     <string name="settings_playback_threshold_mode_percentage">Percentagem</string>
     <string name="settings_playback_threshold_percentage">Percentagem de Limite</string>
     <string name="settings_playback_threshold_percentage_description">Mostra o cartão do próximo episódio quando a reprodução atinge esta percentagem.</string>
-    <string name="settings_playback_threshold_percentage_value">%1$d%%</string>
+    <string name="settings_playback_threshold_percentage_value">%1$d%</string>
     <string name="settings_playback_timeout_instant">Instantâneo</string>
     <string name="settings_playback_timeout_seconds">%1$ds</string>
     <string name="settings_playback_timeout_unlimited">Ilimitado</string>
@@ -984,7 +984,7 @@
     <string name="streams_no_direct_link">Nenhum link direto disponível</string>
     <string name="streams_no_metadata">Nenhuns metadados disponíveis</string>
     <string name="streams_refresh">Atualizar transmissões</string>
-    <string name="streams_resume_from_percent">Retomar de %1$d%%</string>
+    <string name="streams_resume_from_percent">Retomar de %1$d%</string>
     <string name="streams_resume_from_time">Retomar de %1$s</string>
     <string name="streams_size">TAMANHO %1$s</string>
     <string name="trailer_close">Fechar trailer</string>
@@ -994,7 +994,7 @@
     <string name="updates_asset_line">%1$s • %2$s</string>
     <string name="updates_check_failed">Falha ao verificar atualizações</string>
     <string name="updates_download_failed">Falha no download</string>
-    <string name="updates_downloading_progress">A descarregar %1$d%%</string>
+    <string name="updates_downloading_progress">A descarregar %1$d%</string>
     <string name="updates_install_failed">Não foi possível iniciar a instalação</string>
     <string name="updates_latest_version">Estás a usar a versão mais recente.</string>
     <string name="updates_message_allow_installs">Ativa a instalação de aplicações para o Nuvio, depois volta e continua.</string>

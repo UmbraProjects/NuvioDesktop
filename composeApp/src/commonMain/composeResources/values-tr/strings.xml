@@ -569,7 +569,7 @@
     <string name="settings_playback_threshold_mode_percentage">Yüzde</string>
     <string name="settings_playback_threshold_percentage">Eşik yüzdesi</string>
     <string name="settings_playback_threshold_percentage_description">Oynatma bu yüzdeye ulaşınca sonraki bölüm kartını göster.</string>
-    <string name="settings_playback_threshold_percentage_value">%1$d%%</string>
+    <string name="settings_playback_threshold_percentage_value">%1$d%</string>
     <string name="settings_playback_timeout_instant">Hemen</string>
     <string name="settings_playback_timeout_seconds">%1$dsn</string>
     <string name="settings_playback_timeout_unlimited">Sınırsız</string>
@@ -866,7 +866,7 @@
     <string name="streams_no_direct_link">Doğrudan yayın bağlantısı yok</string>
     <string name="streams_no_metadata">Meta veri yok</string>
     <string name="streams_refresh">Yayınları yenile</string>
-    <string name="streams_resume_from_percent">%%%1$d konumundan devam et</string>
+    <string name="streams_resume_from_percent">%1$d% konumundan devam et</string>
     <string name="streams_resume_from_time">%1$s konumundan devam et</string>
     <string name="streams_size">BOYUT %1$s</string>
     <string name="trailer_close">Fragmanı kapat</string>
@@ -876,7 +876,7 @@
     <string name="updates_asset_line">%1$s • %2$s</string>
     <string name="updates_check_failed">Güncelleme kontrolü olmadı</string>
     <string name="updates_download_failed">İndirme olmadı</string>
-    <string name="updates_downloading_progress">İndiriliyor %%%1$d</string>
+    <string name="updates_downloading_progress">İndiriliyor %1$d%</string>
     <string name="updates_install_failed">Kurulum başlatılamadı</string>
     <string name="updates_latest_version">En güncel sürümü kullanıyorsun.</string>
     <string name="updates_message_allow_installs">Nuvio için uygulama kurulumlarına izin ver, sonra geri gelip devam et.</string>

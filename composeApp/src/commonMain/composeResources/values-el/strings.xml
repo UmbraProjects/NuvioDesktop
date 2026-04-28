@@ -569,7 +569,7 @@
     <string name="settings_playback_threshold_mode_percentage">Ποσοστό</string>
     <string name="settings_playback_threshold_percentage">Ποσοστό κατωφλίου</string>
     <string name="settings_playback_threshold_percentage_description">Εμφάνιση κάρτας επόμενου επεισοδίου όταν η αναπαραγωγή φτάσει σε αυτό το ποσοστό.</string>
-    <string name="settings_playback_threshold_percentage_value">%1$d%%</string>
+    <string name="settings_playback_threshold_percentage_value">%1$d%</string>
     <string name="settings_playback_timeout_instant">Άμεσα</string>
     <string name="settings_playback_timeout_seconds">%1$ds</string>
     <string name="settings_playback_timeout_unlimited">Απεριόριστο</string>
@@ -866,7 +866,7 @@
     <string name="streams_no_direct_link">Δεν υπάρχει διαθέσιμος άμεσος σύνδεσμος ροής</string>
     <string name="streams_no_metadata">Δεν υπάρχουν διαθέσιμα μεταδεδομένα</string>
     <string name="streams_refresh">Ανανέωση ροών</string>
-    <string name="streams_resume_from_percent">Συνέχεια από %1$d%%</string>
+    <string name="streams_resume_from_percent">Συνέχεια από %1$d%</string>
     <string name="streams_resume_from_time">Συνέχεια από %1$s</string>
     <string name="streams_size">ΜΕΓΕΘΟΣ %1$s</string>
     <string name="trailer_close">Κλείσιμο τρέιλερ</string>
@@ -876,7 +876,7 @@
     <string name="updates_asset_line">%1$s • %2$s</string>
     <string name="updates_check_failed">Ο έλεγχος ενημερώσεων απέτυχε</string>
     <string name="updates_download_failed">Η λήψη απέτυχε</string>
-    <string name="updates_downloading_progress">Λήψη %1$d%%</string>
+    <string name="updates_downloading_progress">Λήψη %1$d%</string>
     <string name="updates_install_failed">Αδυναμία εκκίνησης εγκατάστασης</string>
     <string name="updates_latest_version">Χρησιμοποιείτε την τελευταία έκδοση.</string>
     <string name="updates_message_allow_installs">Ενεργοποιήστε τις εγκαταστάσεις εφαρμογών για το Nuvio και επιστρέψτε για να συνεχίσετε.</string>
