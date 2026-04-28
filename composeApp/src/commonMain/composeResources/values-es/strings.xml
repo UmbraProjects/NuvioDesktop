@@ -892,7 +892,7 @@
     <string name="episode_mark_unwatched">Marcar como no visto</string>
     <string name="episode_mark_watched">Marcar como visto</string>
     <string name="home_continue_watching_up_next">Siguiente</string>
-    <string name="home_continue_watching_watched">%1$d%% visto</string>
+    <string name="home_continue_watching_watched">%1$s visto</string>
     <string name="home_empty_no_active_addons_message">Instala y valida al menos un addon antes de cargar filas de catálogo en Inicio.</string>
     <string name="home_empty_no_rows_message">Los addons instalados no exponen actualmente catálogos compatibles con el tablero sin extras requeridos.</string>
     <string name="home_empty_no_rows_title">No hay filas de inicio disponibles</string>

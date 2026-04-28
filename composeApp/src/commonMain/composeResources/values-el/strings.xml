@@ -774,7 +774,7 @@
     <string name="episode_mark_unwatched">Σήμανση ως μη παρακολουθηθέν</string>
     <string name="episode_mark_watched">Σήμανση ως παρακολουθηθέν</string>
     <string name="home_continue_watching_up_next">Επόμενο</string>
-    <string name="home_continue_watching_watched">%1$d%% παρακολουθήθηκε</string>
+    <string name="home_continue_watching_watched">%1$s παρακολουθήθηκε</string>
     <string name="home_empty_no_active_addons_message">Εγκαταστήστε και επικυρώστε τουλάχιστον ένα πρόσθετο πριν φορτώσετε γραμμές καταλόγου στην Αρχική.</string>
     <string name="home_empty_no_rows_message">Τα εγκατεστημένα πρόσθετα δεν παρέχουν αυτή τη στιγμή καταλόγους συμβατούς με πίνακα χωρίς απαιτούμενα extras.</string>
     <string name="home_empty_no_rows_title">Δεν υπάρχουν διαθέσιμες γραμμές αρχικής</string>

@@ -892,7 +892,7 @@
     <string name="episode_mark_unwatched">Marcar como não visto</string>
     <string name="episode_mark_watched">Marcar como visto</string>
     <string name="home_continue_watching_up_next">Próximo</string>
-    <string name="home_continue_watching_watched">%1$d%% visto</string>
+    <string name="home_continue_watching_watched">%1$s visto</string>
     <string name="home_empty_no_active_addons_message">Instala e valida pelo menos um addon antes de carregar o Início.</string>
     <string name="home_empty_no_rows_message">Os addons instalados não expõem catálogos compatíveis de momento.</string>
     <string name="home_empty_no_rows_title">Nenhuma linha disponível no Início</string>

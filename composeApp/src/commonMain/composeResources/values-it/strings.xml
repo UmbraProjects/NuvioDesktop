@@ -774,7 +774,7 @@
   <string name="episode_mark_unwatched">Segna come non visto</string>
   <string name="episode_mark_watched">Segna come visto</string>
   <string name="home_continue_watching_up_next">Prossimo episodio</string>
-  <string name="home_continue_watching_watched">%1$d%% visto</string>
+  <string name="home_continue_watching_watched">%1$s visto</string>
   <string name="home_empty_no_active_addons_message">Installa e convalida almeno un addon prima di caricare le righe del catalogo in Home.</string>
   <string name="home_empty_no_rows_message">Gli addon installati non espongono attualmente cataloghi compatibili con la bacheca senza gli extra richiesti.</string>
   <string name="home_empty_no_rows_title">Nessuna riga disponibile in Home</string>

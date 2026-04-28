@@ -892,7 +892,7 @@
     <string name="episode_mark_unwatched">Mark as unwatched</string>
     <string name="episode_mark_watched">Mark as watched</string>
     <string name="home_continue_watching_up_next">Up next</string>
-    <string name="home_continue_watching_watched">%1$d%% watched</string>
+    <string name="home_continue_watching_watched">%1$s watched</string>
     <string name="home_empty_no_active_addons_message">Install and validate at least one addon before loading catalog rows on Home.</string>
     <string name="home_empty_no_rows_message">Installed addons do not currently expose board-compatible catalogs without required extras.</string>
     <string name="home_empty_no_rows_title">No home rows available</string>

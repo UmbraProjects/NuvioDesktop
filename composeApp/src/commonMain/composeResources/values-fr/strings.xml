@@ -893,7 +893,7 @@
     <string name="episode_mark_unwatched">Marquer comme non vu</string>
     <string name="episode_mark_watched">Marquer comme vu</string>
     <string name="home_continue_watching_up_next">Suivant</string>
-    <string name="home_continue_watching_watched">%1$d%% vu</string>
+    <string name="home_continue_watching_watched">%1$s vu</string>
     <string name="home_empty_no_active_addons_message">Installez et validez au moins une extension avant de charger des lignes de catalogue à l\'accueil.</string>
     <string name="home_empty_no_rows_message">Les extensions installées n\'exposent actuellement aucun catalogue compatible avec le tableau sans extras requis.</string>
     <string name="home_empty_no_rows_title">Aucune ligne d\'accueil disponible</string>

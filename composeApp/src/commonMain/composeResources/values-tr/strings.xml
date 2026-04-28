@@ -774,7 +774,7 @@
     <string name="episode_mark_unwatched">İzlenmedi olarak işaretle</string>
     <string name="episode_mark_watched">İzlendi olarak işaretle</string>
     <string name="home_continue_watching_up_next">Sıradaki</string>
-    <string name="home_continue_watching_watched">%%%1$d izlendi</string>
+    <string name="home_continue_watching_watched">%1$s izlendi</string>
     <string name="home_empty_no_active_addons_message">Ana sayfada katalog satırlarını yüklemeden önce en az bir eklenti kurup doğrula.</string>
     <string name="home_empty_no_rows_message">Kurulu eklentiler şu anda gerekli ek bilgiler olmadan ana sayfaya uyumlu katalog sunmuyor.</string>
     <string name="home_empty_no_rows_title">Ana sayfa satırı yok</string>

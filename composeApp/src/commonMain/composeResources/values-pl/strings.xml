@@ -892,7 +892,7 @@
     <string name="episode_mark_unwatched">Oznacz jako nieobejrzane</string>
     <string name="episode_mark_watched">Oznacz jako obejrzane</string>
     <string name="home_continue_watching_up_next">Następny</string>
-    <string name="home_continue_watching_watched">%1$d%% obejrzane</string>
+    <string name="home_continue_watching_watched">%1$s obejrzane</string>
     <string name="home_empty_no_active_addons_message">Zainstaluj i sprawdź co najmniej jeden dodatek przed ładowaniem wierszy katalogów na ekranie głównym.</string>
     <string name="home_empty_no_rows_message">Zainstalowane dodatki nie udostępniają obecnie katalogów kompatybilnych z tablicą bez wymaganych dodatków.</string>
     <string name="home_empty_no_rows_title">Brak dostępnych wierszy ekranu głównego</string>
