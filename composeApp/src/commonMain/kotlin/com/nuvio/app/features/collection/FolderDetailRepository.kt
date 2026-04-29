@@ -140,7 +140,11 @@ object FolderDetailRepository {
                             source = source,
                             type = type,
                             catalogId = tmdbCatalogId(source),
-                            supportsPagination = source.tmdbSourceType != TmdbCollectionSourceType.COLLECTION.name,
+                            supportsPagination = source.tmdbSourceType !in setOf(
+                                TmdbCollectionSourceType.COLLECTION.name,
+                                TmdbCollectionSourceType.PERSON.name,
+                                TmdbCollectionSourceType.DIRECTOR.name,
+                            ),
                             isLoading = true,
                         ),
                     )
