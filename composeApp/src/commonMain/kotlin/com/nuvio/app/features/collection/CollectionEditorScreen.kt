@@ -111,9 +111,7 @@ fun CollectionEditorScreen(
         val genrePickerSource = genrePickerIndex?.let { editingFolder.resolvedSources.getOrNull(it) }
         val genrePickerCatalogSource = genrePickerSource?.addonCatalogSource()
         val genrePickerCatalog = genrePickerCatalogSource?.let { source ->
-            state.availableCatalogs.find {
-                it.addonId == source.addonId && it.type == source.type && it.catalogId == source.catalogId
-            }
+            state.availableCatalogs.findAvailableCatalog(source)
         }
 
         FolderEditorPage(
@@ -757,11 +755,7 @@ private fun FolderEditorPage(
                                 } else if (addonSource != null) {
                                     FolderCatalogSourceCard(
                                         source = addonSource,
-                                        matchingCatalog = state.availableCatalogs.find {
-                                            it.addonId == addonSource.addonId &&
-                                                it.type == addonSource.type &&
-                                                it.catalogId == addonSource.catalogId
-                                        },
+                                        matchingCatalog = state.availableCatalogs.findAvailableCatalog(addonSource),
                                         onRemove = { CollectionEditorRepository.removeCatalogSource(index) },
                                         onOpenGenrePicker = { CollectionEditorRepository.showGenrePicker(index) },
                                     )
