@@ -864,7 +864,7 @@ fun PlayerScreen(
         }
 
         fun switchToDownloadedEpisode(downloadItem: DownloadItem, episode: MetaVideo) {
-            val localFileUri = downloadItem.localFileUri ?: return
+            val localFileUri = DownloadsRepository.playableLocalFileUri(downloadItem) ?: return
             showNextEpisodeCard = false
             showSourcesPanel = false
             showEpisodesPanel = false
