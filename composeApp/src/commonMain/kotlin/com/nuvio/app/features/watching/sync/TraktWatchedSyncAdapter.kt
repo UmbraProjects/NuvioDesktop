@@ -107,6 +107,8 @@ object TraktWatchedSyncAdapter : WatchedSyncAdapter {
         val shows = mutableListOf<TraktHistoryShowRequestDto>()
 
         items.forEach { item ->
+            if (!item.shouldSyncToTraktHistory()) return@forEach
+
             val ids = parseIds(item.id) ?: return@forEach
             val normalizedType = item.type.trim().lowercase()
 
@@ -161,15 +163,10 @@ object TraktWatchedSyncAdapter : WatchedSyncAdapter {
                         ),
                     )
                 }
-            } else {
-                // Series-level mark (no season/episode) → mark entire show
-                shows += TraktHistoryShowRequestDto(
-                    title = item.name.takeIf { it.isNotBlank() },
-                    year = parseYear(item.releaseInfo),
-                    ids = ids,
-                )
             }
         }
+
+        if (movies.isEmpty() && shows.isEmpty()) return
 
         val body = json.encodeToString(
             TraktHistoryAddRequestDto(
@@ -202,6 +199,8 @@ object TraktWatchedSyncAdapter : WatchedSyncAdapter {
         val shows = mutableListOf<TraktHistoryShowRequestDto>()
 
         items.forEach { item ->
+            if (!item.shouldSyncToTraktHistory()) return@forEach
+
             val ids = parseIds(item.id) ?: return@forEach
             val normalizedType = item.type.trim().lowercase()
 
@@ -225,14 +224,10 @@ object TraktWatchedSyncAdapter : WatchedSyncAdapter {
                         ),
                     ),
                 )
-            } else {
-                shows += TraktHistoryShowRequestDto(
-                    title = item.name.takeIf { it.isNotBlank() },
-                    year = parseYear(item.releaseInfo),
-                    ids = ids,
-                )
             }
         }
+
+        if (movies.isEmpty() && shows.isEmpty()) return
 
         val body = json.encodeToString(
             TraktHistoryRemoveRequestDto(
@@ -346,6 +341,13 @@ object TraktWatchedSyncAdapter : WatchedSyncAdapter {
     private fun isLeapYear(y: Int): Boolean = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
     private fun Int.pad2(): String = if (this < 10) "0$this" else "$this"
     private fun Int.pad4(): String = "$this".padStart(4, '0')
+}
+
+internal fun WatchedItem.shouldSyncToTraktHistory(): Boolean {
+    val normalizedType = type.trim().lowercase()
+    return normalizedType == "movie" ||
+        normalizedType == "film" ||
+        (season != null && episode != null)
 }
 
 // ── DTOs for pull (GET /sync/watched) ───────────────────────────────────
