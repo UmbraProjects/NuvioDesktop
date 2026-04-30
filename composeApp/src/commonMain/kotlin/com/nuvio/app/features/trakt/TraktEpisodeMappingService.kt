@@ -198,10 +198,9 @@ object TraktEpisodeMappingService {
         // Find the addon episode entry
         val addonEntry = addonEpisodes.firstOrNull {
             it.season == requestedSeason && it.episode == requestedEpisode
-        } ?: if (!requestedVideoId.isNullOrBlank()) {
-            addonEpisodes.firstOrNull { it.videoId == requestedVideoId }
-        } else null
-        ?: return null
+        } ?: addonEpisodes.firstOrNull {
+            !requestedVideoId.isNullOrBlank() && it.videoId == requestedVideoId
+        } ?: return null
 
         // Try title match first
         val titleToMatch = addonEntry.title?.takeIf { it.isNotBlank() } ?: requestedTitle
