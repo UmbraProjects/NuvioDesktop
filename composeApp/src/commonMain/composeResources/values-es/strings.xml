@@ -219,7 +219,7 @@
     <string name="collections_editor_tmdb_subtitle_movie_collection">Colección de películas de TMDB</string>
     <string name="collections_editor_tmdb_subtitle_production">Producción</string>
     <string name="collections_editor_tmdb_subtitle_network">Cadena</string>
-    <string name="collections_editor_tmdb_subtitle_discover">Discover de TMDB</string>
+    <string name="collections_editor_tmdb_subtitle_discover">Descubrir de TMDB</string>
     <string name="collections_empty_subtitle">Crea una para organizar tus catálogos.</string>
     <string name="collections_empty_title">Aún no hay colecciones</string>
     <string name="collections_folder_count">%1$d carpeta(s)</string>
@@ -298,7 +298,7 @@
     <string name="compose_player_seek_forward_10">Avanzar 10 segundos</string>
     <string name="compose_player_sources">Fuentes</string>
     <string name="compose_player_style">Estilo</string>
-    <string name="compose_player_subs">Subs</string>
+    <string name="compose_player_subs">Subtítulos</string>
     <string name="compose_player_subtitles">Subtítulos</string>
     <string name="compose_player_brightness_level">Brillo %1$s</string>
     <string name="compose_player_volume_level">Volumen %1$s</string>
@@ -424,12 +424,12 @@
     <string name="settings_homescreen_display_name">Nombre visible</string>
     <string name="settings_homescreen_empty_message">Instala un complemento con catálogos compatibles con tableros para configurar las filas de la pantalla de inicio.</string>
     <string name="settings_homescreen_empty_title">No hay catálogos de inicio</string>
-    <string name="settings_homescreen_hero_source">Fuente del Hero</string>
+    <string name="settings_homescreen_hero_source">Fuente de Destacado</string>
     <string name="settings_homescreen_hidden">Oculto</string>
     <string name="settings_homescreen_keep_home_focused">Mantener Inicio enfocado</string>
     <string name="settings_homescreen_limit_reached">%1$s • Límite alcanzado (máx. %2$d)</string>
-    <string name="settings_homescreen_no_sources_selected">No hay fuentes Hero seleccionadas</string>
-    <string name="settings_homescreen_not_in_hero">No está en Hero</string>
+    <string name="settings_homescreen_no_sources_selected">No hay fuentes de Destacado seleccionadas</string>
+    <string name="settings_homescreen_not_in_hero">No está en Destacado</string>
     <string name="settings_homescreen_pin_to_move_toast">Quita fijar arriba de la colección para moverla</string>
     <string name="settings_homescreen_pinned">Fijado</string>
     <string name="settings_homescreen_pinned_to_top">Fijado arriba</string>
@@ -437,12 +437,12 @@
     <string name="settings_homescreen_section_catalogs">CATÁLOGOS</string>
     <string name="settings_homescreen_section_catalogs_collections">CATÁLOGOS Y COLECCIONES</string>
     <string name="settings_homescreen_section_collections">COLECCIONES</string>
-    <string name="settings_homescreen_section_hero">HERO</string>
-    <string name="settings_homescreen_section_hero_sources">FUENTES DEL HERO</string>
+    <string name="settings_homescreen_section_hero">DESTACADO</string>
+    <string name="settings_homescreen_section_hero_sources">FUENTES DE DESTACADO</string>
     <string name="settings_homescreen_selected_count">%1$d de %2$d seleccionados</string>
-    <string name="settings_homescreen_show_hero">Mostrar Hero</string>
-    <string name="settings_homescreen_show_hero_description">Mostrar un carrusel Hero destacado en la parte superior del inicio. Elige hasta 2 catálogos fuente abajo.</string>
-    <string name="settings_homescreen_summary">%1$d de %2$d catálogos visibles • %3$d fuentes Hero seleccionadas</string>
+    <string name="settings_homescreen_show_hero">Mostrar Destacado</string>
+    <string name="settings_homescreen_show_hero_description">Mostrar un carrusel destacado en la parte superior del inicio. Elige hasta 2 catálogos de origen abajo.</string>
+    <string name="settings_homescreen_summary">%1$d de %2$d catálogos visibles • %3$d fuentes de Destacado seleccionadas</string>
     <string name="settings_homescreen_summary_hint">Abre un catálogo solo cuando necesites cambiarle el nombre o reordenarlo.</string>
     <string name="settings_homescreen_visible">Visible</string>
     <string name="settings_playback_subtitle">Reproductor, subtítulos y reproducción automática</string>
@@ -488,7 +488,7 @@
     <string name="settings_content_discovery_addons_description">Instala, elimina, actualiza y ordena tus fuentes de contenido.</string>
     <string name="settings_content_discovery_plugins_description">Instala repositorios de scrapers en JavaScript y prueba proveedores internamente.</string>
     <string name="settings_content_discovery_homescreen_description">Controla qué catálogos aparecen en Inicio y en qué orden.</string>
-    <string name="settings_content_discovery_meta_screen_description">Desactiva secciones de detalles y reordena todo debajo del Hero.</string>
+    <string name="settings_content_discovery_meta_screen_description">Desactiva secciones de detalles y reordena todo debajo del Destacado.</string>
     <string name="settings_content_discovery_collections_description">Crea agrupaciones de catálogos personalizadas con carpetas mostradas en Inicio.</string>
     <string name="settings_integrations_section_title">INTEGRACIONES</string>
     <string name="settings_integrations_tmdb_description">Mejora las páginas de detalles con arte, créditos, metadatos de episodios y más desde TMDB.</string>
@@ -641,7 +641,7 @@
     <string name="settings_playback_regex_preset_quality_720p_smaller">720p / más pequeño</string>
     <string name="settings_playback_regex_preset_web_sources">Fuentes WEB</string>
     <string name="settings_playback_render_type">Tipo de renderizado</string>
-    <string name="settings_playback_render_type_cues">Estándar (Cues)</string>
+    <string name="settings_playback_render_type_cues">Estándar (marcas)</string>
     <string name="settings_playback_render_type_effects_canvas">Canvas con efectos</string>
     <string name="settings_playback_render_type_effects_opengl">OpenGL con efectos</string>
     <string name="settings_playback_render_type_overlay_canvas">Canvas superpuesto</string>
@@ -877,7 +877,7 @@
     <string name="discover_empty_load_failed_message">El catálogo seleccionado no devolvió elementos de descubrimiento.</string>
     <string name="discover_empty_load_failed_title">No se pudo cargar Descubrir</string>
     <string name="discover_empty_no_catalogs_message">Los addons instalados no exponen catálogos compatibles con el tablero para Descubrir.</string>
-    <string name="discover_empty_no_catalogs_title">No hay catálogos de descubrir</string>
+    <string name="discover_empty_no_catalogs_title">No hay catálogos de Descubrir</string>
     <string name="discover_empty_no_results_message">El catálogo y los filtros seleccionados no devolvieron ningún elemento.</string>
     <string name="discover_empty_no_results_title">No se encontraron títulos</string>
     <string name="discover_empty_no_active_addons_message">Instala y valida al menos un addon antes de explorar catálogos en Descubrir.</string>
@@ -948,8 +948,8 @@
     <string name="profile_manage_profiles">Gestionar perfiles</string>
     <string name="profile_name_placeholder">Nombre del perfil</string>
     <string name="profile_new">Perfil nuevo</string>
-    <string name="profile_primary_addons_off">Addons principales desactivados</string>
-    <string name="profile_primary_addons_on">Addons principales activados</string>
+    <string name="profile_primary_addons_off">Complementos principales desactivados</string>
+    <string name="profile_primary_addons_on">Complementos principales activados</string>
     <string name="profile_remove_pin_for">Quitar PIN para %1$s</string>
     <string name="profile_remove_pin_lock">Quitar bloqueo PIN</string>
     <string name="profile_saving">Guardando...</string>
@@ -1021,7 +1021,7 @@
     <string name="detail_logo_content_description">logotipo de %1$s</string>
     <string name="details_comments_load_failed">No se pudieron cargar los comentarios</string>
     <string name="details_load_failed_all_addons">No se pudieron cargar los detalles desde ningún complemento.</string>
-    <string name="details_networks">Redes</string>
+    <string name="details_networks">Cadenas</string>
     <string name="details_no_addon_meta">Ningún complemento proporciona metadatos para este contenido.</string>
     <string name="download_failed">Descarga fallida</string>
     <string name="downloads_channel_description">Muestra el progreso en vivo y los controles de descarga.</string>
@@ -1039,7 +1039,7 @@
     <string name="notifications_test_preview_body">Vista previa de la alerta de estreno de episodio.</string>
     <string name="notifications_test_send_failed">No se pudo enviar una notificación de prueba.</string>
     <string name="notifications_test_sent_for">Notificación de prueba enviada para %1$s.</string>
-    <string name="player_unable_to_play_stream">No se puede reproducir esta transmisión.</string>
+    <string name="player_unable_to_play_stream">No se puede reproducir este stream.</string>
     <string name="profile_pin_changed_requires_refresh">El PIN de este perfil cambió. Conéctate una vez para actualizar el bloqueo en este dispositivo.</string>
     <string name="profile_pin_clear_failed">No se pudo quitar el bloqueo por PIN. Inténtalo de nuevo.</string>
     <string name="profile_pin_clear_requires_internet">Conéctate a internet para quitar el bloqueo por PIN.</string>
@@ -1107,7 +1107,7 @@
     <string name="details_browse_rail_popular">Popular</string>
     <string name="details_browse_rail_recent">Reciente</string>
     <string name="details_browse_rail_title">%1$s • %2$s</string>
-    <string name="details_browse_rail_top_rated">Mejor valorado</string>
+    <string name="details_browse_rail_top_rated">Mejor valorados</string>
     <string name="details_certification">Clasificación</string>
     <string name="details_movie_details">Detalles de la película</string>
     <string name="details_original_language">Idioma original</string>
