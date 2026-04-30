@@ -1327,6 +1327,7 @@ private fun MainAppContent(
                             )
                         )
                         StreamsRepository.consumeAutoPlay()
+                        StreamsRepository.cancelLoading()
                         navController.navigate(PlayerRoute(launchId = launchId)) {
                             popUpTo<StreamRoute> { inclusive = true }
                         }
@@ -1405,6 +1406,7 @@ private fun MainAppContent(
                                         initialProgressFraction = resolvedResumeProgressFraction,
                                     )
                                 )
+                                StreamsRepository.cancelLoading()
                                 navController.navigate(
                                     PlayerRoute(launchId = launchId)
                                 )
