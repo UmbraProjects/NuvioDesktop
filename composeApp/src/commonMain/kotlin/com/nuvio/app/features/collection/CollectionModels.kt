@@ -41,15 +41,20 @@ data class CollectionSource(
     val tmdbSourceType: String? = null,
     val title: String? = null,
     val tmdbId: Int? = null,
+    val traktListId: Long? = null,
     val mediaType: String? = null,
     val sortBy: String? = null,
+    val sortHow: String? = null,
     val filters: TmdbCollectionFilters? = null,
 ) {
     val isTmdb: Boolean
         get() = provider.equals("tmdb", ignoreCase = true)
 
+    val isTrakt: Boolean
+        get() = provider.equals("trakt", ignoreCase = true)
+
     fun addonCatalogSource(): CollectionCatalogSource? {
-        if (isTmdb) return null
+        if (isTmdb || isTrakt) return null
         val sourceAddonId = addonId?.takeIf { it.isNotBlank() } ?: return null
         val sourceType = type?.takeIf { it.isNotBlank() } ?: return null
         val sourceCatalogId = catalogId?.takeIf { it.isNotBlank() } ?: return null
@@ -61,6 +66,9 @@ data class CollectionSource(
         )
     }
 }
+
+internal fun CollectionSource.hasInvalidTraktListId(): Boolean =
+    isTrakt && (traktListId == null || traktListId <= 0L)
 
 @Serializable
 enum class TmdbCollectionSourceType {
@@ -93,6 +101,36 @@ enum class TmdbCollectionSort(val value: String) {
     VOTE_AVERAGE_DESC("vote_average.desc"),
     RELEASE_DATE_DESC("primary_release_date.desc"),
     FIRST_AIR_DATE_DESC("first_air_date.desc"),
+}
+
+enum class TraktListSort(val value: String) {
+    RANK("rank"),
+    ADDED("added"),
+    TITLE("title"),
+    RELEASED("released"),
+    RUNTIME("runtime"),
+    POPULARITY("popularity"),
+    PERCENTAGE("percentage"),
+    VOTES("votes");
+
+    companion object {
+        fun normalize(value: String?): String {
+            val raw = value?.trim()?.lowercase().orEmpty()
+            return entries.firstOrNull { it.value == raw }?.value ?: RANK.value
+        }
+    }
+}
+
+enum class TraktSortHow(val value: String) {
+    ASC("asc"),
+    DESC("desc");
+
+    companion object {
+        fun normalize(value: String?): String {
+            val raw = value?.trim()?.lowercase().orEmpty()
+            return entries.firstOrNull { it.value == raw }?.value ?: ASC.value
+        }
+    }
 }
 
 @Immutable

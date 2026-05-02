@@ -23,6 +23,7 @@ import nuvio.composeapp.generated.resources.collections_import_error_folder_blan
 import nuvio.composeapp.generated.resources.collections_import_error_folder_blank_title
 import nuvio.composeapp.generated.resources.collections_import_error_invalid_json
 import nuvio.composeapp.generated.resources.collections_import_error_source_blank_fields
+import nuvio.composeapp.generated.resources.collections_import_error_trakt_list_id
 import org.jetbrains.compose.resources.getString
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -185,7 +186,20 @@ object CollectionRepository {
                         )
                     }
                     f.resolvedSources.forEachIndexed { si, s ->
-                        val invalidAddon = !s.isTmdb &&
+                        if (s.hasInvalidTraktListId()) {
+                            return ValidationResult(
+                                valid = false,
+                                error = runBlocking {
+                                    getString(
+                                        Res.string.collections_import_error_trakt_list_id,
+                                        si + 1,
+                                        f.title,
+                                    )
+                                },
+                            )
+                        }
+
+                        val invalidAddon = !s.isTmdb && !s.isTrakt &&
                             (s.addonId.isNullOrBlank() || s.type.isNullOrBlank() || s.catalogId.isNullOrBlank())
                         val invalidTmdb = s.isTmdb &&
                             s.tmdbSourceType.isNullOrBlank()
