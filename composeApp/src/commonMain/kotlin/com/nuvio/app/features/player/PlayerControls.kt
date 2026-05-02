@@ -168,6 +168,7 @@ internal fun PlayerControlsShell(
                 onAudioClick = onAudioClick,
                 onSourcesClick = onSourcesClick,
                 onEpisodesClick = onEpisodesClick,
+                onSubmitIntroClick = onSubmitIntroClick,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()

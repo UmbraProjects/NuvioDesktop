@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -2161,5 +2162,4 @@ private fun libassRenderTypeRes(renderType: String): StringResource = when (rend
 
 @Composable
 private fun libassRenderTypeLabel(renderType: String): String = stringResource(libassRenderTypeRes(renderType))
-): String = stringResource(libassRenderTypeRes(renderType))
-pe))
+

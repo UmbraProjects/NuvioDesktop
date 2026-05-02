@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.GpsFixed
@@ -48,7 +50,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlin.math.floor
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,23 +58,30 @@ fun SubmitIntroDialog(
     season: Int,
     episode: Int,
     currentTimeSec: Double,
+    segmentType: String,
+    onSegmentTypeChange: (String) -> Unit,
+    startTimeStr: String,
+    onStartTimeChange: (String) -> Unit,
+    endTimeStr: String,
+    onEndTimeChange: (String) -> Unit,
     onDismiss: () -> Unit,
+    onSuccess: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
     var isSubmitting by remember { mutableStateOf(false) }
-    var segmentType by remember { mutableStateOf("intro") }
-    var startTimeStr by remember { mutableStateOf("00:00") }
-    var endTimeStr by remember { mutableStateOf(formatSecondsToMMSS(currentTimeSec)) }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 8.dp,
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier
+                    .padding(24.dp)
+                    .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 // Header
@@ -88,7 +96,7 @@ fun SubmitIntroDialog(
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
                     )
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
+                    IconButton(onClick = onDismiss) {
                         Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -109,21 +117,21 @@ fun SubmitIntroDialog(
                             label = "Intro",
                             icon = Icons.Rounded.PlayCircleOutline,
                             selected = segmentType == "intro",
-                            onClick = { segmentType = "intro" },
+                            onClick = { onSegmentTypeChange("intro") },
                             modifier = Modifier.weight(1f)
                         )
                         SegmentTypeButton(
                             label = "Recap",
                             icon = Icons.Rounded.Replay,
                             selected = segmentType == "recap",
-                            onClick = { segmentType = "recap" },
+                            onClick = { onSegmentTypeChange("recap") },
                             modifier = Modifier.weight(1f)
                         )
                         SegmentTypeButton(
                             label = "Outro",
                             icon = Icons.Rounded.StopCircle,
                             selected = segmentType == "outro",
-                            onClick = { segmentType = "outro" },
+                            onClick = { onSegmentTypeChange("outro") },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -133,16 +141,16 @@ fun SubmitIntroDialog(
                 TimeInputRow(
                     label = "START TIME (MM:SS)",
                     value = startTimeStr,
-                    onValueChange = { startTimeStr = it },
-                    onCapture = { startTimeStr = formatSecondsToMMSS(currentTimeSec) }
+                    onValueChange = onStartTimeChange,
+                    onCapture = { onStartTimeChange(formatSecondsToMMSS(currentTimeSec)) }
                 )
 
                 // End Time
                 TimeInputRow(
                     label = "END TIME (MM:SS)",
                     value = endTimeStr,
-                    onValueChange = { endTimeStr = it },
-                    onCapture = { endTimeStr = formatSecondsToMMSS(currentTimeSec) }
+                    onValueChange = onEndTimeChange,
+                    onCapture = { onEndTimeChange(formatSecondsToMMSS(currentTimeSec)) }
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -179,7 +187,7 @@ fun SubmitIntroDialog(
                                 if (start != null && end != null && end > start) {
                                     isSubmitting = true
                                     scope.launch {
-                                        SkipIntroRepository.submitIntro(
+                                        val result = SkipIntroRepository.submitIntro(
                                             imdbId = imdbId,
                                             season = season,
                                             episode = episode,
@@ -188,7 +196,9 @@ fun SubmitIntroDialog(
                                             segmentType = segmentType,
                                         )
                                         isSubmitting = false
-                                        onDismiss()
+                                        if (result) {
+                                            onSuccess()
+                                        }
                                     }
                                 }
                             },
@@ -292,7 +302,7 @@ private fun TimeInputRow(
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onSurface,
                     ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     singleLine = true,
                 )
@@ -336,13 +346,26 @@ private fun formatSecondsToMMSS(seconds: Double): String {
 
 private fun parseTimeToSeconds(input: String): Double? {
     if (input.isBlank()) return null
-    if (input.contains(':')) {
-        val parts = input.split(':')
-        if (parts.size != 2) return null
-        val mins = parts[0].toIntOrNull() ?: return null
-        val secs = parts[1].toIntOrNull() ?: return null
-        if (secs < 0 || secs >= 60) return null
-        return (mins * 60 + secs).toDouble()
+
+    // Check for separator (colon or dot)
+    val separator = when {
+        input.contains(':') -> ":"
+        input.contains('.') -> "."
+        else -> null
     }
+
+    if (separator != null) {
+        val parts = input.split(separator)
+        if (parts.size == 2) {
+            val mins = parts[0].toIntOrNull() ?: return null
+            val secs = parts[1].toIntOrNull() ?: return null
+            // If the user uses a dot, we assume they mean MM.SS (e.g. 1.24 = 1m 24s)
+            // But we only treat it as minutes if seconds are 0-59.
+            if (secs in 0..59) {
+                return (mins * 60 + secs).toDouble()
+            }
+        }
+    }
+
     return input.toDoubleOrNull()
 }

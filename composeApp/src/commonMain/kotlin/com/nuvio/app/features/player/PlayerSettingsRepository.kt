@@ -71,6 +71,8 @@ object PlayerSettingsRepository {
     private var skipIntroEnabled = true
     private var animeSkipEnabled = false
     private var animeSkipClientId = ""
+    private var introDbApiKey = ""
+    private var introSubmitEnabled = false
     private var streamAutoPlayNextEpisodeEnabled = false
     private var streamAutoPlayPreferBingeGroup = true
     private var nextEpisodeThresholdMode = NextEpisodeThresholdMode.PERCENTAGE
@@ -113,6 +115,8 @@ object PlayerSettingsRepository {
         skipIntroEnabled = true
         animeSkipEnabled = false
         animeSkipClientId = ""
+        introDbApiKey = ""
+        introSubmitEnabled = false
         streamAutoPlayNextEpisodeEnabled = false
         streamAutoPlayPreferBingeGroup = true
         nextEpisodeThresholdMode = NextEpisodeThresholdMode.PERCENTAGE
