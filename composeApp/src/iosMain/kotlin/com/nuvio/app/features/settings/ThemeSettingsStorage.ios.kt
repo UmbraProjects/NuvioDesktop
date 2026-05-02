@@ -50,7 +50,17 @@ actual object ThemeSettingsStorage {
         NSUserDefaults.standardUserDefaults.setObject(languageCode, forKey = selectedAppLanguageKey)
     }
 
-    actual fun applySelectedAppLanguage(languageCode: String) = Unit
+    actual fun applySelectedAppLanguage(languageCode: String) {
+        val normalizedCode = languageCode
+            .trim()
+            .takeIf { it.isNotBlank() }
+            ?: AppLanguage.ENGLISH.code
+        NSUserDefaults.standardUserDefaults.setObject(
+            listOf(normalizedCode),
+            forKey = "AppleLanguages",
+        )
+        NSUserDefaults.standardUserDefaults.synchronize()
+    }
 
     actual fun exportToSyncPayload(): JsonObject = buildJsonObject {
         loadSelectedTheme()?.let { put(selectedThemeKey, encodeSyncString(it)) }
@@ -69,5 +79,6 @@ actual object ThemeSettingsStorage {
         payload.decodeSyncString(selectedThemeKey)?.let(::saveSelectedTheme)
         payload.decodeSyncBoolean(amoledEnabledKey)?.let(::saveAmoledEnabled)
         payload.decodeSyncString(selectedAppLanguageKey)?.let(::saveSelectedAppLanguage)
+        applySelectedAppLanguage(loadSelectedAppLanguage() ?: AppLanguage.ENGLISH.code)
     }
 }
