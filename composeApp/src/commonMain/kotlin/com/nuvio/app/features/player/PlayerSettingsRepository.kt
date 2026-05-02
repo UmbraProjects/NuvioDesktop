@@ -178,6 +178,8 @@ object PlayerSettingsRepository {
         skipIntroEnabled = PlayerSettingsStorage.loadSkipIntroEnabled() ?: true
         animeSkipEnabled = PlayerSettingsStorage.loadAnimeSkipEnabled() ?: false
         animeSkipClientId = PlayerSettingsStorage.loadAnimeSkipClientId() ?: ""
+        introDbApiKey = PlayerSettingsStorage.loadIntroDbApiKey() ?: ""
+        introSubmitEnabled = PlayerSettingsStorage.loadIntroSubmitEnabled() ?: false
         streamAutoPlayNextEpisodeEnabled = PlayerSettingsStorage.loadStreamAutoPlayNextEpisodeEnabled() ?: false
         streamAutoPlayPreferBingeGroup = PlayerSettingsStorage.loadStreamAutoPlayPreferBingeGroup() ?: true
         nextEpisodeThresholdMode = PlayerSettingsStorage.loadNextEpisodeThresholdMode()
@@ -384,6 +386,22 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveAnimeSkipClientId(clientId)
     }
 
+    fun setIntroDbApiKey(apiKey: String) {
+        ensureLoaded()
+        if (introDbApiKey == apiKey) return
+        introDbApiKey = apiKey
+        publish()
+        PlayerSettingsStorage.saveIntroDbApiKey(apiKey)
+    }
+
+    fun setIntroSubmitEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (introSubmitEnabled == enabled) return
+        introSubmitEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveIntroSubmitEnabled(enabled)
+    }
+
     fun setStreamAutoPlayNextEpisodeEnabled(enabled: Boolean) {
         ensureLoaded()
         if (streamAutoPlayNextEpisodeEnabled == enabled) return
@@ -465,6 +483,8 @@ object PlayerSettingsRepository {
             skipIntroEnabled = skipIntroEnabled,
             animeSkipEnabled = animeSkipEnabled,
             animeSkipClientId = animeSkipClientId,
+            introDbApiKey = introDbApiKey,
+            introSubmitEnabled = introSubmitEnabled,
             streamAutoPlayNextEpisodeEnabled = streamAutoPlayNextEpisodeEnabled,
             streamAutoPlayPreferBingeGroup = streamAutoPlayPreferBingeGroup,
             nextEpisodeThresholdMode = nextEpisodeThresholdMode,

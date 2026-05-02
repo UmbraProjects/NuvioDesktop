@@ -502,6 +502,13 @@ private fun ProgressControls(
                             onClick = onEpisodesClick,
                         )
                     }
+                    if (onSubmitIntroClick != null) {
+                        PlayerActionPillButton(
+                            label = "Submit Intro",
+                            icon = Icons.Rounded.Flag,
+                            onClick = onSubmitIntroClick,
+                        )
+                    }
                 }
             }
         }

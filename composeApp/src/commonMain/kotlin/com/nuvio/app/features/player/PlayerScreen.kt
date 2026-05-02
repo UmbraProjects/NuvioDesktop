@@ -242,6 +242,7 @@ fun PlayerScreen(
         // Sources & Episodes Panel state
         var showSourcesPanel by remember { mutableStateOf(false) }
         var showEpisodesPanel by remember { mutableStateOf(false) }
+        var showSubmitIntroModal by remember { mutableStateOf(false) }
         var episodeStreamsPanelState by remember { mutableStateOf(EpisodeStreamsPanelState()) }
         val sourceStreamsState by PlayerStreamsRepository.sourceState.collectAsStateWithLifecycle()
         val episodeStreamsRepoState by PlayerStreamsRepository.episodeStreamsState.collectAsStateWithLifecycle()
@@ -1599,6 +1600,7 @@ fun PlayerScreen(
                     },
                     onSourcesClick = if (activeVideoId != null) {{ openSourcesPanel() }} else null,
                     onEpisodesClick = if (isSeries) {{ openEpisodesPanel() }} else null,
+                    onSubmitIntroClick = if (isSeries && playerSettingsUiState.introSubmitEnabled && playerSettingsUiState.introDbApiKey.isNotBlank()) {{ showSubmitIntroModal = true }} else null,
                     onScrubChange = { positionMs -> scrubbingPositionMs = positionMs },
                     onScrubFinished = { positionMs ->
                         scrubbingPositionMs = null
@@ -1842,6 +1844,16 @@ fun PlayerScreen(
                         PlayerStreamsRepository.clearEpisodeStreams()
                         controlsVisible = true
                     },
+                )
+            }
+
+            if (showSubmitIntroModal && activeSeasonNumber != null && activeEpisodeNumber != null && activeImdbId != null) {
+                com.nuvio.app.features.player.skip.SubmitIntroDialog(
+                    imdbId = activeImdbId,
+                    season = activeSeasonNumber,
+                    episode = activeEpisodeNumber,
+                    currentTimeSec = (displayedPositionMs / 1000.0),
+                    onDismiss = { showSubmitIntroModal = false },
                 )
             }
         }
