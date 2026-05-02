@@ -301,48 +301,8 @@ object TraktPublicListSourceResolver {
     }
 }
 
-internal fun List<String>?.firstTraktImageUrl(): String? {
-    return orEmpty()
-        .firstOrNull { it.isNotBlank() }
-        ?.toTraktImageUrl()
-}
-
-internal fun String.toTraktImageUrl(): String {
-    val normalized = trim()
-    return when {
-        normalized.startsWith("https://", ignoreCase = true) -> normalized
-        normalized.startsWith("http://", ignoreCase = true) -> "https://${normalized.substringAfter("://")}"
-        normalized.startsWith("//") -> "https:$normalized"
-        traktHostPattern.containsMatchIn(normalized) -> "https://$normalized"
-        else -> normalized
-    }
-}
-
-private fun PublicTraktImagesDto?.traktPosterUrl(): String? = this?.poster.firstTraktImageUrl()
-
-private fun PublicTraktImagesDto?.traktFanartUrl(): String? = this?.fanart.firstTraktImageUrl()
-
-private fun PublicTraktImagesDto?.traktLogoUrl(): String? = this?.logo.firstTraktImageUrl()
-
-private fun PublicTraktImagesDto?.traktClearartUrl(): String? = this?.clearart.firstTraktImageUrl()
-
-private fun PublicTraktImagesDto?.traktBannerUrl(): String? = this?.banner.firstTraktImageUrl()
-
-private fun PublicTraktImagesDto?.traktThumbUrl(): String? = this?.thumb.firstTraktImageUrl()
-
-private fun PublicTraktImagesDto?.traktBestPosterUrl(): String? =
-    traktPosterUrl() ?: traktFanartUrl()
-
-private fun PublicTraktImagesDto?.traktBestBackdropUrl(): String? =
-    traktFanartUrl() ?: traktBannerUrl() ?: traktThumbUrl() ?: traktPosterUrl()
-
-private fun PublicTraktImagesDto?.traktBestLogoUrl(): String? =
-    traktLogoUrl() ?: traktClearartUrl()
-
 private fun Double.formatRating(): String =
     ((this * 10).roundToInt() / 10.0).toString()
-
-private val traktHostPattern = Regex("""^[a-z0-9.-]*trakt\.tv/""", RegexOption.IGNORE_CASE)
 
 @Serializable
 private data class PublicTraktSearchResultDto(
@@ -404,7 +364,7 @@ private data class PublicTraktMovieDto(
     val released: String? = null,
     val rating: Double? = null,
     val genres: List<String>? = null,
-    val images: PublicTraktImagesDto? = null,
+    val images: TraktImagesDto? = null,
 )
 
 @Serializable
@@ -416,15 +376,5 @@ private data class PublicTraktShowDto(
     @SerialName("first_aired") val firstAired: String? = null,
     val rating: Double? = null,
     val genres: List<String>? = null,
-    val images: PublicTraktImagesDto? = null,
-)
-
-@Serializable
-private data class PublicTraktImagesDto(
-    val fanart: List<String>? = null,
-    val poster: List<String>? = null,
-    val logo: List<String>? = null,
-    val clearart: List<String>? = null,
-    val banner: List<String>? = null,
-    val thumb: List<String>? = null,
+    val images: TraktImagesDto? = null,
 )
