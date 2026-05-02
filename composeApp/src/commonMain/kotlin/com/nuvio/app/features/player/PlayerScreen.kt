@@ -1847,11 +1847,17 @@ fun PlayerScreen(
                 )
             }
 
-            if (showSubmitIntroModal && activeSeasonNumber != null && activeEpisodeNumber != null && activeImdbId != null) {
+            val season = activeSeasonNumber
+            val episode = activeEpisodeNumber
+            val imdbId = activeVideoId?.split(":")?.firstOrNull()?.takeIf { it.startsWith("tt") }
+                ?: parentMetaId.takeIf { it.startsWith("tt") }
+                ?: metaUiState.meta?.id?.takeIf { it.startsWith("tt") }
+
+            if (showSubmitIntroModal && season != null && episode != null && !imdbId.isNullOrBlank()) {
                 com.nuvio.app.features.player.skip.SubmitIntroDialog(
-                    imdbId = activeImdbId,
-                    season = activeSeasonNumber,
-                    episode = activeEpisodeNumber,
+                    imdbId = imdbId,
+                    season = season,
+                    episode = episode,
                     currentTimeSec = (displayedPositionMs / 1000.0),
                     onDismiss = { showSubmitIntroModal = false },
                 )

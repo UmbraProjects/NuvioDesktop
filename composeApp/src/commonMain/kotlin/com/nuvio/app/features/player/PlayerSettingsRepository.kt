@@ -32,6 +32,8 @@ data class PlayerSettingsUiState(
     val skipIntroEnabled: Boolean = true,
     val animeSkipEnabled: Boolean = false,
     val animeSkipClientId: String = "",
+    val introDbApiKey: String = "",
+    val introSubmitEnabled: Boolean = false,
     val streamAutoPlayNextEpisodeEnabled: Boolean = false,
     val streamAutoPlayPreferBingeGroup: Boolean = true,
     val nextEpisodeThresholdMode: NextEpisodeThresholdMode = NextEpisodeThresholdMode.PERCENTAGE,
