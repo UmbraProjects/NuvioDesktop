@@ -34,6 +34,10 @@ final class OrientationLockAppDelegate: NSObject, UIApplicationDelegate, UNUserN
         )
     }
 
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        DownloadsPlatformDownloader_iosKt.pauseDownloadsForAppBackground()
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,

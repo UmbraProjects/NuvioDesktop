@@ -144,17 +144,27 @@ internal object CollectionJsonPreserver {
     private fun unifiedSourceKey(element: JsonElement): String? {
         val obj = element as? JsonObject ?: return null
         val provider = obj["provider"]?.jsonPrimitive?.contentOrNull ?: "addon"
-        return if (provider.equals("tmdb", ignoreCase = true)) {
-            val sourceType = obj["tmdbSourceType"]?.jsonPrimitive?.contentOrNull ?: return null
-            val tmdbId = obj["tmdbId"]?.jsonPrimitive?.contentOrNull.orEmpty()
-            val mediaType = obj["mediaType"]?.jsonPrimitive?.contentOrNull.orEmpty()
-            val sortBy = obj["sortBy"]?.jsonPrimitive?.contentOrNull.orEmpty()
-            "$provider|$sourceType|$tmdbId|$mediaType|$sortBy"
-        } else {
-            val addonId = obj["addonId"]?.jsonPrimitive?.contentOrNull ?: return null
-            val type = obj["type"]?.jsonPrimitive?.contentOrNull ?: return null
-            val catalogId = obj["catalogId"]?.jsonPrimitive?.contentOrNull ?: return null
-            "$provider|$addonId|$type|$catalogId"
+        return when {
+            provider.equals("tmdb", ignoreCase = true) -> {
+                val sourceType = obj["tmdbSourceType"]?.jsonPrimitive?.contentOrNull ?: return null
+                val tmdbId = obj["tmdbId"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                val mediaType = obj["mediaType"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                val sortBy = obj["sortBy"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                "$provider|$sourceType|$tmdbId|$mediaType|$sortBy"
+            }
+            provider.equals("trakt", ignoreCase = true) -> {
+                val listId = obj["traktListId"]?.jsonPrimitive?.contentOrNull ?: return null
+                val mediaType = obj["mediaType"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                val sortBy = obj["sortBy"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                val sortHow = obj["sortHow"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                "$provider|$listId|$mediaType|$sortBy|$sortHow"
+            }
+            else -> {
+                val addonId = obj["addonId"]?.jsonPrimitive?.contentOrNull ?: return null
+                val type = obj["type"]?.jsonPrimitive?.contentOrNull ?: return null
+                val catalogId = obj["catalogId"]?.jsonPrimitive?.contentOrNull ?: return null
+                "$provider|$addonId|$type|$catalogId"
+            }
         }
     }
 }
