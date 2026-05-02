@@ -223,7 +223,6 @@ fun PlayerScreen(
             activeEpisodeNumber,
         ) { mutableStateOf(false) }
         var hasSentCompletionScrobbleForCurrentItem by remember(
-            activeSourceUrl,
             activeVideoId,
             activeSeasonNumber,
             activeEpisodeNumber,
@@ -383,7 +382,6 @@ fun PlayerScreen(
             val progressPercent = currentPlaybackProgressPercent()
             if (progressPercent >= 1f && progressPercent < 80f) {
                 emitTraktScrobbleStop(progressPercent)
-                hasSentCompletionScrobbleForCurrentItem = false
                 return
             }
 
@@ -1199,15 +1197,20 @@ fun PlayerScreen(
             pausedOverlayVisible = true
         }
 
-        LaunchedEffect(playbackSnapshot.positionMs, playbackSnapshot.isPlaying, playbackSnapshot.isEnded, playbackSnapshot.durationMs) {
+        LaunchedEffect(
+            playbackSnapshot.positionMs,
+            playbackSnapshot.isPlaying,
+            playbackSnapshot.isLoading,
+            playbackSnapshot.isEnded,
+            playbackSnapshot.durationMs,
+        ) {
             if (playbackSnapshot.isEnded) {
-                hasSentCompletionScrobbleForCurrentItem = false
                 flushWatchProgress()
                 previousIsPlaying = false
                 return@LaunchedEffect
             }
 
-            if (previousIsPlaying && !playbackSnapshot.isPlaying) {
+            if (previousIsPlaying && !playbackSnapshot.isPlaying && !playbackSnapshot.isLoading) {
                 flushWatchProgress()
             }
 
@@ -1215,7 +1218,9 @@ fun PlayerScreen(
                 emitTraktScrobbleStart()
             }
 
-            previousIsPlaying = playbackSnapshot.isPlaying
+            if (!playbackSnapshot.isLoading) {
+                previousIsPlaying = playbackSnapshot.isPlaying
+            }
 
             if (!playbackSnapshot.isPlaying) {
                 return@LaunchedEffect
