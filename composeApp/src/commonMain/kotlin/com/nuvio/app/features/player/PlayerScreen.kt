@@ -241,6 +241,10 @@ fun PlayerScreen(
         // Sources & Episodes Panel state
         var showSourcesPanel by remember { mutableStateOf(false) }
         var showEpisodesPanel by remember { mutableStateOf(false) }
+        var showSubmitIntroModal by remember { mutableStateOf(false) }
+        var submitIntroSegmentType by rememberSaveable { mutableStateOf("intro") }
+        var submitIntroStartTimeStr by rememberSaveable { mutableStateOf("00:00") }
+        var submitIntroEndTimeStr by rememberSaveable { mutableStateOf("00:00") }
         var episodeStreamsPanelState by remember { mutableStateOf(EpisodeStreamsPanelState()) }
         val sourceStreamsState by PlayerStreamsRepository.sourceState.collectAsStateWithLifecycle()
         val episodeStreamsRepoState by PlayerStreamsRepository.episodeStreamsState.collectAsStateWithLifecycle()
@@ -1602,8 +1606,9 @@ fun PlayerScreen(
                         refreshTracks()
                         showAudioModal = true
                     },
-                    onSourcesClick = if (activeVideoId != null) {{ openSourcesPanel() }} else null,
-                    onEpisodesClick = if (isSeries) {{ openEpisodesPanel() }} else null,
+                    onSourcesClick = if (activeVideoId != null) { { openSourcesPanel() } } else null,
+                    onEpisodesClick = if (isSeries) { { openEpisodesPanel() } } else null,
+                    onSubmitIntroClick = if (isSeries && playerSettingsUiState.introSubmitEnabled && playerSettingsUiState.introDbApiKey.isNotBlank()) { { showSubmitIntroModal = true } } else null,
                     onScrubChange = { positionMs -> scrubbingPositionMs = positionMs },
                     onScrubFinished = { positionMs ->
                         scrubbingPositionMs = null
@@ -1847,6 +1852,34 @@ fun PlayerScreen(
                         PlayerStreamsRepository.clearEpisodeStreams()
                         controlsVisible = true
                     },
+                )
+            }
+
+            val season = activeSeasonNumber
+            val episode = activeEpisodeNumber
+            val imdbId = activeVideoId?.split(":")?.firstOrNull()?.takeIf { it.startsWith("tt") }
+                ?: parentMetaId.takeIf { it.startsWith("tt") }
+                ?: metaUiState.meta?.id?.takeIf { it.startsWith("tt") }
+
+            if (showSubmitIntroModal && season != null && episode != null && !imdbId.isNullOrBlank()) {
+                com.nuvio.app.features.player.skip.SubmitIntroDialog(
+                    imdbId = imdbId,
+                    season = season,
+                    episode = episode,
+                    currentTimeSec = (displayedPositionMs / 1000.0),
+                    segmentType = submitIntroSegmentType,
+                    onSegmentTypeChange = { submitIntroSegmentType = it },
+                    startTimeStr = submitIntroStartTimeStr,
+                    onStartTimeChange = { submitIntroStartTimeStr = it },
+                    endTimeStr = submitIntroEndTimeStr,
+                    onEndTimeChange = { submitIntroEndTimeStr = it },
+                    onDismiss = { showSubmitIntroModal = false },
+                    onSuccess = {
+                        submitIntroStartTimeStr = "00:00"
+                        submitIntroEndTimeStr = "00:00"
+                        submitIntroSegmentType = "intro"
+                        showSubmitIntroModal = false
+                    }
                 )
             }
         }
