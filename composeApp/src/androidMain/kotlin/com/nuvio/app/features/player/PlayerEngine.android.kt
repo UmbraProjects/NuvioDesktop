@@ -179,6 +179,10 @@ actual fun PlatformPlayerSurface(
     var currentSubtitleStyle by remember { mutableStateOf(SubtitleStyleState.DEFAULT) }
     var subtitleSelectionJob by remember { mutableStateOf<Job?>(null) }
 
+    fun syncPlayerViewKeepScreenOn() {
+        playerViewRef?.keepScreenOn = exoPlayer.shouldKeepPlayerScreenOn()
+    }
+
     DisposableEffect(exoPlayer) {
         PlayerPictureInPictureManager.registerPausePlaybackCallback {
             exoPlayer.pause()
@@ -186,6 +190,7 @@ actual fun PlatformPlayerSurface(
 
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
+                syncPlayerViewKeepScreenOn()
                 latestOnError.value(error.localizedMessage ?: runBlocking { getString(Res.string.player_unable_to_play_stream) })
             }
 
@@ -202,10 +207,12 @@ actual fun PlatformPlayerSurface(
                     latestOnError.value(null)
                     exoPlayer.logCurrentTracks("STATE_READY")
                 }
+                syncPlayerViewKeepScreenOn()
                 latestOnSnapshot.value(exoPlayer.snapshot())
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                syncPlayerViewKeepScreenOn()
                 latestOnSnapshot.value(exoPlayer.snapshot())
             }
 
@@ -235,6 +242,7 @@ actual fun PlatformPlayerSurface(
         onDispose {
             PlayerPictureInPictureManager.registerPausePlaybackCallback(null)
             exoPlayer.removeListener(listener)
+            playerViewRef?.keepScreenOn = false
             subtitleSelectionJob?.cancel()
         }
     }
@@ -264,6 +272,7 @@ actual fun PlatformPlayerSurface(
 
     LaunchedEffect(exoPlayer, playWhenReady) {
         exoPlayer.playWhenReady = playWhenReady
+        syncPlayerViewKeepScreenOn()
         latestOnSnapshot.value(exoPlayer.snapshot())
     }
 
@@ -424,7 +433,7 @@ actual fun PlatformPlayerSurface(
                 useController = useNativeController
                 layoutParams = android.view.ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
                 player = exoPlayer
-                keepScreenOn = true
+                keepScreenOn = exoPlayer.shouldKeepPlayerScreenOn()
                 this.resizeMode = resizeMode.toExoResizeMode()
                 setShutterBackgroundColor(android.graphics.Color.BLACK)
                 playerViewRef = this
@@ -441,6 +450,7 @@ actual fun PlatformPlayerSurface(
             playerView.useController = useNativeController
             playerView.resizeMode = resizeMode.toExoResizeMode()
             playerViewRef = playerView
+            syncPlayerViewKeepScreenOn()
             playerView.syncLibassOverlay(
                 player = exoPlayer,
                 enabled = useLibass,
@@ -468,6 +478,11 @@ private fun ExoPlayer.snapshot(): PlayerPlaybackSnapshot =
         bufferedPositionMs = bufferedPosition.coerceAtLeast(0L),
         playbackSpeed = playbackParameters.speed,
     )
+
+private fun ExoPlayer.shouldKeepPlayerScreenOn(): Boolean =
+    playerError == null &&
+        playWhenReady &&
+        playbackState in setOf(Player.STATE_BUFFERING, Player.STATE_READY)
 
 private fun PlayerResizeMode.toExoResizeMode(): Int =
     when (this) {
