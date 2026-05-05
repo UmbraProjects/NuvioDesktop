@@ -1026,6 +1026,7 @@
     <string name="streams_resume_from_percent">Resume from %1$d%</string>
     <string name="streams_resume_from_time">Resume from %1$s</string>
     <string name="streams_size">SIZE %1$s</string>
+    <string name="streams_torrent_not_supported">Torrent streams are not supported</string>
     <string name="trailer_close">Close trailer</string>
     <string name="trailer_unable_to_play">Unable to play trailer</string>
     <string name="trakt_lists_load_failed">Failed to load Trakt lists</string>
