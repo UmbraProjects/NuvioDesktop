@@ -21,6 +21,8 @@ import com.nuvio.app.features.tmdb.TmdbSettingsStorage
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.trakt.TraktCommentsStorage
 import com.nuvio.app.features.trakt.TraktCommentsSettings
+import com.nuvio.app.features.trakt.TraktSettingsStorage
+import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesStorage
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import io.github.jan.supabase.postgrest.postgrest
@@ -156,6 +158,7 @@ object ProfileSettingsSync {
             MdbListSettingsRepository.uiState.map { "mdblist" },
             MetaScreenSettingsRepository.uiState.map { "meta" },
             ContinueWatchingPreferencesRepository.uiState.map { "continue_watching" },
+            TraktSettingsRepository.uiState.map { "trakt_settings" },
             TraktCommentsSettings.enabled.map { "trakt_comments" },
             EpisodeReleaseNotificationsRepository.uiState.map { "episode_release_alerts" },
         )
@@ -199,6 +202,7 @@ object ProfileSettingsSync {
                 mdbListSettings = MdbListSettingsStorage.exportToSyncPayload(),
                 metaScreenSettingsPayload = MetaScreenSettingsStorage.loadPayload().orEmpty().trim(),
                 continueWatchingSettingsPayload = ContinueWatchingPreferencesStorage.loadPayload().orEmpty().trim(),
+                traktSettingsPayload = TraktSettingsStorage.loadPayload().orEmpty().trim(),
                 traktCommentsSettings = TraktCommentsStorage.exportToSyncPayload(),
                 notificationsSettings = NotificationsSettingsPayload(
                     episodeReleaseAlertsEnabled = EpisodeReleaseNotificationsRepository.uiState.value.isEnabled,
@@ -230,6 +234,9 @@ object ProfileSettingsSync {
         ContinueWatchingPreferencesStorage.savePayload(blob.features.continueWatchingSettingsPayload)
         ContinueWatchingPreferencesRepository.onProfileChanged()
 
+        TraktSettingsStorage.savePayload(blob.features.traktSettingsPayload)
+        TraktSettingsRepository.onProfileChanged()
+
         TraktCommentsStorage.replaceFromSyncPayload(blob.features.traktCommentsSettings)
         TraktCommentsSettings.onProfileChanged()
 
@@ -244,6 +251,7 @@ object ProfileSettingsSync {
         MdbListSettingsRepository.ensureLoaded()
         MetaScreenSettingsRepository.ensureLoaded()
         ContinueWatchingPreferencesRepository.ensureLoaded()
+        TraktSettingsRepository.ensureLoaded()
         TraktCommentsSettings.ensureLoaded()
         EpisodeReleaseNotificationsRepository.ensureLoaded()
     }
@@ -263,6 +271,7 @@ object ProfileSettingsSync {
         "mdblist=${MdbListSettingsRepository.uiState.value}",
         "meta=${MetaScreenSettingsRepository.uiState.value}",
         "continue=${ContinueWatchingPreferencesRepository.uiState.value}",
+        "trakt_settings=${TraktSettingsRepository.uiState.value}",
         "trakt_comments=${TraktCommentsSettings.enabled.value}",
         "episode_release_alerts=${EpisodeReleaseNotificationsRepository.uiState.value.isEnabled}",
     ).joinToString(separator = "||")
@@ -283,6 +292,7 @@ private data class MobileProfileSettingsFeatures(
     @SerialName("mdblist_settings") val mdbListSettings: JsonObject = JsonObject(emptyMap()),
     @SerialName("meta_screen_settings_payload") val metaScreenSettingsPayload: String = "",
     @SerialName("continue_watching_settings_payload") val continueWatchingSettingsPayload: String = "",
+    @SerialName("trakt_settings_payload") val traktSettingsPayload: String = "",
     @SerialName("trakt_comments_settings") val traktCommentsSettings: JsonObject = JsonObject(emptyMap()),
     @SerialName("notifications_settings") val notificationsSettings: NotificationsSettingsPayload = NotificationsSettingsPayload(),
 )
