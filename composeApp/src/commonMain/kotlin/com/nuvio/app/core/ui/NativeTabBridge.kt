@@ -36,6 +36,24 @@ internal object NativeTabBridge {
     fun publishLiquidGlassEnabled(enabled: Boolean) {
         publishLiquidGlassNativeTabBarEnabled(enabled && isLiquidGlassNativeTabBarSupported())
     }
+
+    fun publishAccentColor(hexColor: String) {
+        publishNativeTabAccentColor(hexColor)
+    }
+
+    fun publishProfileTabIcon(
+        name: String?,
+        avatarColorHex: String?,
+        avatarImageUrl: String?,
+        avatarBackgroundColorHex: String?,
+    ) {
+        publishNativeProfileTabIcon(
+            name = name,
+            avatarColorHex = avatarColorHex,
+            avatarImageUrl = avatarImageUrl,
+            avatarBackgroundColorHex = avatarBackgroundColorHex,
+        )
+    }
 }
 
 fun nativeTabSelect(tabName: String) {
@@ -49,3 +67,12 @@ internal expect fun publishLiquidGlassNativeTabBarEnabled(enabled: Boolean)
 internal expect fun publishNativeTabBarVisible(visible: Boolean)
 
 internal expect fun publishNativeSelectedTab(tabName: String)
+
+internal expect fun publishNativeTabAccentColor(hexColor: String)
+
+internal expect fun publishNativeProfileTabIcon(
+    name: String?,
+    avatarColorHex: String?,
+    avatarImageUrl: String?,
+    avatarBackgroundColorHex: String?,
+)

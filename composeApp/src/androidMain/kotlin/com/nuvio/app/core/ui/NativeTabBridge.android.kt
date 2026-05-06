@@ -7,3 +7,12 @@ internal actual fun publishLiquidGlassNativeTabBarEnabled(enabled: Boolean) = Un
 internal actual fun publishNativeTabBarVisible(visible: Boolean) = Unit
 
 internal actual fun publishNativeSelectedTab(tabName: String) = Unit
+
+internal actual fun publishNativeTabAccentColor(hexColor: String) = Unit
+
+internal actual fun publishNativeProfileTabIcon(
+    name: String?,
+    avatarColorHex: String?,
+    avatarImageUrl: String?,
+    avatarBackgroundColorHex: String?,
+) = Unit

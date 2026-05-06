@@ -8,6 +8,11 @@ import platform.UIKit.UIUserInterfaceIdiomPhone
 private const val liquidGlassNativeTabBarEnabledKey = "NuvioLiquidGlassNativeTabBarEnabled"
 private const val nativeTabBarVisibleKey = "NuvioNativeTabBarVisible"
 private const val nativeSelectedTabKey = "NuvioNativeSelectedTab"
+private const val nativeTabAccentColorKey = "NuvioNativeTabAccentColor"
+private const val nativeProfileNameKey = "NuvioNativeProfileName"
+private const val nativeProfileAvatarColorKey = "NuvioNativeProfileAvatarColor"
+private const val nativeProfileAvatarUrlKey = "NuvioNativeProfileAvatarURL"
+private const val nativeProfileAvatarBackgroundColorKey = "NuvioNativeProfileAvatarBackgroundColor"
 private const val nativeTabChromeDidChangeNotification = "NuvioNativeTabChromeDidChange"
 
 internal actual fun isLiquidGlassNativeTabBarSupported(): Boolean {
@@ -28,9 +33,35 @@ internal actual fun publishNativeSelectedTab(tabName: String) {
     notifyNativeTabChromeChanged()
 }
 
+internal actual fun publishNativeTabAccentColor(hexColor: String) {
+    NSUserDefaults.standardUserDefaults.setObject(hexColor, forKey = nativeTabAccentColorKey)
+    notifyNativeTabChromeChanged()
+}
+
+internal actual fun publishNativeProfileTabIcon(
+    name: String?,
+    avatarColorHex: String?,
+    avatarImageUrl: String?,
+    avatarBackgroundColorHex: String?,
+) {
+    publishString(nativeProfileNameKey, name)
+    publishString(nativeProfileAvatarColorKey, avatarColorHex)
+    publishString(nativeProfileAvatarUrlKey, avatarImageUrl)
+    publishString(nativeProfileAvatarBackgroundColorKey, avatarBackgroundColorHex)
+    notifyNativeTabChromeChanged()
+}
+
 private fun publishBool(key: String, value: Boolean) {
     NSUserDefaults.standardUserDefaults.setBool(value, forKey = key)
     notifyNativeTabChromeChanged()
+}
+
+private fun publishString(key: String, value: String?) {
+    if (value.isNullOrBlank()) {
+        NSUserDefaults.standardUserDefaults.removeObjectForKey(key)
+    } else {
+        NSUserDefaults.standardUserDefaults.setObject(value, forKey = key)
+    }
 }
 
 private fun notifyNativeTabChromeChanged() {

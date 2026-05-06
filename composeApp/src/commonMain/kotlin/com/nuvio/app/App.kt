@@ -127,11 +127,13 @@ import com.nuvio.app.features.player.PlayerRoute
 import com.nuvio.app.features.player.PlayerScreen
 import com.nuvio.app.features.player.sanitizePlaybackHeaders
 import com.nuvio.app.features.player.sanitizePlaybackResponseHeaders
+import com.nuvio.app.features.profiles.AvatarRepository
 import com.nuvio.app.features.profiles.NuvioProfile
 import com.nuvio.app.features.profiles.ProfileEditScreen
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.profiles.ProfileSelectionScreen
 import com.nuvio.app.features.profiles.ProfileSwitcherTab
+import com.nuvio.app.features.profiles.avatarStorageUrl
 import com.nuvio.app.features.search.SearchScreen
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.features.settings.HomescreenSettingsScreen
@@ -316,9 +318,33 @@ fun App() {
 
         val authState by AuthRepository.state.collectAsStateWithLifecycle()
         val profileState by ProfileRepository.state.collectAsStateWithLifecycle()
+        val profileAvatars by AvatarRepository.avatars.collectAsStateWithLifecycle()
         val networkStatusUiState by remember {
             NetworkStatusRepository.uiState
         }.collectAsStateWithLifecycle()
+
+        LaunchedEffect(
+            profileState.activeProfile?.profileIndex,
+            profileState.activeProfile?.name,
+            profileState.activeProfile?.avatarColorHex,
+            profileState.activeProfile?.avatarId,
+            profileAvatars,
+        ) {
+            val activeProfile = profileState.activeProfile
+            val avatarItem = activeProfile?.avatarId?.let { avatarId ->
+                profileAvatars.find { it.id == avatarId }
+            }
+            NativeTabBridge.publishProfileTabIcon(
+                name = activeProfile?.name,
+                avatarColorHex = activeProfile?.avatarColorHex,
+                avatarImageUrl = avatarItem
+                    ?.storagePath
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(::avatarStorageUrl),
+                avatarBackgroundColorHex = avatarItem?.bgColor,
+            )
+        }
+
         var gateScreen by rememberSaveable { mutableStateOf(AppGateScreen.Loading.name) }
         var editingProfile by remember { mutableStateOf<NuvioProfile?>(null) }
         var isNewProfile by remember { mutableStateOf(false) }

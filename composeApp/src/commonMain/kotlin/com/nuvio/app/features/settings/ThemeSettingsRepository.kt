@@ -35,6 +35,7 @@ object ThemeSettingsRepository {
         _selectedTheme.value = AppTheme.WHITE
         _amoledEnabled.value = false
         _liquidGlassNativeTabBarEnabled.value = false
+        NativeTabBridge.publishAccentColor(AppTheme.WHITE.nativeTabAccentHex())
         NativeTabBridge.publishLiquidGlassEnabled(false)
         _selectedAppLanguage.value = AppLanguage.ENGLISH
     }
@@ -52,6 +53,7 @@ object ThemeSettingsRepository {
             AppTheme.WHITE
         }
         _selectedTheme.value = theme
+        NativeTabBridge.publishAccentColor(theme.nativeTabAccentHex())
         _amoledEnabled.value = ThemeSettingsStorage.loadAmoledEnabled() ?: false
         val liquidGlassEnabled = ThemeSettingsStorage.loadLiquidGlassNativeTabBarEnabled() ?: false
         _liquidGlassNativeTabBarEnabled.value = liquidGlassEnabled
@@ -66,6 +68,7 @@ object ThemeSettingsRepository {
         if (_selectedTheme.value == theme) return
         _selectedTheme.value = theme
         ThemeSettingsStorage.saveSelectedTheme(theme.name)
+        NativeTabBridge.publishAccentColor(theme.nativeTabAccentHex())
     }
 
     fun setAmoled(enabled: Boolean) {
@@ -90,4 +93,14 @@ object ThemeSettingsRepository {
         ThemeSettingsStorage.applySelectedAppLanguage(language.code)
         _selectedAppLanguage.value = language
     }
+}
+
+private fun AppTheme.nativeTabAccentHex(): String = when (this) {
+    AppTheme.CRIMSON -> "#E53935"
+    AppTheme.OCEAN -> "#1E88E5"
+    AppTheme.VIOLET -> "#8E24AA"
+    AppTheme.EMERALD -> "#43A047"
+    AppTheme.AMBER -> "#FB8C00"
+    AppTheme.ROSE -> "#D81B60"
+    AppTheme.WHITE -> "#F5F5F5"
 }
