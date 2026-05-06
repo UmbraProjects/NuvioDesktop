@@ -276,39 +276,39 @@ fun MetaDetailsScreen(
                 val isSaved = remember(
                     libraryUiState.items,
                     libraryUiState.sections,
-                    traktAuthUiState.mode,
+                    libraryUiState.sourceMode,
                     meta.id,
                     meta.type,
                 ) {
                     LibraryRepository.isSaved(meta.id, meta.type)
                 }
-                val isTraktConnected = traktAuthUiState.mode == TraktConnectionMode.CONNECTED
-                val toggleSaved = remember(meta, isTraktConnected) {
+                val openLibraryListPicker = remember(meta) {
                     {
                         val libraryItem = meta.toLibraryItem(savedAtEpochMs = 0L)
-                        if (!isTraktConnected) {
-                            LibraryRepository.toggleSaved(libraryItem)
-                        } else {
-                            pickerTabs = LibraryRepository.traktListTabs()
-                            pickerMembership = pickerTabs.associate { it.key to false }
-                            pickerPending = true
-                            pickerError = null
-                            showLibraryListPicker = true
-                            detailsScope.launch {
-                                runCatching {
-                                    val snapshot = LibraryRepository.getMembershipSnapshot(libraryItem)
-                                    val tabs = LibraryRepository.traktListTabs()
-                                    pickerTabs = tabs
-                                    pickerMembership = tabs.associate { tab ->
-                                        tab.key to (snapshot[tab.key] == true)
-                                    }
-                                }.onFailure { error ->
-                                    pickerError = error.message ?: getString(Res.string.trakt_lists_load_failed)
+                        pickerTabs = LibraryRepository.libraryListTabs()
+                        pickerMembership = pickerTabs.associate { it.key to false }
+                        pickerPending = true
+                        pickerError = null
+                        showLibraryListPicker = true
+                        detailsScope.launch {
+                            runCatching {
+                                val snapshot = LibraryRepository.getMembershipSnapshot(libraryItem)
+                                val tabs = LibraryRepository.libraryListTabs()
+                                pickerTabs = tabs
+                                pickerMembership = tabs.associate { tab ->
+                                    tab.key to (snapshot[tab.key] == true)
                                 }
-                                pickerPending = false
+                            }.onFailure { error ->
+                                pickerError = error.message ?: getString(Res.string.trakt_lists_load_failed)
                             }
-                            Unit
+                            pickerPending = false
                         }
+                        Unit
+                    }
+                }
+                val toggleSaved = remember(meta) {
+                    {
+                        LibraryRepository.toggleSaved(meta.toLibraryItem(savedAtEpochMs = 0L))
                     }
                 }
                 val movieProgress = watchProgressUiState.byVideoId[meta.id]
@@ -639,6 +639,7 @@ fun MetaDetailsScreen(
                                     onPrimaryPlayClick = onPrimaryPlayClick,
                                     onPrimaryPlayLongClick = onPrimaryPlayLongClick,
                                     onSaveClick = toggleSaved,
+                                    onSaveLongClick = openLibraryListPicker,
                                     showManualPlayOption = showManualPlayOption,
                                     preferredEpisodeSeasonNumber = seriesAction?.seasonNumber,
                                     preferredEpisodeNumber = seriesAction?.episodeNumber,
@@ -946,6 +947,7 @@ private fun ConfiguredMetaSections(
     onPrimaryPlayClick: () -> Unit,
     onPrimaryPlayLongClick: (() -> Unit)?,
     onSaveClick: () -> Unit,
+    onSaveLongClick: (() -> Unit)?,
     showManualPlayOption: Boolean,
     preferredEpisodeSeasonNumber: Int?,
     preferredEpisodeNumber: Int?,
@@ -1010,6 +1012,7 @@ private fun ConfiguredMetaSections(
                     onPlayClick = onPrimaryPlayClick,
                     onPlayLongClick = if (showManualPlayOption) onPrimaryPlayLongClick else null,
                     onSaveClick = onSaveClick,
+                    onSaveLongClick = onSaveLongClick,
                 )
             }
             MetaScreenSectionKey.OVERVIEW -> {

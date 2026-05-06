@@ -1,5 +1,6 @@
 package com.nuvio.app.features.trakt
 
+import com.nuvio.app.features.library.LibrarySourceMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,16 +36,22 @@ enum class WatchProgressSource {
 }
 
 val DEFAULT_WATCH_PROGRESS_SOURCE: WatchProgressSource = WatchProgressSource.TRAKT
+val DEFAULT_LIBRARY_SOURCE_MODE: LibrarySourceMode = LibrarySourceMode.TRAKT
+
+fun librarySourceModeFromStorage(value: String?): LibrarySourceMode =
+    LibrarySourceMode.entries.firstOrNull { it.name == value } ?: DEFAULT_LIBRARY_SOURCE_MODE
 
 data class TraktSettingsUiState(
     val watchProgressSource: WatchProgressSource = DEFAULT_WATCH_PROGRESS_SOURCE,
     val continueWatchingDaysCap: Int = TRAKT_DEFAULT_CONTINUE_WATCHING_DAYS_CAP,
+    val librarySourceMode: LibrarySourceMode = DEFAULT_LIBRARY_SOURCE_MODE,
 )
 
 @Serializable
 private data class StoredTraktSettings(
     val watchProgressSource: String? = null,
     val continueWatchingDaysCap: Int = TRAKT_DEFAULT_CONTINUE_WATCHING_DAYS_CAP,
+    val librarySourceMode: String? = null,
 )
 
 object TraktSettingsRepository {
@@ -87,6 +94,13 @@ object TraktSettingsRepository {
         persist()
     }
 
+    fun setLibrarySourceMode(mode: LibrarySourceMode) {
+        ensureLoaded()
+        if (_uiState.value.librarySourceMode == mode) return
+        _uiState.value = _uiState.value.copy(librarySourceMode = mode)
+        persist()
+    }
+
     private fun loadFromDisk() {
         hasLoaded = true
 
@@ -104,6 +118,7 @@ object TraktSettingsRepository {
             TraktSettingsUiState(
                 watchProgressSource = WatchProgressSource.fromStorage(stored.watchProgressSource),
                 continueWatchingDaysCap = normalizeTraktContinueWatchingDaysCap(stored.continueWatchingDaysCap),
+                librarySourceMode = librarySourceModeFromStorage(stored.librarySourceMode),
             )
         } else {
             TraktSettingsUiState()
@@ -116,6 +131,7 @@ object TraktSettingsRepository {
                 StoredTraktSettings(
                     watchProgressSource = _uiState.value.watchProgressSource.name,
                     continueWatchingDaysCap = _uiState.value.continueWatchingDaysCap,
+                    librarySourceMode = _uiState.value.librarySourceMode.name,
                 ),
             ),
         )
@@ -133,3 +149,18 @@ fun shouldUseTraktProgress(
     isAuthenticated: Boolean,
     source: WatchProgressSource,
 ): Boolean = isAuthenticated && source == WatchProgressSource.TRAKT
+
+fun effectiveLibrarySourceMode(
+    isAuthenticated: Boolean,
+    source: LibrarySourceMode,
+): LibrarySourceMode =
+    if (isAuthenticated && source == LibrarySourceMode.TRAKT) {
+        LibrarySourceMode.TRAKT
+    } else {
+        LibrarySourceMode.LOCAL
+    }
+
+fun shouldUseTraktLibrary(
+    isAuthenticated: Boolean,
+    source: LibrarySourceMode,
+): Boolean = effectiveLibrarySourceMode(isAuthenticated, source) == LibrarySourceMode.TRAKT

@@ -783,6 +783,14 @@
     <string name="settings_trakt_open_login">Open Trakt Login</string>
     <string name="settings_trakt_save_actions_description">Your Save actions can now target Trakt watchlist and personal lists.</string>
     <string name="settings_trakt_sign_in_description">Sign in with Trakt to enable list-based saving and Trakt library mode.</string>
+    <string name="trakt_library_source_title">Library Source</string>
+    <string name="trakt_library_source_subtitle">Choose which library to use for saving and viewing your collection</string>
+    <string name="trakt_library_source_dialog_title">Library Source</string>
+    <string name="trakt_library_source_dialog_subtitle">Choose where to save and manage your library items</string>
+    <string name="trakt_library_source_trakt">Trakt</string>
+    <string name="trakt_library_source_nuvio">Nuvio Library</string>
+    <string name="trakt_library_source_trakt_selected">Trakt library selected</string>
+    <string name="trakt_library_source_nuvio_selected">Nuvio library selected</string>
     <string name="trakt_watch_progress_title">Watch Progress</string>
     <string name="trakt_watch_progress_subtitle">Choose which progress source powers resume and continue watching</string>
     <string name="trakt_watch_progress_dialog_title">Watch Progress</string>

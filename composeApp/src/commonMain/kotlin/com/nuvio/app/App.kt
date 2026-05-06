@@ -152,8 +152,6 @@ import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
 import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.player.PlayerSettingsRepository
-import com.nuvio.app.features.trakt.TraktAuthRepository
-import com.nuvio.app.features.trakt.TraktConnectionMode
 import com.nuvio.app.features.trakt.TraktListTab
 import com.nuvio.app.features.updater.AppUpdaterHost
 import com.nuvio.app.features.updater.rememberAppUpdaterController
@@ -486,10 +484,6 @@ private fun MainAppContent(
             LibraryRepository.ensureLoaded()
             LibraryRepository.uiState
         }.collectAsStateWithLifecycle()
-        val traktAuthUiState by remember {
-            TraktAuthRepository.ensureLoaded()
-            TraktAuthRepository.uiState
-        }.collectAsStateWithLifecycle()
         val authState by AuthRepository.state.collectAsStateWithLifecycle()
         val profileState by ProfileRepository.state.collectAsStateWithLifecycle()
     val playerSettingsUiState by remember {
@@ -508,7 +502,7 @@ private fun MainAppContent(
         NetworkStatusRepository.uiState
     }.collectAsStateWithLifecycle()
     val downloadedProviderLabel = stringResource(Res.string.provider_downloaded)
-    val isTraktConnected = traktAuthUiState.mode == TraktConnectionMode.CONNECTED
+    val isTraktLibrarySource = libraryUiState.sourceMode == LibrarySourceMode.TRAKT
     var initialHomeReady by rememberSaveable { mutableStateOf(false) }
     var offlineLaunchRouteHandled by rememberSaveable { mutableStateOf(false) }
     var networkToastBaselineReady by rememberSaveable { mutableStateOf(false) }
@@ -1664,12 +1658,12 @@ private fun MainAppContent(
                 onToggleLibrary = {
                     selectedPosterForActions?.let { preview ->
                         val libraryItem = preview.toLibraryItem(savedAtEpochMs = 0L)
-                        if (!isTraktConnected) {
+                        if (!isTraktLibrarySource) {
                             LibraryRepository.toggleSaved(libraryItem)
                         } else {
                             pickerItem = libraryItem
                             pickerTitle = preview.name
-                            pickerTabs = LibraryRepository.traktListTabs()
+                            pickerTabs = LibraryRepository.libraryListTabs()
                             pickerMembership = pickerTabs.associate { it.key to false }
                             pickerPending = true
                             pickerError = null
@@ -1677,7 +1671,7 @@ private fun MainAppContent(
                             coroutineScope.launch {
                                 runCatching {
                                     val snapshot = LibraryRepository.getMembershipSnapshot(libraryItem)
-                                    val tabs = LibraryRepository.traktListTabs()
+                                    val tabs = LibraryRepository.libraryListTabs()
                                     pickerTabs = tabs
                                     pickerMembership = tabs.associate { tab ->
                                         tab.key to (snapshot[tab.key] == true)

@@ -136,8 +136,8 @@ object ProfileRepository {
         )
         persist()
         WatchedRepository.onProfileChanged(profileIndex)
-        LibraryRepository.onProfileChanged(profileIndex)
         TraktSettingsRepository.onProfileChanged()
+        LibraryRepository.onProfileChanged(profileIndex)
         WatchProgressRepository.onProfileChanged(profileIndex)
         AddonRepository.onProfileChanged(profileIndex)
         if (com.nuvio.app.core.build.AppFeaturePolicy.pluginsEnabled) {
