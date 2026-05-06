@@ -61,6 +61,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -576,6 +578,32 @@ private fun MainAppContent(
         NativeTabBridge.publishSelectedTab(selectedTab.toNativeNavigationTab())
     }
 
+    DisposableEffect(
+        navController,
+        liquidGlassNativeTabBarSupported,
+        liquidGlassNativeTabBarEnabled,
+        initialHomeReady,
+    ) {
+        fun publishNativeTabVisibilityForCurrentRoute() {
+            val visible = liquidGlassNativeTabBarSupported &&
+                liquidGlassNativeTabBarEnabled &&
+                initialHomeReady &&
+                navController.currentDestination?.hasRoute<TabsRoute>() == true
+            NativeTabBridge.publishTabBarVisible(visible)
+        }
+
+        val destinationChangedListener = NavController.OnDestinationChangedListener { _, _, _ ->
+            publishNativeTabVisibilityForCurrentRoute()
+        }
+
+        publishNativeTabVisibilityForCurrentRoute()
+        navController.addOnDestinationChangedListener(destinationChangedListener)
+        onDispose {
+            navController.removeOnDestinationChangedListener(destinationChangedListener)
+            NativeTabBridge.publishTabBarVisible(false)
+        }
+    }
+
     LaunchedEffect(Unit) {
         NetworkStatusRepository.ensureStarted()
         EpisodeReleaseNotificationsRepository.refreshAsync()
@@ -954,13 +982,6 @@ private fun MainAppContent(
                             selectedTab = AppScreenTab.Home
                             ProfileRepository.selectProfile(profile.profileIndex)
                             com.nuvio.app.core.sync.SyncManager.pullAllForProfile(profile.profileIndex)
-                        }
-
-                        DisposableEffect(useNativeBottomTabs) {
-                            NativeTabBridge.publishTabBarVisible(useNativeBottomTabs)
-                            onDispose {
-                                NativeTabBridge.publishTabBarVisible(false)
-                            }
                         }
 
                         Scaffold(
