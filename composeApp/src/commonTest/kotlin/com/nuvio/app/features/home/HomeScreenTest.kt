@@ -62,6 +62,29 @@ class HomeScreenTest {
     }
 
     @Test
+    fun `build home continue watching items suppresses next up when series has in progress resume`() {
+        val inProgress = progressEntry(
+            videoId = "show:1:4",
+            title = "Show",
+            episodeNumber = 4,
+            episodeTitle = "Current",
+            lastUpdatedEpochMs = 200L,
+        )
+        val nextUp = continueWatchingItem(
+            videoId = "show:1:5",
+            subtitle = "Up Next • S1E5 • Next",
+        )
+
+        val result = buildHomeContinueWatchingItems(
+            visibleEntries = listOf(inProgress),
+            nextUpItemsBySeries = mapOf("show" to (500L to nextUp)),
+        )
+
+        assertEquals(listOf("show:1:4"), result.map(ContinueWatchingItem::videoId))
+        assertEquals("S1E4 • Current", result.single().subtitle)
+    }
+
+    @Test
     fun `Trakt continue watching window filters old progress only when Trakt source is active`() {
         val oldEntry = progressEntry(
             videoId = "old",

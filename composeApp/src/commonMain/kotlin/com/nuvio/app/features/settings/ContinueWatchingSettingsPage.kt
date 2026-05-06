@@ -28,6 +28,8 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_continue_watching_resume_prompt_description
 import nuvio.composeapp.generated.resources.settings_continue_watching_resume_prompt_title
+import nuvio.composeapp.generated.resources.settings_continue_watching_blur_next_up_description
+import nuvio.composeapp.generated.resources.settings_continue_watching_blur_next_up_title
 import nuvio.composeapp.generated.resources.settings_continue_watching_section_card_style
 import nuvio.composeapp.generated.resources.settings_continue_watching_section_on_launch
 import nuvio.composeapp.generated.resources.settings_continue_watching_section_up_next_behavior
@@ -48,6 +50,7 @@ internal fun LazyListScope.continueWatchingSettingsContent(
     isVisible: Boolean,
     style: ContinueWatchingSectionStyle,
     upNextFromFurthestEpisode: Boolean,
+    blurNextUp: Boolean,
     showResumePromptOnLaunch: Boolean,
 ) {
     item {
@@ -90,6 +93,14 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                     checked = upNextFromFurthestEpisode,
                     isTablet = isTablet,
                     onCheckedChange = ContinueWatchingPreferencesRepository::setUpNextFromFurthestEpisode,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_continue_watching_blur_next_up_title),
+                    description = stringResource(Res.string.settings_continue_watching_blur_next_up_description),
+                    checked = blurNextUp,
+                    isTablet = isTablet,
+                    onCheckedChange = ContinueWatchingPreferencesRepository::setBlurNextUp,
                 )
             }
         }

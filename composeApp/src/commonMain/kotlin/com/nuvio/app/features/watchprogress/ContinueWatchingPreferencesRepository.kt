@@ -3,6 +3,7 @@ package com.nuvio.app.features.watchprogress
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -13,6 +14,8 @@ private data class StoredContinueWatchingPreferences(
     val isVisible: Boolean = true,
     val style: ContinueWatchingSectionStyle = ContinueWatchingSectionStyle.Wide,
     val upNextFromFurthestEpisode: Boolean = true,
+    @SerialName("blur_continue_watching_next_up")
+    val blurNextUp: Boolean = false,
     val dismissedNextUpKeys: Set<String> = emptySet(),
     val showResumePromptOnLaunch: Boolean = true,
 )
@@ -46,6 +49,7 @@ object ContinueWatchingPreferencesRepository {
         isVisible: Boolean,
         style: ContinueWatchingSectionStyle,
         upNextFromFurthestEpisode: Boolean,
+        blurNextUp: Boolean = false,
         dismissedNextUpKeys: Set<String>,
     ) {
         ensureLoaded()
@@ -53,6 +57,7 @@ object ContinueWatchingPreferencesRepository {
             isVisible = isVisible,
             style = style,
             upNextFromFurthestEpisode = upNextFromFurthestEpisode,
+            blurNextUp = blurNextUp,
             dismissedNextUpKeys = dismissedNextUpKeys
                 .map(String::trim)
                 .filter(String::isNotBlank)
@@ -79,6 +84,7 @@ object ContinueWatchingPreferencesRepository {
                 isVisible = stored.isVisible,
                 style = stored.style,
                 upNextFromFurthestEpisode = stored.upNextFromFurthestEpisode,
+                blurNextUp = stored.blurNextUp,
                 dismissedNextUpKeys = stored.dismissedNextUpKeys,
                 showResumePromptOnLaunch = stored.showResumePromptOnLaunch,
             )
@@ -102,6 +108,12 @@ object ContinueWatchingPreferencesRepository {
     fun setUpNextFromFurthestEpisode(enabled: Boolean) {
         ensureLoaded()
         _uiState.value = _uiState.value.copy(upNextFromFurthestEpisode = enabled)
+        persist()
+    }
+
+    fun setBlurNextUp(enabled: Boolean) {
+        ensureLoaded()
+        _uiState.value = _uiState.value.copy(blurNextUp = enabled)
         persist()
     }
 
@@ -139,6 +151,7 @@ object ContinueWatchingPreferencesRepository {
                     isVisible = _uiState.value.isVisible,
                     style = _uiState.value.style,
                     upNextFromFurthestEpisode = _uiState.value.upNextFromFurthestEpisode,
+                    blurNextUp = _uiState.value.blurNextUp,
                     dismissedNextUpKeys = _uiState.value.dismissedNextUpKeys,
                     showResumePromptOnLaunch = _uiState.value.showResumePromptOnLaunch,
                 ),

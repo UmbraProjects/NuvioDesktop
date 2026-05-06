@@ -45,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -90,6 +91,7 @@ fun DetailSeriesContent(
     episodeCardStyle: MetaEpisodeCardStyle = MetaEpisodeCardStyle.Horizontal,
     progressByVideoId: Map<String, WatchProgressEntry> = emptyMap(),
     watchedKeys: Set<String> = emptySet(),
+    blurUnwatchedEpisodes: Boolean = false,
     onEpisodeClick: ((MetaVideo) -> Unit)? = null,
     onEpisodeLongPress: ((MetaVideo) -> Unit)? = null,
 ) {
@@ -276,6 +278,7 @@ fun DetailSeriesContent(
                             watchedKeys = watchedKeys,
                             fallbackImage = meta.background ?: meta.poster,
                             progressByVideoId = progressByVideoId,
+                            blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                             preferredEpisodeNumber = preferredEpisodeNumber,
                             onEpisodeClick = onEpisodeClick,
                             onEpisodeLongPress = onEpisodeLongPress,
@@ -295,13 +298,14 @@ fun DetailSeriesContent(
                                     video = episode,
                                     fallbackImage = meta.background ?: meta.poster,
                                     progressEntry = progressByVideoId[episodeVideoId],
-                                    isWatched = progressByVideoId[episodeVideoId]?.isCompleted == true ||
+                                    isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
                                         WatchingState.isEpisodeWatched(
                                             watchedKeys = watchedKeys,
                                             metaType = meta.type,
                                             metaId = meta.id,
                                             episode = episode,
                                         ),
+                                    blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                                     sizing = sizing,
                                     onClick = { onEpisodeClick?.invoke(episode) },
                                     onLongPress = { onEpisodeLongPress?.invoke(episode) },
@@ -553,6 +557,7 @@ private fun EpisodeHorizontalRow(
     watchedKeys: Set<String>,
     fallbackImage: String?,
     progressByVideoId: Map<String, WatchProgressEntry>,
+    blurUnwatchedEpisodes: Boolean,
     preferredEpisodeNumber: Int? = null,
     onEpisodeClick: ((MetaVideo) -> Unit)?,
     onEpisodeLongPress: ((MetaVideo) -> Unit)?,
@@ -597,13 +602,14 @@ private fun EpisodeHorizontalRow(
                 video = episode,
                 fallbackImage = fallbackImage,
                 progressEntry = progressByVideoId[episodeVideoId],
-                isWatched = progressByVideoId[episodeVideoId]?.isCompleted == true ||
+                isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
                     WatchingState.isEpisodeWatched(
                         watchedKeys = watchedKeys,
                         metaType = metaType,
                         metaId = parentMetaId,
                         episode = episode,
                     ),
+                blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                 metrics = rowMetrics,
                 onClick = { onEpisodeClick?.invoke(episode) },
                 onLongPress = { onEpisodeLongPress?.invoke(episode) },
@@ -619,6 +625,7 @@ private fun EpisodeHorizontalCard(
     fallbackImage: String?,
     progressEntry: WatchProgressEntry?,
     isWatched: Boolean,
+    blurUnwatchedEpisodes: Boolean,
     metrics: EpisodeHorizontalCardMetrics,
     onClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
@@ -642,11 +649,14 @@ private fun EpisodeHorizontalCard(
             ),
     ) {
         val imageUrl = video.thumbnail ?: fallbackImage
+        val shouldBlurArtwork = blurUnwatchedEpisodes && !isWatched
         if (imageUrl != null) {
             AsyncImage(
                 model = imageUrl,
                 contentDescription = video.title,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (shouldBlurArtwork) Modifier.blur(18.dp) else Modifier),
                 contentScale = ContentScale.Crop,
             )
         }
@@ -889,6 +899,7 @@ private fun EpisodeListCard(
     fallbackImage: String?,
     progressEntry: WatchProgressEntry?,
     isWatched: Boolean,
+    blurUnwatchedEpisodes: Boolean,
     sizing: SeriesContentSizing,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
@@ -923,11 +934,14 @@ private fun EpisodeListCard(
                     .clip(RoundedCornerShape(topStart = sizing.cardRadius, bottomStart = sizing.cardRadius)),
             ) {
                 val imageUrl = video.thumbnail ?: fallbackImage
+                val shouldBlurArtwork = blurUnwatchedEpisodes && !isWatched
                 if (imageUrl != null) {
                     AsyncImage(
                         model = imageUrl,
                         contentDescription = video.title,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(if (shouldBlurArtwork) Modifier.blur(18.dp) else Modifier),
                         contentScale = ContentScale.Crop,
                     )
                 } else {

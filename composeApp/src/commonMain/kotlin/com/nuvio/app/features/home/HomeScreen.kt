@@ -166,6 +166,9 @@ fun HomeScreen(
             )
         }
     }
+    val completedSeriesContentIds = remember(completedSeriesCandidates) {
+        completedSeriesCandidates.mapTo(mutableSetOf()) { candidate -> candidate.content.id }
+    }
     val visibleContinueWatchingEntries = remember(
         effectiveWatchProgressEntries,
         latestCompletedBySeries,
@@ -181,8 +184,21 @@ fun HomeScreen(
     var nextUpItemsBySeries by remember(activeProfileId) { mutableStateOf<Map<String, Pair<Long, ContinueWatchingItem>>>(emptyMap()) }
 
     val cachedSnapshots = remember(activeProfileId) { ContinueWatchingEnrichmentCache.getSnapshots() }
-    val cachedNextUpItems = remember(cachedSnapshots.first, continueWatchingPreferences.dismissedNextUpKeys) {
+    val cachedNextUpItems = remember(
+        cachedSnapshots.first,
+        continueWatchingPreferences.dismissedNextUpKeys,
+        completedSeriesContentIds,
+        isTraktProgressActive,
+        watchedUiState.isLoaded,
+    ) {
         cachedSnapshots.first.mapNotNull { cached ->
+            if (
+                !isTraktProgressActive &&
+                watchedUiState.isLoaded &&
+                cached.contentId !in completedSeriesContentIds
+            ) {
+                return@mapNotNull null
+            }
             if (nextUpDismissKey(cached.contentId, cached.seedSeason, cached.seedEpisode) in continueWatchingPreferences.dismissedNextUpKeys) {
                 return@mapNotNull null
             }
@@ -431,6 +447,7 @@ fun HomeScreen(
                             HomeContinueWatchingSection(
                                 items = continueWatchingItems,
                                 style = continueWatchingPreferences.style,
+                                blurNextUp = continueWatchingPreferences.blurNextUp,
                                 modifier = Modifier.padding(bottom = 12.dp),
                                 sectionPadding = homeSectionPadding,
                                 layout = continueWatchingLayout,
@@ -454,6 +471,7 @@ fun HomeScreen(
                             HomeContinueWatchingSection(
                                 items = continueWatchingItems,
                                 style = continueWatchingPreferences.style,
+                                blurNextUp = continueWatchingPreferences.blurNextUp,
                                 modifier = Modifier.padding(bottom = 12.dp),
                                 sectionPadding = homeSectionPadding,
                                 layout = continueWatchingLayout,
@@ -496,6 +514,7 @@ fun HomeScreen(
                             HomeContinueWatchingSection(
                                 items = continueWatchingItems,
                                 style = continueWatchingPreferences.style,
+                                blurNextUp = continueWatchingPreferences.blurNextUp,
                                 modifier = Modifier.padding(bottom = 12.dp),
                                 sectionPadding = homeSectionPadding,
                                 layout = continueWatchingLayout,
@@ -584,6 +603,13 @@ internal fun buildHomeContinueWatchingItems(
     cachedInProgressByVideoId: Map<String, ContinueWatchingItem> = emptyMap(),
     nextUpItemsBySeries: Map<String, Pair<Long, ContinueWatchingItem>>,
 ): List<ContinueWatchingItem> {
+    val inProgressSeriesIds = visibleEntries
+        .asSequence()
+        .filter { entry -> entry.parentMetaType.isSeriesTypeForContinueWatching() }
+        .map { entry -> entry.parentMetaId }
+        .filter(String::isNotBlank)
+        .toSet()
+
     return buildList {
         addAll(
             visibleEntries.map { entry ->
@@ -596,7 +622,8 @@ internal fun buildHomeContinueWatchingItems(
             },
         )
         addAll(
-            nextUpItemsBySeries.values.map { (lastUpdatedEpochMs, item) ->
+            nextUpItemsBySeries.values.mapNotNull { (lastUpdatedEpochMs, item) ->
+                if (item.parentMetaId in inProgressSeriesIds) return@mapNotNull null
                 HomeContinueWatchingCandidate(
                     lastUpdatedEpochMs = lastUpdatedEpochMs,
                     item = item,
@@ -610,9 +637,12 @@ internal fun buildHomeContinueWatchingItems(
                 .thenByDescending { it.isProgressEntry },
         )
         .filter { candidate -> candidate.item.shouldDisplayInContinueWatching() }
-        .distinctBy { it.item.videoId }
+        .distinctBy { candidate -> candidate.item.parentMetaId.ifBlank { candidate.item.videoId } }
         .map(HomeContinueWatchingCandidate::item)
 }
+
+private fun String?.isSeriesTypeForContinueWatching(): Boolean =
+    equals("series", ignoreCase = true) || equals("tv", ignoreCase = true)
 
 private data class CompletedSeriesCandidate(
     val content: WatchingContentRef,

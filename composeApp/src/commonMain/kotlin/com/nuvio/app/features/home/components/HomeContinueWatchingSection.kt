@@ -27,6 +27,7 @@ import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -54,6 +55,7 @@ private fun continueWatchingProgressPercent(progressFraction: Float): Int =
 internal fun HomeContinueWatchingSection(
     items: List<ContinueWatchingItem>,
     style: ContinueWatchingSectionStyle,
+    blurNextUp: Boolean = false,
     modifier: Modifier = Modifier,
     sectionPadding: Dp? = null,
     layout: ContinueWatchingLayout? = null,
@@ -66,6 +68,7 @@ internal fun HomeContinueWatchingSection(
         HomeContinueWatchingSectionContent(
             items = items,
             style = style,
+            blurNextUp = blurNextUp,
             modifier = modifier.fillMaxWidth(),
             sectionPadding = sectionPadding,
             layout = layout,
@@ -77,6 +80,7 @@ internal fun HomeContinueWatchingSection(
             HomeContinueWatchingSectionContent(
                 items = items,
                 style = style,
+                blurNextUp = blurNextUp,
                 modifier = Modifier.fillMaxWidth(),
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
                 layout = rememberContinueWatchingLayout(maxWidth.value),
@@ -91,6 +95,7 @@ internal fun HomeContinueWatchingSection(
 private fun HomeContinueWatchingSectionContent(
     items: List<ContinueWatchingItem>,
     style: ContinueWatchingSectionStyle,
+    blurNextUp: Boolean,
     modifier: Modifier,
     sectionPadding: Dp,
     layout: ContinueWatchingLayout,
@@ -110,12 +115,14 @@ private fun HomeContinueWatchingSectionContent(
             ContinueWatchingSectionStyle.Wide -> ContinueWatchingWideCard(
                 item = item,
                 layout = layout,
+                blurNextUp = blurNextUp,
                 onClick = onItemClick?.let { { it(item) } },
                 onLongClick = onItemLongPress?.let { { it(item) } },
             )
             ContinueWatchingSectionStyle.Poster -> ContinueWatchingPosterCard(
                 item = item,
                 layout = layout,
+                blurNextUp = blurNextUp,
                 onClick = onItemClick?.let { { it(item) } },
                 onLongClick = onItemLongPress?.let { { it(item) } },
             )
@@ -273,6 +280,7 @@ private fun PosterCardPreview() {
 private fun ContinueWatchingWideCard(
     item: ContinueWatchingItem,
     layout: ContinueWatchingLayout,
+    blurNextUp: Boolean,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
 ) {
@@ -293,10 +301,16 @@ private fun ContinueWatchingWideCard(
                 onLongClick = onLongClick,
             ),
     ) {
-        val artworkUrl = item.poster ?: item.background ?: item.imageUrl
+        val shouldBlurArtwork = blurNextUp && item.isNextUp
+        val artworkUrl = if (shouldBlurArtwork) {
+            item.episodeThumbnail ?: item.imageUrl ?: item.background ?: item.poster
+        } else {
+            item.poster ?: item.background ?: item.imageUrl
+        }
         ArtworkPanel(
             imageUrl = artworkUrl,
             width = layout.widePosterStripWidth,
+            blurred = shouldBlurArtwork,
             modifier = Modifier.fillMaxHeight(),
         )
         Column(
@@ -384,6 +398,7 @@ private fun ContinueWatchingWideCard(
 private fun ContinueWatchingPosterCard(
     item: ContinueWatchingItem,
     layout: ContinueWatchingLayout,
+    blurNextUp: Boolean,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
 ) {
@@ -404,12 +419,19 @@ private fun ContinueWatchingPosterCard(
                 )
                 .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
         ) {
-            val imageUrl = item.poster ?: item.imageUrl
+            val shouldBlurArtwork = blurNextUp && item.isNextUp
+            val imageUrl = if (shouldBlurArtwork) {
+                item.episodeThumbnail ?: item.imageUrl ?: item.poster
+            } else {
+                item.poster ?: item.imageUrl
+            }
             if (imageUrl != null) {
                 AsyncImage(
                     model = imageUrl,
                     contentDescription = item.title,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(if (shouldBlurArtwork) Modifier.blur(18.dp) else Modifier),
                     contentScale = ContentScale.Crop,
                 )
             }
@@ -489,6 +511,7 @@ private fun ContinueWatchingPosterCard(
 private fun ArtworkPanel(
     imageUrl: String?,
     width: Dp,
+    blurred: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -500,7 +523,9 @@ private fun ArtworkPanel(
             AsyncImage(
                 model = imageUrl,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (blurred) Modifier.blur(18.dp) else Modifier),
                 contentScale = ContentScale.Crop,
             )
         }

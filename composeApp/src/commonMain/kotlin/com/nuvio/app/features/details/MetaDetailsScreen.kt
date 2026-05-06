@@ -690,6 +690,7 @@ fun MetaDetailsScreen(
                                     onTrailerClick = resolveTrailer,
                                     progressByVideoId = watchProgressUiState.byVideoId,
                                     watchedKeys = watchedUiState.watchedKeys,
+                                    blurUnwatchedEpisodes = metaScreenSettingsUiState.blurUnwatchedEpisodes,
                                     onEpisodeClick = onEpisodePlayClick,
                                     onEpisodeLongPress = { video -> selectedEpisodeForActions = video },
                                     onOpenMeta = onOpenMeta,
@@ -970,6 +971,7 @@ private fun ConfiguredMetaSections(
     onTrailerClick: (MetaTrailer) -> Unit,
     progressByVideoId: Map<String, WatchProgressEntry>,
     watchedKeys: Set<String>,
+    blurUnwatchedEpisodes: Boolean,
     onEpisodeClick: (MetaVideo) -> Unit,
     onEpisodeLongPress: (MetaVideo) -> Unit,
     onOpenMeta: ((MetaPreview) -> Unit)?,
@@ -1062,6 +1064,7 @@ private fun ConfiguredMetaSections(
                         episodeCardStyle = settings.episodeCardStyle,
                         progressByVideoId = progressByVideoId,
                         watchedKeys = watchedKeys,
+                        blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                         onEpisodeClick = onEpisodeClick,
                         onEpisodeLongPress = onEpisodeLongPress,
                     )
