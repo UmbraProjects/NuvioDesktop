@@ -56,25 +56,25 @@ private fun ContinueWatchingItem.continueWatchingArtworkUrl(
 ): String? = when {
     isNextUp && useEpisodeThumbnails -> firstNonBlank(
         episodeThumbnail,
-        background,
         poster,
+        background,
         imageUrl,
     )
     isNextUp -> firstNonBlank(
-        background,
         poster,
+        background,
         episodeThumbnail,
         imageUrl,
     )
     useEpisodeThumbnails -> firstNonBlank(
         episodeThumbnail,
-        background,
         poster,
+        background,
         imageUrl,
     )
     else -> firstNonBlank(
-        background,
         poster,
+        background,
         episodeThumbnail,
         imageUrl,
     )
