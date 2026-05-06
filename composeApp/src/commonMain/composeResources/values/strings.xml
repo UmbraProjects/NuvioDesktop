@@ -508,6 +508,8 @@
     <string name="settings_continue_watching_resume_prompt_title">Resume prompt on launch</string>
     <string name="settings_continue_watching_blur_next_up_description">Blur next episode thumbnails in Continue Watching to avoid spoilers.</string>
     <string name="settings_continue_watching_blur_next_up_title">Blur Unwatched in Continue Watching</string>
+    <string name="settings_continue_watching_show_unaired_next_up_description">Include upcoming episodes in Continue Watching before they air.</string>
+    <string name="settings_continue_watching_show_unaired_next_up_title">Show Unaired Next Up Episodes</string>
     <string name="settings_continue_watching_section_card_style">Poster Card Style</string>
     <string name="settings_continue_watching_section_on_launch">ON LAUNCH</string>
     <string name="settings_continue_watching_section_up_next_behavior">UP NEXT BEHAVIOR</string>
@@ -520,6 +522,8 @@
     <string name="settings_continue_watching_style_wide_description">Info-dense horizontal card</string>
     <string name="settings_continue_watching_up_next_description">Show next episode based on the furthest watched episode. Disable for rewatches to use the most recently watched episode instead.</string>
     <string name="settings_continue_watching_up_next_title">Up Next From Furthest Episode</string>
+    <string name="settings_continue_watching_use_episode_thumbnails_description">Use episode thumbnails as default image. When disabled, uses backdrop.</string>
+    <string name="settings_continue_watching_use_episode_thumbnails_title">Use Episode Thumbnails in Continue Watching</string>
     <string name="settings_content_discovery_section_home">HOME</string>
     <string name="settings_content_discovery_section_sources">SOURCES</string>
     <string name="settings_content_discovery_addons_description">Install, remove, refresh, and sort your content sources.</string>

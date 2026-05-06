@@ -40,6 +40,7 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
+import com.nuvio.app.features.watchprogress.isSeriesTypeForContinueWatching
 import com.nuvio.app.features.watchprogress.nextUpDismissKey
 import com.nuvio.app.features.watchprogress.WatchProgressClock
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
@@ -49,6 +50,7 @@ import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import com.nuvio.app.features.watchprogress.toUpNextContinueWatchingItem
 import com.nuvio.app.features.watching.application.WatchingState
 import com.nuvio.app.features.watching.domain.WatchingContentRef
+import com.nuvio.app.features.watching.domain.isReleasedBy
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.home.components.HomeCollectionRowSection
@@ -189,6 +191,7 @@ fun HomeScreen(
         continueWatchingPreferences.dismissedNextUpKeys,
         completedSeriesContentIds,
         isTraktProgressActive,
+        continueWatchingPreferences.showUnairedNextUp,
         watchedUiState.isLoaded,
     ) {
         cachedSnapshots.first.mapNotNull { cached ->
@@ -200,6 +203,9 @@ fun HomeScreen(
                 return@mapNotNull null
             }
             if (nextUpDismissKey(cached.contentId, cached.seedSeason, cached.seedEpisode) in continueWatchingPreferences.dismissedNextUpKeys) {
+                return@mapNotNull null
+            }
+            if (!cached.hasAired && !continueWatchingPreferences.showUnairedNextUp) {
                 return@mapNotNull null
             }
             val item = cached.toContinueWatchingItem() ?: return@mapNotNull null
@@ -280,7 +286,11 @@ fun HomeScreen(
         HomeCatalogSettingsRepository.syncCollections(collections)
     }
 
-    LaunchedEffect(completedSeriesCandidates, metaProviderKey, isTraktProgressActive) {
+    LaunchedEffect(
+        completedSeriesCandidates,
+        metaProviderKey,
+        continueWatchingPreferences.showUnairedNextUp,
+    ) {
         if (completedSeriesCandidates.isEmpty()) {
             nextUpItemsBySeries = emptyMap()
             return@LaunchedEffect
@@ -301,7 +311,7 @@ fun HomeScreen(
                         seasonNumber = completedEntry.seasonNumber,
                         episodeNumber = completedEntry.episodeNumber,
                         todayIsoDate = todayIsoDate,
-                        showUnairedNextUp = isTraktProgressActive,
+                        showUnairedNextUp = continueWatchingPreferences.showUnairedNextUp,
                     ) ?: return@withPermit null
                     val item = completedEntry.toContinueWatchingSeed(meta)
                         .toUpNextContinueWatchingItem(nextEpisode)
@@ -329,6 +339,10 @@ fun HomeScreen(
                 episodeTitle = item.episodeTitle,
                 episodeThumbnail = item.episodeThumbnail,
                 pauseDescription = item.pauseDescription,
+                released = item.released,
+                hasAired = item.released?.let { released ->
+                    isReleasedBy(todayIsoDate = todayIsoDate, releasedDate = released)
+                } ?: true,
                 lastWatched = pair.first,
                 sortTimestamp = pair.first,
                 seedSeason = item.nextUpSeedSeasonNumber,
@@ -447,6 +461,7 @@ fun HomeScreen(
                             HomeContinueWatchingSection(
                                 items = continueWatchingItems,
                                 style = continueWatchingPreferences.style,
+                                useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
                                 blurNextUp = continueWatchingPreferences.blurNextUp,
                                 modifier = Modifier.padding(bottom = 12.dp),
                                 sectionPadding = homeSectionPadding,
@@ -471,6 +486,7 @@ fun HomeScreen(
                             HomeContinueWatchingSection(
                                 items = continueWatchingItems,
                                 style = continueWatchingPreferences.style,
+                                useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
                                 blurNextUp = continueWatchingPreferences.blurNextUp,
                                 modifier = Modifier.padding(bottom = 12.dp),
                                 sectionPadding = homeSectionPadding,
@@ -514,6 +530,7 @@ fun HomeScreen(
                             HomeContinueWatchingSection(
                                 items = continueWatchingItems,
                                 style = continueWatchingPreferences.style,
+                                useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
                                 blurNextUp = continueWatchingPreferences.blurNextUp,
                                 modifier = Modifier.padding(bottom = 12.dp),
                                 sectionPadding = homeSectionPadding,
@@ -641,9 +658,6 @@ internal fun buildHomeContinueWatchingItems(
         .map(HomeContinueWatchingCandidate::item)
 }
 
-private fun String?.isSeriesTypeForContinueWatching(): Boolean =
-    equals("series", ignoreCase = true) || equals("tv", ignoreCase = true)
-
 private data class CompletedSeriesCandidate(
     val content: WatchingContentRef,
     val seasonNumber: Int,
@@ -698,6 +712,7 @@ private fun CachedNextUpItem.toContinueWatchingItem(): ContinueWatchingItem? {
         episodeTitle = episodeTitle,
         episodeThumbnail = episodeThumbnail,
         pauseDescription = pauseDescription,
+        released = released,
         isNextUp = true,
         nextUpSeedSeasonNumber = seedSeason,
         nextUpSeedEpisodeNumber = seedEpisode,
@@ -764,5 +779,6 @@ private fun ContinueWatchingItem.withFallbackMetadata(
         episodeTitle = episodeTitle ?: fallback.episodeTitle,
         episodeThumbnail = episodeThumbnail ?: fallback.episodeThumbnail,
         pauseDescription = pauseDescription ?: fallback.pauseDescription,
+        released = released ?: fallback.released,
     )
 }

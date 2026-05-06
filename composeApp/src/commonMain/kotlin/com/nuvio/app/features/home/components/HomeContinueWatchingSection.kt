@@ -51,10 +51,43 @@ import org.jetbrains.compose.resources.stringResource
 private fun continueWatchingProgressPercent(progressFraction: Float): Int =
     (progressFraction * 100f).roundToInt().coerceIn(1, 99)
 
+private fun ContinueWatchingItem.continueWatchingArtworkUrl(
+    useEpisodeThumbnails: Boolean,
+): String? = when {
+    isNextUp && useEpisodeThumbnails -> firstNonBlank(
+        episodeThumbnail,
+        background,
+        poster,
+        imageUrl,
+    )
+    isNextUp -> firstNonBlank(
+        background,
+        poster,
+        episodeThumbnail,
+        imageUrl,
+    )
+    useEpisodeThumbnails -> firstNonBlank(
+        episodeThumbnail,
+        background,
+        poster,
+        imageUrl,
+    )
+    else -> firstNonBlank(
+        background,
+        poster,
+        episodeThumbnail,
+        imageUrl,
+    )
+}
+
+private fun firstNonBlank(vararg values: String?): String? =
+    values.firstOrNull { value -> !value.isNullOrBlank() }?.trim()
+
 @Composable
 internal fun HomeContinueWatchingSection(
     items: List<ContinueWatchingItem>,
     style: ContinueWatchingSectionStyle,
+    useEpisodeThumbnails: Boolean = true,
     blurNextUp: Boolean = false,
     modifier: Modifier = Modifier,
     sectionPadding: Dp? = null,
@@ -68,6 +101,7 @@ internal fun HomeContinueWatchingSection(
         HomeContinueWatchingSectionContent(
             items = items,
             style = style,
+            useEpisodeThumbnails = useEpisodeThumbnails,
             blurNextUp = blurNextUp,
             modifier = modifier.fillMaxWidth(),
             sectionPadding = sectionPadding,
@@ -80,6 +114,7 @@ internal fun HomeContinueWatchingSection(
             HomeContinueWatchingSectionContent(
                 items = items,
                 style = style,
+                useEpisodeThumbnails = useEpisodeThumbnails,
                 blurNextUp = blurNextUp,
                 modifier = Modifier.fillMaxWidth(),
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
@@ -95,6 +130,7 @@ internal fun HomeContinueWatchingSection(
 private fun HomeContinueWatchingSectionContent(
     items: List<ContinueWatchingItem>,
     style: ContinueWatchingSectionStyle,
+    useEpisodeThumbnails: Boolean,
     blurNextUp: Boolean,
     modifier: Modifier,
     sectionPadding: Dp,
@@ -115,6 +151,7 @@ private fun HomeContinueWatchingSectionContent(
             ContinueWatchingSectionStyle.Wide -> ContinueWatchingWideCard(
                 item = item,
                 layout = layout,
+                useEpisodeThumbnails = useEpisodeThumbnails,
                 blurNextUp = blurNextUp,
                 onClick = onItemClick?.let { { it(item) } },
                 onLongClick = onItemLongPress?.let { { it(item) } },
@@ -122,6 +159,7 @@ private fun HomeContinueWatchingSectionContent(
             ContinueWatchingSectionStyle.Poster -> ContinueWatchingPosterCard(
                 item = item,
                 layout = layout,
+                useEpisodeThumbnails = useEpisodeThumbnails,
                 blurNextUp = blurNextUp,
                 onClick = onItemClick?.let { { it(item) } },
                 onLongClick = onItemLongPress?.let { { it(item) } },
@@ -280,6 +318,7 @@ private fun PosterCardPreview() {
 private fun ContinueWatchingWideCard(
     item: ContinueWatchingItem,
     layout: ContinueWatchingLayout,
+    useEpisodeThumbnails: Boolean,
     blurNextUp: Boolean,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
@@ -301,12 +340,8 @@ private fun ContinueWatchingWideCard(
                 onLongClick = onLongClick,
             ),
     ) {
-        val shouldBlurArtwork = blurNextUp && item.isNextUp
-        val artworkUrl = if (shouldBlurArtwork) {
-            item.episodeThumbnail ?: item.imageUrl ?: item.background ?: item.poster
-        } else {
-            item.poster ?: item.background ?: item.imageUrl
-        }
+        val shouldBlurArtwork = blurNextUp && useEpisodeThumbnails && item.isNextUp
+        val artworkUrl = item.continueWatchingArtworkUrl(useEpisodeThumbnails)
         ArtworkPanel(
             imageUrl = artworkUrl,
             width = layout.widePosterStripWidth,
@@ -398,6 +433,7 @@ private fun ContinueWatchingWideCard(
 private fun ContinueWatchingPosterCard(
     item: ContinueWatchingItem,
     layout: ContinueWatchingLayout,
+    useEpisodeThumbnails: Boolean,
     blurNextUp: Boolean,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
@@ -419,12 +455,8 @@ private fun ContinueWatchingPosterCard(
                 )
                 .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
         ) {
-            val shouldBlurArtwork = blurNextUp && item.isNextUp
-            val imageUrl = if (shouldBlurArtwork) {
-                item.episodeThumbnail ?: item.imageUrl ?: item.poster
-            } else {
-                item.poster ?: item.imageUrl
-            }
+            val shouldBlurArtwork = blurNextUp && useEpisodeThumbnails && item.isNextUp
+            val imageUrl = item.continueWatchingArtworkUrl(useEpisodeThumbnails)
             if (imageUrl != null) {
                 AsyncImage(
                     model = imageUrl,
