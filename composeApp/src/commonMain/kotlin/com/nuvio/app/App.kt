@@ -314,6 +314,7 @@ fun App() {
         LaunchedEffect(Unit) {
             NetworkStatusRepository.ensureStarted()
             ProfileRepository.loadCachedProfiles()
+            AvatarRepository.fetchAvatars()
         }
 
         val authState by AuthRepository.state.collectAsStateWithLifecycle()
