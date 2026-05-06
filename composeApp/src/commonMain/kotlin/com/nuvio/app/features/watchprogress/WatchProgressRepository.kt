@@ -126,7 +126,9 @@ object WatchProgressRepository {
         TraktProgressRepository.ensureLoaded()
         currentProfileId = profileId
 
-        if (shouldUseTraktProgress()) {
+        val useTraktProgress = shouldUseTraktProgress()
+
+        if (useTraktProgress) {
             runCatching { TraktProgressRepository.refreshNow() }
                 .onFailure { e -> log.e(e) { "Failed to pull Trakt progress" } }
             publish()
@@ -419,8 +421,9 @@ object WatchProgressRepository {
 
     private fun publish() {
         val entries = currentEntries()
+        val sortedEntries = entries.sortedByDescending { it.lastUpdatedEpochMs }
         _uiState.value = WatchProgressUiState(
-            entries = entries.sortedByDescending { it.lastUpdatedEpochMs },
+            entries = sortedEntries,
         )
     }
 

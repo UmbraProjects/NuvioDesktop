@@ -127,6 +127,9 @@ fun ContinueWatchingSettingsScreen(
             isVisible = continueWatchingPreferencesUiState.isVisible,
             style = continueWatchingPreferencesUiState.style,
             upNextFromFurthestEpisode = continueWatchingPreferencesUiState.upNextFromFurthestEpisode,
+            useEpisodeThumbnails = continueWatchingPreferencesUiState.useEpisodeThumbnails,
+            showUnairedNextUp = continueWatchingPreferencesUiState.showUnairedNextUp,
+            blurNextUp = continueWatchingPreferencesUiState.blurNextUp,
             showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
         )
     }

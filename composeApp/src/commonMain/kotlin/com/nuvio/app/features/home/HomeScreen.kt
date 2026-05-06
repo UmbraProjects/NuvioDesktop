@@ -40,6 +40,7 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
+import com.nuvio.app.features.watchprogress.isSeriesTypeForContinueWatching
 import com.nuvio.app.features.watchprogress.nextUpDismissKey
 import com.nuvio.app.features.watchprogress.WatchProgressClock
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
@@ -49,6 +50,7 @@ import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import com.nuvio.app.features.watchprogress.toUpNextContinueWatchingItem
 import com.nuvio.app.features.watching.application.WatchingState
 import com.nuvio.app.features.watching.domain.WatchingContentRef
+import com.nuvio.app.features.watching.domain.isReleasedBy
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.home.components.HomeCollectionRowSection
@@ -166,6 +168,9 @@ fun HomeScreen(
             )
         }
     }
+    val completedSeriesContentIds = remember(completedSeriesCandidates) {
+        completedSeriesCandidates.mapTo(mutableSetOf()) { candidate -> candidate.content.id }
+    }
     val visibleContinueWatchingEntries = remember(
         effectiveWatchProgressEntries,
         latestCompletedBySeries,
@@ -181,9 +186,26 @@ fun HomeScreen(
     var nextUpItemsBySeries by remember(activeProfileId) { mutableStateOf<Map<String, Pair<Long, ContinueWatchingItem>>>(emptyMap()) }
 
     val cachedSnapshots = remember(activeProfileId) { ContinueWatchingEnrichmentCache.getSnapshots() }
-    val cachedNextUpItems = remember(cachedSnapshots.first, continueWatchingPreferences.dismissedNextUpKeys) {
+    val cachedNextUpItems = remember(
+        cachedSnapshots.first,
+        continueWatchingPreferences.dismissedNextUpKeys,
+        completedSeriesContentIds,
+        isTraktProgressActive,
+        continueWatchingPreferences.showUnairedNextUp,
+        watchedUiState.isLoaded,
+    ) {
         cachedSnapshots.first.mapNotNull { cached ->
+            if (
+                !isTraktProgressActive &&
+                watchedUiState.isLoaded &&
+                cached.contentId !in completedSeriesContentIds
+            ) {
+                return@mapNotNull null
+            }
             if (nextUpDismissKey(cached.contentId, cached.seedSeason, cached.seedEpisode) in continueWatchingPreferences.dismissedNextUpKeys) {
+                return@mapNotNull null
+            }
+            if (!cached.hasAired && !continueWatchingPreferences.showUnairedNextUp) {
                 return@mapNotNull null
             }
             val item = cached.toContinueWatchingItem() ?: return@mapNotNull null
@@ -264,7 +286,11 @@ fun HomeScreen(
         HomeCatalogSettingsRepository.syncCollections(collections)
     }
 
-    LaunchedEffect(completedSeriesCandidates, metaProviderKey, isTraktProgressActive) {
+    LaunchedEffect(
+        completedSeriesCandidates,
+        metaProviderKey,
+        continueWatchingPreferences.showUnairedNextUp,
+    ) {
         if (completedSeriesCandidates.isEmpty()) {
             nextUpItemsBySeries = emptyMap()
             return@LaunchedEffect
@@ -285,7 +311,7 @@ fun HomeScreen(
                         seasonNumber = completedEntry.seasonNumber,
                         episodeNumber = completedEntry.episodeNumber,
                         todayIsoDate = todayIsoDate,
-                        showUnairedNextUp = isTraktProgressActive,
+                        showUnairedNextUp = continueWatchingPreferences.showUnairedNextUp,
                     ) ?: return@withPermit null
                     val item = completedEntry.toContinueWatchingSeed(meta)
                         .toUpNextContinueWatchingItem(nextEpisode)
@@ -313,6 +339,10 @@ fun HomeScreen(
                 episodeTitle = item.episodeTitle,
                 episodeThumbnail = item.episodeThumbnail,
                 pauseDescription = item.pauseDescription,
+                released = item.released,
+                hasAired = item.released?.let { released ->
+                    isReleasedBy(todayIsoDate = todayIsoDate, releasedDate = released)
+                } ?: true,
                 lastWatched = pair.first,
                 sortTimestamp = pair.first,
                 seedSeason = item.nextUpSeedSeasonNumber,
@@ -431,6 +461,8 @@ fun HomeScreen(
                             HomeContinueWatchingSection(
                                 items = continueWatchingItems,
                                 style = continueWatchingPreferences.style,
+                                useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
+                                blurNextUp = continueWatchingPreferences.blurNextUp,
                                 modifier = Modifier.padding(bottom = 12.dp),
                                 sectionPadding = homeSectionPadding,
                                 layout = continueWatchingLayout,
@@ -454,6 +486,8 @@ fun HomeScreen(
                             HomeContinueWatchingSection(
                                 items = continueWatchingItems,
                                 style = continueWatchingPreferences.style,
+                                useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
+                                blurNextUp = continueWatchingPreferences.blurNextUp,
                                 modifier = Modifier.padding(bottom = 12.dp),
                                 sectionPadding = homeSectionPadding,
                                 layout = continueWatchingLayout,
@@ -496,6 +530,8 @@ fun HomeScreen(
                             HomeContinueWatchingSection(
                                 items = continueWatchingItems,
                                 style = continueWatchingPreferences.style,
+                                useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
+                                blurNextUp = continueWatchingPreferences.blurNextUp,
                                 modifier = Modifier.padding(bottom = 12.dp),
                                 sectionPadding = homeSectionPadding,
                                 layout = continueWatchingLayout,
@@ -584,6 +620,13 @@ internal fun buildHomeContinueWatchingItems(
     cachedInProgressByVideoId: Map<String, ContinueWatchingItem> = emptyMap(),
     nextUpItemsBySeries: Map<String, Pair<Long, ContinueWatchingItem>>,
 ): List<ContinueWatchingItem> {
+    val inProgressSeriesIds = visibleEntries
+        .asSequence()
+        .filter { entry -> entry.parentMetaType.isSeriesTypeForContinueWatching() }
+        .map { entry -> entry.parentMetaId }
+        .filter(String::isNotBlank)
+        .toSet()
+
     return buildList {
         addAll(
             visibleEntries.map { entry ->
@@ -596,7 +639,8 @@ internal fun buildHomeContinueWatchingItems(
             },
         )
         addAll(
-            nextUpItemsBySeries.values.map { (lastUpdatedEpochMs, item) ->
+            nextUpItemsBySeries.values.mapNotNull { (lastUpdatedEpochMs, item) ->
+                if (item.parentMetaId in inProgressSeriesIds) return@mapNotNull null
                 HomeContinueWatchingCandidate(
                     lastUpdatedEpochMs = lastUpdatedEpochMs,
                     item = item,
@@ -610,7 +654,7 @@ internal fun buildHomeContinueWatchingItems(
                 .thenByDescending { it.isProgressEntry },
         )
         .filter { candidate -> candidate.item.shouldDisplayInContinueWatching() }
-        .distinctBy { it.item.videoId }
+        .distinctBy { candidate -> candidate.item.parentMetaId.ifBlank { candidate.item.videoId } }
         .map(HomeContinueWatchingCandidate::item)
 }
 
@@ -668,6 +712,7 @@ private fun CachedNextUpItem.toContinueWatchingItem(): ContinueWatchingItem? {
         episodeTitle = episodeTitle,
         episodeThumbnail = episodeThumbnail,
         pauseDescription = pauseDescription,
+        released = released,
         isNextUp = true,
         nextUpSeedSeasonNumber = seedSeason,
         nextUpSeedEpisodeNumber = seedEpisode,
@@ -734,5 +779,6 @@ private fun ContinueWatchingItem.withFallbackMetadata(
         episodeTitle = episodeTitle ?: fallback.episodeTitle,
         episodeThumbnail = episodeThumbnail ?: fallback.episodeThumbnail,
         pauseDescription = pauseDescription ?: fallback.pauseDescription,
+        released = released ?: fallback.released,
     )
 }

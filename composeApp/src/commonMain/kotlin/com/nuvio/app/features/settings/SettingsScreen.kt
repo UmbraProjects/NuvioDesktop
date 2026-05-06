@@ -376,6 +376,9 @@ private fun MobileSettingsScreen(
                     isVisible = continueWatchingPreferencesUiState.isVisible,
                     style = continueWatchingPreferencesUiState.style,
                     upNextFromFurthestEpisode = continueWatchingPreferencesUiState.upNextFromFurthestEpisode,
+                    useEpisodeThumbnails = continueWatchingPreferencesUiState.useEpisodeThumbnails,
+                    showUnairedNextUp = continueWatchingPreferencesUiState.showUnairedNextUp,
+                    blurNextUp = continueWatchingPreferencesUiState.blurNextUp,
                     showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
                 )
                 SettingsPage.PosterCustomization -> posterCustomizationSettingsContent(
@@ -614,6 +617,9 @@ private fun TabletSettingsScreen(
                         isVisible = continueWatchingPreferencesUiState.isVisible,
                         style = continueWatchingPreferencesUiState.style,
                         upNextFromFurthestEpisode = continueWatchingPreferencesUiState.upNextFromFurthestEpisode,
+                        useEpisodeThumbnails = continueWatchingPreferencesUiState.useEpisodeThumbnails,
+                        showUnairedNextUp = continueWatchingPreferencesUiState.showUnairedNextUp,
+                        blurNextUp = continueWatchingPreferencesUiState.blurNextUp,
                         showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
                     )
                     SettingsPage.PosterCustomization -> posterCustomizationSettingsContent(
