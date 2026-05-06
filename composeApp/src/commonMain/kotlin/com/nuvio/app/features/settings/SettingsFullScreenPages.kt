@@ -45,7 +45,10 @@ fun HomescreenSettingsScreen(
             }
         }
     }
-    val homescreenSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val homescreenSettingsUiState by remember {
+        HomeCatalogSettingsRepository.snapshot()
+        HomeCatalogSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
     val collections by CollectionRepository.collections.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
@@ -74,6 +77,7 @@ fun HomescreenSettingsScreen(
         homescreenSettingsContent(
             isTablet = false,
             heroEnabled = homescreenSettingsUiState.heroEnabled,
+            hideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
             items = homescreenSettingsUiState.items,
         )
     }

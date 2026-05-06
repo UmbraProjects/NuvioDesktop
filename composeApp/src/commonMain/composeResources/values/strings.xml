@@ -475,6 +475,8 @@
     <string name="settings_homescreen_selected_count">%1$d of %2$d selected</string>
     <string name="settings_homescreen_show_hero">Show Hero Section</string>
     <string name="settings_homescreen_show_hero_description">Display hero carousel at top of home.</string>
+    <string name="layout_hide_unreleased">Hide Unreleased Content</string>
+    <string name="layout_hide_unreleased_sub">Hide movies and shows that haven't been released yet.</string>
     <string name="settings_homescreen_summary">%1$d of %2$d catalogs visible • %3$d hero sources selected</string>
     <string name="settings_homescreen_summary_hint">Open a catalog only when you need to rename or reorder it.</string>
     <string name="settings_homescreen_visible">Visible</string>
