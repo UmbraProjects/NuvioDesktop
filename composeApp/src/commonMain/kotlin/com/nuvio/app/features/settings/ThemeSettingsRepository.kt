@@ -1,6 +1,7 @@
 package com.nuvio.app.features.settings
 
 import com.nuvio.app.core.ui.AppTheme
+import com.nuvio.app.core.ui.NativeTabBridge
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,6 +12,9 @@ object ThemeSettingsRepository {
 
     private val _amoledEnabled = MutableStateFlow(false)
     val amoledEnabled: StateFlow<Boolean> = _amoledEnabled.asStateFlow()
+
+    private val _liquidGlassNativeTabBarEnabled = MutableStateFlow(false)
+    val liquidGlassNativeTabBarEnabled: StateFlow<Boolean> = _liquidGlassNativeTabBarEnabled.asStateFlow()
 
     private val _selectedAppLanguage = MutableStateFlow(AppLanguage.ENGLISH)
     val selectedAppLanguage: StateFlow<AppLanguage> = _selectedAppLanguage.asStateFlow()
@@ -30,6 +34,8 @@ object ThemeSettingsRepository {
         hasLoaded = false
         _selectedTheme.value = AppTheme.WHITE
         _amoledEnabled.value = false
+        _liquidGlassNativeTabBarEnabled.value = false
+        NativeTabBridge.publishLiquidGlassEnabled(false)
         _selectedAppLanguage.value = AppLanguage.ENGLISH
     }
 
@@ -47,6 +53,9 @@ object ThemeSettingsRepository {
         }
         _selectedTheme.value = theme
         _amoledEnabled.value = ThemeSettingsStorage.loadAmoledEnabled() ?: false
+        val liquidGlassEnabled = ThemeSettingsStorage.loadLiquidGlassNativeTabBarEnabled() ?: false
+        _liquidGlassNativeTabBarEnabled.value = liquidGlassEnabled
+        NativeTabBridge.publishLiquidGlassEnabled(liquidGlassEnabled)
         val appLanguage = AppLanguage.fromCode(ThemeSettingsStorage.loadSelectedAppLanguage())
         ThemeSettingsStorage.applySelectedAppLanguage(appLanguage.code)
         _selectedAppLanguage.value = appLanguage
@@ -64,6 +73,14 @@ object ThemeSettingsRepository {
         if (_amoledEnabled.value == enabled) return
         _amoledEnabled.value = enabled
         ThemeSettingsStorage.saveAmoledEnabled(enabled)
+    }
+
+    fun setLiquidGlassNativeTabBar(enabled: Boolean) {
+        ensureLoaded()
+        if (_liquidGlassNativeTabBarEnabled.value == enabled) return
+        _liquidGlassNativeTabBarEnabled.value = enabled
+        ThemeSettingsStorage.saveLiquidGlassNativeTabBarEnabled(enabled)
+        NativeTabBridge.publishLiquidGlassEnabled(enabled)
     }
 
     fun setAppLanguage(language: AppLanguage) {
