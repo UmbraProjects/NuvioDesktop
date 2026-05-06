@@ -29,6 +29,10 @@ import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeSkeletonHero
 import com.nuvio.app.features.home.components.HomeSkeletonRow
 import com.nuvio.app.features.trakt.TraktAuthRepository
+import com.nuvio.app.features.trakt.TRAKT_CONTINUE_WATCHING_DAYS_CAP_ALL
+import com.nuvio.app.features.trakt.TraktSettingsRepository
+import com.nuvio.app.features.trakt.normalizeTraktContinueWatchingDaysCap
+import com.nuvio.app.features.trakt.shouldUseTraktProgress
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watchprogress.CachedInProgressItem
 import com.nuvio.app.features.watchprogress.CachedNextUpItem
@@ -87,6 +91,10 @@ fun HomeScreen(
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
     val watchProgressUiState by WatchProgressRepository.uiState.collectAsStateWithLifecycle()
     val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
+    val traktSettingsUiState by remember {
+        TraktSettingsRepository.ensureLoaded()
+        TraktSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
     val isTraktAuthenticated by remember {
         TraktAuthRepository.ensureLoaded()
         TraktAuthRepository.isAuthenticated
@@ -114,17 +122,31 @@ fun HomeScreen(
         }
     }
 
-    val effectiveWatchProgressEntries = remember(watchProgressUiState.entries, isTraktAuthenticated) {
-        if (!isTraktAuthenticated) {
-            watchProgressUiState.entries
-        } else {
-            val cutoffMs = WatchProgressClock.nowEpochMs() - (TRAKT_CONTINUE_WATCHING_DAYS_CAP_DEFAULT.toLong() * 24L * 60L * 60L * 1000L)
-            watchProgressUiState.entries.filter { entry -> entry.lastUpdatedEpochMs >= cutoffMs }
-        }
+    val isTraktProgressActive = remember(
+        isTraktAuthenticated,
+        traktSettingsUiState.watchProgressSource,
+    ) {
+        shouldUseTraktProgress(
+            isAuthenticated = isTraktAuthenticated,
+            source = traktSettingsUiState.watchProgressSource,
+        )
     }
 
-    val effectiveWatchedItems = remember(watchedUiState.items, isTraktAuthenticated) {
-        if (isTraktAuthenticated) emptyList() else watchedUiState.items
+    val effectiveWatchProgressEntries = remember(
+        watchProgressUiState.entries,
+        isTraktProgressActive,
+        traktSettingsUiState.continueWatchingDaysCap,
+    ) {
+        filterEntriesForTraktContinueWatchingWindow(
+            entries = watchProgressUiState.entries,
+            isTraktProgressActive = isTraktProgressActive,
+            daysCap = traktSettingsUiState.continueWatchingDaysCap,
+            nowEpochMs = WatchProgressClock.nowEpochMs(),
+        )
+    }
+
+    val effectiveWatchedItems = remember(watchedUiState.items, isTraktProgressActive) {
+        if (isTraktProgressActive) emptyList() else watchedUiState.items
     }
 
     val latestCompletedBySeries = remember(effectiveWatchProgressEntries, effectiveWatchedItems, continueWatchingPreferences.upNextFromFurthestEpisode) {
@@ -242,7 +264,7 @@ fun HomeScreen(
         HomeCatalogSettingsRepository.syncCollections(collections)
     }
 
-    LaunchedEffect(completedSeriesCandidates, metaProviderKey) {
+    LaunchedEffect(completedSeriesCandidates, metaProviderKey, isTraktProgressActive) {
         if (completedSeriesCandidates.isEmpty()) {
             nextUpItemsBySeries = emptyMap()
             return@LaunchedEffect
@@ -263,7 +285,7 @@ fun HomeScreen(
                         seasonNumber = completedEntry.seasonNumber,
                         episodeNumber = completedEntry.episodeNumber,
                         todayIsoDate = todayIsoDate,
-                        showUnairedNextUp = isTraktAuthenticated,
+                        showUnairedNextUp = isTraktProgressActive,
                     ) ?: return@withPermit null
                     val item = completedEntry.toContinueWatchingSeed(meta)
                         .toUpNextContinueWatchingItem(nextEpisode)
@@ -525,7 +547,21 @@ fun HomeScreen(
 }
 
 private const val HOME_CATALOG_PREVIEW_LIMIT = 18
-private const val TRAKT_CONTINUE_WATCHING_DAYS_CAP_DEFAULT = 60
+private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L
+
+internal fun filterEntriesForTraktContinueWatchingWindow(
+    entries: List<WatchProgressEntry>,
+    isTraktProgressActive: Boolean,
+    daysCap: Int,
+    nowEpochMs: Long,
+): List<WatchProgressEntry> {
+    if (!isTraktProgressActive) return entries
+    val normalizedDaysCap = normalizeTraktContinueWatchingDaysCap(daysCap)
+    if (normalizedDaysCap == TRAKT_CONTINUE_WATCHING_DAYS_CAP_ALL) return entries
+
+    val cutoffMs = nowEpochMs - (normalizedDaysCap.toLong() * MILLIS_PER_DAY)
+    return entries.filter { entry -> entry.lastUpdatedEpochMs >= cutoffMs }
+}
 
 private fun heroMobileBelowSectionHeightHint(
     maxWidthDp: Float,
