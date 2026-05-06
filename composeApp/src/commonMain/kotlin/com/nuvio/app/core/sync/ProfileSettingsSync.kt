@@ -152,6 +152,7 @@ object ProfileSettingsSync {
         val signatureFlows = listOf(
             ThemeSettingsRepository.selectedTheme.map { "theme" },
             ThemeSettingsRepository.amoledEnabled.map { "amoled" },
+            ThemeSettingsRepository.liquidGlassNativeTabBarEnabled.map { "liquid_glass_tab_bar" },
             PosterCardStyleRepository.uiState.map { "poster_card_style" },
             PlayerSettingsRepository.uiState.map { "player" },
             TmdbSettingsRepository.uiState.map { "tmdb" },
@@ -265,6 +266,7 @@ object ProfileSettingsSync {
     private fun currentObservedStateSignature(): String = listOf(
         "theme=${ThemeSettingsRepository.selectedTheme.value.name}",
         "amoled=${ThemeSettingsRepository.amoledEnabled.value}",
+        "liquid_glass_tab_bar=${ThemeSettingsRepository.liquidGlassNativeTabBarEnabled.value}",
         "poster_card_style=${PosterCardStyleRepository.uiState.value}",
         "player=${PlayerSettingsRepository.uiState.value}",
         "tmdb=${TmdbSettingsRepository.uiState.value}",
