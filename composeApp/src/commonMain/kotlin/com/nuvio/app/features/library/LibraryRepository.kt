@@ -13,6 +13,11 @@ import com.nuvio.app.features.trakt.effectiveLibrarySourceMode as resolveEffecti
 import com.nuvio.app.features.trakt.shouldUseTraktLibrary
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
+import kotlinx.coroutines.runBlocking
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.library_local_tab_title
+import nuvio.composeapp.generated.resources.library_other
+import org.jetbrains.compose.resources.getString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -405,12 +410,11 @@ object LibraryRepository {
 }
 
 internal const val LOCAL_LIBRARY_LIST_KEY = "local"
-internal const val LOCAL_LIBRARY_LIST_TITLE = "Nuvio Library"
 
 internal fun localLibraryListTab(): TraktListTab =
     TraktListTab(
         key = LOCAL_LIBRARY_LIST_KEY,
-        title = LOCAL_LIBRARY_LIST_TITLE,
+        title = runBlocking { getString(Res.string.library_local_tab_title) },
         type = TraktListType.WATCHLIST,
     )
 
@@ -461,7 +465,7 @@ private fun LibraryItem.toSyncItem(): LibrarySyncItem = LibrarySyncItem(
 
 internal fun String.toLibraryDisplayTitle(): String {
     val normalized = trim()
-    if (normalized.isBlank()) return "Other"
+    if (normalized.isBlank()) return runBlocking { getString(Res.string.library_other) }
 
     return normalized
         .split('-', '_', ' ')
@@ -469,5 +473,5 @@ internal fun String.toLibraryDisplayTitle(): String {
         .joinToString(" ") { token ->
             token.lowercase().replaceFirstChar { char -> char.uppercase() }
         }
-        .ifBlank { "Other" }
+        .ifBlank { runBlocking { getString(Res.string.library_other) } }
 }

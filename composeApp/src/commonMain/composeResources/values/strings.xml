@@ -1454,4 +1454,8 @@
     <string name="submit_intro_button_submit">Submit</string>
     <string name="submit_intro_capture_button">Capture</string>
     <string name="settings_playback_introdb_invalid_key">Invalid API Key or connection failed</string>
+    <string name="network_connection_issue">Connection issue</string>
+    <string name="network_please_check_connection">Please check your connection and try again.</string>
+    <string name="library_local_tab_title">Nuvio Library</string>
+    <string name="streams_plugin_repository_fallback">Plugin repository</string>
 </resources>

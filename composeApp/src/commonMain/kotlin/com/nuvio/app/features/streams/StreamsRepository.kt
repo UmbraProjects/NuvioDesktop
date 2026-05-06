@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.runBlocking
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import kotlinx.coroutines.launch
@@ -682,6 +683,8 @@ private fun String.fallbackRepositoryLabel(): String {
     val withoutManifest = withoutQuery.removeSuffix("/manifest.json")
     val host = withoutManifest.substringAfter("://", withoutManifest).substringBefore('/')
     return host.ifBlank {
-        withoutManifest.substringAfterLast('/').ifBlank { "Plugin repository" }
+        withoutManifest.substringAfterLast('/').ifBlank {
+            runBlocking { getString(Res.string.streams_plugin_repository_fallback) }
+        }
     }
 }

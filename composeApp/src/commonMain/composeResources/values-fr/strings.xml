@@ -1400,4 +1400,8 @@
     <string name="settings_search_results_section">RÉSULTATS</string>
     <string name="streams_open_external_player">Ouvrir dans un lecteur externe</string>
     <string name="streams_open_internal_player">Ouvrir dans le lecteur interne</string>
+    <string name="network_connection_issue">Problème de connexion</string>
+    <string name="network_please_check_connection">Vérifie ta connexion et réessaie.</string>
+    <string name="library_local_tab_title">Bibliothèque Nuvio</string>
+    <string name="streams_plugin_repository_fallback">Dépôt de plugin</string>
 </resources>
