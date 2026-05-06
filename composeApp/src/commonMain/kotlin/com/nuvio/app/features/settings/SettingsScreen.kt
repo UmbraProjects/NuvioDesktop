@@ -135,6 +135,7 @@ fun SettingsScreen(
             }
         }
         val homescreenSettingsUiState by remember {
+            HomeCatalogSettingsRepository.snapshot()
             HomeCatalogSettingsRepository.uiState
         }.collectAsStateWithLifecycle()
         val metaScreenSettingsUiState by remember {
@@ -199,6 +200,7 @@ fun SettingsScreen(
                 traktCommentsEnabled = traktCommentsEnabled,
                 traktSettingsUiState = traktSettingsUiState,
                 homescreenHeroEnabled = homescreenSettingsUiState.heroEnabled,
+                homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                 homescreenItems = homescreenSettingsUiState.items,
                 metaScreenSettingsUiState = metaScreenSettingsUiState,
                 continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
@@ -240,6 +242,7 @@ fun SettingsScreen(
                 traktCommentsEnabled = traktCommentsEnabled,
                 traktSettingsUiState = traktSettingsUiState,
                 homescreenHeroEnabled = homescreenSettingsUiState.heroEnabled,
+                homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                 homescreenItems = homescreenSettingsUiState.items,
                 metaScreenSettingsUiState = metaScreenSettingsUiState,
                 continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
@@ -291,6 +294,7 @@ private fun MobileSettingsScreen(
     traktCommentsEnabled: Boolean,
     traktSettingsUiState: TraktSettingsUiState,
     homescreenHeroEnabled: Boolean,
+    homescreenHideUnreleasedContent: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
@@ -399,6 +403,7 @@ private fun MobileSettingsScreen(
                 SettingsPage.Homescreen -> homescreenSettingsContent(
                     isTablet = false,
                     heroEnabled = homescreenHeroEnabled,
+                    hideUnreleasedContent = homescreenHideUnreleasedContent,
                     items = homescreenItems,
                 )
                 SettingsPage.MetaScreen -> metaScreenSettingsContent(
@@ -461,6 +466,7 @@ private fun TabletSettingsScreen(
     traktCommentsEnabled: Boolean,
     traktSettingsUiState: TraktSettingsUiState,
     homescreenHeroEnabled: Boolean,
+    homescreenHideUnreleasedContent: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
@@ -640,6 +646,7 @@ private fun TabletSettingsScreen(
                     SettingsPage.Homescreen -> homescreenSettingsContent(
                         isTablet = true,
                         heroEnabled = homescreenHeroEnabled,
+                        hideUnreleasedContent = homescreenHideUnreleasedContent,
                         items = homescreenItems,
                     )
                     SettingsPage.MetaScreen -> metaScreenSettingsContent(
