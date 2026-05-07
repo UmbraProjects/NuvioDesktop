@@ -61,6 +61,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -133,7 +135,7 @@ import com.nuvio.app.features.profiles.ProfileEditScreen
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.profiles.ProfileSelectionScreen
 import com.nuvio.app.features.profiles.ProfileSwitcherTab
-import com.nuvio.app.features.profiles.avatarStorageUrl
+import com.nuvio.app.features.profiles.profileAvatarImageUrl
 import com.nuvio.app.features.search.SearchScreen
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.features.settings.HomescreenSettingsScreen
@@ -329,6 +331,7 @@ fun App() {
             profileState.activeProfile?.name,
             profileState.activeProfile?.avatarColorHex,
             profileState.activeProfile?.avatarId,
+            profileState.activeProfile?.avatarUrl,
             profileAvatars,
         ) {
             val activeProfile = profileState.activeProfile
@@ -338,10 +341,7 @@ fun App() {
             NativeTabBridge.publishProfileTabIcon(
                 name = activeProfile?.name,
                 avatarColorHex = activeProfile?.avatarColorHex,
-                avatarImageUrl = avatarItem
-                    ?.storagePath
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let(::avatarStorageUrl),
+                avatarImageUrl = activeProfile?.let { profileAvatarImageUrl(it, avatarItem) },
                 avatarBackgroundColorHex = avatarItem?.bgColor,
             )
         }
@@ -574,6 +574,32 @@ private fun MainAppContent(
 
     LaunchedEffect(selectedTab) {
         NativeTabBridge.publishSelectedTab(selectedTab.toNativeNavigationTab())
+    }
+
+    DisposableEffect(
+        navController,
+        liquidGlassNativeTabBarSupported,
+        liquidGlassNativeTabBarEnabled,
+        initialHomeReady,
+    ) {
+        fun publishNativeTabVisibilityForCurrentRoute() {
+            val visible = liquidGlassNativeTabBarSupported &&
+                liquidGlassNativeTabBarEnabled &&
+                initialHomeReady &&
+                navController.currentDestination?.hasRoute<TabsRoute>() == true
+            NativeTabBridge.publishTabBarVisible(visible)
+        }
+
+        val destinationChangedListener = NavController.OnDestinationChangedListener { _, _, _ ->
+            publishNativeTabVisibilityForCurrentRoute()
+        }
+
+        publishNativeTabVisibilityForCurrentRoute()
+        navController.addOnDestinationChangedListener(destinationChangedListener)
+        onDispose {
+            navController.removeOnDestinationChangedListener(destinationChangedListener)
+            NativeTabBridge.publishTabBarVisible(false)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -954,13 +980,6 @@ private fun MainAppContent(
                             selectedTab = AppScreenTab.Home
                             ProfileRepository.selectProfile(profile.profileIndex)
                             com.nuvio.app.core.sync.SyncManager.pullAllForProfile(profile.profileIndex)
-                        }
-
-                        DisposableEffect(useNativeBottomTabs) {
-                            NativeTabBridge.publishTabBarVisible(useNativeBottomTabs)
-                            onDispose {
-                                NativeTabBridge.publishTabBarVisible(false)
-                            }
                         }
 
                         Scaffold(

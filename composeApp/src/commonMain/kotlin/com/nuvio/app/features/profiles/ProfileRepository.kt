@@ -179,6 +179,7 @@ object ProfileRepository {
         name: String,
         avatarColorHex: String,
         avatarId: String? = null,
+        avatarUrl: String? = null,
         usesPrimaryAddons: Boolean = false,
     ) {
         val existing = _state.value.profiles
@@ -192,6 +193,7 @@ object ProfileRepository {
                 usesPrimaryAddons = profile.usesPrimaryAddons,
                 usesPrimaryPlugins = profile.usesPrimaryPlugins,
                 avatarId = profile.avatarId,
+                avatarUrl = profile.avatarUrl,
             )
         } + ProfilePushPayload(
             profileIndex = nextIndex,
@@ -199,6 +201,7 @@ object ProfileRepository {
             avatarColorHex = avatarColorHex,
             usesPrimaryAddons = usesPrimaryAddons,
             avatarId = avatarId,
+            avatarUrl = avatarUrl,
         )
 
         pushProfiles(allPayloads)
@@ -209,6 +212,7 @@ object ProfileRepository {
         name: String,
         avatarColorHex: String,
         avatarId: String? = null,
+        avatarUrl: String? = null,
         usesPrimaryAddons: Boolean = false,
     ) {
         val allPayloads = _state.value.profiles.map { profile ->
@@ -218,7 +222,8 @@ object ProfileRepository {
                     name = name,
                     avatarColorHex = avatarColorHex,
                     usesPrimaryAddons = usesPrimaryAddons,
-                    avatarId = avatarId ?: profile.avatarId,
+                    avatarId = avatarId,
+                    avatarUrl = avatarUrl,
                 )
             } else {
                 ProfilePushPayload(
@@ -228,6 +233,7 @@ object ProfileRepository {
                     usesPrimaryAddons = profile.usesPrimaryAddons,
                     usesPrimaryPlugins = profile.usesPrimaryPlugins,
                     avatarId = profile.avatarId,
+                    avatarUrl = profile.avatarUrl,
                 )
             }
         }
@@ -357,6 +363,7 @@ object ProfileRepository {
                 name = p.name,
                 avatarColorHex = p.avatarColorHex,
                 avatarId = p.avatarId,
+                avatarUrl = p.avatarUrl,
                 usesPrimaryAddons = p.usesPrimaryAddons,
                 usesPrimaryPlugins = p.usesPrimaryPlugins,
             )

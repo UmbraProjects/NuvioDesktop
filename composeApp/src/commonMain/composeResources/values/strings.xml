@@ -1007,9 +1007,14 @@
     <string name="pin_locked_try_again">Locked. Try again in %1$ds</string>
     <string name="profile_avatar_options_pending">Avatar options will appear here when the catalog loads.</string>
     <string name="profile_avatar_selected">Avatar: %1$s</string>
+    <string name="profile_avatar_url_invalid">Enter a valid http:// or https:// image URL.</string>
     <string name="profile_choose_avatar">Choose an avatar</string>
     <string name="profile_choose_avatar_below">Choose an avatar below.</string>
     <string name="profile_create_profile">Create Profile</string>
+    <string name="profile_custom_avatar_selected">Custom avatar URL selected.</string>
+    <string name="profile_custom_avatar_url">Custom avatar URL</string>
+    <string name="profile_custom_avatar_url_description">Paste an image link, or leave this empty to use the built-in avatar catalog.</string>
+    <string name="profile_custom_avatar_url_placeholder">https://example.com/avatar.png</string>
     <string name="profile_delete_confirm_message">All data for &quot;%1$s&quot; will be permanently deleted.</string>
     <string name="profile_delete_title">Delete Profile</string>
     <string name="profile_edit_add_title">Add Profile</string>
