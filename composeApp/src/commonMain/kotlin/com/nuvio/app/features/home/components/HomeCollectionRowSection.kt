@@ -186,7 +186,7 @@ private fun CollectionFolderCard(
 }
 
 private fun collectionFolderCardImageUrl(folder: CollectionFolder): String? {
-    return if (folder.focusGifEnabled) {
+    return if (folder.mobileFocusGifEnabled) {
         firstNonBlank(folder.focusGifUrl, folder.coverImageUrl)
     } else {
         firstNonBlank(folder.coverImageUrl)
@@ -202,5 +202,5 @@ private fun isAnimatedCollectionFolderImage(
     imageUrl: String,
 ): Boolean {
     val gifUrl = firstNonBlank(folder.focusGifUrl) ?: return false
-    return folder.focusGifEnabled && imageUrl == gifUrl
+    return folder.mobileFocusGifEnabled && imageUrl == gifUrl
 }

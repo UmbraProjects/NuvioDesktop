@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import com.nuvio.app.features.home.PosterShape
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 enum class FolderViewMode {
     TABBED_GRID,
@@ -168,6 +169,8 @@ data class CollectionFolder(
     val coverImageUrl: String? = null,
     val focusGifUrl: String? = null,
     val focusGifEnabled: Boolean = true,
+    @Transient
+    val mobileFocusGifEnabled: Boolean = true,
     val coverEmoji: String? = null,
     val tileShape: String = "poster",
     val hideTitle: Boolean = false,
