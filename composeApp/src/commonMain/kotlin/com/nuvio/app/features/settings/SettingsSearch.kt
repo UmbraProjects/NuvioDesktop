@@ -279,16 +279,6 @@ internal fun settingsSearchEntries(
         category = accountCategory,
         icon = Icons.Rounded.AccountCircle,
     )
-    addRow(
-        page = SettingsPage.Account,
-        key = "account-delete",
-        title = stringResource(Res.string.settings_account_delete_account),
-        description = stringResource(Res.string.settings_account_delete_account_description),
-        pageLabel = accountPage,
-        section = accountPage,
-        category = accountCategory,
-        icon = Icons.Rounded.AccountCircle,
-    )
 
     addRow(
         page = SettingsPage.Appearance,
