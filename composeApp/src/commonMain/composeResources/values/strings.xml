@@ -1114,6 +1114,7 @@
     <string name="downloads_live_failed">Download failed</string>
     <string name="downloads_live_paused">Paused %1$s</string>
     <string name="library_remove_confirm">Remove</string>
+    <string name="library_remove_from_list_message">Remove %1$s from %2$s?</string>
     <string name="library_remove_message">Remove %1$s from your library?</string>
     <string name="library_remove_title">Remove from Library?</string>
     <string name="media_movie">Movie</string>
