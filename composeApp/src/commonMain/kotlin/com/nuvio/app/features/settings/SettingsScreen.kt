@@ -97,6 +97,7 @@ fun SettingsScreen(
     onDownloadsClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
+    onLicensesAttributionsClick: () -> Unit = {},
     onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsClick: () -> Unit = {},
 ) {
@@ -243,6 +244,7 @@ fun SettingsScreen(
                 onSwitchProfile = onSwitchProfile,
                 onDownloadsClick = onDownloadsClick,
                 onSupportersContributorsClick = onSupportersContributorsClick,
+                onLicensesAttributionsClick = onLicensesAttributionsClick,
                 onCheckForUpdatesClick = onCheckForUpdatesClick,
                 onCollectionsClick = onCollectionsClick,
             )
@@ -294,6 +296,7 @@ fun SettingsScreen(
                 onDownloadsClick = onDownloadsClick,
                 onAccountClick = onAccountClick,
                 onSupportersContributorsClick = onSupportersContributorsClick,
+                onLicensesAttributionsClick = onLicensesAttributionsClick,
                 onCheckForUpdatesClick = onCheckForUpdatesClick,
                 onCollectionsClick = onCollectionsClick,
             )
@@ -349,6 +352,7 @@ private fun MobileSettingsScreen(
     onDownloadsClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
+    onLicensesAttributionsClick: () -> Unit = {},
     onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsClick: () -> Unit = {},
 ) {
@@ -385,6 +389,7 @@ private fun MobileSettingsScreen(
                 is SettingsSearchTarget.Page -> when (target.page) {
                     SettingsPage.Account -> onAccountClick()
                     SettingsPage.SupportersContributors -> onSupportersContributorsClick()
+                    SettingsPage.LicensesAttributions -> onLicensesAttributionsClick()
                     SettingsPage.ContinueWatching -> onContinueWatchingClick()
                     SettingsPage.Addons -> onAddonsClick()
                     SettingsPage.Plugins -> {
@@ -443,6 +448,7 @@ private fun MobileSettingsScreen(
                             onIntegrationsClick = { onPageChange(SettingsPage.Integrations) },
                             onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
                             onSupportersContributorsClick = onSupportersContributorsClick,
+                            onLicensesAttributionsClick = onLicensesAttributionsClick,
                             onCheckForUpdatesClick = onCheckForUpdatesClick,
                             onDownloadsClick = onDownloadsClick,
                             onAccountClick = onAccountClick,
@@ -454,6 +460,9 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                 )
                 SettingsPage.SupportersContributors -> supportersContributorsContent(
+                    isTablet = false,
+                )
+                SettingsPage.LicensesAttributions -> licensesAttributionsContent(
                     isTablet = false,
                 )
                 SettingsPage.Playback -> playbackSettingsContent(
@@ -635,6 +644,7 @@ private fun TabletSettingsScreen(
     onSwitchProfile: (() -> Unit)? = null,
     onDownloadsClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
+    onLicensesAttributionsClick: () -> Unit = {},
     onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsClick: () -> Unit = {},
 ) {
@@ -792,6 +802,7 @@ private fun TabletSettingsScreen(
                                 onIntegrationsClick = { openInlinePage(SettingsPage.Integrations) },
                                 onTraktClick = { openInlinePage(SettingsPage.TraktAuthentication) },
                                 onSupportersContributorsClick = { openInlinePage(SettingsPage.SupportersContributors) },
+                                onLicensesAttributionsClick = { openInlinePage(SettingsPage.LicensesAttributions) },
                                 onCheckForUpdatesClick = onCheckForUpdatesClick,
                                 onDownloadsClick = onDownloadsClick,
                                 onAccountClick = { openInlinePage(SettingsPage.Account) },
@@ -806,6 +817,9 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                     )
                     SettingsPage.SupportersContributors -> supportersContributorsContent(
+                        isTablet = true,
+                    )
+                    SettingsPage.LicensesAttributions -> licensesAttributionsContent(
                         isTablet = true,
                     )
                     SettingsPage.Playback -> playbackSettingsContent(

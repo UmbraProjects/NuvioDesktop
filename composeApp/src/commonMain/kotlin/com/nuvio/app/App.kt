@@ -145,6 +145,7 @@ import com.nuvio.app.features.settings.AddonsSettingsScreen
 import com.nuvio.app.features.settings.PluginsSettingsScreen
 import com.nuvio.app.features.settings.AccountSettingsScreen
 import com.nuvio.app.features.settings.SupportersContributorsSettingsScreen
+import com.nuvio.app.features.settings.LicensesAttributionsSettingsScreen
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.collection.CollectionManagementScreen
 import com.nuvio.app.features.collection.CollectionEditorScreen
@@ -236,6 +237,9 @@ object AccountSettingsRoute
 
 @Serializable
 object SupportersContributorsSettingsRoute
+
+@Serializable
+object LicensesAttributionsSettingsRoute
 
 @Serializable
 object CollectionsRoute
@@ -1065,6 +1069,9 @@ private fun MainAppContent(
                                         onSupportersContributorsSettingsClick = {
                                             navController.navigate(SupportersContributorsSettingsRoute)
                                         },
+                                        onLicensesAttributionsSettingsClick = {
+                                            navController.navigate(LicensesAttributionsSettingsRoute)
+                                        },
                                         onCheckForUpdatesClick = if (AppFeaturePolicy.inAppUpdaterEnabled) {
                                             {
                                                 appUpdaterController.checkForUpdates(
@@ -1698,6 +1705,15 @@ private fun MainAppContent(
                         onBack = onBack,
                     )
                 }
+                composable<LicensesAttributionsSettingsRoute> { backStackEntry ->
+                    val onBack = rememberGuardedPopBackStack(
+                        navController = navController,
+                        backStackEntry = backStackEntry,
+                    )
+                    LicensesAttributionsSettingsScreen(
+                        onBack = onBack,
+                    )
+                }
                 composable<CollectionsRoute> { backStackEntry ->
                     val onBack = rememberGuardedPopBackStack(
                         navController = navController,
@@ -1972,6 +1988,7 @@ private fun AppTabHost(
     onPluginsSettingsClick: () -> Unit = {},
     onAccountSettingsClick: () -> Unit = {},
     onSupportersContributorsSettingsClick: () -> Unit = {},
+    onLicensesAttributionsSettingsClick: () -> Unit = {},
     onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsSettingsClick: () -> Unit = {},
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
@@ -2024,6 +2041,7 @@ private fun AppTabHost(
                         onPluginsClick = onPluginsSettingsClick,
                         onAccountClick = onAccountSettingsClick,
                         onSupportersContributorsClick = onSupportersContributorsSettingsClick,
+                        onLicensesAttributionsClick = onLicensesAttributionsSettingsClick,
                         onCheckForUpdatesClick = onCheckForUpdatesClick,
                         onCollectionsClick = onCollectionsSettingsClick,
                     )
