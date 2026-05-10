@@ -42,6 +42,7 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
+import com.nuvio.app.features.watchprogress.ContinueWatchingSortMode
 import com.nuvio.app.features.watchprogress.isSeriesTypeForContinueWatching
 import com.nuvio.app.features.watchprogress.nextUpDismissKey
 import com.nuvio.app.features.watchprogress.WatchProgressClock
@@ -247,11 +248,14 @@ fun HomeScreen(
         visibleContinueWatchingEntries,
         cachedInProgressItems,
         effectivNextUpItems,
+        continueWatchingPreferences.sortMode,
     ) {
         buildHomeContinueWatchingItems(
             visibleEntries = visibleContinueWatchingEntries,
             cachedInProgressByVideoId = cachedInProgressItems,
             nextUpItemsBySeries = effectivNextUpItems,
+            sortMode = continueWatchingPreferences.sortMode,
+            todayIsoDate = CurrentDateProvider.todayIsoDate(),
         )
     }
     val availableManifests = remember(addonsUiState.addons) {
@@ -639,6 +643,8 @@ internal fun buildHomeContinueWatchingItems(
     visibleEntries: List<WatchProgressEntry>,
     cachedInProgressByVideoId: Map<String, ContinueWatchingItem> = emptyMap(),
     nextUpItemsBySeries: Map<String, Pair<Long, ContinueWatchingItem>>,
+    sortMode: ContinueWatchingSortMode = ContinueWatchingSortMode.DEFAULT,
+    todayIsoDate: String = "",
 ): List<ContinueWatchingItem> {
     val inProgressSeriesIds = visibleEntries
         .asSequence()
@@ -647,7 +653,7 @@ internal fun buildHomeContinueWatchingItems(
         .filter(String::isNotBlank)
         .toSet()
 
-    return buildList {
+    val candidates = buildList {
         addAll(
             visibleEntries.map { entry ->
                 val liveItem = entry.toContinueWatchingItem()
@@ -669,13 +675,62 @@ internal fun buildHomeContinueWatchingItems(
             },
         )
     }
+
+    // Deduplicate by series/content id first (order-stable)
+    val seen = mutableSetOf<String>()
+    val deduplicated = candidates
         .sortedWith(
             compareByDescending<HomeContinueWatchingCandidate> { it.lastUpdatedEpochMs }
                 .thenByDescending { it.isProgressEntry },
         )
         .filter { candidate -> candidate.item.shouldDisplayInContinueWatching() }
-        .distinctBy { candidate -> candidate.item.parentMetaId.ifBlank { candidate.item.videoId } }
+        .filter { candidate ->
+            val key = candidate.item.parentMetaId.ifBlank { candidate.item.videoId }
+            seen.add(key)
+        }
+
+    return when (sortMode) {
+        ContinueWatchingSortMode.DEFAULT -> deduplicated.map(HomeContinueWatchingCandidate::item)
+        ContinueWatchingSortMode.STREAMING_STYLE -> applyStreamingStyleSort(deduplicated, todayIsoDate)
+    }
+}
+
+private fun applyStreamingStyleSort(
+    candidates: List<HomeContinueWatchingCandidate>,
+    todayIsoDate: String,
+): List<ContinueWatchingItem> {
+    val (released, unreleased) = candidates.partition { candidate ->
+        val item = candidate.item
+        if (!item.isNextUp) {
+            true // in-progress items are always "released"
+        } else {
+            val itemReleased = item.released
+            if (itemReleased.isNullOrBlank() || todayIsoDate.isBlank()) {
+                true // no date info → treat as released
+            } else {
+                isReleasedBy(todayIsoDate = todayIsoDate, releasedDate = itemReleased)
+            }
+        }
+    }
+
+    // Released: most recently watched first (already sorted by dedup pass)
+    val sortedReleased = released.map(HomeContinueWatchingCandidate::item)
+
+    // Unaired: soonest air date first; unknown dates go to the end
+    val sortedUnreleased = unreleased
+        .sortedWith { a, b ->
+            val dateA = a.item.released?.takeIf { it.isNotBlank() }
+            val dateB = b.item.released?.takeIf { it.isNotBlank() }
+            when {
+                dateA == null && dateB == null -> 0
+                dateA == null -> 1
+                dateB == null -> -1
+                else -> dateA.compareTo(dateB)
+            }
+        }
         .map(HomeContinueWatchingCandidate::item)
+
+    return sortedReleased + sortedUnreleased
 }
 
 private data class CompletedSeriesCandidate(
