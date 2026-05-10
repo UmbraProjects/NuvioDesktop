@@ -517,6 +517,12 @@
     <string name="settings_continue_watching_blur_next_up_title">Blur Unwatched in Continue Watching</string>
     <string name="settings_continue_watching_show_unaired_next_up_description">Include upcoming episodes in Continue Watching before they air.</string>
     <string name="settings_continue_watching_show_unaired_next_up_title">Show Unaired Next Up Episodes</string>
+    <string name="settings_continue_watching_section_sort_order">SORT ORDER</string>
+    <string name="settings_continue_watching_sort_mode_title">Sort Order</string>
+    <string name="settings_continue_watching_sort_mode_default">Default</string>
+    <string name="settings_continue_watching_sort_mode_default_desc">Sort all items by recency</string>
+    <string name="settings_continue_watching_sort_mode_streaming">Streaming Style</string>
+    <string name="settings_continue_watching_sort_mode_streaming_desc">Released items first, upcoming at the end</string>
     <string name="settings_continue_watching_section_card_style">Poster Card Style</string>
     <string name="settings_continue_watching_section_on_launch">ON LAUNCH</string>
     <string name="settings_continue_watching_section_up_next_behavior">UP NEXT BEHAVIOR</string>
