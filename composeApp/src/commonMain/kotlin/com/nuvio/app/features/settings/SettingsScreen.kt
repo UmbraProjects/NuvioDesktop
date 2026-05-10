@@ -58,6 +58,7 @@ import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsUiState
 import com.nuvio.app.core.ui.PosterCardStyleRepository
 import com.nuvio.app.core.ui.PosterCardStyleUiState
+import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.mdblist.MdbListSettings
@@ -160,6 +161,7 @@ fun SettingsScreen(
             HomeCatalogSettingsRepository.snapshot()
             HomeCatalogSettingsRepository.uiState
         }.collectAsStateWithLifecycle()
+        val collections by CollectionRepository.collections.collectAsStateWithLifecycle()
         val metaScreenSettingsUiState by remember {
             MetaScreenSettingsRepository.ensureLoaded()
             MetaScreenSettingsRepository.uiState
@@ -180,6 +182,14 @@ fun SettingsScreen(
         LaunchedEffect(homescreenCatalogRefreshKey) {
             if (homescreenCatalogRefreshKey.isEmpty()) return@LaunchedEffect
             HomeCatalogSettingsRepository.syncCatalogs(addonsUiState.addons)
+        }
+
+        LaunchedEffect(Unit) {
+            CollectionRepository.initialize()
+        }
+
+        LaunchedEffect(collections) {
+            HomeCatalogSettingsRepository.syncCollections(collections)
         }
 
         var currentPage by rememberSaveable { mutableStateOf(SettingsPage.Root.name) }

@@ -404,6 +404,11 @@ fun HomeScreen(
     val enabledHomeItems = remember(homeSettingsUiState.items) {
         homeSettingsUiState.items.filter { it.enabled }
     }
+    val hasRenderableCollectionRows = remember(enabledHomeItems, collectionsMap) {
+        enabledHomeItems.any { item ->
+            item.isCollection && collectionsMap[item.key] != null
+        }
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val homeSectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value)
@@ -466,7 +471,7 @@ fun HomeScreen(
             }
 
             when {
-                addonsUiState.addons.none { it.manifest != null } -> {
+                addonsUiState.addons.none { it.manifest != null } && !hasRenderableCollectionRows -> {
                     if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
                         item {
                             HomeContinueWatchingSection(
@@ -491,7 +496,7 @@ fun HomeScreen(
                     }
                 }
 
-                homeUiState.isLoading && homeUiState.sections.isEmpty() -> {
+                homeUiState.isLoading && homeUiState.sections.isEmpty() && !hasRenderableCollectionRows -> {
                     if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
                         item {
                             HomeContinueWatchingSection(
@@ -513,7 +518,8 @@ fun HomeScreen(
                 }
 
                 homeUiState.sections.isEmpty() && homeUiState.heroItems.isEmpty() &&
-                    (!continueWatchingPreferences.isVisible || continueWatchingItems.isEmpty()) -> {
+                    (!continueWatchingPreferences.isVisible || continueWatchingItems.isEmpty()) &&
+                    !hasRenderableCollectionRows -> {
                     item {
                         if (networkStatusUiState.isOfflineLike) {
                             NuvioNetworkOfflineCard(
