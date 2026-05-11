@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -25,6 +26,11 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.plugins_repository_already_installed
+import nuvio.composeapp.generated.resources.plugins_repository_install_failed
+import nuvio.composeapp.generated.resources.plugins_repository_refresh_failed
+import org.jetbrains.compose.resources.getString
 
 @Serializable
 private data class PluginRow(
@@ -149,7 +155,7 @@ actual object PluginRepository {
         }
 
         if (_uiState.value.repositories.any { it.manifestUrl == manifestUrl }) {
-            return AddPluginRepositoryResult.Error("That plugin repository is already installed.")
+            return AddPluginRepositoryResult.Error(getString(Res.string.plugins_repository_already_installed))
         }
 
         return try {
@@ -168,7 +174,7 @@ actual object PluginRepository {
             pushToServer()
             AddPluginRepositoryResult.Success(repo)
         } catch (error: Throwable) {
-            AddPluginRepositoryResult.Error(error.message ?: "Unable to install plugin repository")
+            AddPluginRepositoryResult.Error(error.message ?: getString(Res.string.plugins_repository_install_failed))
         }
     }
 
@@ -232,7 +238,7 @@ actual object PluginRepository {
                                     if (existing.manifestUrl == manifestUrl) {
                                         existing.copy(
                                             isRefreshing = false,
-                                            errorMessage = error.message ?: "Unable to refresh repository",
+                                            errorMessage = error.message ?: runBlocking { getString(Res.string.plugins_repository_refresh_failed) },
                                         )
                                     } else {
                                         existing

@@ -1192,4 +1192,17 @@
     <string name="unit_bytes_kb">Ko</string>
     <string name="unit_bytes_mb">Mo</string>
     <string name="unit_bytes_gb">Go</string>
+    <string name="details_runtime_hours_minutes">%1$d h %2$d min</string>
+    <string name="details_runtime_hours_only">%1$d h</string>
+    <string name="details_runtime_minutes_only">%1$d min</string>
+    <string name="search_error_no_results_for_catalog">Aucun résultat de recherche pour %1$s.</string>
+    <string name="plugins_repository_already_installed">Ce dépôt de plugin est déjà installé.</string>
+    <string name="plugins_repository_install_failed">Impossible d’installer le dépôt de plugin</string>
+    <string name="plugins_repository_refresh_failed">Impossible d’actualiser le dépôt</string>
+    <string name="plugins_manifest_name_missing">Le nom du manifeste est manquant.</string>
+    <string name="plugins_manifest_version_missing">La version du manifeste est manquante.</string>
+    <string name="plugins_manifest_no_providers">Le manifeste ne contient aucun fournisseur.</string>
+    <string name="addons_manifest_missing_field">Champ « %1$s » manquant dans le manifeste</string>
+    <string name="player_error_mpv_unavailable">Moteur de lecture MPV indisponible. Reconstruis l’app.</string>
+    <string name="player_error_unable_to_play_stream">Impossible de lire ce flux.</string>
 </resources>
