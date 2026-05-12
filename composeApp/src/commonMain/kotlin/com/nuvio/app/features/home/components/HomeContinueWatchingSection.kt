@@ -355,8 +355,6 @@ private fun ContinueWatchingWideCard(
                 .padding(layout.wideContentPadding),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            val isEpisodeCard = item.seasonNumber != null && item.episodeNumber != null
-            val hasEpisodeTitle = !item.episodeTitle.isNullOrBlank()
             val wideMetaLine = localizedContinueWatchingSubtitle(item)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
@@ -389,18 +387,6 @@ private fun ContinueWatchingWideCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (hasEpisodeTitle) {
-                    Text(
-                        text = item.episodeTitle.orEmpty(),
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = layout.wideMetaSize,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
             }
 
             if (item.progressFraction > 0f) {
