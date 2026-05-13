@@ -38,7 +38,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.nuvio.app.core.ui.localizedContinueWatchingSubtitle
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.core.ui.NuvioShelfSection
 import com.nuvio.app.core.ui.posterCardClickable
@@ -50,6 +49,19 @@ import org.jetbrains.compose.resources.stringResource
 
 private fun continueWatchingProgressPercent(progressFraction: Float): Int =
     (progressFraction * 100f).roundToInt().coerceIn(1, 99)
+
+@Composable
+private fun localizedContinueWatchingMetaLine(item: ContinueWatchingItem): String =
+    when {
+        item.seasonNumber != null && item.episodeNumber != null && item.isNextUp ->
+            stringResource(Res.string.continue_watching_up_next_episode, item.seasonNumber, item.episodeNumber)
+        item.seasonNumber != null && item.episodeNumber != null ->
+            stringResource(Res.string.compose_player_episode_code_full, item.seasonNumber, item.episodeNumber)
+        item.isNextUp ->
+            stringResource(Res.string.continue_watching_up_next)
+        else ->
+            stringResource(Res.string.media_movie)
+    }
 
 private fun ContinueWatchingItem.continueWatchingArtworkUrl(
     useEpisodeThumbnails: Boolean,
@@ -355,9 +367,8 @@ private fun ContinueWatchingWideCard(
                 .padding(layout.wideContentPadding),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            val isEpisodeCard = item.seasonNumber != null && item.episodeNumber != null
-            val hasEpisodeTitle = !item.episodeTitle.isNullOrBlank()
-            val wideMetaLine = localizedContinueWatchingSubtitle(item)
+            val wideMetaLine = localizedContinueWatchingMetaLine(item)
+            val episodeTitle = item.episodeTitle?.trim()?.takeIf { it.isNotBlank() }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -389,9 +400,9 @@ private fun ContinueWatchingWideCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (hasEpisodeTitle) {
+                if (episodeTitle != null) {
                     Text(
-                        text = item.episodeTitle.orEmpty(),
+                        text = episodeTitle,
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontSize = layout.wideMetaSize,
                             fontWeight = FontWeight.Medium,
