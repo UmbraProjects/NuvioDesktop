@@ -567,7 +567,7 @@
     <string name="settings_content_discovery_section_sources">SUMBER</string>
     <string name="settings_content_discovery_addons_description">Pasang, hapus, perbarui, dan urutkan sumber konten Anda.</string>
     <string name="settings_content_discovery_plugins_description">Pasang repositori scraper JavaScript dan uji penyedia secara internal.</string>
-    <string name="settings_content_discovery_homescreen_description">Sesuaikan tata letak beranda, visibilitas konten, dan perilaku poster</string>
+    <string name="settings_content_discovery_homescreen_description">Sesuaikan tata letak beranda, visibilitas konten, dan poster</string>
     <string name="settings_content_discovery_meta_screen_description">Pengaturan untuk layar detail dan episode.</string>
     <string name="settings_content_discovery_collections_description">Buat pengelompokan katalog kustom dengan folder yang ditampilkan di Beranda.</string>
     <string name="settings_integrations_section_title">Integrasi</string>
@@ -689,7 +689,7 @@
     <string name="settings_playback_duration_hours">%1$d jam</string>
     <string name="settings_playback_enable_libass">Gunakan libass untuk subtitle ASS/SSA</string>
     <string name="settings_playback_enable_libass_description">Eksperimental: rendering ASS/SSA lanjutan (gaya, posisi, animasi)</string>
-    <string name="settings_playback_hold_speed">Kecepatan Tahan</string>
+    <string name="settings_playback_hold_speed">Kecepatan Putar saat Ditahan</string>
     <string name="settings_playback_hold_to_speed">Tahan untuk Mempercepat</string>
     <string name="settings_playback_hold_to_speed_description">Tekan lama di mana saja pada permukaan pemutar untuk sementara meningkatkan kecepatan putar.</string>
     <string name="settings_playback_invalid_regex_pattern">Pola regex tidak valid</string>
@@ -785,7 +785,7 @@
     <string name="settings_tmdb_enable_enrichment_description">Gunakan TMDB sebagai sumber metadata untuk meningkatkan data addon</string>
     <string name="settings_tmdb_enter_api_key">Masukkan kunci API v3 TMDB Anda.</string>
     <string name="settings_tmdb_language_code_label">Kode bahasa</string>
-    <string name="settings_tmdb_module_artwork">Karya Seni</string>
+    <string name="settings_tmdb_module_artwork">Gambar</string>
     <string name="settings_tmdb_module_artwork_description">Gambar logo dan latar dari TMDB</string>
     <string name="settings_tmdb_module_basic_info">Info Dasar</string>
     <string name="settings_tmdb_module_basic_info_description">Deskripsi, genre, dan rating dari TMDB</string>
@@ -797,13 +797,13 @@
     <string name="settings_tmdb_module_details_description">Durasi, status, negara, dan bahasa dari TMDB</string>
     <string name="settings_tmdb_module_episodes">Episode</string>
     <string name="settings_tmdb_module_episodes_description">Judul episode, ikhtisar, thumbnail, dan durasi dari TMDB</string>
-    <string name="settings_tmdb_module_more_like_this">Lebih Seperti Ini</string>
+    <string name="settings_tmdb_module_more_like_this">Yang Seperti Ini</string>
     <string name="settings_tmdb_module_more_like_this_description">Latar rekomendasi TMDB di halaman detail</string>
     <string name="settings_tmdb_module_networks">Jaringan</string>
     <string name="settings_tmdb_module_networks_description">Jaringan dengan logo dari TMDB</string>
     <string name="settings_tmdb_module_production_companies">Produksi</string>
     <string name="settings_tmdb_module_production_companies_description">Perusahaan produksi dari TMDB</string>
-    <string name="settings_tmdb_module_season_posters">Poster musim</string>
+    <string name="settings_tmdb_module_season_posters">Poster Musim</string>
     <string name="settings_tmdb_module_season_posters_description">Gunakan poster musim TMDB di pemilih musim layar metadata untuk serial.</string>
     <string name="settings_tmdb_module_trailers">Trailer</string>
     <string name="settings_tmdb_module_trailers_description">Kandidat trailer dari video TMDB untuk bagian trailer detail</string>
@@ -828,7 +828,7 @@
     <string name="settings_trakt_intro_description">Sinkronkan daftar tonton, progres menonton, lanjutkan menonton, scrobble, dan daftar pribadi Anda dengan Trakt.</string>
     <string name="settings_trakt_missing_credentials">Kredensial Trakt hilang di local.properties (TRAKT_CLIENT_ID / TRAKT_CLIENT_SECRET).</string>
     <string name="settings_trakt_open_login">Buka Login Trakt</string>
-    <string name="settings_trakt_save_actions_description">Tindakan Simpan Anda sekarang dapat menargetkan daftar tonton Trakt dan daftar pribadi.</string>
+    <string name="settings_trakt_save_actions_description">Anda sekarang dapat menyimpan ke daftar tonton Trakt dan personal.</string>
     <string name="settings_trakt_sign_in_description">Masuk dengan Trakt untuk mengaktifkan penyimpanan berbasis daftar dan mode perpustakaan Trakt.</string>
     <string name="trakt_library_source_title">Sumber Perpustakaan</string>
     <string name="trakt_library_source_subtitle">Pilih perpustakaan mana yang digunakan untuk menyimpan dan melihat koleksi Anda</string>
@@ -839,7 +839,7 @@
     <string name="trakt_library_source_trakt_selected">Perpustakaan Trakt dipilih</string>
     <string name="trakt_library_source_nuvio_selected">Perpustakaan Nuvio dipilih</string>
     <string name="trakt_watch_progress_title">Progres Menonton</string>
-    <string name="trakt_watch_progress_subtitle">Pilih sumber progres mana yang menggerakkan lanjutkan dan resume menonton</string>
+    <string name="trakt_watch_progress_subtitle">Pilih sumber progres mana yang digunakan untuk melanjutkan menonton</string>
     <string name="trakt_watch_progress_dialog_title">Progres Menonton</string>
     <string name="trakt_watch_progress_dialog_subtitle">Pilih apakah resume dan lanjutkan menonton harus menggunakan Trakt atau Nuvio Sync sementara scrobbling Trakt tetap aktif.</string>
     <string name="trakt_watch_progress_source_trakt">Trakt</string>
@@ -847,7 +847,7 @@
     <string name="trakt_watch_progress_trakt_selected">Sumber progres menonton diatur ke Trakt</string>
     <string name="trakt_watch_progress_nuvio_selected">Sumber progres menonton diatur ke Nuvio Sync</string>
     <string name="trakt_continue_watching_window">Jendela Lanjutkan Menonton</string>
-    <string name="trakt_continue_watching_subtitle">Riwayat Trakt yang dipertimbangkan untuk lanjutkan menonton</string>
+    <string name="trakt_continue_watching_subtitle">Lanjutkan menonton berdasarkan riwayat Trakt</string>
     <string name="trakt_cw_window_title">Jendela Lanjutkan Menonton</string>
     <string name="trakt_cw_window_subtitle">Pilih berapa banyak aktivitas Trakt yang harus muncul di lanjutkan menonton.</string>
     <string name="trakt_all_history">Semua riwayat</string>
@@ -861,12 +861,12 @@
     <string name="source_trakt">Trakt</string>
     <string name="subtitle_language_unknown">Tidak Diketahui</string>
     <string name="theme_amber">Amber</string>
-    <string name="theme_crimson">Kirmizi</string>
+    <string name="theme_crimson">Delima</string>
     <string name="theme_emerald">Zamrud</string>
     <string name="theme_ocean">Samudra</string>
     <string name="theme_rose">Mawar</string>
-    <string name="theme_violet">Ungu</string>
-    <string name="theme_white">Putih</string>
+    <string name="theme_violet">Lavender</string>
+    <string name="theme_white">Melati</string>
     <string name="player_next_episode">Episode Berikutnya</string>
     <string name="player_next_episode_finding_source">Mencari sumber…</string>
     <string name="player_next_episode_playing_via_countdown">Memutar melalui %1$s dalam %2$d…</string>
