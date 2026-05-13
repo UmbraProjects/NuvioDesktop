@@ -128,6 +128,9 @@ import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerLaunchStore
 import com.nuvio.app.features.player.PlayerRoute
 import com.nuvio.app.features.player.PlayerScreen
+import com.nuvio.app.features.player.ExternalPlayerOpenResult
+import com.nuvio.app.features.player.ExternalPlayerPlatform
+import com.nuvio.app.features.player.ExternalPlayerPlaybackRequest
 import com.nuvio.app.features.player.sanitizePlaybackHeaders
 import com.nuvio.app.features.player.sanitizePlaybackResponseHeaders
 import com.nuvio.app.features.profiles.AvatarRepository
@@ -287,6 +290,14 @@ private fun NativeNavigationTab.toAppScreenTab(): AppScreenTab = when (this) {
     NativeNavigationTab.Library -> AppScreenTab.Library
     NativeNavigationTab.Settings -> AppScreenTab.Settings
 }
+
+private fun PlayerLaunch.toExternalPlayerPlaybackRequest(): ExternalPlayerPlaybackRequest =
+    ExternalPlayerPlaybackRequest(
+        sourceUrl = sourceUrl,
+        title = title,
+        streamTitle = streamTitle,
+        sourceHeaders = sourceHeaders,
+    )
 
 private enum class AppGateScreen {
     Loading,
@@ -562,6 +573,9 @@ private fun MainAppContent(
         NetworkStatusRepository.uiState
     }.collectAsStateWithLifecycle()
     val downloadedProviderLabel = stringResource(Res.string.provider_downloaded)
+    val externalPlayerNotConfiguredText = stringResource(Res.string.external_player_not_configured)
+    val externalPlayerUnavailableText = stringResource(Res.string.external_player_unavailable)
+    val externalPlayerFailedText = stringResource(Res.string.external_player_failed)
     val isTraktLibrarySource = libraryUiState.sourceMode == LibrarySourceMode.TRAKT
     var initialHomeReady by rememberSaveable { mutableStateOf(false) }
     var offlineLaunchRouteHandled by rememberSaveable { mutableStateOf(false) }
@@ -752,6 +766,29 @@ private fun MainAppContent(
             }
         }
 
+        fun openExternalPlayback(launch: PlayerLaunch): Boolean {
+            return when (
+                ExternalPlayerPlatform.open(
+                    request = launch.toExternalPlayerPlaybackRequest(),
+                    playerId = playerSettingsUiState.externalPlayerId,
+                )
+            ) {
+                ExternalPlayerOpenResult.Opened -> true
+                ExternalPlayerOpenResult.NotConfigured -> {
+                    NuvioToastController.show(externalPlayerNotConfiguredText)
+                    false
+                }
+                ExternalPlayerOpenResult.NoPlayerAvailable -> {
+                    NuvioToastController.show(externalPlayerUnavailableText)
+                    false
+                }
+                ExternalPlayerOpenResult.Failed -> {
+                    NuvioToastController.show(externalPlayerFailedText)
+                    false
+                }
+            }
+        }
+
         fun launchPlaybackWithDownloadPreference(
             type: String,
             videoId: String,
@@ -783,8 +820,7 @@ private fun MainAppContent(
                 )
                 val localSourceUrl = downloadedItem?.let(DownloadsRepository::playableLocalFileUri)
                 if (!localSourceUrl.isNullOrBlank()) {
-                    val launchId = PlayerLaunchStore.put(
-                        PlayerLaunch(
+                    val playerLaunch = PlayerLaunch(
                             title = title,
                             sourceUrl = localSourceUrl,
                             sourceHeaders = emptyMap(),
@@ -807,8 +843,12 @@ private fun MainAppContent(
                             parentMetaType = parentMetaType,
                             initialPositionMs = targetResumePositionMs,
                             initialProgressFraction = targetResumeProgressFraction,
-                        ),
-                    )
+                        )
+                    if (playerSettingsUiState.externalPlayerEnabled) {
+                        openExternalPlayback(playerLaunch)
+                        return
+                    }
+                    val launchId = PlayerLaunchStore.put(playerLaunch)
                     navController.navigate(PlayerRoute(launchId = launchId))
                     return
                 }
@@ -1348,10 +1388,8 @@ private fun MainAppContent(
                         val maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
                         val cached = StreamLinkCacheRepository.getValid(cacheKey, maxAgeMs)
                         if (cached != null) {
-                            reuseNavigated = true
                             StreamsRepository.clear()
-                            val launchId = PlayerLaunchStore.put(
-                                PlayerLaunch(
+                            val playerLaunch = PlayerLaunch(
                                     title = launch.title,
                                     sourceUrl = cached.url,
                                     sourceHeaders = sanitizePlaybackHeaders(cached.requestHeaders),
@@ -1376,7 +1414,13 @@ private fun MainAppContent(
                                     initialPositionMs = launch.resumePositionMs ?: 0L,
                                     initialProgressFraction = launch.resumeProgressFraction,
                                 )
-                            )
+                            if (playerSettings.externalPlayerEnabled) {
+                                openExternalPlayback(playerLaunch)
+                                reuseNavigated = true
+                                return@LaunchedEffect
+                            }
+                            reuseNavigated = true
+                            val launchId = PlayerLaunchStore.put(playerLaunch)
                             navController.navigate(PlayerRoute(launchId = launchId)) {
                                 popUpTo<StreamRoute> { inclusive = true }
                             }
@@ -1428,8 +1472,7 @@ private fun MainAppContent(
                                 bingeGroup = stream.behaviorHints.bingeGroup,
                             )
                         }
-                        val launchId = PlayerLaunchStore.put(
-                            PlayerLaunch(
+                        val playerLaunch = PlayerLaunch(
                                 title = launch.title,
                                 sourceUrl = sourceUrl,
                                 sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
@@ -1454,9 +1497,13 @@ private fun MainAppContent(
                                 initialPositionMs = launch.resumePositionMs ?: 0L,
                                 initialProgressFraction = launch.resumeProgressFraction,
                             )
-                        )
                         StreamsRepository.consumeAutoPlay()
                         StreamsRepository.cancelLoading()
+                        if (playerSettings.externalPlayerEnabled) {
+                            openExternalPlayback(playerLaunch)
+                            return@LaunchedEffect
+                        }
+                        val launchId = PlayerLaunchStore.put(playerLaunch)
                         navController.navigate(PlayerRoute(launchId = launchId)) {
                             popUpTo<StreamRoute> { inclusive = true }
                         }
@@ -1470,6 +1517,74 @@ private fun MainAppContent(
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         }
                         return@composable
+                    }
+
+                    fun openSelectedStream(
+                        stream: com.nuvio.app.features.streams.StreamItem,
+                        resolvedResumePositionMs: Long?,
+                        resolvedResumeProgressFraction: Float?,
+                        forceExternal: Boolean,
+                        forceInternal: Boolean,
+                    ) {
+                        val sourceUrl = stream.directPlaybackUrl ?: return
+                        if (playerSettings.streamReuseLastLinkEnabled) {
+                            val cacheKey = StreamLinkCacheRepository.contentKey(
+                                type = launch.type,
+                                videoId = effectiveVideoId,
+                                parentMetaId = launch.parentMetaId,
+                                season = launch.seasonNumber,
+                                episode = launch.episodeNumber,
+                            )
+                            StreamLinkCacheRepository.save(
+                                contentKey = cacheKey,
+                                url = sourceUrl,
+                                streamName = stream.streamLabel,
+                                addonName = stream.addonName,
+                                addonId = stream.addonId,
+                                requestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
+                                responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
+                                filename = stream.behaviorHints.filename,
+                                videoSize = stream.behaviorHints.videoSize,
+                                bingeGroup = stream.behaviorHints.bingeGroup,
+                            )
+                        }
+                        val playerLaunch = PlayerLaunch(
+                            title = launch.title,
+                            sourceUrl = sourceUrl,
+                            sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
+                            sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
+                            logo = launch.logo,
+                            poster = launch.poster,
+                            background = launch.background,
+                            seasonNumber = launch.seasonNumber,
+                            episodeNumber = launch.episodeNumber,
+                            episodeTitle = launch.episodeTitle,
+                            episodeThumbnail = launch.episodeThumbnail,
+                            streamTitle = stream.streamLabel,
+                            streamSubtitle = stream.streamSubtitle,
+                            bingeGroup = stream.behaviorHints.bingeGroup,
+                            pauseDescription = pauseDescription,
+                            providerName = stream.addonName,
+                            providerAddonId = stream.addonId,
+                            contentType = launch.type,
+                            videoId = effectiveVideoId,
+                            parentMetaId = launch.parentMetaId ?: effectiveVideoId,
+                            parentMetaType = launch.parentMetaType ?: launch.type,
+                            initialPositionMs = resolvedResumePositionMs ?: 0L,
+                            initialProgressFraction = resolvedResumeProgressFraction,
+                        )
+
+                        if (!forceInternal && (forceExternal || playerSettings.externalPlayerEnabled)) {
+                            openExternalPlayback(playerLaunch)
+                            StreamsRepository.cancelLoading()
+                            return
+                        }
+
+                        val launchId = PlayerLaunchStore.put(playerLaunch)
+                        StreamsRepository.cancelLoading()
+                        navController.navigate(
+                            PlayerRoute(launchId = launchId)
+                        )
                     }
 
                     StreamsScreen(
@@ -1490,62 +1605,22 @@ private fun MainAppContent(
                         manualSelection = launch.manualSelection,
                         startFromBeginning = launch.startFromBeginning,
                         onStreamSelected = { stream, resolvedResumePositionMs, resolvedResumeProgressFraction ->
-                            val sourceUrl = stream.directPlaybackUrl
-                            if (sourceUrl != null) {
-                                // Persist for Reuse Last Link
-                                if (playerSettings.streamReuseLastLinkEnabled) {
-                                    val cacheKey = StreamLinkCacheRepository.contentKey(
-                                        type = launch.type,
-                                        videoId = effectiveVideoId,
-                                        parentMetaId = launch.parentMetaId,
-                                        season = launch.seasonNumber,
-                                        episode = launch.episodeNumber,
-                                    )
-                                    StreamLinkCacheRepository.save(
-                                        contentKey = cacheKey,
-                                        url = sourceUrl,
-                                        streamName = stream.streamLabel,
-                                        addonName = stream.addonName,
-                                        addonId = stream.addonId,
-                                        requestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
-                                        responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
-                                        filename = stream.behaviorHints.filename,
-                                        videoSize = stream.behaviorHints.videoSize,
-                                        bingeGroup = stream.behaviorHints.bingeGroup,
-                                    )
-                                }
-                                val launchId = PlayerLaunchStore.put(
-                                    PlayerLaunch(
-                                        title = launch.title,
-                                        sourceUrl = sourceUrl,
-                                        sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
-                                        sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
-                                        logo = launch.logo,
-                                        poster = launch.poster,
-                                        background = launch.background,
-                                        seasonNumber = launch.seasonNumber,
-                                        episodeNumber = launch.episodeNumber,
-                                        episodeTitle = launch.episodeTitle,
-                                        episodeThumbnail = launch.episodeThumbnail,
-                                        streamTitle = stream.streamLabel,
-                                        streamSubtitle = stream.streamSubtitle,
-                                        bingeGroup = stream.behaviorHints.bingeGroup,
-                                        pauseDescription = pauseDescription,
-                                        providerName = stream.addonName,
-                                        providerAddonId = stream.addonId,
-                                        contentType = launch.type,
-                                        videoId = effectiveVideoId,
-                                        parentMetaId = launch.parentMetaId ?: effectiveVideoId,
-                                        parentMetaType = launch.parentMetaType ?: launch.type,
-                                        initialPositionMs = resolvedResumePositionMs ?: 0L,
-                                        initialProgressFraction = resolvedResumeProgressFraction,
-                                    )
-                                )
-                                StreamsRepository.cancelLoading()
-                                navController.navigate(
-                                    PlayerRoute(launchId = launchId)
-                                )
-                            }
+                            openSelectedStream(
+                                stream = stream,
+                                resolvedResumePositionMs = resolvedResumePositionMs,
+                                resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                                forceExternal = false,
+                                forceInternal = false,
+                            )
+                        },
+                        onStreamActionOpen = { stream, openExternally, resolvedResumePositionMs, resolvedResumeProgressFraction ->
+                            openSelectedStream(
+                                stream = stream,
+                                resolvedResumePositionMs = resolvedResumePositionMs,
+                                resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                                forceExternal = openExternally,
+                                forceInternal = !openExternally,
+                            )
                         },
                         onBack = {
                             StreamsRepository.clear()
@@ -1674,8 +1749,7 @@ private fun MainAppContent(
                                 ?.let(WatchProgressRepository::progressForVideo)
                                 ?.takeIf { it.isResumable }
 
-                            val launchId = PlayerLaunchStore.put(
-                                PlayerLaunch(
+                            val playerLaunch = PlayerLaunch(
                                     title = item.title,
                                     sourceUrl = sourceUrl,
                                     sourceHeaders = emptyMap(),
@@ -1697,8 +1771,12 @@ private fun MainAppContent(
                                     parentMetaType = item.parentMetaType,
                                     initialPositionMs = resumeEntry?.lastPositionMs?.takeIf { it > 0L } ?: 0L,
                                     initialProgressFraction = resumeEntry?.progressFraction?.takeIf { it > 0f },
-                                ),
                             )
+                            if (playerSettingsUiState.externalPlayerEnabled) {
+                                openExternalPlayback(playerLaunch)
+                                return@DownloadsScreen
+                            }
+                            val launchId = PlayerLaunchStore.put(playerLaunch)
                             navController.navigate(PlayerRoute(launchId = launchId))
                         },
                     )
