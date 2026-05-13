@@ -531,6 +531,7 @@ private fun MainAppContent(
         val hapticFeedback = LocalHapticFeedback.current
         val coroutineScope = rememberCoroutineScope()
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
+        var searchFocusRequestCount by remember { mutableStateOf(0) }
         val currentBackStackEntry by navController.currentBackStackEntryAsState()
         val nativeRequestedTab by remember { NativeTabBridge.requestedTab }.collectAsStateWithLifecycle()
         val liquidGlassNativeTabBarEnabled by remember {
@@ -597,6 +598,9 @@ private fun MainAppContent(
 
     LaunchedEffect(selectedTab) {
         NativeTabBridge.publishSelectedTab(selectedTab.toNativeNavigationTab())
+        if (selectedTab != AppScreenTab.Search) {
+            searchFocusRequestCount = 0
+        }
     }
 
     DisposableEffect(
@@ -1049,7 +1053,13 @@ private fun MainAppContent(
                                         )
                                         NavItem(
                                             selected = selectedTab == AppScreenTab.Search,
-                                            onClick = { selectedTab = AppScreenTab.Search },
+                                            onClick = {
+                                                if (selectedTab == AppScreenTab.Search) {
+                                                    searchFocusRequestCount++
+                                                } else {
+                                                    selectedTab = AppScreenTab.Search
+                                                }
+                                            },
                                             icon = Res.drawable.sidebar_search,
                                             contentDescription = stringResource(Res.string.compose_nav_search),
                                         )
@@ -1083,6 +1093,7 @@ private fun MainAppContent(
                                             .fillMaxSize()
                                             .padding(innerPadding),
                                         selectedTab = selectedTab,
+                                        searchFocusRequestCount = searchFocusRequestCount,
                                         animateHomeCollectionGifs = tabsRouteActive,
                                         onCatalogClick = onCatalogClick,
                                         onPosterClick = { meta ->
@@ -1137,7 +1148,13 @@ private fun MainAppContent(
                                 if (isTabletLayout && !useNativeBottomTabs) {
                                     TabletFloatingTopBar(
                                         selectedTab = selectedTab,
-                                        onTabSelected = { selectedTab = it },
+                                        onTabSelected = { tab ->
+                                            if (tab == AppScreenTab.Search && selectedTab == AppScreenTab.Search) {
+                                                searchFocusRequestCount++
+                                            } else {
+                                                selectedTab = tab
+                                            }
+                                        },
                                         onProfileSelected = onProfileSelected,
                                         onAddProfileRequested = onSwitchProfile,
                                     )
@@ -2085,6 +2102,7 @@ private fun rememberGuardedPopBackStack(
 private fun AppTabHost(
     selectedTab: AppScreenTab,
     modifier: Modifier = Modifier,
+    searchFocusRequestCount: Int = 0,
     animateHomeCollectionGifs: Boolean = true,
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
@@ -2132,6 +2150,7 @@ private fun AppTabHost(
                         modifier = Modifier.fillMaxSize(),
                         onPosterClick = onPosterClick,
                         onPosterLongClick = onPosterLongClick,
+                        searchFocusRequestCount = searchFocusRequestCount,
                     )
                 }
 
