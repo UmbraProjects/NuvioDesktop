@@ -328,7 +328,7 @@ object TmdbCollectionSourceResolver {
             if (!filters.withWatchProviders.isNullOrBlank()) {
                 put("with_watch_providers", filters.withWatchProviders)
                 put("watch_region", filters.watchRegion?.takeIf { it.isNotBlank() } ?: "US")
-                put("with_watch_monetization_types", "flatrate")
+                put("with_watch_monetization_types", "flatrate|free|ads|rent|buy")
             }
             putIfNotBlank("year", filters.year?.takeIf { mediaType == TmdbCollectionMediaType.MOVIE }?.toString())
             putIfNotBlank("first_air_date_year", filters.year?.takeIf { mediaType == TmdbCollectionMediaType.TV }?.toString())
