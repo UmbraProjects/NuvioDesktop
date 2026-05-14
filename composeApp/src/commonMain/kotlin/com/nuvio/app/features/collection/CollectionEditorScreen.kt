@@ -1355,30 +1355,6 @@ private fun TmdbSourcePickerScreen(
                                 },
                             )
                             TmdbQuickChips(
-                                label = stringResource(Res.string.collections_editor_tmdb_quick_watch_regions),
-                                chips = listOf(
-                                    stringResource(Res.string.collections_editor_tmdb_country_us) to "US",
-                                    stringResource(Res.string.collections_editor_tmdb_country_uk) to "GB",
-                                    "Canada" to "CA",
-                                    "Australia" to "AU",
-                                    "Germany" to "DE",
-                                ),
-                                onSelect = { value ->
-                                    CollectionEditorRepository.updateTmdbFilters { it.copy(watchRegion = value) }
-                                },
-                            )
-                            TmdbFilterField(
-                                label = stringResource(Res.string.collections_editor_tmdb_watch_region),
-                                helper = stringResource(Res.string.collections_editor_tmdb_watch_region_helper),
-                                value = state.tmdbFilters.watchRegion.orEmpty(),
-                                placeholder = "US",
-                                onValueChange = { value ->
-                                    CollectionEditorRepository.updateTmdbFilters {
-                                        it.copy(watchRegion = value.ifBlank { null })
-                                    }
-                                },
-                            )
-                            TmdbQuickChips(
                                 label = stringResource(Res.string.collections_editor_tmdb_quick_watch_providers),
                                 chips = listOf(
                                     stringResource(Res.string.collections_editor_tmdb_watch_provider_netflix) to "8",
@@ -1399,6 +1375,30 @@ private fun TmdbSourcePickerScreen(
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(withWatchProviders = value.ifBlank { null })
+                                    }
+                                },
+                            )
+                            TmdbQuickChips(
+                                label = stringResource(Res.string.collections_editor_tmdb_quick_watch_regions),
+                                chips = listOf(
+                                    stringResource(Res.string.collections_editor_tmdb_country_us) to "US",
+                                    stringResource(Res.string.collections_editor_tmdb_country_uk) to "GB",
+                                    "Canada" to "CA",
+                                    "Australia" to "AU",
+                                    "Germany" to "DE",
+                                ),
+                                onSelect = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters { it.copy(watchRegion = value) }
+                                },
+                            )
+                            TmdbFilterField(
+                                label = stringResource(Res.string.collections_editor_tmdb_watch_region),
+                                helper = stringResource(Res.string.collections_editor_tmdb_watch_region_helper),
+                                value = state.tmdbFilters.watchRegion.orEmpty(),
+                                placeholder = "US",
+                                onValueChange = { value ->
+                                    CollectionEditorRepository.updateTmdbFilters {
+                                        it.copy(watchRegion = value.ifBlank { null })
                                     }
                                 },
                             )
