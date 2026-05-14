@@ -252,7 +252,7 @@
     <string name="collections_editor_tmdb_watch_region_helper">ISO 3166-1 country code where the title is available. Example: US, GB.</string>
     <string name="collections_editor_tmdb_quick_watch_regions">Quick watch regions</string>
     <string name="collections_editor_tmdb_watch_providers">Watch provider IDs</string>
-    <string name="collections_editor_tmdb_watch_providers_helper">Pipe-separated TMDB provider IDs. Example: 8|337 for Netflix and Disney+.</string>
+    <string name="collections_editor_tmdb_watch_providers_helper">Use TMDB watch provider IDs. Separate multiple with commas for AND, or pipes for OR.</string>
     <string name="collections_editor_tmdb_watch_providers_placeholder">8|337|350</string>
     <string name="collections_editor_tmdb_quick_watch_providers">Quick watch providers</string>
     <string name="collections_editor_tmdb_watch_provider_netflix">Netflix</string>
