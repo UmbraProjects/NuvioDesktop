@@ -63,10 +63,14 @@ object StreamParser {
         this[name]?.jsonPrimitive?.contentOrNull
 
     private fun JsonObject.int(name: String): Int? =
-        this[name]?.jsonPrimitive?.intOrNull
+        this[name]?.jsonPrimitive?.let { primitive ->
+            primitive.intOrNull ?: primitive.contentOrNull?.toIntOrNull()
+        }
 
     private fun JsonObject.long(name: String): Long? =
-        this[name]?.jsonPrimitive?.longOrNull
+        this[name]?.jsonPrimitive?.let { primitive ->
+            primitive.longOrNull ?: primitive.contentOrNull?.toLongOrNull()
+        }
 
     private fun JsonObject.boolean(name: String): Boolean? =
         this[name]?.jsonPrimitive?.booleanOrNull

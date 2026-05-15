@@ -1,15 +1,25 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -18,9 +28,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.features.debrid.DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT
 import com.nuvio.app.features.debrid.DebridCredentialValidator
 import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.debrid.DebridSettings
@@ -35,11 +47,17 @@ import nuvio.composeapp.generated.resources.settings_debrid_description_template
 import nuvio.composeapp.generated.resources.settings_debrid_description_template_description
 import nuvio.composeapp.generated.resources.settings_debrid_enable
 import nuvio.composeapp.generated.resources.settings_debrid_enable_description
+import nuvio.composeapp.generated.resources.settings_debrid_prepare_count_many
+import nuvio.composeapp.generated.resources.settings_debrid_prepare_count_one
+import nuvio.composeapp.generated.resources.settings_debrid_prepare_instant_playback
+import nuvio.composeapp.generated.resources.settings_debrid_prepare_instant_playback_description
+import nuvio.composeapp.generated.resources.settings_debrid_prepare_stream_count
 import nuvio.composeapp.generated.resources.settings_debrid_key_valid
 import nuvio.composeapp.generated.resources.settings_debrid_key_invalid
 import nuvio.composeapp.generated.resources.settings_debrid_name_template
 import nuvio.composeapp.generated.resources.settings_debrid_name_template_description
 import nuvio.composeapp.generated.resources.settings_debrid_provider_torbox_description
+import nuvio.composeapp.generated.resources.settings_debrid_section_instant_playback
 import nuvio.composeapp.generated.resources.settings_debrid_section_formatting
 import nuvio.composeapp.generated.resources.settings_debrid_section_providers
 import nuvio.composeapp.generated.resources.settings_debrid_section_title
@@ -93,6 +111,52 @@ internal fun LazyListScope.debridSettingsContent(
     }
 
     item {
+        var showPrepareCountDialog by rememberSaveable { mutableStateOf(false) }
+        val prepareLimit = settings.instantPlaybackPreparationLimit
+        val prepareEnabled = settings.enabled && prepareLimit > 0
+
+        SettingsSection(
+            title = stringResource(Res.string.settings_debrid_section_instant_playback),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_debrid_prepare_instant_playback),
+                    description = stringResource(Res.string.settings_debrid_prepare_instant_playback_description),
+                    checked = prepareEnabled,
+                    enabled = settings.enabled && settings.hasAnyApiKey,
+                    isTablet = isTablet,
+                    onCheckedChange = { enabled ->
+                        DebridSettingsRepository.setInstantPlaybackPreparationLimit(
+                            if (enabled) DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT else 0,
+                        )
+                    },
+                )
+                if (prepareEnabled) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_debrid_prepare_stream_count),
+                        description = prepareCountLabel(prepareLimit),
+                        isTablet = isTablet,
+                        onClick = { showPrepareCountDialog = true },
+                    )
+                }
+            }
+        }
+
+        if (showPrepareCountDialog) {
+            DebridPrepareCountDialog(
+                selectedLimit = prepareLimit,
+                onLimitSelected = { limit ->
+                    DebridSettingsRepository.setInstantPlaybackPreparationLimit(limit)
+                    showPrepareCountDialog = false
+                },
+                onDismiss = { showPrepareCountDialog = false },
+            )
+        }
+    }
+
+    item {
         SettingsSection(
             title = stringResource(Res.string.settings_debrid_section_formatting),
             isTablet = isTablet,
@@ -123,6 +187,91 @@ internal fun LazyListScope.debridSettingsContent(
                 ) {
                     TextButton(onClick = DebridSettingsRepository::resetStreamTemplates) {
                         Text(stringResource(Res.string.action_reset))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun prepareCountLabel(limit: Int): String =
+    if (limit == 1) {
+        stringResource(Res.string.settings_debrid_prepare_count_one)
+    } else {
+        stringResource(Res.string.settings_debrid_prepare_count_many, limit)
+    }
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun DebridPrepareCountDialog(
+    selectedLimit: Int,
+    onLimitSelected: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val options = listOf(1, 2, 3, 5)
+
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.settings_debrid_prepare_stream_count),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    options.forEach { limit ->
+                        val isSelected = limit == selectedLimit
+                        val containerColor = if (isSelected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        }
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onLimitSelected(limit) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = containerColor,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = prepareCountLabel(limit),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Box(
+                                    modifier = Modifier.size(24.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -582,6 +582,12 @@
     <string name="settings_debrid_add_key_first">Add an API key before enabling Debrid streams.</string>
     <string name="settings_debrid_section_providers">Account</string>
     <string name="settings_debrid_provider_torbox_description">Use Torbox for instant cached streams.</string>
+    <string name="settings_debrid_section_instant_playback">Instant Playback</string>
+    <string name="settings_debrid_prepare_instant_playback">Prepare instant playback</string>
+    <string name="settings_debrid_prepare_instant_playback_description">Get Torbox streams ready before you press play.</string>
+    <string name="settings_debrid_prepare_stream_count">Streams to prepare</string>
+    <string name="settings_debrid_prepare_count_one">1 stream</string>
+    <string name="settings_debrid_prepare_count_many">%d streams</string>
     <string name="settings_debrid_section_formatting">Stream Formatting</string>
     <string name="settings_debrid_name_template">Name template</string>
     <string name="settings_debrid_name_template_description">Controls how Debrid stream names appear in source lists.</string>

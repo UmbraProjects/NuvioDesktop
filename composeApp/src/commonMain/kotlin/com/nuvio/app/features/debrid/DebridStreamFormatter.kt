@@ -32,10 +32,10 @@ class DebridStreamFormatter(
         val resolve = stream.clientResolve
         val raw = resolve?.stream?.raw
         val parsed = raw?.parsed
-        val season = resolve?.season
-        val episode = resolve?.episode
         val seasons = parsed?.seasons.orEmpty()
         val episodes = parsed?.episodes.orEmpty()
+        val season = resolve?.season ?: seasons.singleOrFirstOrNull()
+        val episode = resolve?.episode ?: episodes.singleOrFirstOrNull()
         val visualTags = buildList {
             addAll(parsed?.hdr.orEmpty())
             parsed?.bitDepth?.takeIf { it.isNotBlank() }?.let { add(it) }
@@ -118,6 +118,9 @@ class DebridStreamFormatter(
 
     private fun formatSeasons(seasons: List<Int>): String =
         seasons.joinToString(" | ") { "S${it.twoDigits()}" }
+
+    private fun List<Int>.singleOrFirstOrNull(): Int? =
+        singleOrNull() ?: firstOrNull()
 
     private fun Int.twoDigits(): String = toString().padStart(2, '0')
 

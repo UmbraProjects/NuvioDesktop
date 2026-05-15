@@ -12,6 +12,7 @@ object DebridSettingsRepository {
     private var enabled = false
     private var torboxApiKey = ""
     private var realDebridApiKey = ""
+    private var instantPlaybackPreparationLimit = 0
     private var streamNameTemplate = DebridStreamFormatterDefaults.NAME_TEMPLATE
     private var streamDescriptionTemplate = DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE
 
@@ -58,6 +59,15 @@ object DebridSettingsRepository {
         DebridSettingsStorage.saveRealDebridApiKey(normalized)
     }
 
+    fun setInstantPlaybackPreparationLimit(value: Int) {
+        ensureLoaded()
+        val normalized = normalizeDebridInstantPlaybackPreparationLimit(value)
+        if (instantPlaybackPreparationLimit == normalized) return
+        instantPlaybackPreparationLimit = normalized
+        publish()
+        DebridSettingsStorage.saveInstantPlaybackPreparationLimit(normalized)
+    }
+
     fun setStreamNameTemplate(value: String) {
         ensureLoaded()
         val normalized = value.ifBlank { DebridStreamFormatterDefaults.NAME_TEMPLATE }
@@ -101,6 +111,9 @@ object DebridSettingsRepository {
         torboxApiKey = DebridSettingsStorage.loadTorboxApiKey()?.trim().orEmpty()
         realDebridApiKey = DebridSettingsStorage.loadRealDebridApiKey()?.trim().orEmpty()
         enabled = (DebridSettingsStorage.loadEnabled() ?: false) && hasVisibleApiKey()
+        instantPlaybackPreparationLimit = normalizeDebridInstantPlaybackPreparationLimit(
+            DebridSettingsStorage.loadInstantPlaybackPreparationLimit() ?: 0,
+        )
         streamNameTemplate = DebridSettingsStorage.loadStreamNameTemplate()
             ?.takeIf { it.isNotBlank() }
             ?: DebridStreamFormatterDefaults.NAME_TEMPLATE
@@ -115,6 +128,7 @@ object DebridSettingsRepository {
             enabled = enabled,
             torboxApiKey = torboxApiKey,
             realDebridApiKey = realDebridApiKey,
+            instantPlaybackPreparationLimit = instantPlaybackPreparationLimit,
             streamNameTemplate = streamNameTemplate,
             streamDescriptionTemplate = streamDescriptionTemplate,
         )

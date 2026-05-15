@@ -5,6 +5,7 @@ import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.httpGetText
+import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
 import com.nuvio.app.features.debrid.DirectDebridStreamSource
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -230,6 +231,7 @@ object StreamsRepository {
                 .toSet()
             var autoSelectTriggered = false
             var timeoutElapsed = false
+            var debridPreparationLaunched = false
             fun publishCompletion(completion: StreamLoadCompletion) {
                 if (completions.trySend(completion).isFailure) {
                     log.d { "Ignoring late stream load completion after channel close" }
@@ -444,6 +446,28 @@ object StreamsRepository {
                                 isAnyLoading = anyLoading,
                                 emptyStateReason = updated.toEmptyStateReason(anyLoading),
                             )
+                        }
+                        if (!debridPreparationLaunched && result.streams.any { it.isDirectDebridStream }) {
+                            debridPreparationLaunched = true
+                            launch {
+                                DirectDebridStreamPreparer.prepare(
+                                    streams = _uiState.value.groups.flatMap { it.streams },
+                                    season = season,
+                                    episode = episode,
+                                    playerSettings = playerSettings,
+                                    installedAddonNames = installedAddonNames,
+                                ) { original, prepared ->
+                                    _uiState.update { current ->
+                                        current.copy(
+                                            groups = DirectDebridStreamPreparer.replacePreparedStream(
+                                                groups = current.groups,
+                                                original = original,
+                                                prepared = prepared,
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

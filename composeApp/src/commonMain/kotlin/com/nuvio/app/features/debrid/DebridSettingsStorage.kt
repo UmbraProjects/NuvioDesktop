@@ -9,6 +9,8 @@ internal expect object DebridSettingsStorage {
     fun saveTorboxApiKey(apiKey: String)
     fun loadRealDebridApiKey(): String?
     fun saveRealDebridApiKey(apiKey: String)
+    fun loadInstantPlaybackPreparationLimit(): Int?
+    fun saveInstantPlaybackPreparationLimit(limit: Int)
     fun loadStreamNameTemplate(): String?
     fun saveStreamNameTemplate(template: String)
     fun loadStreamDescriptionTemplate(): String?
@@ -16,4 +18,3 @@ internal expect object DebridSettingsStorage {
     fun exportToSyncPayload(): JsonObject
     fun replaceFromSyncPayload(payload: JsonObject)
 }
-
