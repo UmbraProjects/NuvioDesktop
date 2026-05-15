@@ -3,6 +3,8 @@ package com.nuvio.app.features.debrid
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
+internal data class DebridTemplateBytes(val value: Long)
+
 class DebridStreamTemplateEngine {
     fun render(template: String, values: Map<String, Any?>): String {
         if (template.isEmpty()) return ""
@@ -299,6 +301,7 @@ class DebridStreamTemplateEngine {
     private fun isTruthy(value: Any?): Boolean =
         when (value) {
             is Boolean -> value
+            is DebridTemplateBytes -> value.value != 0L
             is Number -> value.toDouble() != 0.0
             else -> exists(value)
         }
@@ -313,6 +316,7 @@ class DebridStreamTemplateEngine {
     private fun asNumber(value: Any?): Double? =
         when (value) {
             is Number -> value.toDouble()
+            is DebridTemplateBytes -> value.value.toDouble()
             is String -> value.toDoubleOrNull()
             else -> null
         }
@@ -339,6 +343,7 @@ class DebridStreamTemplateEngine {
         when (value) {
             null -> ""
             is Iterable<*> -> value.mapNotNull { valueToText(it).takeIf { text -> text.isNotBlank() } }.joinToString(", ")
+            is DebridTemplateBytes -> formatBytes(value.value.toDouble())
             is Double -> if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
             is Float -> if (value % 1f == 0f) value.toLong().toString() else value.toString()
             else -> value.toString()
@@ -387,4 +392,3 @@ class DebridStreamTemplateEngine {
         }
     }
 }
-

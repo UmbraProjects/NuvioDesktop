@@ -32,5 +32,14 @@ class DebridStreamTemplateEngineTest {
 
         assertEquals("1.5 GB DTS | Atmos", rendered)
     }
-}
 
+    @Test
+    fun `renders Debrid size values as readable text while keeping numeric comparisons`() {
+        val rendered = engine.render(
+            "{stream.size::>0[\"{stream.size}\"||\"\"]}",
+            mapOf("stream.size" to DebridTemplateBytes(7_361_184_308L)),
+        )
+
+        assertEquals("6.9 GB", rendered)
+    }
+}
