@@ -5,6 +5,7 @@ import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.httpGetText
+import com.nuvio.app.features.debrid.DirectDebridStreamSource
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.pluginContentId
@@ -152,6 +153,7 @@ object PlayerStreamsRepository {
         }
 
         val installedAddons = AddonRepository.uiState.value.addons
+        val debridTargets = DirectDebridStreamSource.configuredTargets()
         val pluginScrapers = if (AppFeaturePolicy.pluginsEnabled) {
             PluginRepository.initialize()
             PluginRepository.getEnabledScrapersForType(type)
@@ -159,7 +161,7 @@ object PlayerStreamsRepository {
             emptyList()
         }
 
-        if (installedAddons.isEmpty() && pluginScrapers.isEmpty()) {
+        if (installedAddons.isEmpty() && pluginScrapers.isEmpty() && debridTargets.isEmpty()) {
             stateFlow.value = StreamsUiState(
                 isAnyLoading = false,
                 emptyStateReason = com.nuvio.app.features.streams.StreamsEmptyStateReason.NoAddonsInstalled,
@@ -185,7 +187,7 @@ object PlayerStreamsRepository {
                 )
             }
 
-        if (streamAddons.isEmpty() && pluginScrapers.isEmpty()) {
+        if (streamAddons.isEmpty() && pluginScrapers.isEmpty() && debridTargets.isEmpty()) {
             stateFlow.value = StreamsUiState(
                 isAnyLoading = false,
                 emptyStateReason = com.nuvio.app.features.streams.StreamsEmptyStateReason.NoCompatibleAddons,
@@ -204,6 +206,13 @@ object PlayerStreamsRepository {
             AddonStreamGroup(
                 addonName = scraper.name,
                 addonId = "plugin:${scraper.id}",
+                streams = emptyList(),
+                isLoading = true,
+            )
+        } + debridTargets.map { target ->
+            AddonStreamGroup(
+                addonName = target.addonName,
+                addonId = target.addonId,
                 streams = emptyList(),
                 isLoading = true,
             )
@@ -275,7 +284,17 @@ object PlayerStreamsRepository {
                 }
             }
 
-            val jobs = addonJobs + pluginJobs
+            val debridJobs = debridTargets.map { target ->
+                async {
+                    DirectDebridStreamSource.fetchProviderStreams(
+                        type = type,
+                        videoId = videoId,
+                        target = target,
+                    )
+                }
+            }
+
+            val jobs = addonJobs + pluginJobs + debridJobs
             jobs.forEach { deferred ->
                 val result = deferred.await()
                 stateFlow.update { current ->

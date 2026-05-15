@@ -18,6 +18,7 @@
     <string name="action_resume">Resume</string>
     <string name="action_retry">Retry</string>
     <string name="action_save">Save</string>
+    <string name="action_validate">Validate</string>
     <string name="addon_installing">Installing</string>
     <string name="addon_title">Addons</string>
     <string name="addons_badge_active">Active</string>
@@ -365,6 +366,7 @@
     <string name="compose_settings_page_appearance">Layout</string>
     <string name="compose_settings_page_content_discovery">Content &amp; Discovery</string>
     <string name="compose_settings_page_continue_watching">Continue Watching</string>
+    <string name="compose_settings_page_debrid">Debrid</string>
     <string name="compose_settings_page_homescreen">Home Layout</string>
     <string name="compose_settings_page_integrations">Integrations</string>
     <string name="compose_settings_page_licenses_attributions">Licenses &amp; Attribution</string>
@@ -573,6 +575,20 @@
     <string name="settings_integrations_section_title">Integrations</string>
     <string name="settings_integrations_tmdb_description">Metadata enrichment controls</string>
     <string name="settings_integrations_mdblist_description">External ratings providers</string>
+    <string name="settings_integrations_debrid_description">Instant cached Debrid streams</string>
+    <string name="settings_debrid_section_title">Direct Debrid</string>
+    <string name="settings_debrid_enable">Enable Debrid streams</string>
+    <string name="settings_debrid_enable_description">Show instant cached Debrid streams.</string>
+    <string name="settings_debrid_add_key_first">Add an API key before enabling Debrid streams.</string>
+    <string name="settings_debrid_section_providers">Account</string>
+    <string name="settings_debrid_provider_torbox_description">Use Torbox for instant cached streams.</string>
+    <string name="settings_debrid_section_formatting">Stream Formatting</string>
+    <string name="settings_debrid_name_template">Name template</string>
+    <string name="settings_debrid_name_template_description">Controls how Debrid stream names appear in source lists.</string>
+    <string name="settings_debrid_description_template">Description template</string>
+    <string name="settings_debrid_description_template_description">Controls the metadata lines shown under each Debrid stream.</string>
+    <string name="settings_debrid_key_valid">API key validated.</string>
+    <string name="settings_debrid_key_invalid">Could not validate this API key.</string>
     <string name="settings_mdb_add_api_key_first">Add your MDBList API key below before turning ratings on.</string>
     <string name="settings_mdb_api_key_description">Required to fetch ratings from MDBList</string>
     <string name="settings_mdb_api_key_label">API Key</string>
@@ -1108,6 +1124,9 @@
     <string name="streams_resume_from_time">Resume from %1$s</string>
     <string name="streams_size">SIZE %1$s</string>
     <string name="streams_torrent_not_supported">Torrent streams are not supported</string>
+    <string name="debrid_missing_api_key">Add a Debrid API key in Settings.</string>
+    <string name="debrid_stream_stale">This Debrid result expired. Refreshing streams.</string>
+    <string name="debrid_resolve_failed">Could not resolve this Debrid stream.</string>
     <string name="external_player_failed">Couldn&apos;t open external player</string>
     <string name="external_player_not_configured">Choose an external player in settings first</string>
     <string name="external_player_unavailable">No external player is available</string>
