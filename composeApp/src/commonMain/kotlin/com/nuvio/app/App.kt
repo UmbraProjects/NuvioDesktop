@@ -467,6 +467,11 @@ fun App() {
                     AuthScreen(modifier = Modifier.fillMaxSize())
                 }
                 AppGateScreen.ProfileSelection.name -> {
+                    PlatformBackHandler(enabled = gateScreen == AppGateScreen.ProfileSelection.name) {
+                        if (!autoSkipProfileSelection) {
+                            gateScreen = AppGateScreen.Main.name
+                        }
+                    }
                     ProfileSelectionScreen(
                         onProfileSelected = { profile ->
                             ProfileRepository.selectProfile(profile.profileIndex)
@@ -489,6 +494,9 @@ fun App() {
                     )
                 }
                 AppGateScreen.ProfileEdit.name -> {
+                    PlatformBackHandler(enabled = gateScreen == AppGateScreen.ProfileEdit.name) {
+                        gateScreen = AppGateScreen.ProfileSelection.name
+                    }
                     ProfileEditScreen(
                         profile = editingProfile,
                         onBack = { gateScreen = AppGateScreen.ProfileSelection.name },
