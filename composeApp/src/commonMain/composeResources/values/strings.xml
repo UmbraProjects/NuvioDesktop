@@ -588,8 +588,9 @@
     <string name="settings_integrations_section_title">Integrations</string>
     <string name="settings_integrations_tmdb_description">Metadata enrichment controls</string>
     <string name="settings_integrations_mdblist_description">External ratings providers</string>
-    <string name="settings_integrations_debrid_description">Cloud account sources</string>
+    <string name="settings_integrations_debrid_description">Experimental cloud account sources</string>
     <string name="settings_debrid_section_title">Debrid</string>
+    <string name="settings_debrid_experimental_notice">Debrid support is experimental and may be kept, changed, or removed later.</string>
     <string name="settings_debrid_enable">Enable sources</string>
     <string name="settings_debrid_enable_description">Show playable results from connected accounts.</string>
     <string name="settings_debrid_add_key_first">Add an API key first.</string>
