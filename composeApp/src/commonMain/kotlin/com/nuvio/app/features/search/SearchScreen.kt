@@ -35,7 +35,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +46,7 @@ import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.NuvioScreenHeader
+import com.nuvio.app.core.ui.nuvioBlockPointerPassthrough
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
@@ -241,14 +241,8 @@ fun SearchScreen(
             androidx.compose.foundation.layout.Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
-                    .pointerInput(Unit) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                awaitPointerEvent()
-                            }
-                        }
-                    },
+                    .nuvioBlockPointerPassthrough()
+                    .background(MaterialTheme.colorScheme.background),
             ) {
                 NuvioScreenHeader(
                     title = headerTitle,

@@ -29,6 +29,7 @@ import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.NuvioViewAllPillSize
 import com.nuvio.app.core.ui.NuvioShelfSection
+import com.nuvio.app.core.ui.nuvioBlockPointerPassthrough
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomePosterCard
 import com.nuvio.app.features.home.components.HomeSkeletonRow
@@ -109,6 +110,7 @@ fun LibraryScreen(
             androidx.compose.foundation.layout.Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .nuvioBlockPointerPassthrough()
                     .background(MaterialTheme.colorScheme.background),
             ) {
                 NuvioScreenHeader(
