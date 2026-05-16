@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,6 +33,8 @@ import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomePosterCard
 import com.nuvio.app.features.home.components.HomeSkeletonRow
 import com.nuvio.app.features.profiles.ProfileRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
@@ -46,6 +49,7 @@ private data class LibraryRemovalTarget(
 @Composable
 fun LibraryScreen(
     modifier: Modifier = Modifier,
+    scrollToTopRequests: Flow<Unit> = emptyFlow(),
     onPosterClick: ((LibraryItem) -> Unit)? = null,
     onSectionViewAllClick: ((LibrarySection) -> Unit)? = null,
 ) {
@@ -57,6 +61,7 @@ fun LibraryScreen(
     var pendingRemovalTarget by remember { mutableStateOf<LibraryRemovalTarget?>(null) }
     var observedOfflineState by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
     val isTraktSource = uiState.sourceMode == LibrarySourceMode.TRAKT
     val retryLibraryLoad: () -> Unit = {
         NetworkStatusRepository.requestRefresh(force = true)
@@ -89,9 +94,16 @@ fun LibraryScreen(
         }
     }
 
+    LaunchedEffect(scrollToTopRequests) {
+        scrollToTopRequests.collect {
+            listState.animateScrollToItem(0)
+        }
+    }
+
     NuvioScreen(
         modifier = modifier,
         horizontalPadding = 0.dp,
+        listState = listState,
     ) {
         stickyHeader {
             androidx.compose.foundation.layout.Column(

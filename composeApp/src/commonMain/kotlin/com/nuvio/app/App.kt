@@ -181,6 +181,8 @@ import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.nextUpDismissKey
 import com.nuvio.app.features.watching.application.WatchingActions
 import com.nuvio.app.features.watching.application.WatchingState
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -544,8 +546,11 @@ private fun MainAppContent(
         val coroutineScope = rememberCoroutineScope()
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
         var searchFocusRequestCount by remember { mutableStateOf(0) }
+        val homeScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+        val searchScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+        val libraryScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+        val settingsRootActionRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
         val currentBackStackEntry by navController.currentBackStackEntryAsState()
-        val nativeRequestedTab by remember { NativeTabBridge.requestedTab }.collectAsStateWithLifecycle()
         val liquidGlassNativeTabBarEnabled by remember {
             ThemeSettingsRepository.liquidGlassNativeTabBarEnabled
         }.collectAsStateWithLifecycle()
@@ -602,9 +607,28 @@ private fun MainAppContent(
             .sorted()
     }
 
-    LaunchedEffect(nativeRequestedTab) {
-        if (liquidGlassNativeTabBarSupported && liquidGlassNativeTabBarEnabled) {
-            selectedTab = nativeRequestedTab.toAppScreenTab()
+    fun handleRootTabClick(tab: AppScreenTab) {
+        if (selectedTab != tab) {
+            selectedTab = tab
+            return
+        }
+
+        when (tab) {
+            AppScreenTab.Home -> homeScrollToTopRequests.tryEmit(Unit)
+            AppScreenTab.Search -> {
+                searchFocusRequestCount++
+                searchScrollToTopRequests.tryEmit(Unit)
+            }
+            AppScreenTab.Library -> libraryScrollToTopRequests.tryEmit(Unit)
+            AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
+        }
+    }
+
+    LaunchedEffect(liquidGlassNativeTabBarSupported, liquidGlassNativeTabBarEnabled) {
+        NativeTabBridge.requestedTabs.collectLatest { requestedTab ->
+            if (liquidGlassNativeTabBarSupported && liquidGlassNativeTabBarEnabled) {
+                handleRootTabClick(requestedTab.toAppScreenTab())
+            }
         }
     }
 
@@ -1059,35 +1083,29 @@ private fun MainAppContent(
                                     NuvioNavigationBar {
                                         NavItem(
                                             selected = selectedTab == AppScreenTab.Home,
-                                            onClick = { selectedTab = AppScreenTab.Home },
+                                            onClick = { handleRootTabClick(AppScreenTab.Home) },
                                             icon = Icons.Filled.Home,
                                             contentDescription = stringResource(Res.string.compose_nav_home),
                                         )
                                         NavItem(
                                             selected = selectedTab == AppScreenTab.Search,
-                                            onClick = {
-                                                if (selectedTab == AppScreenTab.Search) {
-                                                    searchFocusRequestCount++
-                                                } else {
-                                                    selectedTab = AppScreenTab.Search
-                                                }
-                                            },
+                                            onClick = { handleRootTabClick(AppScreenTab.Search) },
                                             icon = Res.drawable.sidebar_search,
                                             contentDescription = stringResource(Res.string.compose_nav_search),
                                         )
                                         NavItem(
                                             selected = selectedTab == AppScreenTab.Library,
-                                            onClick = { selectedTab = AppScreenTab.Library },
+                                            onClick = { handleRootTabClick(AppScreenTab.Library) },
                                             icon = Res.drawable.sidebar_library,
                                             contentDescription = stringResource(Res.string.compose_nav_library),
                                         )
                                         NavItem(
                                             selected = selectedTab == AppScreenTab.Settings,
-                                            onClick = { selectedTab = AppScreenTab.Settings },
+                                            onClick = { handleRootTabClick(AppScreenTab.Settings) },
                                         ) {
                                             ProfileSwitcherTab(
                                                 selected = selectedTab == AppScreenTab.Settings,
-                                                onClick = { selectedTab = AppScreenTab.Settings },
+                                                onClick = { handleRootTabClick(AppScreenTab.Settings) },
                                                 onProfileSelected = onProfileSelected,
                                                 onAddProfileRequested = onSwitchProfile,
                                             )
@@ -1106,6 +1124,11 @@ private fun MainAppContent(
                                             .padding(innerPadding),
                                         selectedTab = selectedTab,
                                         searchFocusRequestCount = searchFocusRequestCount,
+                                        rootActionsEnabled = tabsRouteActive,
+                                        homeScrollToTopRequests = homeScrollToTopRequests,
+                                        searchScrollToTopRequests = searchScrollToTopRequests,
+                                        libraryScrollToTopRequests = libraryScrollToTopRequests,
+                                        settingsRootActionRequests = settingsRootActionRequests,
                                         animateHomeCollectionGifs = tabsRouteActive,
                                         onCatalogClick = onCatalogClick,
                                         onPosterClick = { meta ->
@@ -1160,13 +1183,7 @@ private fun MainAppContent(
                                 if (isTabletLayout && !useNativeBottomTabs) {
                                     TabletFloatingTopBar(
                                         selectedTab = selectedTab,
-                                        onTabSelected = { tab ->
-                                            if (tab == AppScreenTab.Search && selectedTab == AppScreenTab.Search) {
-                                                searchFocusRequestCount++
-                                            } else {
-                                                selectedTab = tab
-                                            }
-                                        },
+                                        onTabSelected = ::handleRootTabClick,
                                         onProfileSelected = onProfileSelected,
                                         onAddProfileRequested = onSwitchProfile,
                                     )
@@ -2196,6 +2213,11 @@ private fun AppTabHost(
     selectedTab: AppScreenTab,
     modifier: Modifier = Modifier,
     searchFocusRequestCount: Int = 0,
+    rootActionsEnabled: Boolean = true,
+    homeScrollToTopRequests: Flow<Unit>,
+    searchScrollToTopRequests: Flow<Unit>,
+    libraryScrollToTopRequests: Flow<Unit>,
+    settingsRootActionRequests: Flow<Unit>,
     animateHomeCollectionGifs: Boolean = true,
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
@@ -2228,6 +2250,7 @@ private fun AppTabHost(
                     HomeScreen(
                         modifier = Modifier.fillMaxSize(),
                         animateCollectionGifs = animateHomeCollectionGifs,
+                        scrollToTopRequests = homeScrollToTopRequests,
                         onCatalogClick = onCatalogClick,
                         onPosterClick = onPosterClick,
                         onPosterLongClick = onPosterLongClick,
@@ -2244,12 +2267,14 @@ private fun AppTabHost(
                         onPosterClick = onPosterClick,
                         onPosterLongClick = onPosterLongClick,
                         searchFocusRequestCount = searchFocusRequestCount,
+                        scrollToTopRequests = searchScrollToTopRequests,
                     )
                 }
 
                 AppScreenTab.Library -> {
                     LibraryScreen(
                         modifier = Modifier.fillMaxSize(),
+                        scrollToTopRequests = libraryScrollToTopRequests,
                         onPosterClick = onLibraryPosterClick,
                         onSectionViewAllClick = onLibrarySectionViewAllClick,
                     )
@@ -2258,6 +2283,8 @@ private fun AppTabHost(
                 AppScreenTab.Settings -> {
                     SettingsScreen(
                         modifier = Modifier.fillMaxSize(),
+                        rootActionRequests = settingsRootActionRequests,
+                        rootActionsEnabled = rootActionsEnabled,
                         onSwitchProfile = onSwitchProfile,
                         onHomescreenClick = onHomescreenSettingsClick,
                         onMetaScreenClick = onMetaScreenSettingsClick,
