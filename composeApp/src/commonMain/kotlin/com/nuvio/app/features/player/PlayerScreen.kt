@@ -228,6 +228,7 @@ fun PlayerScreen(
         val keepScreenAwake = errorMessage == null &&
             (playbackSnapshot.isPlaying || (shouldPlay && playbackSnapshot.isLoading))
         EnterImmersivePlayerMode(keepScreenAwake = keepScreenAwake)
+        var isScrubbingTimeline by remember { mutableStateOf(false) }
         var scrubbingPositionMs by remember { mutableStateOf<Long?>(null) }
         var pausedOverlayVisible by remember { mutableStateOf(false) }
         var gestureFeedback by remember { mutableStateOf<GestureFeedbackState?>(null) }
@@ -600,6 +601,7 @@ fun PlayerScreen(
             controlsVisible = false
             lockedOverlayVisible = false
             pausedOverlayVisible = false
+            isScrubbingTimeline = false
             scrubbingPositionMs = null
             gestureMessageJob?.cancel()
             gestureFeedback = null
@@ -1228,6 +1230,7 @@ fun PlayerScreen(
             playerController = null
             playerControllerSourceUrl = null
             playbackSnapshot = PlayerPlaybackSnapshot()
+            isScrubbingTimeline = false
             scrubbingPositionMs = null
             liveGestureFeedback = null
             renderedGestureFeedback = null
@@ -1325,8 +1328,22 @@ fun PlayerScreen(
             initialSeekApplied = true
         }
 
-        LaunchedEffect(controlsVisible, playbackSnapshot.isPlaying, playbackSnapshot.isLoading, showParentalGuide, errorMessage) {
-            if (!controlsVisible || !playbackSnapshot.isPlaying || playbackSnapshot.isLoading || showParentalGuide || errorMessage != null) {
+        LaunchedEffect(
+            controlsVisible,
+            isScrubbingTimeline,
+            playbackSnapshot.isPlaying,
+            playbackSnapshot.isLoading,
+            showParentalGuide,
+            errorMessage,
+        ) {
+            if (
+                !controlsVisible ||
+                isScrubbingTimeline ||
+                !playbackSnapshot.isPlaying ||
+                playbackSnapshot.isLoading ||
+                showParentalGuide ||
+                errorMessage != null
+            ) {
                 return@LaunchedEffect
             }
             delay(3500)
@@ -1794,8 +1811,12 @@ fun PlayerScreen(
                     parentalWarnings = parentalWarnings,
                     showParentalGuide = showParentalGuide,
                     onParentalGuideAnimationComplete = { showParentalGuide = false },
-                    onScrubChange = { positionMs -> scrubbingPositionMs = positionMs },
+                    onScrubChange = { positionMs ->
+                        isScrubbingTimeline = true
+                        scrubbingPositionMs = positionMs
+                    },
                     onScrubFinished = { positionMs ->
+                        isScrubbingTimeline = false
                         scrubbingPositionMs = null
                         playerController?.seekTo(positionMs)
                     },
