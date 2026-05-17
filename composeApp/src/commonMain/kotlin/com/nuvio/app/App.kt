@@ -126,6 +126,7 @@ import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.LibrarySourceMode
 import com.nuvio.app.features.library.LibraryScreen
 import com.nuvio.app.features.library.toLibraryItem
+import com.nuvio.app.features.library.toMetaPreview
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerLaunchStore
@@ -274,6 +275,12 @@ data class CatalogRoute(
     val catalogId: String,
     val supportsPagination: Boolean = false,
     val genre: String? = null,
+)
+
+private data class PosterActionTarget(
+    val preview: MetaPreview,
+    val libraryItem: LibraryItem? = null,
+    val libraryListKey: String? = null,
 )
 
 enum class AppScreenTab {
@@ -556,7 +563,7 @@ private fun MainAppContent(
         }.collectAsStateWithLifecycle()
         val liquidGlassNativeTabBarSupported = remember { isLiquidGlassNativeTabBarSupported() }
         var showExitConfirmation by rememberSaveable { mutableStateOf(false) }
-        var selectedPosterForActions by remember { mutableStateOf<MetaPreview?>(null) }
+        var selectedPosterActionTarget by remember { mutableStateOf<PosterActionTarget?>(null) }
         var selectedContinueWatchingForActions by remember { mutableStateOf<ContinueWatchingItem?>(null) }
         var showLibraryListPicker by remember { mutableStateOf(false) }
         var pickerItem by remember { mutableStateOf<LibraryItem?>(null) }
@@ -1136,10 +1143,18 @@ private fun MainAppContent(
                                         },
                                         onPosterLongClick = { meta ->
                                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            selectedPosterForActions = meta
+                                            selectedPosterActionTarget = PosterActionTarget(preview = meta)
                                         },
                                         onLibraryPosterClick = { item ->
                                             navController.navigate(DetailRoute(type = item.type, id = item.id))
+                                        },
+                                        onLibraryPosterLongClick = { item, section ->
+                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            selectedPosterActionTarget = PosterActionTarget(
+                                                preview = item.toMetaPreview(),
+                                                libraryItem = item,
+                                                libraryListKey = section.type,
+                                            )
                                         },
                                         onLibrarySectionViewAllClick = onLibrarySectionViewAllClick,
                                         onContinueWatchingClick = onContinueWatchingClick,
@@ -1832,6 +1847,18 @@ private fun MainAppContent(
                         onPosterClick = { meta ->
                             navController.navigate(DetailRoute(type = meta.type, id = meta.id))
                         },
+                        onPosterLongClick = { meta ->
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            selectedPosterActionTarget = if (route.manifestUrl == INTERNAL_LIBRARY_MANIFEST_URL) {
+                                PosterActionTarget(
+                                    preview = meta,
+                                    libraryItem = meta.toLibraryItem(savedAtEpochMs = 0L),
+                                    libraryListKey = route.catalogId,
+                                )
+                            } else {
+                                PosterActionTarget(preview = meta)
+                            }
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -1997,48 +2024,74 @@ private fun MainAppContent(
             }
 
             NuvioPosterActionSheet(
-                item = selectedPosterForActions,
-                isSaved = selectedPosterForActions?.let { preview ->
+                item = selectedPosterActionTarget?.preview,
+                isSaved = selectedPosterActionTarget?.preview?.let { preview ->
                     LibraryRepository.isSaved(preview.id, preview.type)
                 } == true,
-                isWatched = selectedPosterForActions?.let { preview ->
+                isWatched = selectedPosterActionTarget?.preview?.let { preview ->
                     WatchingState.isPosterWatched(
                         watchedKeys = watchedUiState.watchedKeys,
                         item = preview,
                     )
                 } == true,
-                onDismiss = { selectedPosterForActions = null },
+                onDismiss = { selectedPosterActionTarget = null },
                 onToggleLibrary = {
-                    selectedPosterForActions?.let { preview ->
-                        val libraryItem = preview.toLibraryItem(savedAtEpochMs = 0L)
-                        if (!isTraktLibrarySource) {
-                            LibraryRepository.toggleSaved(libraryItem)
-                        } else {
-                            pickerItem = libraryItem
-                            pickerTitle = preview.name
-                            pickerTabs = LibraryRepository.libraryListTabs()
-                            pickerMembership = pickerTabs.associate { it.key to false }
-                            pickerPending = true
-                            pickerError = null
-                            showLibraryListPicker = true
-                            coroutineScope.launch {
-                                runCatching {
-                                    val snapshot = LibraryRepository.getMembershipSnapshot(libraryItem)
-                                    val tabs = LibraryRepository.libraryListTabs()
-                                    pickerTabs = tabs
-                                    pickerMembership = tabs.associate { tab ->
-                                        tab.key to (snapshot[tab.key] == true)
+                    selectedPosterActionTarget?.let { target ->
+                        val preview = target.preview
+                        val libraryItem = target.libraryItem ?: preview.toLibraryItem(savedAtEpochMs = 0L)
+                        if (target.libraryItem != null) {
+                            if (isTraktLibrarySource) {
+                                coroutineScope.launch {
+                                    runCatching {
+                                        val listKey = target.libraryListKey
+                                        if (listKey.isNullOrBlank()) {
+                                            val currentMembership = LibraryRepository.getMembershipSnapshot(libraryItem)
+                                            LibraryRepository.applyMembershipChanges(
+                                                item = libraryItem,
+                                                desiredMembership = currentMembership.mapValues { false },
+                                            )
+                                        } else {
+                                            LibraryRepository.removeFromList(libraryItem, listKey)
+                                        }
+                                    }.onFailure { error ->
+                                        NuvioToastController.show(
+                                            error.message ?: getString(Res.string.trakt_lists_update_failed),
+                                        )
                                     }
-                                }.onFailure { error ->
-                                    pickerError = error.message ?: getString(Res.string.trakt_lists_load_failed)
                                 }
-                                pickerPending = false
+                            } else {
+                                LibraryRepository.remove(libraryItem.id)
+                            }
+                        } else {
+                            if (!isTraktLibrarySource) {
+                                LibraryRepository.toggleSaved(libraryItem)
+                            } else {
+                                pickerItem = libraryItem
+                                pickerTitle = preview.name
+                                pickerTabs = LibraryRepository.libraryListTabs()
+                                pickerMembership = pickerTabs.associate { it.key to false }
+                                pickerPending = true
+                                pickerError = null
+                                showLibraryListPicker = true
+                                coroutineScope.launch {
+                                    runCatching {
+                                        val snapshot = LibraryRepository.getMembershipSnapshot(libraryItem)
+                                        val tabs = LibraryRepository.libraryListTabs()
+                                        pickerTabs = tabs
+                                        pickerMembership = tabs.associate { tab ->
+                                            tab.key to (snapshot[tab.key] == true)
+                                        }
+                                    }.onFailure { error ->
+                                        pickerError = error.message ?: getString(Res.string.trakt_lists_load_failed)
+                                    }
+                                    pickerPending = false
+                                }
                             }
                         }
                     }
                 },
                 onToggleWatched = {
-                    selectedPosterForActions?.let { preview ->
+                    selectedPosterActionTarget?.preview?.let { preview ->
                         coroutineScope.launch {
                             WatchingActions.togglePosterWatched(preview)
                         }
@@ -2223,6 +2276,7 @@ private fun AppTabHost(
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     onLibraryPosterClick: ((LibraryItem) -> Unit)? = null,
+    onLibraryPosterLongClick: ((LibraryItem, LibrarySection) -> Unit)? = null,
     onLibrarySectionViewAllClick: ((LibrarySection) -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
@@ -2276,6 +2330,7 @@ private fun AppTabHost(
                         modifier = Modifier.fillMaxSize(),
                         scrollToTopRequests = libraryScrollToTopRequests,
                         onPosterClick = onLibraryPosterClick,
+                        onPosterLongClick = onLibraryPosterLongClick,
                         onSectionViewAllClick = onLibrarySectionViewAllClick,
                     )
                 }

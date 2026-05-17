@@ -25,8 +25,6 @@ import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.NuvioScreenHeader
-import com.nuvio.app.core.ui.NuvioStatusModal
-import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.NuvioViewAllPillSize
 import com.nuvio.app.core.ui.NuvioShelfSection
 import com.nuvio.app.core.ui.nuvioBlockPointerPassthrough
@@ -38,20 +36,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
-
-private data class LibraryRemovalTarget(
-    val item: LibraryItem,
-    val listKey: String? = null,
-    val listTitle: String? = null,
-)
 
 @Composable
 fun LibraryScreen(
     modifier: Modifier = Modifier,
     scrollToTopRequests: Flow<Unit> = emptyFlow(),
     onPosterClick: ((LibraryItem) -> Unit)? = null,
+    onPosterLongClick: ((LibraryItem, LibrarySection) -> Unit)? = null,
     onSectionViewAllClick: ((LibrarySection) -> Unit)? = null,
 ) {
     val uiState by remember {
@@ -59,7 +51,6 @@ fun LibraryScreen(
         LibraryRepository.uiState
     }.collectAsStateWithLifecycle()
     val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
-    var pendingRemovalTarget by remember { mutableStateOf<LibraryRemovalTarget?>(null) }
     var observedOfflineState by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -187,64 +178,18 @@ fun LibraryScreen(
                     sections = uiState.sections,
                     onPosterClick = onPosterClick,
                     onSectionViewAllClick = onSectionViewAllClick,
-                    onPosterLongClick = { item, section ->
-                        pendingRemovalTarget = if (isTraktSource) {
-                            LibraryRemovalTarget(
-                                item = item,
-                                listKey = section.type,
-                                listTitle = section.displayTitle,
-                            )
-                        } else {
-                            LibraryRemovalTarget(item = item)
-                        }
-                    },
+                    onPosterLongClick = onPosterLongClick,
                 )
             }
         }
     }
-
-    NuvioStatusModal(
-        title = stringResource(Res.string.library_remove_title),
-        message = pendingRemovalTarget?.let { target ->
-            val listTitle = target.listTitle
-            if (listTitle.isNullOrBlank()) {
-                stringResource(Res.string.library_remove_message, target.item.name)
-            } else {
-                stringResource(Res.string.library_remove_from_list_message, target.item.name, listTitle)
-            }
-        }.orEmpty(),
-        isVisible = pendingRemovalTarget != null,
-        confirmText = stringResource(Res.string.library_remove_confirm),
-        dismissText = stringResource(Res.string.action_cancel),
-        onConfirm = {
-            val target = pendingRemovalTarget
-            pendingRemovalTarget = null
-            target?.let {
-                val listKey = target.listKey
-                if (listKey.isNullOrBlank()) {
-                    LibraryRepository.remove(target.item.id)
-                } else {
-                    coroutineScope.launch {
-                        runCatching {
-                            LibraryRepository.removeFromList(target.item, listKey)
-                        }.onFailure { error ->
-                            NuvioToastController.show(
-                                error.message ?: getString(Res.string.trakt_lists_update_failed),
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        onDismiss = { pendingRemovalTarget = null },
-    )
 }
 
 private fun LazyListScope.librarySections(
     sections: List<LibrarySection>,
     onPosterClick: ((LibraryItem) -> Unit)?,
     onSectionViewAllClick: ((LibrarySection) -> Unit)?,
-    onPosterLongClick: (LibraryItem, LibrarySection) -> Unit,
+    onPosterLongClick: ((LibraryItem, LibrarySection) -> Unit)?,
 ) {
     items(
         items = sections,
@@ -267,7 +212,7 @@ private fun LazyListScope.librarySections(
             HomePosterCard(
                 item = item.toMetaPreview(),
                 onClick = onPosterClick?.let { { it(item) } },
-                onLongClick = { onPosterLongClick(item, section) },
+                onLongClick = onPosterLongClick?.let { { it(item, section) } },
             )
         }
     }
