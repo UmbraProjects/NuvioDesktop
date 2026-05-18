@@ -50,6 +50,7 @@ object SupabaseProgressSyncAdapter : ProgressSyncAdapter {
                 position = entry.lastPositionMs,
                 duration = entry.durationMs,
                 lastWatched = entry.lastUpdatedEpochMs,
+                progressKey = progressKeyForEntry(entry),
             )
         }
         val params = buildJsonObject {
@@ -76,6 +77,13 @@ object SupabaseProgressSyncAdapter : ProgressSyncAdapter {
         }
         SupabaseProvider.client.postgrest.rpc("sync_delete_watch_progress", params)
     }
+
+    private fun progressKeyForEntry(entry: WatchProgressEntry): String =
+        if (entry.seasonNumber != null && entry.episodeNumber != null) {
+            "${entry.parentMetaId}_s${entry.seasonNumber}e${entry.episodeNumber}"
+        } else {
+            entry.parentMetaId
+        }
 }
 
 @Serializable
