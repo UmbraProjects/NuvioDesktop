@@ -111,12 +111,10 @@ object TraktProgressRepository {
         val requestId = nextRefreshRequestId()
         val headers = TraktAuthRepository.authorizedHeaders()
         if (headers == null) {
-            log.d { "refreshNow request=$requestId skipped: missing authorized headers" }
             _uiState.value = TraktProgressUiState()
             return
         }
 
-        log.d { "refreshNow request=$requestId start currentEntries=${_uiState.value.entries.size}" }
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
 
         val playbackEntries = runCatching {
@@ -140,10 +138,6 @@ object TraktProgressRepository {
             errorMessage = null,
             hasLoadedRemoteProgress = false,
         )
-        log.d {
-            "refreshNow request=$requestId playback applied entries=${playbackEntries.size} " +
-                "sources=${playbackEntries.debugSourceCounts()} items=${playbackEntries.debugWatchProgressSummary()}"
-        }
 
         if (playbackEntries.isNotEmpty()) {
             launchHydration(requestId = requestId, entries = playbackEntries)
@@ -178,11 +172,6 @@ object TraktProgressRepository {
             errorMessage = null,
             hasLoadedRemoteProgress = true,
         )
-        log.d {
-            "refreshNow request=$requestId completed snapshot applied " +
-                "completedEntries=${completedEntries.size} merged=${merged.size} " +
-                "sources=${merged.debugSourceCounts()} items=${merged.debugWatchProgressSummary()}"
-        }
 
         if (merged.isNotEmpty()) {
             launchHydration(requestId = requestId, entries = merged)
@@ -212,10 +201,6 @@ object TraktProgressRepository {
                 isLoading = false,
                 errorMessage = null,
             )
-            log.d {
-                "hydrate request=$requestId applied hydrated=${hydrated.size} merged=${merged.size} " +
-                    "items=${merged.debugWatchProgressSummary()}"
-            }
         }
     }
 
@@ -228,10 +213,6 @@ object TraktProgressRepository {
             current[normalizedEntry.videoId] = normalizedEntry
         }
         _uiState.value = _uiState.value.copy(entries = current.values.sortedByDescending { it.lastUpdatedEpochMs })
-        log.d {
-            "optimistic progress applied entry=${normalizedEntry.debugSummary()} " +
-                "entries=${_uiState.value.entries.size}"
-        }
     }
 
     fun applyOptimisticRemoval(videoId: String) {
@@ -239,7 +220,6 @@ object TraktProgressRepository {
         if (videoId.isBlank()) return
         val filtered = _uiState.value.entries.filterNot { it.videoId == videoId }
         _uiState.value = _uiState.value.copy(entries = filtered)
-        log.d { "optimistic removal videoId=$videoId entries=${filtered.size}" }
     }
 
     fun applyOptimisticRemoval(
@@ -260,10 +240,6 @@ object TraktProgressRepository {
             }
         }
         _uiState.value = _uiState.value.copy(entries = filtered)
-        log.d {
-            "optimistic removal contentId=$normalizedContentId s=$seasonNumber e=$episodeNumber " +
-                "entries=${filtered.size}"
-        }
     }
 
     suspend fun removeProgress(
@@ -275,7 +251,6 @@ object TraktProgressRepository {
         if (normalizedContentId.isBlank()) return
         val headers = TraktAuthRepository.authorizedHeaders() ?: return
 
-        log.d { "removeProgress start contentId=$normalizedContentId s=$seasonNumber e=$episodeNumber" }
         applyOptimisticRemoval(
             contentId = normalizedContentId,
             seasonNumber = seasonNumber,
@@ -343,12 +318,10 @@ object TraktProgressRepository {
                 }
             }
 
-        log.d { "removeProgress complete contentId=$normalizedContentId refreshing" }
         refreshNow()
     }
 
     private suspend fun fetchPlaybackEntries(headers: Map<String, String>): List<WatchProgressEntry> = withContext(Dispatchers.Default) {
-        log.d { "fetchPlaybackEntries start" }
         val payloads = coroutineScope {
             val moviesPayload = async {
                 httpGetTextWithHeaders(
@@ -371,10 +344,6 @@ object TraktProgressRepository {
 
         val moviePlayback = json.decodeFromString<List<TraktPlaybackItem>>(moviesPayload)
         val episodePlayback = json.decodeFromString<List<TraktPlaybackItem>>(episodesPayload)
-        log.d {
-            "fetchPlaybackEntries raw movies=${moviePlayback.size} episodes=${episodePlayback.size} " +
-                "movieItems=${moviePlayback.debugPlaybackSummary()} episodeItems=${episodePlayback.debugPlaybackSummary()}"
-        }
 
         val inProgressMovies = moviePlayback.mapIndexedNotNull { index, item ->
             mapPlaybackMovie(item = item, fallbackIndex = index)
@@ -384,15 +353,10 @@ object TraktProgressRepository {
         }
 
         val merged = mergeNewestByVideoId(inProgressMovies + inProgressEpisodes)
-        log.d {
-            "fetchPlaybackEntries mapped movies=${inProgressMovies.size} episodes=${inProgressEpisodes.size} " +
-                "merged=${merged.size} items=${merged.debugWatchProgressSummary()}"
-        }
         merged
     }
 
     private suspend fun fetchHistoryEntries(headers: Map<String, String>): List<WatchProgressEntry> = withContext(Dispatchers.Default) {
-        log.d { "fetchHistoryEntries start limit=$HISTORY_LIMIT" }
         val payloads = coroutineScope {
             val historyPayload = async {
                 httpGetTextWithHeaders(
@@ -414,10 +378,6 @@ object TraktProgressRepository {
         val movieHistoryPayload = payloads[1]
         val episodeHistory = json.decodeFromString<List<TraktHistoryEpisodeItem>>(historyPayload)
         val movieHistory = json.decodeFromString<List<TraktHistoryMovieItem>>(movieHistoryPayload)
-        log.d {
-            "fetchHistoryEntries raw episodes=${episodeHistory.size} movies=${movieHistory.size} " +
-                "episodeItems=${episodeHistory.debugHistoryEpisodeSummary()} movieItems=${movieHistory.debugHistoryMovieSummary()}"
-        }
 
         val completedEpisodes = episodeHistory
             .mapIndexedNotNull { index, item -> mapHistoryEpisode(item = item, fallbackIndex = index) }
@@ -427,10 +387,6 @@ object TraktProgressRepository {
             .distinctBy { entry -> entry.videoId }
 
         val merged = mergeNewestByVideoId(completedEpisodes + completedMovies)
-        log.d {
-            "fetchHistoryEntries mapped episodes=${completedEpisodes.size} movies=${completedMovies.size} " +
-                "merged=${merged.size} items=${merged.debugWatchProgressSummary()}"
-        }
         merged
     }
 
@@ -444,10 +400,6 @@ object TraktProgressRepository {
             headers = headers,
         )
         val watchedShows = json.decodeFromString<List<TraktWatchedShowItem>>(payload)
-        log.d {
-            "fetchWatchedShowSeedEntries raw shows=${watchedShows.size} " +
-                "items=${watchedShows.debugWatchedShowSummary()}"
-        }
         val mapped = watchedShows
             .mapNotNull { item ->
                 mapWatchedShowSeed(
@@ -456,10 +408,6 @@ object TraktProgressRepository {
                 )
             }
             .sortedByDescending { entry -> entry.lastUpdatedEpochMs }
-        log.d {
-            "fetchWatchedShowSeedEntries mapped=${mapped.size} useFurthest=$useFurthestEpisode " +
-                "items=${mapped.debugWatchProgressSummary()}"
-        }
         mapped
     }
 
@@ -914,165 +862,3 @@ private data class TraktEpisode(
     @SerialName("number") val number: Int? = null,
     @SerialName("ids") val ids: TraktExternalIds? = null,
 )
-
-private fun WatchProgressEntry.debugSummary(): String =
-    buildString {
-        append(parentMetaType)
-        append(":")
-        append(parentMetaId)
-        if (seasonNumber != null || episodeNumber != null) {
-            append(" s=")
-            append(seasonNumber)
-            append(" e=")
-            append(episodeNumber)
-        }
-        append(" video=")
-        append(videoId)
-        append(" pct=")
-        append(progressPercent)
-        append(" completed=")
-        append(isCompleted)
-        append(" effectiveCompleted=")
-        append(isEffectivelyCompleted)
-        append(" src=")
-        append(source)
-        append(" last=")
-        append(lastUpdatedEpochMs)
-    }
-
-private fun Collection<WatchProgressEntry>.debugWatchProgressSummary(limit: Int = 10): String =
-    take(limit).joinToString(separator = " | ") { it.debugSummary() }.ifBlank { "none" }
-
-private fun Collection<WatchProgressEntry>.debugSourceCounts(): String =
-    groupingBy { it.source }
-        .eachCount()
-        .entries
-        .sortedBy { it.key }
-        .joinToString(separator = ",") { "${it.key}=${it.value}" }
-        .ifBlank { "none" }
-
-private fun Collection<TraktPlaybackItem>.debugPlaybackSummary(limit: Int = 8): String =
-    take(limit).joinToString(separator = " | ") { item ->
-        val media = item.movie ?: item.show
-        val episode = item.episode
-        buildString {
-            append(media?.title ?: "unknown")
-            append(" ids=")
-            append(media?.ids.debugIds())
-            if (episode != null) {
-                append(" ep=")
-                append(episode.season)
-                append("x")
-                append(episode.number)
-                append(" epIds=")
-                append(episode.ids.debugIds())
-            }
-            append(" progress=")
-            append(item.progress)
-            append(" pausedAt=")
-            append(item.pausedAt)
-            append(" playbackId=")
-            append(item.id)
-        }
-    }.ifBlank { "none" }
-
-private fun Collection<TraktHistoryEpisodeItem>.debugHistoryEpisodeSummary(limit: Int = 8): String =
-    take(limit).joinToString(separator = " | ") { item ->
-        buildString {
-            append(item.show?.title ?: "unknown")
-            append(" ids=")
-            append(item.show?.ids.debugIds())
-            append(" ep=")
-            append(item.episode?.season)
-            append("x")
-            append(item.episode?.number)
-            append(" epIds=")
-            append(item.episode?.ids.debugIds())
-            append(" watchedAt=")
-            append(item.watchedAt)
-        }
-    }.ifBlank { "none" }
-
-private fun Collection<TraktHistoryMovieItem>.debugHistoryMovieSummary(limit: Int = 8): String =
-    take(limit).joinToString(separator = " | ") { item ->
-        buildString {
-            append(item.movie?.title ?: "unknown")
-            append(" ids=")
-            append(item.movie?.ids.debugIds())
-            append(" watchedAt=")
-            append(item.watchedAt)
-        }
-    }.ifBlank { "none" }
-
-private fun Collection<TraktWatchedShowItem>.debugWatchedShowSummary(limit: Int = 8): String =
-    take(limit).joinToString(separator = " | ") { item ->
-        val episodeCount = item.seasons.orEmpty().sumOf { season ->
-            season.episodes.orEmpty().count { episode ->
-                (episode.number ?: 0) > 0 && (episode.plays ?: 1) > 0
-            }
-        }
-        val latest = item.seasons.orEmpty()
-            .flatMap { season ->
-                val seasonNumber = season.number
-                season.episodes.orEmpty().mapNotNull { episode ->
-                    val episodeNumber = episode.number ?: return@mapNotNull null
-                    val watchedAt = episode.lastWatchedAt ?: item.lastWatchedAt
-                    TraktWatchedShowEpisodeSeed(
-                        season = seasonNumber ?: 0,
-                        episode = episodeNumber,
-                        watchedAt = watchedAt
-                            ?.let { value ->
-                                runCatching { TraktPlatformClock.parseIsoDateTimeToEpochMs(value) }.getOrNull()
-                            }
-                            ?: 0L,
-                    )
-                }
-            }
-            .maxWithOrNull(
-                compareBy<TraktWatchedShowEpisodeSeed>(
-                    { it.watchedAt },
-                    { it.season },
-                    { it.episode },
-                ),
-            )
-        buildString {
-            append(item.show?.title ?: "unknown")
-            append(" ids=")
-            append(item.show?.ids.debugIds())
-            append(" episodes=")
-            append(episodeCount)
-            append(" latest=")
-            append(latest?.season)
-            append("x")
-            append(latest?.episode)
-            append(" lastWatchedAt=")
-            append(item.lastWatchedAt)
-        }
-    }.ifBlank { "none" }
-
-private fun TraktExternalIds?.debugIds(): String =
-    if (this == null) {
-        "none"
-    } else {
-        buildString {
-            imdb?.takeIf { it.isNotBlank() }?.let {
-                append("imdb:")
-                append(it)
-            }
-            tmdb?.let {
-                if (isNotEmpty()) append(",")
-                append("tmdb:")
-                append(it)
-            }
-            trakt?.let {
-                if (isNotEmpty()) append(",")
-                append("trakt:")
-                append(it)
-            }
-            slug?.takeIf { it.isNotBlank() }?.let {
-                if (isNotEmpty()) append(",")
-                append("slug:")
-                append(it)
-            }
-        }.ifBlank { "none" }
-    }

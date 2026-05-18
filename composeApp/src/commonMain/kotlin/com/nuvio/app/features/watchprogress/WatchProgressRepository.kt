@@ -13,7 +13,6 @@ import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trakt.shouldUseTraktProgress as shouldUseTraktProgressSource
 import com.nuvio.app.features.watching.application.WatchingActions
 import com.nuvio.app.features.watching.sync.ProgressSyncAdapter
-import com.nuvio.app.features.watching.sync.ProgressSyncRecord
 import com.nuvio.app.features.watching.sync.SupabaseProgressSyncAdapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -99,17 +98,7 @@ object WatchProgressRepository {
                 if (authState !is AuthState.Authenticated || authState.isAnonymous) continue
                 if (!hasCompletedInitialNuvioSyncPull || isPullingNuvioSyncFromServer) continue
 
-                log.d {
-                    "periodic NuvioSync pull start profileId=${ProfileRepository.activeProfileId} " +
-                        "entries=${entriesByVideoId.size}"
-                }
                 runCatching { pullFromServer(ProfileRepository.activeProfileId) }
-                    .onSuccess {
-                        log.d {
-                            "periodic NuvioSync pull complete profileId=${ProfileRepository.activeProfileId} " +
-                                "entries=${entriesByVideoId.size}"
-                        }
-                    }
                     .onFailure { error ->
                         if (error is CancellationException) throw error
                         log.w { "Periodic NuvioSync pull failed: ${error.message}" }
@@ -171,13 +160,8 @@ object WatchProgressRepository {
         currentProfileId = profileId
 
         val useTraktProgress = shouldUseTraktProgress()
-        log.d {
-            "pullFromServer start profileId=$profileId source=${if (useTraktProgress) "trakt" else "nuvio_sync"} " +
-                "localEntries=${entriesByVideoId.size}"
-        }
 
         if (!useTraktProgress && isPullingNuvioSyncFromServer) {
-            log.d { "pullFromServer NuvioSync skipped: pull already in flight profileId=$profileId" }
             return
         }
         if (!useTraktProgress) {
@@ -192,20 +176,11 @@ object WatchProgressRepository {
                         log.e(e) { "Failed to pull Trakt progress" }
                     }
                 publish()
-                log.d {
-                    "pullFromServer trakt complete entries=${TraktProgressRepository.uiState.value.entries.size} " +
-                        "sources=${TraktProgressRepository.uiState.value.entries.debugSourceCounts()} " +
-                        "items=${TraktProgressRepository.uiState.value.entries.debugWatchProgressEntrySummary()}"
-                }
                 return
             }
 
             runCatching {
                 val serverEntries = syncAdapter.pull(profileId = profileId)
-                log.d {
-                    "pullFromServer NuvioSync returned ${serverEntries.size} records " +
-                        "items=${serverEntries.debugProgressRecordSummary()}"
-                }
 
                 val oldLocal = entriesByVideoId.toMap()
                 val newMap = mutableMapOf<String, WatchProgressEntry>()
@@ -244,10 +219,6 @@ object WatchProgressRepository {
                 hasCompletedInitialNuvioSyncPull = true
                 publish()
                 persist()
-                log.d {
-                    "pullFromServer NuvioSync applied entries=${entriesByVideoId.size} " +
-                        "items=${entriesByVideoId.values.debugWatchProgressEntrySummary()}"
-                }
 
                 resolveRemoteMetadata()
             }.onFailure { e ->
@@ -267,13 +238,7 @@ object WatchProgressRepository {
             .groupBy { it.parentMetaId to it.contentType }
 
         if (needsResolution.isEmpty()) {
-            log.d { "resolveRemoteMetadata skipped: all entries have artwork" }
             return
-        }
-        log.d {
-            "resolveRemoteMetadata start groups=${needsResolution.size} " +
-                "entries=${needsResolution.values.sumOf { it.size }} " +
-                "keys=${needsResolution.keys.joinToString(limit = 12) { (metaId, type) -> "$type:$metaId" }}"
         }
 
         metadataResolutionJob?.cancel()
@@ -291,7 +256,6 @@ object WatchProgressRepository {
                     MetaDetailsRepository.fetch(metaType, metaId)
                 }.getOrNull()
                 if (meta == null) {
-                    log.d { "resolveRemoteMetadata miss type=$metaType id=$metaId entries=${entries.size}" }
                     continue
                 }
 
@@ -316,13 +280,8 @@ object WatchProgressRepository {
                 }
 
                 publish()
-                log.d {
-                    "resolveRemoteMetadata applied type=$metaType id=$metaId entries=${entries.size} " +
-                        "metaVideos=${meta.videos.size}"
-                }
             }
             persist()
-            log.d { "resolveRemoteMetadata complete entries=${entriesByVideoId.size}" }
         }
     }
 
@@ -447,10 +406,6 @@ object WatchProgressRepository {
             isEnded = snapshot.isEnded,
         )
         if (!isCompleted && !shouldStoreWatchProgress(positionMs = positionMs, durationMs = durationMs)) {
-            log.d {
-                "upsert skipped below threshold video=${session.videoId} content=${session.parentMetaId} " +
-                    "s=${session.seasonNumber} e=${session.episodeNumber} pos=$positionMs dur=$durationMs ended=${snapshot.isEnded}"
-            }
             return
         }
 
@@ -484,10 +439,6 @@ object WatchProgressRepository {
         }
 
         val useTraktProgress = shouldUseTraktProgress()
-        log.d {
-            "upsert progress source=${if (useTraktProgress) "trakt" else "nuvio_sync"} " +
-                "entry=${entry.debugSummary()} snapshotEnded=${snapshot.isEnded}"
-        }
 
         entriesByVideoId[session.videoId] = entry
         if (useTraktProgress) {
@@ -508,9 +459,7 @@ object WatchProgressRepository {
         syncScope.launch {
             runCatching {
                 val profileId = ProfileRepository.activeProfileId
-                log.d { "pushScrobbleToServer profileId=$profileId entry=${entry.debugSummary()}" }
                 syncAdapter.push(profileId = profileId, entries = listOf(entry))
-                log.d { "pushScrobbleToServer complete profileId=$profileId video=${entry.videoId}" }
             }.onFailure { e ->
                 log.e(e) { "Failed to push watch progress scrobble" }
             }
@@ -523,12 +472,7 @@ object WatchProgressRepository {
             runCatching {
                 if (entries.isEmpty()) return@runCatching
                 val profileId = ProfileRepository.activeProfileId
-                log.d {
-                    "pushDeleteToServer profileId=$profileId entries=${entries.size} " +
-                        "items=${entries.debugWatchProgressEntrySummary()}"
-                }
                 syncAdapter.delete(profileId = profileId, entries = entries)
-                log.d { "pushDeleteToServer complete profileId=$profileId entries=${entries.size}" }
             }.onFailure { e ->
                 log.e(e) { "Failed to push watch progress delete" }
             }
@@ -538,11 +482,6 @@ object WatchProgressRepository {
     private fun publish() {
         val entries = currentEntries()
         val sortedEntries = entries.sortedByDescending { it.lastUpdatedEpochMs }
-        log.d {
-            "publish source=${if (shouldUseTraktProgress()) "trakt" else "nuvio_sync"} " +
-                "entries=${sortedEntries.size} cw=${sortedEntries.continueWatchingEntries().size} " +
-                "sources=${sortedEntries.debugSourceCounts()} items=${sortedEntries.debugWatchProgressEntrySummary()}"
-        }
         _uiState.value = WatchProgressUiState(
             entries = sortedEntries,
             hasLoadedRemoteProgress = if (shouldUseTraktProgress()) {
@@ -575,67 +514,3 @@ object WatchProgressRepository {
     }
 
 }
-
-private fun ProgressSyncRecord.debugSummary(): String =
-    buildString {
-        append(contentType)
-        append(":")
-        append(contentId)
-        if (season != null || episode != null) {
-            append(" s=")
-            append(season)
-            append(" e=")
-            append(episode)
-        }
-        append(" video=")
-        append(videoId)
-        append(" pos=")
-        append(position)
-        append(" dur=")
-        append(duration)
-        append(" last=")
-        append(lastWatched)
-    }
-
-private fun Collection<ProgressSyncRecord>.debugProgressRecordSummary(limit: Int = 10): String =
-    take(limit).joinToString(separator = " | ") { it.debugSummary() }.ifBlank { "none" }
-
-private fun WatchProgressEntry.debugSummary(): String =
-    buildString {
-        append(parentMetaType)
-        append(":")
-        append(parentMetaId)
-        if (seasonNumber != null || episodeNumber != null) {
-            append(" s=")
-            append(seasonNumber)
-            append(" e=")
-            append(episodeNumber)
-        }
-        append(" video=")
-        append(videoId)
-        append(" pos=")
-        append(lastPositionMs)
-        append(" dur=")
-        append(durationMs)
-        append(" pct=")
-        append(progressPercent)
-        append(" completed=")
-        append(isCompleted)
-        append(" effectiveCompleted=")
-        append(isEffectivelyCompleted)
-        append(" src=")
-        append(source)
-        append(" last=")
-        append(lastUpdatedEpochMs)
-    }
-
-private fun Collection<WatchProgressEntry>.debugWatchProgressEntrySummary(limit: Int = 10): String =
-    take(limit).joinToString(separator = " | ") { it.debugSummary() }.ifBlank { "none" }
-
-private fun Collection<WatchProgressEntry>.debugSourceCounts(): String =
-    groupingBy { it.source }
-        .eachCount()
-        .entries
-        .sortedBy { it.key }
-        .joinToString(separator = ",") { "${it.key}=${it.value}" }
-        .ifBlank { "none" }
