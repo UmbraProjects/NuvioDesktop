@@ -18,6 +18,7 @@
     <string name="action_resume">Resume</string>
     <string name="action_retry">Retry</string>
     <string name="action_save">Save</string>
+    <string name="action_saving">Saving…</string>
     <string name="action_validate">Validate</string>
     <string name="addon_installing">Installing</string>
     <string name="addon_title">Addons</string>
@@ -596,6 +597,10 @@
     <string name="settings_debrid_add_key_first">Add an API key first.</string>
     <string name="settings_debrid_section_providers">Account</string>
     <string name="settings_debrid_provider_torbox_description">Connect your Torbox account.</string>
+    <string name="settings_debrid_dialog_title">Torbox API Key</string>
+    <string name="settings_debrid_dialog_subtitle">Enter your Torbox API key.</string>
+    <string name="settings_debrid_dialog_placeholder">Enter Torbox API key</string>
+    <string name="settings_debrid_not_set">Not set</string>
     <string name="settings_debrid_section_instant_playback">Instant Playback</string>
     <string name="settings_debrid_prepare_instant_playback">Prepare links</string>
     <string name="settings_debrid_prepare_instant_playback_description">Resolve the first sources before playback starts.</string>
@@ -607,6 +612,8 @@
     <string name="settings_debrid_name_template_description">Controls how source names appear.</string>
     <string name="settings_debrid_description_template">Description template</string>
     <string name="settings_debrid_description_template_description">Controls the metadata shown under each source.</string>
+    <string name="settings_debrid_formatter_reset_title">Reset formatting</string>
+    <string name="settings_debrid_formatter_reset_subtitle">Restore default source formatting.</string>
     <string name="settings_debrid_key_valid">API key validated.</string>
     <string name="settings_debrid_key_invalid">Could not validate this API key.</string>
     <string name="settings_mdb_add_api_key_first">Add your MDBList API key below before turning ratings on.</string>
