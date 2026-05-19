@@ -77,6 +77,7 @@ import nuvio.composeapp.generated.resources.settings_debrid_prepare_count_one
 import nuvio.composeapp.generated.resources.settings_debrid_prepare_instant_playback
 import nuvio.composeapp.generated.resources.settings_debrid_prepare_instant_playback_description
 import nuvio.composeapp.generated.resources.settings_debrid_prepare_stream_count
+import nuvio.composeapp.generated.resources.settings_debrid_prepare_stream_count_warning
 import nuvio.composeapp.generated.resources.settings_debrid_key_invalid
 import nuvio.composeapp.generated.resources.settings_debrid_not_set
 import nuvio.composeapp.generated.resources.settings_debrid_provider_torbox_description
@@ -375,6 +376,12 @@ private fun DebridPrepareCountDialog(
                         }
                     }
                 }
+
+                Text(
+                    text = stringResource(Res.string.settings_debrid_prepare_stream_count_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
