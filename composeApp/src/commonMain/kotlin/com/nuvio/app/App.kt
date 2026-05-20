@@ -1512,30 +1512,34 @@ private fun MainAppContent(
                         if (autoPlayHandled) return@LaunchedEffect
                         if (streamsUiState.requestToken != expectedStreamsRequestToken) return@LaunchedEffect
                         val selectedStream = streamsUiState.autoPlayStream ?: return@LaunchedEffect
-                        val stream = when (
-                            val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
-                                stream = selectedStream,
-                                season = launch.seasonNumber,
-                                episode = launch.episodeNumber,
-                            )
-                        ) {
-                            is DirectDebridPlayableResult.Success -> resolved.stream
-                            else -> {
-                                resolved.toastMessage()?.let { NuvioToastController.show(it) }
-                                StreamsRepository.consumeAutoPlay()
-                                if (resolved == DirectDebridPlayableResult.Stale) {
-                                    StreamsRepository.reload(
-                                        type = launch.type,
-                                        videoId = effectiveVideoId,
-                                        season = launch.seasonNumber,
-                                        episode = launch.episodeNumber,
-                                        manualSelection = launch.manualSelection,
-                                    )
+                        val stream = if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(selectedStream)) {
+                            when (
+                                val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
+                                    stream = selectedStream,
+                                    season = launch.seasonNumber,
+                                    episode = launch.episodeNumber,
+                                )
+                            ) {
+                                is DirectDebridPlayableResult.Success -> resolved.stream
+                                else -> {
+                                    resolved.toastMessage()?.let { NuvioToastController.show(it) }
+                                    StreamsRepository.consumeAutoPlay()
+                                    if (resolved == DirectDebridPlayableResult.Stale) {
+                                        StreamsRepository.reload(
+                                            type = launch.type,
+                                            videoId = effectiveVideoId,
+                                            season = launch.seasonNumber,
+                                            episode = launch.episodeNumber,
+                                            manualSelection = launch.manualSelection,
+                                        )
+                                    }
+                                    return@LaunchedEffect
                                 }
-                                return@LaunchedEffect
                             }
+                        } else {
+                            selectedStream
                         }
-                        val sourceUrl = stream.directPlaybackUrl ?: return@LaunchedEffect
+                        val sourceUrl = stream.playableDirectUrl ?: return@LaunchedEffect
                         autoPlayHandled = true
                         if (playerSettings.streamReuseLastLinkEnabled) {
                             val cacheKey = StreamLinkCacheRepository.contentKey(
@@ -1612,7 +1616,7 @@ private fun MainAppContent(
                         forceExternal: Boolean,
                         forceInternal: Boolean,
                     ) {
-                        if (stream.isDirectDebridStream && stream.directPlaybackUrl == null) {
+                        if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) {
                             if (resolvingDebridStream) return
                             streamRouteScope.launch {
                                 resolvingDebridStream = true
@@ -1646,7 +1650,7 @@ private fun MainAppContent(
                             }
                             return
                         }
-                        val sourceUrl = stream.directPlaybackUrl ?: return
+                        val sourceUrl = stream.playableDirectUrl ?: return
                         if (playerSettings.streamReuseLastLinkEnabled) {
                             val cacheKey = StreamLinkCacheRepository.contentKey(
                                 type = launch.type,

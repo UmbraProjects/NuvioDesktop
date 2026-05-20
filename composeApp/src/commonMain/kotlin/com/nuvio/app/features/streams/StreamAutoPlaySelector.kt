@@ -40,6 +40,7 @@ object StreamAutoPlaySelector {
         selectedPlugins: Set<String>,
         preferredBingeGroup: String? = null,
         preferBingeGroupInSelection: Boolean = false,
+        debridEnabled: Boolean = true,
     ): StreamItem? {
         if (streams.isEmpty()) return null
 
@@ -62,14 +63,14 @@ object StreamAutoPlaySelector {
         val targetBingeGroup = preferredBingeGroup?.trim().orEmpty()
         if (preferBingeGroupInSelection && targetBingeGroup.isNotEmpty()) {
             val bingeGroupMatch = candidateStreams.firstOrNull { stream ->
-                stream.behaviorHints.bingeGroup == targetBingeGroup && stream.isAutoPlayable()
+                stream.behaviorHints.bingeGroup == targetBingeGroup && stream.isAutoPlayable(debridEnabled)
             }
             if (bingeGroupMatch != null) return bingeGroupMatch
         }
 
         return when (mode) {
             StreamAutoPlayMode.MANUAL -> null
-            StreamAutoPlayMode.FIRST_STREAM -> candidateStreams.firstOrNull { it.isAutoPlayable() }
+            StreamAutoPlayMode.FIRST_STREAM -> candidateStreams.firstOrNull { it.isAutoPlayable(debridEnabled) }
             StreamAutoPlayMode.REGEX_MATCH -> {
                 val pattern = regexPattern.trim()
 
@@ -89,8 +90,8 @@ object StreamAutoPlaySelector {
                 } else null
 
                 val matchingStreams = candidateStreams.filter { stream ->
-                    if (!stream.isAutoPlayable()) return@filter false
-                    val url = stream.directPlaybackUrl.orEmpty()
+                    if (!stream.isAutoPlayable(debridEnabled)) return@filter false
+                    val url = stream.playableDirectUrl.orEmpty()
 
                     val searchableText = buildString {
                         append(stream.addonName).append(' ')
@@ -110,11 +111,11 @@ object StreamAutoPlaySelector {
                 }
 
                 if (matchingStreams.isEmpty()) return null
-                matchingStreams.firstOrNull { it.isAutoPlayable() }
+                matchingStreams.firstOrNull { it.isAutoPlayable(debridEnabled) }
             }
         }
     }
 
-    private fun StreamItem.isAutoPlayable(): Boolean =
-        directPlaybackUrl != null || isDirectDebridStream
+    private fun StreamItem.isAutoPlayable(debridEnabled: Boolean): Boolean =
+        playableDirectUrl != null || (debridEnabled && (isDirectDebridStream || isCachedDebridTorrentStream))
 }

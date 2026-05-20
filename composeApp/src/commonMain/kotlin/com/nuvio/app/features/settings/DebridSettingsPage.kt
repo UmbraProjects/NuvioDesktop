@@ -217,7 +217,7 @@ internal fun LazyListScope.debridSettingsContent(
                 DebridPreferenceRow(
                     isTablet = isTablet,
                     title = "Max results",
-                    description = "Limit how many Direct Debrid sources appear.",
+                    description = "Limit how many debrid-ready addon streams appear.",
                     value = streamMaxResultsLabel(preferences.maxResults),
                     enabled = settings.enabled,
                     onClick = { activeStreamPicker = DebridStreamPicker.MAX_RESULTS },
@@ -226,7 +226,7 @@ internal fun LazyListScope.debridSettingsContent(
                 DebridPreferenceRow(
                     isTablet = isTablet,
                     title = "Sort streams",
-                    description = "Choose how Direct Debrid sources are ordered.",
+                    description = "Choose how debrid-ready addon streams are ordered.",
                     value = sortProfileLabel(preferences.sortCriteria),
                     enabled = settings.enabled,
                     onClick = { activeStreamPicker = DebridStreamPicker.SORT_MODE },

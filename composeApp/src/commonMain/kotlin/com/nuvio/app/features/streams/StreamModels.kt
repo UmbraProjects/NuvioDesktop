@@ -18,6 +18,7 @@ data class StreamItem(
     val addonId: String,
     val behaviorHints: StreamBehaviorHints = StreamBehaviorHints(),
     val clientResolve: StreamClientResolve? = null,
+    val debridCacheStatus: StreamDebridCacheStatus? = null,
 ) {
     val streamLabel: String
         get() = name ?: runBlocking { getString(Res.string.stream_default_name) }
@@ -27,6 +28,14 @@ data class StreamItem(
 
     val directPlaybackUrl: String?
         get() = url ?: externalUrl
+
+    val playableDirectUrl: String?
+        get() = listOfNotNull(url, externalUrl)
+            .firstOrNull { !it.isMagnetLink() }
+
+    val torrentMagnetUri: String?
+        get() = listOfNotNull(url, externalUrl)
+            .firstOrNull { it.isMagnetLink() }
 
     val isDirectDebridStream: Boolean
         get() = clientResolve?.isDirectDebridCandidate == true
@@ -38,12 +47,21 @@ data class StreamItem(
             externalUrl.isMagnetLink()
         )
 
+    val isCachedDebridTorrentStream: Boolean
+        get() = isTorrentStream && debridCacheStatus?.state == StreamDebridCacheState.CACHED
+
+    val needsLocalDebridResolve: Boolean
+        get() = isTorrentStream && playableDirectUrl == null
+
     val hasPlayableSource: Boolean
         get() = url != null || infoHash != null || externalUrl != null || clientResolve != null
 }
 
 private fun String?.isMagnetLink(): Boolean =
     this?.trimStart()?.startsWith("magnet:", ignoreCase = true) == true
+
+fun StreamItem.isSelectableForPlayback(debridEnabled: Boolean): Boolean =
+    playableDirectUrl != null || (debridEnabled && (needsLocalDebridResolve || isDirectDebridStream))
 
 data class StreamBehaviorHints(
     val bingeGroup: String? = null,
@@ -57,6 +75,21 @@ data class StreamBehaviorHints(
 data class StreamProxyHeaders(
     val request: Map<String, String>? = null,
     val response: Map<String, String>? = null,
+)
+
+enum class StreamDebridCacheState {
+    CHECKING,
+    CACHED,
+    NOT_CACHED,
+    UNKNOWN,
+}
+
+data class StreamDebridCacheStatus(
+    val providerId: String,
+    val providerName: String,
+    val state: StreamDebridCacheState,
+    val cachedName: String? = null,
+    val cachedSize: Long? = null,
 )
 
 data class StreamClientResolve(

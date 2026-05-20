@@ -45,6 +45,18 @@ internal data class TorboxTorrentFileDto(
 }
 
 @Serializable
+internal data class TorboxCheckCachedRequestDto(
+    val hashes: List<String>,
+)
+
+@Serializable
+internal data class TorboxCachedItemDto(
+    val name: String? = null,
+    val size: Long? = null,
+    val hash: String? = null,
+)
+
+@Serializable
 internal data class RealDebridAddTorrentDto(
     val id: String? = null,
     val uri: String? = null,
@@ -91,4 +103,3 @@ internal data class RealDebridUnrestrictLinkDto(
     val streamable: Int? = null,
     val type: String? = null,
 )
-

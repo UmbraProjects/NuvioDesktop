@@ -5,6 +5,7 @@ import com.nuvio.app.features.addons.httpRequestRaw
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 internal data class DebridApiResponse<T>(
@@ -37,6 +38,33 @@ internal object TorboxApiClient {
             headers = authHeaders(apiKey),
             body = "",
         )
+
+    suspend fun checkCached(
+        apiKey: String,
+        hashes: List<String>,
+    ): DebridApiResponse<TorboxEnvelopeDto<Map<String, TorboxCachedItemDto>>> {
+        val normalizedHashes = hashes
+            .map { it.trim().lowercase() }
+            .filter { it.isNotBlank() }
+            .distinct()
+        if (normalizedHashes.isEmpty()) {
+            return DebridApiResponse(
+                status = 200,
+                body = TorboxEnvelopeDto(success = true, data = emptyMap()),
+                rawBody = "",
+            )
+        }
+        val body = DebridApiJson.json.encodeToString(
+            TorboxCheckCachedRequestDto(hashes = normalizedHashes),
+        )
+        return request(
+            method = "POST",
+            url = "$BASE_URL/v1/api/torrents/checkcached?format=object",
+            apiKey = apiKey,
+            body = body,
+            contentType = "application/json",
+        )
+    }
 
     suspend fun createTorrent(apiKey: String, magnet: String): DebridApiResponse<TorboxEnvelopeDto<TorboxCreateTorrentDataDto>> {
         val boundary = "NuvioDebrid${magnet.hashCode().toUInt()}"

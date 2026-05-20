@@ -2,6 +2,7 @@ package com.nuvio.app.features.debrid
 
 import com.nuvio.app.features.streams.StreamBehaviorHints
 import com.nuvio.app.features.streams.StreamClientResolve
+import com.nuvio.app.features.streams.StreamDebridCacheState
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.epochMs
 import kotlinx.coroutines.CancellationException
@@ -16,12 +17,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.debrid_missing_api_key
+import nuvio.composeapp.generated.resources.debrid_not_cached
 import nuvio.composeapp.generated.resources.debrid_resolve_failed
 import nuvio.composeapp.generated.resources.debrid_stream_stale
 import org.jetbrains.compose.resources.getString
 
 object DirectDebridPlaybackResolver {
     private val torboxResolver = TorboxDirectDebridResolver()
+    private val torboxAddonStreamResolver = TorboxAddonStreamResolver()
     private val realDebridResolver = RealDebridDirectDebridResolver()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mutex = Mutex()
@@ -29,7 +32,10 @@ object DirectDebridPlaybackResolver {
     private val inFlightResolves = mutableMapOf<String, Deferred<DirectDebridResolveResult>>()
 
     suspend fun resolve(stream: StreamItem, season: Int?, episode: Int?): DirectDebridResolveResult {
-        val cacheKey = stream.directDebridResolveCacheKey(season, episode)
+        if (!shouldResolveToPlayableStream(stream)) {
+            return DirectDebridResolveResult.Stale
+        }
+        val cacheKey = stream.debridResolveCacheKey(season, episode)
         if (cacheKey == null) {
             return resolveUncached(stream, season, episode)
         }
@@ -85,7 +91,8 @@ object DirectDebridPlaybackResolver {
     }
 
     suspend fun cachedPlayableStream(stream: StreamItem, season: Int?, episode: Int?): StreamItem? {
-        val cacheKey = stream.directDebridResolveCacheKey(season, episode) ?: return null
+        if (!shouldResolveToPlayableStream(stream)) return null
+        val cacheKey = stream.debridResolveCacheKey(season, episode) ?: return null
         return getCachedResult(cacheKey)
             ?.let { result -> stream.withResolvedDebridUrl(result) }
     }
@@ -96,7 +103,7 @@ object DirectDebridPlaybackResolver {
     private fun getCachedResultLocked(cacheKey: String): DirectDebridResolveResult.Success? {
         val cached = resolvedCache[cacheKey] ?: return null
         val age = epochMs() - cached.cachedAtMs
-        return if (age in 0..DIRECT_DEBRID_RESOLVE_CACHE_TTL_MS) {
+        return if (age in 0..DEBRID_RESOLVE_CACHE_TTL_MS) {
             cached.result
         } else {
             resolvedCache.remove(cacheKey)
@@ -104,11 +111,30 @@ object DirectDebridPlaybackResolver {
         }
     }
 
+    fun shouldResolveToPlayableStream(stream: StreamItem): Boolean {
+        val settings = DebridSettingsRepository.snapshot()
+        if (!settings.enabled) return false
+        if (stream.needsLocalDebridResolve) {
+            return settings.torboxApiKey.isNotBlank()
+        }
+        if (!stream.isDirectDebridStream || stream.playableDirectUrl != null) {
+            return false
+        }
+        return when (DebridProviders.byId(stream.clientResolve?.service)?.id) {
+            DebridProviders.TORBOX_ID -> settings.torboxApiKey.isNotBlank()
+            DebridProviders.REAL_DEBRID_ID -> settings.realDebridApiKey.isNotBlank()
+            else -> false
+        }
+    }
+
     private suspend fun resolveUncached(stream: StreamItem, season: Int?, episode: Int?): DirectDebridResolveResult =
-        when (DebridProviders.byId(stream.clientResolve?.service)?.id) {
-            DebridProviders.TORBOX_ID -> torboxResolver.resolve(stream, season, episode)
-            DebridProviders.REAL_DEBRID_ID -> realDebridResolver.resolve(stream, season, episode)
-            else -> DirectDebridResolveResult.Error
+        when {
+            stream.needsLocalDebridResolve -> torboxAddonStreamResolver.resolve(stream, season, episode)
+            else -> when (DebridProviders.byId(stream.clientResolve?.service)?.id) {
+                DebridProviders.TORBOX_ID -> torboxResolver.resolve(stream, season, episode)
+                DebridProviders.REAL_DEBRID_ID -> realDebridResolver.resolve(stream, season, episode)
+                else -> DirectDebridResolveResult.Error
+            }
         }
 
     suspend fun resolveToPlayableStream(
@@ -116,19 +142,20 @@ object DirectDebridPlaybackResolver {
         season: Int?,
         episode: Int?,
     ): DirectDebridPlayableResult {
-        if (!stream.isDirectDebridStream || stream.directPlaybackUrl != null) {
+        if (!shouldResolveToPlayableStream(stream)) {
             return DirectDebridPlayableResult.Success(stream)
         }
         return when (val result = resolve(stream, season, episode)) {
             is DirectDebridResolveResult.Success -> DirectDebridPlayableResult.Success(stream.withResolvedDebridUrl(result))
             DirectDebridResolveResult.MissingApiKey -> DirectDebridPlayableResult.MissingApiKey
+            DirectDebridResolveResult.NotCached -> DirectDebridPlayableResult.NotCached
             DirectDebridResolveResult.Stale -> DirectDebridPlayableResult.Stale
             DirectDebridResolveResult.Error -> DirectDebridPlayableResult.Error
         }
     }
 }
 
-private const val DIRECT_DEBRID_RESOLVE_CACHE_TTL_MS = 15L * 60L * 1000L
+private const val DEBRID_RESOLVE_CACHE_TTL_MS = 15L * 60L * 1000L
 
 private data class CachedDirectDebridResolve(
     val result: DirectDebridResolveResult.Success,
@@ -138,6 +165,7 @@ private data class CachedDirectDebridResolve(
 sealed class DirectDebridPlayableResult {
     data class Success(val stream: StreamItem) : DirectDebridPlayableResult()
     data object MissingApiKey : DirectDebridPlayableResult()
+    data object NotCached : DirectDebridPlayableResult()
     data object Stale : DirectDebridPlayableResult()
     data object Error : DirectDebridPlayableResult()
 }
@@ -150,6 +178,7 @@ sealed class DirectDebridResolveResult {
     ) : DirectDebridResolveResult()
 
     data object MissingApiKey : DirectDebridResolveResult()
+    data object NotCached : DirectDebridResolveResult()
     data object Stale : DirectDebridResolveResult()
     data object Error : DirectDebridResolveResult()
 }
@@ -158,9 +187,72 @@ fun DirectDebridPlayableResult.toastMessage(): String? =
     when (this) {
         is DirectDebridPlayableResult.Success -> null
         DirectDebridPlayableResult.MissingApiKey -> runBlocking { getString(Res.string.debrid_missing_api_key) }
+        DirectDebridPlayableResult.NotCached -> runBlocking { getString(Res.string.debrid_not_cached) }
         DirectDebridPlayableResult.Stale -> runBlocking { getString(Res.string.debrid_stream_stale) }
         DirectDebridPlayableResult.Error -> runBlocking { getString(Res.string.debrid_resolve_failed) }
     }
+
+private class TorboxAddonStreamResolver(
+    private val fileSelector: TorboxFileSelector = TorboxFileSelector(),
+) {
+    suspend fun resolve(stream: StreamItem, season: Int?, episode: Int?): DirectDebridResolveResult {
+        val apiKey = DebridSettingsRepository.snapshot().torboxApiKey.trim()
+        if (apiKey.isBlank()) {
+            return DirectDebridResolveResult.MissingApiKey
+        }
+
+        val hash = stream.infoHash?.trim()?.lowercase()
+        if (stream.debridCacheStatus?.state == StreamDebridCacheState.NOT_CACHED) {
+            return DirectDebridResolveResult.NotCached
+        }
+        if (!hash.isNullOrBlank() && stream.debridCacheStatus?.state != StreamDebridCacheState.CACHED) {
+            when (TorboxAvailabilityService.isCached(hash)) {
+                false -> return DirectDebridResolveResult.NotCached
+                true, null -> Unit
+            }
+        }
+
+        val magnet = DebridMagnetBuilder.fromStream(stream)
+            ?: return DirectDebridResolveResult.Stale
+        val resolve = stream.toResolveMetadata(season, episode)
+
+        return try {
+            val create = TorboxApiClient.createTorrent(apiKey = apiKey, magnet = magnet)
+            val torrentId = create.body?.takeIf { it.success != false }?.data?.resolvedTorrentId()
+                ?: return create.toFailureForCreate()
+
+            val torrent = TorboxApiClient.getTorrent(apiKey = apiKey, id = torrentId)
+            if (!torrent.isSuccessful) {
+                return DirectDebridResolveResult.Stale
+            }
+            val files = torrent.body?.data?.files.orEmpty()
+            val file = fileSelector.selectFile(files, resolve, season, episode)
+                ?: return DirectDebridResolveResult.Stale
+            val fileId = file.id ?: return DirectDebridResolveResult.Stale
+
+            val link = TorboxApiClient.requestDownloadLink(
+                apiKey = apiKey,
+                torrentId = torrentId,
+                fileId = fileId,
+            )
+            if (!link.isSuccessful) {
+                return DirectDebridResolveResult.Stale
+            }
+            val url = link.body?.data?.takeIf { it.isNotBlank() }
+                ?: return DirectDebridResolveResult.Stale
+
+            DirectDebridResolveResult.Success(
+                url = url,
+                filename = file.displayName().takeIf { it.isNotBlank() }
+                    ?: stream.behaviorHints.filename?.takeIf { it.isNotBlank() },
+                videoSize = file.size ?: stream.behaviorHints.videoSize,
+            )
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            DirectDebridResolveResult.Error
+        }
+    }
+}
 
 private class TorboxDirectDebridResolver(
     private val fileSelector: TorboxFileSelector = TorboxFileSelector(),
@@ -220,11 +312,6 @@ private class TorboxDirectDebridResolver(
         }
     }
 
-    private fun DebridApiResponse<TorboxEnvelopeDto<TorboxCreateTorrentDataDto>>.toFailureForCreate(): DirectDebridResolveResult =
-        when (status) {
-            401, 403 -> DirectDebridResolveResult.Error
-            else -> DirectDebridResolveResult.Stale
-        }
 }
 
 private class RealDebridDirectDebridResolver(
@@ -323,7 +410,8 @@ private fun buildMagnetUri(resolve: StreamClientResolve): String? {
         append("magnet:?xt=urn:btih:")
         append(hash)
         resolve.sources
-            .filter { it.isNotBlank() }
+            .mapNotNull { it.toTrackerUrlOrNull() }
+            .distinct()
             .forEach { source ->
                 append("&tr=")
                 append(encodePathSegment(source))
@@ -331,8 +419,28 @@ private fun buildMagnetUri(resolve: StreamClientResolve): String? {
     }
 }
 
-private fun StreamItem.directDebridResolveCacheKey(season: Int?, episode: Int?): String? {
-    val resolve = clientResolve ?: return null
+private fun String.toTrackerUrlOrNull(): String? {
+    val value = trim()
+    if (value.isBlank() || value.startsWith("dht:", ignoreCase = true)) return null
+    return value.removePrefix("tracker:").trim().takeIf { it.isNotBlank() }
+}
+
+private fun StreamItem.debridResolveCacheKey(season: Int?, episode: Int?): String? {
+    val resolve = clientResolve
+    if (resolve == null && needsLocalDebridResolve) {
+        val apiKey = DebridSettingsRepository.snapshot().torboxApiKey.trim().takeIf { it.isNotBlank() } ?: return null
+        val identity = infoHash ?: torrentMagnetUri ?: behaviorHints.filename ?: return null
+        return listOf(
+            DebridProviders.TORBOX_ID,
+            apiKey.stableFingerprint(),
+            identity.trim().lowercase(),
+            fileIdx?.toString().orEmpty(),
+            behaviorHints.filename.orEmpty().trim().lowercase(),
+            season?.toString().orEmpty(),
+            episode?.toString().orEmpty(),
+        ).joinToString("|")
+    }
+    resolve ?: return null
     val providerId = DebridProviders.byId(resolve.service)?.id ?: return null
     val apiKey = when (providerId) {
         DebridProviders.TORBOX_ID -> DebridSettingsRepository.snapshot().torboxApiKey
@@ -355,6 +463,28 @@ private fun StreamItem.directDebridResolveCacheKey(season: Int?, episode: Int?):
         (episode ?: resolve.episode)?.toString().orEmpty(),
     ).joinToString("|")
 }
+
+private fun StreamItem.toResolveMetadata(season: Int?, episode: Int?): StreamClientResolve =
+    StreamClientResolve(
+        type = "torrent",
+        infoHash = infoHash,
+        fileIdx = fileIdx,
+        magnetUri = torrentMagnetUri,
+        sources = sources,
+        torrentName = title ?: name,
+        filename = behaviorHints.filename,
+        season = season,
+        episode = episode,
+        service = DebridProviders.TORBOX_ID,
+        isCached = debridCacheStatus?.state == StreamDebridCacheState.CACHED,
+    )
+
+private fun DebridApiResponse<TorboxEnvelopeDto<TorboxCreateTorrentDataDto>>.toFailureForCreate(): DirectDebridResolveResult =
+    when (status) {
+        401, 403 -> DirectDebridResolveResult.Error
+        409 -> DirectDebridResolveResult.NotCached
+        else -> DirectDebridResolveResult.Stale
+    }
 
 private fun String.stableFingerprint(): String {
     val hash = fold(1125899906842597L) { acc, char -> (acc * 31L) + char.code }

@@ -5,8 +5,10 @@ import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.httpGetText
+import com.nuvio.app.features.debrid.DebridSettingsRepository
+import com.nuvio.app.features.debrid.DebridStreamPresentation
 import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
-import com.nuvio.app.features.debrid.DirectDebridStreamSource
+import com.nuvio.app.features.debrid.TorboxAvailabilityService
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.pluginContentId
@@ -159,7 +161,6 @@ object PlayerStreamsRepository {
         val installedAddonNames = installedAddons.map { it.displayTitle }.toSet()
         PlayerSettingsRepository.ensureLoaded()
         val playerSettings = PlayerSettingsRepository.uiState.value
-        val debridTargets = DirectDebridStreamSource.configuredTargets()
         val pluginScrapers = if (AppFeaturePolicy.pluginsEnabled) {
             PluginRepository.initialize()
             PluginRepository.getEnabledScrapersForType(type)
@@ -167,7 +168,7 @@ object PlayerStreamsRepository {
             emptyList()
         }
 
-        if (installedAddons.isEmpty() && pluginScrapers.isEmpty() && debridTargets.isEmpty()) {
+        if (installedAddons.isEmpty() && pluginScrapers.isEmpty()) {
             stateFlow.value = StreamsUiState(
                 isAnyLoading = false,
                 emptyStateReason = com.nuvio.app.features.streams.StreamsEmptyStateReason.NoAddonsInstalled,
@@ -193,7 +194,7 @@ object PlayerStreamsRepository {
                 )
             }
 
-        if (streamAddons.isEmpty() && pluginScrapers.isEmpty() && debridTargets.isEmpty()) {
+        if (streamAddons.isEmpty() && pluginScrapers.isEmpty()) {
             stateFlow.value = StreamsUiState(
                 isAnyLoading = false,
                 emptyStateReason = com.nuvio.app.features.streams.StreamsEmptyStateReason.NoCompatibleAddons,
@@ -213,13 +214,6 @@ object PlayerStreamsRepository {
             AddonStreamGroup(
                 addonName = scraper.name,
                 addonId = "plugin:${scraper.id}",
-                streams = emptyList(),
-                isLoading = true,
-            )
-        } + debridTargets.map { target ->
-            AddonStreamGroup(
-                addonName = target.addonName,
-                addonId = target.addonId,
                 streams = emptyList(),
                 isLoading = true,
             )
@@ -291,17 +285,7 @@ object PlayerStreamsRepository {
                 }
             }
 
-            val debridJobs = debridTargets.map { target ->
-                async {
-                    DirectDebridStreamSource.fetchProviderStreams(
-                        type = type,
-                        videoId = videoId,
-                        target = target,
-                    )
-                }
-            }
-
-            val jobs = addonJobs + pluginJobs + debridJobs
+            val jobs = addonJobs + pluginJobs
             val completions = Channel<AddonStreamGroup>(capacity = Channel.BUFFERED)
             jobs.forEach { deferred ->
                 launch {
@@ -329,25 +313,33 @@ object PlayerStreamsRepository {
                         } else null,
                     )
                 }
-                if (!debridPreparationLaunched && result.streams.any { it.isDirectDebridStream }) {
-                    debridPreparationLaunched = true
-                    launch {
-                        DirectDebridStreamPreparer.prepare(
-                            streams = stateFlow.value.groups.flatMap { it.streams },
-                            season = season,
-                            episode = episode,
-                            playerSettings = playerSettings,
-                            installedAddonNames = installedAddonNames,
-                        ) { original, prepared ->
-                            stateFlow.update { current ->
-                                current.copy(
-                                    groups = DirectDebridStreamPreparer.replacePreparedStream(
-                                        groups = current.groups,
-                                        original = original,
-                                        prepared = prepared,
-                                    ),
-                                )
-                            }
+            }
+            if (!debridPreparationLaunched) {
+                debridPreparationLaunched = true
+                val checkingGroups = TorboxAvailabilityService.markChecking(stateFlow.value.groups)
+                stateFlow.update { current -> current.copy(groups = checkingGroups) }
+                val availabilityGroups = TorboxAvailabilityService.annotateCachedAvailability(stateFlow.value.groups)
+                val presentedGroups = DebridStreamPresentation.apply(
+                    groups = availabilityGroups,
+                    settings = DebridSettingsRepository.snapshot(),
+                )
+                stateFlow.update { current -> current.copy(groups = presentedGroups) }
+                launch {
+                    DirectDebridStreamPreparer.prepare(
+                        streams = stateFlow.value.groups.flatMap { it.streams },
+                        season = season,
+                        episode = episode,
+                        playerSettings = playerSettings,
+                        installedAddonNames = installedAddonNames,
+                    ) { original, prepared ->
+                        stateFlow.update { current ->
+                            current.copy(
+                                groups = DirectDebridStreamPreparer.replacePreparedStream(
+                                    groups = current.groups,
+                                    original = original,
+                                    prepared = prepared,
+                                ),
+                            )
                         }
                     }
                 }

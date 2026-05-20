@@ -1153,6 +1153,7 @@
     <string name="streams_size">SIZE %1$s</string>
     <string name="streams_torrent_not_supported">This stream type is not supported</string>
     <string name="debrid_missing_api_key">Add a Debrid API key in Settings.</string>
+    <string name="debrid_not_cached">Not cached on Torbox.</string>
     <string name="debrid_stream_stale">This Debrid result expired. Refreshing streams.</string>
     <string name="debrid_resolve_failed">Could not resolve this Debrid stream.</string>
     <string name="external_player_failed">Couldn&apos;t open external player</string>

@@ -60,6 +60,7 @@ internal fun TabletStreamsLayout(
     episodeNumber: Int?,
     episodeTitle: String?,
     uiState: StreamsUiState,
+    debridEnabled: Boolean,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
@@ -199,6 +200,7 @@ internal fun TabletStreamsLayout(
 
                         StreamList(
                             uiState = uiState,
+                            debridEnabled = debridEnabled,
                             onStreamSelected = onStreamSelected,
                             onStreamLongPress = onStreamLongPress,
                             resumePositionMs = resumePositionMs,

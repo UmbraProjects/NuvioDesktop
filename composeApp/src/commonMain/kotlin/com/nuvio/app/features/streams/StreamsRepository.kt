@@ -6,7 +6,9 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
-import com.nuvio.app.features.debrid.DirectDebridStreamSource
+import com.nuvio.app.features.debrid.DebridSettingsRepository
+import com.nuvio.app.features.debrid.DebridStreamPresentation
+import com.nuvio.app.features.debrid.TorboxAvailabilityService
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
@@ -101,6 +103,7 @@ object StreamsRepository {
 
         PlayerSettingsRepository.ensureLoaded()
         val playerSettings = PlayerSettingsRepository.uiState.value
+        val debridSettings = DebridSettingsRepository.snapshot()
         val autoPlayMode = playerSettings.streamAutoPlayMode
         val isAutoPlayEnabled = !manualSelection && autoPlayMode != StreamAutoPlayMode.MANUAL &&
             !(autoPlayMode == StreamAutoPlayMode.REGEX_MATCH &&
@@ -134,7 +137,6 @@ object StreamsRepository {
         }
 
         val installedAddons = AddonRepository.uiState.value.addons
-        val debridTargets = DirectDebridStreamSource.configuredTargets()
         val pluginScrapers = if (AppFeaturePolicy.pluginsEnabled) {
             PluginRepository.getEnabledScrapersForType(type)
         } else {
@@ -145,7 +147,7 @@ object StreamsRepository {
             groupByRepository = pluginUiState.groupStreamsByRepository,
         )
 
-        if (installedAddons.isEmpty() && pluginProviderGroups.isEmpty() && debridTargets.isEmpty()) {
+        if (installedAddons.isEmpty() && pluginProviderGroups.isEmpty()) {
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
                 isAnyLoading = false,
@@ -174,7 +176,7 @@ object StreamsRepository {
 
         log.d { "Found ${streamAddons.size} addons for stream type=$type id=$videoId" }
 
-        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && debridTargets.isEmpty()) {
+        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty()) {
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
                 isAnyLoading = false,
@@ -199,13 +201,6 @@ object StreamsRepository {
                 streams = emptyList(),
                 isLoading = true,
             )
-        } + debridTargets.map { target ->
-            AddonStreamGroup(
-                addonName = target.addonName,
-                addonId = target.addonId,
-                streams = emptyList(),
-                isLoading = true,
-            )
         }, installedAddonOrder)
         _uiState.value = StreamsUiState(
             requestToken = requestToken,
@@ -224,8 +219,7 @@ object StreamsRepository {
                 .toMutableMap()
             val pluginFirstErrorByAddonId = mutableMapOf<String, String>()
             val totalTasks = streamAddons.size +
-                pluginProviderGroups.sumOf { it.scrapers.size } +
-                debridTargets.size
+                pluginProviderGroups.sumOf { it.scrapers.size }
 
             val installedAddonNames = installedAddonOrder.toSet()
             var autoSelectTriggered = false
@@ -255,6 +249,7 @@ object StreamsRepository {
                                     installedAddonNames = installedAddonNames,
                                     selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
                                     selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
+                                    debridEnabled = debridSettings.enabled,
                                 )
                                 _uiState.update { it.copy(autoPlayStream = selected) }
                                 if (selected == null) {
@@ -363,20 +358,6 @@ object StreamsRepository {
                 }
             }
 
-            debridTargets.forEach { target ->
-                launch {
-                    publishCompletion(
-                        StreamLoadCompletion.Debrid(
-                            DirectDebridStreamSource.fetchProviderStreams(
-                                type = type,
-                                videoId = videoId,
-                                target = target,
-                            ),
-                        ),
-                    )
-                }
-            }
-
             repeat(totalTasks) {
                 when (val completion = completions.receive()) {
                     is StreamLoadCompletion.Addon -> {
@@ -439,43 +420,35 @@ object StreamsRepository {
                         }
                     }
 
-                    is StreamLoadCompletion.Debrid -> {
-                        val result = completion.group
+                }
+            }
+
+            if (!debridPreparationLaunched) {
+                debridPreparationLaunched = true
+                val checkingGroups = TorboxAvailabilityService.markChecking(_uiState.value.groups)
+                _uiState.update { current -> current.copy(groups = checkingGroups) }
+                val availabilityGroups = TorboxAvailabilityService.annotateCachedAvailability(_uiState.value.groups)
+                val presentedGroups = DebridStreamPresentation.apply(
+                    groups = availabilityGroups,
+                    settings = debridSettings,
+                )
+                _uiState.update { current -> current.copy(groups = presentedGroups) }
+                launch {
+                    DirectDebridStreamPreparer.prepare(
+                        streams = _uiState.value.groups.flatMap { it.streams },
+                        season = season,
+                        episode = episode,
+                        playerSettings = playerSettings,
+                        installedAddonNames = installedAddonNames,
+                    ) { original, prepared ->
                         _uiState.update { current ->
-                            val updated = StreamAutoPlaySelector.orderAddonStreams(
-                                groups = current.groups.map { group ->
-                                    if (group.addonId == result.addonId) result else group
-                                },
-                                installedOrder = installedAddonOrder,
-                            )
-                            val anyLoading = updated.any { it.isLoading }
                             current.copy(
-                                groups = updated,
-                                isAnyLoading = anyLoading,
-                                emptyStateReason = updated.toEmptyStateReason(anyLoading),
+                                groups = DirectDebridStreamPreparer.replacePreparedStream(
+                                    groups = current.groups,
+                                    original = original,
+                                    prepared = prepared,
+                                ),
                             )
-                        }
-                        if (!debridPreparationLaunched && result.streams.any { it.isDirectDebridStream }) {
-                            debridPreparationLaunched = true
-                            launch {
-                                DirectDebridStreamPreparer.prepare(
-                                    streams = _uiState.value.groups.flatMap { it.streams },
-                                    season = season,
-                                    episode = episode,
-                                    playerSettings = playerSettings,
-                                    installedAddonNames = installedAddonNames,
-                                ) { original, prepared ->
-                                    _uiState.update { current ->
-                                        current.copy(
-                                            groups = DirectDebridStreamPreparer.replacePreparedStream(
-                                                groups = current.groups,
-                                                original = original,
-                                                prepared = prepared,
-                                            ),
-                                        )
-                                    }
-                                }
-                            }
                         }
                     }
                 }
@@ -492,6 +465,7 @@ object StreamsRepository {
                     installedAddonNames = installedAddonNames,
                     selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
                     selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
+                    debridEnabled = debridSettings.enabled,
                 )
                 _uiState.update { it.copy(autoPlayStream = selected) }
             }
@@ -569,7 +543,6 @@ private data class PluginProviderGroup(
 
 private sealed interface StreamLoadCompletion {
     data class Addon(val group: AddonStreamGroup) : StreamLoadCompletion
-    data class Debrid(val group: AddonStreamGroup) : StreamLoadCompletion
     data class PluginScraper(
         val addonId: String,
         val streams: List<StreamItem>,

@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioToastController
+import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.debrid.toastMessage
@@ -854,7 +855,7 @@ fun PlayerScreen(
             onResolved: (StreamItem) -> Unit,
             onStale: () -> Unit,
         ): Boolean {
-            if (!stream.isDirectDebridStream || stream.directPlaybackUrl != null) return false
+            if (!DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) return false
             scope.launch {
                 val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
                     stream = stream,
@@ -896,7 +897,7 @@ fun PlayerScreen(
                     },
                 )
             ) return
-            val url = stream.directPlaybackUrl ?: return
+            val url = stream.playableDirectUrl ?: return
             if (url == activeSourceUrl) return
             val currentPositionMs = playbackSnapshot.positionMs.coerceAtLeast(0L)
             flushWatchProgress()
@@ -957,7 +958,7 @@ fun PlayerScreen(
                     },
                 )
             ) return
-            val url = stream.directPlaybackUrl ?: return
+            val url = stream.playableDirectUrl ?: return
             showNextEpisodeCard = false
             showSourcesPanel = false
             showEpisodesPanel = false
@@ -1165,6 +1166,7 @@ fun PlayerScreen(
                                 null
                             },
                             preferBingeGroupInSelection = settings.streamAutoPlayPreferBingeGroup,
+                            debridEnabled = DebridSettingsRepository.snapshot().enabled,
                         )
                     } else null
 

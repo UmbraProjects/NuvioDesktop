@@ -49,7 +49,7 @@ object DirectDebridStreamPreparer {
             try {
                 when (val result = DirectDebridPlaybackResolver.resolveToPlayableStream(stream, season, episode)) {
                     is DirectDebridPlayableResult.Success -> {
-                        if (result.stream.directPlaybackUrl != null) {
+                        if (result.stream.playableDirectUrl != null) {
                             onPrepared(stream, result.stream)
                         }
                     }
@@ -71,7 +71,10 @@ object DirectDebridStreamPreparer {
     ): List<StreamItem> {
         if (limit <= 0) return emptyList()
         val candidates = streams
-            .filter { it.isDirectDebridStream && it.directPlaybackUrl == null }
+            .filter { stream ->
+                stream.playableDirectUrl == null &&
+                    (stream.isDirectDebridStream || stream.isCachedDebridTorrentStream)
+            }
             .distinctBy { it.preparationKey() }
         if (candidates.isEmpty()) return emptyList()
 
@@ -85,7 +88,7 @@ object DirectDebridStreamPreparer {
             selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
             selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
         )
-        if (autoPlaySelection?.isDirectDebridStream == true) {
+        if (autoPlaySelection?.let { it.isDirectDebridStream || it.isCachedDebridTorrentStream } == true) {
             candidates.firstOrNull { it.preparationKey() == autoPlaySelection.preparationKey() }
                 ?.let(prioritized::add)
         }
@@ -180,7 +183,10 @@ private fun StreamItem.preparationKey(): String {
 
     return listOf(
         addonId.lowercase(),
-        directPlaybackUrl.orEmpty().lowercase(),
+        infoHash.orEmpty().lowercase(),
+        fileIdx?.toString().orEmpty(),
+        behaviorHints.filename.orEmpty().lowercase(),
+        playableDirectUrl.orEmpty().lowercase(),
         name.orEmpty().lowercase(),
         title.orEmpty().lowercase(),
     ).joinToString("|")
@@ -192,5 +198,5 @@ private fun StreamItem.searchableText(): String =
         append(name.orEmpty()).append(' ')
         append(title.orEmpty()).append(' ')
         append(description.orEmpty()).append(' ')
-        append(directPlaybackUrl.orEmpty())
+        append(playableDirectUrl.orEmpty())
     }
