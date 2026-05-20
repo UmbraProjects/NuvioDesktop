@@ -1451,4 +1451,12 @@
     <string name="settings_debrid_section_providers">Compte</string>
     <string name="settings_debrid_section_title">Debrid</string>
     <string name="settings_integrations_debrid_description">Sources de comptes cloud expérimentales</string>
+    <string name="action_saving">Enregistrement…</string>
+    <string name="settings_debrid_dialog_placeholder">Saisis la clé API Torbox</string>
+    <string name="settings_debrid_dialog_subtitle">Saisis ta clé API Torbox.</string>
+    <string name="settings_debrid_dialog_title">Clé API Torbox</string>
+    <string name="settings_debrid_formatter_reset_subtitle">Restaure la mise en forme des sources par défaut.</string>
+    <string name="settings_debrid_formatter_reset_title">Réinitialiser la mise en forme</string>
+    <string name="settings_debrid_not_set">Non défini</string>
+    <string name="settings_debrid_prepare_stream_count_warning">Privilégie une valeur basse quand c’est possible. Les services Debrid peuvent limiter le nombre de liens résolus dans une période donnée. Ouvrir un film ou un épisode peut compter dans ces limites même sans appuyer sur Lecture, car les liens sont préparés à l’avance.</string>
 </resources>
