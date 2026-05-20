@@ -110,14 +110,28 @@ object AddonStreamWarmupRepository {
         val targets = key.addonTargets
         if (targets.isEmpty()) return emptyList()
 
+        val addonIds = targets.map { it.addonId }.toSet()
         val orderedGroups = coroutineScope {
             targets.map { target ->
                 async {
-                    fetchAddonStreams(
+                    val group = fetchAddonStreams(
                         target = target,
                         type = key.type,
                         videoId = key.videoId,
                     )
+                    val eligibleGroupIds = setOf(group.addonId)
+                    val checkingGroup = TorboxAvailabilityService.markChecking(
+                        groups = listOf(group),
+                        eligibleGroupIds = eligibleGroupIds,
+                    ).firstOrNull() ?: group
+                    val availabilityGroup = TorboxAvailabilityService.annotateCachedAvailability(
+                        groups = listOf(checkingGroup),
+                        eligibleGroupIds = eligibleGroupIds,
+                    ).firstOrNull() ?: checkingGroup
+                    DebridStreamPresentation.apply(
+                        groups = listOf(availabilityGroup),
+                        settings = key.settings,
+                    ).firstOrNull() ?: availabilityGroup
                 }
             }.awaitAll()
         }.let { groups ->
@@ -127,18 +141,7 @@ object AddonStreamWarmupRepository {
             )
         }
 
-        val addonIds = targets.map { it.addonId }.toSet()
-        val availabilityGroups = TorboxAvailabilityService.annotateCachedAvailability(
-            groups = TorboxAvailabilityService.markChecking(
-                groups = orderedGroups,
-                eligibleGroupIds = addonIds,
-            ),
-            eligibleGroupIds = addonIds,
-        )
-        var preparedGroups = DebridStreamPresentation.apply(
-            groups = availabilityGroups,
-            settings = key.settings,
-        )
+        var preparedGroups = orderedGroups
 
         PlayerSettingsRepository.ensureLoaded()
         DirectDebridStreamPreparer.prepare(

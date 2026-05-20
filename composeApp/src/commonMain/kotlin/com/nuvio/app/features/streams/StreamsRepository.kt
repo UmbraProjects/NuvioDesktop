@@ -230,13 +230,55 @@ object StreamsRepository {
 
             val installedAddonNames = installedAddonOrder.toSet()
             val installedAddonIds = streamAddons.map { it.addonId }.toSet()
+            val debridAvailabilityJobs = mutableListOf<Job>()
             var autoSelectTriggered = false
             var timeoutElapsed = false
-            var debridPreparationLaunched = false
             fun publishCompletion(completion: StreamLoadCompletion) {
                 if (completions.trySend(completion).isFailure) {
                     log.d { "Ignoring late stream load completion after channel close" }
                 }
+            }
+            fun presentDebridGroup(group: AddonStreamGroup): AddonStreamGroup =
+                DebridStreamPresentation.apply(
+                    groups = listOf(group),
+                    settings = debridSettings,
+                ).firstOrNull() ?: group
+
+            fun publishAddonGroup(group: AddonStreamGroup) {
+                _uiState.update { current ->
+                    val updated = StreamAutoPlaySelector.orderAddonStreams(
+                        groups = current.groups.map { currentGroup ->
+                            if (currentGroup.addonId == group.addonId) group else currentGroup
+                        },
+                        installedOrder = installedAddonOrder,
+                    )
+                    val anyLoading = updated.any { it.isLoading }
+                    current.copy(
+                        groups = updated,
+                        isAnyLoading = anyLoading,
+                        emptyStateReason = updated.toEmptyStateReason(anyLoading),
+                    )
+                }
+            }
+
+            fun launchDebridAvailability(group: AddonStreamGroup) {
+                if (group.addonId !in installedAddonIds || group.streams.isEmpty()) return
+
+                val eligibleGroupIds = setOf(group.addonId)
+                val checkingGroup = TorboxAvailabilityService.markChecking(
+                    groups = listOf(group),
+                    eligibleGroupIds = eligibleGroupIds,
+                ).firstOrNull() ?: group
+                publishAddonGroup(checkingGroup)
+
+                val availabilityJob = launch {
+                    val availabilityGroup = TorboxAvailabilityService.annotateCachedAvailability(
+                        groups = listOf(checkingGroup),
+                        eligibleGroupIds = eligibleGroupIds,
+                    ).firstOrNull() ?: checkingGroup
+                    publishAddonGroup(presentDebridGroup(availabilityGroup))
+                }
+                debridAvailabilityJobs += availabilityJob
             }
 
             val timeoutJob = if (isAutoPlayEnabled) {
@@ -370,20 +412,8 @@ object StreamsRepository {
                 when (val completion = completions.receive()) {
                     is StreamLoadCompletion.Addon -> {
                         val result = completion.group
-                        _uiState.update { current ->
-                            val updated = StreamAutoPlaySelector.orderAddonStreams(
-                                groups = current.groups.map { group ->
-                                    if (group.addonId == result.addonId) result else group
-                                },
-                                installedOrder = installedAddonOrder,
-                            )
-                            val anyLoading = updated.any { it.isLoading }
-                            current.copy(
-                                groups = updated,
-                                isAnyLoading = anyLoading,
-                                emptyStateReason = updated.toEmptyStateReason(anyLoading),
-                            )
-                        }
+                        publishAddonGroup(result)
+                        launchDebridAvailability(result)
                     }
 
                     is StreamLoadCompletion.PluginScraper -> {
@@ -431,42 +461,28 @@ object StreamsRepository {
                 }
             }
 
-            if (!debridPreparationLaunched) {
-                debridPreparationLaunched = true
-                val checkingGroups = TorboxAvailabilityService.markChecking(
-                    groups = _uiState.value.groups,
-                    eligibleGroupIds = installedAddonIds,
-                )
-                _uiState.update { current -> current.copy(groups = checkingGroups) }
-                val availabilityGroups = TorboxAvailabilityService.annotateCachedAvailability(
-                    groups = _uiState.value.groups,
-                    eligibleGroupIds = installedAddonIds,
-                )
-                val presentedGroups = DebridStreamPresentation.apply(
-                    groups = availabilityGroups,
-                    settings = debridSettings,
-                )
-                _uiState.update { current -> current.copy(groups = presentedGroups) }
-                launch {
-                    DirectDebridStreamPreparer.prepare(
-                        streams = _uiState.value.groups
-                            .filter { it.addonId in installedAddonIds }
-                            .flatMap { it.streams },
-                        season = season,
-                        episode = episode,
-                        playerSettings = playerSettings,
-                        installedAddonNames = installedAddonNames,
-                    ) { original, prepared ->
-                        _uiState.update { current ->
-                            current.copy(
-                                groups = DirectDebridStreamPreparer.replacePreparedStream(
-                                    groups = current.groups,
-                                    original = original,
-                                    prepared = prepared,
-                                    eligibleGroupIds = installedAddonIds,
-                                ),
-                            )
-                        }
+            for (availabilityJob in debridAvailabilityJobs) {
+                availabilityJob.join()
+            }
+            launch {
+                DirectDebridStreamPreparer.prepare(
+                    streams = _uiState.value.groups
+                        .filter { it.addonId in installedAddonIds }
+                        .flatMap { it.streams },
+                    season = season,
+                    episode = episode,
+                    playerSettings = playerSettings,
+                    installedAddonNames = installedAddonNames,
+                ) { original, prepared ->
+                    _uiState.update { current ->
+                        current.copy(
+                            groups = DirectDebridStreamPreparer.replacePreparedStream(
+                                groups = current.groups,
+                                original = original,
+                                prepared = prepared,
+                                eligibleGroupIds = installedAddonIds,
+                            ),
+                        )
                     }
                 }
             }
