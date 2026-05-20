@@ -866,7 +866,7 @@ private fun LazyListScope.streamSection(
             StreamCard(
                 stream = stream,
                 onClick = {
-                    if (stream.directPlaybackUrl != null || stream.isTorrentStream || stream.isDirectDebridStream) {
+                    if (stream.directPlaybackUrl != null || stream.isTorrentStream) {
                         onStreamSelected(stream, resumePositionMs, resumeProgressFraction)
                     }
                 },
@@ -898,7 +898,7 @@ internal fun streamCardRenderKey(
     append(':')
     append(itemIndex)
     append(':')
-    append(stream.url ?: stream.infoHash ?: stream.clientResolve?.infoHash ?: stream.streamLabel)
+    append(stream.url ?: stream.infoHash ?: stream.streamLabel)
 }
 
 // ---------------------------------------------------------------------------
@@ -972,7 +972,7 @@ private fun StreamCard(
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val isEnabled = stream.directPlaybackUrl != null || stream.isTorrentStream || stream.isDirectDebridStream
+    val isEnabled = stream.directPlaybackUrl != null || stream.isTorrentStream
     val cardShape = RoundedCornerShape(12.dp)
     Row(
         modifier = modifier

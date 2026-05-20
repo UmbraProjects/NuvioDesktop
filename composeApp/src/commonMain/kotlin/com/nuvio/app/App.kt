@@ -106,9 +106,6 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.catalog.CatalogRepository
 import com.nuvio.app.features.catalog.CatalogScreen
 import com.nuvio.app.features.catalog.INTERNAL_LIBRARY_MANIFEST_URL
-import com.nuvio.app.features.debrid.DirectDebridPlayableResult
-import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
-import com.nuvio.app.features.debrid.toastMessage
 import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.downloads.DownloadsScreen
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -1360,8 +1357,6 @@ private fun MainAppContent(
                         return@composable
                     }
                     val pauseDescription = launch.pauseDescription
-                    val streamRouteScope = rememberCoroutineScope()
-                    var resolvingDebridStream by rememberSaveable(route.launchId) { mutableStateOf(false) }
                     val lifecycleOwner = backStackEntry
                     DisposableEffect(lifecycleOwner, route.launchId) {
                         val observer = LifecycleEventObserver { _, event ->
@@ -1511,31 +1506,7 @@ private fun MainAppContent(
                         if (reuseNavigated) return@LaunchedEffect
                         if (autoPlayHandled) return@LaunchedEffect
                         if (streamsUiState.requestToken != expectedStreamsRequestToken) return@LaunchedEffect
-                        val selectedStream = streamsUiState.autoPlayStream ?: return@LaunchedEffect
-                        val stream = when (
-                            val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
-                                stream = selectedStream,
-                                season = launch.seasonNumber,
-                                episode = launch.episodeNumber,
-                            )
-                        ) {
-                            is DirectDebridPlayableResult.Success -> resolved.stream
-                            else -> {
-                                resolved.toastMessage()?.let { NuvioToastController.show(it) }
-                                StreamsRepository.consumeAutoPlay()
-                                if (resolved == DirectDebridPlayableResult.Stale) {
-                                    StreamsRepository.reload(
-                                        type = launch.type,
-                                        videoId = effectiveVideoId,
-                                        parentMetaId = launch.parentMetaId,
-                                        season = launch.seasonNumber,
-                                        episode = launch.episodeNumber,
-                                        manualSelection = launch.manualSelection,
-                                    )
-                                }
-                                return@LaunchedEffect
-                            }
-                        }
+                        val stream = streamsUiState.autoPlayStream ?: return@LaunchedEffect
                         val sourceUrl = stream.directPlaybackUrl ?: return@LaunchedEffect
                         autoPlayHandled = true
                         if (playerSettings.streamReuseLastLinkEnabled) {
@@ -1613,41 +1584,6 @@ private fun MainAppContent(
                         forceExternal: Boolean,
                         forceInternal: Boolean,
                     ) {
-                        if (stream.isDirectDebridStream && stream.directPlaybackUrl == null) {
-                            if (resolvingDebridStream) return
-                            streamRouteScope.launch {
-                                resolvingDebridStream = true
-                                val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
-                                    stream = stream,
-                                    season = launch.seasonNumber,
-                                    episode = launch.episodeNumber,
-                                )
-                                resolvingDebridStream = false
-                                when (resolved) {
-                                    is DirectDebridPlayableResult.Success -> openSelectedStream(
-                                        stream = resolved.stream,
-                                        resolvedResumePositionMs = resolvedResumePositionMs,
-                                        resolvedResumeProgressFraction = resolvedResumeProgressFraction,
-                                        forceExternal = forceExternal,
-                                        forceInternal = forceInternal,
-                                    )
-                                    else -> {
-                                        resolved.toastMessage()?.let { NuvioToastController.show(it) }
-                                        if (resolved == DirectDebridPlayableResult.Stale) {
-                                            StreamsRepository.reload(
-                                                type = launch.type,
-                                                videoId = effectiveVideoId,
-                                                parentMetaId = launch.parentMetaId,
-                                                season = launch.seasonNumber,
-                                                episode = launch.episodeNumber,
-                                                manualSelection = launch.manualSelection,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            return
-                        }
                         val sourceUrl = stream.directPlaybackUrl ?: return
                         if (playerSettings.streamReuseLastLinkEnabled) {
                             val cacheKey = StreamLinkCacheRepository.contentKey(
@@ -1751,26 +1687,6 @@ private fun MainAppContent(
                             },
                             modifier = Modifier.fillMaxSize(),
                         )
-                        if (resolvingDebridStream) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.82f)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                                ) {
-                                    CircularProgressIndicator(color = Color.White)
-                                    Text(
-                                        text = stringResource(Res.string.streams_finding_source),
-                                        color = Color.White.copy(alpha = 0.82f),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
                 composable<PlayerRoute>(
