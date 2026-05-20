@@ -756,6 +756,8 @@
     <string name="settings_playback_option_none">None</string>
     <string name="settings_playback_prefer_binge_group">Prefer Binge Group (Next Episode)</string>
     <string name="settings_playback_prefer_binge_group_description">Try the same source profile first (same addon/quality group) before normal auto-play rules.</string>
+    <string name="settings_playback_reuse_binge_group">Reuse Binge Group</string>
+    <string name="settings_playback_reuse_binge_group_description">Remember and reuse the last binge group across sessions (Continue Watching, Details, etc.).</string>
     <string name="settings_playback_preferred_audio_language">Preferred Audio Language</string>
     <string name="settings_playback_preferred_subtitle_language">Preferred Language</string>
     <string name="settings_playback_presets">Presets</string>
