@@ -7,6 +7,29 @@ import com.nuvio.app.features.streams.StreamAutoPlaySource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.abs
+
+val STREAM_AUTO_PLAY_TIMEOUT_VALUES: List<Int> = listOf(
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30, Int.MAX_VALUE
+)
+
+/**
+ * Snaps [value] to the nearest allowed timeout value in [STREAM_AUTO_PLAY_TIMEOUT_VALUES].
+ * Ties break to the lower value. Negative values snap to 0.
+ */
+fun snapToAllowedTimeout(value: Int): Int {
+    if (value <= 0) return 0
+    var bestValue = STREAM_AUTO_PLAY_TIMEOUT_VALUES[0]
+    var bestDistance = Long.MAX_VALUE
+    for (allowed in STREAM_AUTO_PLAY_TIMEOUT_VALUES) {
+        val distance = abs(value.toLong() - allowed.toLong())
+        if (distance < bestDistance || (distance == bestDistance && allowed < bestValue)) {
+            bestDistance = distance
+            bestValue = allowed
+        }
+    }
+    return bestValue
+}
 
 data class PlayerSettingsUiState(
     val showLoadingOverlay: Boolean = true,
@@ -38,6 +61,7 @@ data class PlayerSettingsUiState(
     val introSubmitEnabled: Boolean = false,
     val streamAutoPlayNextEpisodeEnabled: Boolean = false,
     val streamAutoPlayPreferBingeGroup: Boolean = true,
+    val streamAutoPlayReuseBingeGroup: Boolean = true,
     val nextEpisodeThresholdMode: NextEpisodeThresholdMode = NextEpisodeThresholdMode.PERCENTAGE,
     val nextEpisodeThresholdPercent: Float = 99f,
     val nextEpisodeThresholdMinutesBeforeEnd: Float = 2f,
@@ -93,6 +117,7 @@ object PlayerSettingsRepository {
     private var introSubmitEnabled = false
     private var streamAutoPlayNextEpisodeEnabled = false
     private var streamAutoPlayPreferBingeGroup = true
+    private var streamAutoPlayReuseBingeGroup = true
     private var nextEpisodeThresholdMode = NextEpisodeThresholdMode.PERCENTAGE
     private var nextEpisodeThresholdPercent = 99f
     private var nextEpisodeThresholdMinutesBeforeEnd = 2f
@@ -153,6 +178,7 @@ object PlayerSettingsRepository {
         introSubmitEnabled = false
         streamAutoPlayNextEpisodeEnabled = false
         streamAutoPlayPreferBingeGroup = true
+        streamAutoPlayReuseBingeGroup = true
         nextEpisodeThresholdMode = NextEpisodeThresholdMode.PERCENTAGE
         nextEpisodeThresholdPercent = 99f
         nextEpisodeThresholdMinutesBeforeEnd = 2f
@@ -232,6 +258,14 @@ object PlayerSettingsRepository {
         }
         streamAutoPlayRegex = PlayerSettingsStorage.loadStreamAutoPlayRegex() ?: ""
         streamAutoPlayTimeoutSeconds = PlayerSettingsStorage.loadStreamAutoPlayTimeoutSeconds() ?: 3
+        // Legacy migration: 11 was the old sentinel for "unlimited"
+        if (streamAutoPlayTimeoutSeconds == 11) {
+            streamAutoPlayTimeoutSeconds = Int.MAX_VALUE
+            PlayerSettingsStorage.saveStreamAutoPlayTimeoutSeconds(streamAutoPlayTimeoutSeconds)
+        } else if (streamAutoPlayTimeoutSeconds !in STREAM_AUTO_PLAY_TIMEOUT_VALUES) {
+            streamAutoPlayTimeoutSeconds = snapToAllowedTimeout(streamAutoPlayTimeoutSeconds)
+            PlayerSettingsStorage.saveStreamAutoPlayTimeoutSeconds(streamAutoPlayTimeoutSeconds)
+        }
         skipIntroEnabled = PlayerSettingsStorage.loadSkipIntroEnabled() ?: true
         animeSkipEnabled = PlayerSettingsStorage.loadAnimeSkipEnabled() ?: false
         animeSkipClientId = PlayerSettingsStorage.loadAnimeSkipClientId() ?: ""
@@ -239,6 +273,7 @@ object PlayerSettingsRepository {
         introSubmitEnabled = PlayerSettingsStorage.loadIntroSubmitEnabled() ?: false
         streamAutoPlayNextEpisodeEnabled = PlayerSettingsStorage.loadStreamAutoPlayNextEpisodeEnabled() ?: false
         streamAutoPlayPreferBingeGroup = PlayerSettingsStorage.loadStreamAutoPlayPreferBingeGroup() ?: true
+        streamAutoPlayReuseBingeGroup = PlayerSettingsStorage.loadStreamAutoPlayReuseBingeGroup() ?: true
         nextEpisodeThresholdMode = PlayerSettingsStorage.loadNextEpisodeThresholdMode()
             ?.let { runCatching { NextEpisodeThresholdMode.valueOf(it) }.getOrNull() }
             ?: NextEpisodeThresholdMode.PERCENTAGE
@@ -524,6 +559,14 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveStreamAutoPlayPreferBingeGroup(enabled)
     }
 
+    fun setStreamAutoPlayReuseBingeGroup(enabled: Boolean) {
+        ensureLoaded()
+        if (streamAutoPlayReuseBingeGroup == enabled) return
+        streamAutoPlayReuseBingeGroup = enabled
+        publish()
+        PlayerSettingsStorage.saveStreamAutoPlayReuseBingeGroup(enabled)
+    }
+
     fun setNextEpisodeThresholdMode(mode: NextEpisodeThresholdMode) {
         ensureLoaded()
         if (nextEpisodeThresholdMode == mode) return
@@ -753,6 +796,7 @@ object PlayerSettingsRepository {
             introSubmitEnabled = introSubmitEnabled,
             streamAutoPlayNextEpisodeEnabled = streamAutoPlayNextEpisodeEnabled,
             streamAutoPlayPreferBingeGroup = streamAutoPlayPreferBingeGroup,
+            streamAutoPlayReuseBingeGroup = streamAutoPlayReuseBingeGroup,
             nextEpisodeThresholdMode = nextEpisodeThresholdMode,
             nextEpisodeThresholdPercent = nextEpisodeThresholdPercent,
             nextEpisodeThresholdMinutesBeforeEnd = nextEpisodeThresholdMinutesBeforeEnd,

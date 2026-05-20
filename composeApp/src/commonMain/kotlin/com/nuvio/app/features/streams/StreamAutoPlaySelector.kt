@@ -40,6 +40,7 @@ object StreamAutoPlaySelector {
         selectedPlugins: Set<String>,
         preferredBingeGroup: String? = null,
         preferBingeGroupInSelection: Boolean = false,
+        bingeGroupOnly: Boolean = false,
     ): StreamItem? {
         if (streams.isEmpty()) return null
 
@@ -57,7 +58,7 @@ object StreamAutoPlaySelector {
             }
         }
         if (candidateStreams.isEmpty()) return null
-        if (mode == StreamAutoPlayMode.MANUAL) return null
+        if (mode == StreamAutoPlayMode.MANUAL && !bingeGroupOnly) return null
 
         val targetBingeGroup = preferredBingeGroup?.trim().orEmpty()
         if (preferBingeGroupInSelection && targetBingeGroup.isNotEmpty()) {
@@ -65,6 +66,12 @@ object StreamAutoPlaySelector {
                 stream.behaviorHints.bingeGroup == targetBingeGroup && stream.isAutoPlayable()
             }
             if (bingeGroupMatch != null) return bingeGroupMatch
+            // When bingeGroupOnly = true, do NOT fall through to mode-based selection
+            if (bingeGroupOnly) return null
+        } else if (bingeGroupOnly) {
+            // bingeGroupOnly requested but no preferredBingeGroup or preferBingeGroupInSelection is false
+            // Fall through to mode-based selection (bingeGroupOnly has no effect without a binge group to match)
+            if (mode == StreamAutoPlayMode.MANUAL) return null
         }
 
         return when (mode) {
