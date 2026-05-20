@@ -115,9 +115,9 @@ object DirectDebridPlaybackResolver {
         val settings = DebridSettingsRepository.snapshot()
         if (!settings.enabled) return false
         if (stream.needsLocalDebridResolve) {
-            return settings.torboxApiKey.isNotBlank()
+            return stream.isInstalledAddonStream && settings.torboxApiKey.isNotBlank()
         }
-        if (!stream.isDirectDebridStream || stream.playableDirectUrl != null) {
+        if (!stream.isInstalledAddonStream || !stream.isDirectDebridStream || stream.playableDirectUrl != null) {
             return false
         }
         return when (DebridProviders.byId(stream.clientResolve?.service)?.id) {

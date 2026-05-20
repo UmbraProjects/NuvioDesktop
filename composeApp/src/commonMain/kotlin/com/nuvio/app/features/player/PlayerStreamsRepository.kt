@@ -14,6 +14,7 @@ import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.plugins.PluginRuntimeResult
 import com.nuvio.app.features.plugins.PluginScraper
+import com.nuvio.app.features.streams.AddonStreamWarmupRepository
 import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.StreamAutoPlaySelector
 import com.nuvio.app.features.streams.StreamItem
@@ -203,8 +204,13 @@ object PlayerStreamsRepository {
         }
 
         val installedAddonOrder = streamAddons.map { it.addonName }
+        val warmedAddonGroups = AddonStreamWarmupRepository
+            .cachedGroups(type = type, videoId = videoId, season = season, episode = episode)
+            .orEmpty()
+            .associateBy { it.addonId }
+        val warmedAddonIds = warmedAddonGroups.keys
         val initialGroups = StreamAutoPlaySelector.orderAddonStreams(streamAddons.map { addon ->
-            AddonStreamGroup(
+            warmedAddonGroups[addon.addonId] ?: AddonStreamGroup(
                 addonName = addon.addonName,
                 addonId = addon.addonId,
                 streams = emptyList(),
@@ -218,14 +224,17 @@ object PlayerStreamsRepository {
                 isLoading = true,
             )
         }, installedAddonOrder)
+        val isInitiallyLoading = initialGroups.any { it.isLoading }
         stateFlow.value = StreamsUiState(
             groups = initialGroups,
             activeAddonIds = initialGroups.map { it.addonId }.toSet(),
-            isAnyLoading = true,
+            isAnyLoading = isInitiallyLoading,
         )
 
         val job = scope.launch {
-            val addonJobs = streamAddons.map { addon ->
+            val pendingStreamAddons = streamAddons.filterNot { it.addonId in warmedAddonIds }
+            val installedAddonIds = streamAddons.map { it.addonId }.toSet()
+            val addonJobs = pendingStreamAddons.map { addon ->
                 async {
                     val url = buildAddonResourceUrl(
                         manifestUrl = addon.manifest.transportUrl,
@@ -316,9 +325,15 @@ object PlayerStreamsRepository {
             }
             if (!debridPreparationLaunched) {
                 debridPreparationLaunched = true
-                val checkingGroups = TorboxAvailabilityService.markChecking(stateFlow.value.groups)
+                val checkingGroups = TorboxAvailabilityService.markChecking(
+                    groups = stateFlow.value.groups,
+                    eligibleGroupIds = installedAddonIds,
+                )
                 stateFlow.update { current -> current.copy(groups = checkingGroups) }
-                val availabilityGroups = TorboxAvailabilityService.annotateCachedAvailability(stateFlow.value.groups)
+                val availabilityGroups = TorboxAvailabilityService.annotateCachedAvailability(
+                    groups = stateFlow.value.groups,
+                    eligibleGroupIds = installedAddonIds,
+                )
                 val presentedGroups = DebridStreamPresentation.apply(
                     groups = availabilityGroups,
                     settings = DebridSettingsRepository.snapshot(),
@@ -326,7 +341,9 @@ object PlayerStreamsRepository {
                 stateFlow.update { current -> current.copy(groups = presentedGroups) }
                 launch {
                     DirectDebridStreamPreparer.prepare(
-                        streams = stateFlow.value.groups.flatMap { it.streams },
+                        streams = stateFlow.value.groups
+                            .filter { it.addonId in installedAddonIds }
+                            .flatMap { it.streams },
                         season = season,
                         episode = episode,
                         playerSettings = playerSettings,
@@ -338,6 +355,7 @@ object PlayerStreamsRepository {
                                     groups = current.groups,
                                     original = original,
                                     prepared = prepared,
+                                    eligibleGroupIds = installedAddonIds,
                                 ),
                             )
                         }

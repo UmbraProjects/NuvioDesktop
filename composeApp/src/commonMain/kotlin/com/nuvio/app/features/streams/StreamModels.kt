@@ -40,6 +40,9 @@ data class StreamItem(
     val isDirectDebridStream: Boolean
         get() = clientResolve?.isDirectDebridCandidate == true
 
+    val isInstalledAddonStream: Boolean
+        get() = addonId.startsWith("addon:")
+
     val isTorrentStream: Boolean
         get() = !isDirectDebridStream && (
             !infoHash.isNullOrBlank() ||
@@ -53,6 +56,9 @@ data class StreamItem(
     val needsLocalDebridResolve: Boolean
         get() = isTorrentStream && playableDirectUrl == null
 
+    val isAddonDebridCandidate: Boolean
+        get() = isInstalledAddonStream && (needsLocalDebridResolve || isDirectDebridStream)
+
     val hasPlayableSource: Boolean
         get() = url != null || infoHash != null || externalUrl != null || clientResolve != null
 }
@@ -61,7 +67,7 @@ private fun String?.isMagnetLink(): Boolean =
     this?.trimStart()?.startsWith("magnet:", ignoreCase = true) == true
 
 fun StreamItem.isSelectableForPlayback(debridEnabled: Boolean): Boolean =
-    playableDirectUrl != null || (debridEnabled && (needsLocalDebridResolve || isDirectDebridStream))
+    playableDirectUrl != null || (debridEnabled && isAddonDebridCandidate)
 
 data class StreamBehaviorHints(
     val bingeGroup: String? = null,

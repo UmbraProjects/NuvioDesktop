@@ -75,13 +75,45 @@ class DebridStreamPresentationTest {
             ),
         ).single().streams
 
-        assertEquals(listOf("4K TB Ready", "FHD TB Ready", "Resolved addon URL"), presented.map { it.name })
+        assertEquals(listOf("Large", "Mid", "Resolved addon URL"), presented.map { it.name })
+    }
+
+    @Test
+    fun `hides addon torrent streams that are not cached`() {
+        val cached = localTorboxStream(
+            name = "Cached",
+            filename = "Movie.1080p.WEB-DL.HEVC-GRP.mkv",
+            size = 10_000_000_000,
+        )
+        val uncached = localTorboxStream(
+            name = "Uncached",
+            filename = "Movie.2160p.WEB-DL.HEVC-GRP.mkv",
+            size = 20_000_000_000,
+            cacheState = StreamDebridCacheState.NOT_CACHED,
+        )
+
+        val presented = DebridStreamPresentation.apply(
+            groups = listOf(
+                AddonStreamGroup(
+                    addonName = "Addon",
+                    addonId = "addon:test",
+                    streams = listOf(cached, uncached),
+                ),
+            ),
+            settings = DebridSettings(
+                enabled = true,
+                torboxApiKey = "key",
+            ),
+        ).single().streams
+
+        assertEquals(listOf("Cached"), presented.map { it.name })
     }
 
     private fun localTorboxStream(
         name: String = "Torrent",
         filename: String,
         size: Long,
+        cacheState: StreamDebridCacheState = StreamDebridCacheState.CACHED,
     ): StreamItem =
         StreamItem(
             name = name,
@@ -95,7 +127,7 @@ class DebridStreamPresentationTest {
             debridCacheStatus = StreamDebridCacheStatus(
                 providerId = DebridProviders.TORBOX_ID,
                 providerName = DebridProviders.Torbox.displayName,
-                state = StreamDebridCacheState.CACHED,
+                state = cacheState,
                 cachedName = filename,
                 cachedSize = size,
             ),

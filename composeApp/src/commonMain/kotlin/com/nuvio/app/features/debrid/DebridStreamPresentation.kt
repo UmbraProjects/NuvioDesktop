@@ -10,12 +10,19 @@ object DebridStreamPresentation {
     fun apply(groups: List<AddonStreamGroup>, settings: DebridSettings): List<AddonStreamGroup> {
         if (!settings.enabled) return groups
         return groups.map { group ->
-            val debridStreams = group.streams.filter { stream -> stream.isManagedDebridStream }
-            if (debridStreams.isEmpty()) return@map group
+            val visibleStreams = group.streams.filterNot { stream -> stream.isUncachedDebridStream }
+            val debridStreams = visibleStreams.filter { stream -> stream.isManagedDebridStream }
+            if (debridStreams.isEmpty()) return@map group.copy(streams = visibleStreams)
 
             val presentedDebridStreams = applyPreferences(debridStreams, settings)
-                .map { stream -> formatter.format(stream, settings) }
-            val passthroughStreams = group.streams.filterNot { stream -> stream.isManagedDebridStream }
+                .map { stream ->
+                    if (settings.hasCustomStreamFormatting) {
+                        formatter.format(stream, settings)
+                    } else {
+                        stream
+                    }
+                }
+            val passthroughStreams = visibleStreams.filterNot { stream -> stream.isManagedDebridStream }
 
             group.copy(streams = presentedDebridStreams + passthroughStreams)
         }
@@ -33,13 +40,18 @@ object DebridStreamPresentation {
     internal val StreamItem.isManagedDebridStream: Boolean
         get() {
             val status = debridCacheStatus
-            return isDirectDebridStream || (
+            return isAddonDebridCandidate && (isDirectDebridStream || (
                 isTorrentStream &&
                     status != null &&
                     status.providerId == DebridProviders.TORBOX_ID &&
                     status.state != StreamDebridCacheState.CHECKING
-            )
+            ))
         }
+
+    private val StreamItem.isUncachedDebridStream: Boolean
+        get() = isInstalledAddonStream &&
+            debridCacheStatus?.providerId == DebridProviders.TORBOX_ID &&
+            debridCacheStatus.state == StreamDebridCacheState.NOT_CACHED
 
     private fun applyLimits(
         streams: List<Pair<StreamItem, DebridStreamFacts>>,

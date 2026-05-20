@@ -160,7 +160,7 @@ object DebridSettingsRepository {
 
     fun setStreamNameTemplate(value: String) {
         ensureLoaded()
-        val normalized = value.ifBlank { DebridStreamFormatterDefaults.NAME_TEMPLATE }
+        val normalized = normalizeStreamTemplate(value, DebridTemplateKind.NAME)
         if (streamNameTemplate == normalized) return
         streamNameTemplate = normalized
         publish()
@@ -169,7 +169,7 @@ object DebridSettingsRepository {
 
     fun setStreamDescriptionTemplate(value: String) {
         ensureLoaded()
-        val normalized = value.ifBlank { DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE }
+        val normalized = normalizeStreamTemplate(value, DebridTemplateKind.DESCRIPTION)
         if (streamDescriptionTemplate == normalized) return
         streamDescriptionTemplate = normalized
         publish()
@@ -178,8 +178,8 @@ object DebridSettingsRepository {
 
     fun setStreamTemplates(nameTemplate: String, descriptionTemplate: String) {
         ensureLoaded()
-        streamNameTemplate = nameTemplate.ifBlank { DebridStreamFormatterDefaults.NAME_TEMPLATE }
-        streamDescriptionTemplate = descriptionTemplate.ifBlank { DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE }
+        streamNameTemplate = normalizeStreamTemplate(nameTemplate, DebridTemplateKind.NAME)
+        streamDescriptionTemplate = normalizeStreamTemplate(descriptionTemplate, DebridTemplateKind.DESCRIPTION)
         publish()
         DebridSettingsStorage.saveStreamNameTemplate(streamNameTemplate)
         DebridSettingsStorage.saveStreamDescriptionTemplate(streamDescriptionTemplate)
@@ -241,12 +241,14 @@ object DebridSettingsRepository {
                 hdrFilter = streamHdrFilter,
                 codecFilter = streamCodecFilter,
             )
-        streamNameTemplate = DebridSettingsStorage.loadStreamNameTemplate()
-            ?.takeIf { it.isNotBlank() }
-            ?: DebridStreamFormatterDefaults.NAME_TEMPLATE
-        streamDescriptionTemplate = DebridSettingsStorage.loadStreamDescriptionTemplate()
-            ?.takeIf { it.isNotBlank() }
-            ?: DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE
+        streamNameTemplate = normalizeStreamTemplate(
+            DebridSettingsStorage.loadStreamNameTemplate().orEmpty(),
+            DebridTemplateKind.NAME,
+        )
+        streamDescriptionTemplate = normalizeStreamTemplate(
+            DebridSettingsStorage.loadStreamDescriptionTemplate().orEmpty(),
+            DebridTemplateKind.DESCRIPTION,
+        )
         publish()
     }
 
@@ -283,6 +285,21 @@ object DebridSettingsRepository {
             null
         } catch (_: IllegalArgumentException) {
             null
+        }
+    }
+
+    private enum class DebridTemplateKind {
+        NAME,
+        DESCRIPTION,
+    }
+
+    private fun normalizeStreamTemplate(value: String, kind: DebridTemplateKind): String {
+        val trimmed = value.trim()
+        return when {
+            trimmed.isBlank() -> ""
+            kind == DebridTemplateKind.NAME && trimmed == DebridStreamFormatterDefaults.LEGACY_NAME_TEMPLATE -> ""
+            kind == DebridTemplateKind.DESCRIPTION && trimmed == DebridStreamFormatterDefaults.LEGACY_DESCRIPTION_TEMPLATE -> ""
+            else -> value
         }
     }
 }

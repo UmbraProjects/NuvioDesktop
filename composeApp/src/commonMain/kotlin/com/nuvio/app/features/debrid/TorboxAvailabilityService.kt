@@ -7,10 +7,13 @@ import com.nuvio.app.features.streams.StreamItem
 import kotlinx.coroutines.CancellationException
 
 object TorboxAvailabilityService {
-    fun markChecking(groups: List<AddonStreamGroup>): List<AddonStreamGroup> {
+    fun markChecking(
+        groups: List<AddonStreamGroup>,
+        eligibleGroupIds: Set<String>? = null,
+    ): List<AddonStreamGroup> {
         val settings = DebridSettingsRepository.snapshot()
         if (!settings.enabled || settings.torboxApiKey.isBlank()) return groups
-        return groups.updateAvailabilityStatus { stream ->
+        return groups.updateAvailabilityStatus(eligibleGroupIds) { stream ->
             if (stream.torboxAvailabilityHash() == null || stream.debridCacheStatus?.state == StreamDebridCacheState.CACHED) {
                 stream
             } else {
@@ -25,18 +28,27 @@ object TorboxAvailabilityService {
         }
     }
 
-    suspend fun annotateCachedAvailability(groups: List<AddonStreamGroup>): List<AddonStreamGroup> {
+    suspend fun annotateCachedAvailability(
+        groups: List<AddonStreamGroup>,
+        eligibleGroupIds: Set<String>? = null,
+    ): List<AddonStreamGroup> {
         val settings = DebridSettingsRepository.snapshot()
         val apiKey = settings.torboxApiKey.trim()
         if (!settings.enabled || apiKey.isBlank()) return groups
 
         val hashes = groups
-            .flatMap { group -> group.streams.mapNotNull { stream -> stream.torboxAvailabilityHash() } }
+            .filter { group -> eligibleGroupIds == null || group.addonId in eligibleGroupIds }
+            .flatMap { group ->
+                group.streams.mapNotNull { stream ->
+                    stream.torboxAvailabilityHash()
+                        ?.takeUnless { stream.debridCacheStatus?.state in FINAL_CACHE_STATES }
+                }
+            }
             .distinct()
         if (hashes.isEmpty()) return groups
 
         val cached = checkCached(apiKey = apiKey, hashes = hashes)
-            ?: return groups.updateAvailabilityStatus { stream ->
+            ?: return groups.updateAvailabilityStatus(eligibleGroupIds) { stream ->
                 val hash = stream.torboxAvailabilityHash()
                 if (hash == null) {
                     stream
@@ -51,8 +63,9 @@ object TorboxAvailabilityService {
                 }
             }
 
-        return groups.updateAvailabilityStatus { stream ->
+        return groups.updateAvailabilityStatus(eligibleGroupIds) { stream ->
             val hash = stream.torboxAvailabilityHash() ?: return@updateAvailabilityStatus stream
+            if (stream.debridCacheStatus?.state in FINAL_CACHE_STATES) return@updateAvailabilityStatus stream
             val cachedItem = cached[hash]
             stream.copy(
                 debridCacheStatus = StreamDebridCacheStatus(
@@ -91,16 +104,23 @@ object TorboxAvailabilityService {
         }
 }
 
+private val FINAL_CACHE_STATES = setOf(
+    StreamDebridCacheState.CACHED,
+    StreamDebridCacheState.NOT_CACHED,
+)
+
 internal fun StreamItem.torboxAvailabilityHash(): String? =
     infoHash
         ?.trim()
         ?.lowercase()
-        ?.takeIf { needsLocalDebridResolve && it.isNotBlank() }
+        ?.takeIf { isInstalledAddonStream && needsLocalDebridResolve && it.isNotBlank() }
 
 private fun List<AddonStreamGroup>.updateAvailabilityStatus(
+    eligibleGroupIds: Set<String>?,
     transform: (StreamItem) -> StreamItem,
 ): List<AddonStreamGroup> =
     map { group ->
+        if (eligibleGroupIds != null && group.addonId !in eligibleGroupIds) return@map group
         var changed = false
         val updatedStreams = group.streams.map { stream ->
             val updated = transform(stream)

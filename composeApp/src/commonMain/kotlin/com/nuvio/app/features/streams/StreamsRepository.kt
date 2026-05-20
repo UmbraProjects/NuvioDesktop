@@ -187,8 +187,13 @@ object StreamsRepository {
 
         // Initialise loading placeholders
         val installedAddonOrder = streamAddons.map { it.addonName }
+        val warmedAddonGroups = AddonStreamWarmupRepository
+            .cachedGroups(type = type, videoId = videoId, season = season, episode = episode)
+            .orEmpty()
+            .associateBy { it.addonId }
+        val warmedAddonIds = warmedAddonGroups.keys
         val initialGroups = StreamAutoPlaySelector.orderAddonStreams(streamAddons.map { addon ->
-            AddonStreamGroup(
+            warmedAddonGroups[addon.addonId] ?: AddonStreamGroup(
                 addonName = addon.addonName,
                 addonId = addon.addonId,
                 streams = emptyList(),
@@ -202,26 +207,29 @@ object StreamsRepository {
                 isLoading = true,
             )
         }, installedAddonOrder)
+        val isInitiallyLoading = initialGroups.any { it.isLoading }
         _uiState.value = StreamsUiState(
             requestToken = requestToken,
             groups = initialGroups,
             activeAddonIds = initialGroups.map { it.addonId }.toSet(),
-            isAnyLoading = true,
+            isAnyLoading = isInitiallyLoading,
             emptyStateReason = null,
             isDirectAutoPlayFlow = isDirectAutoPlayFlow,
             showDirectAutoPlayOverlay = isDirectAutoPlayFlow,
         )
 
         activeJob = scope.launch {
+            val pendingStreamAddons = streamAddons.filterNot { it.addonId in warmedAddonIds }
             val completions = Channel<StreamLoadCompletion>(capacity = Channel.BUFFERED)
             val pluginRemainingByAddonId = pluginProviderGroups
                 .associate { it.addonId to it.scrapers.size }
                 .toMutableMap()
             val pluginFirstErrorByAddonId = mutableMapOf<String, String>()
-            val totalTasks = streamAddons.size +
+            val totalTasks = pendingStreamAddons.size +
                 pluginProviderGroups.sumOf { it.scrapers.size }
 
             val installedAddonNames = installedAddonOrder.toSet()
+            val installedAddonIds = streamAddons.map { it.addonId }.toSet()
             var autoSelectTriggered = false
             var timeoutElapsed = false
             var debridPreparationLaunched = false
@@ -273,7 +281,7 @@ object StreamsRepository {
                 null
             }
 
-            streamAddons.forEach { addon ->
+            pendingStreamAddons.forEach { addon ->
                 launch {
                     val url = buildAddonResourceUrl(
                         manifestUrl = addon.manifest.transportUrl,
@@ -425,9 +433,15 @@ object StreamsRepository {
 
             if (!debridPreparationLaunched) {
                 debridPreparationLaunched = true
-                val checkingGroups = TorboxAvailabilityService.markChecking(_uiState.value.groups)
+                val checkingGroups = TorboxAvailabilityService.markChecking(
+                    groups = _uiState.value.groups,
+                    eligibleGroupIds = installedAddonIds,
+                )
                 _uiState.update { current -> current.copy(groups = checkingGroups) }
-                val availabilityGroups = TorboxAvailabilityService.annotateCachedAvailability(_uiState.value.groups)
+                val availabilityGroups = TorboxAvailabilityService.annotateCachedAvailability(
+                    groups = _uiState.value.groups,
+                    eligibleGroupIds = installedAddonIds,
+                )
                 val presentedGroups = DebridStreamPresentation.apply(
                     groups = availabilityGroups,
                     settings = debridSettings,
@@ -435,7 +449,9 @@ object StreamsRepository {
                 _uiState.update { current -> current.copy(groups = presentedGroups) }
                 launch {
                     DirectDebridStreamPreparer.prepare(
-                        streams = _uiState.value.groups.flatMap { it.streams },
+                        streams = _uiState.value.groups
+                            .filter { it.addonId in installedAddonIds }
+                            .flatMap { it.streams },
                         season = season,
                         episode = episode,
                         playerSettings = playerSettings,
@@ -447,6 +463,7 @@ object StreamsRepository {
                                     groups = current.groups,
                                     original = original,
                                     prepared = prepared,
+                                    eligibleGroupIds = installedAddonIds,
                                 ),
                             )
                         }

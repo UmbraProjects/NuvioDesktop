@@ -3,9 +3,12 @@ package com.nuvio.app.features.streams
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -85,6 +88,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.rememberModalBottomSheetState
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
+import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
@@ -221,6 +225,7 @@ fun StreamsScreen(
                 episodeTitle = episodeTitle,
                 uiState = uiState,
                 debridEnabled = debridSettings.enabled,
+                appendInstantServiceToDefaultName = !debridSettings.hasCustomStreamFormatting,
                 resumePositionMs = effectiveResumePositionMs,
                 resumeProgressFraction = effectiveResumeProgressFraction,
                 onStreamSelected = { stream, positionMs, progressFraction ->
@@ -239,6 +244,7 @@ fun StreamsScreen(
                 episodeTitle = episodeTitle,
                 uiState = uiState,
                 debridEnabled = debridSettings.enabled,
+                appendInstantServiceToDefaultName = !debridSettings.hasCustomStreamFormatting,
                 resumePositionMs = effectiveResumePositionMs,
                 resumeProgressFraction = effectiveResumeProgressFraction,
                 onStreamSelected = { stream, positionMs, progressFraction ->
@@ -385,6 +391,7 @@ private fun MobileStreamsLayout(
     episodeTitle: String?,
     uiState: StreamsUiState,
     debridEnabled: Boolean,
+    appendInstantServiceToDefaultName: Boolean,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
@@ -466,6 +473,7 @@ private fun MobileStreamsLayout(
                     StreamList(
                         uiState = uiState,
                         debridEnabled = debridEnabled,
+                        appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
                         onStreamSelected = onStreamSelected,
                         onStreamLongPress = onStreamLongPress,
                         resumePositionMs = resumePositionMs,
@@ -760,6 +768,7 @@ private fun FilterChip(
 internal fun StreamList(
     uiState: StreamsUiState,
     debridEnabled: Boolean,
+    appendInstantServiceToDefaultName: Boolean,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
     onStreamLongPress: (StreamItem) -> Unit,
     resumePositionMs: Long?,
@@ -799,6 +808,7 @@ internal fun StreamList(
                         group = group,
                         showHeader = uiState.selectedFilter == null,
                         debridEnabled = debridEnabled,
+                        appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
                         onStreamSelected = onStreamSelected,
                         onStreamLongPress = onStreamLongPress,
                         resumePositionMs = resumePositionMs,
@@ -823,6 +833,7 @@ private fun LazyListScope.streamSection(
     group: AddonStreamGroup,
     showHeader: Boolean,
     debridEnabled: Boolean,
+    appendInstantServiceToDefaultName: Boolean,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
     onStreamLongPress: (StreamItem) -> Unit,
     resumePositionMs: Long?,
@@ -867,6 +878,7 @@ private fun LazyListScope.streamSection(
             StreamCard(
                 stream = stream,
                 enabled = stream.isSelectableForPlayback(debridEnabled),
+                appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
                 onClick = {
                     if (stream.isSelectableForPlayback(debridEnabled)) {
                         onStreamSelected(stream, resumePositionMs, resumeProgressFraction)
@@ -971,6 +983,7 @@ private fun StreamSourceHeader(
 private fun StreamCard(
     stream: StreamItem,
     enabled: Boolean,
+    appendInstantServiceToDefaultName: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -997,15 +1010,9 @@ private fun StreamCard(
         verticalAlignment = Alignment.Top,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stream.streamLabel,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 20.sp,
-                    letterSpacing = 0.1.sp,
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
+            StreamNameWithInstantService(
+                stream = stream,
+                appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
             )
 
             val subtitle = stream.streamSubtitle
@@ -1022,10 +1029,64 @@ private fun StreamCard(
             }
 
             Spacer(modifier = Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                StreamAvailabilityBadge(stream = stream)
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 StreamFileSizeBadge(stream = stream)
             }
+        }
+    }
+}
+
+@Composable
+private fun StreamNameWithInstantService(
+    stream: StreamItem,
+    appendInstantServiceToDefaultName: Boolean,
+) {
+    val nameStyle = MaterialTheme.typography.bodyMedium.copy(
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold,
+        lineHeight = 20.sp,
+        letterSpacing = 0.sp,
+    )
+    val instantLabel = if (appendInstantServiceToDefaultName) {
+        stream.instantServiceLabel()
+    } else {
+        null
+    }
+    val showInstantLabel = instantLabel != null
+    val visibleState = remember(stream.streamLabel) {
+        MutableTransitionState(showInstantLabel)
+    }
+    visibleState.targetState = showInstantLabel
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stream.streamLabel,
+            modifier = Modifier.weight(1f, fill = false),
+            style = nameStyle,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        AnimatedVisibility(
+            visibleState = visibleState,
+            enter = fadeIn(animationSpec = tween(durationMillis = 260)) +
+                expandHorizontally(
+                    animationSpec = tween(durationMillis = 260),
+                    expandFrom = Alignment.Start,
+                ),
+            exit = fadeOut(animationSpec = tween(durationMillis = 120)) +
+                shrinkHorizontally(
+                    animationSpec = tween(durationMillis = 120),
+                    shrinkTowards = Alignment.Start,
+                ),
+            label = "streamNameInstantService",
+        ) {
+            Text(
+                text = " ${instantLabel.orEmpty()}",
+                style = nameStyle,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }
@@ -1128,48 +1189,13 @@ private fun StreamActionsSheet(
     }
 }
 
-@Composable
-private fun StreamAvailabilityBadge(stream: StreamItem) {
-    val status = stream.debridCacheStatus ?: return
-    val (label, background, foreground) = when (status.state) {
-        StreamDebridCacheState.CHECKING -> Triple(
-            "${status.providerName} checking",
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-            MaterialTheme.colorScheme.primary,
-        )
-        StreamDebridCacheState.CACHED -> Triple(
-            "${status.providerName} ready",
-            Color(0xFF123D2B),
-            Color(0xFFB8F6D3),
-        )
-        StreamDebridCacheState.NOT_CACHED -> Triple(
-            "${status.providerName} not cached",
-            Color(0xFF3D2424),
-            Color(0xFFFFC9C9),
-        )
-        StreamDebridCacheState.UNKNOWN -> Triple(
-            "${status.providerName} unknown",
-            Color(0xFF2C3033),
-            MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(background)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.2.sp,
-            ),
-            color = foreground,
-        )
-    }
+private fun StreamItem.instantServiceLabel(): String? {
+    val status = debridCacheStatus ?: return null
+    if (status.state != StreamDebridCacheState.CACHED) return null
+    val providerLabel = DebridProviders.shortName(status.providerId)
+        .ifBlank { status.providerName.trim() }
+        .ifBlank { DebridProviders.displayName(status.providerId) }
+    return "- $providerLabel Instant"
 }
 
 @Composable

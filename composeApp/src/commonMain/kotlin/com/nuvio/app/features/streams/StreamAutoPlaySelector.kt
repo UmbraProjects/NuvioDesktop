@@ -17,7 +17,7 @@ object StreamAutoPlaySelector {
 
         val (directDebridEntries, remainingEntries) = groups.partition { group ->
             group.addonId.startsWith("debrid:") ||
-                group.streams.any { stream -> stream.isDirectDebridStream }
+                group.streams.any { stream -> stream.isAddonDebridCandidate && stream.isDirectDebridStream }
         }
         if (installedOrder.isEmpty()) return directDebridEntries + remainingEntries
 
@@ -117,5 +117,6 @@ object StreamAutoPlaySelector {
     }
 
     private fun StreamItem.isAutoPlayable(debridEnabled: Boolean): Boolean =
-        playableDirectUrl != null || (debridEnabled && (isDirectDebridStream || isCachedDebridTorrentStream))
+        playableDirectUrl != null ||
+            (debridEnabled && isAddonDebridCandidate && (isDirectDebridStream || isCachedDebridTorrentStream))
 }

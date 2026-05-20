@@ -19,6 +19,9 @@ data class DebridSettings(
 ) {
     val hasAnyApiKey: Boolean
         get() = DebridProviders.configuredServices(this).isNotEmpty()
+
+    val hasCustomStreamFormatting: Boolean
+        get() = streamNameTemplate.isNotBlank() || streamDescriptionTemplate.isNotBlank()
 }
 
 const val DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT = 2

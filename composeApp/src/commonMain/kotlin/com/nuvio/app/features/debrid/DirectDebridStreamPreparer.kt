@@ -73,6 +73,7 @@ object DirectDebridStreamPreparer {
         val candidates = streams
             .filter { stream ->
                 stream.playableDirectUrl == null &&
+                    stream.isAddonDebridCandidate &&
                     (stream.isDirectDebridStream || stream.isCachedDebridTorrentStream)
             }
             .distinctBy { it.preparationKey() }
@@ -88,7 +89,7 @@ object DirectDebridStreamPreparer {
             selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
             selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
         )
-        if (autoPlaySelection?.let { it.isDirectDebridStream || it.isCachedDebridTorrentStream } == true) {
+        if (autoPlaySelection?.let { it.isAddonDebridCandidate && (it.isDirectDebridStream || it.isCachedDebridTorrentStream) } == true) {
             candidates.firstOrNull { it.preparationKey() == autoPlaySelection.preparationKey() }
                 ?.let(prioritized::add)
         }
@@ -118,9 +119,11 @@ object DirectDebridStreamPreparer {
         groups: List<AddonStreamGroup>,
         original: StreamItem,
         prepared: StreamItem,
+        eligibleGroupIds: Set<String>? = null,
     ): List<AddonStreamGroup> {
         val key = original.preparationKey()
         return groups.map { group ->
+            if (eligibleGroupIds != null && group.addonId !in eligibleGroupIds) return@map group
             var changed = false
             val updatedStreams = group.streams.map { stream ->
                 if (stream.preparationKey() == key) {

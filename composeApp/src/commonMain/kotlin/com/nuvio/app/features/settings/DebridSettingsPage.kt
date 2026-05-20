@@ -351,7 +351,7 @@ private fun templatePreview(value: String): String {
         .lineSequence()
         .map { it.trim() }
         .firstOrNull { it.isNotBlank() }
-        ?: return ""
+        ?: return "Addon default"
     return if (firstLine.length <= 28) firstLine else "${firstLine.take(28)}..."
 }
 
