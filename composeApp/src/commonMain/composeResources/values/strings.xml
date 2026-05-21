@@ -596,6 +596,8 @@
     <string name="settings_debrid_cloud_library_description">Browse and play files already in your connected cloud services.</string>
     <string name="settings_debrid_enable">Resolve playable links</string>
     <string name="settings_debrid_enable_description">Ask a connected service for playable links when a result needs it. This may add the item to that service.</string>
+    <string name="settings_debrid_resolve_with">Resolve with</string>
+    <string name="settings_debrid_resolve_with_description">Choose which connected cloud service manages playable links.</string>
     <string name="settings_debrid_add_key_first">Connect a cloud service account first.</string>
     <string name="settings_debrid_section_providers">Cloud Services</string>
     <string name="settings_debrid_provider_description">Connect your %1$s account.</string>
@@ -615,6 +617,7 @@
     <string name="settings_debrid_device_auth_open">Open link</string>
     <string name="settings_debrid_device_auth_waiting">Waiting for approval...</string>
     <string name="settings_debrid_device_auth_failed">Could not start sign-in.</string>
+    <string name="settings_debrid_device_auth_missing_configuration">This sign-in method is not configured in this build.</string>
     <string name="settings_debrid_device_auth_expired">This code expired. Try again.</string>
     <string name="settings_debrid_section_instant_playback">Link Preparation</string>
     <string name="settings_debrid_prepare_instant_playback">Prepare links</string>
@@ -1330,7 +1333,7 @@
     <string name="library_trakt_load_failed">Couldn't load Trakt library</string>
     <string name="library_trakt_title">Trakt Library</string>
     <string name="cloud_library_connect_action">Connect account</string>
-    <string name="cloud_library_connect_message">Connect Torbox in Cloud Services settings to browse playable files from your cloud library.</string>
+    <string name="cloud_library_connect_message">Connect a cloud service in Cloud Services settings to browse playable files from your cloud library.</string>
     <string name="cloud_library_connect_title">No cloud account connected</string>
     <string name="cloud_library_disabled_action">Open Cloud Services</string>
     <string name="cloud_library_disabled_message">Turn on Cloud library in Cloud Services settings to browse files from connected accounts.</string>
@@ -1352,6 +1355,7 @@
     <string name="cloud_library_type_torrents">Torrents</string>
     <string name="cloud_library_type_usenet">Usenet</string>
     <string name="cloud_library_type_web">Web</string>
+    <string name="cloud_library_type_files">Files</string>
     <string name="media_anime">Anime</string>
     <string name="media_channels">Channels</string>
     <string name="media_movies">Movies</string>

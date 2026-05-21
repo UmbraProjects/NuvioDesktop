@@ -362,6 +362,180 @@ internal object RealDebridApiClient {
         mapOf("Authorization" to "Bearer $apiKey")
 }
 
+internal object PremiumizeApiClient {
+    private const val BASE_URL = "https://www.premiumize.me"
+
+    suspend fun validateApiKey(apiKey: String): Boolean {
+        val response = accountInfo(apiKey.trim())
+        return response.isSuccessful && response.body?.isSuccess == true
+    }
+
+    suspend fun startDeviceAuthorization(
+        clientId: String,
+    ): DebridApiResponse<PremiumizeDeviceAuthorizationDto> =
+        formRequestWithoutAuth(
+            method = "POST",
+            url = "$BASE_URL/token",
+            fields = listOf(
+                "response_type" to "device_code",
+                "client_id" to clientId,
+            ),
+        )
+
+    suspend fun redeemDeviceAuthorization(
+        clientId: String,
+        deviceCode: String,
+    ): DebridApiResponse<PremiumizeDeviceTokenDto> =
+        formRequestWithoutAuth(
+            method = "POST",
+            url = "$BASE_URL/token",
+            fields = listOf(
+                "grant_type" to "device_code",
+                "code" to deviceCode,
+                "client_id" to clientId,
+            ),
+        )
+
+    suspend fun accountInfo(apiKey: String): DebridApiResponse<PremiumizeAccountInfoDto> =
+        request(
+            method = "GET",
+            url = "$BASE_URL/api/account/info",
+            apiKey = apiKey,
+        )
+
+    suspend fun listAllItems(apiKey: String): DebridApiResponse<PremiumizeItemListAllDto> =
+        request(
+            method = "GET",
+            url = "$BASE_URL/api/item/listall",
+            apiKey = apiKey,
+        )
+
+    suspend fun itemDetails(
+        apiKey: String,
+        itemId: String,
+    ): DebridApiResponse<PremiumizeItemDetailsDto> =
+        request(
+            method = "GET",
+            url = "$BASE_URL/api/item/details?${queryString("id" to itemId)}",
+            apiKey = apiKey,
+        )
+
+    suspend fun directDownload(
+        apiKey: String,
+        source: String,
+    ): DebridApiResponse<PremiumizeDirectDownloadDto> =
+        formRequest(
+            method = "POST",
+            url = "$BASE_URL/api/transfer/directdl",
+            apiKey = apiKey,
+            fields = listOf("src" to source),
+        )
+
+    suspend fun checkCache(
+        apiKey: String,
+        items: List<String>,
+    ): DebridApiResponse<PremiumizeCacheCheckDto> {
+        val normalizedItems = items.map { it.trim() }.filter { it.isNotBlank() }
+        if (normalizedItems.isEmpty()) {
+            return DebridApiResponse(
+                status = 200,
+                body = PremiumizeCacheCheckDto(status = "success", response = emptyList()),
+                rawBody = "",
+            )
+        }
+        return formRequest(
+            method = "POST",
+            url = "$BASE_URL/api/cache/check",
+            apiKey = apiKey,
+            fields = normalizedItems.map { "items[]" to it },
+        )
+    }
+
+    private suspend inline fun <reified T> formRequestWithoutAuth(
+        method: String,
+        url: String,
+        fields: List<Pair<String, String>>,
+    ): DebridApiResponse<T> =
+        requestWithoutAuth(
+            method = method,
+            url = url,
+            body = formBody(fields),
+            contentType = "application/x-www-form-urlencoded",
+        )
+
+    private suspend inline fun <reified T> formRequest(
+        method: String,
+        url: String,
+        apiKey: String,
+        fields: List<Pair<String, String>>,
+    ): DebridApiResponse<T> =
+        request(
+            method = method,
+            url = url,
+            apiKey = apiKey,
+            body = formBody(fields),
+            contentType = "application/x-www-form-urlencoded",
+        )
+
+    private suspend inline fun <reified T> requestWithoutAuth(
+        method: String,
+        url: String,
+        body: String = "",
+        contentType: String? = null,
+    ): DebridApiResponse<T> {
+        val headers = listOfNotNull(
+            contentType?.let { "Content-Type" to it },
+            "Accept" to "application/json",
+        ).toMap()
+        val response = httpRequestRaw(
+            method = method,
+            url = url,
+            headers = headers,
+            body = body,
+        )
+        return DebridApiResponse(
+            status = response.status,
+            body = response.decodeBody<T>(),
+            rawBody = response.body,
+        )
+    }
+
+    private suspend inline fun <reified T> request(
+        method: String,
+        url: String,
+        apiKey: String,
+        body: String = "",
+        contentType: String? = null,
+    ): DebridApiResponse<T> {
+        val headers = authHeaders(apiKey) + listOfNotNull(
+            contentType?.let { "Content-Type" to it },
+            "Accept" to "application/json",
+        )
+        val response = httpRequestRaw(
+            method = method,
+            url = url,
+            headers = headers,
+            body = body,
+        )
+        return DebridApiResponse(
+            status = response.status,
+            body = response.decodeBody<T>(),
+            rawBody = response.body,
+        )
+    }
+
+    private fun formBody(fields: List<Pair<String, String>>): String =
+        fields.joinToString("&") { (key, value) ->
+            "${encodeFormValue(key)}=${encodeFormValue(value)}"
+        }
+
+    private fun authHeaders(apiKey: String): Map<String, String> =
+        mapOf("Authorization" to "Bearer $apiKey")
+
+    private val PremiumizeAccountInfoDto.isSuccess: Boolean
+        get() = status.equals("success", ignoreCase = true)
+}
+
 object DebridCredentialValidator {
     suspend fun validateProvider(providerId: String, apiKey: String): Boolean {
         val normalized = apiKey.trim()

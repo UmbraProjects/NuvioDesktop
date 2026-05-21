@@ -28,12 +28,26 @@ enum class DebridProviderAuthMethod {
 
 object DebridProviders {
     const val TORBOX_ID = "torbox"
+    const val PREMIUMIZE_ID = "premiumize"
     const val REAL_DEBRID_ID = "realdebrid"
 
     val Torbox = DebridProvider(
         id = TORBOX_ID,
         displayName = "Torbox",
         shortName = "TB",
+        authMethod = DebridProviderAuthMethod.DeviceCode,
+        capabilities = setOf(
+            DebridProviderCapability.ClientResolve,
+            DebridProviderCapability.LocalTorrentCacheCheck,
+            DebridProviderCapability.LocalTorrentResolve,
+            DebridProviderCapability.CloudLibrary,
+        ),
+    )
+
+    val Premiumize = DebridProvider(
+        id = PREMIUMIZE_ID,
+        displayName = "Premiumize",
+        shortName = "PM",
         authMethod = DebridProviderAuthMethod.DeviceCode,
         capabilities = setOf(
             DebridProviderCapability.ClientResolve,
@@ -51,7 +65,7 @@ object DebridProviders {
         capabilities = setOf(DebridProviderCapability.ClientResolve),
     )
 
-    private val registered = listOf(Torbox, RealDebrid)
+    private val registered = listOf(Torbox, Premiumize, RealDebrid)
 
     fun all(): List<DebridProvider> = registered
 
@@ -84,6 +98,19 @@ object DebridProviders {
                 .takeIf { provider.visibleInUi && it.isNotBlank() }
                 ?.let { apiKey -> DebridServiceCredential(provider, apiKey) }
         }
+
+    fun configuredResolverServices(settings: DebridSettings): List<DebridServiceCredential> =
+        configuredServices(settings).filter { credential ->
+            credential.provider.supports(DebridProviderCapability.ClientResolve) ||
+                credential.provider.supports(DebridProviderCapability.LocalTorrentResolve)
+        }
+
+    fun preferredResolverService(settings: DebridSettings): DebridServiceCredential? {
+        val services = configuredResolverServices(settings)
+        if (services.isEmpty()) return null
+        val preferredId = byId(settings.preferredResolverProviderId)?.id
+        return services.firstOrNull { it.provider.id == preferredId } ?: services.firstOrNull()
+    }
 
     fun configuredSourceNames(settings: DebridSettings): List<String> =
         configuredServices(settings).map { instantName(it.provider.id) }

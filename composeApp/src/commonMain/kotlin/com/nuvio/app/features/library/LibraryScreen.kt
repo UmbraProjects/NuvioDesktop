@@ -805,6 +805,7 @@ private fun cloudLibraryTypeLabel(type: CloudLibraryItemType): String =
         CloudLibraryItemType.Torrent -> stringResource(Res.string.cloud_library_type_torrents)
         CloudLibraryItemType.Usenet -> stringResource(Res.string.cloud_library_type_usenet)
         CloudLibraryItemType.WebDownload -> stringResource(Res.string.cloud_library_type_web)
+        CloudLibraryItemType.File -> stringResource(Res.string.cloud_library_type_files)
     }
 
 private fun formatCloudBytes(bytes: Long): String {

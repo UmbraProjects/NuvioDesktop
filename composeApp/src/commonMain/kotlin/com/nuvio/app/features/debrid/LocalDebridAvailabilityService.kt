@@ -82,8 +82,8 @@ object LocalDebridAvailabilityService {
     private fun cacheCheckAccount(): DebridServiceCredential? {
         val settings = DebridSettingsRepository.snapshot()
         if (!settings.canResolvePlayableLinks) return null
-        return DebridProviders.configuredServices(settings)
-            .firstOrNull { credential -> credential.provider.supports(DebridProviderCapability.LocalTorrentCacheCheck) }
+        return settings.activeResolverCredential
+            ?.takeIf { credential -> credential.provider.supports(DebridProviderCapability.LocalTorrentCacheCheck) }
     }
 }
 

@@ -23,6 +23,7 @@ object DebridSettingsRepository {
     private var enabled = false
     private var cloudLibraryEnabled = true
     private var providerApiKeys = emptyMap<String, String>()
+    private var preferredResolverProviderId = ""
     private var instantPlaybackPreparationLimit = 0
     private var streamMaxResults = 0
     private var streamSortMode = DebridStreamSortMode.DEFAULT
@@ -50,7 +51,7 @@ object DebridSettingsRepository {
 
     fun setEnabled(value: Boolean) {
         ensureLoaded()
-        if (value && !hasVisibleApiKey()) return
+        if (value && !hasResolverProvider()) return
         if (enabled == value) return
         enabled = value
         publish()
@@ -63,7 +64,7 @@ object DebridSettingsRepository {
 
     fun setCloudLibraryEnabled(value: Boolean) {
         ensureLoaded()
-        if (value && !hasVisibleApiKey()) return
+        if (value && !hasCloudLibraryProvider()) return
         if (cloudLibraryEnabled == value) return
         cloudLibraryEnabled = value
         publish()
@@ -80,7 +81,8 @@ object DebridSettingsRepository {
         } else {
             providerApiKeys + (provider.id to normalized)
         }
-        disableIfNoKeys()
+        normalizePreferredResolverProviderId(save = true)
+        disableIfNoResolver()
         publish()
         DebridSettingsStorage.saveProviderApiKey(provider.id, normalized)
     }
@@ -91,6 +93,22 @@ object DebridSettingsRepository {
 
     fun setRealDebridApiKey(value: String) {
         setProviderApiKey(DebridProviders.REAL_DEBRID_ID, value)
+    }
+
+    fun setPremiumizeApiKey(value: String) {
+        setProviderApiKey(DebridProviders.PREMIUMIZE_ID, value)
+    }
+
+    fun setPreferredResolverProviderId(providerId: String) {
+        ensureLoaded()
+        val normalized = DebridProviders.byId(providerId)?.id.orEmpty()
+        val next = connectedResolverProviderIds()
+            .firstOrNull { it == normalized }
+            ?: connectedResolverProviderIds().firstOrNull().orEmpty()
+        if (preferredResolverProviderId == next) return
+        preferredResolverProviderId = next
+        publish()
+        DebridSettingsStorage.savePreferredResolverProviderId(next)
     }
 
     fun setInstantPlaybackPreparationLimit(value: Int) {
@@ -208,17 +226,45 @@ object DebridSettingsRepository {
         )
     }
 
-    private fun disableIfNoKeys() {
-        if (!hasVisibleApiKey()) {
+    private fun disableIfNoResolver() {
+        if (!hasResolverProvider()) {
             enabled = false
             DebridSettingsStorage.saveEnabled(false)
         }
     }
 
-    private fun hasVisibleApiKey(): Boolean =
+    private fun hasCloudLibraryProvider(): Boolean =
         DebridProviders.visible().any { provider ->
-            providerApiKeys[provider.id].orEmpty().isNotBlank()
+            provider.supports(DebridProviderCapability.CloudLibrary) &&
+                providerApiKeys[provider.id].orEmpty().isNotBlank()
         }
+
+    private fun hasResolverProvider(): Boolean = connectedResolverProviderIds().isNotEmpty()
+
+    private fun connectedResolverProviderIds(): List<String> =
+        DebridProviders.visible().filter { provider ->
+            (
+                provider.supports(DebridProviderCapability.ClientResolve) ||
+                    provider.supports(DebridProviderCapability.LocalTorrentResolve)
+                ) &&
+            providerApiKeys[provider.id].orEmpty().isNotBlank()
+        }.map { it.id }
+
+    private fun normalizePreferredResolverProviderId(save: Boolean = false) {
+        val providerId = DebridProviders.byId(preferredResolverProviderId)?.id.orEmpty()
+        val connectedResolverIds = connectedResolverProviderIds()
+        val normalized = if (providerId in connectedResolverIds) {
+            providerId
+        } else {
+            connectedResolverIds.firstOrNull().orEmpty()
+        }
+        if (preferredResolverProviderId != normalized) {
+            preferredResolverProviderId = normalized
+            if (save) {
+                DebridSettingsStorage.savePreferredResolverProviderId(normalized)
+            }
+        }
+    }
 
     private fun loadFromDisk() {
         hasLoaded = true
@@ -230,7 +276,12 @@ object DebridSettingsRepository {
                     ?.let { apiKey -> provider.id to apiKey }
             }
             .toMap()
-        enabled = (DebridSettingsStorage.loadEnabled() ?: false) && hasVisibleApiKey()
+        preferredResolverProviderId = DebridSettingsStorage.loadPreferredResolverProviderId()
+            ?.let(DebridProviders::byId)
+            ?.id
+            .orEmpty()
+        normalizePreferredResolverProviderId(save = true)
+        enabled = (DebridSettingsStorage.loadEnabled() ?: false) && hasResolverProvider()
         cloudLibraryEnabled = DebridSettingsStorage.loadCloudLibraryEnabled() ?: true
         instantPlaybackPreparationLimit = normalizeDebridInstantPlaybackPreparationLimit(
             DebridSettingsStorage.loadInstantPlaybackPreparationLimit() ?: 0,
@@ -281,6 +332,7 @@ object DebridSettingsRepository {
             enabled = enabled,
             cloudLibraryEnabled = cloudLibraryEnabled,
             providerApiKeys = providerApiKeys,
+            preferredResolverProviderId = preferredResolverProviderId,
             instantPlaybackPreparationLimit = instantPlaybackPreparationLimit,
             streamMaxResults = streamMaxResults,
             streamSortMode = streamSortMode,

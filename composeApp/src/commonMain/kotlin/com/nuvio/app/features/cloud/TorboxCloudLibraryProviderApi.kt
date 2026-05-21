@@ -42,6 +42,7 @@ internal class TorboxCloudLibraryProviderApi : CloudLibraryProviderApi {
                     webId = item.id,
                     fileId = file.id,
                 )
+                CloudLibraryItemType.File -> return CloudLibraryPlaybackResult.Failed()
             }
             if (!response.isSuccessful || response.body?.success == false) {
                 return CloudLibraryPlaybackResult.Failed(response.body?.detail ?: response.body?.error)
@@ -150,6 +151,7 @@ internal fun torboxRequestIdParameterName(type: CloudLibraryItemType): String =
         CloudLibraryItemType.Torrent -> "torrent_id"
         CloudLibraryItemType.Usenet -> "usenet_id"
         CloudLibraryItemType.WebDownload -> "web_id"
+        CloudLibraryItemType.File -> "file_id"
     }
 
 private fun List<String?>.firstNonBlank(): String? =

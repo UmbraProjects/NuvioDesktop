@@ -15,6 +15,16 @@ class DebridProviderTest {
     }
 
     @Test
+    fun `premiumize exposes oauth and cloud service capabilities`() {
+        assertTrue(DebridProviders.Premiumize.visibleInUi)
+        assertTrue(DebridProviders.Premiumize.authMethod == DebridProviderAuthMethod.DeviceCode)
+        assertTrue(DebridProviders.Premiumize.supports(DebridProviderCapability.ClientResolve))
+        assertTrue(DebridProviders.Premiumize.supports(DebridProviderCapability.LocalTorrentCacheCheck))
+        assertTrue(DebridProviders.Premiumize.supports(DebridProviderCapability.LocalTorrentResolve))
+        assertTrue(DebridProviders.Premiumize.supports(DebridProviderCapability.CloudLibrary))
+    }
+
+    @Test
     fun `real debrid stays hidden from local addon capability paths`() {
         assertTrue(DebridProviders.RealDebrid.authMethod == DebridProviderAuthMethod.ApiKey)
         assertFalse(DebridProviders.RealDebrid.visibleInUi)

@@ -6,6 +6,7 @@ data class DebridSettings(
     val enabled: Boolean = false,
     val cloudLibraryEnabled: Boolean = true,
     val providerApiKeys: Map<String, String> = emptyMap(),
+    val preferredResolverProviderId: String = "",
     val instantPlaybackPreparationLimit: Int = 0,
     val streamMaxResults: Int = 0,
     val streamSortMode: DebridStreamSortMode = DebridStreamSortMode.DEFAULT,
@@ -23,14 +24,29 @@ data class DebridSettings(
     val realDebridApiKey: String
         get() = apiKeyFor(DebridProviders.REAL_DEBRID_ID)
 
+    val premiumizeApiKey: String
+        get() = apiKeyFor(DebridProviders.PREMIUMIZE_ID)
+
     val hasAnyApiKey: Boolean
         get() = DebridProviders.configuredServices(this).isNotEmpty()
+
+    val resolverServices: List<DebridServiceCredential>
+        get() = DebridProviders.configuredResolverServices(this)
+
+    val activeResolverCredential: DebridServiceCredential?
+        get() = DebridProviders.preferredResolverService(this)
+
+    val activeResolverProviderId: String?
+        get() = activeResolverCredential?.provider?.id
+
+    val hasResolverProvider: Boolean
+        get() = activeResolverCredential != null
 
     val linkResolvingEnabled: Boolean
         get() = enabled
 
     val canResolvePlayableLinks: Boolean
-        get() = linkResolvingEnabled && hasAnyApiKey
+        get() = linkResolvingEnabled && hasResolverProvider
 
     val hasCloudLibraryProvider: Boolean
         get() = DebridProviders.configuredServices(this)

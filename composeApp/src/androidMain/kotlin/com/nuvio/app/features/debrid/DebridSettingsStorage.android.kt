@@ -17,6 +17,7 @@ actual object DebridSettingsStorage {
     private const val preferencesName = "nuvio_debrid_settings"
     private const val enabledKey = "debrid_enabled"
     private const val cloudLibraryEnabledKey = "debrid_cloud_library_enabled"
+    private const val preferredResolverProviderIdKey = "debrid_preferred_resolver_provider_id"
     private const val torboxApiKeyKey = "debrid_torbox_api_key"
     private const val realDebridApiKeyKey = "debrid_real_debrid_api_key"
     private const val instantPlaybackPreparationLimitKey = "debrid_instant_playback_preparation_limit"
@@ -33,6 +34,7 @@ actual object DebridSettingsStorage {
         listOf(
             enabledKey,
             cloudLibraryEnabledKey,
+            preferredResolverProviderIdKey,
             instantPlaybackPreparationLimitKey,
             streamMaxResultsKey,
             streamSortModeKey,
@@ -61,6 +63,12 @@ actual object DebridSettingsStorage {
 
     actual fun saveCloudLibraryEnabled(enabled: Boolean) {
         saveBoolean(cloudLibraryEnabledKey, enabled)
+    }
+
+    actual fun loadPreferredResolverProviderId(): String? = loadString(preferredResolverProviderIdKey)
+
+    actual fun savePreferredResolverProviderId(providerId: String) {
+        saveString(preferredResolverProviderIdKey, providerId)
     }
 
     actual fun loadProviderApiKey(providerId: String): String? =
@@ -189,6 +197,7 @@ actual object DebridSettingsStorage {
     actual fun exportToSyncPayload(): JsonObject = buildJsonObject {
         loadEnabled()?.let { put(enabledKey, encodeSyncBoolean(it)) }
         loadCloudLibraryEnabled()?.let { put(cloudLibraryEnabledKey, encodeSyncBoolean(it)) }
+        loadPreferredResolverProviderId()?.let { put(preferredResolverProviderIdKey, encodeSyncString(it)) }
         DebridProviders.all().forEach { provider ->
             loadProviderApiKey(provider.id)?.let {
                 put(providerApiKeyKey(provider.id), encodeSyncString(it))
@@ -213,6 +222,7 @@ actual object DebridSettingsStorage {
 
         payload.decodeSyncBoolean(enabledKey)?.let(::saveEnabled)
         payload.decodeSyncBoolean(cloudLibraryEnabledKey)?.let(::saveCloudLibraryEnabled)
+        payload.decodeSyncString(preferredResolverProviderIdKey)?.let(::savePreferredResolverProviderId)
         DebridProviders.all().forEach { provider ->
             payload.decodeSyncString(providerApiKeyKey(provider.id))?.let { apiKey ->
                 saveProviderApiKey(provider.id, apiKey)

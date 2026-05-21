@@ -10,7 +10,9 @@ object DebridStreamPresentation {
     fun apply(groups: List<AddonStreamGroup>, settings: DebridSettings): List<AddonStreamGroup> {
         if (!settings.canResolvePlayableLinks) return groups
         return groups.map { group ->
-            val visibleStreams = group.streams.filterNot { stream -> stream.isUncachedDebridStream }
+            val visibleStreams = group.streams
+                .filterNot { stream -> stream.isInactiveResolverStream(settings) }
+                .filterNot { stream -> stream.isUncachedDebridStream }
             val debridStreams = visibleStreams.filter { stream -> stream.isManagedDebridStream }
             if (debridStreams.isEmpty()) return@map group.copy(streams = visibleStreams)
 
@@ -52,6 +54,12 @@ object DebridStreamPresentation {
         get() = isInstalledAddonStream &&
             DebridProviders.byId(debridCacheStatus?.providerId)?.supports(DebridProviderCapability.LocalTorrentCacheCheck) == true &&
             debridCacheStatus?.state == StreamDebridCacheState.NOT_CACHED
+
+    private fun StreamItem.isInactiveResolverStream(settings: DebridSettings): Boolean {
+        val streamProviderId = DebridProviders.byId(clientResolve?.service)?.id ?: return false
+        val activeProviderId = settings.activeResolverProviderId ?: return false
+        return isDirectDebridStream && streamProviderId != activeProviderId
+    }
 
     private fun applyLimits(
         streams: List<Pair<StreamItem, DebridStreamFacts>>,

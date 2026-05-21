@@ -595,6 +595,8 @@
     <string name="settings_debrid_cloud_library_description">Bla gjennom og spill filer som allerede finnes i tilkoblede skytjenester.</string>
     <string name="settings_debrid_enable">Løs spillbare lenker</string>
     <string name="settings_debrid_enable_description">Be en tilkoblet tjeneste om spillbare lenker når et resultat trenger det. Dette kan legge elementet til i den tjenesten.</string>
+    <string name="settings_debrid_resolve_with">Løs med</string>
+    <string name="settings_debrid_resolve_with_description">Velg hvilken tilkoblet skytjeneste som håndterer spillbare lenker.</string>
     <string name="settings_debrid_add_key_first">Koble til en skytjenestekonto først.</string>
     <string name="settings_debrid_section_providers">Skytjenester</string>
     <string name="settings_debrid_provider_description">Koble til %1$s-kontoen din.</string>
@@ -613,6 +615,7 @@
     <string name="settings_debrid_device_auth_open">Åpne lenke</string>
     <string name="settings_debrid_device_auth_waiting">Venter på godkjenning...</string>
     <string name="settings_debrid_device_auth_failed">Kunne ikke starte innlogging.</string>
+    <string name="settings_debrid_device_auth_missing_configuration">Denne innloggingsmetoden er ikke konfigurert i denne versjonen.</string>
     <string name="settings_debrid_device_auth_expired">Denne koden er utløpt. Prøv igjen.</string>
     <string name="settings_debrid_section_instant_playback">Lenkeforberedelse</string>
     <string name="settings_debrid_prepare_instant_playback">Forbered lenker</string>

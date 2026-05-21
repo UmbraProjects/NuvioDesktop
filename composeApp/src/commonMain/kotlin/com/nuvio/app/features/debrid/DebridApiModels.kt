@@ -151,3 +151,102 @@ internal data class RealDebridUnrestrictLinkDto(
     val streamable: Int? = null,
     val type: String? = null,
 )
+
+@Serializable
+internal data class PremiumizeDeviceAuthorizationDto(
+    @SerialName("device_code") val deviceCode: String? = null,
+    @SerialName("user_code") val userCode: String? = null,
+    @SerialName("verification_uri") val verificationUri: String? = null,
+    @SerialName("verification_uri_complete") val verificationUriComplete: String? = null,
+    @SerialName("expires_in") val expiresIn: Int? = null,
+    val interval: Int? = null,
+    val error: String? = null,
+    @SerialName("error_description") val errorDescription: String? = null,
+)
+
+@Serializable
+internal data class PremiumizeDeviceTokenDto(
+    @SerialName("access_token") val accessToken: String? = null,
+    @SerialName("token_type") val tokenType: String? = null,
+    @SerialName("expires_in") val expiresIn: Int? = null,
+    val scope: String? = null,
+    val error: String? = null,
+    @SerialName("error_description") val errorDescription: String? = null,
+)
+
+@Serializable
+internal data class PremiumizeApiEnvelopeDto(
+    val status: String? = null,
+    val message: String? = null,
+    val code: String? = null,
+)
+
+@Serializable
+internal data class PremiumizeAccountInfoDto(
+    val status: String? = null,
+    val message: String? = null,
+    val code: String? = null,
+    @SerialName("customer_id") val customerId: String? = null,
+    @SerialName("premium_until") val premiumUntil: Long? = null,
+    @SerialName("limit_used") val limitUsed: Double? = null,
+    @SerialName("booster_points") val boosterPoints: Int? = null,
+)
+
+@Serializable
+internal data class PremiumizeDirectDownloadDto(
+    val status: String? = null,
+    val message: String? = null,
+    val code: String? = null,
+    val content: List<PremiumizeDirectDownloadFileDto>? = null,
+)
+
+@Serializable
+internal data class PremiumizeDirectDownloadFileDto(
+    val path: String? = null,
+    val size: Long? = null,
+    val link: String? = null,
+)
+
+@Serializable
+internal data class PremiumizeCacheCheckDto(
+    val status: String? = null,
+    val message: String? = null,
+    val code: String? = null,
+    val response: List<Boolean>? = null,
+    val filename: List<String?>? = null,
+    val filesize: List<JsonElement?>? = null,
+)
+
+@Serializable
+internal data class PremiumizeItemListAllDto(
+    val status: String? = null,
+    val message: String? = null,
+    val code: String? = null,
+    val files: List<PremiumizeCloudFileDto>? = null,
+)
+
+@Serializable
+internal data class PremiumizeCloudFileDto(
+    val id: String? = null,
+    val name: String? = null,
+    val path: String? = null,
+    val type: String? = null,
+    val size: Long? = null,
+    @SerialName("created_at") val createdAt: Long? = null,
+    @SerialName("mime_type") val mimeType: String? = null,
+    val link: String? = null,
+)
+
+@Serializable
+internal data class PremiumizeItemDetailsDto(
+    val status: String? = null,
+    val message: String? = null,
+    val code: String? = null,
+    val id: String? = null,
+    val name: String? = null,
+    val size: Long? = null,
+    @SerialName("created_at") val createdAt: Long? = null,
+    @SerialName("folder_id") val folderId: String? = null,
+    @SerialName("mime_type") val mimeType: String? = null,
+    val link: String? = null,
+)

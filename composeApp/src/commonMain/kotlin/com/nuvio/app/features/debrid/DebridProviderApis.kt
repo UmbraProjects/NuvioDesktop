@@ -25,6 +25,7 @@ internal interface DebridProviderApi {
 internal object DebridProviderApis {
     private val registered = listOf(
         TorboxDebridProviderApi(),
+        PremiumizeDebridProviderApi(),
         RealDebridProviderApi(),
     )
 
@@ -157,6 +158,60 @@ private class TorboxDebridProviderApi(
     }
 }
 
+internal class PremiumizeDebridProviderApi(
+    private val fileSelector: PremiumizeDirectDownloadFileSelector = PremiumizeDirectDownloadFileSelector(),
+    private val clientIdProvider: () -> String = { PremiumizeConfig.CLIENT_ID },
+) : DebridProviderApi {
+    override val provider: DebridProvider = DebridProviders.Premiumize
+
+    override suspend fun validateApiKey(apiKey: String): Boolean =
+        PremiumizeApiClient.validateApiKey(apiKey)
+
+    override suspend fun startDeviceAuthorization(appName: String): DebridDeviceAuthorization? {
+        val clientId = premiumizeClientIdOrThrow()
+        val response = PremiumizeApiClient.startDeviceAuthorization(clientId = clientId)
+        return premiumizeDeviceAuthorizationFromResponse(response, provider.id)
+    }
+
+    override suspend fun redeemDeviceAuthorization(deviceCode: String): DebridDeviceAuthorizationTokenResult {
+        val clientId = premiumizeClientIdOrThrow()
+        val normalized = deviceCode.trim()
+        if (normalized.isBlank()) return DebridDeviceAuthorizationTokenResult.Failed(null)
+        val response = PremiumizeApiClient.redeemDeviceAuthorization(
+            clientId = clientId,
+            deviceCode = normalized,
+        )
+        return premiumizeDeviceAuthorizationTokenResult(response)
+    }
+
+    override suspend fun resolveClientStream(
+        stream: StreamItem,
+        apiKey: String,
+        season: Int?,
+        episode: Int?,
+    ): DirectDebridResolveResult {
+        val resolve = stream.clientResolve ?: return DirectDebridResolveResult.Error
+        val source = resolve.magnetUri?.takeIf { it.isNotBlank() }
+            ?: buildMagnetUri(resolve)
+            ?: stream.playableDirectUrl?.takeIf { it.isNotBlank() }
+            ?: return DirectDebridResolveResult.Stale
+        return resolvePremiumizeDirectDownload(
+            apiKey = apiKey,
+            source = source,
+            resolve = resolve,
+            season = season,
+            episode = episode,
+            fallbackFilename = stream.behaviorHints.filename,
+            fallbackSize = stream.behaviorHints.videoSize,
+            fileSelector = fileSelector,
+        )
+    }
+
+    private fun premiumizeClientIdOrThrow(): String =
+        clientIdProvider().trim().takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("Premiumize sign-in is missing PREMIUMIZE_CLIENT_ID.")
+}
+
 private class RealDebridProviderApi(
     private val fileSelector: RealDebridFileSelector = RealDebridFileSelector(),
 ) : DebridProviderApi {
@@ -242,6 +297,93 @@ private fun buildMagnetUri(resolve: StreamClientResolve): String? {
                 append("&tr=")
                 append(encodePathSegment(source))
             }
+    }
+}
+
+internal fun premiumizeDeviceAuthorizationFromResponse(
+    response: DebridApiResponse<PremiumizeDeviceAuthorizationDto>,
+    providerId: String,
+): DebridDeviceAuthorization? {
+    val data = response.body?.takeIf { response.isSuccessful } ?: return null
+    val deviceCode = data.deviceCode?.takeIf { it.isNotBlank() } ?: return null
+    val userCode = data.userCode?.takeIf { it.isNotBlank() } ?: return null
+    val verificationUrl = data.verificationUri?.takeIf { it.isNotBlank() } ?: return null
+    return DebridDeviceAuthorization(
+        providerId = providerId,
+        deviceCode = deviceCode,
+        userCode = userCode,
+        verificationUrl = verificationUrl,
+        friendlyVerificationUrl = data.verificationUriComplete?.takeIf { it.isNotBlank() }
+            ?: verificationUrl,
+        intervalSeconds = data.interval?.coerceAtLeast(1) ?: 5,
+        expiresAt = data.expiresIn?.takeIf { it > 0 }?.let { "${it}s" },
+    )
+}
+
+internal fun premiumizeDeviceAuthorizationTokenResult(
+    response: DebridApiResponse<PremiumizeDeviceTokenDto>,
+): DebridDeviceAuthorizationTokenResult {
+    val body = response.body
+    body?.accessToken?.takeIf { response.isSuccessful && it.isNotBlank() }?.let { accessToken ->
+        return DebridDeviceAuthorizationTokenResult.Authorized(accessToken)
+    }
+    return when (body?.error?.lowercase()) {
+        "authorization_pending", "slow_down" -> DebridDeviceAuthorizationTokenResult.Pending
+        "invalid_grant", "expired_token" -> DebridDeviceAuthorizationTokenResult.Expired
+        "access_denied" -> DebridDeviceAuthorizationTokenResult.Failed(body.errorDescription)
+        else -> {
+            if (response.status == 400 && body?.error.isNullOrBlank()) {
+                DebridDeviceAuthorizationTokenResult.Pending
+            } else {
+                DebridDeviceAuthorizationTokenResult.Failed(body?.errorDescription ?: body?.error ?: response.rawBody)
+            }
+        }
+    }
+}
+
+internal suspend fun resolvePremiumizeDirectDownload(
+    apiKey: String,
+    source: String,
+    resolve: StreamClientResolve,
+    season: Int?,
+    episode: Int?,
+    fallbackFilename: String? = null,
+    fallbackSize: Long? = null,
+    fileSelector: PremiumizeDirectDownloadFileSelector = PremiumizeDirectDownloadFileSelector(),
+): DirectDebridResolveResult {
+    val normalizedSource = source.trim().takeIf { it.isNotBlank() } ?: return DirectDebridResolveResult.Stale
+    return try {
+        val response = PremiumizeApiClient.directDownload(apiKey = apiKey, source = normalizedSource)
+        if (!response.isSuccessful) {
+            return when (response.status) {
+                401, 403 -> DirectDebridResolveResult.Error
+                else -> DirectDebridResolveResult.Stale
+            }
+        }
+        val body = response.body ?: return DirectDebridResolveResult.Stale
+        if (body.status.equals("error", ignoreCase = true)) {
+            val message = listOfNotNull(body.message, body.code).joinToString(" ").lowercase()
+            return if (message.contains("cache") || message.contains("not found")) {
+                DirectDebridResolveResult.NotCached
+            } else {
+                DirectDebridResolveResult.Stale
+            }
+        }
+        val file = fileSelector.selectFile(
+            files = body.content.orEmpty(),
+            resolve = resolve,
+            season = season,
+            episode = episode,
+        ) ?: return DirectDebridResolveResult.Stale
+        val url = file.link?.takeIf { it.isNotBlank() } ?: return DirectDebridResolveResult.Stale
+        DirectDebridResolveResult.Success(
+            url = url,
+            filename = file.displayName().takeIf { it.isNotBlank() } ?: fallbackFilename,
+            videoSize = file.size ?: fallbackSize,
+        )
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        DirectDebridResolveResult.Error
     }
 }
 

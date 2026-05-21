@@ -67,6 +67,7 @@ import com.nuvio.app.features.debrid.DebridStreamSortCriterion
 import com.nuvio.app.features.debrid.DebridStreamSortDirection
 import com.nuvio.app.features.debrid.DebridStreamSortKey
 import com.nuvio.app.features.debrid.DebridStreamVisualTag
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.Res
@@ -87,6 +88,7 @@ import nuvio.composeapp.generated.resources.settings_debrid_device_auth_connecte
 import nuvio.composeapp.generated.resources.settings_debrid_device_auth_expired
 import nuvio.composeapp.generated.resources.settings_debrid_device_auth_failed
 import nuvio.composeapp.generated.resources.settings_debrid_device_auth_instructions
+import nuvio.composeapp.generated.resources.settings_debrid_device_auth_missing_configuration
 import nuvio.composeapp.generated.resources.settings_debrid_device_auth_open
 import nuvio.composeapp.generated.resources.settings_debrid_device_auth_starting
 import nuvio.composeapp.generated.resources.settings_debrid_device_auth_waiting
@@ -113,6 +115,8 @@ import nuvio.composeapp.generated.resources.settings_debrid_name_template_descri
 import nuvio.composeapp.generated.resources.settings_debrid_not_set
 import nuvio.composeapp.generated.resources.settings_debrid_provider_description
 import nuvio.composeapp.generated.resources.settings_debrid_provider_device_description
+import nuvio.composeapp.generated.resources.settings_debrid_resolve_with
+import nuvio.composeapp.generated.resources.settings_debrid_resolve_with_description
 import nuvio.composeapp.generated.resources.settings_debrid_section_instant_playback
 import nuvio.composeapp.generated.resources.settings_debrid_section_formatting
 import nuvio.composeapp.generated.resources.settings_debrid_section_providers
@@ -124,6 +128,9 @@ internal fun LazyListScope.debridSettingsContent(
     settings: DebridSettings,
 ) {
     item {
+        var showResolverProviderDialog by rememberSaveable { mutableStateOf(false) }
+        val resolverProviders = settings.resolverServices.map { it.provider }
+        val activeResolverProvider = settings.activeResolverCredential?.provider
         SettingsSection(
             title = stringResource(Res.string.settings_debrid_section_title),
             isTablet = isTablet,
@@ -147,11 +154,22 @@ internal fun LazyListScope.debridSettingsContent(
                     title = stringResource(Res.string.settings_debrid_enable),
                     description = stringResource(Res.string.settings_debrid_enable_description),
                     checked = settings.canResolvePlayableLinks,
-                    enabled = settings.hasAnyApiKey,
+                    enabled = settings.hasResolverProvider,
                     isTablet = isTablet,
                     onCheckedChange = DebridSettingsRepository::setLinkResolvingEnabled,
                 )
-                if (!settings.hasAnyApiKey) {
+                if (settings.canResolvePlayableLinks && resolverProviders.size > 1 && activeResolverProvider != null) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    DebridPreferenceRow(
+                        isTablet = isTablet,
+                        title = stringResource(Res.string.settings_debrid_resolve_with),
+                        description = stringResource(Res.string.settings_debrid_resolve_with_description),
+                        value = activeResolverProvider.displayName,
+                        enabled = true,
+                        onClick = { showResolverProviderDialog = true },
+                    )
+                }
+                if (!settings.hasResolverProvider) {
                     SettingsGroupDivider(isTablet = isTablet)
                     DebridInfoRow(
                         isTablet = isTablet,
@@ -159,6 +177,17 @@ internal fun LazyListScope.debridSettingsContent(
                     )
                 }
             }
+        }
+
+        if (showResolverProviderDialog && resolverProviders.size > 1 && activeResolverProvider != null) {
+            DebridSingleChoiceDialog(
+                title = stringResource(Res.string.settings_debrid_resolve_with),
+                selectedValue = activeResolverProvider,
+                options = resolverProviders,
+                label = { provider -> provider.displayName },
+                onSelected = { provider -> DebridSettingsRepository.setPreferredResolverProviderId(provider.id) },
+                onDismiss = { showResolverProviderDialog = false },
+            )
         }
     }
 
@@ -1270,6 +1299,7 @@ private fun DebridDeviceAuthDialog(
     val startingMessage = stringResource(Res.string.settings_debrid_device_auth_starting)
     val waitingMessage = stringResource(Res.string.settings_debrid_device_auth_waiting)
     val failedMessage = stringResource(Res.string.settings_debrid_device_auth_failed)
+    val missingConfigurationMessage = stringResource(Res.string.settings_debrid_device_auth_missing_configuration)
     val expiredMessage = stringResource(Res.string.settings_debrid_device_auth_expired)
     val codeCopiedMessage = stringResource(Res.string.settings_debrid_device_auth_code_copied)
 
@@ -1284,11 +1314,20 @@ private fun DebridDeviceAuthDialog(
         isStarting = true
         isPolling = false
         statusMessage = null
-        session = runCatching {
+        val startResult = runCatching {
             DebridProviderApis.apiFor(provider.id)?.startDeviceAuthorization("Nuvio")
-        }.getOrNull()
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
+        }
+        session = startResult.getOrNull()
         isStarting = false
-        statusMessage = if (session == null) failedMessage else waitingMessage
+        statusMessage = if (session == null) {
+            startResult.exceptionOrNull()?.message?.takeIf { it.contains("PREMIUMIZE_CLIENT_ID") }
+                ?.let { missingConfigurationMessage }
+                ?: failedMessage
+        } else {
+            waitingMessage
+        }
     }
 
     LaunchedEffect(session?.deviceCode, restartNonce, isConnected) {
@@ -1301,8 +1340,13 @@ private fun DebridDeviceAuthDialog(
                 DebridProviderApis.apiFor(provider.id)
                     ?.redeemDeviceAuthorization(activeSession.deviceCode)
                     ?: DebridDeviceAuthorizationTokenResult.Unsupported
-            }.getOrElse {
-                DebridDeviceAuthorizationTokenResult.Failed(it.message)
+            }.getOrElse { error ->
+                if (error is CancellationException) throw error
+                if (error.isCancelledHttpRequest()) {
+                    DebridDeviceAuthorizationTokenResult.Pending
+                } else {
+                    DebridDeviceAuthorizationTokenResult.Failed(null)
+                }
             }
             isPolling = false
             when (result) {
@@ -1321,7 +1365,11 @@ private fun DebridDeviceAuthDialog(
                     return@LaunchedEffect
                 }
 
-                is DebridDeviceAuthorizationTokenResult.Failed,
+                is DebridDeviceAuthorizationTokenResult.Failed -> {
+                    statusMessage = result.message.toDeviceAuthStatusMessage(failedMessage)
+                    return@LaunchedEffect
+                }
+
                 DebridDeviceAuthorizationTokenResult.Unsupported -> {
                     statusMessage = failedMessage
                     return@LaunchedEffect
@@ -1401,7 +1449,7 @@ private fun DebridDeviceAuthDialog(
                         Text(
                             text = message,
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (message == failedMessage || message == expiredMessage) {
+                            color = if (message == failedMessage || message == expiredMessage || message == missingConfigurationMessage) {
                                 MaterialTheme.colorScheme.error
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
@@ -1445,6 +1493,29 @@ private fun DebridDeviceAuthDialog(
                 }
             }
         }
+    }
+}
+
+private fun Throwable.isCancelledHttpRequest(): Boolean {
+    val text = listOfNotNull(message, toString())
+        .joinToString(" ")
+        .lowercase()
+    return "code=-999" in text ||
+        ("nsurlerrordomain" in text && ("cancelled" in text || "canceled" in text))
+}
+
+private fun String?.toDeviceAuthStatusMessage(fallback: String): String {
+    val value = this?.trim()?.takeIf { it.isNotBlank() } ?: return fallback
+    val lower = value.lowercase()
+    return if (
+        value.length > 180 ||
+        "exception in http request" in lower ||
+        "nsurlerrordomain" in lower ||
+        "userinfo=" in lower
+    ) {
+        fallback
+    } else {
+        value
     }
 }
 

@@ -18,6 +18,7 @@ internal interface CloudLibraryProviderApi {
 internal object CloudLibraryProviderApis {
     private val registered = listOf(
         TorboxCloudLibraryProviderApi(),
+        PremiumizeCloudLibraryProviderApi(),
     )
 
     fun all(): List<CloudLibraryProviderApi> = registered

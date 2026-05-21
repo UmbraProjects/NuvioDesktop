@@ -30,7 +30,7 @@ object DirectDebridStreamPreparer {
         if (!settings.canResolvePlayableLinks || limit <= 0) return
 
         val candidates = prioritizeCandidates(
-            streams = streams,
+            streams = streams.filter(DirectDebridPlaybackResolver::shouldResolveToPlayableStream),
             limit = limit,
             playerSettings = playerSettings,
             installedAddonNames = installedAddonNames,

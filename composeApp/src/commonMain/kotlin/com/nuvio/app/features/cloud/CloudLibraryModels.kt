@@ -6,6 +6,7 @@ enum class CloudLibraryItemType {
     Torrent,
     Usenet,
     WebDownload,
+    File,
 }
 
 data class CloudLibraryFile(
@@ -14,6 +15,7 @@ data class CloudLibraryFile(
     val sizeBytes: Long? = null,
     val mimeType: String? = null,
     val playable: Boolean = true,
+    val playbackUrl: String? = null,
 ) {
     val stableKey: String
         get() = id ?: name
