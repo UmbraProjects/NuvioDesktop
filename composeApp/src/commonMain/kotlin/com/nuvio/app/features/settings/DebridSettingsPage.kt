@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,10 +40,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.debrid.DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT
 import com.nuvio.app.features.debrid.DebridCredentialValidator
+import com.nuvio.app.features.debrid.DebridDeviceAuthorization
+import com.nuvio.app.features.debrid.DebridDeviceAuthorizationTokenResult
+import com.nuvio.app.features.debrid.DebridProvider
+import com.nuvio.app.features.debrid.DebridProviderApis
+import com.nuvio.app.features.debrid.DebridProviderAuthMethod
 import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.debrid.DebridSettings
 import com.nuvio.app.features.debrid.DebridSettingsRepository
@@ -58,16 +68,30 @@ import com.nuvio.app.features.debrid.DebridStreamSortDirection
 import com.nuvio.app.features.debrid.DebridStreamSortKey
 import com.nuvio.app.features.debrid.DebridStreamVisualTag
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
 import nuvio.composeapp.generated.resources.action_clear
+import nuvio.composeapp.generated.resources.action_retry
 import nuvio.composeapp.generated.resources.action_reset
 import nuvio.composeapp.generated.resources.action_save
 import nuvio.composeapp.generated.resources.action_saving
 import nuvio.composeapp.generated.resources.settings_debrid_add_key_first
+import nuvio.composeapp.generated.resources.settings_debrid_connected
+import nuvio.composeapp.generated.resources.settings_debrid_connect_provider
+import nuvio.composeapp.generated.resources.settings_debrid_disconnect_provider
+import nuvio.composeapp.generated.resources.settings_debrid_device_auth_code_copied
+import nuvio.composeapp.generated.resources.settings_debrid_device_auth_connected
+import nuvio.composeapp.generated.resources.settings_debrid_device_auth_expired
+import nuvio.composeapp.generated.resources.settings_debrid_device_auth_failed
+import nuvio.composeapp.generated.resources.settings_debrid_device_auth_instructions
+import nuvio.composeapp.generated.resources.settings_debrid_device_auth_open
+import nuvio.composeapp.generated.resources.settings_debrid_device_auth_starting
+import nuvio.composeapp.generated.resources.settings_debrid_device_auth_waiting
 import nuvio.composeapp.generated.resources.settings_debrid_dialog_placeholder
 import nuvio.composeapp.generated.resources.settings_debrid_dialog_subtitle
 import nuvio.composeapp.generated.resources.settings_debrid_dialog_title
+import nuvio.composeapp.generated.resources.settings_debrid_disconnect
 import nuvio.composeapp.generated.resources.settings_debrid_enable
 import nuvio.composeapp.generated.resources.settings_debrid_enable_description
 import nuvio.composeapp.generated.resources.settings_debrid_experimental_notice
@@ -86,6 +110,7 @@ import nuvio.composeapp.generated.resources.settings_debrid_name_template
 import nuvio.composeapp.generated.resources.settings_debrid_name_template_description
 import nuvio.composeapp.generated.resources.settings_debrid_not_set
 import nuvio.composeapp.generated.resources.settings_debrid_provider_description
+import nuvio.composeapp.generated.resources.settings_debrid_provider_device_description
 import nuvio.composeapp.generated.resources.settings_debrid_section_instant_playback
 import nuvio.composeapp.generated.resources.settings_debrid_section_formatting
 import nuvio.composeapp.generated.resources.settings_debrid_section_providers
@@ -127,8 +152,11 @@ internal fun LazyListScope.debridSettingsContent(
     }
 
     item {
-        var activeProviderId by rememberSaveable { mutableStateOf<String?>(null) }
+        var activeApiKeyProviderId by rememberSaveable { mutableStateOf<String?>(null) }
+        var activeDeviceAuthProviderId by rememberSaveable { mutableStateOf<String?>(null) }
         val providers = remember { DebridProviders.visible() }
+        val notSetLabel = stringResource(Res.string.settings_debrid_not_set)
+        val connectedLabel = stringResource(Res.string.settings_debrid_connected)
 
         SettingsSection(
             title = stringResource(Res.string.settings_debrid_section_providers),
@@ -142,16 +170,42 @@ internal fun LazyListScope.debridSettingsContent(
                     DebridPreferenceRow(
                         isTablet = isTablet,
                         title = provider.displayName,
-                        description = stringResource(Res.string.settings_debrid_provider_description, provider.displayName),
-                        value = maskDebridApiKey(settings.apiKeyFor(provider.id), stringResource(Res.string.settings_debrid_not_set)),
+                        description = if (provider.authMethod == DebridProviderAuthMethod.DeviceCode) {
+                            stringResource(Res.string.settings_debrid_provider_device_description, provider.displayName)
+                        } else {
+                            stringResource(Res.string.settings_debrid_provider_description, provider.displayName)
+                        },
+                        value = providerCredentialStatus(
+                            provider = provider,
+                            credential = settings.apiKeyFor(provider.id),
+                            notSetLabel = notSetLabel,
+                            connectedLabel = connectedLabel,
+                        ),
                         enabled = true,
-                        onClick = { activeProviderId = provider.id },
+                        onClick = {
+                            when (provider.authMethod) {
+                                DebridProviderAuthMethod.DeviceCode -> activeDeviceAuthProviderId = provider.id
+                                DebridProviderAuthMethod.ApiKey -> activeApiKeyProviderId = provider.id
+                            }
+                        },
                     )
                 }
             }
         }
 
-        activeProviderId
+        activeDeviceAuthProviderId
+            ?.let(DebridProviders::byId)
+            ?.let { provider ->
+                DebridDeviceAuthDialog(
+                    provider = provider,
+                    currentValue = settings.apiKeyFor(provider.id),
+                    onConnected = { token -> DebridSettingsRepository.setProviderApiKey(provider.id, token) },
+                    onDisconnect = { DebridSettingsRepository.setProviderApiKey(provider.id, "") },
+                    onDismiss = { activeDeviceAuthProviderId = null },
+                )
+            }
+
+        activeApiKeyProviderId
             ?.let(DebridProviders::byId)
             ?.let { provider ->
                 DebridApiKeyDialog(
@@ -161,7 +215,7 @@ internal fun LazyListScope.debridSettingsContent(
                     placeholder = stringResource(Res.string.settings_debrid_dialog_placeholder, provider.displayName),
                     currentValue = settings.apiKeyFor(provider.id),
                     onSave = { apiKey -> DebridSettingsRepository.setProviderApiKey(provider.id, apiKey) },
-                    onDismiss = { activeProviderId = null },
+                    onDismiss = { activeApiKeyProviderId = null },
                 )
             }
     }
@@ -1184,6 +1238,205 @@ private enum class DebridStreamPicker {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
+private fun DebridDeviceAuthDialog(
+    provider: DebridProvider,
+    currentValue: String,
+    onConnected: (String) -> Unit,
+    onDisconnect: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val uriHandler = LocalUriHandler.current
+    val clipboardManager = LocalClipboardManager.current
+    val isConnected = currentValue.isNotBlank()
+    var restartNonce by rememberSaveable(provider.id) { mutableStateOf(0) }
+    var session by remember(provider.id, restartNonce, isConnected) { mutableStateOf<DebridDeviceAuthorization?>(null) }
+    var isStarting by remember(provider.id, restartNonce, isConnected) { mutableStateOf(!isConnected) }
+    var isPolling by remember(provider.id, restartNonce, isConnected) { mutableStateOf(false) }
+    var statusMessage by remember(provider.id, restartNonce, isConnected) { mutableStateOf<String?>(null) }
+
+    val startingMessage = stringResource(Res.string.settings_debrid_device_auth_starting)
+    val waitingMessage = stringResource(Res.string.settings_debrid_device_auth_waiting)
+    val failedMessage = stringResource(Res.string.settings_debrid_device_auth_failed)
+    val expiredMessage = stringResource(Res.string.settings_debrid_device_auth_expired)
+    val codeCopiedMessage = stringResource(Res.string.settings_debrid_device_auth_code_copied)
+
+    LaunchedEffect(provider.id, restartNonce, isConnected) {
+        if (isConnected) {
+            isStarting = false
+            isPolling = false
+            statusMessage = null
+            session = null
+            return@LaunchedEffect
+        }
+        isStarting = true
+        isPolling = false
+        statusMessage = null
+        session = runCatching {
+            DebridProviderApis.apiFor(provider.id)?.startDeviceAuthorization("Nuvio")
+        }.getOrNull()
+        isStarting = false
+        statusMessage = if (session == null) failedMessage else waitingMessage
+    }
+
+    LaunchedEffect(session?.deviceCode, restartNonce, isConnected) {
+        if (isConnected) return@LaunchedEffect
+        val activeSession = session ?: return@LaunchedEffect
+        while (true) {
+            delay(activeSession.intervalSeconds.coerceAtLeast(1) * 1_000L)
+            isPolling = true
+            val result = runCatching {
+                DebridProviderApis.apiFor(provider.id)
+                    ?.redeemDeviceAuthorization(activeSession.deviceCode)
+                    ?: DebridDeviceAuthorizationTokenResult.Unsupported
+            }.getOrElse {
+                DebridDeviceAuthorizationTokenResult.Failed(it.message)
+            }
+            isPolling = false
+            when (result) {
+                is DebridDeviceAuthorizationTokenResult.Authorized -> {
+                    onConnected(result.accessToken)
+                    onDismiss()
+                    return@LaunchedEffect
+                }
+
+                DebridDeviceAuthorizationTokenResult.Pending -> {
+                    statusMessage = waitingMessage
+                }
+
+                DebridDeviceAuthorizationTokenResult.Expired -> {
+                    statusMessage = expiredMessage
+                    return@LaunchedEffect
+                }
+
+                is DebridDeviceAuthorizationTokenResult.Failed,
+                DebridDeviceAuthorizationTokenResult.Unsupported -> {
+                    statusMessage = failedMessage
+                    return@LaunchedEffect
+                }
+            }
+        }
+    }
+
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        DebridDialogSurface(
+            title = stringResource(
+                if (isConnected) Res.string.settings_debrid_disconnect_provider else Res.string.settings_debrid_connect_provider,
+                provider.displayName,
+            ),
+        ) {
+            if (isConnected) {
+                Text(
+                    text = stringResource(Res.string.settings_debrid_device_auth_connected, provider.displayName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (isStarting) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                    Text(
+                        text = startingMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                session?.let { activeSession ->
+                    Text(
+                        text = stringResource(Res.string.settings_debrid_device_auth_instructions),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                clipboardManager.setText(AnnotatedString(activeSession.userCode))
+                                statusMessage = codeCopiedMessage
+                            },
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = activeSession.userCode,
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = activeSession.friendlyVerificationUrl,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+                statusMessage?.let { message ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (isPolling) {
+                            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                        }
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (message == failedMessage || message == expiredMessage) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(Res.string.action_cancel))
+                }
+                if (isConnected) {
+                    Button(
+                        onClick = {
+                            onDisconnect()
+                            onDismiss()
+                        },
+                    ) {
+                        Text(stringResource(Res.string.settings_debrid_disconnect))
+                    }
+                }
+                if (!isConnected && !isStarting && session == null) {
+                    TextButton(onClick = { restartNonce += 1 }) {
+                        Text(stringResource(Res.string.action_retry))
+                    }
+                }
+                if (!isConnected) session?.let { activeSession ->
+                    Button(
+                        onClick = {
+                            runCatching { uriHandler.openUri(activeSession.verificationUrl) }
+                                .onFailure { statusMessage = failedMessage }
+                        },
+                        enabled = !isStarting,
+                    ) {
+                        Text(stringResource(Res.string.settings_debrid_device_auth_open))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun DebridApiKeyDialog(
     providerId: String,
     title: String,
@@ -1286,6 +1539,17 @@ private fun maskDebridApiKey(key: String, notSetLabel: String): String {
     if (trimmed.isBlank()) return notSetLabel
     return if (trimmed.length <= 4) "****" else "******${trimmed.takeLast(4)}"
 }
+
+private fun providerCredentialStatus(
+    provider: DebridProvider,
+    credential: String,
+    notSetLabel: String,
+    connectedLabel: String,
+): String =
+    when (provider.authMethod) {
+        DebridProviderAuthMethod.DeviceCode -> if (credential.isBlank()) notSetLabel else connectedLabel
+        DebridProviderAuthMethod.ApiKey -> maskDebridApiKey(credential, notSetLabel)
+    }
 
 @Composable
 private fun DebridInfoRow(

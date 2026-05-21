@@ -9,6 +9,11 @@ internal interface DebridProviderApi {
 
     suspend fun validateApiKey(apiKey: String): Boolean
 
+    suspend fun startDeviceAuthorization(appName: String): DebridDeviceAuthorization? = null
+
+    suspend fun redeemDeviceAuthorization(deviceCode: String): DebridDeviceAuthorizationTokenResult =
+        DebridDeviceAuthorizationTokenResult.Unsupported
+
     suspend fun resolveClientStream(
         stream: StreamItem,
         apiKey: String,
@@ -29,6 +34,24 @@ internal object DebridProviderApis {
     }
 }
 
+internal data class DebridDeviceAuthorization(
+    val providerId: String,
+    val deviceCode: String,
+    val userCode: String,
+    val verificationUrl: String,
+    val friendlyVerificationUrl: String,
+    val intervalSeconds: Int,
+    val expiresAt: String?,
+)
+
+internal sealed interface DebridDeviceAuthorizationTokenResult {
+    data class Authorized(val accessToken: String) : DebridDeviceAuthorizationTokenResult
+    data object Pending : DebridDeviceAuthorizationTokenResult
+    data object Expired : DebridDeviceAuthorizationTokenResult
+    data object Unsupported : DebridDeviceAuthorizationTokenResult
+    data class Failed(val message: String?) : DebridDeviceAuthorizationTokenResult
+}
+
 private class TorboxDebridProviderApi(
     private val fileSelector: TorboxFileSelector = TorboxFileSelector(),
 ) : DebridProviderApi {
@@ -36,6 +59,55 @@ private class TorboxDebridProviderApi(
 
     override suspend fun validateApiKey(apiKey: String): Boolean =
         TorboxApiClient.validateApiKey(apiKey)
+
+    override suspend fun startDeviceAuthorization(appName: String): DebridDeviceAuthorization? {
+        val response = TorboxApiClient.startDeviceAuthorization(appName = appName)
+        val data = response.body?.takeIf { response.isSuccessful && it.success != false }?.data
+            ?: return null
+        val deviceCode = data.deviceCode?.takeIf { it.isNotBlank() } ?: return null
+        val userCode = data.code?.takeIf { it.isNotBlank() } ?: return null
+        val verificationUrl = data.verificationUrl?.takeIf { it.isNotBlank() } ?: return null
+        return DebridDeviceAuthorization(
+            providerId = provider.id,
+            deviceCode = deviceCode,
+            userCode = userCode,
+            verificationUrl = verificationUrl,
+            friendlyVerificationUrl = data.friendlyVerificationUrl?.takeIf { it.isNotBlank() }
+                ?: verificationUrl,
+            intervalSeconds = data.interval?.coerceAtLeast(1) ?: 5,
+            expiresAt = data.expiresAt?.takeIf { it.isNotBlank() },
+        )
+    }
+
+    override suspend fun redeemDeviceAuthorization(deviceCode: String): DebridDeviceAuthorizationTokenResult {
+        val normalized = deviceCode.trim()
+        if (normalized.isBlank()) return DebridDeviceAuthorizationTokenResult.Failed(null)
+        val response = TorboxApiClient.redeemDeviceAuthorization(deviceCode = normalized)
+        val envelope = response.body
+        val accessToken = envelope
+            ?.takeIf { response.isSuccessful && it.success != false }
+            ?.data
+            ?.accessToken
+            ?.takeIf { it.isNotBlank() }
+        if (accessToken != null) {
+            return DebridDeviceAuthorizationTokenResult.Authorized(accessToken)
+        }
+        val message = listOfNotNull(envelope?.error, envelope?.detail, response.rawBody)
+            .joinToString(" ")
+            .lowercase()
+        return when {
+            message.contains("pending") || message.contains("not authorized") ->
+                DebridDeviceAuthorizationTokenResult.Pending
+            message.contains("expired") ->
+                DebridDeviceAuthorizationTokenResult.Expired
+            response.status == 404 || response.status == 409 || response.status == 425 ->
+                DebridDeviceAuthorizationTokenResult.Pending
+            response.status == 410 ->
+                DebridDeviceAuthorizationTokenResult.Expired
+            else ->
+                DebridDeviceAuthorizationTokenResult.Failed(envelope?.detail ?: envelope?.error)
+        }
+    }
 
     override suspend fun resolveClientStream(
         stream: StreamItem,

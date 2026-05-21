@@ -5,6 +5,7 @@ data class DebridProvider(
     val displayName: String,
     val shortName: String,
     val visibleInUi: Boolean = true,
+    val authMethod: DebridProviderAuthMethod = DebridProviderAuthMethod.ApiKey,
     val capabilities: Set<DebridProviderCapability> = emptySet(),
 )
 
@@ -19,6 +20,11 @@ enum class DebridProviderCapability {
     LocalTorrentResolve,
 }
 
+enum class DebridProviderAuthMethod {
+    ApiKey,
+    DeviceCode,
+}
+
 object DebridProviders {
     const val TORBOX_ID = "torbox"
     const val REAL_DEBRID_ID = "realdebrid"
@@ -27,6 +33,7 @@ object DebridProviders {
         id = TORBOX_ID,
         displayName = "Torbox",
         shortName = "TB",
+        authMethod = DebridProviderAuthMethod.DeviceCode,
         capabilities = setOf(
             DebridProviderCapability.ClientResolve,
             DebridProviderCapability.LocalTorrentCacheCheck,

@@ -28,6 +28,26 @@ internal object DebridApiJson {
 internal object TorboxApiClient {
     private const val BASE_URL = "https://api.torbox.app"
 
+    suspend fun startDeviceAuthorization(
+        appName: String,
+    ): DebridApiResponse<TorboxEnvelopeDto<TorboxDeviceAuthorizationDto>> =
+        requestWithoutAuth(
+            method = "GET",
+            url = "$BASE_URL/v1/api/user/auth/device/start?${
+                queryString("app" to appName)
+            }",
+        )
+
+    suspend fun redeemDeviceAuthorization(
+        deviceCode: String,
+    ): DebridApiResponse<TorboxEnvelopeDto<TorboxDeviceTokenDto>> =
+        requestWithoutAuth(
+            method = "POST",
+            url = "$BASE_URL/v1/api/user/auth/device/token",
+            body = DebridApiJson.json.encodeToString(TorboxDeviceTokenRequestDto(deviceCode = deviceCode)),
+            contentType = "application/json",
+        )
+
     suspend fun validateApiKey(apiKey: String): Boolean =
         getUser(apiKey.trim()).status in 200..299
 
@@ -126,6 +146,29 @@ internal object TorboxApiClient {
             contentType?.let { "Content-Type" to it },
             "Accept" to "application/json",
         )
+        val response = httpRequestRaw(
+            method = method,
+            url = url,
+            headers = headers,
+            body = body,
+        )
+        return DebridApiResponse(
+            status = response.status,
+            body = response.decodeBody<T>(),
+            rawBody = response.body,
+        )
+    }
+
+    private suspend inline fun <reified T> requestWithoutAuth(
+        method: String,
+        url: String,
+        body: String = "",
+        contentType: String? = null,
+    ): DebridApiResponse<T> {
+        val headers = listOfNotNull(
+            contentType?.let { "Content-Type" to it },
+            "Accept" to "application/json",
+        ).toMap()
         val response = httpRequestRaw(
             method = method,
             url = url,

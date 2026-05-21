@@ -50,6 +50,27 @@ internal data class TorboxCheckCachedRequestDto(
 )
 
 @Serializable
+internal data class TorboxDeviceAuthorizationDto(
+    @SerialName("device_code") val deviceCode: String? = null,
+    val code: String? = null,
+    @SerialName("verification_url") val verificationUrl: String? = null,
+    @SerialName("friendly_verification_url") val friendlyVerificationUrl: String? = null,
+    val interval: Int? = null,
+    @SerialName("expires_at") val expiresAt: String? = null,
+)
+
+@Serializable
+internal data class TorboxDeviceTokenRequestDto(
+    @SerialName("device_code") val deviceCode: String,
+)
+
+@Serializable
+internal data class TorboxDeviceTokenDto(
+    @SerialName("access_token") val accessToken: String? = null,
+    @SerialName("token_type") val tokenType: String? = null,
+)
+
+@Serializable
 internal data class TorboxCachedItemDto(
     val name: String? = null,
     val size: Long? = null,
