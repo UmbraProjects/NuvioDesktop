@@ -2,6 +2,7 @@ package com.nuvio.app.features.debrid
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 @Serializable
 internal data class TorboxEnvelopeDto<T>(
@@ -43,6 +44,32 @@ internal data class TorboxTorrentFileDto(
             .firstOrNull { it.isNotBlank() }
             .orEmpty()
 }
+
+@Serializable
+internal data class TorboxCloudItemDto(
+    val id: JsonElement? = null,
+    val hash: String? = null,
+    val name: String? = null,
+    val status: String? = null,
+    val state: String? = null,
+    @SerialName("download_state") val downloadState: String? = null,
+    val progress: Double? = null,
+    @SerialName("download_progress") val downloadProgress: Double? = null,
+    val size: Long? = null,
+    @SerialName("total_size") val totalSize: Long? = null,
+    val files: List<TorboxCloudFileDto>? = null,
+)
+
+@Serializable
+internal data class TorboxCloudFileDto(
+    val id: JsonElement? = null,
+    val name: String? = null,
+    @SerialName("short_name") val shortName: String? = null,
+    @SerialName("absolute_path") val absolutePath: String? = null,
+    @SerialName("mimetype") val mimeType: String? = null,
+    @SerialName("mime_type") val mimeTypeAlt: String? = null,
+    val size: Long? = null,
+)
 
 @Serializable
 internal data class TorboxCheckCachedRequestDto(

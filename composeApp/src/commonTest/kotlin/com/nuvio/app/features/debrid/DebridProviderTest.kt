@@ -11,6 +11,7 @@ class DebridProviderTest {
         assertTrue(DebridProviders.Torbox.supports(DebridProviderCapability.ClientResolve))
         assertTrue(DebridProviders.Torbox.supports(DebridProviderCapability.LocalTorrentCacheCheck))
         assertTrue(DebridProviders.Torbox.supports(DebridProviderCapability.LocalTorrentResolve))
+        assertTrue(DebridProviders.Torbox.supports(DebridProviderCapability.CloudLibrary))
     }
 
     @Test
@@ -20,5 +21,6 @@ class DebridProviderTest {
         assertTrue(DebridProviders.RealDebrid.supports(DebridProviderCapability.ClientResolve))
         assertFalse(DebridProviders.RealDebrid.supports(DebridProviderCapability.LocalTorrentCacheCheck))
         assertFalse(DebridProviders.RealDebrid.supports(DebridProviderCapability.LocalTorrentResolve))
+        assertFalse(DebridProviders.RealDebrid.supports(DebridProviderCapability.CloudLibrary))
     }
 }

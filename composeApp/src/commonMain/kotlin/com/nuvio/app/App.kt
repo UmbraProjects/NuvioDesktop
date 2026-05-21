@@ -106,6 +106,10 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.catalog.CatalogRepository
 import com.nuvio.app.features.catalog.CatalogScreen
 import com.nuvio.app.features.catalog.INTERNAL_LIBRARY_MANIFEST_URL
+import com.nuvio.app.features.cloud.CloudLibraryFile
+import com.nuvio.app.features.cloud.CloudLibraryItem
+import com.nuvio.app.features.cloud.CloudLibraryPlaybackResult
+import com.nuvio.app.features.cloud.CloudLibraryRepository
 import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.debrid.toastMessage
@@ -565,6 +569,7 @@ private fun MainAppContent(
         var showExitConfirmation by rememberSaveable { mutableStateOf(false) }
         var selectedPosterActionTarget by remember { mutableStateOf<PosterActionTarget?>(null) }
         var selectedContinueWatchingForActions by remember { mutableStateOf<ContinueWatchingItem?>(null) }
+        var requestedSettingsPageName by rememberSaveable { mutableStateOf<String?>(null) }
         var showLibraryListPicker by remember { mutableStateOf(false) }
         var pickerItem by remember { mutableStateOf<LibraryItem?>(null) }
         var pickerTitle by remember { mutableStateOf("") }
@@ -601,6 +606,7 @@ private fun MainAppContent(
     val externalPlayerNotConfiguredText = stringResource(Res.string.external_player_not_configured)
     val externalPlayerUnavailableText = stringResource(Res.string.external_player_unavailable)
     val externalPlayerFailedText = stringResource(Res.string.external_player_failed)
+    val cloudLibraryPlayFailedText = stringResource(Res.string.cloud_library_play_failed)
     val isTraktLibrarySource = libraryUiState.sourceMode == LibrarySourceMode.TRAKT
     var initialHomeReady by rememberSaveable { mutableStateOf(false) }
     var offlineLaunchRouteHandled by rememberSaveable { mutableStateOf(false) }
@@ -1157,6 +1163,45 @@ private fun MainAppContent(
                                             )
                                         },
                                         onLibrarySectionViewAllClick = onLibrarySectionViewAllClick,
+                                        onCloudFilePlay = { item, file ->
+                                            coroutineScope.launch {
+                                                when (
+                                                    val resolved = CloudLibraryRepository.resolvePlayback(
+                                                        item = item,
+                                                        file = file,
+                                                    )
+                                                ) {
+                                                    is CloudLibraryPlaybackResult.Success -> {
+                                                        val playbackTitle = file.name.ifBlank { item.name }
+                                                        val playerLaunch = PlayerLaunch(
+                                                            title = playbackTitle,
+                                                            sourceUrl = resolved.url,
+                                                            streamTitle = playbackTitle,
+                                                            streamSubtitle = item.name.takeIf { it != playbackTitle },
+                                                            providerName = item.providerName,
+                                                            providerAddonId = "cloud:${item.providerId}",
+                                                            contentType = "cloud",
+                                                            videoId = "${item.stableKey}:${file.stableKey}",
+                                                            parentMetaId = item.stableKey,
+                                                            parentMetaType = "cloud",
+                                                        )
+                                                        if (playerSettingsUiState.externalPlayerEnabled) {
+                                                            openExternalPlayback(playerLaunch)
+                                                            return@launch
+                                                        }
+                                                        val launchId = PlayerLaunchStore.put(playerLaunch)
+                                                        navController.navigate(PlayerRoute(launchId = launchId))
+                                                    }
+                                                    else -> {
+                                                        NuvioToastController.show(cloudLibraryPlayFailedText)
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        onConnectCloudClick = {
+                                            requestedSettingsPageName = "Debrid"
+                                            selectedTab = AppScreenTab.Settings
+                                        },
                                         onContinueWatchingClick = onContinueWatchingClick,
                                         onContinueWatchingLongPress = onContinueWatchingLongPress,
                                         onSwitchProfile = onSwitchProfile,
@@ -1190,6 +1235,10 @@ private fun MainAppContent(
                                         onCollectionsSettingsClick = { navController.navigate(CollectionsRoute) },
                                         onFolderClick = { collectionId, folderId ->
                                             navController.navigate(FolderDetailRoute(collectionId = collectionId, folderId = folderId))
+                                        },
+                                        requestedSettingsPageName = requestedSettingsPageName,
+                                        onRequestedSettingsPageConsumed = {
+                                            requestedSettingsPageName = null
                                         },
                                         onInitialHomeContentRendered = { initialHomeReady = true },
                                     )
@@ -2282,6 +2331,8 @@ private fun AppTabHost(
     onLibraryPosterClick: ((LibraryItem) -> Unit)? = null,
     onLibraryPosterLongClick: ((LibraryItem, LibrarySection) -> Unit)? = null,
     onLibrarySectionViewAllClick: ((LibrarySection) -> Unit)? = null,
+    onCloudFilePlay: ((CloudLibraryItem, CloudLibraryFile) -> Unit)? = null,
+    onConnectCloudClick: (() -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
     onSwitchProfile: (() -> Unit)? = null,
@@ -2297,6 +2348,8 @@ private fun AppTabHost(
     onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsSettingsClick: () -> Unit = {},
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
+    requestedSettingsPageName: String? = null,
+    onRequestedSettingsPageConsumed: () -> Unit = {},
     onInitialHomeContentRendered: () -> Unit = {},
 ) {
     val tabStateHolder = rememberSaveableStateHolder()
@@ -2336,6 +2389,8 @@ private fun AppTabHost(
                         onPosterClick = onLibraryPosterClick,
                         onPosterLongClick = onLibraryPosterLongClick,
                         onSectionViewAllClick = onLibrarySectionViewAllClick,
+                        onCloudFilePlay = onCloudFilePlay,
+                        onConnectCloudClick = onConnectCloudClick,
                     )
                 }
 
@@ -2343,6 +2398,8 @@ private fun AppTabHost(
                     SettingsScreen(
                         modifier = Modifier.fillMaxSize(),
                         rootActionRequests = settingsRootActionRequests,
+                        requestedPageName = requestedSettingsPageName,
+                        onRequestedPageConsumed = onRequestedSettingsPageConsumed,
                         rootActionsEnabled = rootActionsEnabled,
                         onSwitchProfile = onSwitchProfile,
                         onHomescreenClick = onHomescreenSettingsClick,

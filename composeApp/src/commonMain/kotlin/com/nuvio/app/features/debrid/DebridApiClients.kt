@@ -115,6 +115,27 @@ internal object TorboxApiClient {
             apiKey = apiKey,
         )
 
+    suspend fun listCloudTorrents(apiKey: String): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> =
+        request(
+            method = "GET",
+            url = "$BASE_URL/v1/api/torrents/mylist",
+            apiKey = apiKey,
+        )
+
+    suspend fun listCloudUsenet(apiKey: String): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> =
+        request(
+            method = "GET",
+            url = "$BASE_URL/v1/api/usenet/mylist",
+            apiKey = apiKey,
+        )
+
+    suspend fun listCloudWebDownloads(apiKey: String): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> =
+        request(
+            method = "GET",
+            url = "$BASE_URL/v1/api/webdl/mylist",
+            apiKey = apiKey,
+        )
+
     suspend fun requestDownloadLink(
         apiKey: String,
         torrentId: Int,
@@ -127,6 +148,66 @@ internal object TorboxApiClient {
                     "token" to apiKey,
                     "torrent_id" to torrentId.toString(),
                     "file_id" to fileId?.toString(),
+                    "zip_link" to "false",
+                    "redirect" to "false",
+                    "append_name" to "false",
+                )
+            }",
+            apiKey = apiKey,
+        )
+
+    suspend fun requestCloudTorrentDownloadLink(
+        apiKey: String,
+        torrentId: String,
+        fileId: String?,
+    ): DebridApiResponse<TorboxEnvelopeDto<String>> =
+        request(
+            method = "GET",
+            url = "$BASE_URL/v1/api/torrents/requestdl?${
+                queryString(
+                    "token" to apiKey,
+                    "torrent_id" to torrentId,
+                    "file_id" to fileId,
+                    "zip_link" to "false",
+                    "redirect" to "false",
+                    "append_name" to "false",
+                )
+            }",
+            apiKey = apiKey,
+        )
+
+    suspend fun requestCloudUsenetDownloadLink(
+        apiKey: String,
+        usenetId: String,
+        fileId: String?,
+    ): DebridApiResponse<TorboxEnvelopeDto<String>> =
+        request(
+            method = "GET",
+            url = "$BASE_URL/v1/api/usenet/requestdl?${
+                queryString(
+                    "token" to apiKey,
+                    "usenet_id" to usenetId,
+                    "file_id" to fileId,
+                    "zip_link" to "false",
+                    "redirect" to "false",
+                    "append_name" to "false",
+                )
+            }",
+            apiKey = apiKey,
+        )
+
+    suspend fun requestCloudWebDownloadLink(
+        apiKey: String,
+        webId: String,
+        fileId: String?,
+    ): DebridApiResponse<TorboxEnvelopeDto<String>> =
+        request(
+            method = "GET",
+            url = "$BASE_URL/v1/api/webdl/requestdl?${
+                queryString(
+                    "token" to apiKey,
+                    "web_id" to webId,
+                    "file_id" to fileId,
                     "zip_link" to "false",
                     "redirect" to "false",
                     "append_name" to "false",

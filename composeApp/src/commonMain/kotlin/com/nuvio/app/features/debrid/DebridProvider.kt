@@ -18,6 +18,7 @@ enum class DebridProviderCapability {
     ClientResolve,
     LocalTorrentCacheCheck,
     LocalTorrentResolve,
+    CloudLibrary,
 }
 
 enum class DebridProviderAuthMethod {
@@ -38,6 +39,7 @@ object DebridProviders {
             DebridProviderCapability.ClientResolve,
             DebridProviderCapability.LocalTorrentCacheCheck,
             DebridProviderCapability.LocalTorrentResolve,
+            DebridProviderCapability.CloudLibrary,
         ),
     )
 

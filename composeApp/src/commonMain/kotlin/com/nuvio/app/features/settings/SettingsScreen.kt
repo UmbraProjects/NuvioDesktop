@@ -94,6 +94,8 @@ private const val SettingsSearchRevealHapticDelayMillis = 90L
 fun SettingsScreen(
     modifier: Modifier = Modifier,
     rootActionRequests: Flow<Unit> = emptyFlow(),
+    requestedPageName: String? = null,
+    onRequestedPageConsumed: () -> Unit = {},
     rootActionsEnabled: Boolean = true,
     onSwitchProfile: (() -> Unit)? = null,
     onHomescreenClick: () -> Unit = {},
@@ -219,6 +221,15 @@ fun SettingsScreen(
                     scrollToTopRequests.tryEmit(Unit)
                 }
             }
+        }
+
+        LaunchedEffect(requestedPageName, rootActionsEnabled) {
+            val targetPage = requestedPageName
+                ?.let { runCatching { SettingsPage.valueOf(it) }.getOrNull() }
+                ?: return@LaunchedEffect
+            if (!rootActionsEnabled) return@LaunchedEffect
+            currentPage = targetPage.name
+            onRequestedPageConsumed()
         }
 
         PlatformBackHandler(
