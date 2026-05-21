@@ -1019,6 +1019,7 @@
     <string name="episode_mark_previous_watched">Mark previous as watched</string>
     <string name="episode_mark_season_unwatched">Mark %1$s as unwatched</string>
     <string name="episode_mark_season_watched">Mark %1$s as watched</string>
+    <string name="episode_mark_previous_seasons_watched">Mark previous seasons as watched</string>
     <string name="episode_mark_unwatched">Mark as unwatched</string>
     <string name="episode_mark_watched">Mark as watched</string>
     <string name="home_continue_watching_up_next">Up next</string>
