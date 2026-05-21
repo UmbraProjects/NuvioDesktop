@@ -77,6 +77,8 @@ import nuvio.composeapp.generated.resources.action_reset
 import nuvio.composeapp.generated.resources.action_save
 import nuvio.composeapp.generated.resources.action_saving
 import nuvio.composeapp.generated.resources.settings_debrid_add_key_first
+import nuvio.composeapp.generated.resources.settings_debrid_cloud_library
+import nuvio.composeapp.generated.resources.settings_debrid_cloud_library_description
 import nuvio.composeapp.generated.resources.settings_debrid_connected
 import nuvio.composeapp.generated.resources.settings_debrid_connect_provider
 import nuvio.composeapp.generated.resources.settings_debrid_disconnect_provider
@@ -133,12 +135,21 @@ internal fun LazyListScope.debridSettingsContent(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_debrid_cloud_library),
+                    description = stringResource(Res.string.settings_debrid_cloud_library_description),
+                    checked = settings.canUseCloudLibrary,
+                    enabled = settings.hasCloudLibraryProvider,
+                    isTablet = isTablet,
+                    onCheckedChange = DebridSettingsRepository::setCloudLibraryEnabled,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
                     title = stringResource(Res.string.settings_debrid_enable),
                     description = stringResource(Res.string.settings_debrid_enable_description),
-                    checked = settings.enabled && settings.hasAnyApiKey,
+                    checked = settings.canResolvePlayableLinks,
                     enabled = settings.hasAnyApiKey,
                     isTablet = isTablet,
-                    onCheckedChange = DebridSettingsRepository::setEnabled,
+                    onCheckedChange = DebridSettingsRepository::setLinkResolvingEnabled,
                 )
                 if (!settings.hasAnyApiKey) {
                     SettingsGroupDivider(isTablet = isTablet)
@@ -220,10 +231,12 @@ internal fun LazyListScope.debridSettingsContent(
             }
     }
 
+    if (!settings.canResolvePlayableLinks) return
+
     item {
         var showPrepareCountDialog by rememberSaveable { mutableStateOf(false) }
         val prepareLimit = settings.instantPlaybackPreparationLimit
-        val prepareEnabled = settings.enabled && prepareLimit > 0
+        val prepareEnabled = prepareLimit > 0
 
         SettingsSection(
             title = stringResource(Res.string.settings_debrid_section_instant_playback),
@@ -234,7 +247,7 @@ internal fun LazyListScope.debridSettingsContent(
                     title = stringResource(Res.string.settings_debrid_prepare_instant_playback),
                     description = stringResource(Res.string.settings_debrid_prepare_instant_playback_description),
                     checked = prepareEnabled,
-                    enabled = settings.enabled && settings.hasAnyApiKey,
+                    enabled = settings.canResolvePlayableLinks,
                     isTablet = isTablet,
                     onCheckedChange = { enabled ->
                         DebridSettingsRepository.setInstantPlaybackPreparationLimit(
@@ -281,7 +294,7 @@ internal fun LazyListScope.debridSettingsContent(
                     title = "Max results",
                     description = "Limit how many cloud-service results appear.",
                     value = streamMaxResultsLabel(preferences.maxResults),
-                    enabled = settings.enabled,
+                    enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.MAX_RESULTS },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -290,7 +303,7 @@ internal fun LazyListScope.debridSettingsContent(
                     title = "Sort results",
                     description = "Choose how cloud-service results are ordered.",
                     value = sortProfileLabel(preferences.sortCriteria),
-                    enabled = settings.enabled,
+                    enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.SORT_MODE },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -299,7 +312,7 @@ internal fun LazyListScope.debridSettingsContent(
                     title = "Per resolution limit",
                     description = "Cap repeated 2160p, 1080p, 720p results after sorting.",
                     value = streamMaxResultsLabel(preferences.maxPerResolution),
-                    enabled = settings.enabled,
+                    enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.MAX_PER_RESOLUTION },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -308,7 +321,7 @@ internal fun LazyListScope.debridSettingsContent(
                     title = "Per quality limit",
                     description = "Cap repeated BluRay, WEB-DL, REMUX results after sorting.",
                     value = streamMaxResultsLabel(preferences.maxPerQuality),
-                    enabled = settings.enabled,
+                    enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.MAX_PER_QUALITY },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -317,7 +330,7 @@ internal fun LazyListScope.debridSettingsContent(
                     title = "Size range",
                     description = "Filter cloud-service results by file size.",
                     value = sizeRangeLabel(preferences),
-                    enabled = settings.enabled,
+                    enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.SIZE_RANGE },
                 )
                 rows.forEach { row ->
@@ -327,7 +340,7 @@ internal fun LazyListScope.debridSettingsContent(
                         title = row.title,
                         description = row.description,
                         value = row.value,
-                        enabled = settings.enabled,
+                        enabled = settings.canResolvePlayableLinks,
                         onClick = { activeStreamPicker = row.picker },
                     )
                 }
@@ -357,7 +370,7 @@ internal fun LazyListScope.debridSettingsContent(
                     title = stringResource(Res.string.settings_debrid_name_template),
                     description = stringResource(Res.string.settings_debrid_name_template_description),
                     value = templatePreview(settings.streamNameTemplate),
-                    enabled = settings.enabled,
+                    enabled = settings.canResolvePlayableLinks,
                     onClick = { activeTemplateField = DebridTemplateField.NAME },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -366,7 +379,7 @@ internal fun LazyListScope.debridSettingsContent(
                     title = stringResource(Res.string.settings_debrid_description_template),
                     description = stringResource(Res.string.settings_debrid_description_template_description),
                     value = templatePreview(settings.streamDescriptionTemplate),
-                    enabled = settings.enabled,
+                    enabled = settings.canResolvePlayableLinks,
                     onClick = { activeTemplateField = DebridTemplateField.DESCRIPTION },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -375,7 +388,7 @@ internal fun LazyListScope.debridSettingsContent(
                     title = stringResource(Res.string.settings_debrid_formatter_reset_title),
                     description = stringResource(Res.string.settings_debrid_formatter_reset_subtitle),
                     value = stringResource(Res.string.action_reset),
-                    enabled = settings.enabled,
+                    enabled = settings.canResolvePlayableLinks,
                     onClick = DebridSettingsRepository::resetStreamTemplates,
                 )
             }

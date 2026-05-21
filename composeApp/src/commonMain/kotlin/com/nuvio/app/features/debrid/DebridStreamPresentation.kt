@@ -8,7 +8,7 @@ object DebridStreamPresentation {
     private val formatter = DebridStreamFormatter()
 
     fun apply(groups: List<AddonStreamGroup>, settings: DebridSettings): List<AddonStreamGroup> {
-        if (!settings.enabled) return groups
+        if (!settings.canResolvePlayableLinks) return groups
         return groups.map { group ->
             val visibleStreams = group.streams.filterNot { stream -> stream.isUncachedDebridStream }
             val debridStreams = visibleStreams.filter { stream -> stream.isManagedDebridStream }

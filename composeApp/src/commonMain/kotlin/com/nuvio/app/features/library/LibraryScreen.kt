@@ -68,6 +68,7 @@ import com.nuvio.app.features.cloud.CloudLibraryItem
 import com.nuvio.app.features.cloud.CloudLibraryItemType
 import com.nuvio.app.features.cloud.CloudLibraryRepository
 import com.nuvio.app.features.cloud.CloudLibraryUiState
+import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomePosterCard
 import com.nuvio.app.features.home.components.HomeSkeletonRow
@@ -95,6 +96,10 @@ fun LibraryScreen(
         LibraryRepository.uiState
     }.collectAsStateWithLifecycle()
     val cloudUiState by CloudLibraryRepository.uiState.collectAsStateWithLifecycle()
+    val cloudSettings by remember {
+        DebridSettingsRepository.ensureLoaded()
+        DebridSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
     val watchedUiState by remember {
         WatchedRepository.ensureLoaded()
         WatchedRepository.uiState
@@ -151,7 +156,7 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(sourceMode) {
+    LaunchedEffect(sourceMode, cloudSettings.cloudLibraryEnabled, cloudSettings.providerApiKeys) {
         if (sourceMode == LibraryViewMode.Cloud) {
             CloudLibraryRepository.ensureLoaded()
             selectedCloudItemKey = null
@@ -305,6 +310,18 @@ private fun LazyListScope.cloudLibraryContent(
     when {
         !uiState.isLoaded -> {
             cloudLibrarySkeletonItems()
+        }
+
+        !uiState.isEnabled -> {
+            item {
+                HomeEmptyStateCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = stringResource(Res.string.cloud_library_disabled_title),
+                    message = stringResource(Res.string.cloud_library_disabled_message),
+                    actionLabel = stringResource(Res.string.cloud_library_disabled_action),
+                    onActionClick = onConnectCloudClick,
+                )
+            }
         }
 
         !uiState.hasConnectedProvider -> {
@@ -702,46 +719,59 @@ private fun CloudLibraryFileRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.58f))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.58f),
     ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
         Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                text = file.name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            file.sizeBytes?.let { size ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    modifier = Modifier
+                        .padding(top = 2.dp)
+                        .size(18.dp),
+                    imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
                 Text(
-                    text = formatCloudBytes(size),
+                    modifier = Modifier.weight(1f),
+                    text = file.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = file.sizeBytes?.let { size -> formatCloudBytes(size) }.orEmpty(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    imageVector = Icons.Rounded.PlayArrow,
+                    contentDescription = stringResource(Res.string.cloud_library_play_file),
+                    tint = MaterialTheme.colorScheme.primary,
                 )
             }
         }
-        Icon(
-            imageVector = Icons.Rounded.PlayArrow,
-            contentDescription = stringResource(Res.string.cloud_library_play_file),
-            tint = MaterialTheme.colorScheme.primary,
-        )
     }
 }
 

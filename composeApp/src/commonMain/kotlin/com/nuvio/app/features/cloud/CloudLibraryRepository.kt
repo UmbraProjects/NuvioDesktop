@@ -87,6 +87,11 @@ object CloudLibraryRepository {
 
     fun ensureLoaded() {
         DebridSettingsRepository.ensureLoaded()
+        if (!DebridSettingsRepository.snapshot().cloudLibraryEnabled) {
+            loadedConnectionKeys = emptyList()
+            _uiState.value = CloudLibraryUiState(isLoaded = true, isEnabled = false)
+            return
+        }
         val current = _uiState.value
         if (current.isRefreshing) return
         val connectedKeys = connectedCloudConnectionKeys()
@@ -96,8 +101,15 @@ object CloudLibraryRepository {
     }
 
     fun refresh() {
+        DebridSettingsRepository.ensureLoaded()
+        if (!DebridSettingsRepository.snapshot().cloudLibraryEnabled) {
+            loadedConnectionKeys = emptyList()
+            _uiState.value = CloudLibraryUiState(isLoaded = true, isEnabled = false)
+            return
+        }
         _uiState.update { current ->
             current.copy(
+                isEnabled = true,
                 isRefreshing = true,
                 providers = current.providers.map { it.copy(isLoading = true, errorMessage = null) },
             )
@@ -112,11 +124,19 @@ object CloudLibraryRepository {
     suspend fun resolvePlayback(
         item: CloudLibraryItem,
         file: CloudLibraryFile,
-    ): CloudLibraryPlaybackResult =
-        store.resolvePlayback(item, file)
+    ): CloudLibraryPlaybackResult {
+        DebridSettingsRepository.ensureLoaded()
+        if (!DebridSettingsRepository.snapshot().cloudLibraryEnabled) {
+            return CloudLibraryPlaybackResult.Failed("Cloud library is disabled.")
+        }
+        return store.resolvePlayback(item, file)
+    }
 
     private fun connectedCloudCredentials(): List<DebridServiceCredential> =
-        DebridProviders.configuredServices(DebridSettingsRepository.snapshot())
+        DebridSettingsRepository.snapshot()
+            .takeIf { settings -> settings.cloudLibraryEnabled }
+            ?.let(DebridProviders::configuredServices)
+            .orEmpty()
             .filter { credential -> credential.provider.supports(DebridProviderCapability.CloudLibrary) }
 
     private fun connectedCloudConnectionKeys(): List<CloudConnectionKey> =

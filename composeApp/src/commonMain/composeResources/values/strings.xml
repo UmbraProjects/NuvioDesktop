@@ -592,8 +592,10 @@
     <string name="settings_integrations_debrid_description">Manage cloud service accounts and cloud library access</string>
     <string name="settings_debrid_section_title">Cloud Services</string>
     <string name="settings_debrid_experimental_notice">Cloud Services support is experimental and may be kept, changed, or removed later.</string>
-    <string name="settings_debrid_enable">Enable cloud services</string>
-    <string name="settings_debrid_enable_description">Use connected accounts for playable links and cloud library access.</string>
+    <string name="settings_debrid_cloud_library">Cloud library</string>
+    <string name="settings_debrid_cloud_library_description">Browse and play files already in your connected cloud services.</string>
+    <string name="settings_debrid_enable">Resolve playable links</string>
+    <string name="settings_debrid_enable_description">Ask a connected service for playable links when a result needs it. This may add the item to that service.</string>
     <string name="settings_debrid_add_key_first">Connect a cloud service account first.</string>
     <string name="settings_debrid_section_providers">Cloud Services</string>
     <string name="settings_debrid_provider_description">Connect your %1$s account.</string>
@@ -614,7 +616,7 @@
     <string name="settings_debrid_device_auth_waiting">Waiting for approval...</string>
     <string name="settings_debrid_device_auth_failed">Could not start sign-in.</string>
     <string name="settings_debrid_device_auth_expired">This code expired. Try again.</string>
-    <string name="settings_debrid_section_instant_playback">Instant Playback</string>
+    <string name="settings_debrid_section_instant_playback">Link Preparation</string>
     <string name="settings_debrid_prepare_instant_playback">Prepare links</string>
     <string name="settings_debrid_prepare_instant_playback_description">Resolve playable links before playback starts.</string>
     <string name="settings_debrid_prepare_stream_count">Links to prepare</string>
@@ -1330,6 +1332,9 @@
     <string name="cloud_library_connect_action">Connect account</string>
     <string name="cloud_library_connect_message">Connect Torbox in Cloud Services settings to browse playable files from your cloud library.</string>
     <string name="cloud_library_connect_title">No cloud account connected</string>
+    <string name="cloud_library_disabled_action">Open Cloud Services</string>
+    <string name="cloud_library_disabled_message">Turn on Cloud library in Cloud Services settings to browse files from connected accounts.</string>
+    <string name="cloud_library_disabled_title">Cloud library is off</string>
     <string name="cloud_library_empty_message">No playable cloud files match the current filters.</string>
     <string name="cloud_library_empty_title">Nothing here yet</string>
     <string name="cloud_library_file_picker_title">Choose a file to play</string>

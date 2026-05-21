@@ -1166,7 +1166,7 @@ fun PlayerScreen(
                                 null
                             },
                             preferBingeGroupInSelection = settings.streamAutoPlayPreferBingeGroup,
-                            debridEnabled = DebridSettingsRepository.snapshot().enabled,
+                            debridEnabled = DebridSettingsRepository.snapshot().canResolvePlayableLinks,
                         )
                     } else null
 

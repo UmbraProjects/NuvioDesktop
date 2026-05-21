@@ -83,8 +83,9 @@ internal fun TorboxCloudItemDto.toCloudLibraryItem(
     val itemId = id.scalarString()
         ?: hash?.trim()?.takeIf { it.isNotBlank() }
         ?: return null
+    val itemName = name?.trim()?.takeIf { it.isNotBlank() } ?: itemId
     val mappedFiles = files.orEmpty().mapNotNull { file ->
-        file.toCloudLibraryFile()
+        file.toCloudLibraryFile(parentName = itemName)
     }
     val filesSize = mappedFiles
         .mapNotNull { it.sizeBytes }
@@ -95,7 +96,7 @@ internal fun TorboxCloudItemDto.toCloudLibraryItem(
         providerName = providerName,
         id = itemId,
         type = type,
-        name = name?.trim()?.takeIf { it.isNotBlank() } ?: itemId,
+        name = itemName,
         status = listOf(status, downloadState, state)
             .firstNonBlank(),
         sizeBytes = size ?: totalSize ?: filesSize,
@@ -104,9 +105,8 @@ internal fun TorboxCloudItemDto.toCloudLibraryItem(
     )
 }
 
-internal fun TorboxCloudFileDto.toCloudLibraryFile(): CloudLibraryFile? {
-    val name = listOf(name, shortName, absolutePath)
-        .firstNonBlank()
+internal fun TorboxCloudFileDto.toCloudLibraryFile(parentName: String? = null): CloudLibraryFile? {
+    val name = bestCloudFileName(parentName = parentName)
         ?: return null
     val fileId = id.scalarString()
     val mime = listOf(mimeType, mimeTypeAlt).firstNonBlank()
@@ -119,6 +119,32 @@ internal fun TorboxCloudFileDto.toCloudLibraryFile(): CloudLibraryFile? {
     )
 }
 
+private fun TorboxCloudFileDto.bestCloudFileName(parentName: String?): String? {
+    val rawName = name?.trim()?.takeIf { it.isNotBlank() }
+    val short = shortName?.trim()?.takeIf { it.isNotBlank() }
+    val pathName = absolutePath
+        ?.trim()
+        ?.pathBasename()
+        ?.takeIf { it.isNotBlank() }
+    val parent = parentName?.trim()?.takeIf { it.isNotBlank() }
+    val rawNameIsPath = rawName?.isPathLike() == true
+    val rawNameBasename = rawName
+        ?.takeIf { rawNameIsPath }
+        ?.pathBasename()
+        ?.takeIf { it.isNotBlank() }
+    val candidates = listOf(
+        short,
+        rawNameBasename,
+        rawName?.takeUnless { rawNameIsPath },
+        pathName,
+        rawName,
+        absolutePath?.trim()?.takeIf { it.isNotBlank() },
+    )
+    return candidates.firstOrNull { candidate ->
+        candidate?.isUsableCloudFileName(parentName = parent, pathName = pathName) == true
+    } ?: candidates.firstNonBlank()
+}
+
 internal fun torboxRequestIdParameterName(type: CloudLibraryItemType): String =
     when (type) {
         CloudLibraryItemType.Torrent -> "torrent_id"
@@ -128,6 +154,33 @@ internal fun torboxRequestIdParameterName(type: CloudLibraryItemType): String =
 
 private fun List<String?>.firstNonBlank(): String? =
     firstOrNull { !it.isNullOrBlank() }?.trim()
+
+private fun String.sameDisplayName(other: String?): Boolean {
+    val normalized = normalizeDisplayName()
+    return normalized.isNotBlank() && normalized == other?.normalizeDisplayName()
+}
+
+private fun String.isUsableCloudFileName(parentName: String?, pathName: String?): Boolean {
+    if (isBlank() || sameDisplayName(parentName)) return false
+    val pathNameWithoutExtension = pathName?.substringBeforeLast('.', pathName)
+    if (!contains('.') && sameDisplayName(pathNameWithoutExtension)) return false
+    return true
+}
+
+private fun String.isPathLike(): Boolean =
+    contains('/') || contains('\\')
+
+private fun String.pathBasename(): String =
+    substringAfterLast('/').substringAfterLast('\\')
+
+private fun String.normalizeDisplayName(): String =
+    trim()
+        .substringAfterLast('/')
+        .substringAfterLast('\\')
+        .substringBeforeLast('.', this)
+        .lowercase()
+        .replace(Regex("[^a-z0-9]+"), " ")
+        .trim()
 
 private fun kotlinx.serialization.json.JsonElement?.scalarString(): String? {
     val primitive = this as? JsonPrimitive ?: return null

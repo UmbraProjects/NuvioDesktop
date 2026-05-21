@@ -64,8 +64,70 @@ class TorboxCloudLibraryProviderApiTest {
         assertNotNull(item)
         assertEquals("abc123", item.id)
         assertEquals("abc123", item.name)
-        assertEquals("/downloads/show.mp4", item.files.single().name)
+        assertEquals("show.mp4", item.files.single().name)
         assertTrue(item.files.single().playable)
+    }
+
+    @Test
+    fun `mapping prefers absolute path basename when file name repeats pack name`() {
+        val item = TorboxCloudItemDto(
+            id = JsonPrimitive(44),
+            name = "The Rookie S01",
+            files = listOf(
+                TorboxCloudFileDto(
+                    id = JsonPrimitive(1),
+                    name = "The Rookie S01",
+                    absolutePath = "/The Rookie S01/The.Rookie.S01E01.1080p.WEB-DL.mkv",
+                    mimeType = "video/x-matroska",
+                ),
+                TorboxCloudFileDto(
+                    id = JsonPrimitive(2),
+                    shortName = "The Rookie S01",
+                    absolutePath = "/The Rookie S01/The.Rookie.S01E02.1080p.WEB-DL.mkv",
+                    mimeType = "video/x-matroska",
+                ),
+            ),
+        ).toCloudLibraryItem(
+            providerId = "torbox",
+            providerName = "Torbox",
+            type = CloudLibraryItemType.Torrent,
+        )
+
+        assertNotNull(item)
+        assertEquals(
+            listOf(
+                "The.Rookie.S01E01.1080p.WEB-DL.mkv",
+                "The.Rookie.S01E02.1080p.WEB-DL.mkv",
+            ),
+            item.playableFiles.map { it.name },
+        )
+    }
+
+    @Test
+    fun `mapping prefers short name when Torbox file name is a relative pack path`() {
+        val item = TorboxCloudItemDto(
+            id = JsonPrimitive(29556645),
+            name = "From.The.Earth.To.The.Moon.1998.S01.2160p.MAX.WEB-DL.x265.10bit.HDR.TrueHD.7.1.Atmos-FLUX[rartv]",
+            files = listOf(
+                TorboxCloudFileDto(
+                    id = JsonPrimitive(1),
+                    name = "From.The.Earth.To.The.Moon.S01.2160p.MAX.WEB-DL.x265.10bit.HDR.TrueHD.7.1.Atmos-FLUX[rartv]/From.The.Earth.To.The.Moon.S01E01.2160p.MAX.WEB-DL.TrueHD.Atmos.7.1.HDR.DV.HEVC-FLUX.mkv",
+                    shortName = "From.The.Earth.To.The.Moon.S01E01.2160p.MAX.WEB-DL.TrueHD.Atmos.7.1.HDR.DV.HEVC-FLUX.mkv",
+                    absolutePath = "/completed/2c229180e129280a36ba7f3a22e2f5135a02a766/From.The.Earth.To.The.Moon.S01.2160p.MAX.WEB-DL.x265.10bit.HDR.TrueHD.7.1.Atmos-FLUX[rartv]/From.The.Earth.To.The.Moon.S01E01.2160p.MAX.WEB-DL.TrueHD.Atmos.7.1.HDR.DV.HEVC-FLUX.mkv",
+                    mimeType = "video/x-matroska",
+                ),
+            ),
+        ).toCloudLibraryItem(
+            providerId = "torbox",
+            providerName = "Torbox",
+            type = CloudLibraryItemType.Torrent,
+        )
+
+        assertNotNull(item)
+        assertEquals(
+            "From.The.Earth.To.The.Moon.S01E01.2160p.MAX.WEB-DL.TrueHD.Atmos.7.1.HDR.DV.HEVC-FLUX.mkv",
+            item.playableFiles.single().name,
+        )
     }
 
     @Test

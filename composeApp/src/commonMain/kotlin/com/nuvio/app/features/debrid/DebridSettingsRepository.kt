@@ -21,6 +21,7 @@ object DebridSettingsRepository {
 
     private var hasLoaded = false
     private var enabled = false
+    private var cloudLibraryEnabled = true
     private var providerApiKeys = emptyMap<String, String>()
     private var instantPlaybackPreparationLimit = 0
     private var streamMaxResults = 0
@@ -54,6 +55,19 @@ object DebridSettingsRepository {
         enabled = value
         publish()
         DebridSettingsStorage.saveEnabled(value)
+    }
+
+    fun setLinkResolvingEnabled(value: Boolean) {
+        setEnabled(value)
+    }
+
+    fun setCloudLibraryEnabled(value: Boolean) {
+        ensureLoaded()
+        if (value && !hasVisibleApiKey()) return
+        if (cloudLibraryEnabled == value) return
+        cloudLibraryEnabled = value
+        publish()
+        DebridSettingsStorage.saveCloudLibraryEnabled(value)
     }
 
     fun setProviderApiKey(providerId: String, value: String) {
@@ -217,6 +231,7 @@ object DebridSettingsRepository {
             }
             .toMap()
         enabled = (DebridSettingsStorage.loadEnabled() ?: false) && hasVisibleApiKey()
+        cloudLibraryEnabled = DebridSettingsStorage.loadCloudLibraryEnabled() ?: true
         instantPlaybackPreparationLimit = normalizeDebridInstantPlaybackPreparationLimit(
             DebridSettingsStorage.loadInstantPlaybackPreparationLimit() ?: 0,
         )
@@ -264,6 +279,7 @@ object DebridSettingsRepository {
     private fun publish() {
         _uiState.value = DebridSettings(
             enabled = enabled,
+            cloudLibraryEnabled = cloudLibraryEnabled,
             providerApiKeys = providerApiKeys,
             instantPlaybackPreparationLimit = instantPlaybackPreparationLimit,
             streamMaxResults = streamMaxResults,

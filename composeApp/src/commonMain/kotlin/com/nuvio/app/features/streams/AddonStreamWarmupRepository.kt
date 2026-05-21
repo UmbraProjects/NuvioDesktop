@@ -209,7 +209,7 @@ object AddonStreamWarmupRepository {
 
         DebridSettingsRepository.ensureLoaded()
         val settings = DebridSettingsRepository.snapshot()
-        if (!settings.enabled || settings.torboxApiKey.isBlank()) return null
+        if (!settings.canResolvePlayableLinks || settings.torboxApiKey.isBlank()) return null
 
         AddonRepository.initialize()
         val addonTargets = AddonRepository.uiState.value.addons

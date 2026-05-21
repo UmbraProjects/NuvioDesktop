@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 
 data class DebridSettings(
     val enabled: Boolean = false,
+    val cloudLibraryEnabled: Boolean = true,
     val providerApiKeys: Map<String, String> = emptyMap(),
     val instantPlaybackPreparationLimit: Int = 0,
     val streamMaxResults: Int = 0,
@@ -24,6 +25,19 @@ data class DebridSettings(
 
     val hasAnyApiKey: Boolean
         get() = DebridProviders.configuredServices(this).isNotEmpty()
+
+    val linkResolvingEnabled: Boolean
+        get() = enabled
+
+    val canResolvePlayableLinks: Boolean
+        get() = linkResolvingEnabled && hasAnyApiKey
+
+    val hasCloudLibraryProvider: Boolean
+        get() = DebridProviders.configuredServices(this)
+            .any { credential -> credential.provider.supports(DebridProviderCapability.CloudLibrary) }
+
+    val canUseCloudLibrary: Boolean
+        get() = cloudLibraryEnabled && hasCloudLibraryProvider
 
     val hasCustomStreamFormatting: Boolean
         get() = streamNameTemplate.isNotBlank() || streamDescriptionTemplate.isNotBlank()

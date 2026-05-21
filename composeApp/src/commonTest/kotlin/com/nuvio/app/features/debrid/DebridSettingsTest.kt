@@ -33,4 +33,16 @@ class DebridSettingsTest {
         assertTrue(settings.hasAnyApiKey)
         assertFalse(DebridProviders.isVisible(DebridProviders.REAL_DEBRID_ID))
     }
+
+    @Test
+    fun `cloud library and link resolving capabilities are independent`() {
+        val settings = DebridSettings(
+            enabled = false,
+            cloudLibraryEnabled = true,
+            providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "tb_key"),
+        )
+
+        assertTrue(settings.canUseCloudLibrary)
+        assertFalse(settings.canResolvePlayableLinks)
+    }
 }

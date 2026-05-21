@@ -27,7 +27,7 @@ object DirectDebridStreamPreparer {
     ) {
         val settings = DebridSettingsRepository.snapshot()
         val limit = settings.instantPlaybackPreparationLimit
-        if (!settings.enabled || limit <= 0 || !settings.hasAnyApiKey) return
+        if (!settings.canResolvePlayableLinks || limit <= 0) return
 
         val candidates = prioritizeCandidates(
             streams = streams,

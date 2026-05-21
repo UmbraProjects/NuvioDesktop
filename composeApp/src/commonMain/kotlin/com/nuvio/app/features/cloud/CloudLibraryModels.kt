@@ -52,6 +52,7 @@ data class CloudLibraryProviderState(
 
 data class CloudLibraryUiState(
     val isLoaded: Boolean = false,
+    val isEnabled: Boolean = true,
     val isRefreshing: Boolean = false,
     val providers: List<CloudLibraryProviderState> = emptyList(),
 ) {

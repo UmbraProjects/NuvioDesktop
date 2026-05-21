@@ -221,7 +221,7 @@ fun PlayerSourcesPanel(
                                         SourceStreamRow(
                                             stream = stream,
                                             isCurrent = isCurrent,
-                                            enabled = stream.isSelectableForPlayback(debridSettings.enabled),
+                                            enabled = stream.isSelectableForPlayback(debridSettings.canResolvePlayableLinks),
                                             onClick = { onStreamSelected(stream) },
                                         )
                                     }

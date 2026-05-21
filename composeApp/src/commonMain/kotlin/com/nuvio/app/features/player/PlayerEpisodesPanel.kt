@@ -608,7 +608,7 @@ private fun EpisodeStreamsSubView(
                     ) { _, stream ->
                         EpisodeSourceStreamRow(
                             stream = stream,
-                            enabled = stream.isSelectableForPlayback(debridSettings.enabled),
+                            enabled = stream.isSelectableForPlayback(debridSettings.canResolvePlayableLinks),
                             onClick = { onStreamSelected(stream, episode) },
                         )
                     }

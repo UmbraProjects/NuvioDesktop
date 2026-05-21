@@ -299,7 +299,7 @@ object StreamsRepository {
                                     installedAddonNames = installedAddonNames,
                                     selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
                                     selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
-                                    debridEnabled = debridSettings.enabled,
+                                    debridEnabled = debridSettings.canResolvePlayableLinks,
                                 )
                                 _uiState.update { it.copy(autoPlayStream = selected) }
                                 if (selected == null) {
@@ -498,7 +498,7 @@ object StreamsRepository {
                     installedAddonNames = installedAddonNames,
                     selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
                     selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
-                    debridEnabled = debridSettings.enabled,
+                    debridEnabled = debridSettings.canResolvePlayableLinks,
                 )
                 _uiState.update { it.copy(autoPlayStream = selected) }
             }

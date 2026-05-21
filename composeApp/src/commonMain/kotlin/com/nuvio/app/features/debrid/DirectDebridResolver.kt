@@ -111,7 +111,7 @@ object DirectDebridPlaybackResolver {
 
     fun shouldResolveToPlayableStream(stream: StreamItem): Boolean {
         val settings = DebridSettingsRepository.snapshot()
-        if (!settings.enabled) return false
+        if (!settings.canResolvePlayableLinks) return false
         if (stream.needsLocalDebridResolve) {
             return stream.isInstalledAddonStream && localTorrentResolveCredential(settings) != null
         }

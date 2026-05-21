@@ -109,6 +109,32 @@ class DebridStreamPresentationTest {
         assertEquals(listOf("Cached"), presented.map { it.name })
     }
 
+    @Test
+    fun `leaves cloud-service results untouched when link resolving is off`() {
+        val uncached = localTorboxStream(
+            name = "Uncached",
+            filename = "Movie.2160p.WEB-DL.HEVC-GRP.mkv",
+            size = 20_000_000_000,
+            cacheState = StreamDebridCacheState.NOT_CACHED,
+        )
+
+        val presented = DebridStreamPresentation.apply(
+            groups = listOf(
+                AddonStreamGroup(
+                    addonName = "Addon",
+                    addonId = "addon:test",
+                    streams = listOf(uncached),
+                ),
+            ),
+            settings = DebridSettings(
+                enabled = false,
+                providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
+            ),
+        ).single().streams
+
+        assertEquals(listOf("Uncached"), presented.map { it.name })
+    }
+
     private fun localTorboxStream(
         name: String = "Torrent",
         filename: String,
