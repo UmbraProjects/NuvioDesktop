@@ -8,7 +8,7 @@ import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DebridStreamPresentation
-import com.nuvio.app.features.debrid.TorboxAvailabilityService
+import com.nuvio.app.features.debrid.LocalDebridAvailabilityService
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
@@ -265,14 +265,14 @@ object StreamsRepository {
                 if (group.addonId !in installedAddonIds || group.streams.isEmpty()) return
 
                 val eligibleGroupIds = setOf(group.addonId)
-                val checkingGroup = TorboxAvailabilityService.markChecking(
+                val checkingGroup = LocalDebridAvailabilityService.markChecking(
                     groups = listOf(group),
                     eligibleGroupIds = eligibleGroupIds,
                 ).firstOrNull() ?: group
                 publishAddonGroup(checkingGroup)
 
                 val availabilityJob = launch {
-                    val availabilityGroup = TorboxAvailabilityService.annotateCachedAvailability(
+                    val availabilityGroup = LocalDebridAvailabilityService.annotateCachedAvailability(
                         groups = listOf(checkingGroup),
                         eligibleGroupIds = eligibleGroupIds,
                     ).firstOrNull() ?: checkingGroup

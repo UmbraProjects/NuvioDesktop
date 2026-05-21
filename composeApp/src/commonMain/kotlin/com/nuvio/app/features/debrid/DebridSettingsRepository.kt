@@ -21,8 +21,7 @@ object DebridSettingsRepository {
 
     private var hasLoaded = false
     private var enabled = false
-    private var torboxApiKey = ""
-    private var realDebridApiKey = ""
+    private var providerApiKeys = emptyMap<String, String>()
     private var instantPlaybackPreparationLimit = 0
     private var streamMaxResults = 0
     private var streamSortMode = DebridStreamSortMode.DEFAULT
@@ -57,24 +56,27 @@ object DebridSettingsRepository {
         DebridSettingsStorage.saveEnabled(value)
     }
 
-    fun setTorboxApiKey(value: String) {
+    fun setProviderApiKey(providerId: String, value: String) {
         ensureLoaded()
+        val provider = DebridProviders.byId(providerId) ?: return
         val normalized = value.trim()
-        if (torboxApiKey == normalized) return
-        torboxApiKey = normalized
+        if (providerApiKeys[provider.id].orEmpty() == normalized) return
+        providerApiKeys = if (normalized.isBlank()) {
+            providerApiKeys - provider.id
+        } else {
+            providerApiKeys + (provider.id to normalized)
+        }
         disableIfNoKeys()
         publish()
-        DebridSettingsStorage.saveTorboxApiKey(normalized)
+        DebridSettingsStorage.saveProviderApiKey(provider.id, normalized)
+    }
+
+    fun setTorboxApiKey(value: String) {
+        setProviderApiKey(DebridProviders.TORBOX_ID, value)
     }
 
     fun setRealDebridApiKey(value: String) {
-        ensureLoaded()
-        val normalized = value.trim()
-        if (realDebridApiKey == normalized) return
-        realDebridApiKey = normalized
-        disableIfNoKeys()
-        publish()
-        DebridSettingsStorage.saveRealDebridApiKey(normalized)
+        setProviderApiKey(DebridProviders.REAL_DEBRID_ID, value)
     }
 
     fun setInstantPlaybackPreparationLimit(value: Int) {
@@ -200,13 +202,20 @@ object DebridSettingsRepository {
     }
 
     private fun hasVisibleApiKey(): Boolean =
-        (DebridProviders.isVisible(DebridProviders.TORBOX_ID) && torboxApiKey.isNotBlank()) ||
-            (DebridProviders.isVisible(DebridProviders.REAL_DEBRID_ID) && realDebridApiKey.isNotBlank())
+        DebridProviders.visible().any { provider ->
+            providerApiKeys[provider.id].orEmpty().isNotBlank()
+        }
 
     private fun loadFromDisk() {
         hasLoaded = true
-        torboxApiKey = DebridSettingsStorage.loadTorboxApiKey()?.trim().orEmpty()
-        realDebridApiKey = DebridSettingsStorage.loadRealDebridApiKey()?.trim().orEmpty()
+        providerApiKeys = DebridProviders.all()
+            .mapNotNull { provider ->
+                DebridSettingsStorage.loadProviderApiKey(provider.id)
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { apiKey -> provider.id to apiKey }
+            }
+            .toMap()
         enabled = (DebridSettingsStorage.loadEnabled() ?: false) && hasVisibleApiKey()
         instantPlaybackPreparationLimit = normalizeDebridInstantPlaybackPreparationLimit(
             DebridSettingsStorage.loadInstantPlaybackPreparationLimit() ?: 0,
@@ -255,8 +264,7 @@ object DebridSettingsRepository {
     private fun publish() {
         _uiState.value = DebridSettings(
             enabled = enabled,
-            torboxApiKey = torboxApiKey,
-            realDebridApiKey = realDebridApiKey,
+            providerApiKeys = providerApiKeys,
             instantPlaybackPreparationLimit = instantPlaybackPreparationLimit,
             streamMaxResults = streamMaxResults,
             streamSortMode = streamSortMode,

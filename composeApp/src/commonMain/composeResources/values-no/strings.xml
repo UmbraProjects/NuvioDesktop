@@ -595,7 +595,10 @@
     <string name="settings_debrid_enable_description">Vis spillbare resultater fra tilkoblede kontoer.</string>
     <string name="settings_debrid_add_key_first">Legg til en API-nøkkel først.</string>
     <string name="settings_debrid_section_providers">Konto</string>
-    <string name="settings_debrid_provider_torbox_description">Koble til Torbox-kontoen din.</string>
+    <string name="settings_debrid_provider_description">Koble til %1$s-kontoen din.</string>
+    <string name="settings_debrid_dialog_title">%1$s API-nøkkel</string>
+    <string name="settings_debrid_dialog_subtitle">Skriv inn API-nøkkelen din for %1$s.</string>
+    <string name="settings_debrid_dialog_placeholder">Skriv inn %1$s API-nøkkel</string>
     <string name="settings_debrid_section_instant_playback">Umiddelbar avspilling</string>
     <string name="settings_debrid_prepare_instant_playback">Forbered lenker</string>
     <string name="settings_debrid_prepare_instant_playback_description">Løs første kilder før avspilling starter.</string>

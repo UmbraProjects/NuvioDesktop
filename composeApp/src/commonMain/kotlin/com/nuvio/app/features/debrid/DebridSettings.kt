@@ -4,8 +4,7 @@ import kotlinx.serialization.Serializable
 
 data class DebridSettings(
     val enabled: Boolean = false,
-    val torboxApiKey: String = "",
-    val realDebridApiKey: String = "",
+    val providerApiKeys: Map<String, String> = emptyMap(),
     val instantPlaybackPreparationLimit: Int = 0,
     val streamMaxResults: Int = 0,
     val streamSortMode: DebridStreamSortMode = DebridStreamSortMode.DEFAULT,
@@ -17,11 +16,24 @@ data class DebridSettings(
     val streamNameTemplate: String = DebridStreamFormatterDefaults.NAME_TEMPLATE,
     val streamDescriptionTemplate: String = DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE,
 ) {
+    val torboxApiKey: String
+        get() = apiKeyFor(DebridProviders.TORBOX_ID)
+
+    val realDebridApiKey: String
+        get() = apiKeyFor(DebridProviders.REAL_DEBRID_ID)
+
     val hasAnyApiKey: Boolean
         get() = DebridProviders.configuredServices(this).isNotEmpty()
 
     val hasCustomStreamFormatting: Boolean
         get() = streamNameTemplate.isNotBlank() || streamDescriptionTemplate.isNotBlank()
+
+    fun apiKeyFor(providerId: String?): String {
+        val normalized = DebridProviders.byId(providerId)?.id
+            ?: providerId?.trim()?.lowercase()
+            ?: return ""
+        return providerApiKeys[normalized].orEmpty()
+    }
 }
 
 const val DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT = 2

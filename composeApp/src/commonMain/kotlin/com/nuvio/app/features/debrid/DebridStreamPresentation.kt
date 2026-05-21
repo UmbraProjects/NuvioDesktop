@@ -43,15 +43,15 @@ object DebridStreamPresentation {
             return isAddonDebridCandidate && (isDirectDebridStream || (
                 isTorrentStream &&
                     status != null &&
-                    status.providerId == DebridProviders.TORBOX_ID &&
+                    DebridProviders.byId(status.providerId)?.supports(DebridProviderCapability.LocalTorrentCacheCheck) == true &&
                     status.state != StreamDebridCacheState.CHECKING
             ))
         }
 
     private val StreamItem.isUncachedDebridStream: Boolean
         get() = isInstalledAddonStream &&
-            debridCacheStatus?.providerId == DebridProviders.TORBOX_ID &&
-            debridCacheStatus.state == StreamDebridCacheState.NOT_CACHED
+            DebridProviders.byId(debridCacheStatus?.providerId)?.supports(DebridProviderCapability.LocalTorrentCacheCheck) == true &&
+            debridCacheStatus?.state == StreamDebridCacheState.NOT_CACHED
 
     private fun applyLimits(
         streams: List<Pair<StreamItem, DebridStreamFacts>>,

@@ -10,7 +10,7 @@ import com.nuvio.app.features.debrid.DebridSettings
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DebridStreamPresentation
 import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
-import com.nuvio.app.features.debrid.TorboxAvailabilityService
+import com.nuvio.app.features.debrid.LocalDebridAvailabilityService
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -120,11 +120,11 @@ object AddonStreamWarmupRepository {
                         videoId = key.videoId,
                     )
                     val eligibleGroupIds = setOf(group.addonId)
-                    val checkingGroup = TorboxAvailabilityService.markChecking(
+                    val checkingGroup = LocalDebridAvailabilityService.markChecking(
                         groups = listOf(group),
                         eligibleGroupIds = eligibleGroupIds,
                     ).firstOrNull() ?: group
-                    val availabilityGroup = TorboxAvailabilityService.annotateCachedAvailability(
+                    val availabilityGroup = LocalDebridAvailabilityService.annotateCachedAvailability(
                         groups = listOf(checkingGroup),
                         eligibleGroupIds = eligibleGroupIds,
                     ).firstOrNull() ?: checkingGroup

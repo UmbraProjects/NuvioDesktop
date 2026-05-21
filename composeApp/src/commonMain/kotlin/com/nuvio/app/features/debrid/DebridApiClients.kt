@@ -242,11 +242,7 @@ object DebridCredentialValidator {
     suspend fun validateProvider(providerId: String, apiKey: String): Boolean {
         val normalized = apiKey.trim()
         if (normalized.isBlank()) return false
-        return when (DebridProviders.byId(providerId)?.id) {
-            DebridProviders.TORBOX_ID -> TorboxApiClient.validateApiKey(normalized)
-            DebridProviders.REAL_DEBRID_ID -> RealDebridApiClient.validateApiKey(normalized)
-            else -> false
-        }
+        return DebridProviderApis.apiFor(providerId)?.validateApiKey(normalized) == true
     }
 }
 

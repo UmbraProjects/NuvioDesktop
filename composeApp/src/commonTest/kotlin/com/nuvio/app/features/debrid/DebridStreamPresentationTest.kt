@@ -21,7 +21,7 @@ class DebridStreamPresentationTest {
             stream = stream,
             settings = DebridSettings(
                 enabled = true,
-                torboxApiKey = "key",
+                providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
                 streamNameTemplate = "{stream.resolution} {service.shortName} {service.cached::istrue[\"Ready\"||\"Not Ready\"]}",
                 streamDescriptionTemplate = "{stream.quality} {stream.encode}\n{stream.size::bytes}\n{stream.filename}",
             ),
@@ -67,7 +67,7 @@ class DebridStreamPresentationTest {
             groups = listOf(group),
             settings = DebridSettings(
                 enabled = true,
-                torboxApiKey = "key",
+                providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
                 streamMaxResults = 2,
                 streamSortMode = DebridStreamSortMode.QUALITY_DESC,
                 streamMinimumQuality = DebridStreamMinimumQuality.P1080,
@@ -102,7 +102,7 @@ class DebridStreamPresentationTest {
             ),
             settings = DebridSettings(
                 enabled = true,
-                torboxApiKey = "key",
+                providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
             ),
         ).single().streams
 

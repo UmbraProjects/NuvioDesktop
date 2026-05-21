@@ -85,7 +85,7 @@ import nuvio.composeapp.generated.resources.settings_debrid_key_invalid
 import nuvio.composeapp.generated.resources.settings_debrid_name_template
 import nuvio.composeapp.generated.resources.settings_debrid_name_template_description
 import nuvio.composeapp.generated.resources.settings_debrid_not_set
-import nuvio.composeapp.generated.resources.settings_debrid_provider_torbox_description
+import nuvio.composeapp.generated.resources.settings_debrid_provider_description
 import nuvio.composeapp.generated.resources.settings_debrid_section_instant_playback
 import nuvio.composeapp.generated.resources.settings_debrid_section_formatting
 import nuvio.composeapp.generated.resources.settings_debrid_section_providers
@@ -127,35 +127,43 @@ internal fun LazyListScope.debridSettingsContent(
     }
 
     item {
-        var showApiKeyDialog by rememberSaveable { mutableStateOf(false) }
+        var activeProviderId by rememberSaveable { mutableStateOf<String?>(null) }
+        val providers = remember { DebridProviders.visible() }
 
         SettingsSection(
             title = stringResource(Res.string.settings_debrid_section_providers),
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
-                DebridPreferenceRow(
-                    isTablet = isTablet,
-                    title = DebridProviders.Torbox.displayName,
-                    description = stringResource(Res.string.settings_debrid_provider_torbox_description),
-                    value = maskDebridApiKey(settings.torboxApiKey, stringResource(Res.string.settings_debrid_not_set)),
-                    enabled = true,
-                    onClick = { showApiKeyDialog = true },
-                )
+                providers.forEachIndexed { index, provider ->
+                    if (index > 0) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                    }
+                    DebridPreferenceRow(
+                        isTablet = isTablet,
+                        title = provider.displayName,
+                        description = stringResource(Res.string.settings_debrid_provider_description, provider.displayName),
+                        value = maskDebridApiKey(settings.apiKeyFor(provider.id), stringResource(Res.string.settings_debrid_not_set)),
+                        enabled = true,
+                        onClick = { activeProviderId = provider.id },
+                    )
+                }
             }
         }
 
-        if (showApiKeyDialog) {
-            DebridApiKeyDialog(
-                providerId = DebridProviders.TORBOX_ID,
-                title = stringResource(Res.string.settings_debrid_dialog_title),
-                subtitle = stringResource(Res.string.settings_debrid_dialog_subtitle),
-                placeholder = stringResource(Res.string.settings_debrid_dialog_placeholder),
-                currentValue = settings.torboxApiKey,
-                onSave = DebridSettingsRepository::setTorboxApiKey,
-                onDismiss = { showApiKeyDialog = false },
-            )
-        }
+        activeProviderId
+            ?.let(DebridProviders::byId)
+            ?.let { provider ->
+                DebridApiKeyDialog(
+                    providerId = provider.id,
+                    title = stringResource(Res.string.settings_debrid_dialog_title, provider.displayName),
+                    subtitle = stringResource(Res.string.settings_debrid_dialog_subtitle, provider.displayName),
+                    placeholder = stringResource(Res.string.settings_debrid_dialog_placeholder, provider.displayName),
+                    currentValue = settings.apiKeyFor(provider.id),
+                    onSave = { apiKey -> DebridSettingsRepository.setProviderApiKey(provider.id, apiKey) },
+                    onDismiss = { activeProviderId = null },
+                )
+            }
     }
 
     item {

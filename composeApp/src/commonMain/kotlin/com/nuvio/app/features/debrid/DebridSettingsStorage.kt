@@ -5,6 +5,8 @@ import kotlinx.serialization.json.JsonObject
 internal expect object DebridSettingsStorage {
     fun loadEnabled(): Boolean?
     fun saveEnabled(enabled: Boolean)
+    fun loadProviderApiKey(providerId: String): String?
+    fun saveProviderApiKey(providerId: String, apiKey: String)
     fun loadTorboxApiKey(): String?
     fun saveTorboxApiKey(apiKey: String)
     fun loadRealDebridApiKey(): String?

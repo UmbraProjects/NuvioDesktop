@@ -596,10 +596,10 @@
     <string name="settings_debrid_enable_description">Show playable results from connected accounts.</string>
     <string name="settings_debrid_add_key_first">Add an API key first.</string>
     <string name="settings_debrid_section_providers">Account</string>
-    <string name="settings_debrid_provider_torbox_description">Connect your Torbox account.</string>
-    <string name="settings_debrid_dialog_title">Torbox API Key</string>
-    <string name="settings_debrid_dialog_subtitle">Enter your Torbox API key.</string>
-    <string name="settings_debrid_dialog_placeholder">Enter Torbox API key</string>
+    <string name="settings_debrid_provider_description">Connect your %1$s account.</string>
+    <string name="settings_debrid_dialog_title">%1$s API Key</string>
+    <string name="settings_debrid_dialog_subtitle">Enter your %1$s API key.</string>
+    <string name="settings_debrid_dialog_placeholder">Enter %1$s API key</string>
     <string name="settings_debrid_not_set">Not set</string>
     <string name="settings_debrid_section_instant_playback">Instant Playback</string>
     <string name="settings_debrid_prepare_instant_playback">Prepare links</string>

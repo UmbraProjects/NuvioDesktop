@@ -42,7 +42,7 @@ object DirectDebridStreamPreparer {
             }
 
             if (!consumeBackgroundBudget()) {
-                log.d { "Skipping instant playback preparation; local Torbox budget reached" }
+                log.d { "Skipping instant playback preparation; local debrid budget reached" }
                 return
             }
 

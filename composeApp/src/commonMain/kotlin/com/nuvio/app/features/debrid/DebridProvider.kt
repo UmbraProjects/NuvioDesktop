@@ -5,12 +5,19 @@ data class DebridProvider(
     val displayName: String,
     val shortName: String,
     val visibleInUi: Boolean = true,
+    val capabilities: Set<DebridProviderCapability> = emptySet(),
 )
 
 data class DebridServiceCredential(
     val provider: DebridProvider,
     val apiKey: String,
 )
+
+enum class DebridProviderCapability {
+    ClientResolve,
+    LocalTorrentCacheCheck,
+    LocalTorrentResolve,
+}
 
 object DebridProviders {
     const val TORBOX_ID = "torbox"
@@ -20,6 +27,11 @@ object DebridProviders {
         id = TORBOX_ID,
         displayName = "Torbox",
         shortName = "TB",
+        capabilities = setOf(
+            DebridProviderCapability.ClientResolve,
+            DebridProviderCapability.LocalTorrentCacheCheck,
+            DebridProviderCapability.LocalTorrentResolve,
+        ),
     )
 
     val RealDebrid = DebridProvider(
@@ -27,6 +39,7 @@ object DebridProviders {
         displayName = "Real-Debrid",
         shortName = "RD",
         visibleInUi = false,
+        capabilities = setOf(DebridProviderCapability.ClientResolve),
     )
 
     private val registered = listOf(Torbox, RealDebrid)
@@ -56,13 +69,11 @@ object DebridProviders {
         byId(id)?.shortName ?: id?.trim()?.takeIf { it.isNotBlank() }?.uppercase().orEmpty()
 
     fun configuredServices(settings: DebridSettings): List<DebridServiceCredential> =
-        buildList {
-            settings.torboxApiKey.trim().takeIf { Torbox.visibleInUi && it.isNotBlank() }?.let { apiKey ->
-                add(DebridServiceCredential(Torbox, apiKey))
-            }
-            settings.realDebridApiKey.trim().takeIf { RealDebrid.visibleInUi && it.isNotBlank() }?.let { apiKey ->
-                add(DebridServiceCredential(RealDebrid, apiKey))
-            }
+        registered.mapNotNull { provider ->
+            settings.apiKeyFor(provider.id)
+                .trim()
+                .takeIf { provider.visibleInUi && it.isNotBlank() }
+                ?.let { apiKey -> DebridServiceCredential(provider, apiKey) }
         }
 
     fun configuredSourceNames(settings: DebridSettings): List<String> =
@@ -81,3 +92,6 @@ object DebridProviders {
             .ifBlank { "Debrid" }
     }
 }
+
+fun DebridProvider.supports(capability: DebridProviderCapability): Boolean =
+    capability in capabilities

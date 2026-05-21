@@ -26,21 +26,20 @@ actual object DebridSettingsStorage {
     private const val streamPreferencesKey = "debrid_stream_preferences"
     private const val streamNameTemplateKey = "debrid_stream_name_template"
     private const val streamDescriptionTemplateKey = "debrid_stream_description_template"
-    private val syncKeys = listOf(
-        enabledKey,
-        torboxApiKeyKey,
-        realDebridApiKeyKey,
-        instantPlaybackPreparationLimitKey,
-        streamMaxResultsKey,
-        streamSortModeKey,
-        streamMinimumQualityKey,
-        streamDolbyVisionFilterKey,
-        streamHdrFilterKey,
-        streamCodecFilterKey,
-        streamPreferencesKey,
-        streamNameTemplateKey,
-        streamDescriptionTemplateKey,
-    )
+    private fun syncKeys(): List<String> =
+        listOf(
+            enabledKey,
+            instantPlaybackPreparationLimitKey,
+            streamMaxResultsKey,
+            streamSortModeKey,
+            streamMinimumQualityKey,
+            streamDolbyVisionFilterKey,
+            streamHdrFilterKey,
+            streamCodecFilterKey,
+            streamPreferencesKey,
+            streamNameTemplateKey,
+            streamDescriptionTemplateKey,
+        ) + DebridProviders.all().map { providerApiKeyKey(it.id) }
 
     actual fun loadEnabled(): Boolean? = loadBoolean(enabledKey)
 
@@ -48,16 +47,23 @@ actual object DebridSettingsStorage {
         saveBoolean(enabledKey, enabled)
     }
 
-    actual fun loadTorboxApiKey(): String? = loadString(torboxApiKeyKey)
+    actual fun loadProviderApiKey(providerId: String): String? =
+        loadString(providerApiKeyKey(providerId))
 
-    actual fun saveTorboxApiKey(apiKey: String) {
-        saveString(torboxApiKeyKey, apiKey)
+    actual fun saveProviderApiKey(providerId: String, apiKey: String) {
+        saveString(providerApiKeyKey(providerId), apiKey)
     }
 
-    actual fun loadRealDebridApiKey(): String? = loadString(realDebridApiKeyKey)
+    actual fun loadTorboxApiKey(): String? = loadProviderApiKey(DebridProviders.TORBOX_ID)
+
+    actual fun saveTorboxApiKey(apiKey: String) {
+        saveProviderApiKey(DebridProviders.TORBOX_ID, apiKey)
+    }
+
+    actual fun loadRealDebridApiKey(): String? = loadProviderApiKey(DebridProviders.REAL_DEBRID_ID)
 
     actual fun saveRealDebridApiKey(apiKey: String) {
-        saveString(realDebridApiKeyKey, apiKey)
+        saveProviderApiKey(DebridProviders.REAL_DEBRID_ID, apiKey)
     }
 
     actual fun loadInstantPlaybackPreparationLimit(): Int? = loadInt(instantPlaybackPreparationLimitKey)
@@ -157,8 +163,11 @@ actual object DebridSettingsStorage {
 
     actual fun exportToSyncPayload(): JsonObject = buildJsonObject {
         loadEnabled()?.let { put(enabledKey, encodeSyncBoolean(it)) }
-        loadTorboxApiKey()?.let { put(torboxApiKeyKey, encodeSyncString(it)) }
-        loadRealDebridApiKey()?.let { put(realDebridApiKeyKey, encodeSyncString(it)) }
+        DebridProviders.all().forEach { provider ->
+            loadProviderApiKey(provider.id)?.let {
+                put(providerApiKeyKey(provider.id), encodeSyncString(it))
+            }
+        }
         loadInstantPlaybackPreparationLimit()?.let { put(instantPlaybackPreparationLimitKey, encodeSyncInt(it)) }
         loadStreamMaxResults()?.let { put(streamMaxResultsKey, encodeSyncInt(it)) }
         loadStreamSortMode()?.let { put(streamSortModeKey, encodeSyncString(it)) }
@@ -172,13 +181,16 @@ actual object DebridSettingsStorage {
     }
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
-        syncKeys.forEach { key ->
+        syncKeys().forEach { key ->
             NSUserDefaults.standardUserDefaults.removeObjectForKey(ProfileScopedKey.of(key))
         }
 
         payload.decodeSyncBoolean(enabledKey)?.let(::saveEnabled)
-        payload.decodeSyncString(torboxApiKeyKey)?.let(::saveTorboxApiKey)
-        payload.decodeSyncString(realDebridApiKeyKey)?.let(::saveRealDebridApiKey)
+        DebridProviders.all().forEach { provider ->
+            payload.decodeSyncString(providerApiKeyKey(provider.id))?.let { apiKey ->
+                saveProviderApiKey(provider.id, apiKey)
+            }
+        }
         payload.decodeSyncInt(instantPlaybackPreparationLimitKey)?.let(::saveInstantPlaybackPreparationLimit)
         payload.decodeSyncInt(streamMaxResultsKey)?.let(::saveStreamMaxResults)
         payload.decodeSyncString(streamSortModeKey)?.let(::saveStreamSortMode)
@@ -189,5 +201,15 @@ actual object DebridSettingsStorage {
         payload.decodeSyncString(streamPreferencesKey)?.let(::saveStreamPreferences)
         payload.decodeSyncString(streamNameTemplateKey)?.let(::saveStreamNameTemplate)
         payload.decodeSyncString(streamDescriptionTemplateKey)?.let(::saveStreamDescriptionTemplate)
+    }
+
+    private fun providerApiKeyKey(providerId: String): String {
+        val normalized = DebridProviders.byId(providerId)?.id
+            ?: providerId.trim().lowercase().replace(Regex("[^a-z0-9_]+"), "_")
+        return when (normalized) {
+            DebridProviders.TORBOX_ID -> torboxApiKeyKey
+            DebridProviders.REAL_DEBRID_ID -> realDebridApiKeyKey
+            else -> "debrid_${normalized}_api_key"
+        }
     }
 }
