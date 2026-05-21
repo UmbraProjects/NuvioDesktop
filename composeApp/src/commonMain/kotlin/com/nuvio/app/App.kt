@@ -1571,9 +1571,11 @@ private fun MainAppContent(
                             ) {
                                 is DirectDebridPlayableResult.Success -> resolved.stream
                                 else -> {
-                                    resolved.toastMessage()?.let { NuvioToastController.show(it) }
-                                    StreamsRepository.consumeAutoPlay()
-                                    if (resolved == DirectDebridPlayableResult.Stale) {
+                                    val hasNextCandidate = StreamsRepository.skipAutoPlayStream(selectedStream)
+                                    if (!hasNextCandidate) {
+                                        resolved.toastMessage()?.let { NuvioToastController.show(it) }
+                                    }
+                                    if (!hasNextCandidate && resolved == DirectDebridPlayableResult.Stale) {
                                         StreamsRepository.reload(
                                             type = launch.type,
                                             videoId = effectiveVideoId,
@@ -1588,7 +1590,11 @@ private fun MainAppContent(
                         } else {
                             selectedStream
                         }
-                        val sourceUrl = stream.playableDirectUrl ?: return@LaunchedEffect
+                        val sourceUrl = stream.playableDirectUrl
+                        if (sourceUrl == null) {
+                            StreamsRepository.skipAutoPlayStream(selectedStream)
+                            return@LaunchedEffect
+                        }
                         autoPlayHandled = true
                         if (playerSettings.streamReuseLastLinkEnabled) {
                             val cacheKey = StreamLinkCacheRepository.contentKey(

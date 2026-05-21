@@ -186,6 +186,7 @@ data class StreamsUiState(
     val isAnyLoading: Boolean = false,
     val emptyStateReason: StreamsEmptyStateReason? = null,
     val autoPlayStream: StreamItem? = null,
+    val autoPlayCandidates: List<StreamItem> = emptyList(),
     val isDirectAutoPlayFlow: Boolean = false,
     val showDirectAutoPlayOverlay: Boolean = false,
 ) {

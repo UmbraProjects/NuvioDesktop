@@ -41,8 +41,36 @@ object StreamAutoPlaySelector {
         preferredBingeGroup: String? = null,
         preferBingeGroupInSelection: Boolean = false,
         debridEnabled: Boolean = true,
-    ): StreamItem? {
-        if (streams.isEmpty()) return null
+        activeResolverProviderId: String? = null,
+    ): StreamItem? =
+        evaluateAutoPlayStream(
+            streams = streams,
+            mode = mode,
+            regexPattern = regexPattern,
+            source = source,
+            installedAddonNames = installedAddonNames,
+            selectedAddons = selectedAddons,
+            selectedPlugins = selectedPlugins,
+            preferredBingeGroup = preferredBingeGroup,
+            preferBingeGroupInSelection = preferBingeGroupInSelection,
+            debridEnabled = debridEnabled,
+            activeResolverProviderId = activeResolverProviderId,
+        ).stream
+
+    fun evaluateAutoPlayStream(
+        streams: List<StreamItem>,
+        mode: StreamAutoPlayMode,
+        regexPattern: String,
+        source: StreamAutoPlaySource,
+        installedAddonNames: Set<String>,
+        selectedAddons: Set<String>,
+        selectedPlugins: Set<String>,
+        preferredBingeGroup: String? = null,
+        preferBingeGroupInSelection: Boolean = false,
+        debridEnabled: Boolean = true,
+        activeResolverProviderId: String? = null,
+    ): StreamAutoPlayEvaluation {
+        if (streams.isEmpty()) return StreamAutoPlayEvaluation()
 
         val sourceScopedStreams = when (source) {
             StreamAutoPlaySource.ALL_SOURCES -> streams
@@ -57,25 +85,26 @@ object StreamAutoPlaySelector {
                 selectedPlugins.isEmpty() || stream.addonName in selectedPlugins
             }
         }
-        if (candidateStreams.isEmpty()) return null
-        if (mode == StreamAutoPlayMode.MANUAL) return null
+        if (candidateStreams.isEmpty()) return StreamAutoPlayEvaluation()
+        if (mode == StreamAutoPlayMode.MANUAL) return StreamAutoPlayEvaluation()
 
         val targetBingeGroup = preferredBingeGroup?.trim().orEmpty()
-        if (preferBingeGroupInSelection && targetBingeGroup.isNotEmpty()) {
-            val bingeGroupMatch = candidateStreams.firstOrNull { stream ->
-                stream.behaviorHints.bingeGroup == targetBingeGroup && stream.isAutoPlayable(debridEnabled)
+        val preferredReadyStream = if (preferBingeGroupInSelection && targetBingeGroup.isNotEmpty()) {
+            candidateStreams.firstOrNull { stream ->
+                stream.behaviorHints.bingeGroup == targetBingeGroup &&
+                    stream.isAutoPlayable(debridEnabled, activeResolverProviderId)
             }
-            if (bingeGroupMatch != null) return bingeGroupMatch
+        } else {
+            null
         }
-
-        return when (mode) {
-            StreamAutoPlayMode.MANUAL -> null
-            StreamAutoPlayMode.FIRST_STREAM -> candidateStreams.firstOrNull { it.isAutoPlayable(debridEnabled) }
+        val matchingStreams = when (mode) {
+            StreamAutoPlayMode.MANUAL -> emptyList()
+            StreamAutoPlayMode.FIRST_STREAM -> candidateStreams
             StreamAutoPlayMode.REGEX_MATCH -> {
                 val pattern = regexPattern.trim()
 
                 val userRegex = runCatching { Regex(pattern, RegexOption.IGNORE_CASE) }.getOrNull()
-                    ?: return null
+                    ?: return StreamAutoPlayEvaluation()
 
                 val exclusionMatches = Regex("\\(\\?![^)]*?\\(([^)]+)\\)").findAll(pattern)
 
@@ -89,8 +118,7 @@ object StreamAutoPlaySelector {
                     Regex("\\b(${exclusionWords.joinToString("|")})\\b", RegexOption.IGNORE_CASE)
                 } else null
 
-                val matchingStreams = candidateStreams.filter { stream ->
-                    if (!stream.isAutoPlayable(debridEnabled)) return@filter false
+                candidateStreams.filter { stream ->
                     val url = stream.playableDirectUrl.orEmpty()
 
                     val searchableText = buildString {
@@ -109,14 +137,65 @@ object StreamAutoPlaySelector {
 
                     true
                 }
-
-                if (matchingStreams.isEmpty()) return null
-                matchingStreams.firstOrNull { it.isAutoPlayable(debridEnabled) }
             }
         }
+        if (matchingStreams.isEmpty() && preferredReadyStream == null) return StreamAutoPlayEvaluation()
+
+        val readyStreams = buildList {
+            preferredReadyStream?.let(::add)
+            matchingStreams
+                .filter { it.isAutoPlayable(debridEnabled, activeResolverProviderId) }
+                .filterNot { it == preferredReadyStream }
+                .forEach(::add)
+        }
+        val selected = readyStreams.firstOrNull()
+        if (selected != null) {
+            return StreamAutoPlayEvaluation(
+                stream = selected,
+                readyStreams = readyStreams,
+            )
+        }
+
+        return StreamAutoPlayEvaluation(
+            readyStreams = readyStreams,
+            hasPendingDebridCandidate = matchingStreams.any {
+                it.isPendingDebridAutoPlay(debridEnabled, activeResolverProviderId)
+            },
+        )
     }
 
-    private fun StreamItem.isAutoPlayable(debridEnabled: Boolean): Boolean =
+    private fun StreamItem.isAutoPlayable(
+        debridEnabled: Boolean,
+        activeResolverProviderId: String?,
+    ): Boolean =
         playableDirectUrl != null ||
-            (debridEnabled && isAddonDebridCandidate && (isDirectDebridStream || isCachedDebridTorrentStream))
+            (debridEnabled && isAddonDebridCandidate && isReadyDebridAutoPlay(activeResolverProviderId))
+
+    private fun StreamItem.isReadyDebridAutoPlay(activeResolverProviderId: String?): Boolean =
+        when {
+            isDirectDebridStream -> clientResolve?.service.matchesResolver(activeResolverProviderId)
+            isCachedDebridTorrentStream -> debridCacheStatus?.providerId.matchesResolver(activeResolverProviderId)
+            else -> false
+        }
+
+    private fun StreamItem.isPendingDebridAutoPlay(
+        debridEnabled: Boolean,
+        activeResolverProviderId: String?,
+    ): Boolean {
+        if (!debridEnabled || !isInstalledAddonStream || !needsLocalDebridResolve) return false
+        if (!debridCacheStatus?.providerId.matchesResolver(activeResolverProviderId)) return false
+        val state = debridCacheStatus?.state
+        return state == null || state == StreamDebridCacheState.CHECKING
+    }
+
+    private fun String?.matchesResolver(activeResolverProviderId: String?): Boolean {
+        val active = activeResolverProviderId?.trim().orEmpty()
+        return active.isBlank() || this == null || equals(active, ignoreCase = true)
+    }
 }
+
+data class StreamAutoPlayEvaluation(
+    val stream: StreamItem? = null,
+    val readyStreams: List<StreamItem> = emptyList(),
+    val hasPendingDebridCandidate: Boolean = false,
+)

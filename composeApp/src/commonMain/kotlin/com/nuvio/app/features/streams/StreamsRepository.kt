@@ -232,7 +232,6 @@ object StreamsRepository {
             val installedAddonIds = streamAddons.map { it.addonId }.toSet()
             val debridAvailabilityJobs = mutableListOf<Job>()
             var autoSelectTriggered = false
-            var timeoutElapsed = false
             fun publishCompletion(completion: StreamLoadCompletion) {
                 if (completions.trySend(completion).isFailure) {
                     log.d { "Ignoring late stream load completion after channel close" }
@@ -286,12 +285,10 @@ object StreamsRepository {
                 if (timeoutMs > 0L && playerSettings.streamAutoPlayTimeoutSeconds < 11) {
                     launch {
                         delay(timeoutMs)
-                        timeoutElapsed = true
                         if (!autoSelectTriggered) {
                             val allStreams = _uiState.value.groups.flatMap { it.streams }
                             if (allStreams.isNotEmpty()) {
-                                autoSelectTriggered = true
-                                val selected = StreamAutoPlaySelector.selectAutoPlayStream(
+                                val evaluation = StreamAutoPlaySelector.evaluateAutoPlayStream(
                                     streams = allStreams,
                                     mode = autoPlayMode,
                                     regexPattern = playerSettings.streamAutoPlayRegex,
@@ -300,9 +297,18 @@ object StreamsRepository {
                                     selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
                                     selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
                                     debridEnabled = debridSettings.canResolvePlayableLinks,
+                                    activeResolverProviderId = debridSettings.activeResolverProviderId,
                                 )
-                                _uiState.update { it.copy(autoPlayStream = selected) }
-                                if (selected == null) {
+                                if (evaluation.stream != null || !evaluation.hasPendingDebridCandidate) {
+                                    autoSelectTriggered = true
+                                    _uiState.update {
+                                        it.copy(
+                                            autoPlayStream = evaluation.stream,
+                                            autoPlayCandidates = evaluation.readyStreams,
+                                        )
+                                    }
+                                }
+                                if (evaluation.stream == null && !evaluation.hasPendingDebridCandidate) {
                                     _uiState.update {
                                         it.copy(
                                             isDirectAutoPlayFlow = false,
@@ -313,9 +319,6 @@ object StreamsRepository {
                             }
                         }
                     }
-                } else if (timeoutMs <= 0L) {
-                    timeoutElapsed = true
-                    null
                 } else {
                     null
                 }
@@ -490,7 +493,7 @@ object StreamsRepository {
             if (isAutoPlayEnabled && !autoSelectTriggered) {
                 autoSelectTriggered = true
                 val allStreams = _uiState.value.groups.flatMap { it.streams }
-                val selected = StreamAutoPlaySelector.selectAutoPlayStream(
+                val evaluation = StreamAutoPlaySelector.evaluateAutoPlayStream(
                     streams = allStreams,
                     mode = autoPlayMode,
                     regexPattern = playerSettings.streamAutoPlayRegex,
@@ -499,8 +502,14 @@ object StreamsRepository {
                     selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
                     selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
                     debridEnabled = debridSettings.canResolvePlayableLinks,
+                    activeResolverProviderId = debridSettings.activeResolverProviderId,
                 )
-                _uiState.update { it.copy(autoPlayStream = selected) }
+                _uiState.update {
+                    it.copy(
+                        autoPlayStream = evaluation.stream,
+                        autoPlayCandidates = evaluation.readyStreams,
+                    )
+                }
             }
             if (isDirectAutoPlayFlow && _uiState.value.autoPlayStream == null) {
                 _uiState.update {
@@ -522,10 +531,31 @@ object StreamsRepository {
         _uiState.update {
             it.copy(
                 autoPlayStream = null,
+                autoPlayCandidates = emptyList(),
                 isDirectAutoPlayFlow = false,
                 showDirectAutoPlayOverlay = false,
             )
         }
+    }
+
+    fun skipAutoPlayStream(stream: StreamItem): Boolean {
+        var hasNext = false
+        _uiState.update { current ->
+            val failedIndex = current.autoPlayCandidates.indexOf(stream)
+            val remaining = if (failedIndex >= 0) {
+                current.autoPlayCandidates.drop(failedIndex + 1)
+            } else {
+                current.autoPlayCandidates.drop(1)
+            }
+            hasNext = remaining.isNotEmpty()
+            current.copy(
+                autoPlayStream = remaining.firstOrNull(),
+                autoPlayCandidates = remaining,
+                isDirectAutoPlayFlow = remaining.isNotEmpty(),
+                showDirectAutoPlayOverlay = remaining.isNotEmpty(),
+            )
+        }
+        return hasNext
     }
 
     fun cancelLoading() {
