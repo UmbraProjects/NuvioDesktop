@@ -12,12 +12,14 @@ class DebridStreamFormatter(
     fun format(stream: StreamItem, settings: DebridSettings): StreamItem {
         if (!stream.isManagedDebridStream) return stream
         val values = buildValues(stream, settings)
-        val formattedName = engine.render(settings.streamNameTemplate, values)
+        val nameTemplate = settings.streamNameTemplate.ifBlank { DebridStreamFormatterDefaults.NAME_TEMPLATE }
+        val descriptionTemplate = settings.streamDescriptionTemplate.ifBlank { DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE }
+        val formattedName = engine.render(nameTemplate, values)
             .lineSequence()
             .joinToString(" ") { it.trim() }
             .replace(Regex("\\s+"), " ")
             .trim()
-        val formattedDescription = engine.render(settings.streamDescriptionTemplate, values)
+        val formattedDescription = engine.render(descriptionTemplate, values)
             .lineSequence()
             .map { it.trim() }
             .filter { it.isNotBlank() }

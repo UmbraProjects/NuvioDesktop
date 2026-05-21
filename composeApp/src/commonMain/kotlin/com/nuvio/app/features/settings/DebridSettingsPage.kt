@@ -321,7 +321,7 @@ internal fun LazyListScope.debridSettingsContent(
                 DebridPreferenceRow(
                     isTablet = isTablet,
                     title = "Max results",
-                    description = "Limit how many cloud-service results appear.",
+                    description = "Limit how many results appear.",
                     value = streamMaxResultsLabel(preferences.maxResults),
                     enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.MAX_RESULTS },
@@ -330,7 +330,7 @@ internal fun LazyListScope.debridSettingsContent(
                 DebridPreferenceRow(
                     isTablet = isTablet,
                     title = "Sort results",
-                    description = "Choose how cloud-service results are ordered.",
+                    description = "Choose how results are ordered.",
                     value = sortProfileLabel(preferences.sortCriteria),
                     enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.SORT_MODE },
@@ -357,7 +357,7 @@ internal fun LazyListScope.debridSettingsContent(
                 DebridPreferenceRow(
                     isTablet = isTablet,
                     title = "Size range",
-                    description = "Filter cloud-service results by file size.",
+                    description = "Filter results by file size.",
                     value = sizeRangeLabel(preferences),
                     enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.SIZE_RANGE },
@@ -398,7 +398,10 @@ internal fun LazyListScope.debridSettingsContent(
                     isTablet = isTablet,
                     title = stringResource(Res.string.settings_debrid_name_template),
                     description = stringResource(Res.string.settings_debrid_name_template_description),
-                    value = templatePreview(settings.streamNameTemplate),
+                    value = templatePreview(
+                        value = settings.streamNameTemplate,
+                        defaultValue = DebridStreamFormatterDefaults.NAME_TEMPLATE,
+                    ),
                     enabled = settings.canResolvePlayableLinks,
                     onClick = { activeTemplateField = DebridTemplateField.NAME },
                 )
@@ -407,7 +410,10 @@ internal fun LazyListScope.debridSettingsContent(
                     isTablet = isTablet,
                     title = stringResource(Res.string.settings_debrid_description_template),
                     description = stringResource(Res.string.settings_debrid_description_template_description),
-                    value = templatePreview(settings.streamDescriptionTemplate),
+                    value = templatePreview(
+                        value = settings.streamDescriptionTemplate,
+                        defaultValue = DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE,
+                    ),
                     enabled = settings.canResolvePlayableLinks,
                     onClick = { activeTemplateField = DebridTemplateField.DESCRIPTION },
                 )
@@ -450,7 +456,8 @@ private enum class DebridTemplateField {
     DESCRIPTION,
 }
 
-private fun templatePreview(value: String): String {
+private fun templatePreview(value: String, defaultValue: String): String {
+    if (value.trim().isBlank() || value.trim() == defaultValue.trim()) return "Default format"
     val firstLine = value
         .lineSequence()
         .map { it.trim() }

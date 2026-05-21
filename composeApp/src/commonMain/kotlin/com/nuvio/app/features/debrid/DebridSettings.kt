@@ -56,7 +56,10 @@ data class DebridSettings(
         get() = cloudLibraryEnabled && hasCloudLibraryProvider
 
     val hasCustomStreamFormatting: Boolean
-        get() = streamNameTemplate.isNotBlank() || streamDescriptionTemplate.isNotBlank()
+        get() = DebridStreamFormatterDefaults.NAME_TEMPLATE.isNotBlank() ||
+            DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE.isNotBlank() ||
+            streamNameTemplate.isNotBlank() ||
+            streamDescriptionTemplate.isNotBlank()
 
     fun apiKeyFor(providerId: String?): String {
         val normalized = DebridProviders.byId(providerId)?.id

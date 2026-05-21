@@ -2,12 +2,17 @@ package com.nuvio.app.features.debrid
 
 import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.StreamBehaviorHints
+import com.nuvio.app.features.streams.StreamClientResolve
+import com.nuvio.app.features.streams.StreamClientResolveParsed
+import com.nuvio.app.features.streams.StreamClientResolveRaw
+import com.nuvio.app.features.streams.StreamClientResolveStream
 import com.nuvio.app.features.streams.StreamDebridCacheState
 import com.nuvio.app.features.streams.StreamDebridCacheStatus
 import com.nuvio.app.features.streams.StreamItem
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class DebridStreamPresentationTest {
     @Test
@@ -32,6 +37,36 @@ class DebridStreamPresentationTest {
         assertContains(description, "WEB-DL HEVC")
         assertContains(description, "8 GB")
         assertContains(description, "Lost.S01E01.2160p.WEB-DL.H265.AAC-NAKSU.mkv")
+    }
+
+    @Test
+    fun `default formatter replaces addon source labels for managed streams`() {
+        val stream = premiumizeDirectStream(
+            name = "[P2P] Torrentio 2160p - PM Instant",
+            filename = "The.Boys.S03E01.Payback.2160p.WEB-DL.H265.mkv",
+            size = 12_000_000_000,
+        )
+
+        val presented = DebridStreamPresentation.apply(
+            groups = listOf(
+                AddonStreamGroup(
+                    addonName = "Torrentio",
+                    addonId = "addon:torrentio",
+                    streams = listOf(stream),
+                ),
+            ),
+            settings = DebridSettings(
+                enabled = true,
+                providerApiKeys = mapOf(DebridProviders.PREMIUMIZE_ID to "pm_key"),
+            ),
+        ).single().streams.single()
+
+        val name = presented.name.orEmpty()
+        assertEquals("2160p PM Instant", name)
+        assertFalse(name.contains("P2P", ignoreCase = true))
+        assertFalse(name.contains("torrent", ignoreCase = true))
+        assertFalse(name.contains("Torrentio", ignoreCase = true))
+        assertFalse(name.contains("Comet", ignoreCase = true))
     }
 
     @Test
@@ -75,7 +110,7 @@ class DebridStreamPresentationTest {
             ),
         ).single().streams
 
-        assertEquals(listOf("Large", "Mid", "Resolved addon URL"), presented.map { it.name })
+        assertEquals(listOf("2160p TB Instant", "1080p TB Instant", "Resolved addon URL"), presented.map { it.name })
     }
 
     @Test
@@ -106,7 +141,7 @@ class DebridStreamPresentationTest {
             ),
         ).single().streams
 
-        assertEquals(listOf("Cached"), presented.map { it.name })
+        assertEquals(listOf("1080p TB Instant"), presented.map { it.name })
     }
 
     @Test
@@ -156,6 +191,32 @@ class DebridStreamPresentationTest {
                 state = cacheState,
                 cachedName = filename,
                 cachedSize = size,
+            ),
+        )
+
+    private fun premiumizeDirectStream(
+        name: String,
+        filename: String,
+        size: Long,
+    ): StreamItem =
+        StreamItem(
+            name = name,
+            addonName = "Torrentio",
+            addonId = "addon:torrentio",
+            clientResolve = StreamClientResolve(
+                type = "debrid",
+                service = DebridProviders.PREMIUMIZE_ID,
+                filename = filename,
+                isCached = true,
+                stream = StreamClientResolveStream(
+                    raw = StreamClientResolveRaw(
+                        filename = filename,
+                        size = size,
+                        parsed = StreamClientResolveParsed(
+                            resolution = "2160p",
+                        ),
+                    ),
+                ),
             ),
         )
 }
