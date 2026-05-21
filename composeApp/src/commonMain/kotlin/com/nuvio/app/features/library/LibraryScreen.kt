@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,10 +20,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
@@ -57,6 +58,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.i18n.localizedByteUnit
 import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.network.NetworkStatusRepository
+import com.nuvio.app.core.ui.NuvioDropdownChip
+import com.nuvio.app.core.ui.NuvioDropdownOption
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.NuvioScreenHeader
@@ -204,6 +207,7 @@ fun LibraryScreen(
                 selectedCloudItemKey = selectedCloudItemKey,
                 onProviderSelected = {
                     selectedProviderId = it
+                    selectedTypeName = null
                     selectedCloudItemKey = null
                 },
                 onTypeSelected = {
@@ -337,9 +341,15 @@ private fun LazyListScope.cloudLibraryContent(
         }
 
         else -> {
-            val filteredItems = uiState.items
+            val providerItems = uiState.items
                 .filter { item -> selectedProviderId == null || item.providerId == selectedProviderId }
-                .filter { item -> selectedType == null || item.type == selectedType }
+            val availableTypes = providerItems
+                .map { item -> item.type }
+                .distinct()
+                .sortedBy { type -> type.ordinal }
+            val effectiveSelectedType = selectedType?.takeIf { type -> type in availableTypes }
+            val filteredItems = providerItems
+                .filter { item -> effectiveSelectedType == null || item.type == effectiveSelectedType }
             val selectedItem = filteredItems.firstOrNull { it.stableKey == selectedCloudItemKey }
 
             if (selectedItem != null) {
@@ -355,7 +365,8 @@ private fun LazyListScope.cloudLibraryContent(
                     CloudLibraryToolbar(
                         uiState = uiState,
                         selectedProviderId = selectedProviderId,
-                        selectedType = selectedType,
+                        selectedType = effectiveSelectedType,
+                        availableTypes = availableTypes,
                         onProviderSelected = onProviderSelected,
                         onTypeSelected = onTypeSelected,
                         onRefresh = onRefresh,
@@ -445,11 +456,41 @@ private fun CloudLibraryToolbar(
     uiState: CloudLibraryUiState,
     selectedProviderId: String?,
     selectedType: CloudLibraryItemType?,
+    availableTypes: List<CloudLibraryItemType>,
     onProviderSelected: (String?) -> Unit,
     onTypeSelected: (CloudLibraryItemType?) -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val providerOptions = buildList {
+        add(NuvioDropdownOption(key = "", label = stringResource(Res.string.cloud_library_provider_all)))
+        addAll(
+            uiState.providers.map { provider ->
+                NuvioDropdownOption(
+                    key = provider.providerId,
+                    label = provider.providerName,
+                )
+            },
+        )
+    }
+    val typeOptions = buildList {
+        add(NuvioDropdownOption(key = "", label = stringResource(Res.string.cloud_library_type_all)))
+        addAll(
+            availableTypes.map { type ->
+                NuvioDropdownOption(
+                    key = type.name,
+                    label = cloudLibraryTypeLabel(type),
+                )
+            },
+        )
+    }
+    val selectedProviderName = uiState.providers
+        .firstOrNull { provider -> provider.providerId == selectedProviderId }
+        ?.providerName
+        ?: stringResource(Res.string.cloud_library_provider_all)
+    val selectedTypeLabel = selectedType?.let { type -> cloudLibraryTypeLabel(type) }
+        ?: stringResource(Res.string.cloud_library_type_all)
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -460,58 +501,41 @@ private fun CloudLibraryToolbar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            LazyRow(
-                modifier = Modifier.weight(1f),
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(end = 8.dp),
             ) {
-                item {
-                    LibraryChip(
-                        label = stringResource(Res.string.cloud_library_provider_all),
-                        selected = selectedProviderId == null,
-                        onClick = { onProviderSelected(null) },
-                    )
-                }
-                items(
-                    items = uiState.providers,
-                    key = { provider -> provider.providerId },
-                ) { provider ->
-                    LibraryChip(
-                        label = provider.providerName,
-                        selected = selectedProviderId == provider.providerId,
-                        loading = provider.isLoading,
-                        error = !provider.errorMessage.isNullOrBlank(),
-                        onClick = { onProviderSelected(provider.providerId) },
-                    )
-                }
+                NuvioDropdownChip(
+                    title = stringResource(Res.string.cloud_library_select_provider),
+                    label = selectedProviderName,
+                    selectedKey = selectedProviderId.orEmpty(),
+                    options = providerOptions,
+                    enabled = providerOptions.size > 1,
+                    onSelected = { option ->
+                        onProviderSelected(option.key.ifBlank { null })
+                    },
+                )
+                NuvioDropdownChip(
+                    title = stringResource(Res.string.cloud_library_select_type),
+                    label = selectedTypeLabel,
+                    selectedKey = selectedType?.name.orEmpty(),
+                    options = typeOptions,
+                    enabled = typeOptions.size > 1,
+                    onSelected = { option ->
+                        val type = option.key
+                            .takeIf { it.isNotBlank() }
+                            ?.let(CloudLibraryItemType::valueOf)
+                        onTypeSelected(type)
+                    },
+                )
             }
             IconButton(onClick = onRefresh) {
                 Icon(
                     imageVector = Icons.Rounded.Refresh,
                     contentDescription = stringResource(Res.string.cloud_library_refresh),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(end = 16.dp),
-        ) {
-            item {
-                LibraryChip(
-                    label = stringResource(Res.string.cloud_library_type_all),
-                    selected = selectedType == null,
-                    onClick = { onTypeSelected(null) },
-                )
-            }
-            items(
-                items = CloudLibraryItemType.entries,
-                key = { type -> type.name },
-            ) { type ->
-                LibraryChip(
-                    label = cloudLibraryTypeLabel(type),
-                    selected = selectedType == type,
-                    onClick = { onTypeSelected(type) },
                 )
             }
         }
@@ -841,23 +865,15 @@ private fun CloudLibrarySkeletonToolbar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            CloudSkeletonBlock(brush = brush, width = 52.dp, height = 34.dp, cornerRadius = 18.dp)
-            CloudSkeletonBlock(brush = brush, width = 86.dp, height = 34.dp, cornerRadius = 18.dp)
+            CloudSkeletonBlock(brush = brush, width = 92.dp, height = 34.dp, cornerRadius = 12.dp)
+            CloudSkeletonBlock(brush = brush, width = 78.dp, height = 34.dp, cornerRadius = 12.dp)
             CloudSkeletonBlock(
                 brush = brush,
                 modifier = Modifier.weight(1f),
                 height = 34.dp,
-                cornerRadius = 18.dp,
+                cornerRadius = 12.dp,
             )
             CloudSkeletonBlock(brush = brush, width = 40.dp, height = 40.dp, cornerRadius = 20.dp)
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            CloudSkeletonBlock(brush = brush, width = 52.dp, height = 34.dp, cornerRadius = 18.dp)
-            CloudSkeletonBlock(brush = brush, width = 82.dp, height = 34.dp, cornerRadius = 18.dp)
-            CloudSkeletonBlock(brush = brush, width = 72.dp, height = 34.dp, cornerRadius = 18.dp)
-            CloudSkeletonBlock(brush = brush, width = 60.dp, height = 34.dp, cornerRadius = 18.dp)
         }
     }
 }
