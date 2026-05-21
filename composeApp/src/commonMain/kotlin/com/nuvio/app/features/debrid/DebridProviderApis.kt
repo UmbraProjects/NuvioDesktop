@@ -84,30 +84,7 @@ private class TorboxDebridProviderApi(
         val normalized = deviceCode.trim()
         if (normalized.isBlank()) return DebridDeviceAuthorizationTokenResult.Failed(null)
         val response = TorboxApiClient.redeemDeviceAuthorization(deviceCode = normalized)
-        val envelope = response.body
-        val accessToken = envelope
-            ?.takeIf { response.isSuccessful && it.success != false }
-            ?.data
-            ?.accessToken
-            ?.takeIf { it.isNotBlank() }
-        if (accessToken != null) {
-            return DebridDeviceAuthorizationTokenResult.Authorized(accessToken)
-        }
-        val message = listOfNotNull(envelope?.error, envelope?.detail, response.rawBody)
-            .joinToString(" ")
-            .lowercase()
-        return when {
-            message.contains("pending") || message.contains("not authorized") ->
-                DebridDeviceAuthorizationTokenResult.Pending
-            message.contains("expired") ->
-                DebridDeviceAuthorizationTokenResult.Expired
-            response.status == 404 || response.status == 409 || response.status == 425 ->
-                DebridDeviceAuthorizationTokenResult.Pending
-            response.status == 410 ->
-                DebridDeviceAuthorizationTokenResult.Expired
-            else ->
-                DebridDeviceAuthorizationTokenResult.Failed(envelope?.detail ?: envelope?.error)
-        }
+        return torboxDeviceAuthorizationTokenResult(response)
     }
 
     override suspend fun resolveClientStream(
@@ -318,6 +295,39 @@ internal fun premiumizeDeviceAuthorizationFromResponse(
         intervalSeconds = data.interval?.coerceAtLeast(1) ?: 5,
         expiresAt = data.expiresIn?.takeIf { it > 0 }?.let { "${it}s" },
     )
+}
+
+internal fun torboxDeviceAuthorizationTokenResult(
+    response: DebridApiResponse<TorboxEnvelopeDto<TorboxDeviceTokenDto>>,
+): DebridDeviceAuthorizationTokenResult {
+    val envelope = response.body
+    val accessToken = envelope
+        ?.takeIf { response.isSuccessful && it.success != false }
+        ?.data
+        ?.accessToken
+        ?.takeIf { it.isNotBlank() }
+    if (accessToken != null) {
+        return DebridDeviceAuthorizationTokenResult.Authorized(accessToken)
+    }
+    val message = listOfNotNull(envelope?.error, envelope?.detail, response.rawBody)
+        .joinToString(" ")
+        .lowercase()
+    return when {
+        message.contains("pending") ||
+            message.contains("not authorized") ||
+            message.contains("not been used") ||
+            message.contains("not used yet") ||
+            message.contains("scan the code") ->
+            DebridDeviceAuthorizationTokenResult.Pending
+        message.contains("expired") ->
+            DebridDeviceAuthorizationTokenResult.Expired
+        response.status == 404 || response.status == 409 || response.status == 425 ->
+            DebridDeviceAuthorizationTokenResult.Pending
+        response.status == 410 ->
+            DebridDeviceAuthorizationTokenResult.Expired
+        else ->
+            DebridDeviceAuthorizationTokenResult.Failed(envelope?.detail ?: envelope?.error)
+    }
 }
 
 internal fun premiumizeDeviceAuthorizationTokenResult(

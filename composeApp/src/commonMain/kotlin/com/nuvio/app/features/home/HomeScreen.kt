@@ -100,7 +100,10 @@ fun HomeScreen(
 
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val homeUiState by HomeRepository.uiState.collectAsStateWithLifecycle()
-    val homeSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val homeSettingsUiState by remember {
+        HomeCatalogSettingsRepository.snapshot()
+        HomeCatalogSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
     val homeListState = rememberLazyListState()
     val collections by CollectionRepository.collections.collectAsStateWithLifecycle()
     val continueWatchingPreferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
@@ -612,7 +615,10 @@ fun HomeScreen(
                         }
                     }
                     items(3) {
-                        HomeSkeletonRow(modifier = Modifier.padding(horizontal = 16.dp))
+                        HomeSkeletonRow(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            showHeaderAccent = !homeSettingsUiState.hideCatalogUnderline,
+                        )
                     }
                 }
 

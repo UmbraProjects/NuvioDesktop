@@ -72,6 +72,7 @@ import com.nuvio.app.features.cloud.CloudLibraryItemType
 import com.nuvio.app.features.cloud.CloudLibraryRepository
 import com.nuvio.app.features.cloud.CloudLibraryUiState
 import com.nuvio.app.features.debrid.DebridSettingsRepository
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomePosterCard
 import com.nuvio.app.features.home.components.HomeSkeletonRow
@@ -106,6 +107,10 @@ fun LibraryScreen(
     val watchedUiState by remember {
         WatchedRepository.ensureLoaded()
         WatchedRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val homeCatalogSettingsUiState by remember {
+        HomeCatalogSettingsRepository.snapshot()
+        HomeCatalogSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
     val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
     var observedOfflineState by remember { mutableStateOf(false) }
@@ -230,7 +235,10 @@ fun LibraryScreen(
             when {
                 !uiState.isLoaded || (uiState.isLoading && uiState.sections.isEmpty()) -> {
                     items(3) {
-                        HomeSkeletonRow(modifier = Modifier.padding(horizontal = 16.dp))
+                        HomeSkeletonRow(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            showHeaderAccent = !homeCatalogSettingsUiState.hideCatalogUnderline,
+                        )
                     }
                 }
 
@@ -288,6 +296,7 @@ fun LibraryScreen(
                     librarySections(
                         sections = uiState.sections,
                         watchedKeys = watchedUiState.watchedKeys,
+                        showHeaderAccent = !homeCatalogSettingsUiState.hideCatalogUnderline,
                         onPosterClick = onPosterClick,
                         onSectionViewAllClick = onSectionViewAllClick,
                         onPosterLongClick = onPosterLongClick,
@@ -423,7 +432,7 @@ private fun LazyListScope.cloudLibrarySkeletonItems() {
             modifier = Modifier.padding(horizontal = 16.dp),
         )
     }
-    items(4) {
+    items(3) {
         CloudLibrarySkeletonRow()
     }
 }
@@ -856,24 +865,17 @@ private fun CloudLibrarySkeletonToolbar(
     modifier: Modifier = Modifier,
 ) {
     val brush = rememberCloudLibrarySkeletonBrush()
-    Column(
+    Row(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            CloudSkeletonBlock(brush = brush, width = 92.dp, height = 34.dp, cornerRadius = 12.dp)
-            CloudSkeletonBlock(brush = brush, width = 78.dp, height = 34.dp, cornerRadius = 12.dp)
-            CloudSkeletonBlock(
-                brush = brush,
-                modifier = Modifier.weight(1f),
-                height = 34.dp,
-                cornerRadius = 12.dp,
-            )
-            CloudSkeletonBlock(brush = brush, width = 40.dp, height = 40.dp, cornerRadius = 20.dp)
+            CloudSkeletonBlock(brush = brush, width = 112.dp, height = 36.dp, cornerRadius = 12.dp)
+            CloudSkeletonBlock(brush = brush, width = 92.dp, height = 36.dp, cornerRadius = 12.dp)
         }
     }
 }
@@ -903,35 +905,29 @@ private fun CloudLibrarySkeletonRow(
             ) {
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     CloudSkeletonBlock(
                         brush = brush,
                         modifier = Modifier.fillMaxWidth(0.74f),
-                        height = 17.dp,
+                        height = 18.dp,
                         cornerRadius = 6.dp,
                     )
                     CloudSkeletonBlock(
                         brush = brush,
-                        modifier = Modifier.fillMaxWidth(),
-                        height = 12.dp,
+                        modifier = Modifier.fillMaxWidth(0.9f),
+                        height = 14.dp,
                         cornerRadius = 6.dp,
                     )
                     CloudSkeletonBlock(
                         brush = brush,
-                        modifier = Modifier.fillMaxWidth(0.58f),
+                        modifier = Modifier.fillMaxWidth(0.52f),
                         height = 12.dp,
                         cornerRadius = 6.dp,
                     )
                 }
-                CloudSkeletonBlock(brush = brush, width = 32.dp, height = 32.dp, cornerRadius = 16.dp)
+                CloudSkeletonBlock(brush = brush, width = 48.dp, height = 48.dp, cornerRadius = 24.dp)
             }
-            CloudSkeletonBlock(
-                brush = brush,
-                modifier = Modifier.fillMaxWidth(0.44f),
-                height = 4.dp,
-                cornerRadius = 999.dp,
-            )
         }
     }
 }
@@ -987,6 +983,7 @@ private enum class LibraryViewMode {
 private fun LazyListScope.librarySections(
     sections: List<LibrarySection>,
     watchedKeys: Set<String>,
+    showHeaderAccent: Boolean,
     onPosterClick: ((LibraryItem) -> Unit)?,
     onSectionViewAllClick: ((LibrarySection) -> Unit)?,
     onPosterLongClick: ((LibraryItem, LibrarySection) -> Unit)?,
@@ -1001,6 +998,7 @@ private fun LazyListScope.librarySections(
             entries = previewItems,
             headerHorizontalPadding = 16.dp,
             rowContentPadding = PaddingValues(horizontal = 16.dp),
+            showHeaderAccent = showHeaderAccent,
             onViewAllClick = if (section.items.size > LIBRARY_SECTION_PREVIEW_LIMIT) {
                 onSectionViewAllClick?.let { { it(section) } }
             } else {

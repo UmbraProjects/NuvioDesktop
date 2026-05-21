@@ -123,12 +123,15 @@ import nuvio.composeapp.generated.resources.settings_debrid_section_providers
 import nuvio.composeapp.generated.resources.settings_debrid_section_title
 import org.jetbrains.compose.resources.stringResource
 
+private const val CLOUD_SERVICES_FAQ_URL = "https://nuvioapp.space/faq#common-cloud-library-and-cloud-services"
+
 internal fun LazyListScope.debridSettingsContent(
     isTablet: Boolean,
     settings: DebridSettings,
 ) {
     item {
         var showResolverProviderDialog by rememberSaveable { mutableStateOf(false) }
+        val uriHandler = LocalUriHandler.current
         val resolverProviders = settings.resolverServices.map { it.provider }
         val activeResolverProvider = settings.activeResolverCredential?.provider
         SettingsSection(
@@ -139,6 +142,15 @@ internal fun LazyListScope.debridSettingsContent(
                 DebridInfoRow(
                     isTablet = isTablet,
                     text = stringResource(Res.string.settings_debrid_experimental_notice),
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                DebridPreferenceRow(
+                    isTablet = isTablet,
+                    title = "Learn more",
+                    description = "Cloud Library, connected accounts, and playable-link preparation.",
+                    value = "Open",
+                    enabled = true,
+                    onClick = { runCatching { uriHandler.openUri(CLOUD_SERVICES_FAQ_URL) } },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
