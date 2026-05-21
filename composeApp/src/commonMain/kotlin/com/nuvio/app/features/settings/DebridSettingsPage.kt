@@ -272,14 +272,14 @@ internal fun LazyListScope.debridSettingsContent(
         val rows = debridRuleRows(preferences)
 
         SettingsSection(
-            title = "Filters & Sorting",
+            title = "Result Management",
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
                 DebridPreferenceRow(
                     isTablet = isTablet,
                     title = "Max results",
-                    description = "Limit how many debrid-ready addon streams appear.",
+                    description = "Limit how many cloud-service results appear.",
                     value = streamMaxResultsLabel(preferences.maxResults),
                     enabled = settings.enabled,
                     onClick = { activeStreamPicker = DebridStreamPicker.MAX_RESULTS },
@@ -287,8 +287,8 @@ internal fun LazyListScope.debridSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 DebridPreferenceRow(
                     isTablet = isTablet,
-                    title = "Sort streams",
-                    description = "Choose how debrid-ready addon streams are ordered.",
+                    title = "Sort results",
+                    description = "Choose how cloud-service results are ordered.",
                     value = sortProfileLabel(preferences.sortCriteria),
                     enabled = settings.enabled,
                     onClick = { activeStreamPicker = DebridStreamPicker.SORT_MODE },
@@ -315,7 +315,7 @@ internal fun LazyListScope.debridSettingsContent(
                 DebridPreferenceRow(
                     isTablet = isTablet,
                     title = "Size range",
-                    description = "Filter streams by file size.",
+                    description = "Filter cloud-service results by file size.",
                     value = sizeRangeLabel(preferences),
                     enabled = settings.enabled,
                     onClick = { activeStreamPicker = DebridStreamPicker.SIZE_RANGE },
@@ -413,7 +413,7 @@ private fun templatePreview(value: String): String {
         .lineSequence()
         .map { it.trim() }
         .firstOrNull { it.isNotBlank() }
-        ?: return "Addon default"
+        ?: return "Default format"
     return if (firstLine.length <= 28) firstLine else "${firstLine.take(28)}..."
 }
 
@@ -657,7 +657,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.SORT_MODE -> DebridSingleChoiceDialog(
-            title = "Sort streams",
+            title = "Sort results",
             selectedValue = sortProfileFor(preferences.sortCriteria),
             options = listOf(
                 DebridSortProfile.DEFAULT,
@@ -1101,7 +1101,7 @@ private fun DebridDialogOptionRow(
 
 @Composable
 private fun streamMaxResultsLabel(value: Int): String =
-    if (value <= 0) "All streams" else "$value streams"
+    if (value <= 0) "All results" else "$value results"
 
 private fun sortProfileLabel(value: DebridSortProfile): String =
     when (value) {
@@ -1118,8 +1118,8 @@ private fun debridRuleRows(preferences: DebridStreamPreferences): List<DebridRul
         DebridRuleRow(DebridStreamPicker.REQUIRED_RESOLUTIONS, "Required resolutions", "Only show selected resolutions.", selectionCountLabel(preferences.requiredResolutions)),
         DebridRuleRow(DebridStreamPicker.EXCLUDED_RESOLUTIONS, "Excluded resolutions", "Hide selected resolutions.", selectionCountLabel(preferences.excludedResolutions)),
         DebridRuleRow(DebridStreamPicker.PREFERRED_QUALITIES, "Preferred qualities", "Sort selected qualities first, in default order.", selectionCountLabel(preferences.preferredQualities)),
-        DebridRuleRow(DebridStreamPicker.REQUIRED_QUALITIES, "Required qualities", "Only show selected source qualities.", selectionCountLabel(preferences.requiredQualities)),
-        DebridRuleRow(DebridStreamPicker.EXCLUDED_QUALITIES, "Excluded qualities", "Hide selected source qualities.", selectionCountLabel(preferences.excludedQualities)),
+        DebridRuleRow(DebridStreamPicker.REQUIRED_QUALITIES, "Required qualities", "Only show selected qualities.", selectionCountLabel(preferences.requiredQualities)),
+        DebridRuleRow(DebridStreamPicker.EXCLUDED_QUALITIES, "Excluded qualities", "Hide selected qualities.", selectionCountLabel(preferences.excludedQualities)),
         DebridRuleRow(DebridStreamPicker.PREFERRED_VISUAL_TAGS, "Preferred visual tags", "Sort DV, HDR, 10bit, IMAX and similar tags.", selectionCountLabel(preferences.preferredVisualTags)),
         DebridRuleRow(DebridStreamPicker.REQUIRED_VISUAL_TAGS, "Required visual tags", "Require DV, HDR, 10bit, IMAX, SDR and similar tags.", selectionCountLabel(preferences.requiredVisualTags)),
         DebridRuleRow(DebridStreamPicker.EXCLUDED_VISUAL_TAGS, "Excluded visual tags", "Hide DV, HDR, 10bit, 3D and similar tags.", selectionCountLabel(preferences.excludedVisualTags)),
@@ -1133,8 +1133,8 @@ private fun debridRuleRows(preferences: DebridStreamPreferences): List<DebridRul
         DebridRuleRow(DebridStreamPicker.REQUIRED_ENCODES, "Required encodes", "Require AV1, HEVC, AVC and similar encodes.", selectionCountLabel(preferences.requiredEncodes)),
         DebridRuleRow(DebridStreamPicker.EXCLUDED_ENCODES, "Excluded encodes", "Hide selected encodes.", selectionCountLabel(preferences.excludedEncodes)),
         DebridRuleRow(DebridStreamPicker.PREFERRED_LANGUAGES, "Preferred languages", "Sort preferred audio languages first.", selectionCountLabel(preferences.preferredLanguages)),
-        DebridRuleRow(DebridStreamPicker.REQUIRED_LANGUAGES, "Required languages", "Only show streams with selected languages.", selectionCountLabel(preferences.requiredLanguages)),
-        DebridRuleRow(DebridStreamPicker.EXCLUDED_LANGUAGES, "Excluded languages", "Hide streams where every language is excluded.", selectionCountLabel(preferences.excludedLanguages)),
+        DebridRuleRow(DebridStreamPicker.REQUIRED_LANGUAGES, "Required languages", "Only show results with selected languages.", selectionCountLabel(preferences.requiredLanguages)),
+        DebridRuleRow(DebridStreamPicker.EXCLUDED_LANGUAGES, "Excluded languages", "Hide results where every language is excluded.", selectionCountLabel(preferences.excludedLanguages)),
         DebridRuleRow(DebridStreamPicker.REQUIRED_RELEASE_GROUPS, "Required release groups", "Only show selected release groups.", selectionCountLabel(preferences.requiredReleaseGroups)),
         DebridRuleRow(DebridStreamPicker.EXCLUDED_RELEASE_GROUPS, "Excluded release groups", "Hide selected release groups.", selectionCountLabel(preferences.excludedReleaseGroups)),
     )
