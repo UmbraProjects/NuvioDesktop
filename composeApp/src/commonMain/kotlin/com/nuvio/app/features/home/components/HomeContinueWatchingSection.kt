@@ -104,6 +104,27 @@ private fun ContinueWatchingItem.continueWatchingArtworkUrl(
     )
 }
 
+private fun ContinueWatchingItem.continueWatchingPosterArtworkUrl(
+    useEpisodeThumbnails: Boolean,
+): String? {
+    if (seasonNumber == null || episodeNumber == null) {
+        return continueWatchingArtworkUrl(useEpisodeThumbnails)
+    }
+
+    val normalizedEpisodeThumbnail = episodeThumbnail?.trim()?.takeIf { it.isNotBlank() }
+    val nonEpisodeImageUrl = imageUrl
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && it != normalizedEpisodeThumbnail }
+
+    return firstNonBlank(
+        poster,
+        background,
+        nonEpisodeImageUrl,
+        if (useEpisodeThumbnails) episodeThumbnail else null,
+        imageUrl,
+    )
+}
+
 private fun firstNonBlank(vararg values: String?): String? =
     values.firstOrNull { value -> !value.isNullOrBlank() }?.trim()
 
@@ -508,8 +529,11 @@ private fun ContinueWatchingPosterCard(
                 )
                 .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
         ) {
-            val shouldBlurArtwork = blurNextUp && useEpisodeThumbnails && item.isNextUp
-            val imageUrl = item.continueWatchingArtworkUrl(useEpisodeThumbnails)
+            val imageUrl = item.continueWatchingPosterArtworkUrl(useEpisodeThumbnails)
+            val shouldBlurArtwork = blurNextUp &&
+                useEpisodeThumbnails &&
+                item.isNextUp &&
+                imageUrl == firstNonBlank(item.episodeThumbnail)
             if (imageUrl != null) {
                 AsyncImage(
                     model = cloudLibraryDisplayArtworkUrl(imageUrl),

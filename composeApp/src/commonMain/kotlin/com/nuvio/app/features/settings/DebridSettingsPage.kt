@@ -131,7 +131,6 @@ internal fun LazyListScope.debridSettingsContent(
 ) {
     item {
         var showResolverProviderDialog by rememberSaveable { mutableStateOf(false) }
-        val uriHandler = LocalUriHandler.current
         val resolverProviders = settings.resolverServices.map { it.provider }
         val activeResolverProvider = settings.activeResolverCredential?.provider
         SettingsSection(
@@ -142,15 +141,6 @@ internal fun LazyListScope.debridSettingsContent(
                 DebridInfoRow(
                     isTablet = isTablet,
                     text = stringResource(Res.string.settings_debrid_experimental_notice),
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                DebridPreferenceRow(
-                    isTablet = isTablet,
-                    title = "Learn more",
-                    description = "Cloud Library, connected accounts, and playable-link preparation.",
-                    value = "Open",
-                    enabled = true,
-                    onClick = { runCatching { uriHandler.openUri(CLOUD_SERVICES_FAQ_URL) } },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
@@ -272,7 +262,10 @@ internal fun LazyListScope.debridSettingsContent(
             }
     }
 
-    if (!settings.canResolvePlayableLinks) return
+    if (!settings.canResolvePlayableLinks) {
+        debridLearnMoreFooterItem(isTablet)
+        return
+    }
 
     item {
         var showPrepareCountDialog by rememberSaveable { mutableStateOf(false) }
@@ -459,6 +452,35 @@ internal fun LazyListScope.debridSettingsContent(
                 onDismiss = { activeTemplateField = null },
             )
             null -> Unit
+        }
+    }
+
+    debridLearnMoreFooterItem(isTablet)
+}
+
+private fun LazyListScope.debridLearnMoreFooterItem(isTablet: Boolean) {
+    item {
+        val uriHandler = LocalUriHandler.current
+        DebridLearnMoreFooter(
+            isTablet = isTablet,
+            onClick = { runCatching { uriHandler.openUri(CLOUD_SERVICES_FAQ_URL) } },
+        )
+    }
+}
+
+@Composable
+private fun DebridLearnMoreFooter(
+    isTablet: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = if (isTablet) 4.dp else 0.dp, bottom = if (isTablet) 10.dp else 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        TextButton(onClick = onClick) {
+            Text("Learn more")
         }
     }
 }
