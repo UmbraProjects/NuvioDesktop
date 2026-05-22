@@ -38,6 +38,11 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.NuvioToastController
+import com.nuvio.app.features.debrid.DebridSettingsRepository
+import com.nuvio.app.features.debrid.DirectDebridPlayableResult
+import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
+import com.nuvio.app.features.debrid.toastMessage
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.AddonResource
 import com.nuvio.app.features.addons.ManagedAddon
@@ -67,6 +72,7 @@ import com.nuvio.app.features.watchprogress.WatchProgressPlaybackSession
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import com.nuvio.app.isIos
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -857,8 +863,56 @@ fun PlayerScreen(
             playerController?.seekTo(targetPositionMs)
         }
 
+        fun resolveDebridForPlayer(
+            stream: StreamItem,
+            season: Int?,
+            episode: Int?,
+            onResolved: (StreamItem) -> Unit,
+            onStale: () -> Unit,
+        ): Boolean {
+            if (!DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) return false
+            scope.launch {
+                val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
+                    stream = stream,
+                    season = season,
+                    episode = episode,
+                )
+                when (resolved) {
+                    is DirectDebridPlayableResult.Success -> onResolved(resolved.stream)
+                    else -> {
+                        resolved.toastMessage()?.let { NuvioToastController.show(it) }
+                        if (resolved == DirectDebridPlayableResult.Stale) {
+                            onStale()
+                        }
+                    }
+                }
+            }
+            return true
+        }
+
         fun switchToSource(stream: StreamItem) {
-            val url = stream.directPlaybackUrl ?: return
+            if (
+                resolveDebridForPlayer(
+                    stream = stream,
+                    season = activeSeasonNumber,
+                    episode = activeEpisodeNumber,
+                    onResolved = ::switchToSource,
+                    onStale = {
+                        val type = contentType ?: parentMetaType
+                        val vid = activeVideoId
+                        if (vid != null) {
+                            PlayerStreamsRepository.loadSources(
+                                type = type,
+                                videoId = vid,
+                                season = activeSeasonNumber,
+                                episode = activeEpisodeNumber,
+                                forceRefresh = true,
+                            )
+                        }
+                    },
+                )
+            ) return
+            val url = stream.playableDirectUrl ?: return
             if (url == activeSourceUrl) return
             val currentPositionMs = playbackSnapshot.positionMs.coerceAtLeast(0L)
             flushWatchProgress()
@@ -899,7 +953,27 @@ fun PlayerScreen(
         }
 
         fun switchToEpisodeStream(stream: StreamItem, episode: MetaVideo) {
-            val url = stream.directPlaybackUrl ?: return
+            if (
+                resolveDebridForPlayer(
+                    stream = stream,
+                    season = episode.season,
+                    episode = episode.episode,
+                    onResolved = { resolvedStream ->
+                        switchToEpisodeStream(resolvedStream, episode)
+                    },
+                    onStale = {
+                        val type = contentType ?: parentMetaType
+                        PlayerStreamsRepository.loadEpisodeStreams(
+                            type = type,
+                            videoId = episode.id,
+                            season = episode.season,
+                            episode = episode.episode,
+                            forceRefresh = true,
+                        )
+                    },
+                )
+            ) return
+            val url = stream.playableDirectUrl ?: return
             showNextEpisodeCard = false
             showSourcesPanel = false
             showEpisodesPanel = false
@@ -1094,12 +1168,30 @@ fun PlayerScreen(
                 val installedAddonNames = AddonRepository.uiState.value.addons
                     .map { it.displayTitle }
                     .toSet()
+                val debridSettings = DebridSettingsRepository.snapshot()
 
                 val timeoutSeconds = settings.streamAutoPlayTimeoutSeconds
-                val isUnlimitedTimeout = timeoutSeconds == Int.MAX_VALUE
                 var autoSelectTriggered = false
                 var timeoutElapsed = false
                 var selectedStream: StreamItem? = null
+                val autoSelectSettled = CompletableDeferred<Unit>()
+
+                fun settleAutoSelect() {
+                    if (!autoSelectSettled.isCompleted) {
+                        autoSelectSettled.complete(Unit)
+                    }
+                }
+
+                fun selectStream(stream: StreamItem) {
+                    autoSelectTriggered = true
+                    selectedStream = stream
+                    settleAutoSelect()
+                }
+
+                fun finishWithoutSelection() {
+                    autoSelectTriggered = true
+                    settleAutoSelect()
+                }
 
                 // Full select: tries binge group first, then falls back to mode-based selection
                 fun trySelectStream(streams: List<StreamItem>): StreamItem? {
@@ -1114,6 +1206,8 @@ fun PlayerScreen(
                         preferredBingeGroup = preferredBingeGroup,
                         preferBingeGroupInSelection = settings.streamAutoPlayPreferBingeGroup,
                         bingeGroupOnly = bingeGroupOnlyManualMode,
+                        debridEnabled = debridSettings.canResolvePlayableLinks,
+                        activeResolverProviderId = debridSettings.activeResolverProviderId,
                     )
                 }
 
@@ -1131,6 +1225,8 @@ fun PlayerScreen(
                         preferredBingeGroup = preferredBingeGroup,
                         preferBingeGroupInSelection = true,
                         bingeGroupOnly = true,
+                        debridEnabled = debridSettings.canResolvePlayableLinks,
+                        activeResolverProviderId = debridSettings.activeResolverProviderId,
                     )
                 }
 
@@ -1145,38 +1241,35 @@ fun PlayerScreen(
                             // Already resolved
                         } else if (timeoutElapsed) {
                             // Timeout elapsed: full select (binge group + fallback to mode)
-                            if (allStreams.isNotEmpty()) {
-                                val candidate = trySelectStream(allStreams)
-                                if (candidate != null) {
-                                    autoSelectTriggered = true
-                                    selectedStream = candidate
-                                }
-                            }
-                        } else {
-                            // Before timeout: eagerly check binge group only
-                            if (allStreams.isNotEmpty()) {
-                                val earlyMatch = tryBingeGroupOnly(allStreams)
-                                if (earlyMatch != null) {
-                                    autoSelectTriggered = true
-                                    selectedStream = earlyMatch
-                                }
-                            }
-                        }
+	                            if (allStreams.isNotEmpty()) {
+	                                val candidate = trySelectStream(allStreams)
+	                                if (candidate != null) {
+	                                    selectStream(candidate)
+	                                }
+	                            }
+	                        } else {
+	                            // Before timeout: eagerly check binge group only
+	                            if (allStreams.isNotEmpty()) {
+	                                val earlyMatch = tryBingeGroupOnly(allStreams)
+	                                if (earlyMatch != null) {
+	                                    selectStream(earlyMatch)
+	                                }
+	                            }
+	                        }
 
                         // If all addons finished loading and no match yet, do a final full select
                         if (!autoSelectTriggered && !state.isAnyLoading) {
-                            if (allStreams.isNotEmpty()) {
-                                val candidate = trySelectStream(allStreams)
-                                if (candidate != null) {
-                                    autoSelectTriggered = true
-                                    selectedStream = candidate
-                                }
-                            }
-                            if (!autoSelectTriggered) {
-                                autoSelectTriggered = true
-                            }
-                            return@collectLatest
-                        }
+	                            if (allStreams.isNotEmpty()) {
+	                                val candidate = trySelectStream(allStreams)
+	                                if (candidate != null) {
+	                                    selectStream(candidate)
+	                                }
+	                            }
+	                            if (!autoSelectTriggered) {
+	                                finishWithoutSelection()
+	                            }
+	                            return@collectLatest
+	                        }
 
                         if (autoSelectTriggered) return@collectLatest
                     }
@@ -1192,51 +1285,56 @@ fun PlayerScreen(
                     timeoutElapsed = true
                     if (!autoSelectTriggered) {
                         val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
-                        if (allStreams.isNotEmpty()) {
-                            val candidate = trySelectStream(allStreams)
-                            if (candidate != null) {
-                                autoSelectTriggered = true
-                                selectedStream = candidate
-                            }
-                        }
-                    }
-                    if (selectedStream != null) {
-                        innerJob.cancel()
-                    } else if (PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }.isNotEmpty()) {
-                        // Streams arrived but no match after full select — don't wait further
-                        innerJob.cancel()
-                        autoSelectTriggered = true
-                    } else {
-                        // No addon responded yet — wait with hard ceiling
-                        val completed = withTimeoutOrNull(timeoutMs) { innerJob.join() }
-                        if (completed == null) {
-                            innerJob.cancel()
-                            if (!autoSelectTriggered) {
-                                val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
-                                if (allStreams.isNotEmpty()) {
-                                    selectedStream = trySelectStream(allStreams)
-                                }
-                                autoSelectTriggered = true
-                            }
-                        }
-                    }
-                } else {
-                    // Instant (0) or unlimited: timeoutElapsed immediately so each
-                    // addon response triggers a full select attempt in the collect.
-                    timeoutElapsed = true
-                    val hardTimeout = NEXT_EPISODE_HARD_TIMEOUT_MS
-                    val completed = withTimeoutOrNull(hardTimeout) { innerJob.join() }
-                    if (completed == null) {
-                        innerJob.cancel()
-                        if (!autoSelectTriggered) {
-                            val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
-                            if (allStreams.isNotEmpty()) {
-                                selectedStream = trySelectStream(allStreams)
-                            }
-                            autoSelectTriggered = true
-                        }
-                    }
-                }
+	                        if (allStreams.isNotEmpty()) {
+	                            val candidate = trySelectStream(allStreams)
+	                            if (candidate != null) {
+	                                selectStream(candidate)
+	                            }
+	                        }
+	                    }
+	                    if (selectedStream != null) {
+	                        innerJob.cancel()
+	                    } else if (PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }.isNotEmpty()) {
+	                        // Streams arrived but no match after full select — don't wait further
+	                        innerJob.cancel()
+	                        finishWithoutSelection()
+	                    } else {
+	                        // No addon responded yet — wait with hard ceiling
+	                        val completed = withTimeoutOrNull(timeoutMs) { autoSelectSettled.await() }
+	                        innerJob.cancel()
+	                        if (completed == null) {
+	                            if (!autoSelectTriggered) {
+	                                val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
+	                                if (allStreams.isNotEmpty()) {
+	                                    selectedStream = trySelectStream(allStreams)
+	                                }
+	                                finishWithoutSelection()
+	                            }
+	                        }
+	                    }
+	                } else {
+	                    // Instant (0) or unlimited: timeoutElapsed immediately so each
+	                    // addon response triggers a full select attempt in the collect.
+	                    timeoutElapsed = true
+	                    if (!autoSelectTriggered) {
+	                        val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
+	                        if (allStreams.isNotEmpty()) {
+	                            trySelectStream(allStreams)?.let(::selectStream)
+	                        }
+	                    }
+	                    val hardTimeout = NEXT_EPISODE_HARD_TIMEOUT_MS
+	                    val completed = withTimeoutOrNull(hardTimeout) { autoSelectSettled.await() }
+	                    innerJob.cancel()
+	                    if (completed == null) {
+	                        if (!autoSelectTriggered) {
+	                            val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
+	                            if (allStreams.isNotEmpty()) {
+	                                selectedStream = trySelectStream(allStreams)
+	                            }
+	                            finishWithoutSelection()
+	                        }
+	                    }
+	                }
 
                 // Handle result
                 nextEpisodeAutoPlaySearching = false
