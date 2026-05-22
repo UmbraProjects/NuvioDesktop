@@ -45,6 +45,8 @@ import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.core.ui.NuvioShelfSection
 import com.nuvio.app.core.ui.posterCardClickable
+import com.nuvio.app.features.cloud.CloudLibraryContentType
+import com.nuvio.app.features.cloud.cloudLibraryDisplayArtworkUrl
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
@@ -64,9 +66,14 @@ private fun localizedContinueWatchingMetaLine(item: ContinueWatchingItem): Strin
             stringResource(Res.string.compose_player_episode_code_full, item.seasonNumber, item.episodeNumber)
         item.isNextUp ->
             stringResource(Res.string.continue_watching_up_next)
+        item.isCloudLibraryItem() ->
+            stringResource(Res.string.library_source_cloud)
         else ->
             stringResource(Res.string.media_movie)
     }
+
+private fun ContinueWatchingItem.isCloudLibraryItem(): Boolean =
+    parentMetaType.equals(CloudLibraryContentType, ignoreCase = true)
 
 private fun ContinueWatchingItem.continueWatchingArtworkUrl(
     useEpisodeThumbnails: Boolean,
@@ -392,6 +399,7 @@ private fun ContinueWatchingWideCard(
             imageUrl = artworkUrl,
             width = layout.widePosterStripWidth,
             blurred = shouldBlurArtwork,
+            contentScale = if (item.isCloudLibraryItem()) ContentScale.Fit else ContentScale.Crop,
             modifier = Modifier.fillMaxHeight(),
         )
         Column(
@@ -504,12 +512,12 @@ private fun ContinueWatchingPosterCard(
             val imageUrl = item.continueWatchingArtworkUrl(useEpisodeThumbnails)
             if (imageUrl != null) {
                 AsyncImage(
-                    model = imageUrl,
+                    model = cloudLibraryDisplayArtworkUrl(imageUrl),
                     contentDescription = item.title,
                     modifier = Modifier
                         .fillMaxSize()
                         .then(if (shouldBlurArtwork) Modifier.blur(18.dp) else Modifier),
-                    contentScale = ContentScale.Crop,
+                    contentScale = if (item.isCloudLibraryItem()) ContentScale.Fit else ContentScale.Crop,
                 )
             }
             if (item.progressFraction <= 0f && item.seasonNumber != null && item.episodeNumber != null) {
@@ -589,6 +597,7 @@ private fun ArtworkPanel(
     imageUrl: String?,
     width: Dp,
     blurred: Boolean = false,
+    contentScale: ContentScale = ContentScale.Crop,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -598,12 +607,12 @@ private fun ArtworkPanel(
     ) {
         if (imageUrl != null) {
             AsyncImage(
-                model = imageUrl,
+                model = cloudLibraryDisplayArtworkUrl(imageUrl),
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
                     .then(if (blurred) Modifier.blur(18.dp) else Modifier),
-                contentScale = ContentScale.Crop,
+                contentScale = contentScale,
             )
         }
     }

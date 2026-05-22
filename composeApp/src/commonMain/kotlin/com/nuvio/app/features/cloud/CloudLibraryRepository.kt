@@ -121,6 +121,29 @@ object CloudLibraryRepository {
         }
     }
 
+    suspend fun findPlaybackTargetForProgress(
+        contentId: String,
+        videoId: String,
+    ): CloudLibraryPlaybackTarget? {
+        DebridSettingsRepository.ensureLoaded()
+        if (!DebridSettingsRepository.snapshot().cloudLibraryEnabled) {
+            loadedConnectionKeys = emptyList()
+            _uiState.value = CloudLibraryUiState(isLoaded = true, isEnabled = false)
+            return null
+        }
+
+        _uiState.value.findPlaybackTargetForProgress(
+            contentId = contentId,
+            videoId = videoId,
+        )?.let { target -> return target }
+
+        val refreshed = refreshNow()
+        return refreshed.findPlaybackTargetForProgress(
+            contentId = contentId,
+            videoId = videoId,
+        )
+    }
+
     suspend fun resolvePlayback(
         item: CloudLibraryItem,
         file: CloudLibraryFile,
@@ -147,8 +170,47 @@ object CloudLibraryRepository {
             )
         }.sortedBy { it.providerId }
 
+    private suspend fun refreshNow(): CloudLibraryUiState {
+        _uiState.update { current ->
+            current.copy(
+                isEnabled = true,
+                isRefreshing = true,
+                providers = current.providers.map { it.copy(isLoading = true, errorMessage = null) },
+            )
+        }
+        val refreshed = store.refresh()
+        loadedConnectionKeys = connectedCloudConnectionKeys()
+        _uiState.value = refreshed
+        return refreshed
+    }
+
     private data class CloudConnectionKey(
         val providerId: String,
         val apiKeyHash: Int,
     )
+}
+
+internal fun CloudLibraryUiState.findPlaybackTargetForProgress(
+    contentId: String,
+    videoId: String,
+): CloudLibraryPlaybackTarget? {
+    val normalizedContentId = contentId.trim()
+    val normalizedVideoId = videoId.trim()
+    if (normalizedContentId.isBlank()) return null
+
+    val matchingItems = items.filter { item -> item.stableKey == normalizedContentId }
+    if (matchingItems.isEmpty()) return null
+
+    for (item in matchingItems) {
+        val exactFile = item.playableFiles.firstOrNull { file ->
+            item.playbackVideoId(file) == normalizedVideoId
+        }
+        if (exactFile != null) {
+            return CloudLibraryPlaybackTarget(item = item, file = exactFile)
+        }
+    }
+
+    val singleItem = matchingItems.singleOrNull() ?: return null
+    val singleFile = singleItem.playableFiles.singleOrNull() ?: return null
+    return CloudLibraryPlaybackTarget(item = singleItem, file = singleFile)
 }

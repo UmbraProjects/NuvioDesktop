@@ -6,6 +6,7 @@ import com.nuvio.app.features.debrid.DebridServiceCredential
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CloudLibraryStoreTest {
@@ -67,6 +68,86 @@ class CloudLibraryStoreTest {
 
         assertEquals(listOf("cloud"), state.providers.map { it.providerId })
         assertEquals(listOf("cloud-item"), state.items.map { it.id })
+    }
+
+    @Test
+    fun `playback target lookup matches cloud watch progress video id`() {
+        val provider = cloudProvider(id = "torbox", name = "TorBox")
+        val item = CloudLibraryItem(
+            providerId = provider.id,
+            providerName = provider.displayName,
+            id = "29773238",
+            type = CloudLibraryItemType.Torrent,
+            name = "Torrent",
+            files = listOf(
+                CloudLibraryFile(id = "7", name = "sample.mkv", playable = true),
+                CloudLibraryFile(id = "8", name = "movie.mkv", playable = true),
+            ),
+        )
+        val state = CloudLibraryUiState(
+            isLoaded = true,
+            providers = listOf(
+                CloudLibraryProviderState(
+                    provider = provider,
+                    items = listOf(item),
+                ),
+            ),
+        )
+
+        val target = assertNotNull(
+            state.findPlaybackTargetForProgress(
+                contentId = "torbox:Torrent:29773238",
+                videoId = "torbox:Torrent:29773238:8",
+            ),
+        )
+
+        assertEquals(item, target.item)
+        assertEquals("8", target.file.id)
+    }
+
+    @Test
+    fun `playback target lookup falls back to single playable file`() {
+        val provider = cloudProvider(id = "torbox", name = "TorBox")
+        val item = cloudItem(provider, "29773238")
+        val state = CloudLibraryUiState(
+            isLoaded = true,
+            providers = listOf(
+                CloudLibraryProviderState(
+                    provider = provider,
+                    items = listOf(item),
+                ),
+            ),
+        )
+
+        val target = assertNotNull(
+            state.findPlaybackTargetForProgress(
+                contentId = item.stableKey,
+                videoId = item.stableKey,
+            ),
+        )
+
+        assertEquals(item, target.item)
+        assertEquals(item.playableFiles.single(), target.file)
+    }
+
+    @Test
+    fun `provider poster urls are mapped for cloud services`() {
+        assertEquals(
+            TorboxCloudLibraryPosterUrl,
+            cloudLibraryProviderPosterUrl("torbox:Torrent:29773238"),
+        )
+        assertEquals(
+            PremiumizeCloudLibraryPosterUrl,
+            cloudLibraryProviderPosterUrl("cloud:premiumize"),
+        )
+        assertTrue(
+            cloudLibraryDisplayArtworkUrl(TorboxCloudLibraryPosterUrl)
+                ?.startsWith("data:image/svg+xml;base64,") == true,
+        )
+        assertEquals(
+            PremiumizeCloudLibraryPosterUrl,
+            cloudLibraryDisplayArtworkUrl(PremiumizeCloudLibraryPosterUrl),
+        )
     }
 }
 
