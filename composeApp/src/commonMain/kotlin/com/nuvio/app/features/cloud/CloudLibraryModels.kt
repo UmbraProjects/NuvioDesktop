@@ -44,6 +44,13 @@ data class CloudLibraryPlaybackTarget(
     val file: CloudLibraryFile,
 )
 
+sealed interface CloudLibraryPlaybackTargetLookupResult {
+    data class Found(val target: CloudLibraryPlaybackTarget) : CloudLibraryPlaybackTargetLookupResult
+    data object Disabled : CloudLibraryPlaybackTargetLookupResult
+    data class NotConnected(val providerName: String? = null) : CloudLibraryPlaybackTargetLookupResult
+    data object NotFound : CloudLibraryPlaybackTargetLookupResult
+}
+
 const val CloudLibraryContentType = "cloud"
 const val TorboxCloudLibraryPosterUrl = "https://torbox.app/assets/logo-bb7a9579.svg"
 const val PremiumizeCloudLibraryPosterUrl = "https://www.premiumize.me/icon_normal.svg"
@@ -57,7 +64,7 @@ fun CloudLibraryItem.providerPosterUrl(): String? =
     cloudLibraryProviderPosterUrl(providerId)
 
 fun cloudLibraryProviderPosterUrl(providerIdOrContentId: String?): String? =
-    when (providerIdOrContentId.normalizedCloudLibraryProviderId()) {
+    when (cloudLibraryProviderId(providerIdOrContentId)) {
         "torbox" -> TorboxCloudLibraryPosterUrl
         "premiumize" -> PremiumizeCloudLibraryPosterUrl
         else -> null
@@ -69,8 +76,8 @@ fun cloudLibraryDisplayArtworkUrl(url: String?): String? =
         else -> url?.trim()
     }
 
-private fun String?.normalizedCloudLibraryProviderId(): String =
-    orEmpty()
+fun cloudLibraryProviderId(providerIdOrContentId: String?): String =
+    providerIdOrContentId.orEmpty()
         .trim()
         .removePrefix("$CloudLibraryContentType:")
         .substringBefore(':')

@@ -110,6 +110,7 @@ import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.cloud.CloudLibraryFile
 import com.nuvio.app.features.cloud.CloudLibraryItem
 import com.nuvio.app.features.cloud.CloudLibraryPlaybackResult
+import com.nuvio.app.features.cloud.CloudLibraryPlaybackTargetLookupResult
 import com.nuvio.app.features.cloud.CloudLibraryRepository
 import com.nuvio.app.features.cloud.playbackVideoId
 import com.nuvio.app.features.cloud.providerPosterUrl
@@ -187,6 +188,7 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepositor
 import com.nuvio.app.features.watchprogress.ResumePromptRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.nextUpDismissKey
+import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import com.nuvio.app.features.watching.application.WatchingActions
 import com.nuvio.app.features.watching.application.WatchingState
 import kotlinx.coroutines.flow.Flow
@@ -610,6 +612,8 @@ private fun MainAppContent(
     val externalPlayerUnavailableText = stringResource(Res.string.external_player_unavailable)
     val externalPlayerFailedText = stringResource(Res.string.external_player_failed)
     val cloudLibraryPlayFailedText = stringResource(Res.string.cloud_library_play_failed)
+    val cloudLibraryPlayDisabledText = stringResource(Res.string.cloud_library_play_disabled)
+    val cloudLibraryPlayNotConnectedText = stringResource(Res.string.cloud_library_play_not_connected)
     val isTraktLibrarySource = libraryUiState.sourceMode == LibrarySourceMode.TRAKT
     var initialHomeReady by rememberSaveable { mutableStateOf(false) }
     var offlineLaunchRouteHandled by rememberSaveable { mutableStateOf(false) }
@@ -1063,21 +1067,42 @@ private fun MainAppContent(
         val openContinueWatching: (ContinueWatchingItem, Boolean, Boolean) -> Unit = { item, manualSelection, startFromBeginning ->
             if (item.isCloudLibraryContinueWatchingItem()) {
                 coroutineScope.launch {
-                    val target = CloudLibraryRepository.findPlaybackTargetForProgress(
-                        contentId = item.parentMetaId,
-                        videoId = item.videoId,
-                    )
-                    val launched = target?.let { playbackTarget ->
-                        launchCloudLibraryFile(
-                            item = playbackTarget.item,
-                            file = playbackTarget.file,
-                            resumePositionMs = item.resumePositionMs,
-                            resumeProgressFraction = item.resumeProgressFraction,
-                            startFromBeginning = startFromBeginning,
+                    when (
+                        val lookup = CloudLibraryRepository.findPlaybackTargetForProgressResult(
+                            contentId = item.parentMetaId,
+                            videoId = item.videoId,
                         )
-                    } == true
-                    if (!launched) {
-                        NuvioToastController.show(cloudLibraryPlayFailedText)
+                    ) {
+                        is CloudLibraryPlaybackTargetLookupResult.Found -> {
+                            val launched = launchCloudLibraryFile(
+                                item = lookup.target.item,
+                                file = lookup.target.file,
+                                resumePositionMs = item.resumePositionMs,
+                                resumeProgressFraction = item.resumeProgressFraction,
+                                startFromBeginning = startFromBeginning,
+                            )
+                            if (!launched) {
+                                NuvioToastController.show(cloudLibraryPlayFailedText)
+                            }
+                        }
+
+                        CloudLibraryPlaybackTargetLookupResult.Disabled -> {
+                            NuvioToastController.show(cloudLibraryPlayDisabledText)
+                        }
+
+                        is CloudLibraryPlaybackTargetLookupResult.NotConnected -> {
+                            val providerName = lookup.providerName?.takeIf { it.isNotBlank() }
+                            NuvioToastController.show(
+                                providerName?.let { name ->
+                                    getString(Res.string.cloud_library_play_provider_not_connected, name)
+                                }
+                                    ?: cloudLibraryPlayNotConnectedText,
+                            )
+                        }
+
+                        CloudLibraryPlaybackTargetLookupResult.NotFound -> {
+                            NuvioToastController.show(cloudLibraryPlayFailedText)
+                        }
                     }
                 }
             } else {
@@ -1235,7 +1260,18 @@ private fun MainAppContent(
                                         onLibrarySectionViewAllClick = onLibrarySectionViewAllClick,
                                         onCloudFilePlay = { item, file ->
                                             coroutineScope.launch {
-                                                if (!launchCloudLibraryFile(item = item, file = file)) {
+                                                val resumeItem = WatchProgressRepository
+                                                    .progressForVideo(item.playbackVideoId(file))
+                                                    ?.takeIf { it.isResumable }
+                                                    ?.toContinueWatchingItem()
+                                                if (
+                                                    !launchCloudLibraryFile(
+                                                        item = item,
+                                                        file = file,
+                                                        resumePositionMs = resumeItem?.resumePositionMs,
+                                                        resumeProgressFraction = resumeItem?.resumeProgressFraction,
+                                                    )
+                                                ) {
                                                     NuvioToastController.show(cloudLibraryPlayFailedText)
                                                 }
                                             }

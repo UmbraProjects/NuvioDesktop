@@ -1345,8 +1345,11 @@
     <string name="cloud_library_no_files_message">This item does not expose a playable video file.</string>
     <string name="cloud_library_no_files_title">No playable files</string>
     <string name="cloud_library_no_playable_files">No playable files</string>
+    <string name="cloud_library_play_disabled">Cloud library is off.</string>
     <string name="cloud_library_play_failed">Couldn't play this cloud file.</string>
     <string name="cloud_library_play_file">Play file</string>
+    <string name="cloud_library_play_not_connected">Cloud service is not connected.</string>
+    <string name="cloud_library_play_provider_not_connected">%1$s is not connected.</string>
     <string name="cloud_library_playable_file_count">%1$d playable files</string>
     <string name="cloud_library_provider_all">All</string>
     <string name="cloud_library_refresh">Refresh cloud library</string>

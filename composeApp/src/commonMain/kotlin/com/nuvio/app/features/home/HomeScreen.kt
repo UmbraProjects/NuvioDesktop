@@ -21,6 +21,10 @@ import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.cloud.CloudLibraryContentType
+import com.nuvio.app.features.cloud.CloudLibraryRepository
+import com.nuvio.app.features.cloud.CloudLibraryUiState
+import com.nuvio.app.features.cloud.findPlaybackTargetForProgress
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.nextReleasedEpisodeAfter
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
@@ -109,6 +113,7 @@ fun HomeScreen(
     val continueWatchingPreferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
     val watchProgressUiState by WatchProgressRepository.uiState.collectAsStateWithLifecycle()
+    val cloudLibraryUiState by CloudLibraryRepository.uiState.collectAsStateWithLifecycle()
     val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
     val traktSettingsUiState by remember {
         TraktSettingsRepository.ensureLoaded()
@@ -216,6 +221,12 @@ fun HomeScreen(
 
     val visibleContinueWatchingEntries = remember(effectiveWatchProgressEntries) {
         effectiveWatchProgressEntries.continueWatchingEntries()
+    }
+
+    LaunchedEffect(visibleContinueWatchingEntries) {
+        if (visibleContinueWatchingEntries.any(WatchProgressEntry::isCloudLibraryProgressEntry)) {
+            CloudLibraryRepository.ensureLoaded()
+        }
     }
 
     val latestCompletedAtBySeries = remember(allNextUpSeedEntries) {
@@ -348,6 +359,7 @@ fun HomeScreen(
         effectivNextUpItems,
         nextUpSuppressedSeriesIds,
         continueWatchingPreferences.sortMode,
+        cloudLibraryUiState,
     ) {
         buildHomeContinueWatchingItems(
             visibleEntries = visibleContinueWatchingEntries,
@@ -356,6 +368,7 @@ fun HomeScreen(
             nextUpSuppressedSeriesIds = nextUpSuppressedSeriesIds,
             sortMode = continueWatchingPreferences.sortMode,
             todayIsoDate = CurrentDateProvider.todayIsoDate(),
+            cloudLibraryUiState = cloudLibraryUiState,
         )
     }
     val availableManifests = remember(addonsUiState.addons) {
@@ -911,6 +924,7 @@ internal fun buildHomeContinueWatchingItems(
     nextUpSuppressedSeriesIds: Set<String>? = null,
     sortMode: ContinueWatchingSortMode = ContinueWatchingSortMode.DEFAULT,
     todayIsoDate: String = "",
+    cloudLibraryUiState: CloudLibraryUiState? = null,
 ): List<ContinueWatchingItem> {
     val suppressedSeriesIds = nextUpSuppressedSeriesIds
         ?: visibleEntries
@@ -926,7 +940,9 @@ internal fun buildHomeContinueWatchingItems(
                 val liveItem = entry.toContinueWatchingItem()
                 HomeContinueWatchingCandidate(
                     lastUpdatedEpochMs = entry.lastUpdatedEpochMs,
-                    item = liveItem.withFallbackMetadata(cachedInProgressByVideoId[entry.videoId]),
+                    item = liveItem
+                        .withFallbackMetadata(cachedInProgressByVideoId[entry.videoId])
+                        .withCloudLibraryMetadata(cloudLibraryUiState),
                     isProgressEntry = true,
                 )
             },
@@ -1166,9 +1182,16 @@ private fun ContinueWatchingItem.withFallbackMetadata(
     fallback: ContinueWatchingItem?,
 ): ContinueWatchingItem {
     if (fallback == null) return this
+    val fallbackTitle = fallback.title
+        .takeIf { it.isNotBlank() }
+        ?.takeUnless { fallback.hasPlaceholderCloudTitle() }
 
     return copy(
-        title = title.ifBlank { fallback.title },
+        title = when {
+            title.isBlank() -> fallback.title
+            hasPlaceholderCloudTitle() && fallbackTitle != null -> fallbackTitle
+            else -> title
+        },
         subtitle = subtitle.ifBlank { fallback.subtitle },
         imageUrl = imageUrl ?: fallback.imageUrl,
         logo = logo ?: fallback.logo,
@@ -1180,3 +1203,35 @@ private fun ContinueWatchingItem.withFallbackMetadata(
         released = released ?: fallback.released,
     )
 }
+
+private fun ContinueWatchingItem.withCloudLibraryMetadata(
+    cloudLibraryUiState: CloudLibraryUiState?,
+): ContinueWatchingItem {
+    if (!isCloudLibraryContinueWatchingItem() || cloudLibraryUiState == null) return this
+    val target = cloudLibraryUiState.findPlaybackTargetForProgress(
+        contentId = parentMetaId,
+        videoId = videoId,
+    ) ?: return this
+    val fileName = target.file.name.trim().takeIf { it.isNotBlank() }
+        ?: target.item.name.trim().takeIf { it.isNotBlank() }
+        ?: return this
+    return copy(
+        title = fileName,
+        pauseDescription = pauseDescription
+            ?: target.item.name.takeIf { itemName -> itemName.isNotBlank() && itemName != fileName },
+    )
+}
+
+private fun ContinueWatchingItem.hasPlaceholderCloudTitle(): Boolean {
+    if (!isCloudLibraryContinueWatchingItem()) return false
+    val normalizedTitle = title.trim()
+    return normalizedTitle.equals(parentMetaId, ignoreCase = true) ||
+        normalizedTitle.equals(videoId, ignoreCase = true)
+}
+
+private fun ContinueWatchingItem.isCloudLibraryContinueWatchingItem(): Boolean =
+    parentMetaType.equals(CloudLibraryContentType, ignoreCase = true)
+
+private fun WatchProgressEntry.isCloudLibraryProgressEntry(): Boolean =
+    contentType.equals(CloudLibraryContentType, ignoreCase = true) ||
+        parentMetaType.equals(CloudLibraryContentType, ignoreCase = true)

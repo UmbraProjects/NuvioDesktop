@@ -1,5 +1,12 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.features.cloud.CloudLibraryFile
+import com.nuvio.app.features.cloud.CloudLibraryItem
+import com.nuvio.app.features.cloud.CloudLibraryItemType
+import com.nuvio.app.features.cloud.CloudLibraryProviderState
+import com.nuvio.app.features.cloud.CloudLibraryUiState
+import com.nuvio.app.features.cloud.playbackVideoId
+import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.trakt.TRAKT_CONTINUE_WATCHING_DAYS_CAP_ALL
@@ -82,6 +89,45 @@ class HomeScreenTest {
 
         assertEquals(listOf("show:1:4"), result.map(ContinueWatchingItem::videoId))
         assertEquals("S1E4 • Current", result.single().subtitle)
+    }
+
+    @Test
+    fun `build home continue watching items enriches cloud title from library file`() {
+        val file = CloudLibraryFile(id = "8", name = "GOAT.2026.2160p.UHD.mkv")
+        val cloudItem = CloudLibraryItem(
+            providerId = DebridProviders.TORBOX_ID,
+            providerName = DebridProviders.Torbox.displayName,
+            id = "29773238",
+            type = CloudLibraryItemType.Torrent,
+            name = "GOAT torrent",
+            files = listOf(file),
+        )
+        val progress = WatchProgressEntry(
+            contentType = "cloud",
+            parentMetaId = cloudItem.stableKey,
+            parentMetaType = "cloud",
+            videoId = cloudItem.playbackVideoId(file),
+            title = cloudItem.stableKey,
+            lastPositionMs = 120_000L,
+            durationMs = 1_000_000L,
+            lastUpdatedEpochMs = 500L,
+        )
+
+        val result = buildHomeContinueWatchingItems(
+            visibleEntries = listOf(progress),
+            nextUpItemsBySeries = emptyMap(),
+            cloudLibraryUiState = CloudLibraryUiState(
+                isLoaded = true,
+                providers = listOf(
+                    CloudLibraryProviderState(
+                        provider = DebridProviders.Torbox,
+                        items = listOf(cloudItem),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals("GOAT.2026.2160p.UHD.mkv", result.single().title)
     }
 
     @Test

@@ -124,24 +124,58 @@ object CloudLibraryRepository {
     suspend fun findPlaybackTargetForProgress(
         contentId: String,
         videoId: String,
-    ): CloudLibraryPlaybackTarget? {
+    ): CloudLibraryPlaybackTarget? =
+        when (val result = findPlaybackTargetForProgressResult(contentId = contentId, videoId = videoId)) {
+            is CloudLibraryPlaybackTargetLookupResult.Found -> result.target
+            CloudLibraryPlaybackTargetLookupResult.Disabled,
+            is CloudLibraryPlaybackTargetLookupResult.NotConnected,
+            CloudLibraryPlaybackTargetLookupResult.NotFound,
+            -> null
+        }
+
+    suspend fun findPlaybackTargetForProgressResult(
+        contentId: String,
+        videoId: String,
+    ): CloudLibraryPlaybackTargetLookupResult {
         DebridSettingsRepository.ensureLoaded()
         if (!DebridSettingsRepository.snapshot().cloudLibraryEnabled) {
             loadedConnectionKeys = emptyList()
             _uiState.value = CloudLibraryUiState(isLoaded = true, isEnabled = false)
-            return null
+            return CloudLibraryPlaybackTargetLookupResult.Disabled
+        }
+
+        val providerId = cloudLibraryProviderId(contentId)
+            .ifBlank { cloudLibraryProviderId(videoId) }
+        val connectedCredentials = connectedCloudCredentials()
+        if (connectedCredentials.isEmpty()) {
+            return CloudLibraryPlaybackTargetLookupResult.NotConnected(
+                providerName = providerId.takeIf { it.isNotBlank() }?.let(DebridProviders::displayName),
+            )
+        }
+        if (
+            providerId.isNotBlank() &&
+            connectedCredentials.none { credential -> credential.provider.id.equals(providerId, ignoreCase = true) }
+        ) {
+            return CloudLibraryPlaybackTargetLookupResult.NotConnected(
+                providerName = DebridProviders.displayName(providerId),
+            )
         }
 
         _uiState.value.findPlaybackTargetForProgress(
             contentId = contentId,
             videoId = videoId,
-        )?.let { target -> return target }
+        )?.let { target -> return CloudLibraryPlaybackTargetLookupResult.Found(target) }
 
         val refreshed = refreshNow()
-        return refreshed.findPlaybackTargetForProgress(
+        val refreshedTarget = refreshed.findPlaybackTargetForProgress(
             contentId = contentId,
             videoId = videoId,
         )
+        return if (refreshedTarget != null) {
+            CloudLibraryPlaybackTargetLookupResult.Found(refreshedTarget)
+        } else {
+            CloudLibraryPlaybackTargetLookupResult.NotFound
+        }
     }
 
     suspend fun resolvePlayback(
