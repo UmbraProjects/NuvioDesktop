@@ -49,6 +49,7 @@ import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.nuvioBlockPointerPassthrough
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
@@ -128,7 +129,7 @@ fun SearchScreen(
     }
 
     val addonRefreshKey = remember(addonsUiState.addons) {
-        addonsUiState.addons.mapNotNull { addon ->
+        addonsUiState.addons.enabledAddons().mapNotNull { addon ->
             val manifest = addon.manifest ?: return@mapNotNull null
             buildString {
                 append(manifest.transportUrl)

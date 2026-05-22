@@ -103,6 +103,7 @@ import com.nuvio.app.core.ui.isLiquidGlassNativeTabBarSupported
 import com.nuvio.app.core.ui.localizedContinueWatchingSubtitle
 import com.nuvio.app.features.auth.AuthScreen
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.catalog.CatalogRepository
 import com.nuvio.app.features.catalog.CatalogScreen
 import com.nuvio.app.features.catalog.INTERNAL_LIBRARY_MANIFEST_URL
@@ -622,6 +623,7 @@ private fun MainAppContent(
 
     val addonProbeTargets = remember(addonsUiState.addons) {
         addonsUiState.addons
+            .enabledAddons()
             .mapNotNull { it.manifest?.transportUrl }
             .distinct()
             .sorted()

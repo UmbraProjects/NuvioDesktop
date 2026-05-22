@@ -21,6 +21,7 @@ import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.cloud.CloudLibraryRepository
 import com.nuvio.app.features.cloud.CloudLibraryUiState
@@ -144,7 +145,7 @@ fun HomeScreen(
             NetworkCondition.Online -> {
                 if (observedOfflineState) {
                     observedOfflineState = false
-                    HomeRepository.refresh(addonsUiState.addons, force = true)
+                    HomeRepository.refresh(addonsUiState.addons.enabledAddons(), force = true)
                 }
             }
 
@@ -367,8 +368,11 @@ fun HomeScreen(
             cloudLibraryUiState = cloudLibraryUiState,
         )
     }
-    val availableManifests = remember(addonsUiState.addons) {
-        addonsUiState.addons.mapNotNull { addon -> addon.manifest }
+    val enabledAddons = remember(addonsUiState.addons) {
+        addonsUiState.addons.enabledAddons()
+    }
+    val availableManifests = remember(enabledAddons) {
+        enabledAddons.mapNotNull { addon -> addon.manifest }
     }
 
     val metaProviderKey = remember(availableManifests) {
@@ -394,8 +398,8 @@ fun HomeScreen(
 
     LaunchedEffect(catalogRefreshKey) {
         if (catalogRefreshKey.isEmpty()) return@LaunchedEffect
-        HomeCatalogSettingsRepository.syncCatalogs(addonsUiState.addons)
-        HomeRepository.refresh(addonsUiState.addons)
+        HomeCatalogSettingsRepository.syncCatalogs(enabledAddons)
+        HomeRepository.refresh(enabledAddons)
     }
 
     LaunchedEffect(collections) {
@@ -498,9 +502,9 @@ fun HomeScreen(
         )
     }
 
-    val hasActiveAddons = addonsUiState.addons.any { it.manifest != null }
+    val hasActiveAddons = enabledAddons.any { it.manifest != null }
     val showHeroSlot = homeSettingsUiState.heroEnabled
-    val isResolvingHeroSources = addonsUiState.addons.any { it.isRefreshing } || homeUiState.isLoading
+    val isResolvingHeroSources = enabledAddons.any { it.isRefreshing } || homeUiState.isLoading
     val showHeroSkeleton = showHeroSlot &&
         homeUiState.heroItems.isEmpty() &&
         isResolvingHeroSources
@@ -591,7 +595,7 @@ fun HomeScreen(
             }
 
             when {
-                addonsUiState.addons.none { it.manifest != null } && !hasRenderableCollectionRows -> {
+                !hasActiveAddons && !hasRenderableCollectionRows -> {
                     if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
                         item {
                             HomeContinueWatchingSection(
@@ -650,7 +654,7 @@ fun HomeScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 onRetry = {
                                     NetworkStatusRepository.requestRefresh(force = true)
-                                    HomeRepository.refresh(addonsUiState.addons, force = true)
+                                    HomeRepository.refresh(addonsUiState.addons.enabledAddons(), force = true)
                                 },
                             )
                         } else {
