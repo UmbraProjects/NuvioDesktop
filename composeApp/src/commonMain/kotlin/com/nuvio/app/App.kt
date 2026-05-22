@@ -1657,6 +1657,7 @@ private fun MainAppContent(
                                         StreamsRepository.reload(
                                             type = launch.type,
                                             videoId = effectiveVideoId,
+                                            parentMetaId = launch.parentMetaId,
                                             season = launch.seasonNumber,
                                             episode = launch.episodeNumber,
                                             manualSelection = launch.manualSelection,
@@ -1773,6 +1774,7 @@ private fun MainAppContent(
                                             StreamsRepository.reload(
                                                 type = launch.type,
                                                 videoId = effectiveVideoId,
+                                                parentMetaId = launch.parentMetaId,
                                                 season = launch.seasonNumber,
                                                 episode = launch.episodeNumber,
                                                 manualSelection = launch.manualSelection,

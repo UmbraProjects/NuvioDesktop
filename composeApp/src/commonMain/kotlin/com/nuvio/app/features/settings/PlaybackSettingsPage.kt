@@ -59,6 +59,7 @@ import com.nuvio.app.features.player.IosHardwareDecoderMode
 import com.nuvio.app.features.player.IosTargetPrimaries
 import com.nuvio.app.features.player.IosTargetTransfer
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.player.STREAM_AUTO_PLAY_TIMEOUT_VALUES
 import com.nuvio.app.features.player.SubtitleLanguageOption
 import com.nuvio.app.features.player.formatPlaybackSpeedLabel
 import com.nuvio.app.features.player.languageLabelForCode
@@ -365,7 +366,7 @@ private fun PlaybackSettingsSection(
                     val timeoutSec = autoPlayPlayerSettings.streamAutoPlayTimeoutSeconds
                     val timeoutLabel = when (timeoutSec) {
                         0 -> stringResource(Res.string.settings_playback_timeout_instant)
-                        11 -> stringResource(Res.string.settings_playback_timeout_unlimited)
+                        Int.MAX_VALUE -> stringResource(Res.string.settings_playback_timeout_unlimited)
                         else -> stringResource(Res.string.settings_playback_timeout_seconds, timeoutSec)
                     }
                     Column(
@@ -391,8 +392,11 @@ private fun PlaybackSettingsSection(
                             }
                             ValueBox(text = timeoutLabel, modifier = Modifier.wrapContentWidth())
                         }
-                        var sliderValue by remember(timeoutSec) { mutableFloatStateOf(timeoutSec.toFloat()) }
-                        var lastHapticStep by remember(timeoutSec) { mutableStateOf(timeoutSec.toFloat()) }
+                        val timeoutIndex = STREAM_AUTO_PLAY_TIMEOUT_VALUES.indexOf(timeoutSec)
+                            .coerceAtLeast(0)
+                        val maxIndex = (STREAM_AUTO_PLAY_TIMEOUT_VALUES.size - 1).toFloat()
+                        var sliderValue by remember(timeoutIndex) { mutableFloatStateOf(timeoutIndex.toFloat()) }
+                        var lastHapticStep by remember(timeoutIndex) { mutableStateOf(timeoutIndex.toFloat()) }
                         Slider(
                             value = sliderValue,
                             onValueChange = {
@@ -405,10 +409,11 @@ private fun PlaybackSettingsSection(
                                 }
                             },
                             onValueChangeFinished = {
-                                PlayerSettingsRepository.setStreamAutoPlayTimeoutSeconds(sliderValue.toInt())
+                                val index = sliderValue.toInt().coerceIn(0, STREAM_AUTO_PLAY_TIMEOUT_VALUES.size - 1)
+                                PlayerSettingsRepository.setStreamAutoPlayTimeoutSeconds(STREAM_AUTO_PLAY_TIMEOUT_VALUES[index])
                             },
-                            valueRange = 0f..11f,
-                            steps = calculateSteps(0f, 11f, 1f),
+                            valueRange = 0f..maxIndex,
+                            steps = calculateSteps(0f, maxIndex, 1f),
                             colors = SliderDefaults.colors(
                                 thumbColor = MaterialTheme.colorScheme.primary,
                                 activeTrackColor = MaterialTheme.colorScheme.primary,
@@ -658,6 +663,16 @@ private fun PlaybackSettingsSection(
                     isTablet = isTablet,
                     onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayPreferBingeGroup,
                 )
+                if (autoPlayPlayerSettings.streamAutoPlayPreferBingeGroup) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_reuse_binge_group),
+                        description = stringResource(Res.string.settings_playback_reuse_binge_group_description),
+                        checked = autoPlayPlayerSettings.streamAutoPlayReuseBingeGroup,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayReuseBingeGroup,
+                    )
+                }
                 SettingsGroupDivider(isTablet = isTablet)
                 var showThresholdModeDialog by remember { mutableStateOf(false) }
                 SettingsNavigationRow(
