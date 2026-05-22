@@ -46,6 +46,7 @@ import com.nuvio.app.features.debrid.toastMessage
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.AddonResource
 import com.nuvio.app.features.addons.ManagedAddon
+import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.details.MetaVideo
@@ -1166,6 +1167,7 @@ fun PlayerScreen(
                 )
 
                 val installedAddonNames = AddonRepository.uiState.value.addons
+                    .enabledAddons()
                     .map { it.displayTitle }
                     .toSet()
                 val debridSettings = DebridSettingsRepository.snapshot()
@@ -2289,7 +2291,7 @@ private fun buildAddonSubtitleFetchKey(
 ): String? {
     val normalizedType = type?.takeIf { it.isNotBlank() } ?: return null
     val normalizedVideoId = videoId?.takeIf { it.isNotBlank() } ?: return null
-    val compatibleSubtitleAddons = addons.mapNotNull { addon ->
+    val compatibleSubtitleAddons = addons.enabledAddons().mapNotNull { addon ->
         val manifest = addon.manifest ?: return@mapNotNull null
         val supportsSubtitles = manifest.resources.any { resource ->
             resource.isCompatibleSubtitleResource(

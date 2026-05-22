@@ -201,6 +201,8 @@ object WatchedRepository {
         todayIsoDate: String,
         isEpisodeCompleted: (com.nuvio.app.features.details.MetaVideo) -> Boolean = { false },
     ) {
+        if (!meta.type.isSeriesLikeWatchedType()) return
+
         ensureLoaded()
         val shouldMarkSeriesWatched = meta.hasWatchedAllMainSeasonEpisodes(todayIsoDate) { episode ->
             isWatched(
@@ -211,11 +213,12 @@ object WatchedRepository {
             ) || isEpisodeCompleted(episode)
         }
         val seriesWatchedItem = meta.toSeriesWatchedItem()
+        val hasSeriesWatchedMarker = isWatched(id = meta.id, type = meta.type)
         if (shouldMarkSeriesWatched) {
-            if (!isWatched(id = meta.id, type = meta.type)) {
+            if (!hasSeriesWatchedMarker) {
                 markWatched(seriesWatchedItem)
             }
-        } else if (isWatched(id = meta.id, type = meta.type)) {
+        } else if (hasSeriesWatchedMarker) {
             unmarkWatched(seriesWatchedItem)
         }
     }
@@ -355,3 +358,6 @@ internal fun shouldUseTraktWatchedSync(
     isAuthenticated = isAuthenticated,
     source = source,
 )
+
+private fun String.isSeriesLikeWatchedType(): Boolean =
+    trim().lowercase() in setOf("series", "show", "tv", "tvshow")

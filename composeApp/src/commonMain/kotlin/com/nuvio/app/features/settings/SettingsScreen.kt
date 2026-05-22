@@ -59,6 +59,7 @@ import com.nuvio.app.features.details.MetaScreenSettingsUiState
 import com.nuvio.app.core.ui.PosterCardStyleRepository
 import com.nuvio.app.core.ui.PosterCardStyleUiState
 import com.nuvio.app.features.collection.CollectionRepository
+import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.debrid.DebridSettings
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
@@ -157,10 +158,11 @@ fun SettingsScreen(
             AddonRepository.uiState
         }.collectAsStateWithLifecycle()
         val homescreenCatalogRefreshKey = remember(addonsUiState.addons) {
-            val allManifestsSettled = addonsUiState.addons.isNotEmpty() &&
-                addonsUiState.addons.none { it.isRefreshing }
+            val enabledAddons = addonsUiState.addons.enabledAddons()
+            val allManifestsSettled = enabledAddons.isNotEmpty() &&
+                enabledAddons.none { it.isRefreshing }
             if (!allManifestsSettled) return@remember emptyList<String>()
-            addonsUiState.addons.mapNotNull { addon ->
+            enabledAddons.mapNotNull { addon ->
                 val manifest = addon.manifest ?: return@mapNotNull null
                 buildString {
                     append(manifest.transportUrl)
@@ -195,7 +197,7 @@ fun SettingsScreen(
 
         LaunchedEffect(homescreenCatalogRefreshKey) {
             if (homescreenCatalogRefreshKey.isEmpty()) return@LaunchedEffect
-            HomeCatalogSettingsRepository.syncCatalogs(addonsUiState.addons)
+            HomeCatalogSettingsRepository.syncCatalogs(addonsUiState.addons.enabledAddons())
         }
 
         LaunchedEffect(Unit) {

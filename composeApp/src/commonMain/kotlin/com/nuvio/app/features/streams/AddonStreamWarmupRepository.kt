@@ -5,6 +5,7 @@ import com.nuvio.app.features.addons.AddonManifest
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.addons.buildAddonResourceUrl
+import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.debrid.DebridSettings
 import com.nuvio.app.features.debrid.DebridSettingsRepository
@@ -213,6 +214,7 @@ object AddonStreamWarmupRepository {
 
         AddonRepository.initialize()
         val addonTargets = AddonRepository.uiState.value.addons
+            .enabledAddons()
             .mapNotNull { addon -> addon.toWarmupTarget(normalizedType, normalizedVideoId) }
         if (addonTargets.isEmpty()) return null
 

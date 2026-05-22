@@ -25,6 +25,7 @@
     <string name="addons_badge_active">Active</string>
     <string name="addons_badge_catalogs">%1$d catalogs</string>
     <string name="addons_badge_configurable">Configurable</string>
+    <string name="addons_badge_disabled">Disabled</string>
     <string name="addons_badge_refreshing">Refreshing</string>
     <string name="addons_badge_resources">%1$d resources</string>
     <string name="addons_badge_unavailable">Unavailable</string>
