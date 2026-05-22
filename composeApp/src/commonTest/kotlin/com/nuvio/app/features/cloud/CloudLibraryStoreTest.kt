@@ -131,6 +131,59 @@ class CloudLibraryStoreTest {
     }
 
     @Test
+    fun `resolve playback reuses already resolved file url`() = runBlocking {
+        val provider = cloudProvider(id = "premiumize", name = "Premiumize")
+        val api = FakeCloudProviderApi(
+            provider = provider,
+            items = emptyList(),
+        )
+        val store = CloudLibraryStore(
+            credentialsProvider = {
+                listOf(DebridServiceCredential(provider, "token"))
+            },
+            providerApis = listOf(api),
+        )
+        val item = cloudItem(provider, "ready")
+        val file = item.playableFiles.single().copy(playbackUrl = "https://cached.example/video.mkv")
+
+        val result = store.resolvePlayback(item = item, file = file)
+
+        assertTrue(result is CloudLibraryPlaybackResult.Success)
+        assertEquals("https://cached.example/video.mkv", result.url)
+        assertEquals(0, api.resolvePlaybackCalls)
+    }
+
+    @Test
+    fun `resolved playback url is remembered in cloud library state`() {
+        val provider = cloudProvider(id = "torbox", name = "TorBox")
+        val item = cloudItem(provider, "29773238")
+        val file = item.playableFiles.single()
+        val state = CloudLibraryUiState(
+            isLoaded = true,
+            providers = listOf(
+                CloudLibraryProviderState(
+                    provider = provider,
+                    items = listOf(item),
+                ),
+            ),
+        )
+
+        val updated = state.withResolvedPlaybackUrl(
+            item = item,
+            file = file,
+            url = "https://resolved.example/movie.mkv",
+        )
+
+        val target = assertNotNull(
+            updated.findPlaybackTargetForProgress(
+                contentId = item.stableKey,
+                videoId = item.playbackVideoId(file),
+            ),
+        )
+        assertEquals("https://resolved.example/movie.mkv", target.file.playbackUrl)
+    }
+
+    @Test
     fun `provider poster urls are mapped for cloud services`() {
         assertEquals(
             TorboxCloudLibraryPosterUrl,
@@ -155,6 +208,9 @@ private class FakeCloudProviderApi(
     override val provider: DebridProvider,
     private val items: List<CloudLibraryItem>,
 ) : CloudLibraryProviderApi {
+    var resolvePlaybackCalls: Int = 0
+        private set
+
     override suspend fun listItems(apiKey: String): Result<List<CloudLibraryItem>> =
         Result.success(items)
 
@@ -162,8 +218,10 @@ private class FakeCloudProviderApi(
         apiKey: String,
         item: CloudLibraryItem,
         file: CloudLibraryFile,
-    ): CloudLibraryPlaybackResult =
-        CloudLibraryPlaybackResult.Success(url = "https://example.test/${item.id}/${file.id}")
+    ): CloudLibraryPlaybackResult {
+        resolvePlaybackCalls += 1
+        return CloudLibraryPlaybackResult.Success(url = "https://example.test/${item.id}/${file.id}")
+    }
 }
 
 private fun cloudProvider(id: String, name: String): DebridProvider =

@@ -64,6 +64,13 @@ internal class CloudLibraryStore(
             ?: return CloudLibraryPlaybackResult.MissingCredentials
         val api = providerApis.firstOrNull { it.provider.id == item.providerId }
             ?: return CloudLibraryPlaybackResult.Failed()
+        file.playbackUrl?.takeIf { it.isNotBlank() }?.let { url ->
+            return CloudLibraryPlaybackResult.Success(
+                url = url,
+                filename = file.name.takeIf { it.isNotBlank() },
+                videoSizeBytes = file.sizeBytes,
+            )
+        }
         return api.resolvePlayback(
             apiKey = credential.apiKey,
             item = item,
@@ -186,7 +193,26 @@ object CloudLibraryRepository {
         if (!DebridSettingsRepository.snapshot().cloudLibraryEnabled) {
             return CloudLibraryPlaybackResult.Failed("Cloud library is disabled.")
         }
-        return store.resolvePlayback(item, file)
+        val result = store.resolvePlayback(item, file)
+        if (result is CloudLibraryPlaybackResult.Success) {
+            rememberResolvedPlaybackUrl(item = item, file = file, url = result.url)
+        }
+        return result
+    }
+
+    private fun rememberResolvedPlaybackUrl(
+        item: CloudLibraryItem,
+        file: CloudLibraryFile,
+        url: String,
+    ) {
+        if (url.isBlank()) return
+        _uiState.update { current ->
+            current.withResolvedPlaybackUrl(
+                item = item,
+                file = file,
+                url = url,
+            )
+        }
     }
 
     private fun connectedCloudCredentials(): List<DebridServiceCredential> =
@@ -247,4 +273,36 @@ internal fun CloudLibraryUiState.findPlaybackTargetForProgress(
     val singleItem = matchingItems.singleOrNull() ?: return null
     val singleFile = singleItem.playableFiles.singleOrNull() ?: return null
     return CloudLibraryPlaybackTarget(item = singleItem, file = singleFile)
+}
+
+internal fun CloudLibraryUiState.withResolvedPlaybackUrl(
+    item: CloudLibraryItem,
+    file: CloudLibraryFile,
+    url: String,
+): CloudLibraryUiState {
+    val normalizedUrl = url.trim().takeIf { it.isNotBlank() } ?: return this
+    val targetItemKey = item.stableKey
+    val targetFileKey = file.stableKey
+    var didUpdate = false
+    val updatedProviders = providers.map { providerState ->
+        if (providerState.providerId != item.providerId) return@map providerState
+        val updatedItems = providerState.items.map { candidateItem ->
+            if (candidateItem.stableKey != targetItemKey) return@map candidateItem
+            val updatedFiles = candidateItem.files.map { candidateFile ->
+                if (candidateFile.stableKey != targetFileKey) {
+                    candidateFile
+                } else {
+                    didUpdate = true
+                    candidateFile.copy(playbackUrl = normalizedUrl)
+                }
+            }
+            candidateItem.copy(files = updatedFiles)
+        }
+        providerState.copy(items = updatedItems)
+    }
+    return if (didUpdate) {
+        copy(providers = updatedProviders)
+    } else {
+        this
+    }
 }
