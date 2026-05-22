@@ -59,6 +59,8 @@ import com.nuvio.app.features.details.MetaScreenSettingsUiState
 import com.nuvio.app.core.ui.PosterCardStyleRepository
 import com.nuvio.app.core.ui.PosterCardStyleUiState
 import com.nuvio.app.features.collection.CollectionRepository
+import com.nuvio.app.features.debrid.DebridSettings
+import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.mdblist.MdbListSettings
@@ -131,6 +133,10 @@ fun SettingsScreen(
         val mdbListSettings by remember {
             MdbListSettingsRepository.ensureLoaded()
             MdbListSettingsRepository.uiState
+        }.collectAsStateWithLifecycle()
+        val debridSettings by remember {
+            DebridSettingsRepository.ensureLoaded()
+            DebridSettingsRepository.uiState
         }.collectAsStateWithLifecycle()
         val traktAuthUiState by remember {
             TraktAuthRepository.ensureLoaded()
@@ -251,6 +257,7 @@ fun SettingsScreen(
                 episodeReleaseNotificationsUiState = episodeReleaseNotificationsUiState,
                 tmdbSettings = tmdbSettings,
                 mdbListSettings = mdbListSettings,
+                debridSettings = debridSettings,
                 traktAuthUiState = traktAuthUiState,
                 traktCommentsEnabled = traktCommentsEnabled,
                 traktSettingsUiState = traktSettingsUiState,
@@ -299,6 +306,7 @@ fun SettingsScreen(
                 episodeReleaseNotificationsUiState = episodeReleaseNotificationsUiState,
                 tmdbSettings = tmdbSettings,
                 mdbListSettings = mdbListSettings,
+                debridSettings = debridSettings,
                 traktAuthUiState = traktAuthUiState,
                 traktCommentsEnabled = traktCommentsEnabled,
                 traktSettingsUiState = traktSettingsUiState,
@@ -357,6 +365,7 @@ private fun MobileSettingsScreen(
     episodeReleaseNotificationsUiState: EpisodeReleaseNotificationsUiState,
     tmdbSettings: TmdbSettings,
     mdbListSettings: MdbListSettings,
+    debridSettings: DebridSettings,
     traktAuthUiState: TraktAuthUiState,
     traktCommentsEnabled: Boolean,
     traktSettingsUiState: TraktSettingsUiState,
@@ -571,6 +580,7 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                     onTmdbClick = { onPageChange(SettingsPage.TmdbEnrichment) },
                     onMdbListClick = { onPageChange(SettingsPage.MdbListRatings) },
+                    onDebridClick = { onPageChange(SettingsPage.Debrid) },
                 )
                 SettingsPage.TmdbEnrichment -> tmdbSettingsContent(
                     isTablet = false,
@@ -579,6 +589,10 @@ private fun MobileSettingsScreen(
                 SettingsPage.MdbListRatings -> mdbListSettingsContent(
                     isTablet = false,
                     settings = mdbListSettings,
+                )
+                SettingsPage.Debrid -> debridSettingsContent(
+                    isTablet = false,
+                    settings = debridSettings,
                 )
                 SettingsPage.TraktAuthentication -> traktSettingsContent(
                     isTablet = false,
@@ -665,6 +679,7 @@ private fun TabletSettingsScreen(
     episodeReleaseNotificationsUiState: EpisodeReleaseNotificationsUiState,
     tmdbSettings: TmdbSettings,
     mdbListSettings: MdbListSettings,
+    debridSettings: DebridSettings,
     traktAuthUiState: TraktAuthUiState,
     traktCommentsEnabled: Boolean,
     traktSettingsUiState: TraktSettingsUiState,
@@ -937,6 +952,7 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         onTmdbClick = { onPageChange(SettingsPage.TmdbEnrichment) },
                         onMdbListClick = { onPageChange(SettingsPage.MdbListRatings) },
+                        onDebridClick = { onPageChange(SettingsPage.Debrid) },
                     )
                     SettingsPage.TmdbEnrichment -> tmdbSettingsContent(
                         isTablet = true,
@@ -945,6 +961,10 @@ private fun TabletSettingsScreen(
                     SettingsPage.MdbListRatings -> mdbListSettingsContent(
                         isTablet = true,
                         settings = mdbListSettings,
+                    )
+                    SettingsPage.Debrid -> debridSettingsContent(
+                        isTablet = true,
+                        settings = debridSettings,
                     )
                     SettingsPage.TraktAuthentication -> traktSettingsContent(
                         isTablet = true,

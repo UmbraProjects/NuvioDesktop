@@ -15,15 +15,19 @@ object StreamAutoPlaySelector {
             }
         }
 
-        if (installedOrder.isEmpty()) return groups
+        val (directDebridEntries, remainingEntries) = groups.partition { group ->
+            group.addonId.startsWith("debrid:") ||
+                group.streams.any { stream -> stream.isDirectDebridStream }
+        }
+        if (installedOrder.isEmpty()) return directDebridEntries + remainingEntries
 
-        val (addonEntries, pluginEntries) = groups.partition { group ->
+        val (addonEntries, pluginEntries) = remainingEntries.partition { group ->
             group.addonName in addonRankByName
         }
         val orderedAddons = addonEntries.sortedBy { group ->
             addonRankByName.getValue(group.addonName)
         }
-        return orderedAddons + pluginEntries
+        return directDebridEntries + orderedAddons + pluginEntries
     }
 
     fun selectAutoPlayStream(
@@ -119,5 +123,5 @@ object StreamAutoPlaySelector {
     }
 
     private fun StreamItem.isAutoPlayable(): Boolean =
-        directPlaybackUrl != null
+        directPlaybackUrl != null || isDirectDebridStream
 }
