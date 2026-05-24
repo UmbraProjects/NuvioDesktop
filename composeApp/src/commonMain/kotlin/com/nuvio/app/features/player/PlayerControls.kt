@@ -308,7 +308,7 @@ private fun PlayerHeader(
                     if (onSubmitIntroClick != null) {
                         PlayerHeaderIconButton(
                             icon = Icons.Rounded.Flag,
-                            contentDescription = "Submit Intro",
+                            contentDescription = stringResource(Res.string.submit_intro_action),
                             buttonSize = metrics.headerIconSize + 16.dp,
                             iconSize = metrics.headerIconSize,
                             onClick = onSubmitIntroClick,

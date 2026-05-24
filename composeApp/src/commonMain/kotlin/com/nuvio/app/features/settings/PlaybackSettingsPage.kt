@@ -2310,6 +2310,7 @@ private fun IntroDbApiKeyDialog(
     var value by remember { mutableStateOf(initialValue) }
     var isVerifying by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val invalidKeyMessage = stringResource(Res.string.settings_playback_introdb_invalid_key)
 
     BasicAlertDialog(onDismissRequest = { if (!isVerifying) onDismiss() }) {
         Surface(
@@ -2378,7 +2379,7 @@ private fun IntroDbApiKeyDialog(
                                 if (isValid) {
                                     onSave(trimmed)
                                 } else {
-                                    errorMessage = "Invalid API Key or connection failed"
+                                    errorMessage = invalidKeyMessage
                                 }
                             }
                         },
