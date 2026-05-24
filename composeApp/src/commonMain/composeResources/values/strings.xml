@@ -1584,4 +1584,17 @@
     <string name="downloads_error_open_partial_file_failed">Failed to open partial download file</string>
     <string name="downloads_error_partial_file_not_open">Partial download file is not open</string>
     <string name="downloads_error_write_partial_file_failed">Failed to write partial download file</string>
+    <string name="details_runtime_hours_minutes">%1$dh %2$dm</string>
+    <string name="details_runtime_hours_only">%1$dh</string>
+    <string name="details_runtime_minutes_only">%1$dm</string>
+    <string name="search_error_no_results_for_catalog">No search results returned for %1$s.</string>
+    <string name="plugins_repository_already_installed">That plugin repository is already installed.</string>
+    <string name="plugins_repository_install_failed">Unable to install plugin repository</string>
+    <string name="plugins_repository_refresh_failed">Unable to refresh repository</string>
+    <string name="plugins_manifest_name_missing">Manifest name is missing.</string>
+    <string name="plugins_manifest_version_missing">Manifest version is missing.</string>
+    <string name="plugins_manifest_no_providers">Manifest has no providers.</string>
+    <string name="addons_manifest_missing_field">Manifest missing \"%1$s\"</string>
+    <string name="player_error_mpv_unavailable">MPV player engine not available. Please rebuild the app.</string>
+    <string name="player_error_unable_to_play_stream">Unable to play this stream.</string>
 </resources>
