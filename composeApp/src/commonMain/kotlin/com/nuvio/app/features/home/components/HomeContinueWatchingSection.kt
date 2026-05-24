@@ -50,6 +50,8 @@ import com.nuvio.app.features.cloud.cloudLibraryDisplayArtworkUrl
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
+import com.nuvio.app.features.watchprogress.CurrentDateProvider
+import com.nuvio.app.features.watchprogress.computeAirDateBadgeText
 import kotlin.math.roundToInt
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -60,12 +62,8 @@ private fun continueWatchingProgressPercent(progressFraction: Float): Int =
 @Composable
 private fun localizedContinueWatchingMetaLine(item: ContinueWatchingItem): String =
     when {
-        item.seasonNumber != null && item.episodeNumber != null && item.isNextUp ->
-            stringResource(Res.string.continue_watching_up_next_episode, item.seasonNumber, item.episodeNumber)
         item.seasonNumber != null && item.episodeNumber != null ->
             stringResource(Res.string.compose_player_episode_code_full, item.seasonNumber, item.episodeNumber)
-        item.isNextUp ->
-            stringResource(Res.string.continue_watching_up_next)
         item.isCloudLibraryItem() ->
             stringResource(Res.string.library_source_cloud)
         else ->
@@ -430,6 +428,7 @@ private fun ContinueWatchingWideCard(
                 .padding(layout.wideContentPadding),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
+            val isCompact = layout.wideCardWidth < 350.dp
             val wideMetaLine = localizedContinueWatchingMetaLine(item)
             val episodeTitle = item.episodeTitle?.trim()?.takeIf { it.isNotBlank() }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -450,7 +449,18 @@ private fun ContinueWatchingWideCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (item.progressFraction <= 0f && item.seasonNumber != null && item.episodeNumber != null) {
-                        UpNextBadge(compact = false, textSize = layout.wideBadgeTextSize)
+                        val todayIsoDate = CurrentDateProvider.todayIsoDate()
+                        val badgeText = when {
+                            item.isReleaseAlert -> {
+                                if (item.isNewSeasonRelease) stringResource(Res.string.cw_new_season)
+                                else stringResource(Res.string.cw_new_episode)
+                            }
+                            else -> {
+                                computeAirDateBadgeText(item.released, todayIsoDate, compact = isCompact)
+                                    ?: stringResource(Res.string.home_continue_watching_up_next)
+                            }
+                        }
+                        UpNextBadge(text = badgeText, compact = isCompact, textSize = layout.wideBadgeTextSize)
                     }
                 }
                 Text(
@@ -550,7 +560,18 @@ private fun ContinueWatchingPosterCard(
                         .align(Alignment.TopEnd)
                         .padding(8.dp),
                 ) {
-                    UpNextBadge(compact = true, textSize = layout.posterBadgeTextSize)
+                    val todayIsoDate = CurrentDateProvider.todayIsoDate()
+                    val badgeText = when {
+                        item.isReleaseAlert -> {
+                            if (item.isNewSeasonRelease) stringResource(Res.string.cw_new_season)
+                            else stringResource(Res.string.cw_new_episode)
+                        }
+                        else -> {
+                            computeAirDateBadgeText(item.released, todayIsoDate, compact = true)
+                                ?: stringResource(Res.string.home_continue_watching_up_next)
+                        }
+                    }
+                    UpNextBadge(text = badgeText, compact = true, textSize = layout.posterBadgeTextSize)
                 }
             }
             if (item.progressFraction > 0f) {
@@ -644,6 +665,7 @@ private fun ArtworkPanel(
 
 @Composable
 private fun UpNextBadge(
+    text: String,
     compact: Boolean,
     textSize: androidx.compose.ui.unit.TextUnit,
 ) {
@@ -660,7 +682,7 @@ private fun UpNextBadge(
             ),
     ) {
         Text(
-            text = stringResource(Res.string.home_continue_watching_up_next),
+            text = text,
             style = MaterialTheme.typography.labelSmall.copy(
                 fontSize = textSize,
                 fontWeight = FontWeight.Bold,

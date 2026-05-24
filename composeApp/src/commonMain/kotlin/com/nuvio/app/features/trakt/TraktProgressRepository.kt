@@ -58,6 +58,8 @@ object TraktProgressRepository {
     private val _uiState = MutableStateFlow(TraktProgressUiState())
     val uiState: StateFlow<TraktProgressUiState> = _uiState.asStateFlow()
 
+    private val hiddenProgressShowIds = MutableStateFlow<Set<String>>(emptySet())
+
     private var hasLoaded = false
     private var refreshRequestId: Long = 0L
     private val refreshJobMutex = Mutex()
@@ -68,9 +70,23 @@ object TraktProgressRepository {
         hasLoaded = true
     }
 
+    fun isShowHiddenFromProgress(contentId: String): Boolean {
+        val ids = hiddenProgressShowIds.value
+        if (ids.isEmpty()) return false
+        val parsed = parseTraktContentIds(contentId)
+        val keys = buildList {
+            add(contentId)
+            parsed.imdb?.takeIf { it.isNotBlank() }?.let { add(it) }
+            parsed.tmdb?.let { add("tmdb:$it") }
+            parsed.trakt?.let { add("trakt:$it") }
+        }
+        return keys.any { ids.contains(it) }
+    }
+
     fun onProfileChanged() {
         invalidateInFlightRefreshes()
         hasLoaded = false
+        hiddenProgressShowIds.value = emptySet()
         _uiState.value = TraktProgressUiState()
         ensureLoaded()
     }
@@ -78,6 +94,7 @@ object TraktProgressRepository {
     fun clearLocalState() {
         invalidateInFlightRefreshes()
         hasLoaded = false
+        hiddenProgressShowIds.value = emptySet()
         _uiState.value = TraktProgressUiState()
     }
 
@@ -147,7 +164,11 @@ object TraktProgressRepository {
             coroutineScope {
                 val history = async { fetchHistoryEntries(headers) }
                 val watchedShowSeeds = async { fetchWatchedShowSeedEntries(headers) }
-                history.await() + watchedShowSeeds.await()
+                val hiddenShows = async { fetchHiddenShowIds(headers) }
+                
+                val list = history.await() + watchedShowSeeds.await()
+                hiddenProgressShowIds.value = hiddenShows.await()
+                list
             }
         }.onFailure { error ->
             if (error is CancellationException) throw error
@@ -319,6 +340,35 @@ object TraktProgressRepository {
             }
 
         refreshNow()
+    }
+
+    private suspend fun fetchHiddenShowIds(headers: Map<String, String>): Set<String> {
+        val allIds = mutableSetOf<String>()
+        var page = 1
+        val limit = 1000
+        while (true) {
+            val payload = runCatching {
+                httpGetTextWithHeaders(
+                    url = "$BASE_URL/users/hidden/dropped?type=show&page=$page&limit=$limit",
+                    headers = headers,
+                )
+            }.getOrNull() ?: break
+
+            val items = runCatching {
+                json.decodeFromString<List<TraktHiddenItem>>(payload)
+            }.getOrNull() ?: break
+
+            if (items.isEmpty()) break
+            for (item in items) {
+                val ids = item.show?.ids ?: continue
+                ids.imdb?.takeIf { it.isNotBlank() }?.let { allIds.add(it) }
+                ids.tmdb?.let { allIds.add("tmdb:$it") }
+                ids.trakt?.let { allIds.add("trakt:$it") }
+            }
+            if (items.size < limit) break
+            page++
+        }
+        return allIds
     }
 
     private suspend fun fetchPlaybackEntries(headers: Map<String, String>): List<WatchProgressEntry> = withContext(Dispatchers.Default) {
@@ -861,4 +911,12 @@ private data class TraktEpisode(
     @SerialName("season") val season: Int? = null,
     @SerialName("number") val number: Int? = null,
     @SerialName("ids") val ids: TraktExternalIds? = null,
+)
+
+@Serializable
+private data class TraktHiddenItem(
+    @SerialName("hidden_at") val hiddenAt: String? = null,
+    @SerialName("type") val type: String? = null,
+    @SerialName("show") val show: TraktMedia? = null,
+    @SerialName("movie") val movie: TraktMedia? = null,
 )
