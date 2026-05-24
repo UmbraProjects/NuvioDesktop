@@ -1269,7 +1269,7 @@ private fun TmdbSourcePickerScreen(
                                 label = stringResource(Res.string.collections_editor_tmdb_country),
                                 helper = stringResource(Res.string.collections_editor_tmdb_country_helper),
                                 value = state.tmdbFilters.withOriginCountry.orEmpty(),
-                                placeholder = stringResource(Res.string.collections_editor_watch_region_placeholder),
+                                placeholder = stringResource(Res.string.collections_editor_tmdb_country_placeholder),
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(withOriginCountry = value.ifBlank { null })

@@ -747,9 +747,7 @@ object CollectionEditorRepository {
                 return@launch
             }
 
-            val title = state.traktTitleInput.ifBlank {
-                resolved.title ?: getString(Res.string.collections_editor_trakt_fallback_title, listId)
-            }
+            val title = state.traktTitleInput.ifBlank { resolved.title ?: "Trakt List $listId" }
             addTraktSourcesToFolder(
                 sources = selectedTraktMediaTypes(state).map { mediaType ->
                     CollectionSource(

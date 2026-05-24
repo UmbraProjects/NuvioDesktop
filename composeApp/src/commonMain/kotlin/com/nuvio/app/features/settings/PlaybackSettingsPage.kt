@@ -2381,7 +2381,7 @@ private fun IntroDbApiKeyDialog(
                                 if (isValid) {
                                     onSave(trimmed)
                                 } else {
-                                    errorMessage = getString(Res.string.settings_playback_introdb_invalid_api_key)
+                                    errorMessage = invalidKeyMessage
                                 }
                             }
                         },
