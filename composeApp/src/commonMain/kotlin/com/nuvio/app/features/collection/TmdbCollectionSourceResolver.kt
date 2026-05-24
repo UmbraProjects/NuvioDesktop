@@ -14,17 +14,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.collections_tmdb_api_key_required
-import nuvio.composeapp.generated.resources.collections_tmdb_collection_not_found
-import nuvio.composeapp.generated.resources.collections_tmdb_company_not_found
-import nuvio.composeapp.generated.resources.collections_tmdb_discover_no_data
-import nuvio.composeapp.generated.resources.collections_tmdb_list_not_found
-import nuvio.composeapp.generated.resources.collections_tmdb_missing_collection_id
-import nuvio.composeapp.generated.resources.collections_tmdb_missing_list_id
-import nuvio.composeapp.generated.resources.collections_tmdb_missing_person_id
-import nuvio.composeapp.generated.resources.collections_tmdb_network_not_found
-import nuvio.composeapp.generated.resources.collections_tmdb_person_credits_not_found
-import nuvio.composeapp.generated.resources.collections_tmdb_person_not_found
+import nuvio.composeapp.generated.resources.collections_editor_tmdb_discover
 import org.jetbrains.compose.resources.getString
 import kotlin.math.roundToInt
 
@@ -113,7 +103,7 @@ object TmdbCollectionSourceResolver {
                     )
                 }
 
-                TmdbCollectionSourceType.DISCOVER -> TmdbSourceImportMetadata(title = "TMDB Discover")
+                TmdbCollectionSourceType.DISCOVER -> TmdbSourceImportMetadata(title = getString(Res.string.collections_editor_tmdb_discover))
             }
         }
 

@@ -1269,7 +1269,7 @@ private fun TmdbSourcePickerScreen(
                                 label = stringResource(Res.string.collections_editor_tmdb_country),
                                 helper = stringResource(Res.string.collections_editor_tmdb_country_helper),
                                 value = state.tmdbFilters.withOriginCountry.orEmpty(),
-                                placeholder = stringResource(Res.string.collections_editor_tmdb_country_placeholder),
+                                placeholder = stringResource(Res.string.collections_editor_watch_region_placeholder),
                                 onValueChange = { value ->
                                     CollectionEditorRepository.updateTmdbFilters {
                                         it.copy(withOriginCountry = value.ifBlank { null })
@@ -1387,9 +1387,9 @@ private fun TmdbSourcePickerScreen(
                                 chips = listOf(
                                     stringResource(Res.string.collections_editor_tmdb_country_us) to "US",
                                     stringResource(Res.string.collections_editor_tmdb_country_uk) to "GB",
-                                    "Canada" to "CA",
-                                    "Australia" to "AU",
-                                    "Germany" to "DE",
+                                    stringResource(Res.string.collections_editor_tmdb_country_ca) to "CA",
+                                    stringResource(Res.string.collections_editor_tmdb_country_au) to "AU",
+                                    stringResource(Res.string.collections_editor_tmdb_country_de) to "DE",
                                 ),
                                 onSelect = { value ->
                                     CollectionEditorRepository.updateTmdbFilters { it.copy(watchRegion = value) }

@@ -11,25 +11,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.collections_editor_tmdb_collection_title_format
-import nuvio.composeapp.generated.resources.collections_editor_tmdb_director_title_format
-import nuvio.composeapp.generated.resources.collections_editor_tmdb_discover_title
-import nuvio.composeapp.generated.resources.collections_editor_tmdb_invalid_id_or_url
-import nuvio.composeapp.generated.resources.collections_editor_tmdb_list_title_format
-import nuvio.composeapp.generated.resources.collections_editor_tmdb_network_title_format
-import nuvio.composeapp.generated.resources.collections_editor_tmdb_person_title_format
-import nuvio.composeapp.generated.resources.collections_editor_tmdb_production_title_format
-import nuvio.composeapp.generated.resources.collections_editor_tmdb_source_load_failed
-import nuvio.composeapp.generated.resources.collections_editor_trakt_enter_id_or_url
-import nuvio.composeapp.generated.resources.collections_editor_trakt_enter_name_url_or_id
-import nuvio.composeapp.generated.resources.collections_editor_trakt_fallback_title
-import nuvio.composeapp.generated.resources.collections_editor_trakt_load_failed
+import nuvio.composeapp.generated.resources.collections_editor_media_movies_suffix
+import nuvio.composeapp.generated.resources.collections_editor_media_series_suffix
+import nuvio.composeapp.generated.resources.collections_editor_resolved_trakt_list
+import nuvio.composeapp.generated.resources.collections_editor_tmdb_discover
+import nuvio.composeapp.generated.resources.collections_editor_tmdb_invalid_id_error
+import nuvio.composeapp.generated.resources.collections_editor_tmdb_load_error
+import nuvio.composeapp.generated.resources.collections_editor_trakt_id_url_required
+import nuvio.composeapp.generated.resources.collections_editor_trakt_input_required
+import nuvio.composeapp.generated.resources.collections_editor_trakt_load_error
 import nuvio.composeapp.generated.resources.collections_editor_trakt_no_lists_found
-import nuvio.composeapp.generated.resources.collections_editor_trakt_resolved_subtitle
-import nuvio.composeapp.generated.resources.media_movies
-import nuvio.composeapp.generated.resources.media_series
 import org.jetbrains.compose.resources.getString
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -414,23 +406,25 @@ object CollectionEditorRepository {
         val state = _uiState.value
         val query = state.traktInput.trim()
         if (query.isBlank()) {
-            _uiState.value = state.copy(
-                traktSearchError = runBlocking { getString(Res.string.collections_editor_trakt_enter_name_url_or_id) },
-            )
+            scope.launch {
+                _uiState.value = _uiState.value.copy(
+                    traktSearchError = getString(Res.string.collections_editor_trakt_input_required),
+                )
+            }
             return
         }
 
         scope.launch {
+            val loadErrorMessage = getString(Res.string.collections_editor_trakt_load_error)
             val results = if (query.isTraktListIdentifierInput()) {
                 runCatching {
                     val metadata = TraktPublicListSourceResolver.listImportMetadata(query)
-                    val id = metadata.traktListId
-                        ?: error(getString(Res.string.collections_editor_trakt_load_failed))
+                    val id = metadata.traktListId ?: error(loadErrorMessage)
                     listOf(
                         TraktPublicListSearchResult(
                             traktListId = id,
-                            title = metadata.title ?: getString(Res.string.collections_editor_trakt_fallback_title, id),
-                            subtitle = getString(Res.string.collections_editor_trakt_resolved_subtitle),
+                            title = metadata.title ?: "Trakt List $id",
+                            subtitle = getString(Res.string.collections_editor_resolved_trakt_list),
                             coverImageUrl = metadata.coverImageUrl,
                         ),
                     )
@@ -647,45 +641,46 @@ object CollectionEditorRepository {
         }
         val id = TmdbCollectionSourceResolver.parseTmdbId(state.tmdbInput)
         if (sourceType != TmdbCollectionSourceType.DISCOVER && id == null) {
-            _uiState.value = state.copy(
-                tmdbSearchError = runBlocking { getString(Res.string.collections_editor_tmdb_invalid_id_or_url) },
-            )
+            scope.launch {
+                _uiState.value = _uiState.value.copy(
+                    tmdbSearchError = getString(Res.string.collections_editor_tmdb_invalid_id_error),
+                )
+            }
             return
         }
         val mediaTypes = selectedMediaTypes(state, sourceType)
-        val baseTitle = state.tmdbTitleInput.ifBlank {
-            runBlocking {
-                val idArg = id?.toString().orEmpty()
+        scope.launch {
+            val moviesSuffix = getString(Res.string.collections_editor_media_movies_suffix)
+            val seriesSuffix = getString(Res.string.collections_editor_media_series_suffix)
+            val baseTitle = state.tmdbTitleInput.ifBlank {
                 when (sourceType) {
-                    TmdbCollectionSourceType.LIST -> getString(Res.string.collections_editor_tmdb_list_title_format, idArg).trim()
-                    TmdbCollectionSourceType.COLLECTION -> getString(Res.string.collections_editor_tmdb_collection_title_format, idArg).trim()
-                    TmdbCollectionSourceType.COMPANY -> getString(Res.string.collections_editor_tmdb_production_title_format, idArg).trim()
-                    TmdbCollectionSourceType.NETWORK -> getString(Res.string.collections_editor_tmdb_network_title_format, idArg).trim()
-                    TmdbCollectionSourceType.PERSON -> getString(Res.string.collections_editor_tmdb_person_title_format, idArg).trim()
-                    TmdbCollectionSourceType.DIRECTOR -> getString(Res.string.collections_editor_tmdb_director_title_format, idArg).trim()
-                    TmdbCollectionSourceType.DISCOVER -> getString(Res.string.collections_editor_tmdb_discover_title)
+                    TmdbCollectionSourceType.LIST -> "TMDB List ${id ?: ""}".trim()
+                    TmdbCollectionSourceType.COLLECTION -> "TMDB Collection ${id ?: ""}".trim()
+                    TmdbCollectionSourceType.COMPANY -> "TMDB Production ${id ?: ""}".trim()
+                    TmdbCollectionSourceType.NETWORK -> "TMDB Network ${id ?: ""}".trim()
+                    TmdbCollectionSourceType.PERSON -> "TMDB Person ${id ?: ""}".trim()
+                    TmdbCollectionSourceType.DIRECTOR -> "TMDB Director ${id ?: ""}".trim()
+                    TmdbCollectionSourceType.DISCOVER -> getString(Res.string.collections_editor_tmdb_discover)
                 }
             }
-        }
-        val sources = mediaTypes.map { mediaType ->
-            CollectionSource(
-                provider = "tmdb",
-                tmdbSourceType = sourceType.name,
-                title = titleForMedia(baseTitle, mediaType, mediaTypes.size > 1),
-                tmdbId = id,
-                mediaType = mediaType.name,
-                sortBy = state.tmdbSortBy,
-                filters = state.tmdbFilters,
-            )
-        }
-        if (sourceType == TmdbCollectionSourceType.LIST || sourceType == TmdbCollectionSourceType.COLLECTION) {
-            scope.launch {
+            val sources = mediaTypes.map { mediaType ->
+                CollectionSource(
+                    provider = "tmdb",
+                    tmdbSourceType = sourceType.name,
+                    title = titleForMedia(baseTitle, mediaType, mediaTypes.size > 1, moviesSuffix, seriesSuffix),
+                    tmdbId = id,
+                    mediaType = mediaType.name,
+                    sortBy = state.tmdbSortBy,
+                    filters = state.tmdbFilters,
+                )
+            }
+            if (sourceType == TmdbCollectionSourceType.LIST || sourceType == TmdbCollectionSourceType.COLLECTION) {
                 val metadata = runCatching { TmdbCollectionSourceResolver.importMetadata(sourceType, id!!) }
                 val resolved = metadata.getOrNull()
                 if (metadata.isFailure) {
                     _uiState.value = _uiState.value.copy(
                         tmdbSearchError = metadata.exceptionOrNull()?.message
-                            ?: getString(Res.string.collections_editor_tmdb_source_load_failed),
+                            ?: getString(Res.string.collections_editor_tmdb_load_error),
                     )
                     return@launch
                 }
@@ -695,10 +690,10 @@ object CollectionEditorRepository {
                     },
                     coverImageUrl = resolved?.coverImageUrl,
                 )
+            } else {
+                addTmdbSourcesFromPicker(sources)
             }
-            return
         }
-        addTmdbSourcesFromPicker(sources)
     }
 
     private fun addTmdbSources(sources: List<CollectionSource>, coverImageUrl: String? = null) {
@@ -730,20 +725,24 @@ object CollectionEditorRepository {
         val state = _uiState.value
         val input = state.traktInput.trim()
         if (input.isBlank()) {
-            _uiState.value = state.copy(
-                traktSearchError = runBlocking { getString(Res.string.collections_editor_trakt_enter_id_or_url) },
-            )
+            scope.launch {
+                _uiState.value = _uiState.value.copy(
+                    traktSearchError = getString(Res.string.collections_editor_trakt_id_url_required),
+                )
+            }
             return
         }
 
         scope.launch {
+            val moviesSuffix = getString(Res.string.collections_editor_media_movies_suffix)
+            val seriesSuffix = getString(Res.string.collections_editor_media_series_suffix)
             val metadata = runCatching { TraktPublicListSourceResolver.listImportMetadata(input) }
             val resolved = metadata.getOrNull()
             val listId = resolved?.traktListId
             if (metadata.isFailure || listId == null) {
                 _uiState.value = _uiState.value.copy(
                     traktSearchError = metadata.exceptionOrNull()?.message
-                        ?: getString(Res.string.collections_editor_trakt_load_failed),
+                        ?: getString(Res.string.collections_editor_trakt_load_error),
                 )
                 return@launch
             }
@@ -755,7 +754,7 @@ object CollectionEditorRepository {
                 sources = selectedTraktMediaTypes(state).map { mediaType ->
                     CollectionSource(
                         provider = "trakt",
-                        title = titleForMedia(title, mediaType, state.traktMediaBoth),
+                        title = titleForMedia(title, mediaType, state.traktMediaBoth, moviesSuffix, seriesSuffix),
                         traktListId = listId,
                         mediaType = mediaType.name,
                         sortBy = TraktListSort.normalize(state.traktSortBy),
@@ -770,19 +769,23 @@ object CollectionEditorRepository {
     fun addTraktSourceFromResult(result: TraktPublicListSearchResult) {
         val state = _uiState.value
         val title = state.traktTitleInput.ifBlank { result.title }
-        addTraktSourcesToFolder(
-            sources = selectedTraktMediaTypes(state).map { mediaType ->
-                CollectionSource(
-                    provider = "trakt",
-                    title = titleForMedia(title, mediaType, state.traktMediaBoth),
-                    traktListId = result.traktListId,
-                    mediaType = mediaType.name,
-                    sortBy = TraktListSort.normalize(state.traktSortBy),
-                    sortHow = TraktSortHow.normalize(state.traktSortHow),
-                )
-            },
-            coverImageUrl = result.coverImageUrl,
-        )
+        scope.launch {
+            val moviesSuffix = getString(Res.string.collections_editor_media_movies_suffix)
+            val seriesSuffix = getString(Res.string.collections_editor_media_series_suffix)
+            addTraktSourcesToFolder(
+                sources = selectedTraktMediaTypes(state).map { mediaType ->
+                    CollectionSource(
+                        provider = "trakt",
+                        title = titleForMedia(title, mediaType, state.traktMediaBoth, moviesSuffix, seriesSuffix),
+                        traktListId = result.traktListId,
+                        mediaType = mediaType.name,
+                        sortBy = TraktListSort.normalize(state.traktSortBy),
+                        sortHow = TraktSortHow.normalize(state.traktSortHow),
+                    )
+                },
+                coverImageUrl = result.coverImageUrl,
+            )
+        }
     }
 
     private fun addTraktSourcesToFolder(sources: List<CollectionSource>, coverImageUrl: String? = null) {
@@ -913,15 +916,13 @@ private fun titleForMedia(
     title: String,
     mediaType: TmdbCollectionMediaType,
     addSuffix: Boolean,
+    moviesSuffix: String,
+    seriesSuffix: String,
 ): String {
     if (!addSuffix) return title
-    val suffix = runBlocking {
-        getString(
-            when (mediaType) {
-                TmdbCollectionMediaType.MOVIE -> Res.string.media_movies
-                TmdbCollectionMediaType.TV -> Res.string.media_series
-            },
-        )
+    val suffix = when (mediaType) {
+        TmdbCollectionMediaType.MOVIE -> moviesSuffix
+        TmdbCollectionMediaType.TV -> seriesSuffix
     }
     return "$title $suffix"
 }
