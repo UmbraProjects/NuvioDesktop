@@ -66,6 +66,7 @@ import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
 import com.nuvio.app.features.streams.StreamsUiState
 import com.nuvio.app.features.tmdb.TmdbService
+import com.nuvio.app.features.trakt.TraktScrobbleItem
 import com.nuvio.app.features.trakt.TraktScrobbleRepository
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watchprogress.WatchProgressClock
@@ -75,6 +76,7 @@ import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import com.nuvio.app.isIos
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -92,6 +94,7 @@ private const val PlayerLockedOverlayDurationMs = 2_000L
 private const val PlayerLeftGestureBoundary = 0.4f
 private const val PlayerRightGestureBoundary = 0.6f
 private const val PlayerVerticalGestureSensitivity = 1f
+private const val PlayerSeekProgressSyncDebounceMs = 700L
 /** Hard ceiling for next-episode stream search to prevent hanging forever. */
 private const val NEXT_EPISODE_HARD_TIMEOUT_MS = 120_000L
 private val PlayerSliderOverlayGap = 12.dp
@@ -246,6 +249,7 @@ fun PlayerScreen(
         var lockedOverlayVisible by remember { mutableStateOf(false) }
         var gestureMessageJob by remember { mutableStateOf<Job?>(null) }
         var accumulatedSeekResetJob by remember { mutableStateOf<Job?>(null) }
+        var seekProgressSyncJob by remember { mutableStateOf<Job?>(null) }
         var accumulatedSeekState by remember { mutableStateOf<PlayerAccumulatedSeekState?>(null) }
         var initialLoadCompleted by remember(activeSourceUrl) { mutableStateOf(false) }
         var speedBoostRestoreSpeed by remember(activeSourceUrl) { mutableStateOf<Float?>(null) }
@@ -270,6 +274,12 @@ fun PlayerScreen(
             activeSeasonNumber,
             activeEpisodeNumber,
         ) { mutableStateOf(false) }
+        var currentTraktScrobbleItem by remember(
+            activeSourceUrl,
+            activeVideoId,
+            activeSeasonNumber,
+            activeEpisodeNumber,
+        ) { mutableStateOf<TraktScrobbleItem?>(null) }
         val backdropArtwork = background ?: poster
         val displayedPositionMs = scrubbingPositionMs ?: playbackSnapshot.positionMs
         val isEpisode = activeSeasonNumber != null && activeEpisodeNumber != null
@@ -419,6 +429,7 @@ fun PlayerScreen(
                     hasRequestedScrobbleStartForCurrentItem = false
                     return@launch
                 }
+                currentTraktScrobbleItem = item
                 TraktScrobbleRepository.scrobbleStart(
                     item = item,
                     progressPercent = currentPlaybackProgressPercent(),
@@ -431,13 +442,15 @@ fun PlayerScreen(
             if (!hasRequestedScrobbleStartForCurrentItem && (provided ?: 0f) < 80f) return
 
             val percent = provided ?: currentPlaybackProgressPercent()
-            scope.launch {
-                val item = currentTraktScrobbleItem() ?: return@launch
+            val itemSnapshot = currentTraktScrobbleItem
+            scope.launch(NonCancellable) {
+                val item = itemSnapshot ?: currentTraktScrobbleItem() ?: return@launch
                 TraktScrobbleRepository.scrobbleStop(
                     item = item,
                     progressPercent = percent,
                 )
             }
+            currentTraktScrobbleItem = null
             hasRequestedScrobbleStartForCurrentItem = false
         }
 
@@ -479,6 +492,25 @@ fun PlayerScreen(
                 session = playbackSession,
                 snapshot = playbackSnapshot,
             )
+        }
+
+        fun scheduleProgressSyncAfterSeek() {
+            seekProgressSyncJob?.cancel()
+            seekProgressSyncJob = scope.launch {
+                delay(PlayerSeekProgressSyncDebounceMs)
+                WatchProgressRepository.upsertPlaybackProgress(
+                    session = playbackSession,
+                    snapshot = playbackSnapshot,
+                )
+
+                val progressPercent = currentPlaybackProgressPercent()
+                if (progressPercent >= 1f && progressPercent < 80f) {
+                    emitTraktScrobbleStop(progressPercent)
+                    if (playbackSnapshot.isPlaying) {
+                        emitTraktScrobbleStart()
+                    }
+                }
+            }
         }
 
         val onBackWithProgress = remember(onBack, playbackSession, playbackSnapshot) {
@@ -728,6 +760,7 @@ fun PlayerScreen(
 
         fun seekBy(offsetMs: Long) {
             playerController?.seekBy(offsetMs)
+            scheduleProgressSyncAfterSeek()
             controlsVisible = true
             when {
                 offsetMs > 0L -> showSeekFeedback(PlayerSeekDirection.Forward, offsetMs)
@@ -760,6 +793,7 @@ fun PlayerScreen(
                 }
             }
             playerController?.seekTo(targetPositionMs)
+            scheduleProgressSyncAfterSeek()
             showSeekFeedback(direction, nextState.amountMs)
 
             accumulatedSeekResetJob?.cancel()
@@ -1997,6 +2031,7 @@ fun PlayerScreen(
                         isScrubbingTimeline = false
                         scrubbingPositionMs = null
                         playerController?.seekTo(positionMs)
+                        scheduleProgressSyncAfterSeek()
                     },
                     horizontalSafePadding = horizontalSafePadding,
                     modifier = Modifier.fillMaxSize(),
@@ -2063,6 +2098,7 @@ fun PlayerScreen(
                     onSkip = {
                         val interval = activeSkipInterval ?: return@SkipIntroButton
                         playerController?.seekTo((interval.endTime * 1000).toLong())
+                        scheduleProgressSyncAfterSeek()
                         skipIntervalDismissed = true
                     },
                     onDismiss = { skipIntervalDismissed = true },
