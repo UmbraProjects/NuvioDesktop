@@ -638,7 +638,9 @@ object TraktProgressRepository {
                     shouldStop = true
                     continue
                 }
-                resultsByShow.putIfAbsent(entry.parentMetaId, entry)
+                if (!resultsByShow.containsKey(entry.parentMetaId)) {
+                    resultsByShow[entry.parentMetaId] = entry
+                }
                 if (resultsByShow.size >= MAX_RECENT_EPISODE_HISTORY_ENTRIES) {
                     shouldStop = true
                     break
