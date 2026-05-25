@@ -585,4 +585,8 @@ object WatchProgressRepository {
         }
     }
 
+    fun isDroppedShow(contentId: String): Boolean {
+        return shouldUseTraktProgress() && TraktProgressRepository.isShowHiddenFromProgress(contentId)
+    }
+
 }
