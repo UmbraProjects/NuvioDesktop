@@ -27,6 +27,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.plugins_error_enter_repo_url
+import nuvio.composeapp.generated.resources.plugins_error_enter_valid_url
+import nuvio.composeapp.generated.resources.plugins_error_provider_not_found
 import nuvio.composeapp.generated.resources.plugins_repository_already_installed
 import nuvio.composeapp.generated.resources.plugins_repository_install_failed
 import nuvio.composeapp.generated.resources.plugins_repository_refresh_failed
@@ -151,7 +154,7 @@ actual object PluginRepository {
         val manifestUrl = try {
             normalizeManifestUrl(rawUrl)
         } catch (error: IllegalArgumentException) {
-            return AddPluginRepositoryResult.Error(error.message ?: "Enter a valid plugin URL")
+            return AddPluginRepositoryResult.Error(error.message ?: getString(Res.string.plugins_error_enter_valid_url))
         }
 
         if (_uiState.value.repositories.any { it.manifestUrl == manifestUrl }) {
@@ -300,7 +303,7 @@ actual object PluginRepository {
     actual suspend fun testScraper(scraperId: String): Result<List<PluginRuntimeResult>> {
         initialize()
         val scraper = _uiState.value.scrapers.find { it.id == scraperId }
-            ?: return Result.failure(IllegalArgumentException("Provider not found"))
+            ?: return Result.failure(IllegalArgumentException(getString(Res.string.plugins_error_provider_not_found)))
 
         val mediaType = if (scraper.supportsType("movie")) "movie" else "tv"
         val season = if (mediaType == "tv") 1 else null
@@ -570,7 +573,7 @@ actual object PluginRepository {
 
     private fun normalizeManifestUrl(rawUrl: String): String {
         val trimmed = rawUrl.trim()
-        require(trimmed.isNotEmpty()) { "Enter a plugin repository URL." }
+        require(trimmed.isNotEmpty()) { runBlocking { getString(Res.string.plugins_error_enter_repo_url) } }
 
         val normalizedScheme = when {
             trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed

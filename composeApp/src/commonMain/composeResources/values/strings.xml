@@ -1752,4 +1752,7 @@
     </plurals>
     <string name="cw_new_episode">New Episode</string>
     <string name="cw_new_season">New Season</string>
+    <!-- Pass 4 — platform stubs and dynamic title fallbacks -->
+    <string name="collections_editor_trakt_list_title_format">Trakt List %1$s</string>
+    <string name="external_player_android_system">Android system player</string>
 </resources>

@@ -15,11 +15,18 @@ import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.collections_editor_media_movies_suffix
 import nuvio.composeapp.generated.resources.collections_editor_media_series_suffix
 import nuvio.composeapp.generated.resources.collections_editor_resolved_trakt_list
+import nuvio.composeapp.generated.resources.collections_editor_tmdb_collection_title_format
+import nuvio.composeapp.generated.resources.collections_editor_tmdb_director_title_format
 import nuvio.composeapp.generated.resources.collections_editor_tmdb_discover
 import nuvio.composeapp.generated.resources.collections_editor_tmdb_invalid_id_error
+import nuvio.composeapp.generated.resources.collections_editor_tmdb_list_title_format
 import nuvio.composeapp.generated.resources.collections_editor_tmdb_load_error
+import nuvio.composeapp.generated.resources.collections_editor_tmdb_network_title_format
+import nuvio.composeapp.generated.resources.collections_editor_tmdb_person_title_format
+import nuvio.composeapp.generated.resources.collections_editor_tmdb_production_title_format
 import nuvio.composeapp.generated.resources.collections_editor_trakt_id_url_required
 import nuvio.composeapp.generated.resources.collections_editor_trakt_input_required
+import nuvio.composeapp.generated.resources.collections_editor_trakt_list_title_format
 import nuvio.composeapp.generated.resources.collections_editor_trakt_load_error
 import nuvio.composeapp.generated.resources.collections_editor_trakt_no_lists_found
 import org.jetbrains.compose.resources.getString
@@ -423,7 +430,7 @@ object CollectionEditorRepository {
                     listOf(
                         TraktPublicListSearchResult(
                             traktListId = id,
-                            title = metadata.title ?: "Trakt List $id",
+                            title = metadata.title ?: getString(Res.string.collections_editor_trakt_list_title_format, id),
                             subtitle = getString(Res.string.collections_editor_resolved_trakt_list),
                             coverImageUrl = metadata.coverImageUrl,
                         ),
@@ -654,12 +661,12 @@ object CollectionEditorRepository {
             val seriesSuffix = getString(Res.string.collections_editor_media_series_suffix)
             val baseTitle = state.tmdbTitleInput.ifBlank {
                 when (sourceType) {
-                    TmdbCollectionSourceType.LIST -> "TMDB List ${id ?: ""}".trim()
-                    TmdbCollectionSourceType.COLLECTION -> "TMDB Collection ${id ?: ""}".trim()
-                    TmdbCollectionSourceType.COMPANY -> "TMDB Production ${id ?: ""}".trim()
-                    TmdbCollectionSourceType.NETWORK -> "TMDB Network ${id ?: ""}".trim()
-                    TmdbCollectionSourceType.PERSON -> "TMDB Person ${id ?: ""}".trim()
-                    TmdbCollectionSourceType.DIRECTOR -> "TMDB Director ${id ?: ""}".trim()
+                    TmdbCollectionSourceType.LIST -> getString(Res.string.collections_editor_tmdb_list_title_format, id ?: "").trim()
+                    TmdbCollectionSourceType.COLLECTION -> getString(Res.string.collections_editor_tmdb_collection_title_format, id ?: "").trim()
+                    TmdbCollectionSourceType.COMPANY -> getString(Res.string.collections_editor_tmdb_production_title_format, id ?: "").trim()
+                    TmdbCollectionSourceType.NETWORK -> getString(Res.string.collections_editor_tmdb_network_title_format, id ?: "").trim()
+                    TmdbCollectionSourceType.PERSON -> getString(Res.string.collections_editor_tmdb_person_title_format, id ?: "").trim()
+                    TmdbCollectionSourceType.DIRECTOR -> getString(Res.string.collections_editor_tmdb_director_title_format, id ?: "").trim()
                     TmdbCollectionSourceType.DISCOVER -> getString(Res.string.collections_editor_tmdb_discover)
                 }
             }
@@ -747,7 +754,7 @@ object CollectionEditorRepository {
                 return@launch
             }
 
-            val title = state.traktTitleInput.ifBlank { resolved.title ?: "Trakt List $listId" }
+            val title = state.traktTitleInput.ifBlank { resolved.title ?: getString(Res.string.collections_editor_trakt_list_title_format, listId) }
             addTraktSourcesToFolder(
                 sources = selectedTraktMediaTypes(state).map { mediaType ->
                     CollectionSource(
