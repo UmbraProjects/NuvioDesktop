@@ -269,6 +269,12 @@ fun PlayerScreen(
             activeSeasonNumber,
             activeEpisodeNumber,
         ) { mutableStateOf(false) }
+        var scrobbleStartRequestGeneration by remember(
+            activeSourceUrl,
+            activeVideoId,
+            activeSeasonNumber,
+            activeEpisodeNumber,
+        ) { mutableStateOf(0L) }
         var hasSentCompletionScrobbleForCurrentItem by remember(
             activeVideoId,
             activeSeasonNumber,
@@ -422,11 +428,16 @@ fun PlayerScreen(
         fun emitTraktScrobbleStart() {
             if (hasRequestedScrobbleStartForCurrentItem) return
             hasRequestedScrobbleStartForCurrentItem = true
+            val requestGeneration = scrobbleStartRequestGeneration + 1L
+            scrobbleStartRequestGeneration = requestGeneration
 
             scope.launch {
                 val item = currentTraktScrobbleItem()
                 if (item == null) {
                     hasRequestedScrobbleStartForCurrentItem = false
+                    return@launch
+                }
+                if (requestGeneration != scrobbleStartRequestGeneration || !hasRequestedScrobbleStartForCurrentItem) {
                     return@launch
                 }
                 currentTraktScrobbleItem = item
@@ -452,6 +463,7 @@ fun PlayerScreen(
             }
             currentTraktScrobbleItem = null
             hasRequestedScrobbleStartForCurrentItem = false
+            scrobbleStartRequestGeneration += 1L
         }
 
         fun emitStopScrobbleForCurrentProgress() {
