@@ -3,6 +3,7 @@ package com.nuvio.app.features.player
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.text.SpannableString
 import android.net.Uri
 import android.util.Log
 import android.util.TypedValue
@@ -34,12 +35,17 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.text.Cue
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.ForwardingRenderer
+import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
@@ -105,6 +111,10 @@ actual fun PlatformPlayerSurface(
         sanitizedSourceResponseHeaders,
         useYoutubeChunkedPlayback,
     )
+    var subtitleDelayMs by remember(playerSourceKey) { mutableStateOf(0) }
+    var selectedExternalSubtitleMimeType by remember(playerSourceKey) { mutableStateOf<String?>(null) }
+    val latestSubtitleDelayMs = rememberUpdatedState(subtitleDelayMs)
+    val latestExternalSubtitleMimeType = rememberUpdatedState(selectedExternalSubtitleMimeType)
     var decoderPriorityOverride by remember(playerSourceKey) { mutableStateOf<Int?>(null) }
     var fallbackStartPositionMs by remember(playerSourceKey) { mutableStateOf<Long?>(null) }
     val effectiveDecoderPriority = decoderPriorityOverride ?: playerSettings.decoderPriority
@@ -117,7 +127,13 @@ actual fun PlatformPlayerSurface(
         useYoutubeChunkedPlayback,
         effectiveDecoderPriority,
     ) {
-        val renderersFactory = DefaultRenderersFactory(context)
+        val renderersFactory = SubtitleOffsetRenderersFactory(
+            context = context,
+            subtitleDelayUsProvider = { latestSubtitleDelayMs.value.toLong() * 1_000L },
+            shouldNormalizeCuePositionProvider = {
+                latestExternalSubtitleMimeType.value == MimeTypes.TEXT_VTT
+            },
+        )
             .setExtensionRendererMode(effectiveDecoderPriority)
             .setEnableDecoderFallback(true)
             .setMapDV7ToHevc(playerSettings.mapDV7ToHevc)
@@ -388,6 +404,7 @@ actual fun PlatformPlayerSurface(
                         val resolvedMime = withContext(Dispatchers.IO) {
                             resolveSubtitleMimeType(url)
                         }
+                        selectedExternalSubtitleMimeType = resolvedMime
                         Log.d(TAG, "setSubtitleUri: currentPosition=$currentPosition, wasPlaying=$wasPlaying")
                         val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.parse(url))
                             .setMimeType(resolvedMime)
@@ -418,6 +435,8 @@ actual fun PlatformPlayerSurface(
 
                 override fun clearExternalSubtitle() {
                     Log.d(TAG, "clearExternalSubtitle called")
+                    subtitleSelectionJob?.cancel()
+                    selectedExternalSubtitleMimeType = null
                     val currentPosition = exoPlayer.currentPosition
                     val wasPlaying = exoPlayer.isPlaying
                     val currentMediaItem = exoPlayer.currentMediaItem ?: return
@@ -432,6 +451,8 @@ actual fun PlatformPlayerSurface(
 
                 override fun clearExternalSubtitleAndSelect(trackIndex: Int) {
                     Log.d(TAG, "clearExternalSubtitleAndSelect: trackIndex=$trackIndex")
+                    subtitleSelectionJob?.cancel()
+                    selectedExternalSubtitleMimeType = null
                     pendingSubtitleTrackIndex.clear()
                     pendingSubtitleTrackIndex.add(trackIndex)
                     val currentPosition = exoPlayer.currentPosition
@@ -449,6 +470,10 @@ actual fun PlatformPlayerSurface(
                 override fun applySubtitleStyle(style: SubtitleStyleState) {
                     currentSubtitleStyle = style
                     playerViewRef?.applySubtitleStyle(style)
+                }
+
+                override fun setSubtitleDelayMs(delayMs: Int) {
+                    subtitleDelayMs = delayMs.coerceIn(SUBTITLE_DELAY_MIN_MS, SUBTITLE_DELAY_MAX_MS)
                 }
             }
         )
@@ -607,11 +632,11 @@ private fun PlayerView.applySubtitleStyle(style: SubtitleStyleState) {
         setStyle(
             CaptionStyleCompat(
                 style.textColor.toArgb(),
-                android.graphics.Color.TRANSPARENT,
+                style.backgroundColor.toArgb(),
                 android.graphics.Color.TRANSPARENT,
                 if (style.outlineEnabled) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE,
-                android.graphics.Color.BLACK,
-                Typeface.DEFAULT,
+                style.outlineColor.toArgb(),
+                if (style.bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT,
             )
         )
         setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, style.fontSizeSp.toFloat())
@@ -707,6 +732,114 @@ private fun ExoPlayer.logCurrentTracks(context: String) {
         Log.d(TAG, "  group type=$typeName id=${format.id} lang=${format.language} label=${format.label} selected=${group.isSelected} supported=${group.isSupported}")
     }
     Log.d(TAG, "--- end logCurrentTracks ---")
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+private class SubtitleOffsetRenderersFactory(
+    context: Context,
+    private val subtitleDelayUsProvider: () -> Long,
+    private val shouldNormalizeCuePositionProvider: () -> Boolean,
+) : DefaultRenderersFactory(context) {
+    override fun buildTextRenderers(
+        context: Context,
+        output: TextOutput,
+        outputLooper: android.os.Looper,
+        extensionRendererMode: Int,
+        out: ArrayList<Renderer>,
+    ) {
+        val normalizingOutput = CueNormalizingTextOutput(
+            delegate = output,
+            shouldNormalizeCuePositionProvider = shouldNormalizeCuePositionProvider,
+        )
+        val startIndex = out.size
+        super.buildTextRenderers(context, normalizingOutput, outputLooper, extensionRendererMode, out)
+        for (index in startIndex until out.size) {
+            out[index] = SubtitleOffsetRenderer(
+                baseRenderer = out[index],
+                subtitleDelayUsProvider = subtitleDelayUsProvider,
+            )
+        }
+    }
+}
+
+private class CueNormalizingTextOutput(
+    private val delegate: TextOutput,
+    private val shouldNormalizeCuePositionProvider: () -> Boolean,
+) : TextOutput {
+    override fun onCues(cueGroup: CueGroup) {
+        val processed = cueGroup.cues.map(::processCue)
+        delegate.onCues(CueGroup(processed, cueGroup.presentationTimeUs))
+    }
+
+    @Deprecated("Uses the deprecated Media3 callback for text outputs.")
+    override fun onCues(cues: List<Cue>) {
+        delegate.onCues(cues.map(::processCue))
+    }
+
+    private fun processCue(cue: Cue): Cue {
+        var processed = fixRtlCueText(cue)
+        if (shouldNormalizeCuePositionProvider()) {
+            processed = normalizeCuePosition(processed)
+        }
+        return processed
+    }
+
+    private fun normalizeCuePosition(cue: Cue): Cue {
+        if (cue.bitmap != null || cue.verticalType != Cue.TYPE_UNSET || cue.line == Cue.DIMEN_UNSET) {
+            return cue
+        }
+        return cue.buildUpon()
+            .setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET)
+            .setLineAnchor(Cue.TYPE_UNSET)
+            .build()
+    }
+
+    private fun fixRtlCueText(cue: Cue): Cue {
+        val text = cue.text ?: return cue
+        if (!containsRtlChars(text)) return cue
+        val original = text.toString()
+        val fixed = original.split('\n').joinToString("\n") { line ->
+            moveLeadingRtlPunctuationToEnd(line)
+        }
+        if (fixed == original) return cue
+        return cue.buildUpon().setText(SpannableString(fixed)).build()
+    }
+
+    private fun moveLeadingRtlPunctuationToEnd(line: String): String {
+        if (line.isEmpty()) return line
+        var end = 0
+        while (end < line.length && line[end] in RTL_PUNCTUATION) end++
+        if (end == 0) return line
+        return line.substring(end) + line.substring(0, end)
+    }
+
+    private fun containsRtlChars(text: CharSequence): Boolean {
+        for (char in text) {
+            val directionality = Character.getDirectionality(char)
+            if (
+                directionality == Character.DIRECTIONALITY_RIGHT_TO_LEFT ||
+                directionality == Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    companion object {
+        private val RTL_PUNCTUATION = setOf('.', ',', '?', '!', '-', ':', ';', '…', ')', '(')
+    }
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+private class SubtitleOffsetRenderer(
+    baseRenderer: Renderer,
+    private val subtitleDelayUsProvider: () -> Long,
+) : ForwardingRenderer(baseRenderer) {
+    override fun render(positionUs: Long, elapsedRealtimeUs: Long) {
+        val adjustedPositionUs = (positionUs - subtitleDelayUsProvider()).coerceAtLeast(0L)
+        super.render(adjustedPositionUs, elapsedRealtimeUs)
+    }
 }
 
 private fun resolveSubtitleMimeType(url: String): String {
