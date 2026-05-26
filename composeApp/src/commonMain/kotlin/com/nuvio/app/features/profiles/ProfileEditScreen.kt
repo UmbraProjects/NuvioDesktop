@@ -420,7 +420,7 @@ private fun ProfileIdentityCard(
                         AsyncImage(
                             model = avatarStorageUrl(selectedAvatar.storagePath),
                             contentDescription = selectedAvatar.displayName,
-                            modifier = Modifier.size(88.dp).clip(CircleShape),
+                            modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
                         )
                     } else if (name.isNotBlank()) {
