@@ -276,6 +276,12 @@ fun PlayerScreen(
             activeSeasonNumber,
             activeEpisodeNumber,
         ) { mutableStateOf(0L) }
+        var pendingScrobbleStartAfterSeek by remember(
+            activeSourceUrl,
+            activeVideoId,
+            activeSeasonNumber,
+            activeEpisodeNumber,
+        ) { mutableStateOf(false) }
         var hasSentCompletionScrobbleForCurrentItem by remember(
             activeVideoId,
             activeSeasonNumber,
@@ -508,6 +514,7 @@ fun PlayerScreen(
         }
 
         fun scheduleProgressSyncAfterSeek() {
+            val shouldRestartScrobbleAfterSeek = shouldPlay || playbackSnapshot.isPlaying
             seekProgressSyncJob?.cancel()
             seekProgressSyncJob = scope.launch {
                 delay(PlayerSeekProgressSyncDebounceMs)
@@ -519,8 +526,12 @@ fun PlayerScreen(
                 val progressPercent = currentPlaybackProgressPercent()
                 if (progressPercent >= 1f && progressPercent < 80f) {
                     emitTraktScrobbleStop(progressPercent)
-                    if (playbackSnapshot.isPlaying) {
+                    val shouldRestartScrobbleNow = shouldRestartScrobbleAfterSeek && shouldPlay
+                    if (shouldRestartScrobbleNow && playbackSnapshot.isPlaying) {
+                        pendingScrobbleStartAfterSeek = false
                         emitTraktScrobbleStart()
+                    } else if (shouldRestartScrobbleNow) {
+                        pendingScrobbleStartAfterSeek = true
                     }
                 }
             }
@@ -1056,6 +1067,7 @@ fun PlayerScreen(
         val currentDurationMsState = rememberUpdatedState(playbackSnapshot.durationMs)
         val commitHorizontalSeekState = rememberUpdatedState { targetPositionMs: Long ->
             playerController?.seekTo(targetPositionMs)
+            scheduleProgressSyncAfterSeek()
         }
 
         fun resolveDebridForPlayer(
@@ -1655,6 +1667,9 @@ fun PlayerScreen(
             initialLoadCompleted = false
             lastProgressPersistEpochMs = 0L
             previousIsPlaying = false
+            pendingScrobbleStartAfterSeek = false
+            seekProgressSyncJob?.cancel()
+            seekProgressSyncJob = null
             accumulatedSeekResetJob?.cancel()
             accumulatedSeekResetJob = null
             accumulatedSeekState = null
@@ -1810,14 +1825,19 @@ fun PlayerScreen(
             if (playbackSnapshot.isEnded) {
                 flushWatchProgress()
                 previousIsPlaying = false
+                pendingScrobbleStartAfterSeek = false
                 return@LaunchedEffect
             }
 
             if (previousIsPlaying && !playbackSnapshot.isPlaying && !playbackSnapshot.isLoading) {
+                pendingScrobbleStartAfterSeek = false
                 flushWatchProgress()
             }
 
-            if (!previousIsPlaying && playbackSnapshot.isPlaying) {
+            if (playbackSnapshot.isPlaying && pendingScrobbleStartAfterSeek) {
+                pendingScrobbleStartAfterSeek = false
+                emitTraktScrobbleStart()
+            } else if (!previousIsPlaying && playbackSnapshot.isPlaying) {
                 emitTraktScrobbleStart()
             }
 
