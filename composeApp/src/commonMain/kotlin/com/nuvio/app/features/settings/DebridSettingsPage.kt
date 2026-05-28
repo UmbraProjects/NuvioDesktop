@@ -55,6 +55,8 @@ import com.nuvio.app.features.debrid.DebridProviderAuthMethod
 import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.debrid.DebridSettings
 import com.nuvio.app.features.debrid.DebridSettingsRepository
+import com.nuvio.app.features.debrid.DebridStreamBadgeImportResult
+import com.nuvio.app.features.debrid.DebridStreamBadgeRules
 import com.nuvio.app.features.debrid.DebridStreamFormatterDefaults
 import com.nuvio.app.features.debrid.DebridStreamAudioChannel
 import com.nuvio.app.features.debrid.DebridStreamAudioTag
@@ -393,6 +395,7 @@ internal fun LazyListScope.debridSettingsContent(
 
     item {
         var activeTemplateField by rememberSaveable { mutableStateOf<DebridTemplateField?>(null) }
+        var showBadgeImportDialog by rememberSaveable { mutableStateOf(false) }
 
         SettingsSection(
             title = stringResource(Res.string.settings_debrid_section_formatting),
@@ -425,6 +428,15 @@ internal fun LazyListScope.debridSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 DebridPreferenceRow(
                     isTablet = isTablet,
+                    title = "Badge URL",
+                    description = "Import Fusion badge filters from a JSON URL.",
+                    value = badgeRulesPreview(settings.streamBadgeRules),
+                    enabled = settings.canResolvePlayableLinks,
+                    onClick = { showBadgeImportDialog = true },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                DebridPreferenceRow(
+                    isTablet = isTablet,
                     title = stringResource(Res.string.settings_debrid_formatter_reset_title),
                     description = stringResource(Res.string.settings_debrid_formatter_reset_subtitle),
                     value = stringResource(Res.string.action_reset),
@@ -452,6 +464,13 @@ internal fun LazyListScope.debridSettingsContent(
                 onDismiss = { activeTemplateField = null },
             )
             null -> Unit
+        }
+
+        if (showBadgeImportDialog) {
+            DebridBadgeImportDialog(
+                currentRules = settings.streamBadgeRules,
+                onDismiss = { showBadgeImportDialog = false },
+            )
         }
     }
 
@@ -499,6 +518,13 @@ private fun templatePreview(value: String, defaultValue: String): String {
         ?: return "Default format"
     return if (firstLine.length <= 28) firstLine else "${firstLine.take(28)}..."
 }
+
+private fun badgeRulesPreview(rules: DebridStreamBadgeRules): String =
+    if (rules.hasImport) {
+        "${rules.filters.count { it.isEnabled }} badges"
+    } else {
+        "Not imported"
+    }
 
 @Composable
 private fun prepareCountLabel(limit: Int): String =
@@ -656,6 +682,110 @@ private fun DebridTemplateDialog(
                             text = stringResource(Res.string.action_save),
                             maxLines = 1,
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun DebridBadgeImportDialog(
+    currentRules: DebridStreamBadgeRules,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var draftUrl by rememberSaveable(currentRules.sourceUrl) { mutableStateOf(currentRules.sourceUrl) }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var isImporting by rememberSaveable { mutableStateOf(false) }
+
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        DebridDialogSurface(title = "Import badge URL") {
+            Text(
+                text = "Paste a Fusion badge filter JSON URL. Nuvio stores the imported rules and only uses user-imported badges.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = draftUrl,
+                onValueChange = {
+                    draftUrl = it
+                    errorMessage = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = false,
+                minLines = 2,
+                maxLines = 4,
+                enabled = !isImporting,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    disabledContainerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+            errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            if (currentRules.hasImport) {
+                Text(
+                    text = "${currentRules.filters.count { it.isEnabled }} enabled badges imported from ${currentRules.groups.size} groups.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (currentRules.hasImport) {
+                    TextButton(
+                        enabled = !isImporting,
+                        onClick = {
+                            DebridSettingsRepository.clearStreamBadgeRules()
+                            onDismiss()
+                        },
+                    ) {
+                        Text(text = stringResource(Res.string.action_clear), maxLines = 1)
+                    }
+                }
+                TextButton(
+                    enabled = !isImporting,
+                    onClick = onDismiss,
+                ) {
+                    Text(text = stringResource(Res.string.action_cancel), maxLines = 1)
+                }
+                Button(
+                    enabled = !isImporting,
+                    onClick = {
+                        scope.launch {
+                            isImporting = true
+                            errorMessage = null
+                            when (val result = DebridSettingsRepository.importStreamBadgeRulesFromUrl(draftUrl)) {
+                                is DebridStreamBadgeImportResult.Success -> onDismiss()
+                                is DebridStreamBadgeImportResult.Error -> {
+                                    errorMessage = result.message
+                                    isImporting = false
+                                }
+                            }
+                        }
+                    },
+                ) {
+                    if (isImporting) {
+                        CircularProgressIndicator(
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    } else {
+                        Text(text = "Import", maxLines = 1)
                     }
                 }
             }

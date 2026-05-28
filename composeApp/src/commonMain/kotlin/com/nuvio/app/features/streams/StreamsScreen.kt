@@ -9,6 +9,7 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -1030,9 +1032,19 @@ private fun StreamCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                StreamFileSizeBadge(stream = stream)
+            val badgeImages = stream.badges.filter { it.imageURL.isNotBlank() }
+            if (badgeImages.isNotEmpty() || stream.behaviorHints.videoSize != null) {
+                Spacer(modifier = Modifier.height(5.dp))
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    badgeImages.forEach { badge ->
+                        StreamImportedBadge(badge = badge)
+                    }
+                    StreamFileSizeBadge(stream = stream)
+                }
             }
         }
     }
@@ -1201,6 +1213,36 @@ private fun StreamItem.instantServiceLabel(): String? {
 }
 
 @Composable
+private fun StreamImportedBadge(badge: StreamBadge) {
+    val shape = RoundedCornerShape(4.dp)
+    val backgroundColor = if (badge.tagStyle.equals("filled", ignoreCase = true)) {
+        badge.tagColor.toBadgeColorOrNull()
+    } else {
+        null
+    }
+    val borderColor = badge.borderColor.toBadgeColorOrNull()
+
+    Box(
+        modifier = Modifier
+            .height(20.dp)
+            .then(if (backgroundColor != null) Modifier.background(backgroundColor, shape) else Modifier)
+            .then(if (borderColor != null) Modifier.border(1.dp, borderColor, shape) else Modifier)
+            .padding(horizontal = 3.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        AsyncImage(
+            model = badge.imageURL,
+            contentDescription = badge.name,
+            modifier = Modifier
+                .height(16.dp)
+                .widthIn(min = 34.dp, max = 92.dp)
+                .clip(shape),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+
+@Composable
 private fun StreamFileSizeBadge(stream: StreamItem) {
     val bytes = stream.behaviorHints.videoSize ?: return
     val gib = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
@@ -1214,20 +1256,34 @@ private fun StreamFileSizeBadge(stream: StreamItem) {
 
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .height(20.dp)
+            .clip(RoundedCornerShape(4.dp))
             .background(Color(0xFF0A0C0C))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
+            .border(1.dp, Color(0xFF0A0C0C), RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             text = stringResource(Res.string.streams_size, sizeLabel),
             style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 11.sp,
+                fontSize = 10.sp,
+                lineHeight = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.2.sp,
+                letterSpacing = 0.sp,
             ),
             color = Color.White,
         )
     }
+}
+
+private fun String.toBadgeColorOrNull(): Color? {
+    val hex = trim().removePrefix("#")
+    val argb = when (hex.length) {
+        6 -> "FF$hex"
+        8 -> hex
+        else -> return null
+    }
+    return argb.toLongOrNull(16)?.let { Color(it) }
 }
 
 private fun Long.toPlaybackClock(): String {

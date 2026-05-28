@@ -1,5 +1,7 @@
 package com.nuvio.app.features.debrid
 
+import com.nuvio.app.features.addons.httpGetText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +36,7 @@ object DebridSettingsRepository {
     private var streamPreferences = DebridStreamPreferences()
     private var streamNameTemplate = DebridStreamFormatterDefaults.NAME_TEMPLATE
     private var streamDescriptionTemplate = DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE
+    private var streamBadgeRules = DebridStreamBadgeRules()
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -226,6 +229,42 @@ object DebridSettingsRepository {
         )
     }
 
+    suspend fun importStreamBadgeRulesFromUrl(url: String): DebridStreamBadgeImportResult {
+        ensureLoaded()
+        val normalizedUrl = url.trim()
+        if (normalizedUrl.isBlank()) {
+            return DebridStreamBadgeImportResult.Error("Enter a badge JSON URL.")
+        }
+        if (!normalizedUrl.startsWith("https://", ignoreCase = true) &&
+            !normalizedUrl.startsWith("http://", ignoreCase = true)
+        ) {
+            return DebridStreamBadgeImportResult.Error("Badge URL must start with http:// or https://.")
+        }
+
+        return try {
+            val payload = httpGetText(normalizedUrl)
+            val parsed = DebridStreamBadgeRulesParser.parse(
+                sourceUrl = normalizedUrl,
+                payload = payload,
+            )
+            streamBadgeRules = parsed
+            publish()
+            saveStreamBadgeRules()
+            DebridStreamBadgeImportResult.Success(parsed)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            DebridStreamBadgeImportResult.Error(error.message ?: "Badge import failed.")
+        }
+    }
+
+    fun clearStreamBadgeRules() {
+        ensureLoaded()
+        if (streamBadgeRules == DebridStreamBadgeRules()) return
+        streamBadgeRules = DebridStreamBadgeRules()
+        publish()
+        DebridSettingsStorage.saveStreamBadgeRules("")
+    }
+
     private fun disableIfNoResolver() {
         if (!hasResolverProvider()) {
             enabled = false
@@ -324,6 +363,7 @@ object DebridSettingsRepository {
             DebridSettingsStorage.loadStreamDescriptionTemplate().orEmpty(),
             DebridTemplateKind.DESCRIPTION,
         )
+        streamBadgeRules = parseStreamBadgeRules(DebridSettingsStorage.loadStreamBadgeRules()) ?: DebridStreamBadgeRules()
         publish()
     }
 
@@ -343,11 +383,16 @@ object DebridSettingsRepository {
             streamPreferences = streamPreferences,
             streamNameTemplate = streamNameTemplate,
             streamDescriptionTemplate = streamDescriptionTemplate,
+            streamBadgeRules = streamBadgeRules,
         )
     }
 
     private fun saveStreamPreferences() {
         DebridSettingsStorage.saveStreamPreferences(json.encodeToString(streamPreferences.normalized()))
+    }
+
+    private fun saveStreamBadgeRules() {
+        DebridSettingsStorage.saveStreamBadgeRules(json.encodeToString(streamBadgeRules))
     }
 
     private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String?, default: T): T =
@@ -357,6 +402,17 @@ object DebridSettingsRepository {
         if (value.isNullOrBlank()) return null
         return try {
             json.decodeFromString<DebridStreamPreferences>(value).normalized()
+        } catch (_: SerializationException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
+    private fun parseStreamBadgeRules(value: String?): DebridStreamBadgeRules? {
+        if (value.isNullOrBlank()) return null
+        return try {
+            json.decodeFromString<DebridStreamBadgeRules>(value)
         } catch (_: SerializationException) {
             null
         } catch (_: IllegalArgumentException) {

@@ -40,6 +40,125 @@ class DebridStreamPresentationTest {
     }
 
     @Test
+    fun `formats imported badge matches from fusion badge rules`() {
+        val stream = localTorboxStream(
+            filename = "Movie.2024.2160p.BluRay.REMUX.TrueHD.7.1-GRP.mkv",
+            size = 40_000_000_000,
+        )
+
+        val formatted = DebridStreamFormatter().format(
+            stream = stream,
+            settings = DebridSettings(
+                enabled = true,
+                providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
+                streamNameTemplate = "{stream.rseMatched::join(' | ')}",
+                streamDescriptionTemplate = "{stream.regexMatched::~REMUX[\"has-remux\"||\"missing\"]}",
+                streamBadgeRules = DebridStreamBadgeRules(
+                    sourceUrl = "https://example.test/badges.json",
+                    filters = listOf(
+                        DebridStreamBadgeFilter(
+                            name = "REMUX",
+                            pattern = "(?i)\\bremux\\b",
+                            imageURL = "https://example.test/remux.png",
+                            tagColor = "#27C04F",
+                            tagStyle = "filled",
+                            textColor = "#FFFFFF",
+                            borderColor = "#27C04F",
+                        ),
+                        DebridStreamBadgeFilter(
+                            name = "Disabled",
+                            pattern = "(?i)\\bbluray\\b",
+                            isEnabled = false,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals("REMUX", formatted.name)
+        assertEquals("has-remux", formatted.description)
+        assertEquals(1, formatted.badges.size)
+        assertEquals("REMUX", formatted.badges.single().name)
+        assertEquals("https://example.test/remux.png", formatted.badges.single().imageURL)
+    }
+
+    @Test
+    fun `parses fusion badge url payload shape`() {
+        val rules = DebridStreamBadgeRulesParser.parse(
+            sourceUrl = "https://example.test/fusion-tags-ume.json",
+            payload = """
+                {
+                  "filters": [
+                    {
+                      "borderColor": "#27C04F",
+                      "groupId": "media",
+                      "id": "remux",
+                      "imageURL": "https://example.test/remux.png",
+                      "isEnabled": true,
+                      "name": "REMUX",
+                      "pattern": "(?i)\\bremux\\b",
+                      "tagColor": "#27C04F",
+                      "tagStyle": "filled",
+                      "textColor": "#FFFFFF",
+                      "type": "filter"
+                    }
+                  ],
+                  "groups": [
+                    {
+                      "color": "#96CEB4",
+                      "id": "media",
+                      "isExpanded": true,
+                      "name": "Media Source"
+                    }
+                  ]
+                }
+            """.trimIndent(),
+        )
+
+        assertEquals("https://example.test/fusion-tags-ume.json", rules.sourceUrl)
+        assertEquals(1, rules.filters.size)
+        assertEquals("REMUX", rules.filters.single().name)
+        assertEquals("(?i)\\bremux\\b", rules.filters.single().pattern)
+        assertEquals("https://example.test/remux.png", rules.filters.single().imageURL)
+        assertEquals("Media Source", rules.groups.single().name)
+    }
+
+    @Test
+    fun `attaches imported badge urls to presented debrid streams`() {
+        val stream = localTorboxStream(
+            filename = "Movie.2024.2160p.BluRay.REMUX.TrueHD.7.1-GRP.mkv",
+            size = 40_000_000_000,
+        )
+
+        val presented = DebridStreamPresentation.apply(
+            groups = listOf(
+                AddonStreamGroup(
+                    addonName = "Addon",
+                    addonId = "addon:test",
+                    streams = listOf(stream),
+                ),
+            ),
+            settings = DebridSettings(
+                enabled = true,
+                providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
+                streamBadgeRules = DebridStreamBadgeRules(
+                    sourceUrl = "https://example.test/badges.json",
+                    filters = listOf(
+                        DebridStreamBadgeFilter(
+                            name = "REMUX 1",
+                            pattern = "(?i)\\bremux\\b",
+                            imageURL = "https://example.test/remux-t1.png",
+                        ),
+                    ),
+                ),
+            ),
+        ).single().streams.single()
+
+        assertEquals(listOf("REMUX 1"), presented.badges.map { it.name })
+        assertEquals("https://example.test/remux-t1.png", presented.badges.single().imageURL)
+    }
+
+    @Test
     fun `default formatter replaces addon source labels for managed streams`() {
         val stream = premiumizeDirectStream(
             name = "[P2P] Torrentio 2160p - PM Instant",
