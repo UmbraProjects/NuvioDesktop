@@ -52,39 +52,58 @@ class DebridStreamPresentationTest {
                 enabled = true,
                 providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
                 streamNameTemplate = "{stream.rseMatched::join(' | ')}",
-                streamDescriptionTemplate = "{stream.regexMatched::~REMUX[\"has-remux\"||\"missing\"]}",
+                streamDescriptionTemplate = "{stream.regexMatched::~REMUX[\"has-remux\"||\"missing-remux\"]}",
                 streamBadgeRules = DebridStreamBadgeRules(
-                    sourceUrl = "https://example.test/badges.json",
-                    filters = listOf(
-                        DebridStreamBadgeFilter(
-                            name = "REMUX",
-                            pattern = "(?i)\\bremux\\b",
-                            imageURL = "https://example.test/remux.png",
-                            tagColor = "#27C04F",
-                            tagStyle = "filled",
-                            textColor = "#FFFFFF",
-                            borderColor = "#27C04F",
+                    imports = listOf(
+                        DebridStreamBadgeImport(
+                            sourceUrl = "https://example.test/media-badges.json",
+                            isActive = false,
+                            filters = listOf(
+                                DebridStreamBadgeFilter(
+                                    name = "REMUX",
+                                    pattern = "(?i)\\bremux\\b",
+                                    imageURL = "https://example.test/remux.png",
+                                    tagColor = "#27C04F",
+                                    tagStyle = "filled",
+                                    textColor = "#FFFFFF",
+                                    borderColor = "#27C04F",
+                                ),
+                                DebridStreamBadgeFilter(
+                                    name = "Disabled",
+                                    pattern = "(?i)\\bbluray\\b",
+                                    isEnabled = false,
+                                ),
+                            ),
                         ),
-                        DebridStreamBadgeFilter(
-                            name = "Disabled",
-                            pattern = "(?i)\\bbluray\\b",
-                            isEnabled = false,
+                        DebridStreamBadgeImport(
+                            sourceUrl = "https://example.test/audio-badges.json",
+                            isActive = true,
+                            filters = listOf(
+                                DebridStreamBadgeFilter(
+                                    name = "TRUEHD",
+                                    pattern = "(?i)\\btruehd\\b",
+                                    imageURL = "https://example.test/truehd.png",
+                                    tagColor = "#B968FF",
+                                    tagStyle = "filled",
+                                    textColor = "#FFFFFF",
+                                    borderColor = "#B968FF",
+                                ),
+                            ),
                         ),
                     ),
                 ),
             ),
         )
 
-        assertEquals("REMUX", formatted.name)
-        assertEquals("has-remux", formatted.description)
-        assertEquals(1, formatted.badges.size)
-        assertEquals("REMUX", formatted.badges.single().name)
-        assertEquals("https://example.test/remux.png", formatted.badges.single().imageURL)
+        assertEquals("TRUEHD", formatted.name)
+        assertEquals("missing-remux", formatted.description)
+        assertEquals(listOf("TRUEHD"), formatted.badges.map { it.name })
+        assertEquals(listOf("https://example.test/truehd.png"), formatted.badges.map { it.imageURL })
     }
 
     @Test
     fun `parses fusion badge url payload shape`() {
-        val rules = DebridStreamBadgeRulesParser.parse(
+        val importedRules = DebridStreamBadgeRulesParser.parse(
             sourceUrl = "https://example.test/fusion-tags-ume.json",
             payload = """
                 {
@@ -115,12 +134,12 @@ class DebridStreamPresentationTest {
             """.trimIndent(),
         )
 
-        assertEquals("https://example.test/fusion-tags-ume.json", rules.sourceUrl)
-        assertEquals(1, rules.filters.size)
-        assertEquals("REMUX", rules.filters.single().name)
-        assertEquals("(?i)\\bremux\\b", rules.filters.single().pattern)
-        assertEquals("https://example.test/remux.png", rules.filters.single().imageURL)
-        assertEquals("Media Source", rules.groups.single().name)
+        assertEquals("https://example.test/fusion-tags-ume.json", importedRules.sourceUrl)
+        assertEquals(1, importedRules.filters.size)
+        assertEquals("REMUX", importedRules.filters.single().name)
+        assertEquals("(?i)\\bremux\\b", importedRules.filters.single().pattern)
+        assertEquals("https://example.test/remux.png", importedRules.filters.single().imageURL)
+        assertEquals("Media Source", importedRules.groups.single().name)
     }
 
     @Test
@@ -142,12 +161,16 @@ class DebridStreamPresentationTest {
                 enabled = true,
                 providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
                 streamBadgeRules = DebridStreamBadgeRules(
-                    sourceUrl = "https://example.test/badges.json",
-                    filters = listOf(
-                        DebridStreamBadgeFilter(
-                            name = "REMUX 1",
-                            pattern = "(?i)\\bremux\\b",
-                            imageURL = "https://example.test/remux-t1.png",
+                    imports = listOf(
+                        DebridStreamBadgeImport(
+                            sourceUrl = "https://example.test/badges.json",
+                            filters = listOf(
+                                DebridStreamBadgeFilter(
+                                    name = "REMUX 1",
+                                    pattern = "(?i)\\bremux\\b",
+                                    imageURL = "https://example.test/remux-t1.png",
+                                ),
+                            ),
                         ),
                     ),
                 ),

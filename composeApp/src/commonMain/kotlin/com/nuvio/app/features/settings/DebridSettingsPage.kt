@@ -1,10 +1,14 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,21 +16,27 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,12 +50,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.nuvio.app.features.debrid.DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT
+import com.nuvio.app.features.debrid.DEBRID_STREAM_BADGE_IMPORT_LIMIT
 import com.nuvio.app.features.debrid.DebridCredentialValidator
 import com.nuvio.app.features.debrid.DebridDeviceAuthorization
 import com.nuvio.app.features.debrid.DebridDeviceAuthorizationTokenResult
@@ -56,6 +72,8 @@ import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.debrid.DebridSettings
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DebridStreamBadgeImportResult
+import com.nuvio.app.features.debrid.DebridStreamBadgeFilter
+import com.nuvio.app.features.debrid.DebridStreamBadgeImport
 import com.nuvio.app.features.debrid.DebridStreamBadgeRules
 import com.nuvio.app.features.debrid.DebridStreamFormatterDefaults
 import com.nuvio.app.features.debrid.DebridStreamAudioChannel
@@ -75,6 +93,7 @@ import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
 import nuvio.composeapp.generated.resources.action_clear
+import nuvio.composeapp.generated.resources.action_delete
 import nuvio.composeapp.generated.resources.action_retry
 import nuvio.composeapp.generated.resources.action_reset
 import nuvio.composeapp.generated.resources.action_save
@@ -428,8 +447,8 @@ internal fun LazyListScope.debridSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 DebridPreferenceRow(
                     isTablet = isTablet,
-                    title = "Badge URL",
-                    description = "Import Fusion badge filters from a JSON URL.",
+                    title = "Badge URLs",
+                    description = "Manage imported label badge JSON URLs.",
                     value = badgeRulesPreview(settings.streamBadgeRules),
                     enabled = settings.canResolvePlayableLinks,
                     onClick = { showBadgeImportDialog = true },
@@ -467,7 +486,7 @@ internal fun LazyListScope.debridSettingsContent(
         }
 
         if (showBadgeImportDialog) {
-            DebridBadgeImportDialog(
+            DebridBadgeUrlManagerDialog(
                 currentRules = settings.streamBadgeRules,
                 onDismiss = { showBadgeImportDialog = false },
             )
@@ -519,12 +538,14 @@ private fun templatePreview(value: String, defaultValue: String): String {
     return if (firstLine.length <= 28) firstLine else "${firstLine.take(28)}..."
 }
 
-private fun badgeRulesPreview(rules: DebridStreamBadgeRules): String =
-    if (rules.hasImport) {
-        "${rules.filters.count { it.isEnabled }} badges"
+private fun badgeRulesPreview(rules: DebridStreamBadgeRules): String {
+    val normalizedRules = rules.normalized()
+    return if (normalizedRules.hasImport) {
+        "${normalizedRules.imports.size}/$DEBRID_STREAM_BADGE_IMPORT_LIMIT URLs, ${normalizedRules.enabledFilterCount} active badges"
     } else {
         "Not imported"
     }
+}
 
 @Composable
 private fun prepareCountLabel(limit: Int): String =
@@ -691,19 +712,21 @@ private fun DebridTemplateDialog(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun DebridBadgeImportDialog(
+private fun DebridBadgeUrlManagerDialog(
     currentRules: DebridStreamBadgeRules,
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    var draftUrl by rememberSaveable(currentRules.sourceUrl) { mutableStateOf(currentRules.sourceUrl) }
+    val imports = currentRules.normalized().imports
+    var draftUrl by rememberSaveable { mutableStateOf("") }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var isImporting by rememberSaveable { mutableStateOf(false) }
+    var previewImport by remember { mutableStateOf<DebridStreamBadgeImport?>(null) }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        DebridDialogSurface(title = "Import badge URL") {
+        DebridDialogSurface(title = "Badge URLs") {
             Text(
-                text = "Paste a Fusion badge filter JSON URL. Nuvio stores the imported rules and only uses user-imported badges.",
+                text = "Import up to $DEBRID_STREAM_BADGE_IMPORT_LIMIT label badge JSON URLs. Each URL can be updated or deleted separately.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -714,6 +737,7 @@ private fun DebridBadgeImportDialog(
                     errorMessage = null
                 },
                 modifier = Modifier.fillMaxWidth(),
+                label = { Text("Badge JSON URL") },
                 singleLine = false,
                 minLines = 2,
                 maxLines = 4,
@@ -726,50 +750,28 @@ private fun DebridBadgeImportDialog(
                     disabledContainerColor = MaterialTheme.colorScheme.surface,
                 ),
             )
-            errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            if (currentRules.hasImport) {
-                Text(
-                    text = "${currentRules.filters.count { it.isEnabled }} enabled badges imported from ${currentRules.groups.size} groups.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (currentRules.hasImport) {
-                    TextButton(
-                        enabled = !isImporting,
-                        onClick = {
-                            DebridSettingsRepository.clearStreamBadgeRules()
-                            onDismiss()
-                        },
-                    ) {
-                        Text(text = stringResource(Res.string.action_clear), maxLines = 1)
-                    }
-                }
-                TextButton(
-                    enabled = !isImporting,
-                    onClick = onDismiss,
-                ) {
-                    Text(text = stringResource(Res.string.action_cancel), maxLines = 1)
-                }
+                Text(
+                    text = "${imports.size}/$DEBRID_STREAM_BADGE_IMPORT_LIMIT URLs imported",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
                 Button(
-                    enabled = !isImporting,
+                    enabled = !isImporting && draftUrl.isNotBlank(),
                     onClick = {
                         scope.launch {
                             isImporting = true
                             errorMessage = null
                             when (val result = DebridSettingsRepository.importStreamBadgeRulesFromUrl(draftUrl)) {
-                                is DebridStreamBadgeImportResult.Success -> onDismiss()
+                                is DebridStreamBadgeImportResult.Success -> {
+                                    draftUrl = ""
+                                    isImporting = false
+                                }
                                 is DebridStreamBadgeImportResult.Error -> {
                                     errorMessage = result.message
                                     isImporting = false
@@ -789,8 +791,305 @@ private fun DebridBadgeImportDialog(
                     }
                 }
             }
+            errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            if (imports.isEmpty()) {
+                Text(
+                    text = "No badge URLs imported.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(
+                        items = imports,
+                        key = { import -> import.sourceUrl },
+                    ) { import ->
+                        DebridBadgeUrlRow(
+                            import = import,
+                            showActiveChoice = imports.size > 1,
+                            enabled = !isImporting,
+                            onActivate = {
+                                DebridSettingsRepository.setActiveStreamBadgeRulesSource(import.sourceUrl)
+                            },
+                            onPreview = { previewImport = import },
+                            onDelete = {
+                                DebridSettingsRepository.deleteStreamBadgeRulesSource(import.sourceUrl)
+                                if (previewImport?.sourceUrl.equals(import.sourceUrl, ignoreCase = true)) {
+                                    previewImport = null
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    enabled = !isImporting,
+                    onClick = onDismiss,
+                ) {
+                    Text(text = stringResource(Res.string.action_cancel), maxLines = 1)
+                }
+            }
         }
     }
+
+    previewImport?.let { import ->
+        DebridBadgePreviewDialog(
+            import = import,
+            onDismiss = { previewImport = null },
+        )
+    }
+}
+
+@Composable
+private fun DebridBadgeUrlRow(
+    import: DebridStreamBadgeImport,
+    showActiveChoice: Boolean,
+    enabled: Boolean,
+    onActivate: () -> Unit,
+    onPreview: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val containerColor = if (import.isActive) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = containerColor,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (showActiveChoice) {
+                    RadioButton(
+                        selected = import.isActive,
+                        onClick = onActivate,
+                        enabled = enabled,
+                    )
+                }
+                Text(
+                    text = import.sourceUrl,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            ) {
+                val status = if (import.isActive) "Active" else "Inactive"
+                Text(
+                    text = "$status, ${import.enabledFilterCount} enabled badges, ${import.groups.size} groups",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    enabled = enabled,
+                    onClick = onPreview,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Visibility,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(text = "Preview", maxLines = 1)
+                }
+                IconButton(
+                    enabled = enabled,
+                    onClick = onDelete,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = stringResource(Res.string.action_delete),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+private fun DebridBadgePreviewDialog(
+    import: DebridStreamBadgeImport,
+    onDismiss: () -> Unit,
+) {
+    val sections = remember(import) { badgePreviewSections(import) }
+    val badgeCount = sections.sumOf { it.filters.size }
+
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        DebridDialogSurface(title = "Badge preview") {
+            Text(
+                text = import.sourceUrl,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "$badgeCount badges from this URL",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (sections.isEmpty()) {
+                Text(
+                    text = "No badge images in this URL.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 460.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    items(
+                        items = sections,
+                        key = { section -> section.id },
+                    ) { section ->
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = section.title,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                verticalArrangement = Arrangement.spacedBy(5.dp),
+                            ) {
+                                section.filters.forEach { filter ->
+                                    DebridBadgePreviewChip(filter)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text(text = "Close", maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DebridBadgePreviewChip(filter: DebridStreamBadgeFilter) {
+    val shape = RoundedCornerShape(6.dp)
+    val backgroundColor = if (filter.tagStyle.equals("filled", ignoreCase = true)) {
+        filter.tagColor.toBadgeColorOrNull()
+    } else {
+        null
+    }
+    val borderColor = filter.borderColor.toBadgeColorOrNull()
+
+    Box(
+        modifier = Modifier
+            .height(24.dp)
+            .then(if (backgroundColor != null) Modifier.background(backgroundColor, shape) else Modifier)
+            .then(if (borderColor != null) Modifier.border(1.dp, borderColor, shape) else Modifier)
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        AsyncImage(
+            model = filter.imageURL,
+            contentDescription = filter.name,
+            modifier = Modifier
+                .height(18.dp)
+                .widthIn(min = 38.dp, max = 112.dp)
+                .clip(shape),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+
+private data class DebridBadgePreviewSection(
+    val id: String,
+    val title: String,
+    val filters: List<DebridStreamBadgeFilter>,
+)
+
+private fun badgePreviewSections(import: DebridStreamBadgeImport): List<DebridBadgePreviewSection> {
+    val filters = import.filters.filter { it.imageURL.isNotBlank() }
+    if (filters.isEmpty()) return emptyList()
+
+    val filtersByGroupId = filters.groupBy { it.groupId }
+    val usedGroupIds = mutableSetOf<String>()
+    val sections = mutableListOf<DebridBadgePreviewSection>()
+    import.groups.forEachIndexed { index, group ->
+        val groupFilters = filtersByGroupId[group.id].orEmpty()
+        if (groupFilters.isNotEmpty()) {
+            usedGroupIds += group.id
+            sections += DebridBadgePreviewSection(
+                id = group.id.ifBlank { "group-$index" },
+                title = group.name.ifBlank { "Group ${index + 1}" },
+                filters = groupFilters,
+            )
+        }
+    }
+
+    val ungroupedFilters = filters.filter { it.groupId !in usedGroupIds }
+    if (ungroupedFilters.isNotEmpty()) {
+        sections += DebridBadgePreviewSection(
+            id = "other",
+            title = "Other badges",
+            filters = ungroupedFilters,
+        )
+    }
+    return sections
+}
+
+private fun String.toBadgeColorOrNull(): Color? {
+    val hex = trim().removePrefix("#")
+    val argb = when (hex.length) {
+        6 -> "FF$hex"
+        8 -> hex
+        else -> return null
+    }
+    return argb.toLongOrNull(16)?.let { Color(it) }
 }
 
 @Composable

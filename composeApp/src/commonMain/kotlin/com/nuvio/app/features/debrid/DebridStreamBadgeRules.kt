@@ -8,17 +8,96 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
+const val DEBRID_STREAM_BADGE_IMPORT_LIMIT = 3
+
 @Serializable
 data class DebridStreamBadgeRules(
+    val imports: List<DebridStreamBadgeImport> = emptyList(),
+) {
+    val hasImport: Boolean
+        get() = imports.isNotEmpty()
+
+    val activeImport: DebridStreamBadgeImport?
+        get() = imports.firstOrNull { it.isActive } ?: imports.firstOrNull()
+
+    val enabledFilterCount: Int
+        get() = activeImport?.enabledFilterCount ?: 0
+
+    fun normalized(): DebridStreamBadgeRules {
+        val normalizedImports = mutableListOf<DebridStreamBadgeImport>()
+        imports.forEach { import ->
+            val normalizedUrl = import.sourceUrl.trim()
+            if (normalizedUrl.isBlank() || import.filters.isEmpty()) return@forEach
+            val normalizedImport = import.copy(sourceUrl = normalizedUrl)
+            val existingIndex = normalizedImports.indexOfFirst { it.sourceUrl.equals(normalizedUrl, ignoreCase = true) }
+            if (existingIndex >= 0) {
+                normalizedImports[existingIndex] = normalizedImport
+            } else if (normalizedImports.size < DEBRID_STREAM_BADGE_IMPORT_LIMIT) {
+                normalizedImports += normalizedImport
+            }
+        }
+        if (normalizedImports.isEmpty()) return copy(imports = emptyList())
+        val activeIndex = normalizedImports.indexOfFirst { it.isActive }.takeIf { it >= 0 } ?: 0
+        return copy(
+            imports = normalizedImports.mapIndexed { index, import ->
+                import.copy(isActive = index == activeIndex)
+            },
+        )
+    }
+
+    fun upsert(import: DebridStreamBadgeImport, activate: Boolean = true): DebridStreamBadgeRules {
+        val normalizedUrl = import.sourceUrl.trim()
+        if (normalizedUrl.isBlank()) return normalized()
+        val normalizedImport = import.copy(sourceUrl = normalizedUrl, isActive = activate)
+        val replaced = imports.map { existing ->
+            if (existing.sourceUrl.equals(normalizedUrl, ignoreCase = true)) normalizedImport else existing
+        }
+        val nextImports = if (imports.any { it.sourceUrl.equals(normalizedUrl, ignoreCase = true) }) {
+            replaced
+        } else {
+            imports + normalizedImport
+        }
+        val activeImports = if (activate) {
+            nextImports.map { existing ->
+                existing.copy(isActive = existing.sourceUrl.equals(normalizedUrl, ignoreCase = true))
+            }
+        } else {
+            nextImports
+        }
+        return copy(imports = activeImports).normalized()
+    }
+
+    fun setActiveSource(sourceUrl: String): DebridStreamBadgeRules {
+        val normalizedUrl = sourceUrl.trim()
+        if (normalizedUrl.isBlank() || imports.none { it.sourceUrl.equals(normalizedUrl, ignoreCase = true) }) {
+            return normalized()
+        }
+        return copy(
+            imports = imports.map { import ->
+                import.copy(isActive = import.sourceUrl.equals(normalizedUrl, ignoreCase = true))
+            },
+        ).normalized()
+    }
+
+    fun removeSource(sourceUrl: String): DebridStreamBadgeRules =
+        copy(imports = imports.filterNot { it.sourceUrl.equals(sourceUrl.trim(), ignoreCase = true) }).normalized()
+
+    override fun toString(): String =
+        "DebridStreamBadgeRules(imports=${imports.size}, activeFilters=$enabledFilterCount, groups=${imports.sumOf { it.groups.size }})"
+}
+
+@Serializable
+data class DebridStreamBadgeImport(
     val sourceUrl: String = "",
     val filters: List<DebridStreamBadgeFilter> = emptyList(),
     val groups: List<DebridStreamBadgeGroup> = emptyList(),
+    val isActive: Boolean = true,
 ) {
-    val hasImport: Boolean
-        get() = filters.isNotEmpty()
+    val enabledFilterCount: Int
+        get() = filters.count { it.isEnabled }
 
     override fun toString(): String =
-        "DebridStreamBadgeRules(sourceUrl=$sourceUrl, filters=${filters.size}, groups=${groups.size})"
+        "DebridStreamBadgeImport(sourceUrl=$sourceUrl, filters=${filters.size}, groups=${groups.size}, isActive=$isActive)"
 }
 
 @Serializable
@@ -55,7 +134,7 @@ internal object DebridStreamBadgeRulesParser {
         explicitNulls = false
     }
 
-    fun parse(sourceUrl: String, payload: String): DebridStreamBadgeRules {
+    fun parse(sourceUrl: String, payload: String): DebridStreamBadgeImport {
         val decoded = try {
             json.decodeFromString<DebridStreamBadgePayload>(payload)
         } catch (error: SerializationException) {
@@ -98,7 +177,7 @@ internal object DebridStreamBadgeRulesParser {
             )
         }
 
-        return DebridStreamBadgeRules(
+        return DebridStreamBadgeImport(
             sourceUrl = sourceUrl.trim(),
             filters = filters,
             groups = groups,
@@ -109,23 +188,25 @@ internal object DebridStreamBadgeRulesParser {
 internal object DebridStreamBadgeMatcher {
     fun compile(rules: DebridStreamBadgeRules): List<DebridCompiledStreamBadgeFilter> {
         if (!rules.hasImport) return emptyList()
-        return rules.filters.mapNotNull { filter ->
-            if (!filter.isEnabled || filter.name.isBlank() || filter.pattern.isBlank()) {
-                return@mapNotNull null
-            }
-            val regex = runCatching { Regex(filter.pattern) }.getOrNull() ?: return@mapNotNull null
-            DebridCompiledStreamBadgeFilter(
-                name = filter.name,
-                badge = StreamBadge(
+        return rules.normalized().imports.filter { it.isActive }.flatMap { import ->
+            import.filters.mapNotNull { filter ->
+                if (!filter.isEnabled || filter.name.isBlank() || filter.pattern.isBlank()) {
+                    return@mapNotNull null
+                }
+                val regex = runCatching { Regex(filter.pattern) }.getOrNull() ?: return@mapNotNull null
+                DebridCompiledStreamBadgeFilter(
                     name = filter.name,
-                    imageURL = filter.imageURL,
-                    tagColor = filter.tagColor,
-                    tagStyle = filter.tagStyle,
-                    textColor = filter.textColor,
-                    borderColor = filter.borderColor,
-                ),
-                regex = regex,
-            )
+                    badge = StreamBadge(
+                        name = filter.name,
+                        imageURL = filter.imageURL,
+                        tagColor = filter.tagColor,
+                        tagStyle = filter.tagStyle,
+                        textColor = filter.textColor,
+                        borderColor = filter.borderColor,
+                    ),
+                    regex = regex,
+                )
+            }
         }
     }
 

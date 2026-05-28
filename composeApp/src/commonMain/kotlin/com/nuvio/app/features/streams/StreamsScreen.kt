@@ -1214,7 +1214,7 @@ private fun StreamItem.instantServiceLabel(): String? {
 
 @Composable
 private fun StreamImportedBadge(badge: StreamBadge) {
-    val shape = RoundedCornerShape(4.dp)
+    val shape = RoundedCornerShape(6.dp)
     val backgroundColor = if (badge.tagStyle.equals("filled", ignoreCase = true)) {
         badge.tagColor.toBadgeColorOrNull()
     } else {
@@ -1257,9 +1257,9 @@ private fun StreamFileSizeBadge(stream: StreamItem) {
     Box(
         modifier = Modifier
             .height(20.dp)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(Color(0xFF0A0C0C))
-            .border(1.dp, Color(0xFF0A0C0C), RoundedCornerShape(4.dp))
+            .border(1.dp, Color(0xFF0A0C0C), RoundedCornerShape(6.dp))
             .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
