@@ -59,6 +59,7 @@ import com.nuvio.app.features.player.AvailableLanguageOptions
 import com.nuvio.app.features.player.ExternalPlayerApp
 import com.nuvio.app.features.player.ExternalPlayerPlatform
 import com.nuvio.app.features.player.IosHardwareDecoderMode
+import com.nuvio.app.features.player.localizedLabel
 import com.nuvio.app.features.player.IosTargetPrimaries
 import com.nuvio.app.features.player.IosTargetTransfer
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -77,6 +78,7 @@ import com.nuvio.app.isIos
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
@@ -704,42 +706,42 @@ private fun PlaybackSettingsSection(
 
         if (isIos) {
             SettingsSection(
-                title = "iOS video output",
+                title = stringResource(Res.string.settings_playback_ios_video_output),
                 isTablet = isTablet,
             ) {
                 SettingsGroup(isTablet = isTablet) {
                     SettingsNavigationRow(
-                        title = "Hardware decoder",
-                        description = autoPlayPlayerSettings.iosHardwareDecoderMode.label,
+                        title = stringResource(Res.string.settings_playback_ios_hardware_decoder),
+                        description = autoPlayPlayerSettings.iosHardwareDecoderMode.localizedLabel(),
                         isTablet = isTablet,
                         onClick = { showIosHardwareDecoderDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
-                        title = "Extended dynamic range",
-                        description = "Default Metal output mode for new playback sessions.",
+                        title = stringResource(Res.string.settings_playback_ios_extended_dynamic_range),
+                        description = stringResource(Res.string.settings_playback_ios_extended_dynamic_range_desc),
                         checked = autoPlayPlayerSettings.iosExtendedDynamicRangeEnabled,
                         isTablet = isTablet,
                         onCheckedChange = PlayerSettingsRepository::setIosExtendedDynamicRangeEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
-                        title = "Display color hint",
-                        description = "Let mpv target the active display color space by default.",
+                        title = stringResource(Res.string.settings_playback_ios_display_color_hint),
+                        description = stringResource(Res.string.settings_playback_ios_display_color_hint_desc),
                         checked = autoPlayPlayerSettings.iosTargetColorspaceHintEnabled,
                         isTablet = isTablet,
                         onCheckedChange = PlayerSettingsRepository::setIosTargetColorspaceHintEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
-                        title = "Target primaries",
+                        title = stringResource(Res.string.settings_playback_ios_target_primaries),
                         description = autoPlayPlayerSettings.iosTargetPrimaries.label,
                         isTablet = isTablet,
                         onClick = { showIosTargetPrimariesDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
-                        title = "Target transfer",
+                        title = stringResource(Res.string.settings_playback_ios_target_transfer),
                         description = autoPlayPlayerSettings.iosTargetTransfer.label,
                         isTablet = isTablet,
                         onClick = { showIosTargetTransferDialog = true },
@@ -1151,7 +1153,7 @@ private fun PlaybackSettingsSection(
 
     if (showIosHardwareDecoderDialog) {
         IosEnumSelectionDialog(
-            title = "Hardware decoder",
+            title = stringResource(Res.string.settings_playback_ios_hw_decoder_dialog),
             options = IosHardwareDecoderMode.entries,
             selected = autoPlayPlayerSettings.iosHardwareDecoderMode,
             label = { it.label },
@@ -1165,7 +1167,7 @@ private fun PlaybackSettingsSection(
 
     if (showIosTargetPrimariesDialog) {
         IosEnumSelectionDialog(
-            title = "Target primaries",
+            title = stringResource(Res.string.settings_playback_ios_target_primaries_dialog),
             options = IosTargetPrimaries.entries,
             selected = autoPlayPlayerSettings.iosTargetPrimaries,
             label = { it.label },
@@ -1179,7 +1181,7 @@ private fun PlaybackSettingsSection(
 
     if (showIosTargetTransferDialog) {
         IosEnumSelectionDialog(
-            title = "Target transfer",
+            title = stringResource(Res.string.settings_playback_ios_target_transfer_dialog),
             options = IosTargetTransfer.entries,
             selected = autoPlayPlayerSettings.iosTargetTransfer,
             label = { it.label },
@@ -2740,6 +2742,7 @@ private fun IntroDbApiKeyDialog(
     var value by remember { mutableStateOf(initialValue) }
     var isVerifying by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val invalidKeyMessage = stringResource(Res.string.settings_playback_introdb_invalid_key)
 
     BasicAlertDialog(onDismissRequest = { if (!isVerifying) onDismiss() }) {
         Surface(
@@ -2808,7 +2811,7 @@ private fun IntroDbApiKeyDialog(
                                 if (isValid) {
                                     onSave(trimmed)
                                 } else {
-                                    errorMessage = "Invalid API Key or connection failed"
+                                    errorMessage = invalidKeyMessage
                                 }
                             }
                         },

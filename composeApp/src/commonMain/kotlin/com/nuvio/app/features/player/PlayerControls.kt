@@ -308,7 +308,7 @@ private fun PlayerHeader(
                     if (onSubmitIntroClick != null) {
                         PlayerHeaderIconButton(
                             icon = Icons.Rounded.Flag,
-                            contentDescription = "Submit Intro",
+                            contentDescription = stringResource(Res.string.submit_intro_action),
                             buttonSize = metrics.headerIconSize + 16.dp,
                             iconSize = metrics.headerIconSize,
                             onClick = onSubmitIntroClick,
@@ -328,7 +328,7 @@ private fun PlayerHeader(
                     if (onVideoSettingsClick != null) {
                         PlayerHeaderIconButton(
                             icon = Icons.Rounded.Build,
-                            contentDescription = "Video settings",
+                            contentDescription = stringResource(Res.string.player_action_video_settings),
                             buttonSize = metrics.headerIconSize + 16.dp,
                             iconSize = metrics.headerIconSize,
                             onClick = onVideoSettingsClick,
