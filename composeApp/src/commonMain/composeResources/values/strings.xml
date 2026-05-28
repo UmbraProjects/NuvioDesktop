@@ -586,6 +586,8 @@
     <string name="settings_continue_watching_section_visibility">VISIBILITY</string>
     <string name="settings_continue_watching_show_description">Display the Continue Watching shelf on the Home screen.</string>
     <string name="settings_continue_watching_show_title">Show Continue Watching</string>
+    <string name="settings_continue_watching_style_card">Card</string>
+    <string name="settings_continue_watching_style_card_description">TV-style landscape card</string>
     <string name="settings_continue_watching_style_poster">Poster</string>
     <string name="settings_continue_watching_style_poster_description">Artwork-first poster card</string>
     <string name="settings_continue_watching_style_wide">Wide</string>
@@ -1107,6 +1109,8 @@
     <string name="episode_mark_watched">Mark as watched</string>
     <string name="home_continue_watching_up_next">Up next</string>
     <string name="home_continue_watching_watched">%1$s watched</string>
+    <string name="home_continue_watching_hours_minutes_left">%1$dh %2$dm left</string>
+    <string name="home_continue_watching_minutes_left">%1$dm left</string>
     <string name="home_empty_no_active_addons_message">Install and validate at least one addon before loading catalog rows on Home.</string>
     <string name="home_empty_no_rows_message">Installed addons do not currently expose board-compatible catalogs without required extras.</string>
     <string name="home_empty_no_rows_title">No home rows available</string>
