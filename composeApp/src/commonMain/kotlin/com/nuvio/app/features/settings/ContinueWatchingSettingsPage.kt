@@ -230,16 +230,6 @@ private fun ContinueWatchingStyleOption(
     isTablet: Boolean,
     onClick: () -> Unit,
 ) {
-    val optionBorder = if (style == ContinueWatchingSectionStyle.Wide) {
-        androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (selected) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.outlineVariant,
-        )
-    } else {
-        null
-    }
-
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -250,7 +240,6 @@ private fun ContinueWatchingStyleOption(
             MaterialTheme.colorScheme.surface
         },
         shape = RoundedCornerShape(12.dp),
-        border = optionBorder,
     ) {
         Column(
             modifier = Modifier
