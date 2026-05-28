@@ -1,7 +1,5 @@
 package com.nuvio.app.features.settings
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +15,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -50,18 +47,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.nuvio.app.features.debrid.DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT
-import com.nuvio.app.features.debrid.DEBRID_STREAM_BADGE_IMPORT_LIMIT
+import com.nuvio.app.features.debrid.STREAM_BADGE_IMPORT_LIMIT
+import com.nuvio.app.features.debrid.ImportedBadgeChip
+import com.nuvio.app.features.debrid.ImportedBadgeChipSize
 import com.nuvio.app.features.debrid.DebridCredentialValidator
 import com.nuvio.app.features.debrid.DebridDeviceAuthorization
 import com.nuvio.app.features.debrid.DebridDeviceAuthorizationTokenResult
@@ -71,10 +66,10 @@ import com.nuvio.app.features.debrid.DebridProviderAuthMethod
 import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.debrid.DebridSettings
 import com.nuvio.app.features.debrid.DebridSettingsRepository
-import com.nuvio.app.features.debrid.DebridStreamBadgeImportResult
-import com.nuvio.app.features.debrid.DebridStreamBadgeFilter
-import com.nuvio.app.features.debrid.DebridStreamBadgeImport
-import com.nuvio.app.features.debrid.DebridStreamBadgeRules
+import com.nuvio.app.features.debrid.StreamBadgeImportResult
+import com.nuvio.app.features.debrid.StreamBadgeFilter
+import com.nuvio.app.features.debrid.StreamBadgeImport
+import com.nuvio.app.features.debrid.StreamBadgeRules
 import com.nuvio.app.features.debrid.DebridStreamFormatterDefaults
 import com.nuvio.app.features.debrid.DebridStreamAudioChannel
 import com.nuvio.app.features.debrid.DebridStreamAudioTag
@@ -486,7 +481,7 @@ internal fun LazyListScope.debridSettingsContent(
         }
 
         if (showBadgeImportDialog) {
-            DebridBadgeUrlManagerDialog(
+            BadgeUrlManagerDialog(
                 currentRules = settings.streamBadgeRules,
                 onDismiss = { showBadgeImportDialog = false },
             )
@@ -538,10 +533,10 @@ private fun templatePreview(value: String, defaultValue: String): String {
     return if (firstLine.length <= 28) firstLine else "${firstLine.take(28)}..."
 }
 
-private fun badgeRulesPreview(rules: DebridStreamBadgeRules): String {
+private fun badgeRulesPreview(rules: StreamBadgeRules): String {
     val normalizedRules = rules.normalized()
     return if (normalizedRules.hasImport) {
-        "${normalizedRules.imports.size}/$DEBRID_STREAM_BADGE_IMPORT_LIMIT URLs, ${normalizedRules.enabledFilterCount} active badges"
+        "${normalizedRules.imports.size}/$STREAM_BADGE_IMPORT_LIMIT URLs, ${normalizedRules.enabledFilterCount} active badges"
     } else {
         "Not imported"
     }
@@ -712,8 +707,8 @@ private fun DebridTemplateDialog(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun DebridBadgeUrlManagerDialog(
-    currentRules: DebridStreamBadgeRules,
+private fun BadgeUrlManagerDialog(
+    currentRules: StreamBadgeRules,
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -721,12 +716,12 @@ private fun DebridBadgeUrlManagerDialog(
     var draftUrl by rememberSaveable { mutableStateOf("") }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var isImporting by rememberSaveable { mutableStateOf(false) }
-    var previewImport by remember { mutableStateOf<DebridStreamBadgeImport?>(null) }
+    var previewImport by remember { mutableStateOf<StreamBadgeImport?>(null) }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
         DebridDialogSurface(title = "Badge URLs") {
             Text(
-                text = "Import up to $DEBRID_STREAM_BADGE_IMPORT_LIMIT label badge JSON URLs. Each URL can be updated or deleted separately.",
+                text = "Import up to $STREAM_BADGE_IMPORT_LIMIT label badge JSON URLs. Each URL can be updated or deleted separately.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -756,7 +751,7 @@ private fun DebridBadgeUrlManagerDialog(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "${imports.size}/$DEBRID_STREAM_BADGE_IMPORT_LIMIT URLs imported",
+                    text = "${imports.size}/$STREAM_BADGE_IMPORT_LIMIT URLs imported",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
@@ -768,11 +763,11 @@ private fun DebridBadgeUrlManagerDialog(
                             isImporting = true
                             errorMessage = null
                             when (val result = DebridSettingsRepository.importStreamBadgeRulesFromUrl(draftUrl)) {
-                                is DebridStreamBadgeImportResult.Success -> {
+                                is StreamBadgeImportResult.Success -> {
                                     draftUrl = ""
                                     isImporting = false
                                 }
-                                is DebridStreamBadgeImportResult.Error -> {
+                                is StreamBadgeImportResult.Error -> {
                                     errorMessage = result.message
                                     isImporting = false
                                 }
@@ -816,7 +811,7 @@ private fun DebridBadgeUrlManagerDialog(
                         items = imports,
                         key = { import -> import.sourceUrl },
                     ) { import ->
-                        DebridBadgeUrlRow(
+                        BadgeUrlRow(
                             import = import,
                             showActiveChoice = imports.size > 1,
                             enabled = !isImporting,
@@ -850,7 +845,7 @@ private fun DebridBadgeUrlManagerDialog(
     }
 
     previewImport?.let { import ->
-        DebridBadgePreviewDialog(
+        BadgePreviewDialog(
             import = import,
             onDismiss = { previewImport = null },
         )
@@ -858,8 +853,8 @@ private fun DebridBadgeUrlManagerDialog(
 }
 
 @Composable
-private fun DebridBadgeUrlRow(
-    import: DebridStreamBadgeImport,
+private fun BadgeUrlRow(
+    import: StreamBadgeImport,
     showActiveChoice: Boolean,
     enabled: Boolean,
     onActivate: () -> Unit,
@@ -943,8 +938,8 @@ private fun DebridBadgeUrlRow(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-private fun DebridBadgePreviewDialog(
-    import: DebridStreamBadgeImport,
+private fun BadgePreviewDialog(
+    import: StreamBadgeImport,
     onDismiss: () -> Unit,
 ) {
     val sections = remember(import) { badgePreviewSections(import) }
@@ -997,7 +992,14 @@ private fun DebridBadgePreviewDialog(
                                 verticalArrangement = Arrangement.spacedBy(5.dp),
                             ) {
                                 section.filters.forEach { filter ->
-                                    DebridBadgePreviewChip(filter)
+                                    ImportedBadgeChip(
+                                        imageURL = filter.imageURL,
+                                        name = filter.name,
+                                        tagColor = filter.tagColor,
+                                        tagStyle = filter.tagStyle,
+                                        borderColor = filter.borderColor,
+                                        size = ImportedBadgeChipSize.PREVIEW,
+                                    )
                                 }
                             }
                         }
@@ -1016,54 +1018,24 @@ private fun DebridBadgePreviewDialog(
     }
 }
 
-@Composable
-private fun DebridBadgePreviewChip(filter: DebridStreamBadgeFilter) {
-    val shape = RoundedCornerShape(6.dp)
-    val backgroundColor = if (filter.tagStyle.equals("filled", ignoreCase = true)) {
-        filter.tagColor.toBadgeColorOrNull()
-    } else {
-        null
-    }
-    val borderColor = filter.borderColor.toBadgeColorOrNull()
-
-    Box(
-        modifier = Modifier
-            .height(24.dp)
-            .then(if (backgroundColor != null) Modifier.background(backgroundColor, shape) else Modifier)
-            .then(if (borderColor != null) Modifier.border(1.dp, borderColor, shape) else Modifier)
-            .padding(horizontal = 4.dp, vertical = 3.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        AsyncImage(
-            model = filter.imageURL,
-            contentDescription = filter.name,
-            modifier = Modifier
-                .height(18.dp)
-                .widthIn(min = 38.dp, max = 112.dp)
-                .clip(shape),
-            contentScale = ContentScale.Fit,
-        )
-    }
-}
-
-private data class DebridBadgePreviewSection(
+private data class BadgePreviewSection(
     val id: String,
     val title: String,
-    val filters: List<DebridStreamBadgeFilter>,
+    val filters: List<StreamBadgeFilter>,
 )
 
-private fun badgePreviewSections(import: DebridStreamBadgeImport): List<DebridBadgePreviewSection> {
+private fun badgePreviewSections(import: StreamBadgeImport): List<BadgePreviewSection> {
     val filters = import.filters.filter { it.imageURL.isNotBlank() }
     if (filters.isEmpty()) return emptyList()
 
     val filtersByGroupId = filters.groupBy { it.groupId }
     val usedGroupIds = mutableSetOf<String>()
-    val sections = mutableListOf<DebridBadgePreviewSection>()
+    val sections = mutableListOf<BadgePreviewSection>()
     import.groups.forEachIndexed { index, group ->
         val groupFilters = filtersByGroupId[group.id].orEmpty()
         if (groupFilters.isNotEmpty()) {
             usedGroupIds += group.id
-            sections += DebridBadgePreviewSection(
+            sections += BadgePreviewSection(
                 id = group.id.ifBlank { "group-$index" },
                 title = group.name.ifBlank { "Group ${index + 1}" },
                 filters = groupFilters,
@@ -1073,23 +1045,13 @@ private fun badgePreviewSections(import: DebridStreamBadgeImport): List<DebridBa
 
     val ungroupedFilters = filters.filter { it.groupId !in usedGroupIds }
     if (ungroupedFilters.isNotEmpty()) {
-        sections += DebridBadgePreviewSection(
+        sections += BadgePreviewSection(
             id = "other",
             title = "Other badges",
             filters = ungroupedFilters,
         )
     }
     return sections
-}
-
-private fun String.toBadgeColorOrNull(): Color? {
-    val hex = trim().removePrefix("#")
-    val argb = when (hex.length) {
-        6 -> "FF$hex"
-        8 -> hex
-        else -> return null
-    }
-    return argb.toLongOrNull(16)?.let { Color(it) }
 }
 
 @Composable

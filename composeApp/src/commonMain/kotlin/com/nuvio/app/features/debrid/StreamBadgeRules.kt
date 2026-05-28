@@ -8,23 +8,23 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
-const val DEBRID_STREAM_BADGE_IMPORT_LIMIT = 3
+const val STREAM_BADGE_IMPORT_LIMIT = 3
 
 @Serializable
-data class DebridStreamBadgeRules(
-    val imports: List<DebridStreamBadgeImport> = emptyList(),
+data class StreamBadgeRules(
+    val imports: List<StreamBadgeImport> = emptyList(),
 ) {
     val hasImport: Boolean
         get() = imports.isNotEmpty()
 
-    val activeImport: DebridStreamBadgeImport?
+    val activeImport: StreamBadgeImport?
         get() = imports.firstOrNull { it.isActive } ?: imports.firstOrNull()
 
     val enabledFilterCount: Int
         get() = activeImport?.enabledFilterCount ?: 0
 
-    fun normalized(): DebridStreamBadgeRules {
-        val normalizedImports = mutableListOf<DebridStreamBadgeImport>()
+    fun normalized(): StreamBadgeRules {
+        val normalizedImports = mutableListOf<StreamBadgeImport>()
         imports.forEach { import ->
             val normalizedUrl = import.sourceUrl.trim()
             if (normalizedUrl.isBlank() || import.filters.isEmpty()) return@forEach
@@ -32,7 +32,7 @@ data class DebridStreamBadgeRules(
             val existingIndex = normalizedImports.indexOfFirst { it.sourceUrl.equals(normalizedUrl, ignoreCase = true) }
             if (existingIndex >= 0) {
                 normalizedImports[existingIndex] = normalizedImport
-            } else if (normalizedImports.size < DEBRID_STREAM_BADGE_IMPORT_LIMIT) {
+            } else if (normalizedImports.size < STREAM_BADGE_IMPORT_LIMIT) {
                 normalizedImports += normalizedImport
             }
         }
@@ -45,7 +45,7 @@ data class DebridStreamBadgeRules(
         )
     }
 
-    fun upsert(import: DebridStreamBadgeImport, activate: Boolean = true): DebridStreamBadgeRules {
+    fun upsert(import: StreamBadgeImport, activate: Boolean = true): StreamBadgeRules {
         val normalizedUrl = import.sourceUrl.trim()
         if (normalizedUrl.isBlank()) return normalized()
         val normalizedImport = import.copy(sourceUrl = normalizedUrl, isActive = activate)
@@ -67,7 +67,7 @@ data class DebridStreamBadgeRules(
         return copy(imports = activeImports).normalized()
     }
 
-    fun setActiveSource(sourceUrl: String): DebridStreamBadgeRules {
+    fun setActiveSource(sourceUrl: String): StreamBadgeRules {
         val normalizedUrl = sourceUrl.trim()
         if (normalizedUrl.isBlank() || imports.none { it.sourceUrl.equals(normalizedUrl, ignoreCase = true) }) {
             return normalized()
@@ -79,29 +79,29 @@ data class DebridStreamBadgeRules(
         ).normalized()
     }
 
-    fun removeSource(sourceUrl: String): DebridStreamBadgeRules =
+    fun removeSource(sourceUrl: String): StreamBadgeRules =
         copy(imports = imports.filterNot { it.sourceUrl.equals(sourceUrl.trim(), ignoreCase = true) }).normalized()
 
     override fun toString(): String =
-        "DebridStreamBadgeRules(imports=${imports.size}, activeFilters=$enabledFilterCount, groups=${imports.sumOf { it.groups.size }})"
+        "StreamBadgeRules(imports=${imports.size}, activeFilters=$enabledFilterCount, groups=${imports.sumOf { it.groups.size }})"
 }
 
 @Serializable
-data class DebridStreamBadgeImport(
+data class StreamBadgeImport(
     val sourceUrl: String = "",
-    val filters: List<DebridStreamBadgeFilter> = emptyList(),
-    val groups: List<DebridStreamBadgeGroup> = emptyList(),
+    val filters: List<StreamBadgeFilter> = emptyList(),
+    val groups: List<StreamBadgeGroup> = emptyList(),
     val isActive: Boolean = true,
 ) {
     val enabledFilterCount: Int
         get() = filters.count { it.isEnabled }
 
     override fun toString(): String =
-        "DebridStreamBadgeImport(sourceUrl=$sourceUrl, filters=${filters.size}, groups=${groups.size}, isActive=$isActive)"
+        "StreamBadgeImport(sourceUrl=$sourceUrl, filters=${filters.size}, groups=${groups.size}, isActive=$isActive)"
 }
 
 @Serializable
-data class DebridStreamBadgeFilter(
+data class StreamBadgeFilter(
     val id: String = "",
     val groupId: String = "",
     val name: String = "",
@@ -115,28 +115,28 @@ data class DebridStreamBadgeFilter(
 )
 
 @Serializable
-data class DebridStreamBadgeGroup(
+data class StreamBadgeGroup(
     val id: String = "",
     val name: String = "",
     val color: String = "",
     val isExpanded: Boolean = true,
 )
 
-sealed interface DebridStreamBadgeImportResult {
-    data class Success(val rules: DebridStreamBadgeRules) : DebridStreamBadgeImportResult
-    data class Error(val message: String) : DebridStreamBadgeImportResult
+sealed interface StreamBadgeImportResult {
+    data class Success(val rules: StreamBadgeRules) : StreamBadgeImportResult
+    data class Error(val message: String) : StreamBadgeImportResult
 }
 
-internal object DebridStreamBadgeRulesParser {
+internal object StreamBadgeRulesParser {
     @OptIn(ExperimentalSerializationApi::class)
     private val json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
     }
 
-    fun parse(sourceUrl: String, payload: String): DebridStreamBadgeImport {
+    fun parse(sourceUrl: String, payload: String): StreamBadgeImport {
         val decoded = try {
-            json.decodeFromString<DebridStreamBadgePayload>(payload)
+            json.decodeFromString<StreamBadgePayload>(payload)
         } catch (error: SerializationException) {
             throw IllegalArgumentException("Invalid badge JSON: ${error.message.orEmpty()}")
         } catch (error: IllegalArgumentException) {
@@ -150,7 +150,7 @@ internal object DebridStreamBadgeRulesParser {
                 return@mapNotNull null
             }
 
-            DebridStreamBadgeFilter(
+            StreamBadgeFilter(
                 id = filter.id.orEmpty(),
                 groupId = filter.groupId.orEmpty(),
                 name = name,
@@ -169,7 +169,7 @@ internal object DebridStreamBadgeRulesParser {
         }
 
         val groups = decoded.groups.map { group ->
-            DebridStreamBadgeGroup(
+            StreamBadgeGroup(
                 id = group.id.orEmpty(),
                 name = group.name.orEmpty(),
                 color = group.color.orEmpty(),
@@ -177,7 +177,7 @@ internal object DebridStreamBadgeRulesParser {
             )
         }
 
-        return DebridStreamBadgeImport(
+        return StreamBadgeImport(
             sourceUrl = sourceUrl.trim(),
             filters = filters,
             groups = groups,
@@ -185,8 +185,8 @@ internal object DebridStreamBadgeRulesParser {
     }
 }
 
-internal object DebridStreamBadgeMatcher {
-    fun compile(rules: DebridStreamBadgeRules): List<DebridCompiledStreamBadgeFilter> {
+internal object StreamBadgeMatcher {
+    fun compile(rules: StreamBadgeRules): List<CompiledStreamBadgeFilter> {
         if (!rules.hasImport) return emptyList()
         return rules.normalized().imports.filter { it.isActive }.flatMap { import ->
             import.filters.mapNotNull { filter ->
@@ -194,7 +194,7 @@ internal object DebridStreamBadgeMatcher {
                     return@mapNotNull null
                 }
                 val regex = runCatching { Regex(filter.pattern) }.getOrNull() ?: return@mapNotNull null
-                DebridCompiledStreamBadgeFilter(
+                CompiledStreamBadgeFilter(
                     name = filter.name,
                     badge = StreamBadge(
                         name = filter.name,
@@ -210,14 +210,14 @@ internal object DebridStreamBadgeMatcher {
         }
     }
 
-    fun matchedNames(stream: StreamItem, rules: DebridStreamBadgeRules): List<String> =
+    fun matchedNames(stream: StreamItem, rules: StreamBadgeRules): List<String> =
         matchedNames(stream, compile(rules))
 
-    fun matchedNames(stream: StreamItem, filters: List<DebridCompiledStreamBadgeFilter>): List<String> {
+    fun matchedNames(stream: StreamItem, filters: List<CompiledStreamBadgeFilter>): List<String> {
         return matchedBadges(stream, filters).map { it.name }
     }
 
-    fun matchedBadges(stream: StreamItem, filters: List<DebridCompiledStreamBadgeFilter>): List<StreamBadge> {
+    fun matchedBadges(stream: StreamItem, filters: List<CompiledStreamBadgeFilter>): List<StreamBadge> {
         if (filters.isEmpty()) return emptyList()
         val candidates = badgeMatchCandidates(stream)
         if (candidates.isEmpty()) return emptyList()
@@ -271,7 +271,7 @@ internal object DebridStreamBadgeMatcher {
     }
 }
 
-data class DebridCompiledStreamBadgeFilter(
+data class CompiledStreamBadgeFilter(
     val name: String,
     val badge: StreamBadge,
     val regex: Regex,
@@ -281,13 +281,13 @@ private fun StreamBadge.dedupeKey(): String =
     imageURL.takeIf { it.isNotBlank() } ?: name
 
 @Serializable
-private data class DebridStreamBadgePayload(
-    val filters: List<DebridStreamBadgeFilterPayload> = emptyList(),
-    val groups: List<DebridStreamBadgeGroupPayload> = emptyList(),
+private data class StreamBadgePayload(
+    val filters: List<StreamBadgeFilterPayload> = emptyList(),
+    val groups: List<StreamBadgeGroupPayload> = emptyList(),
 )
 
 @Serializable
-private data class DebridStreamBadgeFilterPayload(
+private data class StreamBadgeFilterPayload(
     val id: String? = null,
     val groupId: String? = null,
     val name: String? = null,
@@ -302,7 +302,7 @@ private data class DebridStreamBadgeFilterPayload(
 )
 
 @Serializable
-private data class DebridStreamBadgeGroupPayload(
+private data class StreamBadgeGroupPayload(
     val id: String? = null,
     val name: String? = null,
     val color: String? = null,

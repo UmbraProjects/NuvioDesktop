@@ -53,13 +53,13 @@ class DebridStreamPresentationTest {
                 providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
                 streamNameTemplate = "{stream.rseMatched::join(' | ')}",
                 streamDescriptionTemplate = "{stream.regexMatched::~REMUX[\"has-remux\"||\"missing-remux\"]}",
-                streamBadgeRules = DebridStreamBadgeRules(
+                streamBadgeRules = StreamBadgeRules(
                     imports = listOf(
-                        DebridStreamBadgeImport(
+                        StreamBadgeImport(
                             sourceUrl = "https://example.test/media-badges.json",
                             isActive = false,
                             filters = listOf(
-                                DebridStreamBadgeFilter(
+                                StreamBadgeFilter(
                                     name = "REMUX",
                                     pattern = "(?i)\\bremux\\b",
                                     imageURL = "https://example.test/remux.png",
@@ -68,18 +68,18 @@ class DebridStreamPresentationTest {
                                     textColor = "#FFFFFF",
                                     borderColor = "#27C04F",
                                 ),
-                                DebridStreamBadgeFilter(
+                                StreamBadgeFilter(
                                     name = "Disabled",
                                     pattern = "(?i)\\bbluray\\b",
                                     isEnabled = false,
                                 ),
                             ),
                         ),
-                        DebridStreamBadgeImport(
+                        StreamBadgeImport(
                             sourceUrl = "https://example.test/audio-badges.json",
                             isActive = true,
                             filters = listOf(
-                                DebridStreamBadgeFilter(
+                                StreamBadgeFilter(
                                     name = "TRUEHD",
                                     pattern = "(?i)\\btruehd\\b",
                                     imageURL = "https://example.test/truehd.png",
@@ -103,7 +103,7 @@ class DebridStreamPresentationTest {
 
     @Test
     fun `parses fusion badge url payload shape`() {
-        val importedRules = DebridStreamBadgeRulesParser.parse(
+        val importedRules = StreamBadgeRulesParser.parse(
             sourceUrl = "https://example.test/fusion-tags-ume.json",
             payload = """
                 {
@@ -160,12 +160,12 @@ class DebridStreamPresentationTest {
             settings = DebridSettings(
                 enabled = true,
                 providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
-                streamBadgeRules = DebridStreamBadgeRules(
+                streamBadgeRules = StreamBadgeRules(
                     imports = listOf(
-                        DebridStreamBadgeImport(
+                        StreamBadgeImport(
                             sourceUrl = "https://example.test/badges.json",
                             filters = listOf(
-                                DebridStreamBadgeFilter(
+                                StreamBadgeFilter(
                                     name = "REMUX 1",
                                     pattern = "(?i)\\bremux\\b",
                                     imageURL = "https://example.test/remux-t1.png",

@@ -90,6 +90,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.rememberModalBottomSheetState
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
+import com.nuvio.app.features.debrid.BadgeChipDefaults
+import com.nuvio.app.features.debrid.ImportedBadgeChip
+import com.nuvio.app.features.debrid.ImportedBadgeChipSize
 import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -1214,32 +1217,14 @@ private fun StreamItem.instantServiceLabel(): String? {
 
 @Composable
 private fun StreamImportedBadge(badge: StreamBadge) {
-    val shape = RoundedCornerShape(6.dp)
-    val backgroundColor = if (badge.tagStyle.equals("filled", ignoreCase = true)) {
-        badge.tagColor.toBadgeColorOrNull()
-    } else {
-        null
-    }
-    val borderColor = badge.borderColor.toBadgeColorOrNull()
-
-    Box(
-        modifier = Modifier
-            .height(20.dp)
-            .then(if (backgroundColor != null) Modifier.background(backgroundColor, shape) else Modifier)
-            .then(if (borderColor != null) Modifier.border(1.dp, borderColor, shape) else Modifier)
-            .padding(horizontal = 3.dp, vertical = 2.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        AsyncImage(
-            model = badge.imageURL,
-            contentDescription = badge.name,
-            modifier = Modifier
-                .height(16.dp)
-                .widthIn(min = 34.dp, max = 92.dp)
-                .clip(shape),
-            contentScale = ContentScale.Fit,
-        )
-    }
+    ImportedBadgeChip(
+        imageURL = badge.imageURL,
+        name = badge.name,
+        tagColor = badge.tagColor,
+        tagStyle = badge.tagStyle,
+        borderColor = badge.borderColor,
+        size = ImportedBadgeChipSize.STREAM,
+    )
 }
 
 @Composable
@@ -1254,36 +1239,27 @@ private fun StreamFileSizeBadge(stream: StreamItem) {
         "${round(mib).toInt()} ${localizedByteUnit("MB")}"
     }
 
+    val badgeShape = BadgeChipDefaults.shape
     Box(
         modifier = Modifier
-            .height(20.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .height(ImportedBadgeChipSize.STREAM.containerHeight)
+            .clip(badgeShape)
             .background(Color(0xFF0A0C0C))
-            .border(1.dp, Color(0xFF0A0C0C), RoundedCornerShape(6.dp))
-            .padding(horizontal = 6.dp),
+            .border(1.dp, Color(0xFF0A0C0C), badgeShape)
+            .padding(horizontal = BadgeChipDefaults.fileSizeHorizontalPadding),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = stringResource(Res.string.streams_size, sizeLabel),
             style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 10.sp,
-                lineHeight = 12.sp,
+                fontSize = BadgeChipDefaults.fileSizeFontSize,
+                lineHeight = BadgeChipDefaults.fileSizeLineHeight,
                 fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.sp,
+                letterSpacing = BadgeChipDefaults.fileSizeLetterSpacing,
             ),
             color = Color.White,
         )
     }
-}
-
-private fun String.toBadgeColorOrNull(): Color? {
-    val hex = trim().removePrefix("#")
-    val argb = when (hex.length) {
-        6 -> "FF$hex"
-        8 -> hex
-        else -> return null
-    }
-    return argb.toLongOrNull(16)?.let { Color(it) }
 }
 
 private fun Long.toPlaybackClock(): String {

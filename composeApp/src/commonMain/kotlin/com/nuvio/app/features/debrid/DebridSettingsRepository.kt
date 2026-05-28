@@ -37,7 +37,7 @@ object DebridSettingsRepository {
     private var streamPreferences = DebridStreamPreferences()
     private var streamNameTemplate = DebridStreamFormatterDefaults.NAME_TEMPLATE
     private var streamDescriptionTemplate = DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE
-    private var streamBadgeRules = DebridStreamBadgeRules()
+    private var streamBadgeRules = StreamBadgeRules()
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -230,16 +230,16 @@ object DebridSettingsRepository {
         )
     }
 
-    suspend fun importStreamBadgeRulesFromUrl(url: String): DebridStreamBadgeImportResult {
+    suspend fun importStreamBadgeRulesFromUrl(url: String): StreamBadgeImportResult {
         ensureLoaded()
         val normalizedUrl = url.trim()
         if (normalizedUrl.isBlank()) {
-            return DebridStreamBadgeImportResult.Error("Enter a badge JSON URL.")
+            return StreamBadgeImportResult.Error("Enter a badge JSON URL.")
         }
         if (!normalizedUrl.startsWith("https://", ignoreCase = true) &&
             !normalizedUrl.startsWith("http://", ignoreCase = true)
         ) {
-            return DebridStreamBadgeImportResult.Error("Badge URL must start with http:// or https://.")
+            return StreamBadgeImportResult.Error("Badge URL must start with http:// or https://.")
         }
 
         return try {
@@ -247,21 +247,21 @@ object DebridSettingsRepository {
             val isExistingImport = currentRules.imports.any { import ->
                 import.sourceUrl.equals(normalizedUrl, ignoreCase = true)
             }
-            if (!isExistingImport && currentRules.imports.size >= DEBRID_STREAM_BADGE_IMPORT_LIMIT) {
-                return DebridStreamBadgeImportResult.Error("You can import up to $DEBRID_STREAM_BADGE_IMPORT_LIMIT badge URLs.")
+            if (!isExistingImport && currentRules.imports.size >= STREAM_BADGE_IMPORT_LIMIT) {
+                return StreamBadgeImportResult.Error("You can import up to $STREAM_BADGE_IMPORT_LIMIT badge URLs.")
             }
             val payload = httpGetText(normalizedUrl)
-            val parsedImport = DebridStreamBadgeRulesParser.parse(
+            val parsedImport = StreamBadgeRulesParser.parse(
                 sourceUrl = normalizedUrl,
                 payload = payload,
             )
             streamBadgeRules = currentRules.upsert(parsedImport, activate = true)
             publish()
             saveStreamBadgeRules()
-            DebridStreamBadgeImportResult.Success(streamBadgeRules)
+            StreamBadgeImportResult.Success(streamBadgeRules)
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            DebridStreamBadgeImportResult.Error(error.message ?: "Badge import failed.")
+            StreamBadgeImportResult.Error(error.message ?: "Badge import failed.")
         }
     }
 
@@ -383,7 +383,7 @@ object DebridSettingsRepository {
             DebridSettingsStorage.loadStreamDescriptionTemplate().orEmpty(),
             DebridTemplateKind.DESCRIPTION,
         )
-        streamBadgeRules = parseStreamBadgeRules(DebridSettingsStorage.loadStreamBadgeRules()) ?: DebridStreamBadgeRules()
+        streamBadgeRules = parseStreamBadgeRules(DebridSettingsStorage.loadStreamBadgeRules()) ?: StreamBadgeRules()
         publish()
     }
 
@@ -435,10 +435,10 @@ object DebridSettingsRepository {
         }
     }
 
-    private fun parseStreamBadgeRules(value: String?): DebridStreamBadgeRules? {
+    private fun parseStreamBadgeRules(value: String?): StreamBadgeRules? {
         if (value.isNullOrBlank()) return null
         val decodedRules = try {
-            json.decodeFromString<DebridStreamBadgeRules>(value).normalized()
+            json.decodeFromString<StreamBadgeRules>(value).normalized()
         } catch (_: SerializationException) {
             null
         } catch (_: IllegalArgumentException) {
@@ -447,7 +447,7 @@ object DebridSettingsRepository {
         if (decodedRules?.hasImport == true) return decodedRules
 
         val legacyRules = try {
-            json.decodeFromString<LegacyDebridStreamBadgeRules>(value)
+            json.decodeFromString<LegacyStreamBadgeRules>(value)
                 .toBadgeRules()
                 .normalized()
         } catch (_: SerializationException) {
@@ -475,15 +475,15 @@ object DebridSettingsRepository {
 }
 
 @Serializable
-private data class LegacyDebridStreamBadgeRules(
+private data class LegacyStreamBadgeRules(
     val sourceUrl: String = "",
-    val filters: List<DebridStreamBadgeFilter> = emptyList(),
-    val groups: List<DebridStreamBadgeGroup> = emptyList(),
+    val filters: List<StreamBadgeFilter> = emptyList(),
+    val groups: List<StreamBadgeGroup> = emptyList(),
 ) {
-    fun toBadgeRules(): DebridStreamBadgeRules =
-        DebridStreamBadgeRules(
+    fun toBadgeRules(): StreamBadgeRules =
+        StreamBadgeRules(
             imports = listOf(
-                DebridStreamBadgeImport(
+                StreamBadgeImport(
                     sourceUrl = sourceUrl,
                     filters = filters,
                     groups = groups,
