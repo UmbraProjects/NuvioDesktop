@@ -103,7 +103,6 @@ import com.nuvio.app.core.ui.isLiquidGlassNativeTabBarSupported
 import com.nuvio.app.core.ui.localizedContinueWatchingSubtitle
 import com.nuvio.app.features.auth.AuthScreen
 import com.nuvio.app.features.addons.AddonRepository
-import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.catalog.CatalogRepository
 import com.nuvio.app.features.catalog.CatalogScreen
 import com.nuvio.app.features.catalog.INTERNAL_LIBRARY_MANIFEST_URL
@@ -621,14 +620,6 @@ private fun MainAppContent(
     var networkToastBaselineReady by rememberSaveable { mutableStateOf(false) }
     var lastNetworkToastCondition by rememberSaveable { mutableStateOf(NetworkCondition.Unknown.name) }
 
-    val addonProbeTargets = remember(addonsUiState.addons) {
-        addonsUiState.addons
-            .enabledAddons()
-            .mapNotNull { it.manifest?.transportUrl }
-            .distinct()
-            .sorted()
-    }
-
     fun handleRootTabClick(tab: AppScreenTab) {
         if (selectedTab != tab) {
             selectedTab = tab
@@ -694,13 +685,9 @@ private fun MainAppContent(
         initialHomeReady = true
     }
 
-    LaunchedEffect(addonProbeTargets) {
-        NetworkStatusRepository.updateAddonProbeTargets(addonProbeTargets)
-    }
-
     LaunchedEffect(Unit) {
         AppForegroundMonitor.events().collect {
-            NetworkStatusRepository.requestRefresh(force = true)
+            NetworkStatusRepository.requestForegroundRefresh()
         }
     }
 
