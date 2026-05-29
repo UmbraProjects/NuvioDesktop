@@ -133,7 +133,14 @@ object WatchProgressRepository {
                 delay(NUVIO_SYNC_PERIODIC_INTERVAL_MS)
                 TraktAuthRepository.ensureLoaded()
                 TraktSettingsRepository.ensureLoaded()
-                if (shouldUseTraktProgress()) continue
+                if (shouldUseTraktProgress()) {
+                    runCatching { TraktProgressRepository.refreshNow() }
+                        .onFailure { error ->
+                            if (error is CancellationException) throw error
+                            log.w { "Periodic Trakt progress refresh failed: ${error.message}" }
+                        }
+                    continue
+                }
 
                 val authState = AuthRepository.state.value
                 if (authState !is AuthState.Authenticated || authState.isAnonymous) continue
