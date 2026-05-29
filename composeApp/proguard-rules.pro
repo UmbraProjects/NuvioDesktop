@@ -33,6 +33,9 @@
 -keep class com.dokar.quickjs.** { *; }
 -keep class com.nuvio.app.features.plugins.** { *; }
 
+# TorrServer based P2P streaming.
+-keep class com.nuvio.app.features.p2p.** { *; }
+
 # Media3 / ExoPlayer classes from local AAR decoders and stock modules.
 -dontwarn androidx.media3.**
 -keep class androidx.media3.** { *; }
