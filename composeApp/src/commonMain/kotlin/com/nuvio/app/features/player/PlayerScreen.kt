@@ -2635,13 +2635,12 @@ fun PlayerScreen(
             }
 
             P2pLoadingStatus(
-                visible = isP2pPlaybackActive &&
-                    initialLoadCompleted &&
-                    playbackSnapshot.isLoading &&
-                    errorMessage == null,
+                visible = showP2pRebufferStats && errorMessage == null,
                 message = p2pRebufferMessage,
                 progress = p2pRebufferProgress,
-                modifier = Modifier.align(Alignment.Center),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(top = 58.dp),
             )
 
             AnimatedVisibility(

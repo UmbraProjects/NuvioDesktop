@@ -1,5 +1,7 @@
 package com.nuvio.app.features.player
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -7,7 +9,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -170,7 +171,13 @@ internal fun OpeningOverlay(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            val progressValue = progress?.coerceIn(0f, 1f)
+            val targetProgress = progress?.coerceIn(0f, 1f)
+            val animatedProgress by animateFloatAsState(
+                targetValue = targetProgress ?: 0f,
+                animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+                label = "openingOverlayP2pProgress",
+            )
+            val progressActive = targetProgress != null
             if (logo != null) {
                 Box(
                     modifier = Modifier
@@ -183,22 +190,22 @@ internal fun OpeningOverlay(
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer {
-                                alpha = if (progressValue != null) 0.25f else contentAlpha
-                                if (progressValue == null) {
+                                alpha = if (progressActive) 0.25f else contentAlpha
+                                if (!progressActive) {
                                     scaleX = contentScale
                                     scaleY = contentScale
                                 }
                             },
                         contentScale = ContentScale.Fit,
                     )
-                    if (progressValue != null) {
+                    if (progressActive) {
                         AsyncImage(
                             model = logo,
                             contentDescription = null,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .drawWithContent {
-                                    clipRect(right = size.width * progressValue) {
+                                    clipRect(right = size.width * animatedProgress) {
                                         this@drawWithContent.drawContent()
                                     }
                                 },
@@ -232,7 +239,7 @@ internal fun OpeningOverlay(
                 )
             }
 
-            val showHorizontalProgress = progressValue != null && logo == null
+            val showHorizontalProgress = progressActive && logo == null
             if (!message.isNullOrBlank() || showHorizontalProgress) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Crossfade(
@@ -274,7 +281,7 @@ internal fun OpeningOverlay(
                     ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(progressValue)
+                                .fillMaxWidth(animatedProgress)
                                 .height(4.dp)
                                 .background(
                                     color = Color.White.copy(alpha = 0.85f),

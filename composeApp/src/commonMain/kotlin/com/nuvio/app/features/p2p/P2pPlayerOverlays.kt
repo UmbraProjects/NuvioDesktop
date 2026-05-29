@@ -5,21 +5,18 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -99,33 +96,37 @@ fun P2pLoadingStatus(
 
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color.Black.copy(alpha = 0.72f))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        CircularProgressIndicator(
-            color = MaterialTheme.colorScheme.primary,
-            strokeWidth = 2.5.dp,
-            modifier = Modifier.size(30.dp),
-        )
         if (!message.isNullOrBlank()) {
             Text(
                 text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.86f),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.78f),
             )
         }
         if (progress != null) {
-            LinearProgressIndicator(
-                progress = { progress.coerceIn(0f, 1f) },
+            Box(
                 modifier = Modifier
-                    .width(220.dp)
-                    .height(4.dp),
-                color = Color.White.copy(alpha = 0.85f),
-                trackColor = Color.White.copy(alpha = 0.2f),
-            )
+                    .width(200.dp)
+                    .height(3.dp)
+                    .background(
+                        color = Color.White.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(2.dp),
+                    ),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(200.dp * progress.coerceIn(0f, 1f))
+                        .height(3.dp)
+                        .background(
+                            color = Color.White.copy(alpha = 0.85f),
+                            shape = RoundedCornerShape(2.dp),
+                        ),
+                )
+            }
         }
     }
 }
