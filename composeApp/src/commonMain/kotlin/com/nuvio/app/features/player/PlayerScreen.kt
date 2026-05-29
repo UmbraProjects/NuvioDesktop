@@ -144,6 +144,7 @@ fun PlayerScreen(
     initialBingeGroup: String? = null,
     pauseDescription: String? = null,
     onBack: () -> Unit,
+    onOpenInExternalPlayer: ((ExternalPlayerPlaybackRequest) -> Unit)? = null,
     modifier: Modifier = Modifier,
     logo: String? = null,
     poster: String? = null,
@@ -2268,6 +2269,34 @@ fun PlayerScreen(
                     },
                     onSourcesClick = if (activeVideoId != null) { { openSourcesPanel() } } else null,
                     onEpisodesClick = if (isSeries) { { openEpisodesPanel() } } else null,
+                    onOpenInExternalPlayer = if (onOpenInExternalPlayer != null) {
+                        {
+                            val currentPositionMs = playbackSnapshot.positionMs
+                            val loadedSubtitles = addonSubtitles
+                                .takeIf { it.isNotEmpty() }
+                                ?.map { sub ->
+                                    SubtitleInput(
+                                        url = sub.url,
+                                        name = buildString {
+                                            if (!sub.addonName.isNullOrBlank()) {
+                                                append("[${sub.addonName}] ")
+                                            }
+                                            append(sub.display)
+                                        },
+                                        lang = sub.language,
+                                    )
+                                }
+                            val request = ExternalPlayerPlaybackRequest(
+                                sourceUrl = activeSourceUrl,
+                                title = title,
+                                streamTitle = activeStreamTitle,
+                                sourceHeaders = activeSourceHeaders,
+                                resumePositionMs = currentPositionMs,
+                                subtitles = loadedSubtitles,
+                            )
+                            onOpenInExternalPlayer(request)
+                        }
+                    } else null,
                     onSubmitIntroClick = if (isSeries && playerSettingsUiState.introSubmitEnabled && playerSettingsUiState.introDbApiKey.isNotBlank()) { { showSubmitIntroModal = true } } else null,
                     parentalWarnings = parentalWarnings,
                     showParentalGuide = showParentalGuide,

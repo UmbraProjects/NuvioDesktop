@@ -331,7 +331,8 @@ fun StreamsScreen(
                         strokeWidth = 2.5.dp,
                     )
                     Text(
-                        text = stringResource(Res.string.streams_finding_source),
+                        text = uiState.overlayMessage
+                            ?: stringResource(Res.string.streams_finding_source),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.8f),
                     )

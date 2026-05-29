@@ -770,7 +770,13 @@
     <string name="settings_playback_external_player_app">External Player App</string>
     <string name="settings_playback_external_player_description_android">Open new playback with Android&apos;s default video app or system chooser.</string>
     <string name="settings_playback_external_player_description_ios">Open new playback with the selected installed player.</string>
+    <string name="settings_playback_external_player_forward_subtitles">Forward Subtitles to External Player</string>
+    <string name="settings_playback_external_player_forward_subtitles_description">Fetch addon subtitles in your preferred language and pass them to the external player.</string>
     <string name="settings_playback_external_player_none_available">No supported external players installed</string>
+    <string name="settings_playback_player_preference">Player</string>
+    <string name="settings_playback_player_preference_internal">Internal</string>
+    <string name="settings_playback_player_preference_external">External</string>
+    <string name="settings_playback_player_preference_description">Choose which player handles new playback.</string>
     <string name="settings_playback_hold_speed">Hold Speed</string>
     <string name="settings_playback_hold_to_speed">Hold To Speed</string>
     <string name="settings_playback_hold_to_speed_description">Long-press anywhere on the player surface to temporarily boost playback speed.</string>
@@ -1200,6 +1206,7 @@
     <string name="streams_episode_title_with_name">S%1$dE%2$d - %3$s</string>
     <string name="streams_fetching">Fetching…</string>
     <string name="streams_finding_source">Finding source…</string>
+    <string name="streams_loading_subtitles">Loading subtitles from addons…</string>
     <string name="streams_finding_streams">Finding streams…</string>
     <string name="streams_link_copied">Stream link copied</string>
     <string name="streams_no_direct_link">No direct stream link available</string>

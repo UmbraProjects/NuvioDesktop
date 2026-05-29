@@ -294,6 +294,31 @@ object StreamsRepository {
                         eligibleGroupIds = eligibleGroupIds,
                     ).firstOrNull() ?: checkingGroup
                     publishAddonGroup(presentDebridGroup(availabilityGroup))
+
+                    // Early binge-group match right after this addon's availability is resolved
+                    if (isDirectAutoPlayFlow && !autoSelectTriggered && persistedBingeGroup != null && !timeoutElapsed) {
+                        val allStreams = _uiState.value.groups.flatMap { it.streams }
+                        if (allStreams.isNotEmpty()) {
+                            val earlyMatch = StreamAutoPlaySelector.selectAutoPlayStream(
+                                streams = allStreams,
+                                mode = autoPlayMode,
+                                regexPattern = playerSettings.streamAutoPlayRegex,
+                                source = playerSettings.streamAutoPlaySource,
+                                installedAddonNames = installedAddonNames,
+                                selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
+                                selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
+                                preferredBingeGroup = persistedBingeGroup,
+                                preferBingeGroupInSelection = true,
+                                bingeGroupOnly = true,
+                                debridEnabled = debridSettings.canResolvePlayableLinks,
+                                activeResolverProviderId = debridSettings.activeResolverProviderId,
+                            )
+                            if (earlyMatch != null) {
+                                autoSelectTriggered = true
+                                _uiState.update { it.copy(autoPlayStream = earlyMatch) }
+                            }
+                        }
+                    }
                 }
                 debridAvailabilityJobs += availabilityJob
             }
@@ -532,7 +557,34 @@ object StreamsRepository {
 
             for (availabilityJob in debridAvailabilityJobs) {
                 availabilityJob.join()
+
+                // Early binge-group match after each availability job completes
+                if (isDirectAutoPlayFlow && !autoSelectTriggered && persistedBingeGroup != null) {
+                    val allStreams = _uiState.value.groups.flatMap { it.streams }
+                    if (allStreams.isNotEmpty()) {
+                        val earlyMatch = StreamAutoPlaySelector.selectAutoPlayStream(
+                            streams = allStreams,
+                            mode = autoPlayMode,
+                            regexPattern = playerSettings.streamAutoPlayRegex,
+                            source = playerSettings.streamAutoPlaySource,
+                            installedAddonNames = installedAddonNames,
+                            selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
+                            selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
+                            preferredBingeGroup = persistedBingeGroup,
+                            preferBingeGroupInSelection = true,
+                            bingeGroupOnly = !timeoutElapsed,
+                            debridEnabled = debridSettings.canResolvePlayableLinks,
+                            activeResolverProviderId = debridSettings.activeResolverProviderId,
+                        )
+                        if (earlyMatch != null) {
+                            autoSelectTriggered = true
+                            _uiState.update { it.copy(autoPlayStream = earlyMatch) }
+                            break
+                        }
+                    }
+                }
             }
+
             launch {
                 DirectDebridStreamPreparer.prepare(
                     streams = _uiState.value.groups
@@ -552,6 +604,31 @@ object StreamsRepository {
                                 eligibleGroupIds = installedAddonIds,
                             ),
                         )
+                    }
+
+                    // Early binge-group match after each debrid-prepared stream
+                    if (isDirectAutoPlayFlow && !autoSelectTriggered && persistedBingeGroup != null) {
+                        val allStreams = _uiState.value.groups.flatMap { it.streams }
+                        if (allStreams.isNotEmpty()) {
+                            val earlyMatch = StreamAutoPlaySelector.selectAutoPlayStream(
+                                streams = allStreams,
+                                mode = autoPlayMode,
+                                regexPattern = playerSettings.streamAutoPlayRegex,
+                                source = playerSettings.streamAutoPlaySource,
+                                installedAddonNames = installedAddonNames,
+                                selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
+                                selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
+                                preferredBingeGroup = persistedBingeGroup,
+                                preferBingeGroupInSelection = true,
+                                bingeGroupOnly = !timeoutElapsed,
+                                debridEnabled = debridSettings.canResolvePlayableLinks,
+                                activeResolverProviderId = debridSettings.activeResolverProviderId,
+                            )
+                            if (earlyMatch != null) {
+                                autoSelectTriggered = true
+                                _uiState.update { it.copy(autoPlayStream = earlyMatch) }
+                            }
+                        }
                     }
                 }
 
@@ -705,6 +782,10 @@ object StreamsRepository {
         activeJob = null
         activeRequestKey = null
         _uiState.value = StreamsUiState()
+    }
+
+    fun setOverlayVisible(visible: Boolean, message: String? = null) {
+        _uiState.update { it.copy(showDirectAutoPlayOverlay = visible, overlayMessage = message) }
     }
 }
 
