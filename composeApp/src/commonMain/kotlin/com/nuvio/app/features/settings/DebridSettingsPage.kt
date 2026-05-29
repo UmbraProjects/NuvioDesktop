@@ -150,6 +150,7 @@ import nuvio.composeapp.generated.resources.settings_debrid_size_range
 import nuvio.composeapp.generated.resources.settings_debrid_size_range_desc
 import nuvio.composeapp.generated.resources.settings_debrid_learn_more
 import nuvio.composeapp.generated.resources.settings_debrid_template_default_format
+import nuvio.composeapp.generated.resources.settings_debrid_template_original_format
 import nuvio.composeapp.generated.resources.settings_debrid_release_groups_hint
 import nuvio.composeapp.generated.resources.settings_debrid_sort_best_quality
 import nuvio.composeapp.generated.resources.settings_debrid_sort_largest
@@ -600,7 +601,10 @@ private enum class DebridTemplateField {
 
 private fun templatePreview(value: String, defaultValue: String): String {
     val defaultFormat = runBlocking { getString(Res.string.settings_debrid_template_default_format) }
-    if (value.trim().isBlank() || value.trim() == defaultValue.trim()) return defaultFormat
+    val originalFormat = runBlocking { getString(Res.string.settings_debrid_template_original_format) }
+    val trimmed = value.trim()
+    if (trimmed.isBlank()) return originalFormat
+    if (trimmed == defaultValue.trim()) return defaultFormat
     val firstLine = value
         .lineSequence()
         .map { it.trim() }

@@ -661,9 +661,9 @@
     <string name="settings_debrid_prepare_count_many">%1$d links</string>
     <string name="settings_debrid_section_formatting">Formatting</string>
     <string name="settings_debrid_name_template">Name template</string>
-    <string name="settings_debrid_name_template_description">Controls how result names appear.</string>
+    <string name="settings_debrid_name_template_description">Controls how result names appear. Leave blank to use the original result name.</string>
     <string name="settings_debrid_description_template">Description template</string>
-    <string name="settings_debrid_description_template_description">Controls the metadata shown under each result.</string>
+    <string name="settings_debrid_description_template_description">Controls the metadata shown under each result. Leave blank to use the original result details.</string>
     <string name="settings_debrid_formatter_reset_title">Reset formatting</string>
     <string name="settings_debrid_formatter_reset_subtitle">Restore default result formatting.</string>
     <string name="settings_debrid_key_valid">API key validated.</string>
@@ -1545,6 +1545,7 @@
     <!-- Debrid misc -->
     <string name="settings_debrid_learn_more">Learn more</string>
     <string name="settings_debrid_template_default_format">Default format</string>
+    <string name="settings_debrid_template_original_format">Original format</string>
     <string name="settings_debrid_release_groups_hint">Enter one group per line.</string>
     <!-- Debrid sort profiles -->
     <string name="settings_debrid_sort_original">Original order</string>

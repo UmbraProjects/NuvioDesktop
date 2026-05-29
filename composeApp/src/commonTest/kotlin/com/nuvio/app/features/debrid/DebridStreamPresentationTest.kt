@@ -40,6 +40,28 @@ class DebridStreamPresentationTest {
     }
 
     @Test
+    fun `blank templates preserve original stream name and description`() {
+        val stream = localTorboxStream(
+            name = "Original torrent",
+            filename = "Movie.2026.1080p.WEB-DL.H265-GRP.mkv",
+            size = 4_000_000_000,
+        ).copy(description = "Original addon details")
+
+        val formatted = DebridStreamFormatter().format(
+            stream = stream,
+            settings = DebridSettings(
+                enabled = true,
+                providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
+                streamNameTemplate = "",
+                streamDescriptionTemplate = "",
+            ),
+        )
+
+        assertEquals("Original torrent", formatted.name)
+        assertEquals("Original addon details", formatted.description)
+    }
+
+    @Test
     fun `formats imported badge matches from fusion badge rules`() {
         val stream = localTorboxStream(
             filename = "Movie.2024.2160p.BluRay.REMUX.TrueHD.7.1-GRP.mkv",

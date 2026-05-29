@@ -390,11 +390,13 @@ object DebridSettingsRepository {
             }
         }
         streamNameTemplate = normalizeStreamTemplate(
-            DebridSettingsStorage.loadStreamNameTemplate().orEmpty(),
+            DebridSettingsStorage.loadStreamNameTemplate()
+                ?: DebridStreamFormatterDefaults.NAME_TEMPLATE,
             DebridTemplateKind.NAME,
         )
         streamDescriptionTemplate = normalizeStreamTemplate(
-            DebridSettingsStorage.loadStreamDescriptionTemplate().orEmpty(),
+            DebridSettingsStorage.loadStreamDescriptionTemplate()
+                ?: DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE,
             DebridTemplateKind.DESCRIPTION,
         )
         streamBadgeRules = parseStreamBadgeRules(DebridSettingsStorage.loadStreamBadgeRules()) ?: StreamBadgeRules()
