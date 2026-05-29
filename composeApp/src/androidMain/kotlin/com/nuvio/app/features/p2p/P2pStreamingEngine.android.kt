@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -33,8 +32,11 @@ actual object P2pStreamingEngine {
     actual val state: StateFlow<P2pStreamingState> = _state.asStateFlow()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val lifecycleLock = Any()
     private var statsJob: Job? = null
+    private var cleanupJob: Job? = null
     private var currentHash: String? = null
+    private var streamGeneration = 0L
     private var appContext: Context? = null
     private val binary = TorrServerBinary()
     private val api = TorrServerApi(binary)
@@ -45,29 +47,37 @@ actual object P2pStreamingEngine {
     }
 
     actual suspend fun startStream(request: P2pStreamRequest): String = withContext(Dispatchers.IO) {
-        stopStream()
+        stopStreamNow(stopBinary = false)
+        val generation = nextStreamGeneration()
         _state.value = P2pStreamingState.Connecting
 
         try {
             binary.start()
+            ensureCurrentGeneration(generation)
 
             val magnetLink = buildMagnetUri(request.infoHash, request.trackers)
             Log.d(TAG, "Starting stream: $magnetLink")
 
             val hash = api.addTorrent(magnetLink)
                 ?: throw P2pStreamingException("Failed to add torrent")
-            currentHash = hash
+            if (!attachTorrentIfCurrent(generation, hash)) {
+                api.dropTorrent(hash)
+                throw CancellationException("P2P stream start was cancelled")
+            }
 
             val resolvedIdx = resolveFileIndex(
                 hash = hash,
                 requestedIdx = request.fileIdx,
                 filename = request.filename,
             )
+            ensureCurrentGeneration(generation)
+
             val streamUrl = api.getStreamUrl(magnetLink, resolvedIdx)
             Log.d(TAG, "Stream URL: $streamUrl")
 
-            startStatsPolling(hash)
+            startStatsPolling(hash, generation)
 
+            ensureCurrentGeneration(generation)
             _state.value = P2pStreamingState.Streaming(
                 localUrl = streamUrl,
                 downloadSpeed = 0,
@@ -82,31 +92,88 @@ actual object P2pStreamingEngine {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _state.value = P2pStreamingState.Error(e.message ?: "Unknown torrent error")
+            if (isCurrentGeneration(generation)) {
+                _state.value = P2pStreamingState.Error(e.message ?: "Unknown torrent error")
+            }
             throw e
         }
     }
 
     actual fun stopStream() {
-        statsJob?.cancel()
-        statsJob = null
+        scheduleStop(stopBinary = false)
+    }
 
-        currentHash?.let { hash ->
+    actual fun shutdown() {
+        scheduleStop(stopBinary = true)
+    }
+
+    private fun scheduleStop(stopBinary: Boolean) {
+        val hash = detachActiveStream()
+        val previousCleanup = cleanupJob
+        cleanupJob = scope.launch {
+            previousCleanup?.join()
+            cleanupDetachedStream(hash, stopBinary)
+        }
+    }
+
+    private suspend fun stopStreamNow(stopBinary: Boolean) {
+        cleanupJob?.join()
+        val hash = detachActiveStream()
+        cleanupDetachedStream(hash, stopBinary)
+    }
+
+    private fun detachActiveStream(): String? {
+        val detached = synchronized(lifecycleLock) {
+            streamGeneration += 1
+            val hash = currentHash
+            val job = statsJob
+            currentHash = null
+            statsJob = null
+            hash to job
+        }
+        detached.second?.cancel()
+        _state.value = P2pStreamingState.Idle
+        return detached.first
+    }
+
+    private suspend fun cleanupDetachedStream(hash: String?, stopBinary: Boolean) {
+        hash?.let {
             try {
-                runBlocking(Dispatchers.IO) {
-                    api.dropTorrent(hash)
-                }
+                api.dropTorrent(it)
             } catch (e: Exception) {
                 Log.w(TAG, "Error dropping torrent", e)
             }
         }
-        currentHash = null
-        _state.value = P2pStreamingState.Idle
+
+        if (stopBinary) {
+            try {
+                binary.stop()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping TorrServer", e)
+            }
+        }
     }
 
-    actual fun shutdown() {
-        stopStream()
-        binary.stop()
+    private fun nextStreamGeneration(): Long =
+        synchronized(lifecycleLock) {
+            streamGeneration += 1
+            streamGeneration
+        }
+
+    private fun attachTorrentIfCurrent(generation: Long, hash: String): Boolean =
+        synchronized(lifecycleLock) {
+            if (streamGeneration != generation) return@synchronized false
+            currentHash = hash
+            true
+        }
+
+    private fun isCurrentGeneration(generation: Long): Boolean =
+        synchronized(lifecycleLock) { streamGeneration == generation }
+
+    private fun ensureCurrentGeneration(generation: Long) {
+        if (!isCurrentGeneration(generation)) {
+            throw CancellationException("P2P stream start was cancelled")
+        }
     }
 
     private fun buildMagnetUri(infoHash: String, extraTrackers: List<String>): String {
@@ -176,14 +243,19 @@ actual object P2pStreamingEngine {
         return result
     }
 
-    private fun startStatsPolling(hash: String) {
+    private fun startStatsPolling(hash: String, generation: Long) {
         statsJob?.cancel()
         statsJob = scope.launch {
             while (isActive) {
+                if (!isCurrentGeneration(generation)) return@launch
                 try {
                     val stats = api.getTorrentStats(hash)
                     val currentState = _state.value
-                    if (stats != null && currentState is P2pStreamingState.Streaming) {
+                    if (
+                        stats != null &&
+                        currentState is P2pStreamingState.Streaming &&
+                        isCurrentGeneration(generation)
+                    ) {
                         _state.value = currentState.copy(
                             downloadSpeed = stats.downloadSpeed,
                             uploadSpeed = stats.uploadSpeed,
