@@ -329,7 +329,7 @@ private fun PlaybackSettingsSection(
                         onClick = { showExternalPlayerAppDialog = true },
                     )
                 }
-                if (autoPlayPlayerSettings.externalPlayerEnabled) {
+                if (!isIos && autoPlayPlayerSettings.externalPlayerEnabled) {
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_external_player_forward_subtitles),
