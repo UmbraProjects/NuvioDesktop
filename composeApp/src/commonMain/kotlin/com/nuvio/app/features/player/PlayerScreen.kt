@@ -56,7 +56,6 @@ import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.p2p.P2pConsentDialog
 import com.nuvio.app.features.p2p.P2pLoadingStatus
 import com.nuvio.app.features.p2p.P2pSettingsRepository
-import com.nuvio.app.features.p2p.P2pStatsOverlay
 import com.nuvio.app.features.p2p.P2pStreamRequest
 import com.nuvio.app.features.p2p.P2pStreamingEngine
 import com.nuvio.app.features.p2p.P2pStreamingState
@@ -93,6 +92,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -365,9 +365,13 @@ fun PlayerScreen(
             !isP2pPlaybackActive || initialLoadCompleted || p2pStats == null -> null
             else -> (p2pStats.preloadedBytes.toFloat() / P2pInitialPreloadTargetBytes.toFloat()).coerceIn(0f, 1f)
         }
+        val showP2pRebufferStats = isP2pPlaybackActive &&
+            initialLoadCompleted &&
+            playbackSnapshot.isLoading &&
+            p2pStats != null &&
+            !p2pSettingsUiState.hideTorrentStats
         val p2pRebufferMessage = when {
-            !isP2pPlaybackActive || !initialLoadCompleted || !playbackSnapshot.isLoading || p2pStats == null -> null
-            p2pSettingsUiState.hideTorrentStats -> null
+            !showP2pRebufferStats -> null
             else -> {
                 val bufferedSeconds = ((playbackSnapshot.bufferedPositionMs - playbackSnapshot.positionMs) / 1000L)
                     .coerceAtLeast(0L)
@@ -377,7 +381,7 @@ fun PlayerScreen(
             }
         }
         val p2pRebufferProgress = when {
-            !isP2pPlaybackActive || !initialLoadCompleted || !playbackSnapshot.isLoading -> null
+            !showP2pRebufferStats -> null
             else -> {
                 val bufferedSeconds = ((playbackSnapshot.bufferedPositionMs - playbackSnapshot.positionMs) / 1000f)
                     .coerceAtLeast(0f)
@@ -1974,7 +1978,10 @@ fun PlayerScreen(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                errorMessage = "Failed to start torrent: ${error.message ?: genericUnknownLabel}"
+                errorMessage = getString(
+                    Res.string.player_error_failed_start_torrent,
+                    error.message ?: genericUnknownLabel,
+                )
                 controlsVisible = !playerControlsLocked
                 initialLoadCompleted = true
             }
@@ -1983,7 +1990,7 @@ fun PlayerScreen(
         LaunchedEffect(p2pStreamingState, activeTorrentInfoHash) {
             val state = p2pStreamingState
             if (activeTorrentInfoHash != null && state is P2pStreamingState.Error) {
-                errorMessage = "Torrent error: ${state.message}"
+                errorMessage = getString(Res.string.player_error_torrent, state.message)
                 controlsVisible = !playerControlsLocked
             }
         }
@@ -2622,29 +2629,18 @@ fun PlayerScreen(
                     onBack = onBackWithProgress,
                     horizontalSafePadding = horizontalSafePadding,
                     modifier = Modifier.fillMaxSize(),
+                    message = p2pInitialLoadingMessage,
+                    progress = p2pInitialLoadingProgress,
                 )
             }
 
-            P2pStatsOverlay(
-                visible = isP2pPlaybackActive &&
-                    p2pStats != null &&
-                    !p2pSettingsUiState.hideTorrentStats &&
-                    errorMessage == null,
-                downloadSpeed = p2pStats?.downloadSpeed ?: 0L,
-                uploadSpeed = p2pStats?.uploadSpeed ?: 0L,
-                peers = p2pStats?.peers ?: 0,
-                seeds = p2pStats?.seeds ?: 0,
-                totalProgress = p2pStats?.totalProgress ?: 0f,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Top))
-                    .padding(horizontal = horizontalSafePadding)
-                    .padding(top = 24.dp),
-            )
-
             P2pLoadingStatus(
-                message = p2pRebufferMessage ?: p2pInitialLoadingMessage,
-                progress = p2pRebufferProgress ?: p2pInitialLoadingProgress,
+                visible = isP2pPlaybackActive &&
+                    initialLoadCompleted &&
+                    playbackSnapshot.isLoading &&
+                    errorMessage == null,
+                message = p2pRebufferMessage,
+                progress = p2pRebufferProgress,
                 modifier = Modifier.align(Alignment.Center),
             )
 

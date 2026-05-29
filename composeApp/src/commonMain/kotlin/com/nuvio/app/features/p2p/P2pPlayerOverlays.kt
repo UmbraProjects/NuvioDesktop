@@ -93,8 +93,9 @@ fun P2pLoadingStatus(
     message: String?,
     progress: Float?,
     modifier: Modifier = Modifier,
+    visible: Boolean = message != null || progress != null,
 ) {
-    if (message == null && progress == null) return
+    if (!visible) return
 
     Column(
         modifier = modifier
