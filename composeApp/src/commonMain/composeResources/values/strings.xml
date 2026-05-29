@@ -1547,7 +1547,8 @@
     <string name="settings_debrid_template_default_format">Default format</string>
     <string name="settings_debrid_release_groups_hint">Enter one group per line.</string>
     <!-- Debrid sort profiles -->
-    <string name="settings_debrid_sort_default">Default</string>
+    <string name="settings_debrid_sort_original">Original order</string>
+    <string name="settings_debrid_sort_best_quality">Best quality first</string>
     <string name="settings_debrid_sort_largest">Largest first</string>
     <string name="settings_debrid_sort_smallest">Smallest first</string>
     <string name="settings_debrid_sort_best_audio">Best audio first</string>

@@ -34,10 +34,18 @@ object DebridStreamPresentation {
 
     internal fun applyPreferences(streams: List<StreamItem>, settings: DebridSettings): List<StreamItem> {
         val preferences = DebridStreamMetadata.effectivePreferences(settings)
-        return streams.map { it to DebridStreamMetadata.facts(it, preferences) }
+        val matchedStreams = streams.map { it to DebridStreamMetadata.facts(it, preferences) }
             .filter { (_, facts) -> facts.matchesFilters(preferences) }
-            .sortedWith { left, right -> compareFacts(left.second, right.second, preferences.sortCriteria) }
-            .let { sorted -> applyLimits(sorted, preferences) }
+
+        val orderedStreams = if (preferences.sortCriteria.isEmpty()) {
+            matchedStreams
+        } else {
+            matchedStreams.sortedWith { left, right ->
+                compareFacts(left.second, right.second, preferences.sortCriteria)
+            }
+        }
+
+        return applyLimits(orderedStreams, preferences)
             .map { it.first }
     }
 
@@ -114,7 +122,7 @@ object DebridStreamPresentation {
         right: DebridStreamFacts,
         criteria: List<DebridStreamSortCriterion>,
     ): Int {
-        for (criterion in criteria.ifEmpty { DebridStreamSortCriterion.defaultOrder }) {
+        for (criterion in criteria) {
             val comparison = compareKey(left, right, criterion)
             if (comparison != 0) return comparison
         }

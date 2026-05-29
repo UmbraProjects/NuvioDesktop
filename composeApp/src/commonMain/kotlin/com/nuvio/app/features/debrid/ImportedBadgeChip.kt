@@ -63,19 +63,23 @@ internal fun ImportedBadgeChip(
     size: ImportedBadgeChipSize,
     modifier: Modifier = Modifier,
 ) {
-    val backgroundColor = if (tagStyle.equals("filled", ignoreCase = true)) {
-        tagColor.toBadgeColorOrNull()
+    val backgroundColorArgb = if (tagStyle.equals("filled", ignoreCase = true)) {
+        tagColor.toBadgeColorArgbOrNull()
     } else {
         null
     }
-    val outlineColor = borderColor.toBadgeColorOrNull()
+    val outlineColorArgb = borderColor.toBadgeColorArgbOrNull()
     val shape = BadgeChipDefaults.shape
+    var chipModifier = modifier.height(size.containerHeight)
+    if (backgroundColorArgb != null) {
+        chipModifier = chipModifier.background(Color(backgroundColorArgb), shape)
+    }
+    if (outlineColorArgb != null) {
+        chipModifier = chipModifier.border(1.dp, Color(outlineColorArgb), shape)
+    }
 
     Box(
-        modifier = modifier
-            .height(size.containerHeight)
-            .then(if (backgroundColor != null) Modifier.background(backgroundColor, shape) else Modifier)
-            .then(if (outlineColor != null) Modifier.border(1.dp, outlineColor, shape) else Modifier)
+        modifier = chipModifier
             .padding(horizontal = size.horizontalPadding, vertical = size.verticalPadding),
         contentAlignment = Alignment.Center,
     ) {
@@ -91,12 +95,12 @@ internal fun ImportedBadgeChip(
     }
 }
 
-private fun String.toBadgeColorOrNull(): Color? {
+private fun String.toBadgeColorArgbOrNull(): Long? {
     val hex = trim().removePrefix("#")
     val argb = when (hex.length) {
         6 -> "FF$hex"
         8 -> hex
         else -> return null
     }
-    return argb.toLongOrNull(16)?.let { Color(it) }
+    return argb.toLongOrNull(16)
 }

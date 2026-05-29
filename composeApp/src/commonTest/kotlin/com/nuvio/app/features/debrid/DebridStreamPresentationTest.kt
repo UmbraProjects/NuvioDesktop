@@ -212,6 +212,79 @@ class DebridStreamPresentationTest {
     }
 
     @Test
+    fun `preserves original addon order by default`() {
+        val low = localTorboxStream(
+            name = "Low",
+            filename = "Movie.720p.BluRay.x264-GRP.mkv",
+            size = 4_000_000_000,
+        )
+        val large = localTorboxStream(
+            name = "Large",
+            filename = "Movie.2160p.BluRay.REMUX.HEVC-GRP.mkv",
+            size = 40_000_000_000,
+        )
+        val mid = localTorboxStream(
+            name = "Mid",
+            filename = "Movie.1080p.WEB-DL.HEVC-GRP.mkv",
+            size = 10_000_000_000,
+        )
+
+        val presented = DebridStreamPresentation.apply(
+            groups = listOf(
+                AddonStreamGroup(
+                    addonName = "Addon",
+                    addonId = "addon:test",
+                    streams = listOf(low, large, mid),
+                ),
+            ),
+            settings = DebridSettings(
+                enabled = true,
+                providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
+            ),
+        ).single().streams
+
+        assertEquals(listOf("720p TB Instant", "2160p TB Instant", "1080p TB Instant"), presented.map { it.name })
+    }
+
+    @Test
+    fun `sorts by best quality when quality criteria are selected`() {
+        val low = localTorboxStream(
+            name = "Low",
+            filename = "Movie.720p.BluRay.x264-GRP.mkv",
+            size = 4_000_000_000,
+        )
+        val large = localTorboxStream(
+            name = "Large",
+            filename = "Movie.2160p.BluRay.REMUX.HEVC-GRP.mkv",
+            size = 40_000_000_000,
+        )
+        val mid = localTorboxStream(
+            name = "Mid",
+            filename = "Movie.1080p.WEB-DL.HEVC-GRP.mkv",
+            size = 10_000_000_000,
+        )
+
+        val presented = DebridStreamPresentation.apply(
+            groups = listOf(
+                AddonStreamGroup(
+                    addonName = "Addon",
+                    addonId = "addon:test",
+                    streams = listOf(low, large, mid),
+                ),
+            ),
+            settings = DebridSettings(
+                enabled = true,
+                providerApiKeys = mapOf(DebridProviders.TORBOX_ID to "key"),
+                streamPreferences = DebridStreamPreferences(
+                    sortCriteria = DebridStreamSortCriterion.defaultOrder,
+                ),
+            ),
+        ).single().streams
+
+        assertEquals(listOf("2160p TB Instant", "1080p TB Instant", "720p TB Instant"), presented.map { it.name })
+    }
+
+    @Test
     fun `applies debrid sort filters and limits without removing normal urls`() {
         val low = localTorboxStream(
             name = "Low",
