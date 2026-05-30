@@ -39,7 +39,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 
-private const val NUVIO_SYNC_PERIODIC_INTERVAL_MS = 5L * 60L * 1000L
+private const val NUVIO_SYNC_PERIODIC_INTERVAL_MS = 30L * 60L * 1000L
 private const val WATCH_PROGRESS_METADATA_RESOLUTION_CONCURRENCY = 4
 private const val WATCH_PROGRESS_METADATA_RESOLUTION_LIMIT = 64
 
