@@ -768,7 +768,7 @@ private fun MainAppContent(
 
         val activeProfileId = profileState.activeProfile?.profileIndex ?: return@LaunchedEffect
         AppForegroundMonitor.events().collect {
-            SyncManager.requestForegroundPull(activeProfileId)
+            SyncManager.requestForegroundPull(activeProfileId, force = true)
         }
     }
     var profileSwitchLoading by remember { mutableStateOf(false) }
