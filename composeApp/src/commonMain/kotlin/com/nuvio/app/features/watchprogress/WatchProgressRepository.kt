@@ -27,7 +27,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,7 +38,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 
-private const val NUVIO_SYNC_PERIODIC_INTERVAL_MS = 30L * 60L * 1000L
 private const val WATCH_PROGRESS_METADATA_RESOLUTION_CONCURRENCY = 4
 private const val WATCH_PROGRESS_METADATA_RESOLUTION_LIMIT = 64
 
@@ -128,31 +126,6 @@ object WatchProgressRepository {
             }
         }
 
-        syncScope.launch {
-            while (true) {
-                delay(NUVIO_SYNC_PERIODIC_INTERVAL_MS)
-                TraktAuthRepository.ensureLoaded()
-                TraktSettingsRepository.ensureLoaded()
-                if (shouldUseTraktProgress()) {
-                    runCatching { TraktProgressRepository.refreshNow() }
-                        .onFailure { error ->
-                            if (error is CancellationException) throw error
-                            log.w { "Periodic Trakt progress refresh failed: ${error.message}" }
-                        }
-                    continue
-                }
-
-                val authState = AuthRepository.state.value
-                if (authState !is AuthState.Authenticated || authState.isAnonymous) continue
-                if (!hasCompletedInitialNuvioSyncPull || isPullingNuvioSyncFromServer) continue
-
-                runCatching { pullFromServer(ProfileRepository.activeProfileId) }
-                    .onFailure { error ->
-                        if (error is CancellationException) throw error
-                        log.w { "Periodic NuvioSync pull failed: ${error.message}" }
-                    }
-            }
-        }
     }
 
     fun ensureLoaded() {
