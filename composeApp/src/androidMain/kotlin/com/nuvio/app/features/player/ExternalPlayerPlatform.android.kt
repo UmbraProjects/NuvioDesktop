@@ -5,6 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.runBlocking
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.external_player_android_system
+import org.jetbrains.compose.resources.getString
 import java.io.File
 import java.net.URI
 
@@ -20,7 +24,12 @@ internal actual object ExternalPlayerPlatform {
     actual fun defaultPlayerId(): String? = AndroidSystemPlayerId
 
     actual fun availablePlayers(): List<ExternalPlayerApp> =
-        listOf(ExternalPlayerApp(AndroidSystemPlayerId, "Android system player"))
+        listOf(
+            ExternalPlayerApp(
+                AndroidSystemPlayerId,
+                runBlocking { getString(Res.string.external_player_android_system) },
+            ),
+        )
 
     actual fun open(
         request: ExternalPlayerPlaybackRequest,

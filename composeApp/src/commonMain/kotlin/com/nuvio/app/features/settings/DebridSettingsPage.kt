@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,21 +14,26 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,8 +51,12 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.debrid.DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT
+import com.nuvio.app.features.debrid.STREAM_BADGE_IMPORT_LIMIT
+import com.nuvio.app.features.debrid.ImportedBadgeChip
+import com.nuvio.app.features.debrid.ImportedBadgeChipSize
 import com.nuvio.app.features.debrid.DebridCredentialValidator
 import com.nuvio.app.features.debrid.DebridDeviceAuthorization
 import com.nuvio.app.features.debrid.DebridDeviceAuthorizationTokenResult
@@ -55,6 +66,10 @@ import com.nuvio.app.features.debrid.DebridProviderAuthMethod
 import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.debrid.DebridSettings
 import com.nuvio.app.features.debrid.DebridSettingsRepository
+import com.nuvio.app.features.debrid.StreamBadgeImportResult
+import com.nuvio.app.features.debrid.StreamBadgeFilter
+import com.nuvio.app.features.debrid.StreamBadgeImport
+import com.nuvio.app.features.debrid.StreamBadgeRules
 import com.nuvio.app.features.debrid.DebridStreamFormatterDefaults
 import com.nuvio.app.features.debrid.DebridStreamAudioChannel
 import com.nuvio.app.features.debrid.DebridStreamAudioTag
@@ -73,6 +88,7 @@ import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
 import nuvio.composeapp.generated.resources.action_clear
+import nuvio.composeapp.generated.resources.action_delete
 import nuvio.composeapp.generated.resources.action_retry
 import nuvio.composeapp.generated.resources.action_reset
 import nuvio.composeapp.generated.resources.action_save
@@ -120,8 +136,84 @@ import nuvio.composeapp.generated.resources.settings_debrid_resolve_with_descrip
 import nuvio.composeapp.generated.resources.settings_debrid_section_instant_playback
 import nuvio.composeapp.generated.resources.settings_debrid_section_formatting
 import nuvio.composeapp.generated.resources.settings_debrid_section_providers
+import nuvio.composeapp.generated.resources.settings_debrid_section_result_management
 import nuvio.composeapp.generated.resources.settings_debrid_section_title
+import nuvio.composeapp.generated.resources.settings_debrid_max_results
+import nuvio.composeapp.generated.resources.settings_debrid_max_results_desc
+import nuvio.composeapp.generated.resources.settings_debrid_sort_results
+import nuvio.composeapp.generated.resources.settings_debrid_sort_results_desc
+import nuvio.composeapp.generated.resources.settings_debrid_per_resolution_limit
+import nuvio.composeapp.generated.resources.settings_debrid_per_resolution_limit_desc
+import nuvio.composeapp.generated.resources.settings_debrid_per_quality_limit
+import nuvio.composeapp.generated.resources.settings_debrid_per_quality_limit_desc
+import nuvio.composeapp.generated.resources.settings_debrid_size_range
+import nuvio.composeapp.generated.resources.settings_debrid_size_range_desc
+import nuvio.composeapp.generated.resources.settings_debrid_learn_more
+import nuvio.composeapp.generated.resources.settings_debrid_template_default_format
+import nuvio.composeapp.generated.resources.settings_debrid_template_original_format
+import nuvio.composeapp.generated.resources.settings_debrid_release_groups_hint
+import nuvio.composeapp.generated.resources.settings_debrid_sort_best_quality
+import nuvio.composeapp.generated.resources.settings_debrid_sort_largest
+import nuvio.composeapp.generated.resources.settings_debrid_sort_original
+import nuvio.composeapp.generated.resources.settings_debrid_sort_smallest
+import nuvio.composeapp.generated.resources.settings_debrid_sort_best_audio
+import nuvio.composeapp.generated.resources.settings_debrid_sort_language
+import nuvio.composeapp.generated.resources.settings_debrid_selection_any
+import nuvio.composeapp.generated.resources.settings_debrid_selection_count
+import nuvio.composeapp.generated.resources.settings_debrid_results_all
+import nuvio.composeapp.generated.resources.settings_debrid_results_count
+import nuvio.composeapp.generated.resources.settings_debrid_size_up_to
+import nuvio.composeapp.generated.resources.settings_debrid_size_min
+import nuvio.composeapp.generated.resources.settings_debrid_size_range_value
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_resolutions
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_resolutions_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_resolutions
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_resolutions_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_resolutions
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_resolutions_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_qualities
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_qualities_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_qualities
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_qualities_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_qualities
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_qualities_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_visual_tags
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_visual_tags_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_visual_tags
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_visual_tags_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_visual_tags
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_visual_tags_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_audio_tags
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_audio_tags_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_audio_tags
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_audio_tags_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_audio_tags
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_audio_tags_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_channels
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_channels_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_channels
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_channels_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_channels
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_channels_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_encodes
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_encodes_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_encodes
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_encodes_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_encodes
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_encodes_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_languages
+import nuvio.composeapp.generated.resources.settings_debrid_rule_preferred_languages_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_languages
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_languages_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_languages
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_languages_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_release_groups
+import nuvio.composeapp.generated.resources.settings_debrid_rule_required_release_groups_desc
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_release_groups
+import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_release_groups_desc
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+import kotlinx.coroutines.runBlocking
 
 private const val CLOUD_SERVICES_FAQ_URL = "https://nuvioapp.space/faq#common-cloud-library-and-cloud-services"
 
@@ -319,14 +411,14 @@ internal fun LazyListScope.debridSettingsContent(
         val rows = debridRuleRows(preferences)
 
         SettingsSection(
-            title = "Result Management",
+            title = stringResource(Res.string.settings_debrid_section_result_management),
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
                 DebridPreferenceRow(
                     isTablet = isTablet,
-                    title = "Max results",
-                    description = "Limit how many results appear.",
+                    title = stringResource(Res.string.settings_debrid_max_results),
+                    description = stringResource(Res.string.settings_debrid_max_results_desc),
                     value = streamMaxResultsLabel(preferences.maxResults),
                     enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.MAX_RESULTS },
@@ -334,8 +426,8 @@ internal fun LazyListScope.debridSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 DebridPreferenceRow(
                     isTablet = isTablet,
-                    title = "Sort results",
-                    description = "Choose how results are ordered.",
+                    title = stringResource(Res.string.settings_debrid_sort_results),
+                    description = stringResource(Res.string.settings_debrid_sort_results_desc),
                     value = sortProfileLabel(preferences.sortCriteria),
                     enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.SORT_MODE },
@@ -343,8 +435,8 @@ internal fun LazyListScope.debridSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 DebridPreferenceRow(
                     isTablet = isTablet,
-                    title = "Per resolution limit",
-                    description = "Cap repeated 2160p, 1080p, 720p results after sorting.",
+                    title = stringResource(Res.string.settings_debrid_per_resolution_limit),
+                    description = stringResource(Res.string.settings_debrid_per_resolution_limit_desc),
                     value = streamMaxResultsLabel(preferences.maxPerResolution),
                     enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.MAX_PER_RESOLUTION },
@@ -352,8 +444,8 @@ internal fun LazyListScope.debridSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 DebridPreferenceRow(
                     isTablet = isTablet,
-                    title = "Per quality limit",
-                    description = "Cap repeated BluRay, WEB-DL, REMUX results after sorting.",
+                    title = stringResource(Res.string.settings_debrid_per_quality_limit),
+                    description = stringResource(Res.string.settings_debrid_per_quality_limit_desc),
                     value = streamMaxResultsLabel(preferences.maxPerQuality),
                     enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.MAX_PER_QUALITY },
@@ -361,8 +453,8 @@ internal fun LazyListScope.debridSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 DebridPreferenceRow(
                     isTablet = isTablet,
-                    title = "Size range",
-                    description = "Filter results by file size.",
+                    title = stringResource(Res.string.settings_debrid_size_range),
+                    description = stringResource(Res.string.settings_debrid_size_range_desc),
                     value = sizeRangeLabel(preferences),
                     enabled = settings.canResolvePlayableLinks,
                     onClick = { activeStreamPicker = DebridStreamPicker.SIZE_RANGE },
@@ -393,6 +485,7 @@ internal fun LazyListScope.debridSettingsContent(
 
     item {
         var activeTemplateField by rememberSaveable { mutableStateOf<DebridTemplateField?>(null) }
+        var showBadgeImportDialog by rememberSaveable { mutableStateOf(false) }
 
         SettingsSection(
             title = stringResource(Res.string.settings_debrid_section_formatting),
@@ -425,6 +518,15 @@ internal fun LazyListScope.debridSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 DebridPreferenceRow(
                     isTablet = isTablet,
+                    title = "Badge URLs",
+                    description = "Manage imported label badge JSON URLs.",
+                    value = badgeRulesPreview(settings.streamBadgeRules),
+                    enabled = settings.canResolvePlayableLinks,
+                    onClick = { showBadgeImportDialog = true },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                DebridPreferenceRow(
+                    isTablet = isTablet,
                     title = stringResource(Res.string.settings_debrid_formatter_reset_title),
                     description = stringResource(Res.string.settings_debrid_formatter_reset_subtitle),
                     value = stringResource(Res.string.action_reset),
@@ -453,6 +555,13 @@ internal fun LazyListScope.debridSettingsContent(
             )
             null -> Unit
         }
+
+        if (showBadgeImportDialog) {
+            BadgeUrlManagerDialog(
+                currentRules = settings.streamBadgeRules,
+                onDismiss = { showBadgeImportDialog = false },
+            )
+        }
     }
 
     debridLearnMoreFooterItem(isTablet)
@@ -480,7 +589,7 @@ private fun DebridLearnMoreFooter(
         contentAlignment = Alignment.Center,
     ) {
         TextButton(onClick = onClick) {
-            Text("Learn more")
+            Text(stringResource(Res.string.settings_debrid_learn_more))
         }
     }
 }
@@ -491,13 +600,26 @@ private enum class DebridTemplateField {
 }
 
 private fun templatePreview(value: String, defaultValue: String): String {
-    if (value.trim().isBlank() || value.trim() == defaultValue.trim()) return "Default format"
+    val defaultFormat = runBlocking { getString(Res.string.settings_debrid_template_default_format) }
+    val originalFormat = runBlocking { getString(Res.string.settings_debrid_template_original_format) }
+    val trimmed = value.trim()
+    if (trimmed.isBlank()) return originalFormat
+    if (trimmed == defaultValue.trim()) return defaultFormat
     val firstLine = value
         .lineSequence()
         .map { it.trim() }
         .firstOrNull { it.isNotBlank() }
-        ?: return "Default format"
+        ?: return defaultFormat
     return if (firstLine.length <= 28) firstLine else "${firstLine.take(28)}..."
+}
+
+private fun badgeRulesPreview(rules: StreamBadgeRules): String {
+    val normalizedRules = rules.normalized()
+    return if (normalizedRules.hasImport) {
+        "${normalizedRules.imports.size}/$STREAM_BADGE_IMPORT_LIMIT URLs, ${normalizedRules.enabledFilterCount} active badges"
+    } else {
+        "Not imported"
+    }
 }
 
 @Composable
@@ -664,6 +786,355 @@ private fun DebridTemplateDialog(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun BadgeUrlManagerDialog(
+    currentRules: StreamBadgeRules,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val imports = currentRules.normalized().imports
+    var draftUrl by rememberSaveable { mutableStateOf("") }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var isImporting by rememberSaveable { mutableStateOf(false) }
+    var previewImport by remember { mutableStateOf<StreamBadgeImport?>(null) }
+
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        DebridDialogSurface(title = "Badge URLs") {
+            Text(
+                text = "Import up to $STREAM_BADGE_IMPORT_LIMIT label badge JSON URLs. Each URL can be updated or deleted separately.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = draftUrl,
+                onValueChange = {
+                    draftUrl = it
+                    errorMessage = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Badge JSON URL") },
+                singleLine = false,
+                minLines = 2,
+                maxLines = 4,
+                enabled = !isImporting,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    disabledContainerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${imports.size}/$STREAM_BADGE_IMPORT_LIMIT URLs imported",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    enabled = !isImporting && draftUrl.isNotBlank(),
+                    onClick = {
+                        scope.launch {
+                            isImporting = true
+                            errorMessage = null
+                            when (val result = DebridSettingsRepository.importStreamBadgeRulesFromUrl(draftUrl)) {
+                                is StreamBadgeImportResult.Success -> {
+                                    draftUrl = ""
+                                    isImporting = false
+                                }
+                                is StreamBadgeImportResult.Error -> {
+                                    errorMessage = result.message
+                                    isImporting = false
+                                }
+                            }
+                        }
+                    },
+                ) {
+                    if (isImporting) {
+                        CircularProgressIndicator(
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    } else {
+                        Text(text = "Import", maxLines = 1)
+                    }
+                }
+            }
+            errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            if (imports.isEmpty()) {
+                Text(
+                    text = "No badge URLs imported.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(
+                        items = imports,
+                        key = { import -> import.sourceUrl },
+                    ) { import ->
+                        BadgeUrlRow(
+                            import = import,
+                            showActiveChoice = imports.size > 1,
+                            enabled = !isImporting,
+                            onActivate = {
+                                DebridSettingsRepository.setActiveStreamBadgeRulesSource(import.sourceUrl)
+                            },
+                            onPreview = { previewImport = import },
+                            onDelete = {
+                                DebridSettingsRepository.deleteStreamBadgeRulesSource(import.sourceUrl)
+                                if (previewImport?.sourceUrl.equals(import.sourceUrl, ignoreCase = true)) {
+                                    previewImport = null
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    enabled = !isImporting,
+                    onClick = onDismiss,
+                ) {
+                    Text(text = stringResource(Res.string.action_cancel), maxLines = 1)
+                }
+            }
+        }
+    }
+
+    previewImport?.let { import ->
+        BadgePreviewDialog(
+            import = import,
+            onDismiss = { previewImport = null },
+        )
+    }
+}
+
+@Composable
+private fun BadgeUrlRow(
+    import: StreamBadgeImport,
+    showActiveChoice: Boolean,
+    enabled: Boolean,
+    onActivate: () -> Unit,
+    onPreview: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val containerColor = if (import.isActive) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = containerColor,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (showActiveChoice) {
+                    RadioButton(
+                        selected = import.isActive,
+                        onClick = onActivate,
+                        enabled = enabled,
+                    )
+                }
+                Text(
+                    text = import.sourceUrl,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            ) {
+                val status = if (import.isActive) "Active" else "Inactive"
+                Text(
+                    text = "$status, ${import.enabledFilterCount} enabled badges, ${import.groups.size} groups",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    enabled = enabled,
+                    onClick = onPreview,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Visibility,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(text = "Preview", maxLines = 1)
+                }
+                IconButton(
+                    enabled = enabled,
+                    onClick = onDelete,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = stringResource(Res.string.action_delete),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+private fun BadgePreviewDialog(
+    import: StreamBadgeImport,
+    onDismiss: () -> Unit,
+) {
+    val sections = remember(import) { badgePreviewSections(import) }
+    val badgeCount = sections.sumOf { it.filters.size }
+
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        DebridDialogSurface(title = "Badge preview") {
+            Text(
+                text = import.sourceUrl,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "$badgeCount badges from this URL",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (sections.isEmpty()) {
+                Text(
+                    text = "No badge images in this URL.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 460.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    items(
+                        items = sections,
+                        key = { section -> section.id },
+                    ) { section ->
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = section.title,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                verticalArrangement = Arrangement.spacedBy(5.dp),
+                            ) {
+                                section.filters.forEach { filter ->
+                                    ImportedBadgeChip(
+                                        imageURL = filter.imageURL,
+                                        name = filter.name,
+                                        tagColor = filter.tagColor,
+                                        tagStyle = filter.tagStyle,
+                                        borderColor = filter.borderColor,
+                                        size = ImportedBadgeChipSize.PREVIEW,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text(text = "Close", maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+private data class BadgePreviewSection(
+    val id: String,
+    val title: String,
+    val filters: List<StreamBadgeFilter>,
+)
+
+private fun badgePreviewSections(import: StreamBadgeImport): List<BadgePreviewSection> {
+    val filters = import.filters.filter { it.imageURL.isNotBlank() }
+    if (filters.isEmpty()) return emptyList()
+
+    val filtersByGroupId = filters.groupBy { it.groupId }
+    val usedGroupIds = mutableSetOf<String>()
+    val sections = mutableListOf<BadgePreviewSection>()
+    import.groups.forEachIndexed { index, group ->
+        val groupFilters = filtersByGroupId[group.id].orEmpty()
+        if (groupFilters.isNotEmpty()) {
+            usedGroupIds += group.id
+            sections += BadgePreviewSection(
+                id = group.id.ifBlank { "group-$index" },
+                title = group.name.ifBlank { "Group ${index + 1}" },
+                filters = groupFilters,
+            )
+        }
+    }
+
+    val ungroupedFilters = filters.filter { it.groupId !in usedGroupIds }
+    if (ungroupedFilters.isNotEmpty()) {
+        sections += BadgePreviewSection(
+            id = "other",
+            title = "Other badges",
+            filters = ungroupedFilters,
+        )
+    }
+    return sections
+}
+
+@Composable
 private fun DebridPreferenceRow(
     isTablet: Boolean,
     title: String,
@@ -716,7 +1187,7 @@ private fun DebridStreamPreferenceDialog(
 ) {
     when (picker) {
         DebridStreamPicker.MAX_RESULTS -> DebridIntChoiceDialog(
-            title = "Max results",
+            title = stringResource(Res.string.settings_debrid_max_results),
             selectedValue = preferences.maxResults,
             options = listOf(0, 5, 10, 20, 50),
             label = { streamMaxResultsLabel(it) },
@@ -724,7 +1195,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.MAX_PER_RESOLUTION -> DebridIntChoiceDialog(
-            title = "Max results",
+            title = stringResource(Res.string.settings_debrid_max_results),
             selectedValue = preferences.maxPerResolution,
             options = listOf(0, 1, 2, 3, 5),
             label = { streamMaxResultsLabel(it) },
@@ -732,7 +1203,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.MAX_PER_QUALITY -> DebridIntChoiceDialog(
-            title = "Max results",
+            title = stringResource(Res.string.settings_debrid_max_results),
             selectedValue = preferences.maxPerQuality,
             options = listOf(0, 1, 2, 3, 5),
             label = { streamMaxResultsLabel(it) },
@@ -740,10 +1211,11 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.SORT_MODE -> DebridSingleChoiceDialog(
-            title = "Sort results",
+            title = stringResource(Res.string.settings_debrid_sort_results),
             selectedValue = sortProfileFor(preferences.sortCriteria),
             options = listOf(
-                DebridSortProfile.DEFAULT,
+                DebridSortProfile.ORIGINAL,
+                DebridSortProfile.BEST_QUALITY,
                 DebridSortProfile.LARGEST,
                 DebridSortProfile.SMALLEST,
                 DebridSortProfile.AUDIO,
@@ -754,7 +1226,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.SIZE_RANGE -> DebridSingleChoiceDialog(
-            title = "Size range",
+            title = stringResource(Res.string.settings_debrid_size_range),
             selectedValue = preferences.sizeMinGb to preferences.sizeMaxGb,
             options = listOf(0 to 0, 0 to 5, 0 to 10, 5 to 20, 10 to 50, 20 to 100),
             label = { sizeRangeLabel(it.first, it.second) },
@@ -762,7 +1234,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.PREFERRED_RESOLUTIONS -> DebridMultiChoiceDialog(
-            title = "Preferred resolutions",
+            title = stringResource(Res.string.settings_debrid_rule_preferred_resolutions),
             selectedValues = preferences.preferredResolutions,
             values = DebridStreamResolution.defaultOrder,
             label = { it.label },
@@ -770,7 +1242,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.REQUIRED_RESOLUTIONS -> DebridMultiChoiceDialog(
-            title = "Required resolutions",
+            title = stringResource(Res.string.settings_debrid_rule_required_resolutions),
             selectedValues = preferences.requiredResolutions,
             values = DebridStreamResolution.defaultOrder,
             label = { it.label },
@@ -778,7 +1250,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.EXCLUDED_RESOLUTIONS -> DebridMultiChoiceDialog(
-            title = "Excluded resolutions",
+            title = stringResource(Res.string.settings_debrid_rule_excluded_resolutions),
             selectedValues = preferences.excludedResolutions,
             values = DebridStreamResolution.defaultOrder,
             label = { it.label },
@@ -786,7 +1258,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.PREFERRED_QUALITIES -> DebridMultiChoiceDialog(
-            title = "Preferred qualities",
+            title = stringResource(Res.string.settings_debrid_rule_preferred_qualities),
             selectedValues = preferences.preferredQualities,
             values = DebridStreamQuality.defaultOrder,
             label = { it.label },
@@ -794,7 +1266,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.REQUIRED_QUALITIES -> DebridMultiChoiceDialog(
-            title = "Required qualities",
+            title = stringResource(Res.string.settings_debrid_rule_required_qualities),
             selectedValues = preferences.requiredQualities,
             values = DebridStreamQuality.defaultOrder,
             label = { it.label },
@@ -802,7 +1274,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.EXCLUDED_QUALITIES -> DebridMultiChoiceDialog(
-            title = "Excluded qualities",
+            title = stringResource(Res.string.settings_debrid_rule_excluded_qualities),
             selectedValues = preferences.excludedQualities,
             values = DebridStreamQuality.defaultOrder,
             label = { it.label },
@@ -810,7 +1282,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.PREFERRED_VISUAL_TAGS -> DebridMultiChoiceDialog(
-            title = "Preferred visual tags",
+            title = stringResource(Res.string.settings_debrid_rule_preferred_visual_tags),
             selectedValues = preferences.preferredVisualTags,
             values = DebridStreamVisualTag.defaultOrder,
             label = { it.label },
@@ -818,7 +1290,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.REQUIRED_VISUAL_TAGS -> DebridMultiChoiceDialog(
-            title = "Required visual tags",
+            title = stringResource(Res.string.settings_debrid_rule_required_visual_tags),
             selectedValues = preferences.requiredVisualTags,
             values = DebridStreamVisualTag.defaultOrder,
             label = { it.label },
@@ -826,7 +1298,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.EXCLUDED_VISUAL_TAGS -> DebridMultiChoiceDialog(
-            title = "Excluded visual tags",
+            title = stringResource(Res.string.settings_debrid_rule_excluded_visual_tags),
             selectedValues = preferences.excludedVisualTags,
             values = DebridStreamVisualTag.defaultOrder,
             label = { it.label },
@@ -834,7 +1306,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.PREFERRED_AUDIO_TAGS -> DebridMultiChoiceDialog(
-            title = "Preferred audio tags",
+            title = stringResource(Res.string.settings_debrid_rule_preferred_audio_tags),
             selectedValues = preferences.preferredAudioTags,
             values = DebridStreamAudioTag.defaultOrder,
             label = { it.label },
@@ -842,7 +1314,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.REQUIRED_AUDIO_TAGS -> DebridMultiChoiceDialog(
-            title = "Required audio tags",
+            title = stringResource(Res.string.settings_debrid_rule_required_audio_tags),
             selectedValues = preferences.requiredAudioTags,
             values = DebridStreamAudioTag.defaultOrder,
             label = { it.label },
@@ -850,7 +1322,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.EXCLUDED_AUDIO_TAGS -> DebridMultiChoiceDialog(
-            title = "Excluded audio tags",
+            title = stringResource(Res.string.settings_debrid_rule_excluded_audio_tags),
             selectedValues = preferences.excludedAudioTags,
             values = DebridStreamAudioTag.defaultOrder,
             label = { it.label },
@@ -858,7 +1330,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.PREFERRED_AUDIO_CHANNELS -> DebridMultiChoiceDialog(
-            title = "Preferred channels",
+            title = stringResource(Res.string.settings_debrid_rule_preferred_channels),
             selectedValues = preferences.preferredAudioChannels,
             values = DebridStreamAudioChannel.defaultOrder,
             label = { it.label },
@@ -866,7 +1338,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.REQUIRED_AUDIO_CHANNELS -> DebridMultiChoiceDialog(
-            title = "Required channels",
+            title = stringResource(Res.string.settings_debrid_rule_required_channels),
             selectedValues = preferences.requiredAudioChannels,
             values = DebridStreamAudioChannel.defaultOrder,
             label = { it.label },
@@ -874,7 +1346,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.EXCLUDED_AUDIO_CHANNELS -> DebridMultiChoiceDialog(
-            title = "Excluded channels",
+            title = stringResource(Res.string.settings_debrid_rule_excluded_channels),
             selectedValues = preferences.excludedAudioChannels,
             values = DebridStreamAudioChannel.defaultOrder,
             label = { it.label },
@@ -882,7 +1354,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.PREFERRED_ENCODES -> DebridMultiChoiceDialog(
-            title = "Preferred encodes",
+            title = stringResource(Res.string.settings_debrid_rule_preferred_encodes),
             selectedValues = preferences.preferredEncodes,
             values = DebridStreamEncode.defaultOrder,
             label = { it.label },
@@ -890,7 +1362,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.REQUIRED_ENCODES -> DebridMultiChoiceDialog(
-            title = "Required encodes",
+            title = stringResource(Res.string.settings_debrid_rule_required_encodes),
             selectedValues = preferences.requiredEncodes,
             values = DebridStreamEncode.defaultOrder,
             label = { it.label },
@@ -898,7 +1370,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.EXCLUDED_ENCODES -> DebridMultiChoiceDialog(
-            title = "Excluded encodes",
+            title = stringResource(Res.string.settings_debrid_rule_excluded_encodes),
             selectedValues = preferences.excludedEncodes,
             values = DebridStreamEncode.defaultOrder,
             label = { it.label },
@@ -906,7 +1378,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.PREFERRED_LANGUAGES -> DebridMultiChoiceDialog(
-            title = "Preferred languages",
+            title = stringResource(Res.string.settings_debrid_rule_preferred_languages),
             selectedValues = preferences.preferredLanguages,
             values = DebridStreamLanguage.entries,
             label = { it.label },
@@ -914,7 +1386,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.REQUIRED_LANGUAGES -> DebridMultiChoiceDialog(
-            title = "Required languages",
+            title = stringResource(Res.string.settings_debrid_rule_required_languages),
             selectedValues = preferences.requiredLanguages,
             values = DebridStreamLanguage.entries,
             label = { it.label },
@@ -922,7 +1394,7 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.EXCLUDED_LANGUAGES -> DebridMultiChoiceDialog(
-            title = "Excluded languages",
+            title = stringResource(Res.string.settings_debrid_rule_excluded_languages),
             selectedValues = preferences.excludedLanguages,
             values = DebridStreamLanguage.entries,
             label = { it.label },
@@ -930,13 +1402,13 @@ private fun DebridStreamPreferenceDialog(
             onDismiss = onDismiss,
         )
         DebridStreamPicker.REQUIRED_RELEASE_GROUPS -> DebridTextListDialog(
-            title = "Required release groups",
+            title = stringResource(Res.string.settings_debrid_rule_required_release_groups),
             selectedValues = preferences.requiredReleaseGroups,
             onSelected = { value -> onPreferencesChanged(preferences.copy(requiredReleaseGroups = value)) },
             onDismiss = onDismiss,
         )
         DebridStreamPicker.EXCLUDED_RELEASE_GROUPS -> DebridTextListDialog(
-            title = "Excluded release groups",
+            title = stringResource(Res.string.settings_debrid_rule_excluded_release_groups),
             selectedValues = preferences.excludedReleaseGroups,
             onSelected = { value -> onPreferencesChanged(preferences.copy(excludedReleaseGroups = value)) },
             onDismiss = onDismiss,
@@ -1063,7 +1535,7 @@ private fun DebridTextListDialog(
     BasicAlertDialog(onDismissRequest = onDismiss) {
         DebridDialogSurface(title = title) {
             Text(
-                text = "Enter one group per line.",
+                text = stringResource(Res.string.settings_debrid_release_groups_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1184,61 +1656,87 @@ private fun DebridDialogOptionRow(
 
 @Composable
 private fun streamMaxResultsLabel(value: Int): String =
-    if (value <= 0) "All results" else "$value results"
-
-private fun sortProfileLabel(value: DebridSortProfile): String =
-    when (value) {
-        DebridSortProfile.DEFAULT -> "Default"
-        DebridSortProfile.LARGEST -> "Largest first"
-        DebridSortProfile.SMALLEST -> "Smallest first"
-        DebridSortProfile.AUDIO -> "Best audio first"
-        DebridSortProfile.LANGUAGE -> "Language first"
+    if (value <= 0) {
+        stringResource(Res.string.settings_debrid_results_all)
+    } else {
+        stringResource(Res.string.settings_debrid_results_count, value)
     }
 
+@Composable
+private fun sortProfileLabel(value: DebridSortProfile): String =
+    when (value) {
+        DebridSortProfile.ORIGINAL -> stringResource(Res.string.settings_debrid_sort_original)
+        DebridSortProfile.BEST_QUALITY -> stringResource(Res.string.settings_debrid_sort_best_quality)
+        DebridSortProfile.LARGEST -> stringResource(Res.string.settings_debrid_sort_largest)
+        DebridSortProfile.SMALLEST -> stringResource(Res.string.settings_debrid_sort_smallest)
+        DebridSortProfile.AUDIO -> stringResource(Res.string.settings_debrid_sort_best_audio)
+        DebridSortProfile.LANGUAGE -> stringResource(Res.string.settings_debrid_sort_language)
+    }
+
+@Composable
+private fun sortProfileLabel(criteria: List<DebridStreamSortCriterion>): String =
+    sortProfileLabel(sortProfileFor(criteria))
+
+@Composable
 private fun debridRuleRows(preferences: DebridStreamPreferences): List<DebridRuleRow> =
     listOf(
-        DebridRuleRow(DebridStreamPicker.PREFERRED_RESOLUTIONS, "Preferred resolutions", "Sort selected resolutions first, in default order.", selectionCountLabel(preferences.preferredResolutions)),
-        DebridRuleRow(DebridStreamPicker.REQUIRED_RESOLUTIONS, "Required resolutions", "Only show selected resolutions.", selectionCountLabel(preferences.requiredResolutions)),
-        DebridRuleRow(DebridStreamPicker.EXCLUDED_RESOLUTIONS, "Excluded resolutions", "Hide selected resolutions.", selectionCountLabel(preferences.excludedResolutions)),
-        DebridRuleRow(DebridStreamPicker.PREFERRED_QUALITIES, "Preferred qualities", "Sort selected qualities first, in default order.", selectionCountLabel(preferences.preferredQualities)),
-        DebridRuleRow(DebridStreamPicker.REQUIRED_QUALITIES, "Required qualities", "Only show selected qualities.", selectionCountLabel(preferences.requiredQualities)),
-        DebridRuleRow(DebridStreamPicker.EXCLUDED_QUALITIES, "Excluded qualities", "Hide selected qualities.", selectionCountLabel(preferences.excludedQualities)),
-        DebridRuleRow(DebridStreamPicker.PREFERRED_VISUAL_TAGS, "Preferred visual tags", "Sort DV, HDR, 10bit, IMAX and similar tags.", selectionCountLabel(preferences.preferredVisualTags)),
-        DebridRuleRow(DebridStreamPicker.REQUIRED_VISUAL_TAGS, "Required visual tags", "Require DV, HDR, 10bit, IMAX, SDR and similar tags.", selectionCountLabel(preferences.requiredVisualTags)),
-        DebridRuleRow(DebridStreamPicker.EXCLUDED_VISUAL_TAGS, "Excluded visual tags", "Hide DV, HDR, 10bit, 3D and similar tags.", selectionCountLabel(preferences.excludedVisualTags)),
-        DebridRuleRow(DebridStreamPicker.PREFERRED_AUDIO_TAGS, "Preferred audio tags", "Sort Atmos, TrueHD, DTS, AAC and similar tags.", selectionCountLabel(preferences.preferredAudioTags)),
-        DebridRuleRow(DebridStreamPicker.REQUIRED_AUDIO_TAGS, "Required audio tags", "Require Atmos, TrueHD, DTS, AAC and similar tags.", selectionCountLabel(preferences.requiredAudioTags)),
-        DebridRuleRow(DebridStreamPicker.EXCLUDED_AUDIO_TAGS, "Excluded audio tags", "Hide selected audio tags.", selectionCountLabel(preferences.excludedAudioTags)),
-        DebridRuleRow(DebridStreamPicker.PREFERRED_AUDIO_CHANNELS, "Preferred channels", "Sort preferred channel layouts first.", selectionCountLabel(preferences.preferredAudioChannels)),
-        DebridRuleRow(DebridStreamPicker.REQUIRED_AUDIO_CHANNELS, "Required channels", "Only show selected channel layouts.", selectionCountLabel(preferences.requiredAudioChannels)),
-        DebridRuleRow(DebridStreamPicker.EXCLUDED_AUDIO_CHANNELS, "Excluded channels", "Hide selected channel layouts.", selectionCountLabel(preferences.excludedAudioChannels)),
-        DebridRuleRow(DebridStreamPicker.PREFERRED_ENCODES, "Preferred encodes", "Sort AV1, HEVC, AVC and similar encodes.", selectionCountLabel(preferences.preferredEncodes)),
-        DebridRuleRow(DebridStreamPicker.REQUIRED_ENCODES, "Required encodes", "Require AV1, HEVC, AVC and similar encodes.", selectionCountLabel(preferences.requiredEncodes)),
-        DebridRuleRow(DebridStreamPicker.EXCLUDED_ENCODES, "Excluded encodes", "Hide selected encodes.", selectionCountLabel(preferences.excludedEncodes)),
-        DebridRuleRow(DebridStreamPicker.PREFERRED_LANGUAGES, "Preferred languages", "Sort preferred audio languages first.", selectionCountLabel(preferences.preferredLanguages)),
-        DebridRuleRow(DebridStreamPicker.REQUIRED_LANGUAGES, "Required languages", "Only show results with selected languages.", selectionCountLabel(preferences.requiredLanguages)),
-        DebridRuleRow(DebridStreamPicker.EXCLUDED_LANGUAGES, "Excluded languages", "Hide results where every language is excluded.", selectionCountLabel(preferences.excludedLanguages)),
-        DebridRuleRow(DebridStreamPicker.REQUIRED_RELEASE_GROUPS, "Required release groups", "Only show selected release groups.", selectionCountLabel(preferences.requiredReleaseGroups)),
-        DebridRuleRow(DebridStreamPicker.EXCLUDED_RELEASE_GROUPS, "Excluded release groups", "Hide selected release groups.", selectionCountLabel(preferences.excludedReleaseGroups)),
+        DebridRuleRow(DebridStreamPicker.PREFERRED_RESOLUTIONS, stringResource(Res.string.settings_debrid_rule_preferred_resolutions), stringResource(Res.string.settings_debrid_rule_preferred_resolutions_desc), selectionCountLabel(preferences.preferredResolutions)),
+        DebridRuleRow(DebridStreamPicker.REQUIRED_RESOLUTIONS, stringResource(Res.string.settings_debrid_rule_required_resolutions), stringResource(Res.string.settings_debrid_rule_required_resolutions_desc), selectionCountLabel(preferences.requiredResolutions)),
+        DebridRuleRow(DebridStreamPicker.EXCLUDED_RESOLUTIONS, stringResource(Res.string.settings_debrid_rule_excluded_resolutions), stringResource(Res.string.settings_debrid_rule_excluded_resolutions_desc), selectionCountLabel(preferences.excludedResolutions)),
+        DebridRuleRow(DebridStreamPicker.PREFERRED_QUALITIES, stringResource(Res.string.settings_debrid_rule_preferred_qualities), stringResource(Res.string.settings_debrid_rule_preferred_qualities_desc), selectionCountLabel(preferences.preferredQualities)),
+        DebridRuleRow(DebridStreamPicker.REQUIRED_QUALITIES, stringResource(Res.string.settings_debrid_rule_required_qualities), stringResource(Res.string.settings_debrid_rule_required_qualities_desc), selectionCountLabel(preferences.requiredQualities)),
+        DebridRuleRow(DebridStreamPicker.EXCLUDED_QUALITIES, stringResource(Res.string.settings_debrid_rule_excluded_qualities), stringResource(Res.string.settings_debrid_rule_excluded_qualities_desc), selectionCountLabel(preferences.excludedQualities)),
+        DebridRuleRow(DebridStreamPicker.PREFERRED_VISUAL_TAGS, stringResource(Res.string.settings_debrid_rule_preferred_visual_tags), stringResource(Res.string.settings_debrid_rule_preferred_visual_tags_desc), selectionCountLabel(preferences.preferredVisualTags)),
+        DebridRuleRow(DebridStreamPicker.REQUIRED_VISUAL_TAGS, stringResource(Res.string.settings_debrid_rule_required_visual_tags), stringResource(Res.string.settings_debrid_rule_required_visual_tags_desc), selectionCountLabel(preferences.requiredVisualTags)),
+        DebridRuleRow(DebridStreamPicker.EXCLUDED_VISUAL_TAGS, stringResource(Res.string.settings_debrid_rule_excluded_visual_tags), stringResource(Res.string.settings_debrid_rule_excluded_visual_tags_desc), selectionCountLabel(preferences.excludedVisualTags)),
+        DebridRuleRow(DebridStreamPicker.PREFERRED_AUDIO_TAGS, stringResource(Res.string.settings_debrid_rule_preferred_audio_tags), stringResource(Res.string.settings_debrid_rule_preferred_audio_tags_desc), selectionCountLabel(preferences.preferredAudioTags)),
+        DebridRuleRow(DebridStreamPicker.REQUIRED_AUDIO_TAGS, stringResource(Res.string.settings_debrid_rule_required_audio_tags), stringResource(Res.string.settings_debrid_rule_required_audio_tags_desc), selectionCountLabel(preferences.requiredAudioTags)),
+        DebridRuleRow(DebridStreamPicker.EXCLUDED_AUDIO_TAGS, stringResource(Res.string.settings_debrid_rule_excluded_audio_tags), stringResource(Res.string.settings_debrid_rule_excluded_audio_tags_desc), selectionCountLabel(preferences.excludedAudioTags)),
+        DebridRuleRow(DebridStreamPicker.PREFERRED_AUDIO_CHANNELS, stringResource(Res.string.settings_debrid_rule_preferred_channels), stringResource(Res.string.settings_debrid_rule_preferred_channels_desc), selectionCountLabel(preferences.preferredAudioChannels)),
+        DebridRuleRow(DebridStreamPicker.REQUIRED_AUDIO_CHANNELS, stringResource(Res.string.settings_debrid_rule_required_channels), stringResource(Res.string.settings_debrid_rule_required_channels_desc), selectionCountLabel(preferences.requiredAudioChannels)),
+        DebridRuleRow(DebridStreamPicker.EXCLUDED_AUDIO_CHANNELS, stringResource(Res.string.settings_debrid_rule_excluded_channels), stringResource(Res.string.settings_debrid_rule_excluded_channels_desc), selectionCountLabel(preferences.excludedAudioChannels)),
+        DebridRuleRow(DebridStreamPicker.PREFERRED_ENCODES, stringResource(Res.string.settings_debrid_rule_preferred_encodes), stringResource(Res.string.settings_debrid_rule_preferred_encodes_desc), selectionCountLabel(preferences.preferredEncodes)),
+        DebridRuleRow(DebridStreamPicker.REQUIRED_ENCODES, stringResource(Res.string.settings_debrid_rule_required_encodes), stringResource(Res.string.settings_debrid_rule_required_encodes_desc), selectionCountLabel(preferences.requiredEncodes)),
+        DebridRuleRow(DebridStreamPicker.EXCLUDED_ENCODES, stringResource(Res.string.settings_debrid_rule_excluded_encodes), stringResource(Res.string.settings_debrid_rule_excluded_encodes_desc), selectionCountLabel(preferences.excludedEncodes)),
+        DebridRuleRow(DebridStreamPicker.PREFERRED_LANGUAGES, stringResource(Res.string.settings_debrid_rule_preferred_languages), stringResource(Res.string.settings_debrid_rule_preferred_languages_desc), selectionCountLabel(preferences.preferredLanguages)),
+        DebridRuleRow(DebridStreamPicker.REQUIRED_LANGUAGES, stringResource(Res.string.settings_debrid_rule_required_languages), stringResource(Res.string.settings_debrid_rule_required_languages_desc), selectionCountLabel(preferences.requiredLanguages)),
+        DebridRuleRow(DebridStreamPicker.EXCLUDED_LANGUAGES, stringResource(Res.string.settings_debrid_rule_excluded_languages), stringResource(Res.string.settings_debrid_rule_excluded_languages_desc), selectionCountLabel(preferences.excludedLanguages)),
+        DebridRuleRow(DebridStreamPicker.REQUIRED_RELEASE_GROUPS, stringResource(Res.string.settings_debrid_rule_required_release_groups), stringResource(Res.string.settings_debrid_rule_required_release_groups_desc), selectionCountLabel(preferences.requiredReleaseGroups)),
+        DebridRuleRow(DebridStreamPicker.EXCLUDED_RELEASE_GROUPS, stringResource(Res.string.settings_debrid_rule_excluded_release_groups), stringResource(Res.string.settings_debrid_rule_excluded_release_groups_desc), selectionCountLabel(preferences.excludedReleaseGroups)),
     )
 
+@Composable
 private fun selectionCountLabel(values: List<*>): String =
-    if (values.isEmpty()) "Any" else "${values.size} selected"
+    if (values.isEmpty()) {
+        stringResource(Res.string.settings_debrid_selection_any)
+    } else {
+        stringResource(Res.string.settings_debrid_selection_count, values.size)
+    }
 
+@Composable
 private fun sizeRangeLabel(preferences: DebridStreamPreferences): String =
     sizeRangeLabel(preferences.sizeMinGb, preferences.sizeMaxGb)
 
+@Composable
 private fun sizeRangeLabel(minGb: Int, maxGb: Int): String =
     when {
-        minGb <= 0 && maxGb <= 0 -> "Any"
-        minGb <= 0 -> "Up to ${maxGb}GB"
-        maxGb <= 0 -> "${minGb}GB+"
-        else -> "${minGb}-${maxGb}GB"
+        minGb <= 0 && maxGb <= 0 -> stringResource(Res.string.settings_debrid_selection_any)
+        minGb <= 0 -> stringResource(Res.string.settings_debrid_size_up_to, maxGb)
+        maxGb <= 0 -> stringResource(Res.string.settings_debrid_size_min, minGb)
+        else -> stringResource(Res.string.settings_debrid_size_range_value, minGb, maxGb)
     }
 
 private fun sortProfileFor(criteria: List<DebridStreamSortCriterion>): DebridSortProfile {
     val normalized = criteria.map { it.key to it.direction }
+    val bestQuality = DebridStreamSortCriterion.defaultOrder.map { it.key to it.direction }
+    val legacyQuality = listOf(
+        DebridStreamSortKey.RESOLUTION to DebridStreamSortDirection.DESC,
+        DebridStreamSortKey.QUALITY to DebridStreamSortDirection.DESC,
+        DebridStreamSortKey.SIZE to DebridStreamSortDirection.DESC,
+    )
     return when {
+        normalized.isEmpty() -> DebridSortProfile.ORIGINAL
+        normalized == bestQuality || normalized == legacyQuality -> DebridSortProfile.BEST_QUALITY
         normalized == listOf(DebridStreamSortKey.SIZE to DebridStreamSortDirection.DESC) -> DebridSortProfile.LARGEST
         normalized == listOf(DebridStreamSortKey.SIZE to DebridStreamSortDirection.ASC) -> DebridSortProfile.SMALLEST
         normalized.take(2) == listOf(
@@ -1246,16 +1744,14 @@ private fun sortProfileFor(criteria: List<DebridStreamSortCriterion>): DebridSor
             DebridStreamSortKey.AUDIO_CHANNEL to DebridStreamSortDirection.DESC,
         ) -> DebridSortProfile.AUDIO
         normalized.firstOrNull() == DebridStreamSortKey.LANGUAGE to DebridStreamSortDirection.DESC -> DebridSortProfile.LANGUAGE
-        else -> DebridSortProfile.DEFAULT
+        else -> DebridSortProfile.BEST_QUALITY
     }
 }
 
-private fun sortProfileLabel(criteria: List<DebridStreamSortCriterion>): String =
-    sortProfileLabel(sortProfileFor(criteria))
-
 private fun sortCriteriaForProfile(profile: DebridSortProfile): List<DebridStreamSortCriterion> =
     when (profile) {
-        DebridSortProfile.DEFAULT -> DebridStreamSortCriterion.defaultOrder
+        DebridSortProfile.ORIGINAL -> DebridStreamSortCriterion.originalOrder
+        DebridSortProfile.BEST_QUALITY -> DebridStreamSortCriterion.defaultOrder
         DebridSortProfile.LARGEST -> listOf(DebridStreamSortCriterion(DebridStreamSortKey.SIZE, DebridStreamSortDirection.DESC))
         DebridSortProfile.SMALLEST -> listOf(DebridStreamSortCriterion(DebridStreamSortKey.SIZE, DebridStreamSortDirection.ASC))
         DebridSortProfile.AUDIO -> listOf(
@@ -1281,7 +1777,8 @@ private data class DebridRuleRow(
 )
 
 private enum class DebridSortProfile {
-    DEFAULT,
+    ORIGINAL,
+    BEST_QUALITY,
     LARGEST,
     SMALLEST,
     AUDIO,

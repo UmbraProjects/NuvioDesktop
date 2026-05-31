@@ -19,6 +19,7 @@ data class StreamItem(
     val behaviorHints: StreamBehaviorHints = StreamBehaviorHints(),
     val clientResolve: StreamClientResolve? = null,
     val debridCacheStatus: StreamDebridCacheStatus? = null,
+    val badges: List<StreamBadge> = emptyList(),
 ) {
     val streamLabel: String
         get() = name ?: runBlocking { getString(Res.string.stream_default_name) }
@@ -62,6 +63,15 @@ data class StreamItem(
     val hasPlayableSource: Boolean
         get() = url != null || infoHash != null || externalUrl != null || clientResolve != null
 }
+
+data class StreamBadge(
+    val name: String,
+    val imageURL: String = "",
+    val tagColor: String = "",
+    val tagStyle: String = "",
+    val textColor: String = "",
+    val borderColor: String = "",
+)
 
 private fun String?.isMagnetLink(): Boolean =
     this?.trimStart()?.startsWith("magnet:", ignoreCase = true) == true
