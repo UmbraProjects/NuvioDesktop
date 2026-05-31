@@ -17,7 +17,6 @@ data class DebridSettings(
     val streamPreferences: DebridStreamPreferences = DebridStreamPreferences(),
     val streamNameTemplate: String = DebridStreamFormatterDefaults.NAME_TEMPLATE,
     val streamDescriptionTemplate: String = DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE,
-    val streamBadgeRules: StreamBadgeRules = StreamBadgeRules(),
 ) {
     val torboxApiKey: String
         get() = apiKeyFor(DebridProviders.TORBOX_ID)

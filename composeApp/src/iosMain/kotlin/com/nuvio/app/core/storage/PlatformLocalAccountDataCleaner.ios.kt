@@ -34,6 +34,8 @@ internal actual object PlatformLocalAccountDataCleaner {
         "subtitle_bottom_offset",
         "stream_reuse_last_link_enabled",
         "stream_reuse_last_link_cache_hours",
+        "stream_badge_rules",
+        "debrid_stream_badge_rules",
         "p2p_enabled",
         "enable_upload",
         "hide_torrent_stats",

@@ -1,4 +1,4 @@
-package com.nuvio.app.features.debrid
+package com.nuvio.app.features.streams
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 
-internal object BadgeChipDefaults {
+internal object StreamBadgeChipDefaults {
     val shape = RoundedCornerShape(6.dp)
     val fileSizeHorizontalPadding = 6.dp
     val fileSizeFontSize: TextUnit = 10.sp
@@ -27,7 +27,7 @@ internal object BadgeChipDefaults {
     val fileSizeLetterSpacing: TextUnit = 0.sp
 }
 
-internal enum class ImportedBadgeChipSize(
+internal enum class StreamBadgeChipSize(
     val containerHeight: Dp,
     val imageHeight: Dp,
     val minImageWidth: Dp,
@@ -54,13 +54,13 @@ internal enum class ImportedBadgeChipSize(
 }
 
 @Composable
-internal fun ImportedBadgeChip(
+internal fun StreamBadgeChip(
     imageURL: String,
     name: String,
     tagColor: String,
     tagStyle: String,
     borderColor: String,
-    size: ImportedBadgeChipSize,
+    size: StreamBadgeChipSize,
     modifier: Modifier = Modifier,
 ) {
     val backgroundColorArgb = if (tagStyle.equals("filled", ignoreCase = true)) {
@@ -69,7 +69,7 @@ internal fun ImportedBadgeChip(
         null
     }
     val outlineColorArgb = borderColor.toBadgeColorArgbOrNull()
-    val shape = BadgeChipDefaults.shape
+    val shape = StreamBadgeChipDefaults.shape
     var chipModifier = modifier.height(size.containerHeight)
     if (backgroundColorArgb != null) {
         chipModifier = chipModifier.background(Color(backgroundColorArgb), shape)

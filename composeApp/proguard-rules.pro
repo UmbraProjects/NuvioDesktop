@@ -21,10 +21,10 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
-# Avoid R8 merging/optimizing the imported badge chip used in lazy stream rows.
--keep class com.nuvio.app.features.debrid.ImportedBadgeChipKt { *; }
--keep class com.nuvio.app.features.debrid.ImportedBadgeChipSize { *; }
--keep class com.nuvio.app.features.debrid.BadgeChipDefaults { *; }
+# Avoid R8 merging/optimizing the stream badge chip used in lazy stream rows.
+-keep class com.nuvio.app.features.streams.StreamBadgeChipKt { *; }
+-keep class com.nuvio.app.features.streams.StreamBadgeChipSize { *; }
+-keep class com.nuvio.app.features.streams.StreamBadgeChipDefaults { *; }
 
 -keep class com.nuvio.app.features.streams.StreamsScreenKt { *; }
 -keep class com.nuvio.app.features.streams.StreamsScreenKt$* { *; }

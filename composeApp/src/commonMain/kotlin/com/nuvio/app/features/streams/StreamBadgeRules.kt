@@ -1,7 +1,5 @@
-package com.nuvio.app.features.debrid
+package com.nuvio.app.features.streams
 
-import com.nuvio.app.features.streams.StreamItem
-import com.nuvio.app.features.streams.StreamBadge
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -185,7 +183,7 @@ internal object StreamBadgeRulesParser {
     }
 }
 
-internal object StreamBadgeMatcher {
+object StreamBadgeMatcher {
     fun compile(rules: StreamBadgeRules): List<CompiledStreamBadgeFilter> {
         if (!rules.hasImport) return emptyList()
         return rules.normalized().imports.filter { it.isActive }.flatMap { import ->
@@ -232,7 +230,7 @@ internal object StreamBadgeMatcher {
         return matched.values.toList()
     }
 
-    private fun badgeMatchCandidates(stream: StreamItem): List<String> {
+    fun badgeMatchCandidates(stream: StreamItem): List<String> {
         val resolve = stream.clientResolve
         val raw = resolve?.stream?.raw
         val parsed = raw?.parsed
@@ -278,7 +276,7 @@ data class CompiledStreamBadgeFilter(
 )
 
 private fun StreamBadge.dedupeKey(): String =
-    imageURL.takeIf { it.isNotBlank() } ?: name
+    (imageURL.takeIf { it.isNotBlank() } ?: name).lowercase()
 
 @Serializable
 private data class StreamBadgePayload(

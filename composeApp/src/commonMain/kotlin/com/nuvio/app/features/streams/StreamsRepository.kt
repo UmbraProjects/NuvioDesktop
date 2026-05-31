@@ -108,6 +108,7 @@ object StreamsRepository {
         PlayerSettingsRepository.ensureLoaded()
         val playerSettings = PlayerSettingsRepository.uiState.value
         val debridSettings = DebridSettingsRepository.snapshot()
+        val streamBadgeRules = StreamBadgeSettingsRepository.snapshot()
         val autoPlayMode = playerSettings.streamAutoPlayMode
         val isAutoPlayEnabled = !manualSelection && autoPlayMode != StreamAutoPlayMode.MANUAL &&
             !(autoPlayMode == StreamAutoPlayMode.REGEX_MATCH &&
@@ -145,9 +146,13 @@ object StreamsRepository {
                 streams = embeddedStreams,
                 isLoading = false,
             )
+            val presentedGroup = StreamBadgePresentation.apply(
+                groups = listOf(group),
+                rules = streamBadgeRules,
+            ).firstOrNull() ?: group
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
-                groups = listOf(group),
+                groups = listOf(presentedGroup),
                 activeAddonIds = setOf("embedded"),
                 isAnyLoading = false,
             )
@@ -256,11 +261,16 @@ object StreamsRepository {
                     log.d { "Ignoring late stream load completion after channel close" }
                 }
             }
-            fun presentDebridGroup(group: AddonStreamGroup): AddonStreamGroup =
-                DebridStreamPresentation.apply(
+            fun presentStreamGroup(group: AddonStreamGroup): AddonStreamGroup {
+                val badgeGroup = StreamBadgePresentation.apply(
                     groups = listOf(group),
-                    settings = debridSettings,
+                    rules = streamBadgeRules,
                 ).firstOrNull() ?: group
+                return DebridStreamPresentation.apply(
+                    groups = listOf(badgeGroup),
+                    settings = debridSettings,
+                ).firstOrNull() ?: badgeGroup
+            }
 
             fun publishAddonGroup(group: AddonStreamGroup) {
                 _uiState.update { current ->
@@ -281,7 +291,7 @@ object StreamsRepository {
 
             fun publishAddonGroupAfterCacheCheck(group: AddonStreamGroup) {
                 if (group.addonId !in installedAddonIds || group.streams.isEmpty()) {
-                    publishAddonGroup(presentDebridGroup(group))
+                    publishAddonGroup(presentStreamGroup(group))
                     return
                 }
 
@@ -291,7 +301,7 @@ object StreamsRepository {
                     eligibleGroupIds = eligibleGroupIds,
                 )
                 if (!shouldWaitForCacheCheck) {
-                    publishAddonGroup(presentDebridGroup(group))
+                    publishAddonGroup(presentStreamGroup(group))
                     return
                 }
 
@@ -305,7 +315,7 @@ object StreamsRepository {
                         groups = listOf(checkingGroup),
                         eligibleGroupIds = eligibleGroupIds,
                     ).firstOrNull() ?: checkingGroup
-                    publishAddonGroup(presentDebridGroup(availabilityGroup))
+                    publishAddonGroup(presentStreamGroup(availabilityGroup))
 
                     // Early binge-group match right after this addon's availability is resolved
                     if (isDirectAutoPlayFlow && !autoSelectTriggered && persistedBingeGroup != null && !timeoutElapsed) {
