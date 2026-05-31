@@ -16,12 +16,12 @@ object DebridStreamPresentation {
             val debridStreams = visibleStreams.filter { stream -> stream.isManagedDebridStream }
             if (debridStreams.isEmpty()) return@map group.copy(streams = visibleStreams)
 
-            val compiledBadgeFilters = StreamBadgeMatcher.compile(settings.streamBadgeRules)
-            val shouldFormatStreams = settings.hasCustomStreamFormatting || compiledBadgeFilters.isNotEmpty()
+            val shouldFormatStreams = settings.hasCustomStreamFormatting ||
+                debridStreams.any { stream -> stream.badges.isNotEmpty() }
             val presentedDebridStreams = applyPreferences(debridStreams, settings)
                 .map { stream ->
                     if (shouldFormatStreams) {
-                        formatter.format(stream, settings, compiledBadgeFilters)
+                        formatter.format(stream, settings)
                     } else {
                         stream
                     }

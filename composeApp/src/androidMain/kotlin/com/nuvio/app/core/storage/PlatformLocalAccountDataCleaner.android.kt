@@ -20,6 +20,7 @@ internal actual object PlatformLocalAccountDataCleaner {
         "nuvio_trakt_settings",
         "nuvio_watched",
         "nuvio_stream_link_cache",
+        "nuvio_stream_badge_settings",
         "nuvio_continue_watching_preferences",
         "nuvio_episode_release_notifications",
         "nuvio_episode_release_notifications_platform",
