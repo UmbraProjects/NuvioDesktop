@@ -17,6 +17,7 @@ data class DebridSettings(
     val streamPreferences: DebridStreamPreferences = DebridStreamPreferences(),
     val streamNameTemplate: String = DebridStreamFormatterDefaults.NAME_TEMPLATE,
     val streamDescriptionTemplate: String = DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE,
+    val streamBadgeRules: StreamBadgeRules = StreamBadgeRules(),
 ) {
     val torboxApiKey: String
         get() = apiKeyFor(DebridProviders.TORBOX_ID)
@@ -129,7 +130,7 @@ data class DebridStreamPreferences(
     val excludedLanguages: List<DebridStreamLanguage> = emptyList(),
     val requiredReleaseGroups: List<String> = emptyList(),
     val excludedReleaseGroups: List<String> = emptyList(),
-    val sortCriteria: List<DebridStreamSortCriterion> = DebridStreamSortCriterion.defaultOrder,
+    val sortCriteria: List<DebridStreamSortCriterion> = DebridStreamSortCriterion.originalOrder,
 )
 
 @Serializable
@@ -266,6 +267,7 @@ data class DebridStreamSortCriterion(
     val direction: DebridStreamSortDirection = DebridStreamSortDirection.DESC,
 ) {
     companion object {
+        val originalOrder = emptyList<DebridStreamSortCriterion>()
         val defaultOrder = listOf(
             DebridStreamSortCriterion(DebridStreamSortKey.RESOLUTION, DebridStreamSortDirection.DESC),
             DebridStreamSortCriterion(DebridStreamSortKey.QUALITY, DebridStreamSortDirection.DESC),

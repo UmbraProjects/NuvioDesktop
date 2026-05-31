@@ -21,6 +21,14 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
+# Avoid R8 merging/optimizing the imported badge chip used in lazy stream rows.
+-keep class com.nuvio.app.features.debrid.ImportedBadgeChipKt { *; }
+-keep class com.nuvio.app.features.debrid.ImportedBadgeChipSize { *; }
+-keep class com.nuvio.app.features.debrid.BadgeChipDefaults { *; }
+
+-keep class com.nuvio.app.features.streams.StreamsScreenKt { *; }
+-keep class com.nuvio.app.features.streams.StreamsScreenKt$* { *; }
+
 # QuickJS plugin runtime is dynamic; keep runtime and app plugin classes.
 -keep class com.dokar.quickjs.** { *; }
 -keep class com.nuvio.app.features.plugins.** { *; }
