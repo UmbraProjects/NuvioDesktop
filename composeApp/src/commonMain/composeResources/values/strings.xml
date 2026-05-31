@@ -1799,4 +1799,20 @@
     <!-- Pass 4 — platform stubs and dynamic title fallbacks -->
     <string name="collections_editor_trakt_list_title_format">Trakt List %1$s</string>
     <string name="external_player_android_system">Android system player</string>
+    <string name="p2p_consent_title">P2P Streaming</string>
+    <string name="p2p_consent_body">This stream uses peer-to-peer (P2P) technology. By enabling P2P, you acknowledge and agree that:\n\n• Your IP address will be visible to other peers in the network\n• You are solely responsible for the content you access\n• You confirm you have the legal right to stream this content in your jurisdiction\n• Nuvio does not host, distribute, or control any P2P content\n• Nuvio bears no liability for any legal consequences arising from your use of P2P streaming\n\nYou use this feature entirely at your own risk. P2P can be disabled anytime in Settings.</string>
+    <string name="p2p_consent_enable">Enable P2P</string>
+    <string name="p2p_consent_cancel">Cancel</string>
+    <string name="settings_p2p_title">P2P Streaming</string>
+    <string name="settings_p2p_subtitle">Allow peer-to-peer (torrent) streams</string>
+    <string name="settings_p2p_hide_stats_title">Hide torrent stats</string>
+    <string name="settings_p2p_hide_stats_subtitle">Hide buffer, seeds, peers and download speed during loading and playback</string>
+    <string name="player_torrent_peer_info">%1$d seeds · %2$d peers</string>
+    <string name="player_torrent_buffered_status">%1$s buffered · %2$s · %3$s</string>
+    <string name="player_torrent_status">%1$s · %2$s</string>
+    <string name="player_torrent_stats">%1$d peers · %2$d seeds · %3$d%%</string>
+    <string name="player_torrent_connecting_peers">Connecting to peers…</string>
+    <string name="player_torrent_starting_engine">Starting P2P engine…</string>
+    <string name="player_error_failed_start_torrent">Failed to start torrent: %1$s</string>
+    <string name="player_error_torrent">Torrent error: %1$s</string>
 </resources>
