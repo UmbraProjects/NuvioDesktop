@@ -16,6 +16,7 @@ import com.nuvio.app.features.trakt.TraktProgressRepository
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trakt.shouldUseTraktProgress as shouldUseTraktProgressSource
 import com.nuvio.app.features.watching.application.WatchingActions
+import com.nuvio.app.features.watching.sync.ProgressDeltaEvent
 import com.nuvio.app.features.watching.sync.ProgressSyncRecord
 import com.nuvio.app.features.watching.sync.ProgressSyncAdapter
 import com.nuvio.app.features.watching.sync.SupabaseProgressSyncAdapter
@@ -40,6 +41,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 private const val WATCH_PROGRESS_METADATA_RESOLUTION_CONCURRENCY = 4
 private const val WATCH_PROGRESS_METADATA_RESOLUTION_LIMIT = 64
+private const val WATCH_PROGRESS_DELTA_PAGE_SIZE = 900
+private const val WATCH_PROGRESS_DELTA_OPERATION_UPSERT = "upsert"
+private const val WATCH_PROGRESS_DELTA_OPERATION_DELETE = "delete"
 
 private data class RemoteMetadataResolutionResult(
     val key: Pair<String, String>,
@@ -73,7 +77,9 @@ object WatchProgressRepository {
     private var entriesByVideoId: MutableMap<String, WatchProgressEntry> = mutableMapOf()
     private var metadataResolutionJob: Job? = null
     private var isPullingNuvioSyncFromServer = false
-    private var hasCompletedInitialNuvioSyncPull = false
+    private var lastSuccessfulPushEpochMs = 0L
+    private var deltaCursorEventId = 0L
+    private var deltaInitialized = false
     private var lastAddonMetadataReadyFingerprint: String? = null
     internal var syncAdapter: ProgressSyncAdapter = SupabaseProgressSyncAdapter
 
@@ -155,6 +161,9 @@ object WatchProgressRepository {
         currentProfileId = 1
         lastAddonMetadataReadyFingerprint = null
         entriesByVideoId.clear()
+        lastSuccessfulPushEpochMs = 0L
+        deltaCursorEventId = 0L
+        deltaInitialized = false
         TraktProgressRepository.clearLocalState()
         TraktSettingsRepository.clearLocalState()
         _uiState.value = WatchProgressUiState()
@@ -168,9 +177,17 @@ object WatchProgressRepository {
 
         val payload = WatchProgressStorage.loadPayload(profileId).orEmpty().trim()
         if (payload.isNotEmpty()) {
-            entriesByVideoId = WatchProgressCodec.decodeEntries(payload)
+            val storedPayload = WatchProgressCodec.decodePayload(payload)
+            lastSuccessfulPushEpochMs = storedPayload.lastSuccessfulPushEpochMs
+            deltaCursorEventId = storedPayload.deltaCursorEventId
+            deltaInitialized = storedPayload.deltaInitialized
+            entriesByVideoId = storedPayload.entries
                 .associateBy { it.videoId }
                 .toMutableMap()
+        } else {
+            lastSuccessfulPushEpochMs = 0L
+            deltaCursorEventId = 0L
+            deltaInitialized = false
         }
         publish()
         resolveRemoteMetadata()
@@ -203,37 +220,10 @@ object WatchProgressRepository {
             }
 
             runCatching {
-                val sinceLastWatched = entriesByVideoId.values
-                    .maxOfOrNull { entry -> entry.lastUpdatedEpochMs }
-                    ?.takeIf { hasCompletedInitialNuvioSyncPull }
-                val serverEntries = syncAdapter.pull(
+                pullSupabaseDeltaFromServer(
                     profileId = profileId,
-                    sinceLastWatched = sinceLastWatched,
+                    pullStartedEpochMs = WatchProgressClock.nowEpochMs(),
                 )
-                val isIncrementalPull = sinceLastWatched != null
-                if (isIncrementalPull && serverEntries.isEmpty()) {
-                    hasLoaded = true
-                    hasCompletedInitialNuvioSyncPull = true
-                    return@runCatching
-                }
-                val oldLocal = entriesByVideoId.toMap()
-                val newMap = if (isIncrementalPull) {
-                    entriesByVideoId.toMutableMap()
-                } else {
-                    mutableMapOf()
-                }
-
-                serverEntries.forEach { entry ->
-                    newMap[entry.videoId] = entry.toWatchProgressEntry(cached = oldLocal[entry.videoId])
-                }
-
-                entriesByVideoId = newMap
-                hasLoaded = true
-                hasCompletedInitialNuvioSyncPull = true
-                publish()
-                persist()
-
-                resolveRemoteMetadata()
             }.onFailure { e ->
                 if (e is CancellationException) throw e
                 log.e(e) { "Failed to pull watch progress from server" }
@@ -243,6 +233,140 @@ object WatchProgressRepository {
                 isPullingNuvioSyncFromServer = false
             }
         }
+    }
+
+    private suspend fun pullSupabaseDeltaFromServer(
+        profileId: Int,
+        pullStartedEpochMs: Long,
+    ) {
+        if (!deltaInitialized) {
+            val cursorBeforeSnapshot = try {
+                syncAdapter.getDeltaCursor(profileId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                log.w { "Watch progress delta cursor unavailable, falling back to full pull: ${error.message}" }
+                null
+            }
+            if (cursorBeforeSnapshot == null) {
+                pullFullFromAdapter(
+                    profileId = profileId,
+                    pullStartedEpochMs = pullStartedEpochMs,
+                    resetDeltaState = true,
+                )
+                return
+            }
+
+            pullFullFromAdapter(
+                profileId = profileId,
+                pullStartedEpochMs = pullStartedEpochMs,
+                resetDeltaState = false,
+            )
+            deltaCursorEventId = cursorBeforeSnapshot
+            deltaInitialized = true
+            persist()
+            return
+        }
+
+        var cursor = deltaCursorEventId
+        var changed = false
+
+        while (true) {
+            val events = try {
+                syncAdapter.pullDelta(
+                    profileId = profileId,
+                    sinceEventId = cursor,
+                    limit = WATCH_PROGRESS_DELTA_PAGE_SIZE,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                log.w { "Watch progress delta pull unavailable, falling back to full pull: ${error.message}" }
+                pullFullFromAdapter(
+                    profileId = profileId,
+                    pullStartedEpochMs = pullStartedEpochMs,
+                    resetDeltaState = true,
+                )
+                return
+            }
+            if (events.isEmpty()) break
+
+            changed = applyWatchProgressDeltaEvents(
+                events = events,
+                pullStartedEpochMs = pullStartedEpochMs,
+            ) || changed
+            cursor = maxOf(cursor, events.maxOf { it.eventId })
+            deltaCursorEventId = cursor
+            deltaInitialized = true
+
+            if (events.size < WATCH_PROGRESS_DELTA_PAGE_SIZE) break
+        }
+
+        hasLoaded = true
+        if (changed) {
+            publish()
+            persist()
+            resolveRemoteMetadata()
+        }
+    }
+
+    private suspend fun pullFullFromAdapter(
+        profileId: Int,
+        pullStartedEpochMs: Long,
+        resetDeltaState: Boolean,
+    ) {
+        val serverEntries = syncAdapter.pull(profileId = profileId)
+        entriesByVideoId = mergeWatchProgressEntriesPreservingUnsynced(
+            serverEntries = serverEntries,
+            localEntries = entriesByVideoId.values,
+            lastSuccessfulPushEpochMs = lastSuccessfulPushEpochMs,
+            pullStartedEpochMs = pullStartedEpochMs,
+        ).toMutableMap()
+        if (resetDeltaState) {
+            deltaCursorEventId = 0L
+            deltaInitialized = false
+        }
+        hasLoaded = true
+        publish()
+        persist()
+        resolveRemoteMetadata()
+    }
+
+    private fun applyWatchProgressDeltaEvents(
+        events: Collection<ProgressDeltaEvent>,
+        pullStartedEpochMs: Long,
+    ): Boolean {
+        var changed = false
+        events.forEach { event ->
+            if (event.videoId.isBlank()) return@forEach
+            when (event.operation.lowercase()) {
+                WATCH_PROGRESS_DELTA_OPERATION_UPSERT -> {
+                    val current = entriesByVideoId[event.videoId]
+                    val updated = event.toProgressSyncRecord().toWatchProgressEntry(cached = current)
+                    if (current != updated) {
+                        entriesByVideoId[event.videoId] = updated
+                        changed = true
+                    }
+                }
+                WATCH_PROGRESS_DELTA_OPERATION_DELETE -> {
+                    val localEntry = entriesByVideoId[event.videoId]
+                    if (
+                        localEntry != null &&
+                        shouldPreserveLocalWatchProgressEntry(
+                            localEntry = localEntry,
+                            lastSuccessfulPushEpochMs = lastSuccessfulPushEpochMs,
+                            pullStartedEpochMs = pullStartedEpochMs,
+                        )
+                    ) {
+                        return@forEach
+                    }
+                    if (entriesByVideoId.remove(event.videoId) != null) {
+                        changed = true
+                    }
+                }
+            }
+        }
+        return changed
     }
 
     private fun ProgressSyncRecord.toWatchProgressEntry(cached: WatchProgressEntry?): WatchProgressEntry =
@@ -270,6 +394,56 @@ object WatchProgressRepository {
             lastSourceUrl = cached?.lastSourceUrl,
             isCompleted = isWatchProgressComplete(position, duration, false),
         )
+
+    private fun ProgressDeltaEvent.toProgressSyncRecord(): ProgressSyncRecord =
+        ProgressSyncRecord(
+            contentId = contentId,
+            contentType = contentType,
+            videoId = videoId,
+            season = season,
+            episode = episode,
+            position = position,
+            duration = duration,
+            lastWatched = lastWatched,
+        )
+
+    private fun mergeWatchProgressEntriesPreservingUnsynced(
+        serverEntries: Collection<ProgressSyncRecord>,
+        localEntries: Collection<WatchProgressEntry>,
+        lastSuccessfulPushEpochMs: Long,
+        pullStartedEpochMs: Long,
+    ): Map<String, WatchProgressEntry> {
+        val localByVideoId = localEntries.associateBy { entry -> entry.videoId }
+        val merged = serverEntries.associate { record ->
+            record.videoId to record.toWatchProgressEntry(cached = localByVideoId[record.videoId])
+        }.toMutableMap()
+
+        localByVideoId.forEach { (videoId, localEntry) ->
+            val remoteEntry = merged[videoId]
+            val shouldPreserve = shouldPreserveLocalWatchProgressEntry(
+                localEntry = localEntry,
+                lastSuccessfulPushEpochMs = lastSuccessfulPushEpochMs,
+                pullStartedEpochMs = pullStartedEpochMs,
+            )
+            if (!shouldPreserve) return@forEach
+            if (remoteEntry == null || localEntry.lastUpdatedEpochMs > remoteEntry.lastUpdatedEpochMs) {
+                merged[videoId] = localEntry
+            }
+        }
+
+        return merged
+    }
+
+    private fun shouldPreserveLocalWatchProgressEntry(
+        localEntry: WatchProgressEntry,
+        lastSuccessfulPushEpochMs: Long,
+        pullStartedEpochMs: Long,
+    ): Boolean {
+        val updatedAt = localEntry.lastUpdatedEpochMs
+        val wasUpdatedAfterLastPush = lastSuccessfulPushEpochMs > 0L && updatedAt > lastSuccessfulPushEpochMs
+        val wasUpdatedDuringPull = pullStartedEpochMs > 0L && updatedAt >= pullStartedEpochMs
+        return wasUpdatedAfterLastPush || wasUpdatedDuringPull
+    }
 
     private fun retryMetadataResolutionWhenAddonMetaProvidersReady(state: AddonsUiState) {
         if (!hasLoaded || shouldUseTraktProgress()) return
@@ -609,6 +783,7 @@ object WatchProgressRepository {
             runCatching {
                 val profileId = ProfileRepository.activeProfileId
                 syncAdapter.push(profileId = profileId, entries = listOf(entry))
+                recordSuccessfulPush(profileId = profileId, entries = listOf(entry))
             }.onFailure { e ->
                 log.e(e) { "Failed to push watch progress scrobble" }
             }
@@ -645,8 +820,25 @@ object WatchProgressRepository {
     private fun persist() {
         WatchProgressStorage.savePayload(
             currentProfileId,
-            WatchProgressCodec.encodeEntries(entriesByVideoId.values),
+            WatchProgressCodec.encodePayload(
+                entries = entriesByVideoId.values,
+                lastSuccessfulPushEpochMs = lastSuccessfulPushEpochMs,
+                deltaCursorEventId = deltaCursorEventId,
+                deltaInitialized = deltaInitialized,
+            ),
         )
+    }
+
+    private fun recordSuccessfulPush(profileId: Int, entries: Collection<WatchProgressEntry>) {
+        if (profileId != currentProfileId) return
+        val latestPushed = entries
+            .asSequence()
+            .map { entry -> entry.lastUpdatedEpochMs }
+            .maxOrNull()
+            ?: return
+        if (latestPushed <= lastSuccessfulPushEpochMs) return
+        lastSuccessfulPushEpochMs = latestPushed
+        persist()
     }
 
     private fun shouldUseTraktProgress(): Boolean =
