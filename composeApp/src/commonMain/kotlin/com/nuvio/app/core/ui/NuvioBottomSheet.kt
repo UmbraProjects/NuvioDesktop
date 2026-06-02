@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -25,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.isIos
 import com.mohamedrejeb.calf.ui.sheet.AdaptiveBottomSheet
@@ -50,12 +52,25 @@ fun NuvioModalBottomSheet(
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     shape: Shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     showDragHandle: Boolean = true,
+    iosContentTopPadding: Dp = 28.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val sheetModifier = if (isIos) {
         modifier.fillMaxSize()
     } else {
         modifier
+    }
+    val sheetContent: @Composable ColumnScope.() -> Unit = {
+        if (isIos && iosContentTopPadding > 0.dp) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = iosContentTopPadding),
+                content = content,
+            )
+        } else {
+            content()
+        }
     }
 
     AdaptiveBottomSheet(
@@ -70,7 +85,7 @@ fun NuvioModalBottomSheet(
         } else {
             null
         },
-        content = content,
+        content = sheetContent,
     )
 }
 
