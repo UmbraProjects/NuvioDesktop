@@ -86,7 +86,7 @@ import com.nuvio.app.core.ui.dismissNuvioBottomSheet
 import com.nuvio.app.features.downloads.DownloadsRepository
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.rememberModalBottomSheetState
+import com.nuvio.app.core.ui.rememberNuvioBottomSheetState
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.debrid.DebridProviders
@@ -1126,7 +1126,7 @@ private fun StreamActionsSheet(
 ) {
     if (stream == null) return
 
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberNuvioBottomSheetState()
     val coroutineScope = rememberCoroutineScope()
 
     NuvioModalBottomSheet(
