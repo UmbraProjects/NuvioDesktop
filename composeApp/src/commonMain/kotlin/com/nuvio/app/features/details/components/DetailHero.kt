@@ -1,6 +1,10 @@
 package com.nuvio.app.features.details.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -13,6 +17,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -35,12 +41,26 @@ fun DetailHero(
     scrollOffset: Int = 0,
     contentMaxWidth: Dp = 560.dp,
     onHeightChanged: (Int) -> Unit = {},
+    heroTrailerSourceUrl: String? = null,
+    heroTrailerSourceAudioUrl: String? = null,
+    heroTrailerReady: Boolean = false,
+    heroTrailerPlayWhenReady: Boolean = false,
+    heroTrailerMuted: Boolean = true,
+    onHeroTrailerMuteToggle: () -> Unit = {},
+    onHeroTrailerReady: () -> Unit = {},
+    onHeroTrailerEnded: () -> Unit = {},
+    onHeroTrailerError: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth(),
     ) {
         val heroHeight = detailHeroHeight(maxWidth, isTablet)
+        val trailerAlpha by animateFloatAsState(
+            targetValue = if (heroTrailerReady) 1f else 0f,
+            animationSpec = tween(durationMillis = 300),
+            label = "detail_hero_trailer_alpha",
+        )
 
         Box(
             modifier = Modifier
@@ -76,6 +96,35 @@ fun DetailHero(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(MaterialTheme.colorScheme.surface),
+                    )
+                }
+                if (heroTrailerSourceUrl != null) {
+                    HeroTrailerPlayerSurface(
+                        sourceUrl = heroTrailerSourceUrl,
+                        sourceAudioUrl = heroTrailerSourceAudioUrl,
+                        playWhenReady = heroTrailerPlayWhenReady,
+                        muted = heroTrailerMuted,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = trailerAlpha
+                                translationY = scrollOffset * 0.5f
+                                scaleX = 1.08f
+                                scaleY = 1.08f
+                            },
+                        onReady = onHeroTrailerReady,
+                        onEnded = onHeroTrailerEnded,
+                        onError = onHeroTrailerError,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                enabled = heroTrailerReady,
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onHeroTrailerMuteToggle,
+                            ),
                     )
                 }
 

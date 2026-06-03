@@ -31,6 +31,7 @@ interface NuvioPlayerBridge {
         gamma: Int,
     )
     fun setPlaybackSpeed(speed: Float)
+    fun setMuted(muted: Boolean)
     fun setResizeMode(mode: Int) // 0=Fit, 1=Fill, 2=Zoom
     fun getAudioTrackCount(): Int
     fun getAudioTrackIndex(at: Int): Int
