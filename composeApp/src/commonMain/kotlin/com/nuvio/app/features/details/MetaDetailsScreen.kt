@@ -28,8 +28,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material3.Button
@@ -1330,9 +1330,9 @@ private fun ConfiguredMetaSections(
                                 stringResource(Res.string.hero_add_to_library)
                             },
                             icon = if (isSaved) {
-                                Icons.Default.Bookmark
+                                Icons.Default.Check
                             } else {
-                                Icons.Default.BookmarkBorder
+                                Icons.Default.Add
                             },
                             isActive = isSaved,
                             onClick = onSaveClick,
