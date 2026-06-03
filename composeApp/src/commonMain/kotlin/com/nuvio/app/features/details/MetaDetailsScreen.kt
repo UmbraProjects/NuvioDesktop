@@ -897,7 +897,7 @@ fun MetaDetailsScreen(
                                     start = 12.dp,
                                     top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp,
                                 ).zIndex(2f),
-                                containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.5f),
+                                containerColor = Color.Transparent,
                                 contentColor = MaterialTheme.colorScheme.onBackground,
                             )
                         }
@@ -1149,7 +1149,7 @@ fun MetaDetailsScreen(
                     start = 12.dp,
                     top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp,
                 ),
-                containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.5f),
+                containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.onBackground,
             )
         }
