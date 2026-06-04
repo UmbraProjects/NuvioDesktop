@@ -12,6 +12,10 @@ actual object P2pStreamingEngine {
         _state.value = P2pStreamingState.Idle
     }
 
+    actual fun cooldownWarmup() {
+        _state.value = P2pStreamingState.Idle
+    }
+
     actual suspend fun startStream(request: P2pStreamRequest): String {
         val message = "P2P streaming is not available on this platform"
         _state.value = P2pStreamingState.Error(message)
