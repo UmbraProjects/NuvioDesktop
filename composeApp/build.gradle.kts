@@ -352,6 +352,14 @@ android {
         manifest.srcFile("src/androidFull/AndroidManifest.xml")
         java.srcDir(fullCommonSourceDir)
     }
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            isUniversalApk = false
+        }
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
