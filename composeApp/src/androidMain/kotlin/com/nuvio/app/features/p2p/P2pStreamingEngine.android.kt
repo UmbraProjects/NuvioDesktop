@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,7 +35,14 @@ private const val FILE_INDEX_METADATA_TIMEOUT_MS = 15_000L
 private const val FILE_INDEX_FAST_VALIDATION_TIMEOUT_MS = 10_000L
 private const val FILE_INDEX_POLL_INTERVAL_MS = 250L
 private const val STREAMING_CACHE_SIZE_BYTES = 128L * 1024L * 1024L
-private const val STREAMING_CONNECTION_LIMIT = 80
+private const val STREAMING_CONNECTION_LIMIT = 160
+private const val STREAMING_HALF_OPEN_CONNECTION_LIMIT = 120
+private const val STREAMING_TOTAL_HALF_OPEN_CONNECTION_LIMIT = 500
+private const val STREAMING_PEERS_HIGH_WATER = 900
+private const val STREAMING_PEERS_LOW_WATER = 120
+private const val STREAMING_NOMINAL_DIAL_TIMEOUT_MS = 8_000
+private const val STREAMING_MIN_DIAL_TIMEOUT_MS = 1_500
+private const val STREAMING_HANDSHAKE_TIMEOUT_MS = 3_000
 private const val STREAMING_DISCONNECT_TIMEOUT_SECONDS = 120
 private const val STREAMING_READ_AHEAD_PERCENT = 95
 private const val STREAMING_PRELOAD_CACHE_PERCENT = 50
@@ -47,6 +55,7 @@ actual object P2pStreamingEngine {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lifecycleLock = Any()
     private var statsJob: Job? = null
+    private var preloadJob: Job? = null
     private var warmupJob: Job? = null
     private var currentHash: String? = null
     private var streamGeneration = 0L
@@ -72,7 +81,12 @@ actual object P2pStreamingEngine {
                 Log.d(TAG, "warmup: starting TorrServer")
                 try {
                     binary.start()
-                    api.ensureStreamingSettings()
+                    if (api.ensureStreamingSettings().changed) {
+                        Log.d(TAG, "warmup: restarting TorrServer to apply streaming settings")
+                        binary.stop()
+                        binary.start()
+                        api.ensureStreamingSettings()
+                    }
                     Log.d(TAG, "warmup: TorrServer ready in ${System.currentTimeMillis() - startedAt}ms")
                 } catch (e: CancellationException) {
                     throw e
@@ -108,8 +122,18 @@ actual object P2pStreamingEngine {
             Log.d(TAG, "startStream[$generation]: binary ready ${System.currentTimeMillis() - binaryStartAt}ms")
             ensureCurrentGeneration(generation)
             val settingsAt = System.currentTimeMillis()
-            api.ensureStreamingSettings()
-            Log.d(TAG, "startStream[$generation]: streaming settings ready ${System.currentTimeMillis() - settingsAt}ms")
+            val settingsResult = api.ensureStreamingSettings()
+            if (settingsResult.changed) {
+                Log.d(TAG, "startStream[$generation]: restarting TorrServer to apply streaming settings")
+                binary.stop()
+                binary.start()
+                api.ensureStreamingSettings()
+            }
+            Log.d(
+                TAG,
+                "startStream[$generation]: streaming settings ready ${System.currentTimeMillis() - settingsAt}ms " +
+                    "changed=${settingsResult.changed}",
+            )
             ensureCurrentGeneration(generation)
 
             val magnetLink = buildMagnetUri(
@@ -151,16 +175,23 @@ actual object P2pStreamingEngine {
             }
             ensureCurrentGeneration(generation)
 
+            val streamSelector = TorrServerStreamSelector(
+                legacyIndex = resolvedIdx,
+                fileIdx = request.fileIdx,
+                filename = requestedName,
+            )
             val streamUrl = api.getStreamUrl(
                 magnetLink = magnetLink,
-                selector = TorrServerStreamSelector(
-                    legacyIndex = resolvedIdx,
-                    fileIdx = request.fileIdx,
-                    filename = requestedName,
-                ),
+                selector = streamSelector,
             )
             Log.d(TAG, "startStream[$generation]: streamUrl=${summarizeStreamUrl(streamUrl)}")
 
+            startPreload(
+                hash = hash,
+                generation = generation,
+                magnetLink = magnetLink,
+                selector = streamSelector,
+            )
             startStatsPolling(
                 hash = hash,
                 generation = generation,
@@ -241,6 +272,7 @@ actual object P2pStreamingEngine {
         val generation: Long,
         val hash: String?,
         val statsJob: Job?,
+        val preloadJob: Job?,
     )
 
     private data class ActiveFileSelection(
@@ -256,12 +288,15 @@ actual object P2pStreamingEngine {
                 generation = streamGeneration,
                 hash = currentHash,
                 statsJob = statsJob,
+                preloadJob = preloadJob,
             )
             currentHash = null
             statsJob = null
+            preloadJob = null
             detached
         }
         detached.statsJob?.cancel()
+        detached.preloadJob?.cancel()
         return detached
     }
 
@@ -701,6 +736,48 @@ actual object P2pStreamingEngine {
         }
     }
 
+    private fun startPreload(
+        hash: String,
+        generation: Long,
+        magnetLink: String,
+        selector: TorrServerStreamSelector,
+    ) {
+        val job = scope.launch {
+            val preloadAt = System.currentTimeMillis()
+            Log.d(
+                TAG,
+                "preload[$generation]: starting hash=$hash legacyIndex=${selector.legacyIndex ?: -1} " +
+                    "fileIdx=${selector.fileIdx ?: -1} filename=${selector.filename.orEmpty()}",
+            )
+            try {
+                val completed = api.preloadTorrent(
+                    magnetLink = magnetLink,
+                    selector = selector,
+                )
+                Log.d(
+                    TAG,
+                    "preload[$generation]: completed=$completed in ${System.currentTimeMillis() - preloadAt}ms",
+                )
+            } catch (e: CancellationException) {
+                Log.d(TAG, "preload[$generation]: cancelled after ${System.currentTimeMillis() - preloadAt}ms")
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "preload[$generation]: failed after ${System.currentTimeMillis() - preloadAt}ms", e)
+            }
+        }
+        val previousJob = synchronized(lifecycleLock) {
+            if (streamGeneration == generation && hashMatches(currentHash, hash)) {
+                val previous = preloadJob
+                preloadJob = job
+                previous
+            } else {
+                job.cancel()
+                null
+            }
+        }
+        previousJob?.cancel()
+    }
+
     private fun formatBytes(bytes: Long): String =
         when {
             bytes >= 1_073_741_824L -> "${"%.2f".format(Locale.US, bytes / 1_073_741_824.0)}GB"
@@ -708,6 +785,9 @@ actual object P2pStreamingEngine {
             bytes >= 1_024L -> "${bytes / 1_024}KB"
             else -> "${bytes}B"
         }
+
+    private fun formatSpeed(bytesPerSecond: Long): String =
+        "${formatBytes(bytesPerSecond)}/s"
 
     private fun startStatsPolling(
         hash: String,
@@ -726,6 +806,9 @@ actual object P2pStreamingEngine {
                             files = stats.files,
                             fileSelection = fileSelection,
                         )
+                    }
+                    if (stats != null) {
+                        Log.d(TAG, "stats[$generation]: ${stats.summary()}")
                     }
                     val currentState = _state.value
                     if (
@@ -761,6 +844,16 @@ actual object P2pStreamingEngine {
         }
         previousJob?.cancel()
     }
+
+    private fun TorrServerStats.summary(): String =
+        "state=${status.ifBlank { "?" }} " +
+            "down=${formatSpeed(downloadSpeed)} up=${formatSpeed(uploadSpeed)} " +
+            "peers=$peers/$totalPeers seeds=$seeds pending=$pendingPeers halfOpen=$halfOpenPeers " +
+            "preload=${formatBytes(preloadedBytes)}/${formatBytes(preloadSize)} " +
+            "loaded=${formatBytes(loadedSize)}/${formatBytes(torrentSize)} " +
+            "read=${formatBytes(bytesRead)} useful=${formatBytes(bytesReadUsefulData)} " +
+            "chunks=$chunksRead/$chunksReadUseful wasted=$chunksReadWasted " +
+            "piecesGood=$piecesDirtiedGood piecesBad=$piecesDirtiedBad"
 
     private val DEFAULT_TRACKERS = listOf(
         "udp://tracker.opentrackr.org:1337/announce",
@@ -941,14 +1034,31 @@ actual object P2pStreamingEngine {
     )
 
     private data class TorrServerStats(
+        val status: String,
         val downloadSpeed: Long,
         val uploadSpeed: Long,
         val peers: Int,
         val seeds: Int,
+        val totalPeers: Int,
+        val pendingPeers: Int,
+        val halfOpenPeers: Int,
         val preloadedBytes: Long,
+        val preloadSize: Long,
         val loadedSize: Long,
         val torrentSize: Long,
+        val bytesRead: Long,
+        val bytesReadUsefulData: Long,
+        val chunksRead: Long,
+        val chunksReadUseful: Long,
+        val chunksReadWasted: Long,
+        val piecesDirtiedGood: Long,
+        val piecesDirtiedBad: Long,
         val files: List<TorrServerFile>,
+    )
+
+    private data class StreamingSettingsResult(
+        val success: Boolean,
+        val changed: Boolean,
     )
 
     private class TorrServerApi(
@@ -959,18 +1069,31 @@ actual object P2pStreamingEngine {
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
+        private val preloadClient = client.newBuilder()
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .build()
 
         private val baseUrl: String get() = binary.baseUrl
 
-        suspend fun ensureStreamingSettings(): Boolean = settingsMutex.withLock {
+        suspend fun ensureStreamingSettings(): StreamingSettingsResult = settingsMutex.withLock {
             withContext(Dispatchers.IO) {
                 try {
-                    val settings = getSettings() ?: return@withContext false
+                    val settings = getSettings() ?: return@withContext StreamingSettingsResult(
+                        success = false,
+                        changed = false,
+                    )
                     val beforeSummary = summarizeSettings(settings)
                     val changes = mutableListOf<String>()
 
                     putIfDifferent(settings, "CacheSize", STREAMING_CACHE_SIZE_BYTES, changes)
                     putIfDifferent(settings, "ConnectionsLimit", STREAMING_CONNECTION_LIMIT, changes)
+                    putIfDifferent(settings, "HalfOpenConnectionsLimit", STREAMING_HALF_OPEN_CONNECTION_LIMIT, changes)
+                    putIfDifferent(settings, "TotalHalfOpenConnectionsLimit", STREAMING_TOTAL_HALF_OPEN_CONNECTION_LIMIT, changes)
+                    putIfDifferent(settings, "TorrentPeersHighWater", STREAMING_PEERS_HIGH_WATER, changes)
+                    putIfDifferent(settings, "TorrentPeersLowWater", STREAMING_PEERS_LOW_WATER, changes)
+                    putIfDifferent(settings, "NominalDialTimeoutMs", STREAMING_NOMINAL_DIAL_TIMEOUT_MS, changes)
+                    putIfDifferent(settings, "MinDialTimeoutMs", STREAMING_MIN_DIAL_TIMEOUT_MS, changes)
+                    putIfDifferent(settings, "HandshakeTimeoutMs", STREAMING_HANDSHAKE_TIMEOUT_MS, changes)
                     putIfDifferent(settings, "TorrentDisconnectTimeout", STREAMING_DISCONNECT_TIMEOUT_SECONDS, changes)
                     putIfDifferent(settings, "ReaderReadAHead", STREAMING_READ_AHEAD_PERCENT, changes)
                     putIfDifferent(settings, "PreloadCache", STREAMING_PRELOAD_CACHE_PERCENT, changes)
@@ -990,7 +1113,10 @@ actual object P2pStreamingEngine {
 
                     if (changes.isEmpty()) {
                         Log.d(TAG, "streaming-settings: already tuned $beforeSummary")
-                        return@withContext true
+                        return@withContext StreamingSettingsResult(
+                            success = true,
+                            changed = false,
+                        )
                     }
 
                     Log.d(
@@ -1009,14 +1135,23 @@ actual object P2pStreamingEngine {
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
                             Log.w(TAG, "streaming-settings: set failed code=${response.code}")
-                            return@withContext false
+                            return@withContext StreamingSettingsResult(
+                                success = false,
+                                changed = false,
+                            )
                         }
                     }
                     Log.d(TAG, "streaming-settings: applied ${summarizeSettings(settings)}")
-                    true
+                    StreamingSettingsResult(
+                        success = true,
+                        changed = true,
+                    )
                 } catch (e: Exception) {
                     Log.w(TAG, "streaming-settings: failed", e)
-                    false
+                    StreamingSettingsResult(
+                        success = false,
+                        changed = false,
+                    )
                 }
             }
         }
@@ -1091,6 +1226,13 @@ actual object P2pStreamingEngine {
         private fun summarizeSettings(settings: JSONObject): String =
             "cache=${formatBytes(settings.optLong("CacheSize", 0))} " +
                 "connections=${settings.optInt("ConnectionsLimit", 0)} " +
+                "halfOpen=${settings.optInt("HalfOpenConnectionsLimit", 0)}/" +
+                "${settings.optInt("TotalHalfOpenConnectionsLimit", 0)} " +
+                "peerWater=${settings.optInt("TorrentPeersLowWater", 0)}/" +
+                "${settings.optInt("TorrentPeersHighWater", 0)} " +
+                "dialMs=${settings.optInt("MinDialTimeoutMs", 0)}/" +
+                "${settings.optInt("NominalDialTimeoutMs", 0)} " +
+                "handshakeMs=${settings.optInt("HandshakeTimeoutMs", 0)} " +
                 "readAhead=${settings.optInt("ReaderReadAHead", 0)} " +
                 "preload=${settings.optInt("PreloadCache", 0)} " +
                 "responsive=${settings.optBoolean("ResponsiveMode", false)} " +
@@ -1130,6 +1272,39 @@ actual object P2pStreamingEngine {
             }
         }
 
+        suspend fun preloadTorrent(
+            magnetLink: String,
+            selector: TorrServerStreamSelector,
+        ): Boolean = withContext(Dispatchers.IO) {
+            val url = getStreamUrl(
+                magnetLink = magnetLink,
+                selector = selector,
+                mode = "preload",
+            )
+            Log.d(TAG, "preload: url=${summarizeStreamUrl(url)}")
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .build()
+            val call = preloadClient.newCall(request)
+            val cancellationHandle = currentCoroutineContext()[Job]?.invokeOnCompletion { cause ->
+                if (cause is CancellationException) {
+                    call.cancel()
+                }
+            }
+            try {
+                call.execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.w(TAG, "preload: request failed code=${response.code}")
+                        return@withContext false
+                    }
+                    true
+                }
+            } finally {
+                cancellationHandle?.dispose()
+            }
+        }
+
         suspend fun getTorrentStats(hash: String): TorrServerStats? = withContext(Dispatchers.IO) {
             val body = JSONObject().apply {
                 put("action", "get")
@@ -1161,13 +1336,25 @@ actual object P2pStreamingEngine {
                     }
 
                     TorrServerStats(
+                        status = json.optString("stat_string", ""),
                         downloadSpeed = json.optLong("download_speed", 0),
                         uploadSpeed = json.optLong("upload_speed", 0),
                         peers = json.optInt("active_peers", 0),
                         seeds = json.optInt("connected_seeders", 0),
+                        totalPeers = json.optInt("total_peers", 0),
+                        pendingPeers = json.optInt("pending_peers", 0),
+                        halfOpenPeers = json.optInt("half_open_peers", 0),
                         preloadedBytes = json.optLong("preloaded_bytes", 0),
+                        preloadSize = json.optLong("preload_size", 0),
                         loadedSize = json.optLong("loaded_size", 0),
                         torrentSize = json.optLong("torrent_size", 0),
+                        bytesRead = json.optLong("bytes_read", 0),
+                        bytesReadUsefulData = json.optLong("bytes_read_useful_data", 0),
+                        chunksRead = json.optLong("chunks_read", 0),
+                        chunksReadUseful = json.optLong("chunks_read_useful", 0),
+                        chunksReadWasted = json.optLong("chunks_read_wasted", 0),
+                        piecesDirtiedGood = json.optLong("pieces_dirtied_good", 0),
+                        piecesDirtiedBad = json.optLong("pieces_dirtied_bad", 0),
                         files = files,
                     )
                 }
@@ -1199,10 +1386,11 @@ actual object P2pStreamingEngine {
         fun getStreamUrl(
             magnetLink: String,
             selector: TorrServerStreamSelector,
+            mode: String = "play",
         ): String {
             val params = mutableListOf(
                 "link=${URLEncoder.encode(magnetLink, "UTF-8")}",
-                "play",
+                mode,
             )
             selector.legacyIndex?.let { params += "index=$it" }
             selector.fileIdx?.let { params += "fileIdx=$it" }
