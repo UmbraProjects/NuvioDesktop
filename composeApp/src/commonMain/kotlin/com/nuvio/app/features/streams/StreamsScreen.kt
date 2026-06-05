@@ -87,7 +87,7 @@ import com.nuvio.app.core.ui.dismissNuvioBottomSheet
 import com.nuvio.app.features.downloads.DownloadsRepository
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.nuvio.app.core.ui.rememberNuvioBottomSheetState
+import androidx.compose.material3.rememberModalBottomSheetState
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.debrid.DebridProviders
@@ -132,7 +132,6 @@ fun StreamsScreen(
     ) -> Unit = { _, _, _, _ -> },
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    showBackButton: Boolean = true,
 ) {
     val uiState by StreamsRepository.uiState.collectAsStateWithLifecycle()
     val playerSettings by remember {
@@ -279,15 +278,13 @@ fun StreamsScreen(
                 .padding(start = 12.dp, top = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (showBackButton) {
-                NuvioBackButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .size(40.dp),
-                    containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.45f),
-                    contentColor = MaterialTheme.colorScheme.onBackground,
-                )
-            }
+            NuvioBackButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .size(40.dp),
+                containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.45f),
+                contentColor = MaterialTheme.colorScheme.onBackground,
+            )
 
             Box(
                 modifier = Modifier
@@ -1145,7 +1142,7 @@ private fun StreamActionsSheet(
 ) {
     if (stream == null) return
 
-    val sheetState = rememberNuvioBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
 
     NuvioModalBottomSheet(
