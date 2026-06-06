@@ -473,6 +473,15 @@ internal fun settingsSearchEntries(
     )
     addRow(
         page = SettingsPage.Streams,
+        key = "stream-badge-position",
+        title = stringResource(Res.string.settings_stream_badge_position_title),
+        description = stringResource(Res.string.settings_stream_badge_position_description),
+        pageLabel = streamsPage,
+        section = stringResource(Res.string.settings_stream_badges_section),
+        icon = Icons.Rounded.Style,
+    )
+    addRow(
+        page = SettingsPage.Streams,
         key = "stream-badge-urls",
         title = stringResource(Res.string.settings_stream_badge_urls_title),
         description = stringResource(Res.string.settings_stream_badge_urls_search_description),
