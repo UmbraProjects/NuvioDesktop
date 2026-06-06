@@ -89,6 +89,7 @@ internal fun settingsSearchEntries(
     val accountPage = stringResource(Res.string.compose_settings_page_account)
     val traktPage = stringResource(Res.string.compose_settings_page_trakt)
     val layoutPage = stringResource(Res.string.compose_settings_page_appearance)
+    val advancedPage = stringResource(Res.string.compose_settings_page_advanced)
     val contentDiscoveryPage = stringResource(Res.string.compose_settings_page_content_discovery)
     val downloadsPage = stringResource(Res.string.compose_settings_root_downloads_title)
     val playbackPage = stringResource(Res.string.compose_settings_page_playback)
@@ -206,6 +207,13 @@ internal fun settingsSearchEntries(
         title = layoutPage,
         description = stringResource(Res.string.compose_settings_root_appearance_description),
         icon = Icons.Rounded.Palette,
+    )
+    addPage(
+        page = SettingsPage.Advanced,
+        key = "advanced",
+        title = advancedPage,
+        description = stringResource(Res.string.compose_settings_root_advanced_description),
+        icon = Icons.Rounded.Tune,
     )
     addPage(
         page = SettingsPage.ContentDiscovery,
@@ -367,6 +375,15 @@ internal fun settingsSearchEntries(
         pageLabel = layoutPage,
         section = stringResource(Res.string.settings_appearance_section_display),
         icon = Icons.Rounded.Language,
+    )
+    addRow(
+        page = SettingsPage.Advanced,
+        key = "remember-last-profile",
+        title = stringResource(Res.string.settings_advanced_remember_last_profile),
+        description = stringResource(Res.string.settings_advanced_remember_last_profile_description),
+        pageLabel = advancedPage,
+        section = stringResource(Res.string.settings_advanced_section_startup),
+        icon = Icons.Rounded.Tune,
     )
     addPage(
         page = SettingsPage.ContinueWatching,
