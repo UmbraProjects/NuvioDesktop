@@ -1560,6 +1560,12 @@
     <string name="settings_playback_ios_display_color_hint_desc">Let mpv target the active display color space by default.</string>
     <string name="settings_playback_ios_target_primaries">Target primaries</string>
     <string name="settings_playback_ios_target_transfer">Target transfer</string>
+    <!-- Playback settings iOS audio output -->
+    <string name="settings_playback_ios_audio_output_section">iOS audio output</string>
+    <string name="settings_playback_ios_audio_output">Audio output</string>
+    <string name="settings_playback_ios_audio_output_auto_desc">Try AVFoundation first, then fall back to AudioUnit.</string>
+    <string name="settings_playback_ios_audio_output_avfoundation_desc">Experimental support for Spatial Audio and multichannel output.</string>
+    <string name="settings_playback_ios_audio_output_audiounit_desc">Use the legacy AudioUnit output.</string>
     <!-- Debrid Result Management section -->
     <string name="settings_debrid_section_result_management">Result Management</string>
     <string name="settings_debrid_max_results">Max results</string>
@@ -1660,6 +1666,7 @@
     <string name="submit_intro_capture">Capture</string>
     <!-- iOS advanced playback -->
     <string name="settings_playback_ios_hw_decoder_dialog">Hardware decoder</string>
+    <string name="settings_playback_ios_audio_output_dialog">Audio output</string>
     <string name="settings_playback_ios_target_primaries_dialog">Target primaries</string>
     <string name="settings_playback_ios_target_transfer_dialog">Target transfer</string>
     <!-- Collection editor -->
