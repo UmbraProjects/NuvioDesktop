@@ -896,6 +896,7 @@ private fun TabletSettingsScreen(
                                 showAccountSection = activeCategory == SettingsCategory.Account,
                                 showGeneralSection = activeCategory == SettingsCategory.General,
                                 showAboutSection = activeCategory == SettingsCategory.About,
+                                showAdvancedSection = activeCategory == SettingsCategory.Advanced,
                             )
                         }
                     }

@@ -427,6 +427,7 @@
     <string name="compose_settings_root_account_description">Account and sync status</string>
     <string name="compose_settings_root_account_section">ACCOUNT</string>
     <string name="compose_settings_root_advanced_description">Startup and profile behavior.</string>
+    <string name="compose_settings_root_advanced_section">ADVANCED</string>
     <string name="compose_settings_root_appearance_description">Home structure and poster styles</string>
     <string name="compose_settings_root_check_updates_description">Download latest release</string>
     <string name="compose_settings_root_check_updates_title">Check for updates</string>
@@ -445,7 +446,7 @@
     <string name="settings_search_results_section">RESULTS</string>
     <string name="settings_advanced_section_startup">STARTUP</string>
     <string name="settings_advanced_remember_last_profile">Remember Last Profile</string>
-    <string name="settings_advanced_remember_last_profile_description">Start with the last selected profile when it does not have a PIN lock.</string>
+    <string name="settings_advanced_remember_last_profile_description">Remember last selected profile at startup</string>
     <string name="settings_licenses_attributions_section_app">APP LICENSE</string>
     <string name="settings_licenses_attributions_section_data">DATA &amp; SERVICES</string>
     <string name="settings_licenses_attributions_section_playback">PLAYBACK LICENSE</string>

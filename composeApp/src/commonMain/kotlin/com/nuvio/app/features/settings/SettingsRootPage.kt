@@ -51,6 +51,7 @@ import nuvio.composeapp.generated.resources.compose_settings_root_trakt_descript
 import nuvio.composeapp.generated.resources.compose_settings_root_about_section
 import nuvio.composeapp.generated.resources.compose_settings_root_account_section
 import nuvio.composeapp.generated.resources.compose_settings_root_advanced_description
+import nuvio.composeapp.generated.resources.compose_settings_root_advanced_section
 import nuvio.composeapp.generated.resources.compose_settings_page_content_discovery
 import nuvio.composeapp.generated.resources.compose_settings_page_trakt
 import nuvio.composeapp.generated.resources.settings_playback_subtitle
@@ -77,6 +78,7 @@ internal fun LazyListScope.settingsRootContent(
     showAccountSection: Boolean = true,
     showGeneralSection: Boolean = true,
     showAboutSection: Boolean = true,
+    showAdvancedSection: Boolean = true,
 ) {
     if (showAccountSection) {
         item {
@@ -127,14 +129,6 @@ internal fun LazyListScope.settingsRootContent(
                         icon = Icons.Rounded.Palette,
                         isTablet = isTablet,
                         onClick = onAppearanceClick,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.compose_settings_page_advanced),
-                        description = stringResource(Res.string.compose_settings_root_advanced_description),
-                        icon = Icons.Rounded.Tune,
-                        isTablet = isTablet,
-                        onClick = onAdvancedClick,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
@@ -220,6 +214,24 @@ internal fun LazyListScope.settingsRootContent(
                             onClick = onCheckForUpdatesClick,
                         )
                     }
+                }
+            }
+        }
+    }
+    if (showAdvancedSection) {
+        item {
+            SettingsSection(
+                title = stringResource(Res.string.compose_settings_root_advanced_section),
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_advanced),
+                        description = stringResource(Res.string.compose_settings_root_advanced_description),
+                        icon = Icons.Rounded.Tune,
+                        isTablet = isTablet,
+                        onClick = onAdvancedClick,
+                    )
                 }
             }
         }
