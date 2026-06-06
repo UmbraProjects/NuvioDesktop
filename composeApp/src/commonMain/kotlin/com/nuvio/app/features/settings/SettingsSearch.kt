@@ -388,6 +388,16 @@ internal fun settingsSearchEntries(
         category = advancedCategory,
         icon = Icons.Rounded.Tune,
     )
+    addRow(
+        page = SettingsPage.Advanced,
+        key = "clear-cw-cache",
+        title = stringResource(Res.string.settings_advanced_clear_cw_cache),
+        description = stringResource(Res.string.settings_advanced_clear_cw_cache_subtitle),
+        pageLabel = advancedPage,
+        section = stringResource(Res.string.settings_advanced_section_cache),
+        category = advancedCategory,
+        icon = Icons.Rounded.Tune,
+    )
     addPage(
         page = SettingsPage.ContinueWatching,
         key = "continue-watching",
