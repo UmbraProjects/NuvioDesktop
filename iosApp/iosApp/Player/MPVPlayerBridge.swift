@@ -317,7 +317,7 @@ final class MPVPlayerViewController: UIViewController {
         checkError(mpv_set_option_string(mpv, "vo", "gpu-next"))
         checkError(mpv_set_option_string(mpv, "gpu-api", "vulkan"))
         checkError(mpv_set_option_string(mpv, "gpu-context", "moltenvk"))
-        checkError(mpv_set_option_string(mpv, "hwdec", "auto"))
+        checkError(mpv_set_option_string(mpv, "hwdec", "videotoolbox"))
         checkError(mpv_set_option_string(mpv, "audio-channels", "stereo"))
         checkError(mpv_set_option_string(mpv, "audio-fallback-to-null", "yes"))
         checkError(mpv_set_option_string(mpv, "vulkan-swap-mode", "fifo"))
@@ -498,7 +498,7 @@ final class MPVPlayerViewController: UIViewController {
         metalLayer.wantsExtendedDynamicRangeContent = extendedDynamicRange
         guard mpv != nil else { return }
 
-        setStringProperty("hwdec", hardwareDecoder)
+        setStringProperty("hwdec", "videotoolbox")
         setStringProperty("target-colorspace-hint", targetColorspaceHint ? "yes" : "no")
         setStringProperty("tone-mapping", toneMapping)
         setStringProperty("hdr-compute-peak", hdrComputePeak ? "yes" : "no")
