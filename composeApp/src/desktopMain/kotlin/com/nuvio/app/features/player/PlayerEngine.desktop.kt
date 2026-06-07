@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +30,10 @@ actual fun PlatformPlayerSurface(
     playWhenReady: Boolean,
     resizeMode: PlayerResizeMode,
     useNativeController: Boolean,
+    playerControlsState: PlayerControlsState,
+    onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
+    onPlayerControlsScrubChange: (Long) -> Boolean,
+    onPlayerControlsScrubFinished: (Long) -> Boolean,
     onControllerReady: (PlayerEngineController) -> Unit,
     onSnapshot: (PlayerPlaybackSnapshot) -> Unit,
     onError: (String?) -> Unit,
@@ -39,6 +44,10 @@ actual fun PlatformPlayerSurface(
             sourceHeaders = sourceHeaders,
             modifier = modifier,
             playWhenReady = playWhenReady,
+            playerControlsState = playerControlsState,
+            onPlayerControlsAction = onPlayerControlsAction,
+            onPlayerControlsScrubChange = onPlayerControlsScrubChange,
+            onPlayerControlsScrubFinished = onPlayerControlsScrubFinished,
             onControllerReady = onControllerReady,
             onSnapshot = onSnapshot,
             onError = onError,
@@ -59,6 +68,10 @@ private fun NativePlayerSurface(
     sourceHeaders: Map<String, String>,
     modifier: Modifier,
     playWhenReady: Boolean,
+    playerControlsState: PlayerControlsState,
+    onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
+    onPlayerControlsScrubChange: (Long) -> Boolean,
+    onPlayerControlsScrubFinished: (Long) -> Boolean,
     onControllerReady: (PlayerEngineController) -> Unit,
     onSnapshot: (PlayerPlaybackSnapshot) -> Unit,
     onError: (String?) -> Unit,
@@ -66,9 +79,20 @@ private fun NativePlayerSurface(
     val host = remember { NativePlayerHost() }
     val controller = remember(host) { NativePlayerController(host) }
     val playbackHeaders = remember(sourceHeaders) { sanitizePlaybackHeaders(sourceHeaders) }
+    val latestOnPlayerControlsAction = rememberUpdatedState(onPlayerControlsAction)
+    val latestOnPlayerControlsScrubChange = rememberUpdatedState(onPlayerControlsScrubChange)
+    val latestOnPlayerControlsScrubFinished = rememberUpdatedState(onPlayerControlsScrubFinished)
 
     LaunchedEffect(controller) {
         onControllerReady(controller)
+    }
+
+    LaunchedEffect(controller) {
+        controller.setControlCallbacks(
+            onAction = { action -> latestOnPlayerControlsAction.value(action) },
+            onScrubChange = { positionMs -> latestOnPlayerControlsScrubChange.value(positionMs) },
+            onScrubFinished = { positionMs -> latestOnPlayerControlsScrubFinished.value(positionMs) },
+        )
     }
 
     DisposableEffect(controller, sourceUrl, playbackHeaders) {
@@ -87,6 +111,10 @@ private fun NativePlayerSurface(
         } else {
             controller.pause()
         }
+    }
+
+    LaunchedEffect(controller, playerControlsState) {
+        controller.updateControls(playerControlsState)
     }
 
     LaunchedEffect(controller) {

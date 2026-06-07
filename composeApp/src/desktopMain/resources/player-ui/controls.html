@@ -123,6 +123,38 @@
     }
 
     .top-gradient,
+    .bottom-gradient,
+    .metadata,
+    .header-actions,
+    .center-controls,
+    .progress {
+      transition: opacity 160ms ease;
+    }
+
+    .player.chrome-hidden .top-gradient,
+    .player.chrome-hidden .bottom-gradient,
+    .player.chrome-hidden .metadata,
+    .player.chrome-hidden .header-actions,
+    .player.chrome-hidden .center-controls,
+    .player.chrome-hidden .progress,
+    .player.locked .metadata,
+    .player.locked .header-actions,
+    .player.locked .center-controls {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .player.locked.locked-visible .bottom-gradient,
+    .player.locked.locked-visible .progress {
+      opacity: 1;
+      pointer-events: none;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    .top-gradient,
     .bottom-gradient {
       position: absolute;
       left: 0;
@@ -272,6 +304,48 @@
       flex-direction: column;
     }
 
+    .locked-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      place-items: center;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .player.locked.locked-visible .locked-overlay {
+      display: grid;
+    }
+
+    .locked-content {
+      display: grid;
+      justify-items: center;
+      gap: 12px;
+      pointer-events: auto;
+    }
+
+    .locked-button {
+      width: 78px;
+      height: 78px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, .18);
+      background: rgba(0, 0, 0, .52);
+    }
+
+    .locked-button svg {
+      width: 34px;
+      height: 34px;
+    }
+
+    .locked-label {
+      font-size: 15px;
+      line-height: 1.25;
+      font-weight: 600;
+      color: rgba(255, 255, 255, .92);
+    }
+
     .scrub {
       width: 100%;
       height: var(--slider-touch);
@@ -411,6 +485,9 @@
     <symbol id="icon-lock" viewBox="0 0 24 24">
       <path d="M17 9h-1V7a4 4 0 0 0-8 0v2H7c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2Zm-7 0V7a2 2 0 0 1 4 0v2h-4Z"/>
     </symbol>
+    <symbol id="icon-lock-open" viewBox="0 0 24 24">
+      <path d="M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm6-8h-8V7a2 2 0 1 1 4 0h2a4 4 0 0 0-8 0v2H7c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2Z"/>
+    </symbol>
     <symbol id="icon-build" viewBox="0 0 24 24">
       <path d="M22 19.59 12.41 10 14 8.41l1.17 1.17 2.83-2.83-1.17-1.17L19.66 2.75A6 6 0 0 0 12.2 10.2L2.3 20.1a1 1 0 0 0 0 1.41l.19.19a1 1 0 0 0 1.41 0l9.9-9.9A6 6 0 0 0 21.25 4.34l-2.83 2.83 1.17 1.17-2.83 2.83L15.59 10 14 11.59 20.41 18 22 19.59Z"/>
     </symbol>
@@ -427,11 +504,12 @@
       <path d="M12 4a10 10 0 0 0-8.66 15h17.32A10 10 0 0 0 12 4Zm0 2a8 8 0 0 1 7.39 11H4.61A8 8 0 0 1 12 6Zm4.2 3.8-3.08 4.62a2 2 0 1 1-1.66-1.11l4.04-4.04.7.53Z"/>
     </symbol>
     <symbol id="icon-subs" viewBox="0 0 24 24">
-      <path d="M1 12C1 5 2.5 4 12 4s11 1 11 8-1.5 8-11 8S1 19 1 12Zm2 0c0 3.02.31 4.59 1.42 5.34C5.62 18.15 7.89 18 12 18s6.38.15 7.58-.66C20.69 16.59 21 15.02 21 12s-.31-4.59-1.42-5.34C18.38 5.85 16.11 6 12 6s-6.38-.15-7.58.66C3.31 7.41 3 8.98 3 12Zm3 3h6v1H6v-1Zm7 0h5v1h-5v-1ZM6 11h4v1H6v-1Zm5 0h7v1h-7v-1Z"/>
+      <path fill="none" stroke="currentColor" stroke-width="2" d="M1,12 C1,5 2.5,4 12,4 C21.5,4 23,5 23,12 C23,19 21.5,20 12,20 C2.5,20 1,19 1,12 Z M5.25,14 C5.25,15.5 6,16 7.75,16 C9.5,16 10.25,15.5 10.25,14 L9.97861679,14 C9.97861671,15.25 8.97905547,16 7.75,16 C6.52094453,16 5.52138329,15.25 5.52138321,14 L5.52138321,10 C5.5,8.75 6.5,8 7.75,8 C9,8 10,8.75 9.97861679,10 L10.25,10 C10.25,8.75 9.2286998,8 7.75,8 C6.2713002,8 5.25,8.75 5.25,10 L5.25,14 Z M13.25,14 C13.25,15.5 14,16 15.75,16 C17.5,16 18.25,15.5 18.25,14 L17.9786168,14 C17.9786167,15.25 16.9790555,16 15.75,16 C14.5209445,16 13.5213833,15.25 13.5213832,14 L13.5213832,10 C13.5,8.75 14.5,8 15.75,8 C17,8 18,8.75 17.9786168,10 L18.25,10 C18.25,8.75 17.2286998,8 15.75,8 C14.2713002,8 13.25,8.75 13.25,10 L13.25,14 Z"/>
     </symbol>
     <symbol id="icon-audio" viewBox="0 0 24 24">
-      <path d="M12 6.25c-.69 0-1.25.56-1.25 1.25S11.31 8.75 12 8.75s1.25-.56 1.25-1.25S12.69 6.25 12 6.25ZM9.75 15.5A2.25 2.25 0 1 1 12 17.75a2.25 2.25 0 0 1-2.25-2.25Z"/>
-      <path d="M4 10c0-3.77 0-5.66 1.17-6.83C6.34 2 8.23 2 12 2s5.66 0 6.83 1.17C20 4.34 20 6.23 20 10v4c0 3.77 0 5.66-1.17 6.83C17.66 22 15.77 22 12 22s-5.66 0-6.83-1.17C4 19.66 4 17.77 4 14v-4Zm5.25-2.5a2.75 2.75 0 1 0 5.5 0 2.75 2.75 0 0 0-5.5 0ZM12 11.75a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Z"/>
+      <path d="M12 6.25C11.3096 6.25 10.75 6.80964 10.75 7.5C10.75 8.19036 11.3096 8.75 12 8.75C12.6904 8.75 13.25 8.19036 13.25 7.5C13.25 6.80964 12.6904 6.25 12 6.25Z"/>
+      <path d="M9.75 15.5C9.75 14.2574 10.7574 13.25 12 13.25C13.2426 13.25 14.25 14.2574 14.25 15.5C14.25 16.7426 13.2426 17.75 12 17.75C10.7574 17.75 9.75 16.7426 9.75 15.5Z"/>
+      <path fill-rule="evenodd" clip-rule="evenodd" d="M4 10C4 6.22876 4 4.34315 5.17157 3.17157C6.34315 2 8.22876 2 12 2C15.7712 2 17.6569 2 18.8284 3.17157C20 4.34315 20 6.22876 20 10V14C20 17.7712 20 19.6569 18.8284 20.8284C17.6569 22 15.7712 22 12 22C8.22876 22 6.34315 22 5.17157 20.8284C4 19.6569 4 17.7712 4 14V10ZM9.25 7.5C9.25 5.98122 10.4812 4.75 12 4.75C13.5188 4.75 14.75 5.98122 14.75 7.5C14.75 9.01878 13.5188 10.25 12 10.25C10.4812 10.25 9.25 9.01878 9.25 7.5ZM12 11.75C9.92893 11.75 8.25 13.4289 8.25 15.5C8.25 17.5711 9.92893 19.25 12 19.25C14.0711 19.25 15.75 17.5711 15.75 15.5C15.75 13.4289 14.0711 11.75 12 11.75Z"/>
     </symbol>
     <symbol id="icon-swap" viewBox="0 0 24 24">
       <path d="M7 7h11l-3-3 1.4-1.4L21.8 8l-5.4 5.4L15 12l3-3H7V7Zm10 10H6l3 3-1.4 1.4L2.2 16l5.4-5.4L9 12l-3 3h11v2Z"/>
@@ -444,24 +522,24 @@
     </symbol>
   </svg>
 
-  <div class="player">
+  <div class="player" id="playerRoot">
     <div class="top-gradient"></div>
     <div class="bottom-gradient"></div>
     <div class="content">
       <header class="header">
         <section class="metadata" aria-label="Playback metadata">
-          <div class="title" id="title">Player controls</div>
-          <div class="episode" id="episode">S1 E1 - Episode title</div>
+          <div class="title" id="title"></div>
+          <div class="episode" id="episode" hidden></div>
           <div class="meta-row">
-            <span class="stream-title" id="streamTitle">Stream title</span>
-            <span class="provider" id="providerName">Provider</span>
+            <span class="stream-title" id="streamTitle"></span>
+            <span class="provider" id="providerName"></span>
           </div>
         </section>
         <nav class="header-actions" aria-label="Player actions">
-          <button class="header-button" data-command="submitIntro" aria-label="Submit intro"><svg><use href="#icon-flag"></use></svg></button>
-          <button class="header-button" data-command="lock" aria-label="Lock controls"><svg><use href="#icon-lock"></use></svg></button>
-          <button class="header-button" data-command="videoSettings" aria-label="Video settings"><svg><use href="#icon-build"></use></svg></button>
-          <button class="header-button" data-command="close" aria-label="Close player"><svg><use href="#icon-close"></use></svg></button>
+          <button class="header-button" id="submitIntroButton" data-command="submitIntro" aria-label="Submit intro"><svg><use href="#icon-flag"></use></svg></button>
+          <button class="header-button" id="lockButton" data-command="lock" aria-label="Lock controls"><svg><use id="lockIcon" href="#icon-lock"></use></svg></button>
+          <button class="header-button" id="videoSettingsButton" data-command="videoSettings" aria-label="Video settings"><svg><use href="#icon-build"></use></svg></button>
+          <button class="header-button" id="backButton" data-command="back" aria-label="Close player"><svg><use href="#icon-close"></use></svg></button>
         </nav>
       </header>
 
@@ -481,32 +559,96 @@
           <div class="action-pill">
             <button class="action" data-command="resize"><svg><use href="#icon-aspect"></use></svg><span id="resizeLabel">Fit</span></button>
             <button class="action" data-command="speed"><svg><use href="#icon-speed"></use></svg><span id="speedLabel">1x</span></button>
-            <button class="action" data-command="subtitles"><svg><use href="#icon-subs"></use></svg><span>Subs</span></button>
-            <button class="action" data-command="audio"><svg><use href="#icon-audio"></use></svg><span>Audio</span></button>
-            <button class="action optional" data-command="sources"><svg><use href="#icon-swap"></use></svg><span>Sources</span></button>
-            <button class="action optional" data-command="episodes"><svg><use href="#icon-video"></use></svg><span>Episodes</span></button>
-            <button class="action optional" data-command="external"><svg><use href="#icon-open"></use></svg><span>External</span></button>
+            <button class="action" data-command="subtitles"><svg><use href="#icon-subs"></use></svg><span id="subtitlesLabel">Subs</span></button>
+            <button class="action" data-command="audio"><svg><use href="#icon-audio"></use></svg><span id="audioLabel">Audio</span></button>
+            <button class="action optional" id="sourcesButton" data-command="sources"><svg><use href="#icon-swap"></use></svg><span id="sourcesLabel">Sources</span></button>
+            <button class="action optional" id="episodesButton" data-command="episodes"><svg><use href="#icon-video"></use></svg><span id="episodesLabel">Episodes</span></button>
+            <button class="action optional" id="externalButton" data-command="external"><svg><use href="#icon-open"></use></svg><span id="externalLabel">External</span></button>
           </div>
+        </div>
+      </section>
+      <section class="locked-overlay" id="lockedOverlay" aria-label="Locked player controls">
+        <div class="locked-content">
+          <button class="locked-button" data-command="lock" aria-label="Unlock player controls"><svg><use href="#icon-lock"></use></svg></button>
+          <div class="locked-label" id="lockedLabel">Tap to unlock</div>
         </div>
       </section>
     </div>
   </div>
 
   <script>
+    const root = document.getElementById("playerRoot");
     const seek = document.getElementById("seek");
     const positionLabel = document.getElementById("position");
     const durationLabel = document.getElementById("duration");
     const toggle = document.getElementById("toggle");
     const toggleIcon = document.getElementById("toggleIcon");
+    const lockIcon = document.getElementById("lockIcon");
+    const title = document.getElementById("title");
+    const episode = document.getElementById("episode");
+    const streamTitle = document.getElementById("streamTitle");
+    const providerName = document.getElementById("providerName");
+    const resizeLabel = document.getElementById("resizeLabel");
+    const speedLabel = document.getElementById("speedLabel");
+    const subtitlesLabel = document.getElementById("subtitlesLabel");
+    const audioLabel = document.getElementById("audioLabel");
+    const sourcesLabel = document.getElementById("sourcesLabel");
+    const episodesLabel = document.getElementById("episodesLabel");
+    const externalLabel = document.getElementById("externalLabel");
+    const submitIntroButton = document.getElementById("submitIntroButton");
+    const lockButton = document.getElementById("lockButton");
+    const videoSettingsButton = document.getElementById("videoSettingsButton");
+    const backButton = document.getElementById("backButton");
+    const sourcesButton = document.getElementById("sourcesButton");
+    const episodesButton = document.getElementById("episodesButton");
+    const externalButton = document.getElementById("externalButton");
+    const lockedLabel = document.getElementById("lockedLabel");
+
+    let state = {
+      title: "",
+      episodeText: "",
+      streamTitle: "",
+      providerName: "",
+      resizeModeLabel: "Fit",
+      playbackSpeedLabel: "1x",
+      subtitlesLabel: "Subs",
+      audioLabel: "Audio",
+      sourcesLabel: "Sources",
+      episodesLabel: "Episodes",
+      externalPlayerLabel: "External",
+      playLabel: "Play",
+      pauseLabel: "Pause",
+      closeLabel: "Close player",
+      lockLabel: "Lock player controls",
+      unlockLabel: "Unlock player controls",
+      submitIntroLabel: "Submit Intro",
+      videoSettingsLabel: "Video settings",
+      tapToUnlockLabel: "Tap to unlock",
+      isPlaying: false,
+      isLoading: false,
+      isLocked: false,
+      lockedOverlayVisible: false,
+      controlsVisible: true,
+      showSubmitIntro: false,
+      showVideoSettings: false,
+      showSources: false,
+      showEpisodes: false,
+      showExternalPlayer: false,
+      durationMs: 0,
+      positionMs: 0,
+    };
+    let isScrubbing = false;
+    let scrubPositionMs = 0;
+    let tapTimer = 0;
 
     const send = (type, value = 0) => {
       const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
       if (bridge) bridge.postMessage({ type, value });
     };
 
-    const formatTime = seconds => {
-      if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
-      const total = Math.floor(seconds);
+    const formatTime = milliseconds => {
+      if (!Number.isFinite(milliseconds) || milliseconds < 0) milliseconds = 0;
+      const total = Math.floor(milliseconds / 1000);
       const h = Math.floor(total / 3600);
       const m = Math.floor((total % 3600) / 60);
       const s = total % 60;
@@ -515,47 +657,122 @@
         : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
     };
 
-    const setProgress = (position, duration) => {
-      const percent = duration > 0 ? Math.max(0, Math.min(100, position / duration * 100)) : 0;
+    const setProgress = (positionMs, durationMs) => {
+      const percent = durationMs > 0 ? Math.max(0, Math.min(100, positionMs / durationMs * 100)) : 0;
       seek.value = Math.round(percent * 10);
       seek.style.setProperty("--progress", `${percent}%`);
-      positionLabel.textContent = formatTime(position);
-      durationLabel.textContent = formatTime(duration);
+      positionLabel.textContent = formatTime(positionMs);
+      durationLabel.textContent = formatTime(durationMs);
+    };
+
+    const setText = (element, text) => {
+      element.textContent = text || "";
+      element.hidden = !text;
+    };
+
+    const setVisible = (element, visible) => {
+      element.hidden = !visible;
+    };
+
+    const rangePositionMs = () => {
+      const durationMs = Math.max(0, Number(state.durationMs) || 0);
+      return durationMs > 0 ? Math.round(durationMs * Number(seek.value) / 1000) : 0;
+    };
+
+    const render = () => {
+      const durationMs = Math.max(0, Number(state.durationMs) || 0);
+      const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
+      root.classList.toggle("locked", Boolean(state.isLocked));
+      root.classList.toggle("locked-visible", Boolean(state.isLocked && state.lockedOverlayVisible));
+      root.classList.toggle("chrome-hidden", Boolean(!state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible)));
+
+      title.textContent = state.title || "";
+      setText(episode, state.episodeText);
+      setText(streamTitle, state.streamTitle);
+      setText(providerName, state.providerName);
+      resizeLabel.textContent = state.resizeModeLabel || "Fit";
+      speedLabel.textContent = state.playbackSpeedLabel || "1x";
+      subtitlesLabel.textContent = state.subtitlesLabel || "Subs";
+      audioLabel.textContent = state.audioLabel || "Audio";
+      sourcesLabel.textContent = state.sourcesLabel || "Sources";
+      episodesLabel.textContent = state.episodesLabel || "Episodes";
+      externalLabel.textContent = state.externalPlayerLabel || "External";
+      lockedLabel.textContent = state.tapToUnlockLabel || "Tap to unlock";
+
+      setVisible(submitIntroButton, Boolean(state.showSubmitIntro));
+      setVisible(videoSettingsButton, Boolean(state.showVideoSettings));
+      setVisible(sourcesButton, Boolean(state.showSources));
+      setVisible(episodesButton, Boolean(state.showEpisodes));
+      setVisible(externalButton, Boolean(state.showExternalPlayer));
+
+      const isPlaying = Boolean(state.isPlaying);
+      const playPauseLabel = isPlaying ? state.pauseLabel : state.playLabel;
+      toggle.setAttribute("aria-label", playPauseLabel || (isPlaying ? "Pause" : "Play"));
+      toggleIcon.setAttribute("href", isPlaying ? "#icon-pause" : "#icon-play");
+      lockButton.setAttribute("aria-label", state.isLocked ? state.unlockLabel : state.lockLabel);
+      lockIcon.setAttribute("href", state.isLocked ? "#icon-lock-open" : "#icon-lock");
+      backButton.setAttribute("aria-label", state.closeLabel || "Close player");
+      submitIntroButton.setAttribute("aria-label", state.submitIntroLabel || "Submit Intro");
+      videoSettingsButton.setAttribute("aria-label", state.videoSettingsLabel || "Video settings");
+      seek.disabled = Boolean(state.isLocked);
+      setProgress(positionMs, durationMs);
     };
 
     document.querySelectorAll("[data-command]").forEach(button => {
-      button.addEventListener("click", () => send(button.dataset.command, 0));
+      button.addEventListener("click", event => {
+        event.stopPropagation();
+        send(button.dataset.command, 0);
+      });
     });
 
     seek.addEventListener("input", () => {
-      seek.style.setProperty("--progress", `${Number(seek.value) / 10}%`);
-      send("seekPercent", Number(seek.value) / 1000);
+      isScrubbing = true;
+      scrubPositionMs = rangePositionMs();
+      setProgress(scrubPositionMs, state.durationMs);
+      send("scrubChange", scrubPositionMs);
+    });
+
+    seek.addEventListener("change", () => {
+      scrubPositionMs = rangePositionMs();
+      isScrubbing = false;
+      send("scrubFinish", scrubPositionMs);
+      state.positionMs = scrubPositionMs;
+      render();
     });
 
     window.playerUpdate = state => {
-      const duration = Number(state.duration) || 0;
-      const position = Number(state.position) || 0;
-      const paused = Boolean(state.paused);
-      toggle.setAttribute("aria-label", paused ? "Play" : "Pause");
-      toggleIcon.setAttribute("href", paused ? "#icon-play" : "#icon-pause");
-      setProgress(position, duration);
+      const durationMs = Math.round((Number(state.duration) || 0) * 1000);
+      const positionMs = Math.round((Number(state.position) || 0) * 1000);
+      window.playerControls({
+        durationMs,
+        positionMs,
+        isPlaying: !Boolean(state.paused),
+      });
     };
 
-    window.playerMetadata = metadata => {
-      const title = document.getElementById("title");
-      const episode = document.getElementById("episode");
-      const streamTitle = document.getElementById("streamTitle");
-      const providerName = document.getElementById("providerName");
-      if ("title" in metadata) title.textContent = metadata.title || "";
-      if ("episode" in metadata) {
-        episode.textContent = metadata.episode || "";
-        episode.hidden = !metadata.episode;
-      }
-      if ("streamTitle" in metadata) streamTitle.textContent = metadata.streamTitle || "";
-      if ("providerName" in metadata) providerName.textContent = metadata.providerName || "";
+    window.playerControls = nextState => {
+      state = { ...state, ...nextState };
+      render();
     };
+
+    root.addEventListener("click", event => {
+      if (event.target.closest("button,input")) return;
+      window.clearTimeout(tapTimer);
+      tapTimer = window.setTimeout(() => {
+        send(state.isLocked ? "revealLockedOverlay" : "toggleChrome");
+      }, 220);
+    });
+
+    root.addEventListener("dblclick", event => {
+      if (event.target.closest("button,input")) return;
+      window.clearTimeout(tapTimer);
+      const bounds = root.getBoundingClientRect();
+      const localX = event.clientX - bounds.left;
+      send(localX < bounds.width / 2 ? "doubleTapSeekBack" : "doubleTapSeekForward");
+    });
 
     setProgress(0, 0);
+    render();
   </script>
 </body>
 </html>

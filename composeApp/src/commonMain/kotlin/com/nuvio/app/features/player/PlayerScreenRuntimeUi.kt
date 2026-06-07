@@ -16,12 +16,16 @@ import com.nuvio.app.features.p2p.formatP2pSpeed
 import com.nuvio.app.isIos
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
 internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     val runtime = this
     val displayedPositionMs = scrubbingPositionMs ?: playbackSnapshot.positionMs
-    val isEpisode = activeSeasonNumber != null && activeEpisodeNumber != null
+    val seasonNumber = activeSeasonNumber
+    val episodeNumber = activeEpisodeNumber
+    val episodeTitle = activeEpisodeTitle
+    val isEpisode = seasonNumber != null && episodeNumber != null
     val currentGestureFeedback = liveGestureFeedback ?: gestureFeedback
     val isP2pPlaybackActive = activeTorrentInfoHash != null
     val p2pStats = p2pStreamingState as? P2pStreamingState.Streaming
@@ -81,6 +85,51 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             (bufferedSeconds / 10f).coerceIn(0f, 1f)
         }
     }
+    val episodeText = if (seasonNumber != null && episodeNumber != null && !episodeTitle.isNullOrBlank()) {
+        stringResource(
+            Res.string.compose_player_episode_title_format,
+            seasonNumber,
+            episodeNumber,
+            episodeTitle.orEmpty(),
+        )
+    } else {
+        ""
+    }
+    val playerControlsState = PlayerControlsState(
+        title = title,
+        episodeText = episodeText,
+        streamTitle = activeStreamTitle,
+        providerName = activeProviderName,
+        resizeModeLabel = stringResource(resizeMode.labelRes),
+        playbackSpeedLabel = formatPlaybackSpeedLabel(playbackSnapshot.playbackSpeed),
+        subtitlesLabel = stringResource(Res.string.compose_player_subs),
+        audioLabel = stringResource(Res.string.compose_player_audio),
+        sourcesLabel = stringResource(Res.string.compose_player_sources),
+        episodesLabel = stringResource(Res.string.compose_player_episodes),
+        externalPlayerLabel = stringResource(Res.string.streams_open_external_player),
+        playLabel = stringResource(Res.string.detail_btn_play),
+        pauseLabel = stringResource(Res.string.compose_action_pause),
+        closeLabel = stringResource(Res.string.compose_player_close),
+        lockLabel = stringResource(Res.string.compose_player_lock_controls),
+        unlockLabel = stringResource(Res.string.compose_player_unlock_controls),
+        submitIntroLabel = stringResource(Res.string.submit_intro_action),
+        videoSettingsLabel = stringResource(Res.string.player_action_video_settings),
+        tapToUnlockLabel = stringResource(Res.string.compose_player_tap_to_unlock),
+        isPlaying = playbackSnapshot.isPlaying,
+        isLoading = playbackSnapshot.isLoading,
+        isLocked = playerControlsLocked,
+        lockedOverlayVisible = lockedOverlayVisible,
+        controlsVisible = (controlsVisible || showParentalGuide) && !playerControlsLocked,
+        showSubmitIntro = isSeries &&
+            playerSettingsUiState.introSubmitEnabled &&
+            playerSettingsUiState.introDbApiKey.isNotBlank(),
+        showVideoSettings = isIos,
+        showSources = activeVideoId != null,
+        showEpisodes = isSeries,
+        showExternalPlayer = args.onOpenInExternalPlayer != null,
+        durationMs = playbackSnapshot.durationMs,
+        positionMs = displayedPositionMs,
+    )
     val gestureCallbacks = rememberSurfaceGestureCallbacks()
 
     Box(
@@ -123,6 +172,16 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 modifier = Modifier.fillMaxSize(),
                 playWhenReady = shouldPlay,
                 resizeMode = resizeMode,
+                playerControlsState = playerControlsState,
+                onPlayerControlsAction = { action -> handlePlayerControlsAction(action) },
+                onPlayerControlsScrubChange = { positionMs ->
+                    handlePlayerControlsScrubChange(positionMs)
+                    true
+                },
+                onPlayerControlsScrubFinished = { positionMs ->
+                    handlePlayerControlsScrubFinished(positionMs)
+                    true
+                },
                 onControllerReady = { controller ->
                     playerController = controller
                     playerControllerSourceUrl = activeSourceUrl
@@ -282,6 +341,102 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
             modifier = Modifier.fillMaxSize(),
         )
     }
+}
+
+private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControlsAction): Boolean {
+    when (action) {
+        PlayerControlsAction.ToggleChrome -> {
+            if (playerControlsLocked) {
+                revealLockedOverlay()
+            } else {
+                controlsVisible = !controlsVisible
+            }
+        }
+        PlayerControlsAction.RevealLockedOverlay -> revealLockedOverlay()
+        PlayerControlsAction.Back -> {
+            flushWatchProgress()
+            args.onBack()
+        }
+        PlayerControlsAction.TogglePlayback -> togglePlayback()
+        PlayerControlsAction.SeekBack -> seekBy(-10_000L)
+        PlayerControlsAction.SeekForward -> seekBy(10_000L)
+        PlayerControlsAction.ResizeMode -> cycleResizeMode()
+        PlayerControlsAction.Speed -> cyclePlaybackSpeed()
+        PlayerControlsAction.Subtitles -> {
+            refreshTracks()
+            showSubtitleModal = true
+        }
+        PlayerControlsAction.Audio -> {
+            refreshTracks()
+            showAudioModal = true
+        }
+        PlayerControlsAction.Sources -> {
+            if (activeVideoId != null) openSourcesPanel()
+        }
+        PlayerControlsAction.Episodes -> {
+            if (isSeries) openEpisodesPanel()
+        }
+        PlayerControlsAction.OpenExternalPlayer -> openInExternalPlayer()
+        PlayerControlsAction.SubmitIntro -> {
+            if (
+                isSeries &&
+                playerSettingsUiState.introSubmitEnabled &&
+                playerSettingsUiState.introDbApiKey.isNotBlank()
+            ) {
+                showSubmitIntroModal = true
+            }
+        }
+        PlayerControlsAction.LockToggle -> {
+            if (playerControlsLocked) unlockPlayerControls() else lockPlayerControls()
+        }
+        PlayerControlsAction.VideoSettings -> {
+            if (isIos) {
+                showVideoSettingsModal = true
+                controlsVisible = true
+            }
+        }
+        PlayerControlsAction.DoubleTapSeekBack -> handleDoubleTapSeek(PlayerSeekDirection.Backward)
+        PlayerControlsAction.DoubleTapSeekForward -> handleDoubleTapSeek(PlayerSeekDirection.Forward)
+    }
+    return true
+}
+
+private fun PlayerScreenRuntime.handlePlayerControlsScrubChange(positionMs: Long) {
+    isScrubbingTimeline = true
+    scrubbingPositionMs = positionMs
+}
+
+private fun PlayerScreenRuntime.handlePlayerControlsScrubFinished(positionMs: Long) {
+    isScrubbingTimeline = false
+    scrubbingPositionMs = null
+    playerController?.seekTo(positionMs)
+    scheduleProgressSyncAfterSeek()
+}
+
+private fun PlayerScreenRuntime.openInExternalPlayer() {
+    val openExternal = args.onOpenInExternalPlayer ?: return
+    val loadedSubtitles = addonSubtitles
+        .takeIf { it.isNotEmpty() }
+        ?.map { sub ->
+            SubtitleInput(
+                url = sub.url,
+                name = buildString {
+                    if (!sub.addonName.isNullOrBlank()) append("[${sub.addonName}] ")
+                    append(sub.display)
+                },
+                lang = sub.language,
+            )
+        }
+    openExternal(
+        ExternalPlayerPlaybackRequest(
+            sourceUrl = activeSourceUrl,
+            title = title,
+            streamTitle = activeStreamTitle,
+            sourceHeaders = activeSourceHeaders,
+            resumePositionMs = playbackSnapshot.positionMs,
+            subtitles = loadedSubtitles,
+        ),
+    )
 }
 
 @Composable

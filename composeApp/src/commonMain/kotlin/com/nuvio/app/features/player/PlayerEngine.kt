@@ -23,6 +23,61 @@ interface PlayerEngineController {
     fun configureIosVideoOutput(settings: PlayerSettingsUiState) {}
 }
 
+enum class PlayerControlsAction {
+    ToggleChrome,
+    RevealLockedOverlay,
+    Back,
+    TogglePlayback,
+    SeekBack,
+    SeekForward,
+    ResizeMode,
+    Speed,
+    Subtitles,
+    Audio,
+    Sources,
+    Episodes,
+    OpenExternalPlayer,
+    SubmitIntro,
+    LockToggle,
+    VideoSettings,
+    DoubleTapSeekBack,
+    DoubleTapSeekForward,
+}
+
+data class PlayerControlsState(
+    val title: String = "",
+    val episodeText: String = "",
+    val streamTitle: String = "",
+    val providerName: String = "",
+    val resizeModeLabel: String = "Fit",
+    val playbackSpeedLabel: String = "1x",
+    val subtitlesLabel: String = "Subs",
+    val audioLabel: String = "Audio",
+    val sourcesLabel: String = "Sources",
+    val episodesLabel: String = "Episodes",
+    val externalPlayerLabel: String = "External",
+    val playLabel: String = "Play",
+    val pauseLabel: String = "Pause",
+    val closeLabel: String = "Close player",
+    val lockLabel: String = "Lock player controls",
+    val unlockLabel: String = "Unlock player controls",
+    val submitIntroLabel: String = "Submit Intro",
+    val videoSettingsLabel: String = "Video settings",
+    val tapToUnlockLabel: String = "Tap to unlock",
+    val isPlaying: Boolean = false,
+    val isLoading: Boolean = false,
+    val isLocked: Boolean = false,
+    val lockedOverlayVisible: Boolean = false,
+    val controlsVisible: Boolean = true,
+    val showSubmitIntro: Boolean = false,
+    val showVideoSettings: Boolean = false,
+    val showSources: Boolean = false,
+    val showEpisodes: Boolean = false,
+    val showExternalPlayer: Boolean = false,
+    val durationMs: Long = 0L,
+    val positionMs: Long = 0L,
+)
+
 internal fun sanitizePlaybackHeaders(headers: Map<String, String>?): Map<String, String> {
     val rawHeaders = headers ?: return emptyMap()
     if (rawHeaders.isEmpty()) return emptyMap()
@@ -63,6 +118,10 @@ expect fun PlatformPlayerSurface(
     playWhenReady: Boolean = true,
     resizeMode: PlayerResizeMode = PlayerResizeMode.Fit,
     useNativeController: Boolean = false,
+    playerControlsState: PlayerControlsState = PlayerControlsState(),
+    onPlayerControlsAction: (PlayerControlsAction) -> Boolean = { false },
+    onPlayerControlsScrubChange: (Long) -> Boolean = { false },
+    onPlayerControlsScrubFinished: (Long) -> Boolean = { false },
     onControllerReady: (PlayerEngineController) -> Unit,
     onSnapshot: (PlayerPlaybackSnapshot) -> Unit,
     onError: (String?) -> Unit,

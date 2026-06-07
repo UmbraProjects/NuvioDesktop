@@ -3,6 +3,10 @@ package com.nuvio.app.features.player.desktop
 import java.io.File
 import java.nio.file.Files
 
+internal fun interface NativePlayerEventSink {
+    fun onPlayerEvent(type: String, value: Double)
+}
+
 internal object NativePlayerBridge {
     init {
         loadNativeLibrary()
@@ -14,9 +18,11 @@ internal object NativePlayerBridge {
         headerLines: Array<String>,
         playWhenReady: Boolean,
         controlsHtml: String,
+        eventSink: NativePlayerEventSink,
     ): Long
 
     external fun dispose(handle: Long)
+    external fun updateControls(handle: Long, controlsJson: String)
     external fun setPaused(handle: Long, paused: Boolean)
     external fun seekTo(handle: Long, positionMs: Long)
     external fun seekBy(handle: Long, offsetMs: Long)

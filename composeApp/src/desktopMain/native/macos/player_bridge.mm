@@ -97,8 +97,12 @@ uint64_t mpv_render_context_update(mpv_render_context *ctx);
                        sourceUrl:(NSString *)sourceUrl
                      headerLines:(NSArray<NSString *> *)headerLines
                     playWhenReady:(BOOL)playWhenReady
-                     controlsHtml:(NSString *)controlsHtml;
+                     controlsHtml:(NSString *)controlsHtml
+                           javaVm:(JavaVM *)javaVm
+                        eventSink:(jobject)eventSink
+                      eventMethod:(jmethodID)eventMethod;
 - (void)shutdown;
+- (void)updateControlsJson:(NSString *)controlsJson;
 - (void)setPaused:(BOOL)paused;
 - (BOOL)isPaused;
 - (void)seekToMilliseconds:(long long)positionMs;
@@ -218,6 +222,19 @@ static void renderUpdateCallback(void *callbackContext) {
 }
 @end
 
+static NSString *javaScriptStringLiteral(NSString *value) {
+    NSArray *array = @[value ?: @""];
+    NSData *data = [NSJSONSerialization dataWithJSONObject:array options:0 error:nil];
+    if (!data) {
+        return @"\"\"";
+    }
+    NSString *jsonArray = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (jsonArray.length < 2) {
+        return @"\"\"";
+    }
+    return [jsonArray substringWithRange:NSMakeRange(1, jsonArray.length - 2)];
+}
+
 @implementation MpvWebPlayer {
     NSView *_hostView;
     PlayerOpenGLView *_videoView;
@@ -226,17 +243,27 @@ static void renderUpdateCallback(void *callbackContext) {
     mpv_handle *_mpv;
     mpv_render_context *_renderContext;
     NSTimer *_timer;
+    JavaVM *_javaVm;
+    jobject _eventSink;
+    jmethodID _eventMethod;
 }
 
 - (instancetype)initWithHostView:(NSView *)hostView
                        sourceUrl:(NSString *)sourceUrl
                      headerLines:(NSArray<NSString *> *)headerLines
                     playWhenReady:(BOOL)playWhenReady
-                     controlsHtml:(NSString *)controlsHtml {
+                     controlsHtml:(NSString *)controlsHtml
+                           javaVm:(JavaVM *)javaVm
+                        eventSink:(jobject)eventSink
+                      eventMethod:(jmethodID)eventMethod {
     self = [super init];
     if (!self) {
         return nil;
     }
+
+    _javaVm = javaVm;
+    _eventSink = eventSink;
+    _eventMethod = eventMethod;
 
     _hostView = hostView;
     _hostView.wantsLayer = YES;
@@ -345,6 +372,66 @@ static void renderUpdateCallback(void *callbackContext) {
     [_webView evaluateJavaScript:script completionHandler:nil];
 }
 
+- (JNIEnv *)jniEnvDidAttach:(BOOL *)didAttach {
+    if (didAttach) {
+        *didAttach = NO;
+    }
+    if (!_javaVm) {
+        return nullptr;
+    }
+
+    JNIEnv *env = nullptr;
+    jint status = _javaVm->GetEnv((void **)&env, JNI_VERSION_1_6);
+    if (status == JNI_OK) {
+        return env;
+    }
+    if (status != JNI_EDETACHED) {
+        return nullptr;
+    }
+    if (_javaVm->AttachCurrentThread((void **)&env, nullptr) != JNI_OK) {
+        return nullptr;
+    }
+    if (didAttach) {
+        *didAttach = YES;
+    }
+    return env;
+}
+
+- (void)sendPlayerEvent:(NSString *)type value:(double)value {
+    if (!_eventSink || !_eventMethod) {
+        return;
+    }
+
+    BOOL didAttach = NO;
+    JNIEnv *env = [self jniEnvDidAttach:&didAttach];
+    if (!env) {
+        return;
+    }
+
+    jstring eventType = env->NewStringUTF(type.UTF8String);
+    env->CallVoidMethod(_eventSink, _eventMethod, eventType, (jdouble)value);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+    }
+    if (eventType) {
+        env->DeleteLocalRef(eventType);
+    }
+    if (didAttach) {
+        _javaVm->DetachCurrentThread();
+    }
+}
+
+- (void)updateControlsJson:(NSString *)controlsJson {
+    if (!_webView) {
+        return;
+    }
+    NSString *jsonString = javaScriptStringLiteral(controlsJson);
+    NSString *script = [NSString stringWithFormat:
+        @"if (window.playerControls) window.playerControls(JSON.parse(%@))",
+        jsonString];
+    [_webView evaluateJavaScript:script completionHandler:nil];
+}
+
 - (void)shutdown {
     [_timer invalidate];
     _timer = nil;
@@ -364,6 +451,19 @@ static void renderUpdateCallback(void *callbackContext) {
     _webView = nil;
     _videoView = nil;
     _scriptHandler = nil;
+    if (_eventSink) {
+        BOOL didAttach = NO;
+        JNIEnv *env = [self jniEnvDidAttach:&didAttach];
+        if (env) {
+            env->DeleteGlobalRef(_eventSink);
+        }
+        if (didAttach) {
+            _javaVm->DetachCurrentThread();
+        }
+        _eventSink = nullptr;
+    }
+    _eventMethod = nullptr;
+    _javaVm = nullptr;
 }
 
 - (void)setPaused:(BOOL)paused {
@@ -422,15 +522,26 @@ static void renderUpdateCallback(void *callbackContext) {
 
 - (void)handleScriptMessage:(NSDictionary *)message {
     NSString *type = message[@"type"];
+    if (![type isKindOfClass:[NSString class]]) {
+        return;
+    }
+
+    NSNumber *value = message[@"value"];
+    if (_eventSink && _eventMethod) {
+        [self sendPlayerEvent:type value:value ? value.doubleValue : 0.0];
+        return;
+    }
+
     if ([type isEqualToString:@"toggle"]) {
         [self setPaused:![self isPaused]];
         [self syncControls];
     } else if ([type isEqualToString:@"seekPercent"]) {
-        NSNumber *value = message[@"value"];
         double duration = [self doubleProperty:"duration" fallback:0.0];
         if (duration > 0.0 && value) {
             [self seekToMilliseconds:(long long)llround(duration * value.doubleValue * 1000.0)];
         }
+    } else if ([type isEqualToString:@"scrubFinish"] && value) {
+        [self seekToMilliseconds:(long long)llround(value.doubleValue)];
     }
 }
 
@@ -494,12 +605,31 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jstring sourceUrl,
     jobjectArray headerLines,
     jboolean playWhenReady,
-    jstring controlsHtml
+    jstring controlsHtml,
+    jobject eventSink
 ) {
     NSView *hostView = (__bridge NSView *)(void *)(intptr_t)hostViewPtr;
     if (!hostView) {
         throwJavaError(env, @"Unable to resolve the AWT host NSView for native playback.");
         return 0;
+    }
+
+    JavaVM *javaVm = nullptr;
+    env->GetJavaVM(&javaVm);
+    jobject eventSinkRef = nullptr;
+    jmethodID eventMethod = nullptr;
+    if (eventSink) {
+        eventSinkRef = env->NewGlobalRef(eventSink);
+        jclass eventSinkClass = env->GetObjectClass(eventSink);
+        eventMethod = env->GetMethodID(eventSinkClass, "onPlayerEvent", "(Ljava/lang/String;D)V");
+        env->DeleteLocalRef(eventSinkClass);
+        if (!eventMethod) {
+            if (eventSinkRef) {
+                env->DeleteGlobalRef(eventSinkRef);
+            }
+            throwJavaError(env, @"Native player event sink is missing onPlayerEvent(String, Double).");
+            return 0;
+        }
     }
 
     std::string source = jstringToString(env, sourceUrl);
@@ -511,16 +641,22 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
         @try {
             player = [[MpvWebPlayer alloc]
                 initWithHostView:hostView
-                      sourceUrl:[NSString stringWithUTF8String:source.c_str()]
+                    sourceUrl:[NSString stringWithUTF8String:source.c_str()]
                     headerLines:headers
                    playWhenReady:playWhenReady == JNI_TRUE
-                    controlsHtml:[NSString stringWithUTF8String:controls.c_str()]];
+                    controlsHtml:[NSString stringWithUTF8String:controls.c_str()]
+                          javaVm:javaVm
+                       eventSink:eventSinkRef
+                     eventMethod:eventMethod];
         } @catch (NSException *exception) {
             error = exception.reason ?: exception.name;
         }
     });
 
     if (error) {
+        if (eventSinkRef) {
+            env->DeleteGlobalRef(eventSinkRef);
+        }
         throwJavaError(env, error);
         return 0;
     }
@@ -538,6 +674,21 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_dispose(
     MpvWebPlayer *player = (__bridge_transfer MpvWebPlayer *)(void *)(intptr_t)handle;
     runOnMainSync(^{
         [player shutdown];
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_updateControls(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle,
+    jstring controlsJson
+) {
+    if (handle == 0) return;
+    std::string controls = jstringToString(env, controlsJson);
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player updateControlsJson:[NSString stringWithUTF8String:controls.c_str()]];
     });
 }
 
