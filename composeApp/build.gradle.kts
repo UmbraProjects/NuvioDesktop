@@ -8,6 +8,7 @@ import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
+import org.gradle.jvm.tasks.Jar
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 import java.util.Properties
@@ -207,6 +208,63 @@ val generateRuntimeConfigs = tasks.register<GenerateRuntimeConfigsTask>("generat
     appVersionCode.set(releaseAppVersionCode)
 }
 
+val isMacHost = System.getProperty("os.name").contains("mac", ignoreCase = true)
+val stremioMacosDir = providers.gradleProperty("nuvio.stremio.macos.dir")
+    .orElse("/Applications/Stremio.app/Contents/MacOS")
+val macosPlayerBridgeSource = layout.projectDirectory.file("src/desktopMain/native/macos/player_bridge.mm")
+val macosPlayerBridgeOutput = layout.buildDirectory.file("native/macos/libplayer_bridge.dylib")
+val buildMacosPlayerBridge = tasks.register<Exec>("buildMacosPlayerBridge") {
+    notCompatibleWithConfigurationCache("Builds a host-local player bridge against the installed Stremio libmpv.")
+    enabled = isMacHost
+    inputs.file(macosPlayerBridgeSource)
+    inputs.file(stremioMacosDir.map { "$it/libmpv.dylib" })
+    outputs.file(macosPlayerBridgeOutput)
+
+    doFirst {
+        val stremioDir = stremioMacosDir.get()
+        val stremioMpv = File(stremioDir, "libmpv.dylib")
+        require(stremioMpv.exists()) {
+            "Stremio libmpv was not found at ${stremioMpv.path}. Set -Pnuvio.stremio.macos.dir=/path/to/Stremio.app/Contents/MacOS."
+        }
+        macosPlayerBridgeOutput.get().asFile.parentFile.mkdirs()
+    }
+
+    val javaHome = providers.systemProperty("java.home")
+    commandLine(
+        "xcrun",
+        "clang++",
+        "-std=c++17",
+        "-dynamiclib",
+        "-fobjc-arc",
+        "-ObjC++",
+        macosPlayerBridgeSource.asFile.absolutePath,
+        "-o",
+        macosPlayerBridgeOutput.get().asFile.absolutePath,
+        "-I${javaHome.get()}/include",
+        "-I${javaHome.get()}/include/darwin",
+        "-L${stremioMacosDir.get()}",
+        "-lmpv",
+        "-Wl,-rpath,${stremioMacosDir.get()}",
+        "-framework",
+        "AppKit",
+        "-framework",
+        "WebKit",
+        "-framework",
+        "QuartzCore",
+        "-framework",
+        "OpenGL",
+    )
+}
+
+tasks.withType<Jar>().configureEach {
+    if (isMacHost && name == "desktopJar") {
+        dependsOn(buildMacosPlayerBridge)
+        from(macosPlayerBridgeOutput) {
+            into("native/macos")
+        }
+    }
+}
+
 tasks.withType<KotlinCompilationTask<*>>().configureEach {
     dependsOn(generateRuntimeConfigs)
 }
@@ -325,6 +383,14 @@ kotlin {
 compose.desktop {
     application {
         mainClass = "com.nuvio.app.MainKt"
+        val smokePlayerUrl = providers.gradleProperty("nuvio.desktop.smokePlayerUrl").orNull
+            ?: System.getenv("NUVIO_DESKTOP_SMOKE_PLAYER_URL")
+        jvmArgs += listOfNotNull(
+            "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
+            "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
+            "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
+            smokePlayerUrl?.takeIf { it.isNotBlank() }?.let { "-Dnuvio.desktop.smokePlayerUrl=$it" },
+        )
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)

@@ -6,11 +6,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.nuvio.app.features.player.desktop.DesktopHostOs
+import com.nuvio.app.features.player.desktop.NativePlayerController
+import com.nuvio.app.features.player.desktop.NativePlayerHost
+import kotlinx.coroutines.delay
 
 @Composable
 actual fun PlatformPlayerSurface(
@@ -26,6 +32,81 @@ actual fun PlatformPlayerSurface(
     onControllerReady: (PlayerEngineController) -> Unit,
     onSnapshot: (PlayerPlaybackSnapshot) -> Unit,
     onError: (String?) -> Unit,
+) {
+    if (DesktopHostOs.current == DesktopHostOs.MACOS) {
+        NativePlayerSurface(
+            sourceUrl = sourceUrl,
+            sourceHeaders = sourceHeaders,
+            modifier = modifier,
+            playWhenReady = playWhenReady,
+            onControllerReady = onControllerReady,
+            onSnapshot = onSnapshot,
+            onError = onError,
+        )
+        return
+    }
+
+    DesktopStubPlayerSurface(
+        modifier = modifier,
+        onControllerReady = onControllerReady,
+        onSnapshot = onSnapshot,
+    )
+}
+
+@Composable
+private fun NativePlayerSurface(
+    sourceUrl: String,
+    sourceHeaders: Map<String, String>,
+    modifier: Modifier,
+    playWhenReady: Boolean,
+    onControllerReady: (PlayerEngineController) -> Unit,
+    onSnapshot: (PlayerPlaybackSnapshot) -> Unit,
+    onError: (String?) -> Unit,
+) {
+    val host = remember { NativePlayerHost() }
+    val controller = remember(host) { NativePlayerController(host) }
+    val playbackHeaders = remember(sourceHeaders) { sanitizePlaybackHeaders(sourceHeaders) }
+
+    LaunchedEffect(controller) {
+        onControllerReady(controller)
+    }
+
+    DisposableEffect(controller, sourceUrl, playbackHeaders) {
+        controller.attach(
+            sourceUrl = sourceUrl,
+            sourceHeaders = playbackHeaders,
+            playWhenReady = playWhenReady,
+            onError = onError,
+        )
+        onDispose { controller.dispose() }
+    }
+
+    LaunchedEffect(controller, playWhenReady) {
+        if (playWhenReady) {
+            controller.play()
+        } else {
+            controller.pause()
+        }
+    }
+
+    LaunchedEffect(controller) {
+        while (true) {
+            onSnapshot(controller.snapshot())
+            delay(500L)
+        }
+    }
+
+    SwingPanel(
+        factory = { host },
+        modifier = modifier.fillMaxSize(),
+    )
+}
+
+@Composable
+private fun DesktopStubPlayerSurface(
+    modifier: Modifier,
+    onControllerReady: (PlayerEngineController) -> Unit,
+    onSnapshot: (PlayerPlaybackSnapshot) -> Unit,
 ) {
     val controller = remember { DesktopStubPlayerController() }
 

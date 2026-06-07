@@ -1,0 +1,77 @@
+package com.nuvio.app.features.player.desktop
+
+import java.io.File
+import java.nio.file.Files
+
+internal object NativePlayerBridge {
+    init {
+        loadNativeLibrary()
+    }
+
+    external fun create(
+        hostViewPtr: Long,
+        sourceUrl: String,
+        headerLines: Array<String>,
+        playWhenReady: Boolean,
+    ): Long
+
+    external fun dispose(handle: Long)
+    external fun setPaused(handle: Long, paused: Boolean)
+    external fun seekTo(handle: Long, positionMs: Long)
+    external fun seekBy(handle: Long, offsetMs: Long)
+    external fun setSpeed(handle: Long, speed: Float)
+    external fun durationMs(handle: Long): Long
+    external fun positionMs(handle: Long): Long
+    external fun isPaused(handle: Long): Boolean
+    external fun speed(handle: Long): Float
+
+    private fun loadNativeLibrary() {
+        val platform = DesktopHostOs.current
+        require(platform == DesktopHostOs.MACOS) {
+            "Native desktop playback is not implemented for $platform yet."
+        }
+
+        val libraryName = nativeLibraryName(platform)
+        val platformDir = nativeDirectoryName(platform)
+        findLocalBuildLibrary(platformDir, libraryName)?.let { localLibrary ->
+            System.load(localLibrary.absolutePath)
+            return
+        }
+
+        val resource = "/native/$platformDir/$libraryName"
+        val input = NativePlayerBridge::class.java.getResourceAsStream(resource)
+            ?: error("Missing bundled native player bridge: $resource")
+        val dir = File(System.getProperty("java.io.tmpdir"), "native-player-bridge").apply { mkdirs() }
+        val suffix = libraryName.substringAfter("player_bridge", ".dylib")
+        val file = Files.createTempFile(dir.toPath(), "player-bridge-", suffix).toFile()
+        file.deleteOnExit()
+        input.use { source ->
+            file.outputStream().use { target -> source.copyTo(target) }
+        }
+        System.load(file.absolutePath)
+    }
+
+    private fun findLocalBuildLibrary(platformDir: String, libraryName: String): File? {
+        val candidates = listOf(
+            File("composeApp/build/native/$platformDir/$libraryName"),
+            File("build/native/$platformDir/$libraryName"),
+        )
+        return candidates.firstOrNull { it.exists() }
+    }
+
+    private fun nativeDirectoryName(platform: DesktopHostOs): String =
+        when (platform) {
+            DesktopHostOs.MACOS -> "macos"
+            DesktopHostOs.WINDOWS -> "windows"
+            DesktopHostOs.LINUX -> "linux"
+            DesktopHostOs.UNKNOWN -> "unknown"
+        }
+
+    private fun nativeLibraryName(platform: DesktopHostOs): String =
+        when (platform) {
+            DesktopHostOs.MACOS -> "libplayer_bridge.dylib"
+            DesktopHostOs.WINDOWS -> "player_bridge.dll"
+            DesktopHostOs.LINUX -> "libplayer_bridge.so"
+            DesktopHostOs.UNKNOWN -> "player_bridge"
+        }
+}
