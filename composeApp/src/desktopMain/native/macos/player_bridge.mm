@@ -96,7 +96,8 @@ uint64_t mpv_render_context_update(mpv_render_context *ctx);
 - (instancetype)initWithHostView:(NSView *)hostView
                        sourceUrl:(NSString *)sourceUrl
                      headerLines:(NSArray<NSString *> *)headerLines
-                    playWhenReady:(BOOL)playWhenReady;
+                    playWhenReady:(BOOL)playWhenReady
+                     controlsHtml:(NSString *)controlsHtml;
 - (void)shutdown;
 - (void)setPaused:(BOOL)paused;
 - (BOOL)isPaused;
@@ -230,7 +231,8 @@ static void renderUpdateCallback(void *callbackContext) {
 - (instancetype)initWithHostView:(NSView *)hostView
                        sourceUrl:(NSString *)sourceUrl
                      headerLines:(NSArray<NSString *> *)headerLines
-                    playWhenReady:(BOOL)playWhenReady {
+                    playWhenReady:(BOOL)playWhenReady
+                     controlsHtml:(NSString *)controlsHtml {
     self = [super init];
     if (!self) {
         return nil;
@@ -257,7 +259,7 @@ static void renderUpdateCallback(void *callbackContext) {
     _webView.wantsLayer = YES;
     [_webView setValue:@NO forKey:@"drawsBackground"];
     [_hostView addSubview:_webView positioned:NSWindowAbove relativeTo:_videoView];
-    [_webView loadHTMLString:[self controlsHtml] baseURL:nil];
+    [_webView loadHTMLString:controlsHtml baseURL:nil];
 
     [self startMpvWithSource:sourceUrl headerLines:headerLines playWhenReady:playWhenReady];
     _timer = [NSTimer scheduledTimerWithTimeInterval:0.5
@@ -326,30 +328,6 @@ static void renderUpdateCallback(void *callbackContext) {
     }
 
     [self setPaused:!playWhenReady];
-}
-
-- (NSString *)controlsHtml {
-    return @"<!doctype html>"
-    "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<style>"
-    "html,body{margin:0;width:100%;height:100%;background:transparent;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Inter,sans-serif;overflow:hidden;}"
-    "#shade{position:absolute;inset:auto 0 0 0;height:132px;background:linear-gradient(transparent,rgba(0,0,0,.78));pointer-events:none;}"
-    "#bar{position:absolute;left:22px;right:22px;bottom:20px;display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:14px;background:rgba(10,10,12,.66);backdrop-filter:blur(22px);box-shadow:0 10px 30px rgba(0,0,0,.35);}"
-    "button{appearance:none;border:0;border-radius:999px;background:#fff;color:#09090b;width:42px;height:42px;font-size:16px;font-weight:800;cursor:pointer;}"
-    "#time{font-variant-numeric:tabular-nums;font-size:12px;min-width:92px;text-align:right;color:rgba(255,255,255,.82);}"
-    "input[type=range]{flex:1;accent-color:#fff;cursor:pointer;}"
-    "#badge{position:absolute;left:18px;top:14px;padding:7px 10px;border-radius:999px;background:rgba(0,0,0,.45);font-size:12px;color:rgba(255,255,255,.78);}"
-    "</style></head><body>"
-    "<div id='badge'>Native macOS player</div><div id='shade'></div>"
-    "<div id='bar'><button id='toggle'>||</button><input id='seek' type='range' min='0' max='1000' value='0'><span id='time'>0:00 / 0:00</span></div>"
-    "<script>"
-    "const send=(type,value)=>window.webkit.messageHandlers.player.postMessage({type,value});"
-    "const fmt=s=>{if(!isFinite(s)||s<0)s=0;const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=Math.floor(s%60);return h?`${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${m}:${String(x).padStart(2,'0')}`};"
-    "const seek=document.getElementById('seek'),toggle=document.getElementById('toggle'),time=document.getElementById('time');"
-    "toggle.onclick=()=>send('toggle',0);"
-    "seek.oninput=()=>send('seekPercent',Number(seek.value)/1000);"
-    "window.playerUpdate=s=>{toggle.textContent=s.paused?'▶':'||';seek.value=s.duration>0?Math.max(0,Math.min(1000,(s.position/s.duration)*1000)):0;time.textContent=`${fmt(s.position)} / ${fmt(s.duration)}`;};"
-    "</script></body></html>";
 }
 
 - (void)syncControls {
@@ -515,7 +493,8 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jlong hostViewPtr,
     jstring sourceUrl,
     jobjectArray headerLines,
-    jboolean playWhenReady
+    jboolean playWhenReady,
+    jstring controlsHtml
 ) {
     NSView *hostView = (__bridge NSView *)(void *)(intptr_t)hostViewPtr;
     if (!hostView) {
@@ -524,6 +503,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     }
 
     std::string source = jstringToString(env, sourceUrl);
+    std::string controls = jstringToString(env, controlsHtml);
     NSArray<NSString *> *headers = jstringArrayToNSArray(env, headerLines);
     __block MpvWebPlayer *player = nil;
     __block NSString *error = nil;
@@ -533,7 +513,8 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
                 initWithHostView:hostView
                       sourceUrl:[NSString stringWithUTF8String:source.c_str()]
                     headerLines:headers
-                   playWhenReady:playWhenReady == JNI_TRUE];
+                   playWhenReady:playWhenReady == JNI_TRUE
+                    controlsHtml:[NSString stringWithUTF8String:controls.c_str()]];
         } @catch (NSException *exception) {
             error = exception.reason ?: exception.name;
         }

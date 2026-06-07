@@ -13,6 +13,7 @@ internal object NativePlayerBridge {
         sourceUrl: String,
         headerLines: Array<String>,
         playWhenReady: Boolean,
+        controlsHtml: String,
     ): Long
 
     external fun dispose(handle: Long)
@@ -24,6 +25,13 @@ internal object NativePlayerBridge {
     external fun positionMs(handle: Long): Long
     external fun isPaused(handle: Long): Boolean
     external fun speed(handle: Long): Float
+
+    val controlsHtml: String by lazy {
+        val resource = "/player-ui/controls.html"
+        val input = NativePlayerBridge::class.java.getResourceAsStream(resource)
+            ?: error("Missing native player controls resource: $resource")
+        input.bufferedReader().use { it.readText() }
+    }
 
     private fun loadNativeLibrary() {
         val platform = DesktopHostOs.current

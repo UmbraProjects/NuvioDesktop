@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --hp: 20px;
+      --vp: 16px;
+      --title: 18px;
+      --episode: 14px;
+      --meta: 12px;
+      --center-gap: 56px;
+      --center-lift: 10px;
+      --slider-bottom: 16px;
+      --slider-touch: 22px;
+      --slider-scale: .82;
+      --time: 12px;
+      --header-icon: 20px;
+      --header-button: 36px;
+      --side-pad: 10px;
+      --play-pad: 13px;
+      --play-icon: 34px;
+      color-scheme: dark;
+    }
+
+    @media (min-width: 768px) {
+      :root {
+        --hp: 20px;
+        --vp: 16px;
+        --title: 22px;
+        --episode: 14px;
+        --meta: 12px;
+        --center-gap: 72px;
+        --center-lift: 14px;
+        --slider-bottom: 20px;
+        --slider-touch: 24px;
+        --slider-scale: .78;
+        --time: 12px;
+        --header-icon: 20px;
+        --header-button: 36px;
+        --side-pad: 12px;
+        --play-pad: 15px;
+        --play-icon: 38px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      :root {
+        --hp: 24px;
+        --vp: 20px;
+        --title: 24px;
+        --episode: 15px;
+        --meta: 13px;
+        --center-gap: 88px;
+        --center-lift: 18px;
+        --slider-bottom: 24px;
+        --slider-touch: 26px;
+        --slider-scale: .74;
+        --time: 13px;
+        --header-icon: 22px;
+        --header-button: 38px;
+        --side-pad: 13px;
+        --play-pad: 16px;
+        --play-icon: 42px;
+      }
+    }
+
+    @media (min-width: 1440px) {
+      :root {
+        --hp: 28px;
+        --vp: 24px;
+        --title: 28px;
+        --episode: 16px;
+        --meta: 14px;
+        --center-gap: 112px;
+        --center-lift: 24px;
+        --slider-bottom: 28px;
+        --slider-touch: 28px;
+        --slider-scale: .72;
+        --time: 14px;
+        --header-icon: 24px;
+        --header-button: 40px;
+        --side-pad: 14px;
+        --play-pad: 18px;
+        --play-icon: 44px;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: transparent;
+      color: #fff;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+      user-select: none;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      color: inherit;
+      background: transparent;
+      font: inherit;
+      cursor: default;
+    }
+
+    .player {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    .top-gradient,
+    .bottom-gradient {
+      position: absolute;
+      left: 0;
+      right: 0;
+      pointer-events: none;
+    }
+
+    .top-gradient {
+      top: 0;
+      height: 160px;
+      background: linear-gradient(to bottom, rgba(0, 0, 0, .7), rgba(0, 0, 0, 0));
+    }
+
+    .bottom-gradient {
+      bottom: 0;
+      height: 220px;
+      background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, .7));
+    }
+
+    .content {
+      position: absolute;
+      inset: 0;
+      padding-inline: var(--hp);
+    }
+
+    .header {
+      position: absolute;
+      top: calc(var(--vp) / 4 + env(safe-area-inset-top));
+      left: calc(var(--hp) * 2);
+      right: calc(var(--hp) * 2);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+    }
+
+    .metadata {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      opacity: 1;
+    }
+
+    .title {
+      max-width: min(760px, 64vw);
+      font-size: var(--title);
+      line-height: 1.16;
+      font-weight: 700;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .episode {
+      max-width: min(760px, 64vw);
+      font-size: var(--episode);
+      line-height: 1.3;
+      color: rgba(255, 255, 255, .9);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: min(760px, 64vw);
+      min-width: 0;
+    }
+
+    .stream-title,
+    .provider {
+      min-width: 0;
+      font-size: var(--meta);
+      line-height: 1.25;
+      color: rgba(255, 255, 255, .7);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .provider {
+      font-style: italic;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex: 0 0 auto;
+    }
+
+    .header-button {
+      width: var(--header-button);
+      height: var(--header-button);
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, .35);
+    }
+
+    .header-button svg {
+      width: var(--header-icon);
+      height: var(--header-icon);
+    }
+
+    .center-controls {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, calc(-50% - var(--center-lift)));
+      display: flex;
+      align-items: center;
+      gap: var(--center-gap);
+    }
+
+    .side-control,
+    .play-control {
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+    }
+
+    .side-control {
+      padding: var(--side-pad);
+    }
+
+    .play-control {
+      padding: var(--play-pad);
+    }
+
+    .side-control svg,
+    .play-control svg {
+      width: var(--play-icon);
+      height: var(--play-icon);
+    }
+
+    .progress {
+      position: absolute;
+      left: calc(var(--hp) * 2);
+      right: calc(var(--hp) * 2);
+      bottom: var(--slider-bottom);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .scrub {
+      width: 100%;
+      height: var(--slider-touch);
+      transform: scaleY(var(--slider-scale));
+      transform-origin: center;
+      margin: 0;
+      appearance: none;
+      background: transparent;
+    }
+
+    .scrub::-webkit-slider-runnable-track {
+      height: 4px;
+      border-radius: 999px;
+      background:
+        linear-gradient(to right, #fff 0 var(--progress, 0%), rgba(255, 255, 255, .28) var(--progress, 0%) 100%);
+    }
+
+    .scrub::-webkit-slider-thumb {
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      margin-top: -5px;
+      border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, .18);
+    }
+
+    .time-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 14px 8px;
+    }
+
+    .time-pill {
+      border-radius: 12px;
+      padding: 4px 10px;
+      border: 1px solid rgba(255, 255, 255, .2);
+      background: rgba(0, 0, 0, .5);
+      font-size: var(--time);
+      line-height: 1.25;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .action-row {
+      display: flex;
+      justify-content: center;
+      min-width: 0;
+    }
+
+    .action-pill {
+      max-width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      padding: 2px 4px;
+      border: 1px solid rgba(255, 255, 255, .2);
+      border-radius: 24px;
+      background: rgba(0, 0, 0, .5);
+      overflow: hidden;
+    }
+
+    .action {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+      border-radius: 22px;
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    .action svg {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+    }
+
+    .action span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 12px;
+      line-height: 1.2;
+      font-weight: 500;
+    }
+
+    @media (max-width: 760px) {
+      .header {
+        left: var(--hp);
+        right: var(--hp);
+      }
+
+      .title,
+      .episode,
+      .meta-row {
+        max-width: 52vw;
+      }
+
+      .progress {
+        left: var(--hp);
+        right: var(--hp);
+      }
+
+      .action.optional {
+        display: none;
+      }
+    }
+
+    svg {
+      display: block;
+      fill: currentColor;
+      stroke: none;
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <symbol id="icon-play" viewBox="0 0 24 24">
+      <path d="M21.4086 9.35258C23.5305 10.5065 23.5305 13.4935 21.4086 14.6474L8.59662 21.6145C6.53435 22.736 4 21.2763 4 18.9671L4 5.0329C4 2.72368 6.53435 1.26402 8.59661 2.38548L21.4086 9.35258Z"/>
+    </symbol>
+    <symbol id="icon-pause" viewBox="0 0 24 24">
+      <path d="M2 6C2 4.11438 2 3.17157 2.58579 2.58579C3.17157 2 4.11438 2 6 2C7.88562 2 8.82843 2 9.41421 2.58579C10 3.17157 10 4.11438 10 6V18C10 19.8856 10 20.8284 9.41421 21.4142C8.82843 22 7.88562 22 6 22C4.11438 22 3.17157 22 2.58579 21.4142C2 20.8284 2 19.8856 2 18V6Z"/>
+      <path d="M14 6C14 4.11438 14 3.17157 14.5858 2.58579C15.1716 2 16.1144 2 18 2C19.8856 2 20.8284 2 21.4142 2.58579C22 3.17157 22 4.11438 22 6V18C22 19.8856 22 20.8284 21.4142 21.4142C20.8284 22 19.8856 22 18 22C16.1144 22 15.1716 22 14.5858 21.4142C14 20.8284 14 19.8856 14 18V6Z"/>
+    </symbol>
+    <symbol id="icon-replay10" viewBox="0 0 24 24">
+      <path d="M12 5V2L7.5 6.5 12 11V8c3.31 0 6 2.69 6 6 0 1.45-.52 2.78-1.38 3.82l1.42 1.42A7.95 7.95 0 0 0 20 14c0-4.42-3.58-9-8-9Z"/>
+      <path d="M8.7 17.8H7.55v-4.35l-1.25.38v-.95l2.25-.72h.15v5.64ZM15.25 16.47c0 .88-.63 1.42-1.62 1.42h-1.2c-.99 0-1.62-.54-1.62-1.42v-2.85c0-.88.63-1.42 1.62-1.42h1.2c.99 0 1.62.54 1.62 1.42v2.85Zm-1.13-2.64c0-.36-.2-.55-.58-.55h-1.02c-.38 0-.58.19-.58.55v2.43c0 .36.2.55.58.55h1.02c.38 0 .58-.19.58-.55v-2.43Z"/>
+    </symbol>
+    <symbol id="icon-forward10" viewBox="0 0 24 24">
+      <path d="M12 5V2l4.5 4.5L12 11V8c-3.31 0-6 2.69-6 6 0 1.45.52 2.78 1.38 3.82l-1.42 1.42A7.95 7.95 0 0 1 4 14c0-4.42 3.58-9 8-9Z"/>
+      <path d="M8.7 17.8H7.55v-4.35l-1.25.38v-.95l2.25-.72h.15v5.64ZM15.25 16.47c0 .88-.63 1.42-1.62 1.42h-1.2c-.99 0-1.62-.54-1.62-1.42v-2.85c0-.88.63-1.42 1.62-1.42h1.2c.99 0 1.62.54 1.62 1.42v2.85Zm-1.13-2.64c0-.36-.2-.55-.58-.55h-1.02c-.38 0-.58.19-.58.55v2.43c0 .36.2.55.58.55h1.02c.38 0 .58-.19.58-.55v-2.43Z"/>
+    </symbol>
+    <symbol id="icon-lock" viewBox="0 0 24 24">
+      <path d="M17 9h-1V7a4 4 0 0 0-8 0v2H7c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2Zm-7 0V7a2 2 0 0 1 4 0v2h-4Z"/>
+    </symbol>
+    <symbol id="icon-build" viewBox="0 0 24 24">
+      <path d="M22 19.59 12.41 10 14 8.41l1.17 1.17 2.83-2.83-1.17-1.17L19.66 2.75A6 6 0 0 0 12.2 10.2L2.3 20.1a1 1 0 0 0 0 1.41l.19.19a1 1 0 0 0 1.41 0l9.9-9.9A6 6 0 0 0 21.25 4.34l-2.83 2.83 1.17 1.17-2.83 2.83L15.59 10 14 11.59 20.41 18 22 19.59Z"/>
+    </symbol>
+    <symbol id="icon-flag" viewBox="0 0 24 24">
+      <path d="M5 21V4.6c0-.38.21-.72.55-.89 2.15-1.08 4.18.32 6.12.32 1.58 0 3.1-.72 5.26-.72.55 0 1 .45 1 1v9.72c0 .41-.25.78-.63.93-2.03.8-3.79.1-5.46.1-1.94 0-3.55 1.13-5.84.38V21H5Z"/>
+    </symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24">
+      <path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.3-6.29 1.41 1.41Z"/>
+    </symbol>
+    <symbol id="icon-aspect" viewBox="0 0 24 24">
+      <path d="M19 3c1.6 0 2.9 1.25 2.99 2.82L22 6v12c0 1.6-1.25 2.9-2.82 2.99L19 21H5c-1.6 0-2.9-1.25-2.99-2.82L2 18V6c0-1.6 1.25-2.9 2.82-2.99L5 3h14Zm0 2H5c-.51 0-.94.39-.99.88L4 6v12c0 .51.39.94.88.99L5 19h14c.51 0 .94-.39.99-.88L20 18V6c0-.51-.39-.94-.88-.99L19 5Zm-2 7c.51 0 .94.39.99.88L18 13v3c0 .51-.39.94-.88.99L17 17h-3a1 1 0 0 1-.12-1.99L14 15h2v-2c0-.55.45-1 1-1ZM10 7a1 1 0 0 1 .12 1.99L10 9H8v2a1 1 0 0 1-1.99.12L6 11V8c0-.51.39-.94.88-.99L7 7h3Z"/>
+    </symbol>
+    <symbol id="icon-speed" viewBox="0 0 24 24">
+      <path d="M12 4a10 10 0 0 0-8.66 15h17.32A10 10 0 0 0 12 4Zm0 2a8 8 0 0 1 7.39 11H4.61A8 8 0 0 1 12 6Zm4.2 3.8-3.08 4.62a2 2 0 1 1-1.66-1.11l4.04-4.04.7.53Z"/>
+    </symbol>
+    <symbol id="icon-subs" viewBox="0 0 24 24">
+      <path d="M1 12C1 5 2.5 4 12 4s11 1 11 8-1.5 8-11 8S1 19 1 12Zm2 0c0 3.02.31 4.59 1.42 5.34C5.62 18.15 7.89 18 12 18s6.38.15 7.58-.66C20.69 16.59 21 15.02 21 12s-.31-4.59-1.42-5.34C18.38 5.85 16.11 6 12 6s-6.38-.15-7.58.66C3.31 7.41 3 8.98 3 12Zm3 3h6v1H6v-1Zm7 0h5v1h-5v-1ZM6 11h4v1H6v-1Zm5 0h7v1h-7v-1Z"/>
+    </symbol>
+    <symbol id="icon-audio" viewBox="0 0 24 24">
+      <path d="M12 6.25c-.69 0-1.25.56-1.25 1.25S11.31 8.75 12 8.75s1.25-.56 1.25-1.25S12.69 6.25 12 6.25ZM9.75 15.5A2.25 2.25 0 1 1 12 17.75a2.25 2.25 0 0 1-2.25-2.25Z"/>
+      <path d="M4 10c0-3.77 0-5.66 1.17-6.83C6.34 2 8.23 2 12 2s5.66 0 6.83 1.17C20 4.34 20 6.23 20 10v4c0 3.77 0 5.66-1.17 6.83C17.66 22 15.77 22 12 22s-5.66 0-6.83-1.17C4 19.66 4 17.77 4 14v-4Zm5.25-2.5a2.75 2.75 0 1 0 5.5 0 2.75 2.75 0 0 0-5.5 0ZM12 11.75a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Z"/>
+    </symbol>
+    <symbol id="icon-swap" viewBox="0 0 24 24">
+      <path d="M7 7h11l-3-3 1.4-1.4L21.8 8l-5.4 5.4L15 12l3-3H7V7Zm10 10H6l3 3-1.4 1.4L2.2 16l5.4-5.4L9 12l-3 3h11v2Z"/>
+    </symbol>
+    <symbol id="icon-video" viewBox="0 0 24 24">
+      <path d="M4 6h16v12H4V6Zm2 2v8h12V8H6Zm14-4H4V2h16v2Zm0 18H4v-2h16v2Z"/>
+    </symbol>
+    <symbol id="icon-open" viewBox="0 0 24 24">
+      <path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3ZM5 5h6v2H7v10h10v-4h2v6H5V5Z"/>
+    </symbol>
+  </svg>
+
+  <div class="player">
+    <div class="top-gradient"></div>
+    <div class="bottom-gradient"></div>
+    <div class="content">
+      <header class="header">
+        <section class="metadata" aria-label="Playback metadata">
+          <div class="title" id="title">Player controls</div>
+          <div class="episode" id="episode">S1 E1 - Episode title</div>
+          <div class="meta-row">
+            <span class="stream-title" id="streamTitle">Stream title</span>
+            <span class="provider" id="providerName">Provider</span>
+          </div>
+        </section>
+        <nav class="header-actions" aria-label="Player actions">
+          <button class="header-button" data-command="submitIntro" aria-label="Submit intro"><svg><use href="#icon-flag"></use></svg></button>
+          <button class="header-button" data-command="lock" aria-label="Lock controls"><svg><use href="#icon-lock"></use></svg></button>
+          <button class="header-button" data-command="videoSettings" aria-label="Video settings"><svg><use href="#icon-build"></use></svg></button>
+          <button class="header-button" data-command="close" aria-label="Close player"><svg><use href="#icon-close"></use></svg></button>
+        </nav>
+      </header>
+
+      <main class="center-controls" aria-label="Playback controls">
+        <button class="side-control" data-command="seekBack" aria-label="Seek back 10 seconds"><svg><use href="#icon-replay10"></use></svg></button>
+        <button class="play-control" id="toggle" data-command="toggle" aria-label="Pause"><svg><use id="toggleIcon" href="#icon-pause"></use></svg></button>
+        <button class="side-control" data-command="seekForward" aria-label="Seek forward 10 seconds"><svg><use href="#icon-forward10"></use></svg></button>
+      </main>
+
+      <section class="progress" aria-label="Playback progress">
+        <input id="seek" class="scrub" type="range" min="0" max="1000" value="0" aria-label="Seek">
+        <div class="time-row">
+          <span class="time-pill" id="position">00:00</span>
+          <span class="time-pill" id="duration">00:00</span>
+        </div>
+        <div class="action-row">
+          <div class="action-pill">
+            <button class="action" data-command="resize"><svg><use href="#icon-aspect"></use></svg><span id="resizeLabel">Fit</span></button>
+            <button class="action" data-command="speed"><svg><use href="#icon-speed"></use></svg><span id="speedLabel">1x</span></button>
+            <button class="action" data-command="subtitles"><svg><use href="#icon-subs"></use></svg><span>Subs</span></button>
+            <button class="action" data-command="audio"><svg><use href="#icon-audio"></use></svg><span>Audio</span></button>
+            <button class="action optional" data-command="sources"><svg><use href="#icon-swap"></use></svg><span>Sources</span></button>
+            <button class="action optional" data-command="episodes"><svg><use href="#icon-video"></use></svg><span>Episodes</span></button>
+            <button class="action optional" data-command="external"><svg><use href="#icon-open"></use></svg><span>External</span></button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const seek = document.getElementById("seek");
+    const positionLabel = document.getElementById("position");
+    const durationLabel = document.getElementById("duration");
+    const toggle = document.getElementById("toggle");
+    const toggleIcon = document.getElementById("toggleIcon");
+
+    const send = (type, value = 0) => {
+      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
+      if (bridge) bridge.postMessage({ type, value });
+    };
+
+    const formatTime = seconds => {
+      if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+      const total = Math.floor(seconds);
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      return h > 0
+        ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+        : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    };
+
+    const setProgress = (position, duration) => {
+      const percent = duration > 0 ? Math.max(0, Math.min(100, position / duration * 100)) : 0;
+      seek.value = Math.round(percent * 10);
+      seek.style.setProperty("--progress", `${percent}%`);
+      positionLabel.textContent = formatTime(position);
+      durationLabel.textContent = formatTime(duration);
+    };
+
+    document.querySelectorAll("[data-command]").forEach(button => {
+      button.addEventListener("click", () => send(button.dataset.command, 0));
+    });
+
+    seek.addEventListener("input", () => {
+      seek.style.setProperty("--progress", `${Number(seek.value) / 10}%`);
+      send("seekPercent", Number(seek.value) / 1000);
+    });
+
+    window.playerUpdate = state => {
+      const duration = Number(state.duration) || 0;
+      const position = Number(state.position) || 0;
+      const paused = Boolean(state.paused);
+      toggle.setAttribute("aria-label", paused ? "Play" : "Pause");
+      toggleIcon.setAttribute("href", paused ? "#icon-play" : "#icon-pause");
+      setProgress(position, duration);
+    };
+
+    window.playerMetadata = metadata => {
+      const title = document.getElementById("title");
+      const episode = document.getElementById("episode");
+      const streamTitle = document.getElementById("streamTitle");
+      const providerName = document.getElementById("providerName");
+      if ("title" in metadata) title.textContent = metadata.title || "";
+      if ("episode" in metadata) {
+        episode.textContent = metadata.episode || "";
+        episode.hidden = !metadata.episode;
+      }
+      if ("streamTitle" in metadata) streamTitle.textContent = metadata.streamTitle || "";
+      if ("providerName" in metadata) providerName.textContent = metadata.providerName || "";
+    };
+
+    setProgress(0, 0);
+  </script>
+</body>
+</html>
