@@ -511,8 +511,14 @@ static void mpvWakeupCallback(void *callbackContext) {
 
 static NSString *javaScriptStringLiteral(NSString *value) {
     NSArray *array = @[value ?: @""];
-    NSData *data = [NSJSONSerialization dataWithJSONObject:array options:0 error:nil];
+    NSError *error = nil;
+    NSData *data = [NSJSONSerialization dataWithJSONObject:array options:0 error:&error];
     if (!data) {
+        NSLog(
+            @"[NuvioDesktopControls][native] failed to encode JS string literal length=%lu error=%@",
+            (unsigned long)(value ? value.length : 0),
+            error.localizedDescription ?: @"unknown"
+        );
         return @"\"\"";
     }
     NSString *jsonArray = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
@@ -552,6 +558,25 @@ static NSString *redactUrlsInText(NSString *text) {
                                            options:0
                                              range:range
                                       withTemplate:@"<redacted-url>"];
+}
+
+static BOOL isControlsStreamDiagnosticMessage(NSString *type) {
+    return [type isEqualToString:@"sources"]
+        || [type isEqualToString:@"reloadSources"]
+        || [type isEqualToString:@"selectSource"]
+        || [type isEqualToString:@"episodes"]
+        || [type isEqualToString:@"reloadEpisodeStreams"]
+        || [type isEqualToString:@"selectEpisode"]
+        || [type isEqualToString:@"selectEpisodeStream"]
+        || [type isEqualToString:@"backToEpisodes"];
+}
+
+static NSString *limitDiagnosticText(NSString *text) {
+    NSString *safeText = redactUrlsInText(text ?: @"");
+    if (safeText.length <= 600) {
+        return safeText;
+    }
+    return [[safeText substringToIndex:600] stringByAppendingString:@"..."];
 }
 
 @implementation MpvWebPlayer {
@@ -1066,11 +1091,28 @@ static NSString *redactUrlsInText(NSString *text) {
     if (!_webView) {
         return;
     }
+    if (!controlsJson) {
+        NSLog(@"[NuvioDesktopControls][native] updateControls ignored nil controls JSON");
+        return;
+    }
     NSString *jsonString = javaScriptStringLiteral(controlsJson);
     NSString *script = [NSString stringWithFormat:
         @"if (window.playerControls) window.playerControls(JSON.parse(%@))",
         jsonString];
-    [_webView evaluateJavaScript:script completionHandler:nil];
+    [_webView evaluateJavaScript:script completionHandler:^(id _Nullable, NSError * _Nullable error) {
+        if (error) {
+            NSDictionary *userInfo = error.userInfo ?: @{};
+            id message = userInfo[@"WKJavaScriptExceptionMessage"] ?: error.localizedDescription;
+            id line = userInfo[@"WKJavaScriptExceptionLineNumber"] ?: @"?";
+            id column = userInfo[@"WKJavaScriptExceptionColumnNumber"] ?: @"?";
+            NSLog(
+                @"[NuvioDesktopControls][native] updateControls JS error: %@ line=%@ column=%@",
+                message,
+                line,
+                column
+            );
+        }
+    }];
 }
 
 - (void)shutdown {
@@ -1522,7 +1564,18 @@ static NSString *redactUrlsInText(NSString *text) {
         return;
     }
 
-    NSNumber *value = message[@"value"];
+    id rawValue = message[@"value"];
+    NSNumber *value = [rawValue isKindOfClass:[NSNumber class]] ? rawValue : nil;
+    if ([type isEqualToString:@"diagnostic"]) {
+        id rawText = message[@"message"];
+        if ([rawText isKindOfClass:[NSString class]]) {
+            NSLog(@"[NuvioDesktopControls][html] %@", limitDiagnosticText((NSString *)rawText));
+        }
+        return;
+    }
+    if (isControlsStreamDiagnosticMessage(type)) {
+        NSLog(@"[NuvioDesktopControls][native] script event type=%@ value=%@", type, value ?: @0);
+    }
     if ([type isEqualToString:@"selectAudioTrack"] && value) {
         [self selectAudioTrackId:(int)llround(value.doubleValue)];
         [self syncControls];
@@ -1579,11 +1632,19 @@ static void throwJavaError(JNIEnv *env, NSString *message) {
 
 static std::string jstringToString(JNIEnv *env, jstring value) {
     if (!value) return std::string();
-    const char *chars = env->GetStringUTFChars(value, nullptr);
-    std::string result = chars ? chars : "";
-    if (chars) {
-        env->ReleaseStringUTFChars(value, chars);
+    jsize length = env->GetStringLength(value);
+    const jchar *chars = env->GetStringChars(value, nullptr);
+    if (!chars) {
+        return std::string();
     }
+    NSString *string = [NSString stringWithCharacters:(const unichar *)chars length:(NSUInteger)length];
+    env->ReleaseStringChars(value, chars);
+
+    NSData *data = [string dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data) {
+        return std::string();
+    }
+    std::string result((const char *)data.bytes, data.length);
     return result;
 }
 

@@ -534,7 +534,8 @@
       display: flex;
       gap: 8px;
       overflow-x: auto;
-      padding: 0 20px 12px;
+      padding: 0 20px 14px;
+      flex: 0 0 auto;
     }
 
     .subtitle-tabs {
@@ -708,9 +709,10 @@
     .track-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
       overflow: auto;
-      padding: 0 20px 20px;
+      padding: 4px 20px 20px;
+      min-height: 0;
     }
 
     .track-row {
@@ -731,7 +733,7 @@
     .track-row.episode-row {
       align-items: stretch;
       justify-content: flex-start;
-      min-height: 62px;
+      min-height: 72px;
     }
 
     .track-row.disabled {
@@ -768,6 +770,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      flex: 0 0 auto;
     }
 
     .stream-name,
@@ -790,6 +793,13 @@
       color: rgba(255, 255, 255, .64);
       font-size: 12px;
       line-height: 1.3;
+    }
+
+    .stream-subtitle {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      white-space: normal;
     }
 
     .episode-overview {
@@ -1523,9 +1533,34 @@
       endTime: "00:00",
       status: "",
     };
+    let lastSourceControlsDiagnostic = "";
+
+    const sourceDiagnosticCommands = new Set([
+      "sources",
+      "reloadSources",
+      "selectSource",
+      "episodes",
+      "reloadEpisodeStreams",
+      "selectEpisode",
+      "selectEpisodeStream",
+      "backToEpisodes",
+    ]);
+
+    const postDiagnostic = message => {
+      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
+      if (!bridge) return;
+      try {
+        bridge.postMessage({ type: "diagnostic", value: 0, message });
+      } catch (_) {
+        // Diagnostics must never break controls.
+      }
+    };
 
     const send = (type, value = 0) => {
       const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
+      if (sourceDiagnosticCommands.has(type)) {
+        postDiagnostic(`event type=${type} value=${value} activeModal=${activeModal || "none"}`);
+      }
       if (bridge) bridge.postMessage({ type, value });
     };
 
@@ -1915,6 +1950,27 @@
       container.appendChild(row);
     };
 
+    const sourceControlsDiagnostic = controlsState => {
+      const filters = normalizeItems(controlsState.sourceFilters);
+      const items = normalizeItems(controlsState.sourceItems);
+      const loadingFilters = filters.filter(filter => Boolean(filter.isLoading)).length;
+      const errorFilters = filters.filter(filter => Boolean(filter.hasError)).length;
+      const currentItems = items.filter(item => Boolean(item.isCurrent)).length;
+      const disabledItems = items.filter(item => item.isEnabled === false).length;
+      return [
+        `activeModal=${activeModal || "none"}`,
+        `showSources=${Boolean(controlsState.showSources)}`,
+        `sourceLoading=${Boolean(controlsState.sourceIsLoading)}`,
+        `filters=${filters.length}`,
+        `filterLoading=${loadingFilters}`,
+        `filterErrors=${errorFilters}`,
+        `items=${items.length}`,
+        `current=${currentItems}`,
+        `disabled=${disabledItems}`,
+        `sourceFilter=${sourceFilterId || "all"}`,
+      ].join(" ");
+    };
+
     const renderSourceModal = () => {
       sourcePanelTitle.textContent = state.sourcesPanelTitle || "Sources";
       sourceReloadButton.textContent = state.reloadLabel || "Reload";
@@ -1935,6 +1991,11 @@
         items = items.filter(item => String(item.filterId || "") === sourceFilterId);
       }
       if (items.length === 0) {
+        postDiagnostic(
+          `render sources empty loading=${Boolean(state.sourceIsLoading)} ` +
+          `rawItems=${normalizeItems(state.sourceItems).length} filters=${filters.length} ` +
+          `sourceFilter=${sourceFilterId || "all"}`,
+        );
         appendEmptyTrackState(
           sourceList,
           state.sourceIsLoading ? "Loading streams..." : (state.noStreamsLabel || "No streams found"),
@@ -2459,6 +2520,11 @@
     window.playerControls = nextState => {
       const previousCloseToken = Number(state.closeModalsToken) || 0;
       state = { ...state, ...nextState };
+      const sourceDiagnostic = sourceControlsDiagnostic(state);
+      if (sourceDiagnostic !== lastSourceControlsDiagnostic) {
+        lastSourceControlsDiagnostic = sourceDiagnostic;
+        postDiagnostic(`state ${sourceDiagnostic}`);
+      }
       const closeToken = Number(state.closeModalsToken) || 0;
       if (closeToken !== previousCloseToken) {
         closePlayerModal();

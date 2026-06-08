@@ -531,6 +531,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
             showAudioModal = true
         }
         PlayerControlsAction.Sources -> {
+            println("[NuvioPlayerControls] action sources")
             prepareSourcesForPlayerControls()
         }
         PlayerControlsAction.Episodes -> {
@@ -557,9 +558,17 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
 
 private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: Double): Boolean {
     when (type) {
-        "reloadSources" -> prepareSourcesForPlayerControls(forceRefresh = true)
+        "reloadSources" -> {
+            println("[NuvioPlayerControls] event reloadSources")
+            prepareSourcesForPlayerControls(forceRefresh = true)
+        }
         "selectSource" -> {
-            val stream = sourceStreamsState.groups.flatMap { it.streams }.getOrNull(value.toInt()) ?: return true
+            val streams = sourceStreamsState.groups.flatMap { it.streams }
+            println(
+                "[NuvioPlayerControls] event selectSource index=${value.toInt()} " +
+                    "available=${streams.size} ${sourceStreamsState.playerControlsStreamsSummary()}",
+            )
+            val stream = streams.getOrNull(value.toInt()) ?: return true
             if (requestP2pConsentForPlayerControls(stream = stream, episode = null)) return true
             switchToSource(stream)
             playerControlsCloseModalsToken += 1
@@ -718,9 +727,22 @@ private fun PlayerScreenRuntime.enableP2pForPlayerControls() {
 }
 
 private fun PlayerScreenRuntime.prepareSourcesForPlayerControls(forceRefresh: Boolean = false) {
-    val vid = activeVideoId ?: return
+    val vid = activeVideoId
+    if (vid == null) {
+        println(
+            "[NuvioPlayerControls] loadSources ignored reason=no-active-video " +
+                "type=${contentType ?: parentMetaType} parent=$parentMetaId force=$forceRefresh",
+        )
+        return
+    }
+    val requestType = contentType ?: parentMetaType
+    println(
+        "[NuvioPlayerControls] loadSources request type=$requestType id=$vid " +
+            "season=$activeSeasonNumber episode=$activeEpisodeNumber force=$forceRefresh " +
+            "before=${sourceStreamsState.playerControlsStreamsSummary()}",
+    )
     PlayerStreamsRepository.loadSources(
-        type = contentType ?: parentMetaType,
+        type = requestType,
         videoId = vid,
         season = activeSeasonNumber,
         episode = activeEpisodeNumber,
@@ -749,6 +771,14 @@ private fun PlayerScreenRuntime.requestEpisodeStreamsForPlayerControls(
         forceRefresh = forceRefresh,
     )
     episodeStreamsPanelState = EpisodeStreamsPanelState(showStreams = true, selectedEpisode = episode)
+}
+
+private fun com.nuvio.app.features.streams.StreamsUiState.playerControlsStreamsSummary(): String {
+    val streams = groups.sumOf { it.streams.size }
+    val loadingGroups = groups.count { it.isLoading }
+    val errorGroups = groups.count { !it.error.isNullOrBlank() }
+    return "groups=${groups.size} streams=$streams isAnyLoading=$isAnyLoading " +
+        "loadingGroups=$loadingGroups errorGroups=$errorGroups empty=${emptyStateReason ?: "none"}"
 }
 
 private fun PlayerScreenRuntime.submitIntroFromPlayerControls() {

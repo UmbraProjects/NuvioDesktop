@@ -38,6 +38,7 @@ internal class NativePlayerController(
     private var pendingSource: PendingSource? = null
     private var controlsState = PlayerControlsState()
     private var lastSentControlsStructureKey: PlayerControlsState? = null
+    private var lastSourceControlsDiagnostics: String? = null
     private var onAction: (PlayerControlsAction) -> Boolean = { false }
     private var onEvent: (String, Double) -> Boolean = { _, _ -> false }
     private var onScrubChange: (Long) -> Boolean = { false }
@@ -109,8 +110,15 @@ internal class NativePlayerController(
 
     fun updateControls(state: PlayerControlsState) {
         controlsState = state
-        val current = handle.takeIf { it != 0L } ?: return
+        val currentHandle = handle
         val structureKey = state.nativeControlsStructureKey()
+        val willSend = currentHandle != 0L && structureKey != lastSentControlsStructureKey
+        val sourceDiagnostics = state.sourceControlsDiagnostics()
+        if (sourceDiagnostics != lastSourceControlsDiagnostics) {
+            println("[NuvioDesktopControls] state handleReady=${currentHandle != 0L} willSend=$willSend $sourceDiagnostics")
+            lastSourceControlsDiagnostics = sourceDiagnostics
+        }
+        val current = currentHandle.takeIf { it != 0L } ?: return
         if (structureKey == lastSentControlsStructureKey) return
         lastSentControlsStructureKey = structureKey
         NativePlayerBridge.updateControls(current, state.toControlsJson())
@@ -130,6 +138,10 @@ internal class NativePlayerController(
     }
 
     private fun handlePlayerEvent(type: String, value: Double) {
+        val shouldLog = type.isStreamControlsDiagnosticEvent()
+        if (shouldLog) {
+            println("[NuvioDesktopControls] event received type=$type value=$value")
+        }
         when (type) {
             "scrubChange" -> {
                 if (!onScrubChange(value.toLong())) {
@@ -142,9 +154,21 @@ internal class NativePlayerController(
                 }
             }
             else -> {
-                if (onEvent(type, value)) return
-                val action = type.toPlayerControlsAction() ?: return
-                if (!onAction(action)) {
+                val eventHandled = onEvent(type, value)
+                if (shouldLog) {
+                    println("[NuvioDesktopControls] event route type=$type onEvent=$eventHandled")
+                }
+                if (eventHandled) return
+                val action = type.toPlayerControlsAction()
+                if (shouldLog) {
+                    println("[NuvioDesktopControls] event map type=$type action=${action ?: "none"}")
+                }
+                if (action == null) return
+                val actionHandled = onAction(action)
+                if (shouldLog) {
+                    println("[NuvioDesktopControls] event action=$action onAction=$actionHandled fallback=${!actionHandled}")
+                }
+                if (!actionHandled) {
                     handleFallbackAction(action)
                 }
             }
@@ -429,6 +453,19 @@ private fun String.toPlayerControlsAction(): PlayerControlsAction? =
         else -> null
     }
 
+private fun String.isStreamControlsDiagnosticEvent(): Boolean =
+    when (this) {
+        "sources",
+        "reloadSources",
+        "selectSource",
+        "episodes",
+        "reloadEpisodeStreams",
+        "selectEpisode",
+        "selectEpisodeStream",
+        "backToEpisodes" -> true
+        else -> false
+    }
+
 private fun PlayerControlsState.toControlsJson(): String =
     buildString {
         append('{')
@@ -657,6 +694,19 @@ private fun PlayerControlsState.nativeControlsStructureKey(): PlayerControlsStat
         durationMs = 0L,
         positionMs = 0L,
     )
+
+private fun PlayerControlsState.sourceControlsDiagnostics(): String {
+    val loadingFilters = sourceFilters.count { it.isLoading }
+    val errorFilters = sourceFilters.count { it.hasError }
+    val currentItems = sourceItems.count { it.isCurrent }
+    val disabledItems = sourceItems.count { !it.isEnabled }
+    val firstItem = sourceItems.firstOrNull()?.let { item ->
+        "${item.addonName}:${item.label}".replace('\n', ' ').take(96)
+    } ?: "none"
+    return "sources(show=$showSources loading=$sourceIsLoading filters=${sourceFilters.size} " +
+        "filterLoading=$loadingFilters filterErrors=$errorFilters items=${sourceItems.size} " +
+        "current=$currentItems disabled=$disabledItems first=$firstItem)"
+}
 
 private fun StringBuilder.appendJsonField(name: String, value: String) {
     append('"').append(name).append("\":")
