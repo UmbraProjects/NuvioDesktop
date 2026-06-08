@@ -1,8 +1,6 @@
 #import <Cocoa/Cocoa.h>
-#import <CoreVideo/CoreVideo.h>
 #import <IOKit/IOKitLib.h>
-#import <OpenGL/OpenGL.h>
-#import <OpenGL/gl3.h>
+#import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
 #import <WebKit/WebKit.h>
 
@@ -16,8 +14,6 @@
 
 extern "C" {
 typedef struct mpv_handle mpv_handle;
-typedef struct mpv_render_context mpv_render_context;
-typedef void *(*mpv_render_opengl_get_proc_address_fn)(void *ctx, const char *name);
 
 typedef enum mpv_format {
     MPV_FORMAT_NONE = 0,
@@ -48,41 +44,6 @@ typedef struct mpv_event {
     void *data;
 } mpv_event;
 
-typedef enum mpv_render_param_type {
-    MPV_RENDER_PARAM_INVALID = 0,
-    MPV_RENDER_PARAM_API_TYPE = 1,
-    MPV_RENDER_PARAM_OPENGL_INIT_PARAMS = 2,
-    MPV_RENDER_PARAM_OPENGL_FBO = 3,
-    MPV_RENDER_PARAM_FLIP_Y = 4,
-    MPV_RENDER_PARAM_DEPTH = 5,
-    MPV_RENDER_PARAM_ICC_PROFILE = 6,
-    MPV_RENDER_PARAM_AMBIENT_LIGHT = 7,
-    MPV_RENDER_PARAM_X11_DISPLAY = 8,
-    MPV_RENDER_PARAM_WL_DISPLAY = 9,
-    MPV_RENDER_PARAM_ADVANCED_CONTROL = 10,
-    MPV_RENDER_PARAM_NEXT_FRAME_INFO = 11,
-    MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME = 12,
-    MPV_RENDER_PARAM_SKIP_RENDERING = 13,
-} mpv_render_param_type;
-
-typedef struct mpv_render_param {
-    mpv_render_param_type type;
-    void *data;
-} mpv_render_param;
-
-typedef struct mpv_opengl_init_params {
-    mpv_render_opengl_get_proc_address_fn get_proc_address;
-    void *get_proc_address_ctx;
-    const char *extra_exts;
-} mpv_opengl_init_params;
-
-typedef struct mpv_opengl_fbo {
-    int fbo;
-    int w;
-    int h;
-    int internal_format;
-} mpv_opengl_fbo;
-
 mpv_handle *mpv_create(void);
 int mpv_initialize(mpv_handle *ctx);
 void mpv_terminate_destroy(mpv_handle *ctx);
@@ -97,30 +58,17 @@ void mpv_free(void *data);
 int mpv_request_log_messages(mpv_handle *ctx, const char *min_level);
 mpv_event *mpv_wait_event(mpv_handle *ctx, double timeout);
 void mpv_set_wakeup_callback(mpv_handle *ctx, void (*cb)(void *d), void *d);
-int mpv_render_context_create(mpv_render_context **res, mpv_handle *mpv, mpv_render_param *params);
-void mpv_render_context_free(mpv_render_context *ctx);
-void mpv_render_context_render(mpv_render_context *ctx, mpv_render_param *params);
-void mpv_render_context_report_swap(mpv_render_context *ctx);
-void mpv_render_context_set_update_callback(
-    mpv_render_context *ctx,
-    void (*callback)(void *callback_ctx),
-    void *callback_ctx
-);
-uint64_t mpv_render_context_update(mpv_render_context *ctx);
 }
 
-@class PlayerOpenGLView;
+@class PlayerMetalView;
 @class MpvWebPlayer;
 
-@interface PlayerOpenGLView : NSView
-@property(nonatomic, assign) mpv_render_context *renderContext;
-- (CGLContextObj)cglContext;
+@interface PlayerMetalView : NSView
+@property(nonatomic, readonly) CAMetalLayer *metalLayer;
+- (int64_t)wid;
 - (double)edrMax;
 - (double)hdrTargetPeakNits;
 - (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries;
-- (void)requestRender;
-- (void)stopRendering;
-- (void)clearRenderContext;
 @end
 
 @interface PlayerScriptHandler : NSObject <WKScriptMessageHandler>
@@ -170,14 +118,6 @@ uint64_t mpv_render_context_update(mpv_render_context *ctx);
 - (void)scheduleMpvEventDrain;
 @end
 
-static void *getOpenGLProcAddress(void * /* ctx */, const char *name) {
-    static void *openGlHandle = dlopen(
-        "/System/Library/Frameworks/OpenGL.framework/OpenGL",
-        RTLD_LAZY | RTLD_LOCAL
-    );
-    return openGlHandle ? dlsym(openGlHandle, name) : nullptr;
-}
-
 typedef CFDictionaryRef (*CoreDisplayCreateInfoDictionaryFn)(CGDirectDisplayID displayId);
 
 static void setBoolWithSelector(id target, NSString *selectorName, BOOL value) {
@@ -211,38 +151,42 @@ static BOOL setLayerColorSpace(CALayer *layer, CGColorSpaceRef colorSpace) {
     return YES;
 }
 
-static CGLPixelFormatObj createPlayerPixelFormat(void) {
-    CGLPixelFormatAttribute floatAttributes[] = {
-        kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,
-        kCGLPFAAccelerated,
-        kCGLPFADoubleBuffer,
-        kCGLPFAColorFloat,
-        kCGLPFAColorSize, (CGLPixelFormatAttribute)64,
-        kCGLPFAAlphaSize, (CGLPixelFormatAttribute)16,
-        (CGLPixelFormatAttribute)0
-    };
-    CGLPixelFormatObj pixelFormat = NULL;
-    GLint pixelCount = 0;
-    CGLError error = CGLChoosePixelFormat(floatAttributes, &pixelFormat, &pixelCount);
-    if (error == kCGLNoError && pixelFormat) {
-        return pixelFormat;
+static BOOL setLayerEdrMetadata(CALayer *layer, double minNits, double maxNits, double opticalOutputScale) {
+    if (!layer || maxNits <= 0.0) {
+        return NO;
     }
 
-    CGLPixelFormatAttribute fallbackAttributes[] = {
-        kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,
-        kCGLPFAAccelerated,
-        kCGLPFADoubleBuffer,
-        kCGLPFAColorSize, (CGLPixelFormatAttribute)24,
-        kCGLPFAAlphaSize, (CGLPixelFormatAttribute)8,
-        (CGLPixelFormatAttribute)0
-    };
-    error = CGLChoosePixelFormat(fallbackAttributes, &pixelFormat, &pixelCount);
-    if (error != kCGLNoError || !pixelFormat) {
-        NSLog(@"[NuvioDesktopPlayer] macos_edr: CGLChoosePixelFormat failed err=%d", error);
-        return NULL;
+    Class edrMetadataClass = NSClassFromString(@"CAEDRMetadata");
+    SEL selector = NSSelectorFromString(@"HDR10MetadataWithMinLuminance:maxLuminance:opticalOutputScale:");
+    if (!edrMetadataClass || ![edrMetadataClass respondsToSelector:selector]) {
+        return NO;
     }
-    NSLog(@"[NuvioDesktopPlayer] macos_edr: float CGL pixel format unavailable; using 8-bit fallback");
-    return pixelFormat;
+
+    typedef id (*Factory)(id, SEL, float, float, float);
+    Factory factory = (Factory)[edrMetadataClass methodForSelector:selector];
+    id metadata = factory(edrMetadataClass, selector, (float)minNits, (float)maxNits, (float)opticalOutputScale);
+    if (!metadata) {
+        return NO;
+    }
+
+    SEL setterSelector = NSSelectorFromString(@"setEDRMetadata:");
+    if (![layer respondsToSelector:setterSelector]) {
+        return NO;
+    }
+    typedef void (*Setter)(id, SEL, id);
+    Setter setter = (Setter)[layer methodForSelector:setterSelector];
+    setter(layer, setterSelector, metadata);
+    return YES;
+}
+
+static void clearLayerEdrMetadata(CALayer *layer) {
+    SEL selector = NSSelectorFromString(@"setEDRMetadata:");
+    if (!layer || ![layer respondsToSelector:selector]) {
+        return;
+    }
+    typedef void (*Setter)(id, SEL, id);
+    Setter setter = (Setter)[layer methodForSelector:selector];
+    setter(layer, selector, nil);
 }
 
 static CGDirectDisplayID displayIdForScreen(NSScreen *screen) {
@@ -346,7 +290,7 @@ static double ioRegistryPeakNits(void) {
     }
 
     io_iterator_t iterator = IO_OBJECT_NULL;
-    kern_return_t result = IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator);
+    kern_return_t result = IOServiceGetMatchingServices(MACH_PORT_NULL, matching, &iterator);
     if (result != KERN_SUCCESS || iterator == IO_OBJECT_NULL) {
         return 0.0;
     }
@@ -409,245 +353,14 @@ static double hdrTargetPeakNitsForScreen(NSScreen *screen) {
     return 100.0;
 }
 
-@interface PlayerOpenGLLayer : CAOpenGLLayer
-@property(nonatomic, assign) mpv_render_context *renderContext;
-- (CGLContextObj)cglContext;
-- (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries;
-- (void)requestRender;
-- (void)stopRendering;
-- (void)clearRenderContext;
-@end
-
-static void renderUpdateCallback(void *callbackContext) {
-    PlayerOpenGLView *view = (__bridge PlayerOpenGLView *)callbackContext;
-    [view requestRender];
+static double hdrMetadataMaxNits(void) {
+    return 1000.0;
 }
 
-static void mpvWakeupCallback(void *callbackContext) {
-    MpvWebPlayer *player = (__bridge MpvWebPlayer *)callbackContext;
-    [player scheduleMpvEventDrain];
-}
-
-@implementation PlayerOpenGLLayer {
-    CGLPixelFormatObj _pixelFormat;
-    CGLContextObj _cglContext;
-    std::atomic_bool _renderRequested;
-    BOOL _ownsPixelFormat;
+@implementation PlayerMetalView {
+    CAMetalLayer *_metalLayer;
     BOOL _hasConfiguredEdr;
     BOOL _edrEnabled;
-    mpv_render_context *_renderContext;
-}
-
-- (instancetype)init {
-    self = [super init];
-    if (!self) {
-        return nil;
-    }
-    self.opaque = YES;
-    self.asynchronous = YES;
-    self.needsDisplayOnBoundsChange = YES;
-    self.contentsFormat = kCAContentsFormatRGBA16Float;
-    self.contentsGravity = kCAGravityResize;
-    _renderRequested.store(false);
-    return self;
-}
-
-- (BOOL)ensureOpenGLObjectsWithPixelFormat:(CGLPixelFormatObj)pixelFormat {
-    if (_cglContext) {
-        return YES;
-    }
-    CGLPixelFormatObj contextPixelFormat = pixelFormat ?: createPlayerPixelFormat();
-    if (!contextPixelFormat) {
-        return NO;
-    }
-    if (!pixelFormat) {
-        _pixelFormat = contextPixelFormat;
-        _ownsPixelFormat = YES;
-    }
-    CGLError error = CGLCreateContext(contextPixelFormat, NULL, &_cglContext);
-    if (error != kCGLNoError || !_cglContext) {
-        NSLog(@"[NuvioDesktopPlayer] macos_edr: CGLCreateContext failed err=%d", error);
-        return NO;
-    }
-    GLint swapInterval = 1;
-    CGLSetParameter(_cglContext, kCGLCPSwapInterval, &swapInterval);
-    CGLSetCurrentContext(_cglContext);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    return YES;
-}
-
-- (void)setRenderContext:(mpv_render_context *)renderContext {
-    @synchronized (self) {
-        _renderContext = renderContext;
-    }
-    [self requestRender];
-}
-
-- (mpv_render_context *)renderContext {
-    @synchronized (self) {
-        return _renderContext;
-    }
-}
-
-- (CGLContextObj)cglContext {
-    if (![self ensureOpenGLObjectsWithPixelFormat:NULL]) {
-        return NULL;
-    }
-    return _cglContext;
-}
-
-- (CGLPixelFormatObj)copyCGLPixelFormatForDisplayMask:(uint32_t)mask {
-    (void)mask;
-    return createPlayerPixelFormat();
-}
-
-- (CGLContextObj)copyCGLContextForPixelFormat:(CGLPixelFormatObj)pixelFormat {
-    if (![self ensureOpenGLObjectsWithPixelFormat:pixelFormat]) {
-        return NULL;
-    }
-    return CGLRetainContext(_cglContext);
-}
-
-- (void)releaseCGLPixelFormat:(CGLPixelFormatObj)pixelFormat {
-    if (pixelFormat) {
-        CGLReleasePixelFormat(pixelFormat);
-    }
-}
-
-- (void)releaseCGLContext:(CGLContextObj)context {
-    if (context) {
-        CGLReleaseContext(context);
-    }
-}
-
-- (BOOL)canDrawInCGLContext:(CGLContextObj)context
-                pixelFormat:(CGLPixelFormatObj)pixelFormat
-               forLayerTime:(CFTimeInterval)timeInterval
-                displayTime:(const CVTimeStamp *)timeStamp {
-    (void)context;
-    (void)pixelFormat;
-    (void)timeInterval;
-    (void)timeStamp;
-    return YES;
-}
-
-- (void)drawInCGLContext:(CGLContextObj)context
-             pixelFormat:(CGLPixelFormatObj)pixelFormat
-            forLayerTime:(CFTimeInterval)timeInterval
-             displayTime:(const CVTimeStamp *)timeStamp {
-    (void)pixelFormat;
-    (void)timeInterval;
-    (void)timeStamp;
-
-    CGLLockContext(context);
-
-    @synchronized (self) {
-        CGLSetCurrentContext(context);
-        CGFloat scale = self.contentsScale > 0.0 ? self.contentsScale : NSScreen.mainScreen.backingScaleFactor;
-        int width = MAX(1, (int)llround(self.bounds.size.width * scale));
-        int height = MAX(1, (int)llround(self.bounds.size.height * scale));
-        glViewport(0, 0, width, height);
-
-        mpv_render_context *renderContext = _renderContext;
-        if (!renderContext) {
-            glClear(GL_COLOR_BUFFER_BIT);
-            glFlush();
-        } else {
-            GLint currentFbo = 0;
-            glGetIntegerv(GL_FRAMEBUFFER_BINDING, &currentFbo);
-
-            mpv_opengl_fbo fbo = {
-                (int)currentFbo,
-                width,
-                height,
-                _edrEnabled ? GL_RGBA16F : GL_RGBA8
-            };
-            int flipY = 1;
-            int depth = _edrEnabled ? 16 : 8;
-            mpv_render_param params[] = {
-                {MPV_RENDER_PARAM_OPENGL_FBO, &fbo},
-                {MPV_RENDER_PARAM_FLIP_Y, &flipY},
-                {MPV_RENDER_PARAM_DEPTH, &depth},
-                {MPV_RENDER_PARAM_INVALID, nullptr},
-            };
-
-            mpv_render_context_update(renderContext);
-            mpv_render_context_render(renderContext, params);
-            glFlush();
-            mpv_render_context_report_swap(renderContext);
-        }
-    }
-
-    CGLUnlockContext(context);
-    _renderRequested.store(false);
-}
-
-- (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries {
-    if (_hasConfiguredEdr && _edrEnabled == enabled) {
-        return;
-    }
-    _hasConfiguredEdr = YES;
-    _edrEnabled = enabled;
-    setBoolWithSelector(self, @"setWantsExtendedDynamicRangeContent:", enabled);
-
-    CGColorSpaceRef colorSpace = NULL;
-    if (enabled) {
-        colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_PQ);
-        if (!colorSpace) {
-            NSLog(
-                @"[NuvioDesktopPlayer] macos_edr: PQ colorspace not available for primaries=%@",
-                primaries ?: @"unknown"
-            );
-        }
-    }
-    if (!colorSpace) {
-        colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    }
-    BOOL didSetColorSpace = colorSpace ? setLayerColorSpace(self, colorSpace) : NO;
-    if (colorSpace) {
-        CGColorSpaceRelease(colorSpace);
-    }
-    if (enabled && !didSetColorSpace) {
-        NSLog(@"[NuvioDesktopPlayer] macos_edr: CAOpenGLLayer colorspace selector unavailable");
-    }
-    [self setNeedsDisplay];
-}
-
-- (void)requestRender {
-    _renderRequested.store(true);
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self setNeedsDisplay];
-    });
-}
-
-- (void)clearRenderContext {
-    @synchronized (self) {
-        _renderContext = nullptr;
-    }
-    _renderRequested.store(false);
-}
-
-- (void)stopRendering {
-    [self clearRenderContext];
-    if (_cglContext) {
-        CGLReleaseContext(_cglContext);
-        _cglContext = NULL;
-    }
-    if (_ownsPixelFormat && _pixelFormat) {
-        CGLReleasePixelFormat(_pixelFormat);
-    }
-    _pixelFormat = NULL;
-    _ownsPixelFormat = NO;
-}
-
-- (void)dealloc {
-    [self stopRendering];
-}
-
-@end
-
-@implementation PlayerOpenGLView {
-    PlayerOpenGLLayer *_glLayer;
 }
 
 - (instancetype)initWithFrame:(NSRect)frameRect {
@@ -655,16 +368,27 @@ static void mpvWakeupCallback(void *callbackContext) {
     if (!self) {
         return nil;
     }
+
     self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.wantsLayer = YES;
-    _glLayer = [PlayerOpenGLLayer new];
-    _glLayer.frame = self.bounds;
-    self.layer = _glLayer;
-    [self updateContentsScale];
+
+    _metalLayer = [CAMetalLayer layer];
+    _metalLayer.device = MTLCreateSystemDefaultDevice();
+    _metalLayer.frame = self.bounds;
+    _metalLayer.contentsGravity = kCAGravityResize;
+    _metalLayer.framebufferOnly = YES;
+    _metalLayer.pixelFormat = MTLPixelFormatRGBA16Float;
+    _metalLayer.opaque = YES;
+    _metalLayer.backgroundColor = NSColor.blackColor.CGColor;
+    setBoolWithSelector(_metalLayer, @"setWantsExtendedDynamicRangeContent:", YES);
+    self.layer = _metalLayer;
+    [self updateMetalLayerLayout];
+
     NSLog(
-        @"[NuvioDesktopPlayer] macos_edr: CAOpenGLLayer attached (%0.0fx%0.0f)",
+        @"[NuvioDesktopPlayer] render: MPVKit Metal surface attached (%0.0fx%0.0f) device=%@ pixelFormat=rgba16Float",
         frameRect.size.width,
-        frameRect.size.height
+        frameRect.size.height,
+        _metalLayer.device.name ?: @"none"
     );
     return self;
 }
@@ -673,36 +397,92 @@ static void mpvWakeupCallback(void *callbackContext) {
     return YES;
 }
 
+- (CALayer *)makeBackingLayer {
+    return _metalLayer ?: [CAMetalLayer layer];
+}
+
+- (CAMetalLayer *)metalLayer {
+    return _metalLayer;
+}
+
+- (int64_t)wid {
+    return (int64_t)(intptr_t)_metalLayer;
+}
+
 - (void)layout {
     [super layout];
-    _glLayer.frame = self.bounds;
-    [self updateContentsScale];
-    [self requestRender];
+    [self updateMetalLayerLayout];
 }
 
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
-    [self updateContentsScale];
-    [self requestRender];
+    [self updateMetalLayerLayout];
+    setBoolWithSelector(self, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(self.window, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(self.window.contentView, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(_metalLayer, @"setWantsExtendedDynamicRangeContent:", YES);
 }
 
-- (void)updateContentsScale {
+- (void)updateMetalLayerLayout {
+    if (!_metalLayer) {
+        return;
+    }
+
     CGFloat scale = self.window.backingScaleFactor > 0.0
         ? self.window.backingScaleFactor
         : NSScreen.mainScreen.backingScaleFactor;
-    _glLayer.contentsScale = scale;
+    CGSize drawableSize = CGSizeMake(
+        MAX(1.0, llround(self.bounds.size.width * scale)),
+        MAX(1.0, llround(self.bounds.size.height * scale))
+    );
+
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _metalLayer.contentsScale = scale;
+    _metalLayer.frame = self.bounds;
+    if (!CGSizeEqualToSize(_metalLayer.drawableSize, drawableSize)) {
+        _metalLayer.drawableSize = drawableSize;
+    }
+    [CATransaction commit];
 }
 
-- (void)setRenderContext:(mpv_render_context *)renderContext {
-    _glLayer.renderContext = renderContext;
-}
+- (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries {
+    if (_hasConfiguredEdr && _edrEnabled == enabled) {
+        return;
+    }
+    _hasConfiguredEdr = YES;
+    _edrEnabled = enabled;
 
-- (mpv_render_context *)renderContext {
-    return _glLayer.renderContext;
-}
+    setBoolWithSelector(self, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(self.window, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(self.window.contentView, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(_metalLayer, @"setWantsExtendedDynamicRangeContent:", YES);
 
-- (CGLContextObj)cglContext {
-    return [_glLayer cglContext];
+    CGColorSpaceRef colorSpace = enabled
+        ? CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_PQ)
+        : CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    BOOL didSetColorSpace = colorSpace ? setLayerColorSpace(_metalLayer, colorSpace) : NO;
+    if (colorSpace) {
+        CGColorSpaceRelease(colorSpace);
+    }
+    if (enabled && !didSetColorSpace) {
+        NSLog(@"[NuvioDesktopPlayer] macos_edr: CAMetalLayer colorspace selector unavailable");
+    }
+
+    BOOL didSetMetadata = NO;
+    if (enabled) {
+        didSetMetadata = setLayerEdrMetadata(_metalLayer, 0.0, hdrMetadataMaxNits(), 1.0);
+    } else {
+        clearLayerEdrMetadata(_metalLayer);
+    }
+
+    NSLog(
+        @"[NuvioDesktopPlayer] macos_edr: CAMetalLayer EDR %@ primaries=%@ edrMax=%.2f pixelFormat=rgba16Float metadata=%@",
+        enabled ? @"enabled" : @"disabled",
+        primaries ?: @"unknown",
+        [self edrMax],
+        didSetMetadata ? @"hdr10-1000" : @"none"
+    );
 }
 
 - (double)edrMax {
@@ -713,31 +493,12 @@ static void mpvWakeupCallback(void *callbackContext) {
     return hdrTargetPeakNitsForScreen(self.window.screen ?: NSScreen.mainScreen);
 }
 
-- (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries {
-    [self updateContentsScale];
-    setBoolWithSelector(self, @"setWantsExtendedDynamicRangeContent:", enabled);
-    setBoolWithSelector(self.window, @"setWantsExtendedDynamicRangeContent:", enabled);
-    setBoolWithSelector(self.window.contentView, @"setWantsExtendedDynamicRangeContent:", enabled);
-    [_glLayer configureExtendedDynamicRange:enabled primaries:primaries];
-}
-
-- (void)requestRender {
-    [_glLayer requestRender];
-}
-
-- (void)clearRenderContext {
-    [_glLayer clearRenderContext];
-}
-
-- (void)stopRendering {
-    [_glLayer stopRendering];
-}
-
-- (void)dealloc {
-    [self stopRendering];
-}
-
 @end
+
+static void mpvWakeupCallback(void *callbackContext) {
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)callbackContext;
+    [player scheduleMpvEventDrain];
+}
 
 @implementation PlayerScriptHandler
 - (void)userContentController:(WKUserContentController *)userContentController
@@ -795,17 +556,17 @@ static NSString *redactUrlsInText(NSString *text) {
 
 @implementation MpvWebPlayer {
     NSView *_hostView;
-    PlayerOpenGLView *_videoView;
+    PlayerMetalView *_videoView;
     WKWebView *_webView;
     PlayerScriptHandler *_scriptHandler;
     mpv_handle *_mpv;
-    mpv_render_context *_renderContext;
     NSTimer *_timer;
     JavaVM *_javaVm;
     jobject _eventSink;
     jmethodID _eventMethod;
     NSString *_lastLoggedHwdec;
     NSString *_lastConfiguredHdrKey;
+    NSString *_lastLoggedHdrTargetKey;
     NSMutableSet<NSString *> *_loggedMpvDiagnostics;
     dispatch_queue_t _mpvEventQueue;
     std::atomic_bool _eventDrainScheduled;
@@ -838,9 +599,7 @@ static NSString *redactUrlsInText(NSString *text) {
     _hostView.wantsLayer = YES;
     _hostView.layer.backgroundColor = NSColor.blackColor.CGColor;
 
-    _videoView = [[PlayerOpenGLView alloc] initWithFrame:_hostView.bounds];
-    _videoView.wantsLayer = YES;
-    _videoView.layer.backgroundColor = NSColor.blackColor.CGColor;
+    _videoView = [[PlayerMetalView alloc] initWithFrame:_hostView.bounds];
     [_hostView addSubview:_videoView];
 
     _scriptHandler = [PlayerScriptHandler new];
@@ -886,32 +645,43 @@ static NSString *redactUrlsInText(NSString *text) {
     setMpvOptionString(_mpv, "input-default-bindings", "yes");
     setMpvOptionString(_mpv, "input-vo-keyboard", "no");
     setMpvOptionString(_mpv, "keep-open", "yes");
-    setMpvOptionString(_mpv, "vo", "libmpv");
-    setMpvOptionString(_mpv, "msg-level", "ffmpeg/video=warn,vd=warn,vo=warn,libmpv_render=warn");
-    setMpvOptionString(_mpv, "hwdec", "videotoolbox-copy");
+    setMpvOptionString(_mpv, "vo", "gpu-next");
+    setMpvOptionString(_mpv, "gpu-api", "vulkan");
+    setMpvOptionString(_mpv, "gpu-context", "moltenvk");
+    setMpvOptionString(_mpv, "msg-level", "ffmpeg/video=warn,vd=warn,vo=info,gpu=warn,vulkan=warn");
+    setMpvOptionString(_mpv, "hwdec", "videotoolbox");
     setMpvOptionString(_mpv, "hwdec-codecs", "all");
-    setMpvOptionString(_mpv, "vd-lavc-dr", "no");
     setMpvOptionString(_mpv, "vd-lavc-software-fallback", "no");
     setMpvOptionString(_mpv, "vd-lavc-threads", "4");
-    setMpvOptionString(_mpv, "icc-profile-auto", "no");
-    setMpvOptionString(_mpv, "target-prim", "auto");
-    setMpvOptionString(_mpv, "target-trc", "auto");
-    setMpvOptionString(_mpv, "target-peak", "auto");
-    setMpvOptionString(_mpv, "tone-mapping", "bt.2390");
+    setMpvOptionString(_mpv, "target-colorspace-hint", "yes");
+    setMpvOptionString(_mpv, "target-colorspace-hint-mode", "source");
+    setMpvOptionString(_mpv, "target-colorspace-hint-strict", "no");
+    setMpvOptionString(_mpv, "tone-mapping", "auto");
+    setMpvOptionString(_mpv, "hdr-compute-peak", "no");
     setMpvOptionString(_mpv, "dither-depth", "auto");
     setMpvOptionString(_mpv, "deband", "yes");
     setMpvOptionString(_mpv, "scale", "spline36");
     setMpvOptionString(_mpv, "cscale", "spline36");
+    setMpvOptionString(_mpv, "vulkan-swap-mode", "fifo");
+    setMpvOptionString(_mpv, "vulkan-queue-count", "1");
+    setMpvOptionString(_mpv, "vulkan-async-compute", "no");
+    setMpvOptionString(_mpv, "vulkan-async-transfer", "no");
     setMpvOptionString(_mpv, "demuxer-max-bytes", "64MiB");
     setMpvOptionString(_mpv, "demuxer-max-back-bytes", "16MiB");
     setMpvOptionString(_mpv, "demuxer-seekable-cache", "no");
     setMpvOptionString(_mpv, "cache-secs", "30");
     setMpvOptionString(_mpv, "hr-seek", "no");
     NSLog(
-        @"[NuvioDesktopPlayer] decode: hwdec=videotoolbox-copy directRendering=no softwareFallback=no reason=stable-hardware-decode-copy-into-edr-opengl"
+        @"[NuvioDesktopPlayer] render: MPVKit gpu-next vulkan/moltenvk wid=%lld hwdec=videotoolbox softwareFallback=no layerFormat=rgba16Float",
+        (long long)[_videoView wid]
     );
+    int64_t wid = [_videoView wid];
+    int widResult = mpv_set_option(_mpv, "wid", MPV_FORMAT_INT64, &wid);
+    if (widResult < 0) {
+        NSLog(@"[NuvioDesktopPlayer] mpv option failed wid error=%s", mpv_error_string(widResult));
+    }
 
-    int logResult = mpv_request_log_messages(_mpv, "warn");
+    int logResult = mpv_request_log_messages(_mpv, "info");
     if (logResult < 0) {
         NSLog(@"[NuvioDesktopPlayer] mpv log request failed error=%s", mpv_error_string(logResult));
     }
@@ -927,36 +697,6 @@ static NSString *redactUrlsInText(NSString *text) {
         NSString *reason = [NSString stringWithFormat:@"mpv_initialize failed: %s", mpv_error_string(initResult)];
         @throw [NSException exceptionWithName:@"PlayerBridgeError" reason:reason userInfo:nil];
     }
-
-    CGLContextObj cglContext = [_videoView cglContext];
-    if (!cglContext) {
-        @throw [NSException exceptionWithName:@"PlayerBridgeError"
-                                       reason:@"CGL context creation failed"
-                                     userInfo:nil];
-    }
-    CGLLockContext(cglContext);
-    CGLSetCurrentContext(cglContext);
-    mpv_opengl_init_params glInit = {
-        getOpenGLProcAddress,
-        nullptr,
-        nullptr
-    };
-    const char *apiType = "opengl";
-    int advancedControl = 1;
-    mpv_render_param renderParams[] = {
-        {MPV_RENDER_PARAM_API_TYPE, (void *)apiType},
-        {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &glInit},
-        {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advancedControl},
-        {MPV_RENDER_PARAM_INVALID, nullptr},
-    };
-    int renderResult = mpv_render_context_create(&_renderContext, _mpv, renderParams);
-    CGLUnlockContext(cglContext);
-    if (renderResult < 0) {
-        NSString *reason = [NSString stringWithFormat:@"mpv render context failed: %s", mpv_error_string(renderResult)];
-        @throw [NSException exceptionWithName:@"PlayerBridgeError" reason:reason userInfo:nil];
-    }
-    _videoView.renderContext = _renderContext;
-    mpv_render_context_set_update_callback(_renderContext, renderUpdateCallback, (__bridge void *)_videoView);
 
     std::vector<const char *> command = {"loadfile", sourceUrl.UTF8String};
     std::string loadOptions;
@@ -990,6 +730,7 @@ static NSString *redactUrlsInText(NSString *text) {
     NSString *subtitleTracks = [self subtitleTracksJson] ?: @"[]";
     [self scheduleMpvEventDrain];
     [self configureHdrForCurrentScreenIfNeeded];
+    [self logHdrTargetIfNeeded];
     [self logHwdecIfNeeded];
     NSString *script = [NSString stringWithFormat:
         @"window.playerUpdate({duration:%0.3f,position:%0.3f,paused:%@,audioTracks:%@,subtitleTracks:%@})",
@@ -1016,64 +757,102 @@ static NSString *redactUrlsInText(NSString *text) {
         || [gamma containsString:@"st2084"];
     BOOL isHlg = [gamma containsString:@"hlg"];
     double edrMax = [_videoView edrMax];
-    double targetPeak = [_videoView hdrTargetPeakNits];
-    BOOL pqHdrDetected = isPq && edrMax > 1.0;
-    BOOL enableNativePq = pqHdrDetected && targetPeak >= 300.0;
-    NSString *targetPrimaries = (enableNativePq && primaries.length > 0) ? primaries : @"auto";
-    NSString *targetTrc = enableNativePq ? @"pq" : @"auto";
-    NSString *targetPeakValue = enableNativePq
-        ? [NSString stringWithFormat:@"%0.0f", targetPeak]
-        : @"auto";
+    double screenPeak = [_videoView hdrTargetPeakNits];
+    BOOL hdrDetected = (isPq || isHlg) && edrMax > 1.0;
+    NSString *targetPrimaries = hdrDetected && primaries.length > 0 ? primaries : @"auto";
     NSString *stateKey = [NSString stringWithFormat:
-        @"%@:%@:%@:%@:%0.2f:%0.0f",
-        enableNativePq ? @"native-pq" : (pqHdrDetected ? @"tone-map-pq" : @"sdr"),
+        @"%@:%@:%@:%0.2f:%0.0f",
+        hdrDetected ? @"native-metal-edr" : @"sdr",
         gamma ?: @"",
         targetPrimaries,
-        targetTrc,
         edrMax,
-        targetPeak
+        screenPeak
     ];
     if (_lastConfiguredHdrKey && [_lastConfiguredHdrKey isEqualToString:stateKey]) {
         return;
     }
     _lastConfiguredHdrKey = stateKey;
 
-    [_videoView configureExtendedDynamicRange:enableNativePq primaries:targetPrimaries];
-    [self setStringProperty:"icc-profile-auto" value:@"no"];
-    [self setStringProperty:"target-trc" value:targetTrc];
-    [self setStringProperty:"target-prim" value:targetPrimaries];
-    [self setStringProperty:"target-peak" value:targetPeakValue];
-    [self setStringProperty:"tone-mapping" value:@"bt.2390"];
+    [_videoView configureExtendedDynamicRange:hdrDetected primaries:targetPrimaries];
+    [self setStringProperty:"target-colorspace-hint" value:@"yes"];
+    [self setStringProperty:"target-colorspace-hint-mode" value:hdrDetected ? @"source" : @"target"];
+    [self setStringProperty:"target-colorspace-hint-strict" value:@"no"];
+    [self setStringProperty:"tone-mapping" value:@"auto"];
+    [self setStringProperty:"hdr-compute-peak" value:@"no"];
+    [self setStringProperty:"target-prim" value:hdrDetected ? @"bt.2020" : @"auto"];
+    [self setStringProperty:"target-trc" value:isPq ? @"pq" : (isHlg ? @"hlg" : @"auto")];
+    [self setStringProperty:"target-peak" value:@"auto"];
 
-    if (enableNativePq) {
+    if (hdrDetected) {
+        NSString *targetGamma = [[self stringProperty:"video-target-params/gamma" fallback:@""] lowercaseString];
+        NSString *targetPrimariesLog = [[self stringProperty:"video-target-params/primaries" fallback:@""] lowercaseString];
+        NSString *targetSigPeak = [self stringProperty:"video-target-params/sig-peak" fallback:@""];
         NSLog(
-            @"[NuvioDesktopPlayer] macos_edr: HDR enabled primaries=%@ gamma=%@ edrMax=%.2f targetPeak=%.0f",
+            @"[NuvioDesktopPlayer] macos_edr: HDR enabled via MPVKit Metal primaries=%@ gamma=%@ edrMax=%.2f screenPeak=%.0f metadataPeak=%.0f targetPeak=auto toneMapping=auto hdrComputePeak=no hint=source targetPrimaries=%@ targetGamma=%@ targetSigPeak=%@",
             targetPrimaries,
             gamma.length > 0 ? gamma : @"unknown",
             edrMax,
-            targetPeak
-        );
-    } else if (pqHdrDetected) {
-        NSLog(
-            @"[NuvioDesktopPlayer] macos_edr: PQ detected; using mpv tone-map for live display primaries=%@ gamma=%@ edrMax=%.2f detectedPeak=%.0f reason=forced-pq-live-display-dark",
-            primaries.length > 0 ? primaries : @"unknown",
-            gamma.length > 0 ? gamma : @"unknown",
-            edrMax,
-            targetPeak
+            screenPeak,
+            hdrMetadataMaxNits(),
+            targetPrimariesLog.length > 0 ? targetPrimariesLog : @"unknown",
+            targetGamma.length > 0 ? targetGamma : @"unknown",
+            targetSigPeak.length > 0 ? targetSigPeak : @"unknown"
         );
     } else {
         NSString *reason = isHlg
-            ? @"hlg-not-yet-mapped-to-layer-colorspace"
+            ? @"display-edr-unavailable-for-hlg"
             : (isPq ? @"display-edr-unavailable" : @"video-sdr");
         NSLog(
-            @"[NuvioDesktopPlayer] macos_edr: SDR mode primaries=%@ gamma=%@ edrMax=%.2f targetPeak=%.0f reason=%@",
+            @"[NuvioDesktopPlayer] macos_edr: SDR mode primaries=%@ gamma=%@ edrMax=%.2f screenPeak=%.0f reason=%@",
             primaries.length > 0 ? primaries : @"unknown",
             gamma.length > 0 ? gamma : @"unknown",
             edrMax,
-            targetPeak,
+            screenPeak,
             reason
         );
     }
+}
+
+- (void)logHdrTargetIfNeeded {
+    if (!_mpv) {
+        return;
+    }
+    NSString *sourceGamma = [[self stringProperty:"video-params/gamma" fallback:@""] lowercaseString];
+    BOOL isHdr = [sourceGamma containsString:@"pq"]
+        || [sourceGamma containsString:@"2084"]
+        || [sourceGamma containsString:@"st2084"]
+        || [sourceGamma containsString:@"hlg"];
+    if (!isHdr) {
+        return;
+    }
+
+    NSString *targetPrimaries = [[self stringProperty:"video-target-params/primaries" fallback:@""] lowercaseString];
+    NSString *targetGamma = [[self stringProperty:"video-target-params/gamma" fallback:@""] lowercaseString];
+    NSString *targetSigPeak = [self stringProperty:"video-target-params/sig-peak" fallback:@""];
+    NSString *targetFormat = [self stringProperty:"video-target-params/pixelformat" fallback:@""];
+    if (targetPrimaries.length == 0 && targetGamma.length == 0 && targetSigPeak.length == 0) {
+        return;
+    }
+
+    NSString *diagnosticKey = [NSString stringWithFormat:
+        @"%@:%@:%@:%@",
+        targetPrimaries,
+        targetGamma,
+        targetSigPeak,
+        targetFormat
+    ];
+    if (_lastLoggedHdrTargetKey && [_lastLoggedHdrTargetKey isEqualToString:diagnosticKey]) {
+        return;
+    }
+    _lastLoggedHdrTargetKey = diagnosticKey;
+
+    NSLog(
+        @"[NuvioDesktopPlayer] macos_edr: mpv target primaries=%@ gamma=%@ sigPeak=%@ format=%@",
+        targetPrimaries.length > 0 ? targetPrimaries : @"unknown",
+        targetGamma.length > 0 ? targetGamma : @"unknown",
+        targetSigPeak.length > 0 ? targetSigPeak : @"unknown",
+        targetFormat.length > 0 ? targetFormat : @"unknown"
+    );
 }
 
 - (void)logHwdecIfNeeded {
@@ -1198,7 +977,9 @@ static NSString *redactUrlsInText(NSString *text) {
         || [lowerText containsString:@"yuv420p10"]
         || [lowerText containsString:@"dovi"]
         || [lowerText containsString:@"rpu"]
-        || [lowerText containsString:@"poc"];
+        || [lowerText containsString:@"poc"]
+        || [lowerText containsString:@"moltenvk hdr"]
+        || [lowerText containsString:@"target colorspace"];
     if (!(videoPipelinePrefix || decoderErrorPrefix) || !relevantText) {
         return;
     }
@@ -1300,21 +1081,6 @@ static NSString *redactUrlsInText(NSString *text) {
     }
     if (_mpvEventQueue) {
         dispatch_sync(_mpvEventQueue, ^{});
-    }
-    if (_renderContext) {
-        mpv_render_context_set_update_callback(_renderContext, nullptr, nullptr);
-        [_videoView clearRenderContext];
-        CGLContextObj cglContext = [_videoView cglContext];
-        if (cglContext) {
-            CGLLockContext(cglContext);
-            CGLSetCurrentContext(cglContext);
-        }
-        mpv_render_context_free(_renderContext);
-        if (cglContext) {
-            CGLUnlockContext(cglContext);
-        }
-        _renderContext = nullptr;
-        [_videoView stopRendering];
     }
     if (_mpv) {
         mpv_terminate_destroy(_mpv);

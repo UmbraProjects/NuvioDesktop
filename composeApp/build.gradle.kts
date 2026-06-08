@@ -149,6 +149,8 @@ fun readXcconfigValue(file: File, key: String): String? {
         ?.second
 }
 
+fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidApplication)
@@ -209,55 +211,97 @@ val generateRuntimeConfigs = tasks.register<GenerateRuntimeConfigsTask>("generat
 }
 
 val isMacHost = System.getProperty("os.name").contains("mac", ignoreCase = true)
-val stremioMacosDir = providers.gradleProperty("nuvio.stremio.macos.dir")
-    .orElse("/Applications/Stremio.app/Contents/MacOS")
+val mpvKitDir = providers.gradleProperty("nuvio.mpvkit.dir")
+    .orElse(rootProject.layout.projectDirectory.dir("MPVKit").asFile.absolutePath)
 val macosPlayerBridgeSource = layout.projectDirectory.file("src/desktopMain/native/macos/player_bridge.mm")
 val macosPlayerBridgeOutput = layout.buildDirectory.file("native/macos/libplayer_bridge.dylib")
+val macosPlayerBridgeArch = when (System.getProperty("os.arch").lowercase()) {
+    "aarch64", "arm64" -> "arm64"
+    else -> "x86_64"
+}
+val mpvKitRoot = File(mpvKitDir.get())
+val mpvKitDistRoot = File(mpvKitRoot, "dist")
+val mpvKitLibmpvRoot = File(mpvKitDistRoot, "libmpv/macos/thin/$macosPlayerBridgeArch")
+val mpvKitLibmpvPkgConfigFile = File(mpvKitLibmpvRoot, "lib/pkgconfig/mpv.pc")
+val mpvKitGeneratedPkgConfigDirs = if (mpvKitDistRoot.exists()) {
+    mpvKitDistRoot.walkTopDown()
+        .filter { it.isDirectory && it.invariantSeparatorsPath.endsWith("/macos/thin/$macosPlayerBridgeArch/lib/pkgconfig") }
+        .toList()
+        .sortedBy { it.absolutePath }
+} else {
+    emptyList()
+}
+val mpvKitGeneratedLibSearchArgs = mpvKitGeneratedPkgConfigDirs
+    .mapNotNull { it.parentFile }
+    .distinctBy { it.absolutePath }
+    .joinToString(" ") { "-L${shellQuote(it.absolutePath)}" }
+val missingMpvKitMacosFrameworks = if (mpvKitLibmpvPkgConfigFile.exists()) emptyList() else listOf("mpv.pc")
+val missingMpvKitMacosMessage = """
+    MPVKit macOS libmpv artifacts are missing for $macosPlayerBridgeArch: ${missingMpvKitMacosFrameworks.joinToString()}.
+    Build MPVKit's macOS runtime first:
+      cd ${mpvKitRoot.absolutePath}
+      make build platform=macos
+    Or pass -Pnuvio.mpvkit.dir=/absolute/path/to/MPVKit.
+""".trimIndent()
+val missingMpvKitMacosShellMessage = missingMpvKitMacosMessage.replace("'", "'\"'\"'")
+val macosPlayerBridgeSourceFile = macosPlayerBridgeSource.asFile
+val macosPlayerBridgeOutputFile = macosPlayerBridgeOutput.get().asFile
+val macosPlayerBridgeJavaHome = providers.systemProperty("java.home").get()
+if (isMacHost) {
+    macosPlayerBridgeOutputFile.parentFile.mkdirs()
+}
+val macosPlayerBridgeCommand = if (missingMpvKitMacosFrameworks.isNotEmpty()) {
+    listOf(
+        "/bin/sh",
+        "-c",
+        "printf '%s\\n' '$missingMpvKitMacosShellMessage' >&2; exit 1",
+    )
+} else {
+    mutableListOf(
+        "/bin/sh",
+        "-c",
+        """
+        set -eu
+        SDKROOT="${'$'}(xcrun --sdk macosx --show-sdk-path)"
+        SWIFTC="${'$'}(xcrun --toolchain XcodeDefault --find swiftc)"
+        SWIFT_TOOLCHAIN="${'$'}{SWIFTC%/usr/bin/swiftc}"
+        SWIFT_LIB="${'$'}{SWIFT_TOOLCHAIN}/usr/lib/swift/macosx"
+        DEFAULT_PC="${'$'}(pkg-config --variable pc_path pkg-config)"
+        export PKG_CONFIG_LIBDIR=${shellQuote(mpvKitGeneratedPkgConfigDirs.joinToString(":"))}:"${'$'}{DEFAULT_PC}"
+        exec xcrun clang++ \
+          -std=c++17 \
+          -dynamiclib \
+          -fobjc-arc \
+          -ObjC++ \
+          -arch ${shellQuote(macosPlayerBridgeArch)} \
+          -isysroot "${'$'}{SDKROOT}" \
+          -mmacosx-version-min=11.0 \
+          ${shellQuote(macosPlayerBridgeSourceFile.absolutePath)} \
+          -o ${shellQuote(macosPlayerBridgeOutputFile.absolutePath)} \
+          -I${shellQuote("$macosPlayerBridgeJavaHome/include")} \
+          -I${shellQuote("$macosPlayerBridgeJavaHome/include/darwin")} \
+          -I${shellQuote(File(mpvKitLibmpvRoot, "include").absolutePath)} \
+          $mpvKitGeneratedLibSearchArgs \
+          -L"${'$'}{SWIFT_LIB}" \
+          -L/usr/lib/swift \
+          -framework AppKit \
+          -framework WebKit \
+          -framework Metal \
+          -framework Security \
+          -lswiftCompatibility56 \
+          -lswiftCompatibilityConcurrency \
+          -lswiftCompatibilityPacks \
+          -lc++ \
+          ${'$'}(pkg-config --libs --static mpv)
+        """.trimIndent(),
+    )
+}
 val buildMacosPlayerBridge = tasks.register<Exec>("buildMacosPlayerBridge") {
-    notCompatibleWithConfigurationCache("Builds a host-local player bridge against the installed Stremio libmpv.")
+    notCompatibleWithConfigurationCache("Builds a host-local player bridge against MPVKit's macOS libmpv artifacts.")
     enabled = isMacHost
     inputs.file(macosPlayerBridgeSource)
-    inputs.file(stremioMacosDir.map { "$it/libmpv.dylib" })
     outputs.file(macosPlayerBridgeOutput)
-
-    doFirst {
-        val stremioDir = stremioMacosDir.get()
-        val stremioMpv = File(stremioDir, "libmpv.dylib")
-        require(stremioMpv.exists()) {
-            "Stremio libmpv was not found at ${stremioMpv.path}. Set -Pnuvio.stremio.macos.dir=/path/to/Stremio.app/Contents/MacOS."
-        }
-        macosPlayerBridgeOutput.get().asFile.parentFile.mkdirs()
-    }
-
-    val javaHome = providers.systemProperty("java.home")
-    commandLine(
-        "xcrun",
-        "clang++",
-        "-std=c++17",
-        "-dynamiclib",
-        "-fobjc-arc",
-        "-ObjC++",
-        macosPlayerBridgeSource.asFile.absolutePath,
-        "-o",
-        macosPlayerBridgeOutput.get().asFile.absolutePath,
-        "-I${javaHome.get()}/include",
-        "-I${javaHome.get()}/include/darwin",
-        "-L${stremioMacosDir.get()}",
-        "-lmpv",
-        "-Wl,-rpath,${stremioMacosDir.get()}",
-        "-framework",
-        "AppKit",
-        "-framework",
-        "WebKit",
-        "-framework",
-        "QuartzCore",
-        "-framework",
-        "CoreVideo",
-        "-framework",
-        "IOKit",
-        "-framework",
-        "OpenGL",
-    )
+    commandLine(macosPlayerBridgeCommand)
 }
 
 tasks.withType<Jar>().configureEach {
