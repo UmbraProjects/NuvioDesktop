@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
@@ -17,6 +18,7 @@ import java.awt.Color as AwtColor
 import javax.swing.JComponent
 
 private val NuvioDesktopNativeBackground = AwtColor(0x0D, 0x0D, 0x0D)
+private const val NuvioDesktopIconPath = "icons/nuvio-app-icon.png"
 
 fun main() {
     preloadNativePlayerBridgeAsync()
@@ -32,6 +34,7 @@ fun main() {
             onCloseRequest = ::exitApplication,
             title = if (smokePlayerUrl == null) "Nuvio" else "Nuvio Player Smoke",
             state = WindowState(width = 1280.dp, height = 820.dp),
+            icon = painterResource(NuvioDesktopIconPath),
         ) {
             SideEffect {
                 window.background = NuvioDesktopNativeBackground

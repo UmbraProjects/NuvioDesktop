@@ -452,6 +452,15 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Nuvio"
             packageVersion = releaseAppVersionName
+            macOS {
+                iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon.icns"))
+            }
+            windows {
+                iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon.ico"))
+            }
+            linux {
+                iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon.png"))
+            }
         }
     }
 }
