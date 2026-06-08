@@ -65,9 +65,11 @@ void mpv_terminate_destroy(mpv_handle *ctx);
 int mpv_set_option(mpv_handle *ctx, const char *name, mpv_format format, void *data);
 int mpv_set_option_string(mpv_handle *ctx, const char *name, const char *data);
 int mpv_set_property(mpv_handle *ctx, const char *name, mpv_format format, void *data);
+int mpv_set_property_string(mpv_handle *ctx, const char *name, const char *data);
 int mpv_get_property(mpv_handle *ctx, const char *name, mpv_format format, void *data);
 int mpv_command(mpv_handle *ctx, const char **args);
 const char *mpv_error_string(int error);
+void mpv_free(void *data);
 int mpv_render_context_create(mpv_render_context **res, mpv_handle *mpv, mpv_render_param *params);
 void mpv_render_context_free(mpv_render_context *ctx);
 void mpv_render_context_render(mpv_render_context *ctx, mpv_render_param *params);
@@ -109,8 +111,24 @@ uint64_t mpv_render_context_update(mpv_render_context *ctx);
 - (void)seekByMilliseconds:(long long)offsetMs;
 - (void)setSpeed:(double)speed;
 - (double)speed;
+- (void)setResizeMode:(int)mode;
 - (long long)durationMs;
 - (long long)positionMs;
+- (NSString *)audioTracksJson;
+- (NSString *)subtitleTracksJson;
+- (void)selectAudioTrackId:(int)trackId;
+- (void)selectSubtitleTrackId:(int)trackId;
+- (void)addSubtitleUrl:(NSString *)url;
+- (void)removeExternalSubtitles;
+- (void)removeExternalSubtitlesAndSelect:(int)trackId;
+- (void)setSubtitleDelayMs:(int)delayMs;
+- (void)applySubtitleStyleWithTextColor:(NSString *)textColor
+                        backgroundColor:(NSString *)backgroundColor
+                            outlineColor:(NSString *)outlineColor
+                             outlineSize:(double)outlineSize
+                                    bold:(BOOL)bold
+                                fontSize:(double)fontSize
+                                  subPos:(int)subPos;
 - (void)handleScriptMessage:(NSDictionary *)message;
 @end
 
@@ -364,11 +382,15 @@ static NSString *javaScriptStringLiteral(NSString *value) {
     double duration = [self doubleProperty:"duration" fallback:0.0];
     double position = [self doubleProperty:"time-pos" fallback:0.0];
     BOOL paused = [self isPaused];
+    NSString *audioTracks = [self audioTracksJson] ?: @"[]";
+    NSString *subtitleTracks = [self subtitleTracksJson] ?: @"[]";
     NSString *script = [NSString stringWithFormat:
-        @"window.playerUpdate({duration:%0.3f,position:%0.3f,paused:%@})",
+        @"window.playerUpdate({duration:%0.3f,position:%0.3f,paused:%@,audioTracks:%@,subtitleTracks:%@})",
         duration,
         position,
-        paused ? @"true" : @"false"];
+        paused ? @"true" : @"false",
+        audioTracks,
+        subtitleTracks];
     [_webView evaluateJavaScript:script completionHandler:nil];
 }
 
@@ -503,12 +525,108 @@ static NSString *javaScriptStringLiteral(NSString *value) {
     return [self doubleProperty:"speed" fallback:1.0];
 }
 
+- (void)setResizeMode:(int)mode {
+    if (!_mpv) return;
+    switch (mode) {
+        case 1:
+            [self setStringProperty:"panscan" value:@"1.0"];
+            [self setStringProperty:"video-unscaled" value:@"no"];
+            break;
+        case 2:
+            [self setStringProperty:"panscan" value:@"1.0"];
+            [self setStringProperty:"video-unscaled" value:@"no"];
+            break;
+        default:
+            [self setStringProperty:"panscan" value:@"0.0"];
+            [self setStringProperty:"video-unscaled" value:@"no"];
+            break;
+    }
+}
+
 - (long long)durationMs {
     return (long long)llround([self doubleProperty:"duration" fallback:0.0] * 1000.0);
 }
 
 - (long long)positionMs {
     return (long long)llround([self doubleProperty:"time-pos" fallback:0.0] * 1000.0);
+}
+
+- (NSString *)audioTracksJson {
+    return [self tracksJsonForType:@"audio"];
+}
+
+- (NSString *)subtitleTracksJson {
+    return [self tracksJsonForType:@"sub"];
+}
+
+- (void)selectAudioTrackId:(int)trackId {
+    if (!_mpv) return;
+    int64_t id = trackId;
+    mpv_set_property(_mpv, "aid", MPV_FORMAT_INT64, &id);
+}
+
+- (void)selectSubtitleTrackId:(int)trackId {
+    if (!_mpv) return;
+    if (trackId < 0) {
+        [self setStringProperty:"sid" value:@"no"];
+        return;
+    }
+    int64_t id = trackId;
+    mpv_set_property(_mpv, "sid", MPV_FORMAT_INT64, &id);
+}
+
+- (void)addSubtitleUrl:(NSString *)url {
+    if (!_mpv || url.length == 0) return;
+    [self command:@[@"sub-add", url, @"select"]];
+}
+
+- (void)removeExternalSubtitles {
+    if (!_mpv) return;
+    [self removeExternalSubtitleTracks];
+    [self setStringProperty:"sid" value:@"no"];
+}
+
+- (void)removeExternalSubtitlesAndSelect:(int)trackId {
+    if (!_mpv) return;
+    [self removeExternalSubtitleTracks];
+    if (trackId >= 0) {
+        [self selectSubtitleTrackId:trackId];
+    } else {
+        [self setStringProperty:"sid" value:@"no"];
+    }
+}
+
+- (void)setSubtitleDelayMs:(int)delayMs {
+    if (!_mpv) return;
+    int clamped = MAX(-60000, MIN(60000, delayMs));
+    double delaySeconds = (double)clamped / 1000.0;
+    mpv_set_property(_mpv, "sub-delay", MPV_FORMAT_DOUBLE, &delaySeconds);
+}
+
+- (void)applySubtitleStyleWithTextColor:(NSString *)textColor
+                        backgroundColor:(NSString *)backgroundColor
+                            outlineColor:(NSString *)outlineColor
+                             outlineSize:(double)outlineSize
+                                    bold:(BOOL)bold
+                                fontSize:(double)fontSize
+                                  subPos:(int)subPos {
+    if (!_mpv) return;
+    [self setStringProperty:"sub-ass-override" value:@"force"];
+    [self setStringProperty:"sub-color" value:textColor ?: @"#FFFFFFFF"];
+    [self setStringProperty:"sub-back-color" value:backgroundColor ?: @"#00000000"];
+    [self setStringProperty:"sub-outline-color" value:outlineColor ?: @"#FF000000"];
+    [self setStringProperty:"sub-border-style"
+                      value:[(backgroundColor ?: @"") hasPrefix:@"#00"] ? @"outline-and-shadow" : @"opaque-box"];
+    [self setStringProperty:"sub-bold" value:bold ? @"yes" : @"no"];
+
+    double outline = MAX(0.0, MIN(8.0, outlineSize));
+    mpv_set_property(_mpv, "sub-outline-size", MPV_FORMAT_DOUBLE, &outline);
+
+    double size = MAX(24.0, MIN(96.0, fontSize));
+    mpv_set_property(_mpv, "sub-font-size", MPV_FORMAT_DOUBLE, &size);
+
+    int64_t position = MAX(0, MIN(150, subPos));
+    mpv_set_property(_mpv, "sub-pos", MPV_FORMAT_INT64, &position);
 }
 
 - (double)doubleProperty:(const char *)name fallback:(double)fallback {
@@ -520,6 +638,212 @@ static NSString *javaScriptStringLiteral(NSString *value) {
     return value;
 }
 
+- (long long)int64Property:(const char *)name fallback:(long long)fallback {
+    if (!_mpv) return fallback;
+    int64_t value = fallback;
+    if (mpv_get_property(_mpv, name, MPV_FORMAT_INT64, &value) < 0) {
+        return fallback;
+    }
+    return value;
+}
+
+- (BOOL)flagProperty:(const char *)name fallback:(BOOL)fallback {
+    if (!_mpv) return fallback;
+    int flag = fallback ? 1 : 0;
+    if (mpv_get_property(_mpv, name, MPV_FORMAT_FLAG, &flag) < 0) {
+        return fallback;
+    }
+    return flag != 0;
+}
+
+- (NSString *)stringProperty:(const char *)name fallback:(NSString *)fallback {
+    if (!_mpv) return fallback ?: @"";
+    char *value = nullptr;
+    if (mpv_get_property(_mpv, name, MPV_FORMAT_STRING, &value) < 0 || !value) {
+        return fallback ?: @"";
+    }
+    NSString *result = [NSString stringWithUTF8String:value] ?: (fallback ?: @"");
+    mpv_free(value);
+    return result;
+}
+
+- (void)setStringProperty:(const char *)name value:(NSString *)value {
+    if (!_mpv) return;
+    mpv_set_property_string(_mpv, name, (value ?: @"").UTF8String);
+}
+
+- (void)command:(NSArray<NSString *> *)args {
+    if (!_mpv || args.count == 0) return;
+    std::vector<const char *> cargs;
+    cargs.reserve(args.count + 1);
+    for (NSString *arg in args) {
+        cargs.push_back((arg ?: @"").UTF8String);
+    }
+    cargs.push_back(nullptr);
+    mpv_command(_mpv, cargs.data());
+}
+
+- (void)removeExternalSubtitleTracks {
+    long long count = [self int64Property:"track-list/count" fallback:0];
+    if (count <= 0) return;
+    for (long long index = count - 1; index >= 0; index--) {
+        NSString *typeKey = [NSString stringWithFormat:@"track-list/%lld/type", index];
+        NSString *externalKey = [NSString stringWithFormat:@"track-list/%lld/external", index];
+        NSString *idKey = [NSString stringWithFormat:@"track-list/%lld/id", index];
+        NSString *type = [self stringProperty:typeKey.UTF8String fallback:@""];
+        BOOL external = [self flagProperty:externalKey.UTF8String fallback:NO];
+        if ([type isEqualToString:@"sub"] && external) {
+            long long trackId = [self int64Property:idKey.UTF8String fallback:-1];
+            if (trackId >= 0) {
+                [self command:@[@"sub-remove", [NSString stringWithFormat:@"%lld", trackId]]];
+            }
+        }
+    }
+}
+
+- (NSString *)tracksJsonForType:(NSString *)wantedType {
+    if (!_mpv) return @"[]";
+    NSMutableArray<NSDictionary *> *tracks = [NSMutableArray array];
+    long long count = [self int64Property:"track-list/count" fallback:0];
+    int logicalIndex = 0;
+
+    for (long long index = 0; index < count; index++) {
+        NSString *prefix = [NSString stringWithFormat:@"track-list/%lld", index];
+        NSString *type = [self stringProperty:[[prefix stringByAppendingString:@"/type"] UTF8String] fallback:@""];
+        if (![type isEqualToString:wantedType]) {
+            continue;
+        }
+
+        long long trackId = [self int64Property:[[prefix stringByAppendingString:@"/id"] UTF8String] fallback:logicalIndex + 1];
+        NSString *title = [self trackStringAtIndex:index field:@"title"];
+        NSString *language = [self trackStringAtIndex:index field:@"lang"];
+        NSString *codec = [self trackStringAtIndex:index field:@"codec"];
+        NSString *decoderDescription = [self trackStringAtIndex:index field:@"decoder-desc"];
+        NSString *channels = [self trackStringAtIndex:index field:@"demux-channels"];
+        long long channelCount = [self int64Property:[[prefix stringByAppendingString:@"/demux-channel-count"] UTF8String] fallback:0];
+        BOOL selected = [self flagProperty:[[prefix stringByAppendingString:@"/selected"] UTF8String] fallback:NO];
+        BOOL forced = [self flagProperty:[[prefix stringByAppendingString:@"/forced"] UTF8String] fallback:NO];
+        NSString *label = [self formatTrackTitleWithType:type
+                                                   index:logicalIndex
+                                                   title:title
+                                                language:language
+                                                   codec:codec
+                                      decoderDescription:decoderDescription
+                                                channels:channels
+                                            channelCount:(int)channelCount];
+        [tracks addObject:@{
+            @"index": @(logicalIndex),
+            @"id": [NSString stringWithFormat:@"%lld", trackId],
+            @"label": label ?: @"",
+            @"language": language ?: @"",
+            @"selected": @(selected),
+            @"forced": @(forced),
+        }];
+        logicalIndex += 1;
+    }
+
+    NSData *data = [NSJSONSerialization dataWithJSONObject:tracks options:0 error:nil];
+    if (!data) return @"[]";
+    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"[]";
+}
+
+- (NSString *)trackStringAtIndex:(long long)index field:(NSString *)field {
+    NSString *key = [NSString stringWithFormat:@"track-list/%lld/%@", index, field];
+    return [[self stringProperty:key.UTF8String fallback:@""] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+}
+
+- (NSString *)formatTrackTitleWithType:(NSString *)type
+                                 index:(int)index
+                                 title:(NSString *)title
+                              language:(NSString *)language
+                                 codec:(NSString *)codec
+                    decoderDescription:(NSString *)decoderDescription
+                              channels:(NSString *)channels
+                          channelCount:(int)channelCount {
+    NSString *base = [self ifNotBlank:title]
+        ?: [self localizedLanguageName:language]
+        ?: ([type isEqualToString:@"sub"]
+            ? [NSString stringWithFormat:@"Subtitle %d", index + 1]
+            : [NSString stringWithFormat:@"Track %d", index + 1]);
+    NSString *codecName = [self codecDisplayName:codec] ?: [self codecDisplayName:decoderDescription];
+    NSString *channelName = [type isEqualToString:@"audio"]
+        ? [self channelLayoutNameWithChannels:channels channelCount:channelCount]
+        : nil;
+    NSMutableArray<NSString *> *details = [NSMutableArray array];
+    for (NSString *detail in @[channelName ?: @"", codecName ?: @""]) {
+        if (detail.length == 0) continue;
+        if ([base rangeOfString:detail options:NSCaseInsensitiveSearch].location == NSNotFound) {
+            [details addObject:detail];
+        }
+    }
+    return details.count == 0
+        ? base
+        : [NSString stringWithFormat:@"%@ (%@)", base, [details componentsJoinedByString:@", "]];
+}
+
+- (NSString *)ifNotBlank:(NSString *)value {
+    NSString *trimmed = [(value ?: @"") stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    return trimmed.length == 0 ? nil : trimmed;
+}
+
+- (NSString *)localizedLanguageName:(NSString *)languageCode {
+    NSString *code = [self ifNotBlank:languageCode];
+    if (!code) return nil;
+    return [[NSLocale currentLocale] displayNameForKey:NSLocaleLanguageCode value:code] ?: code;
+}
+
+- (NSString *)channelLayoutNameWithChannels:(NSString *)channels channelCount:(int)channelCount {
+    NSString *normalized = [self ifNotBlank:channels];
+    if (normalized && ![normalized isEqualToString:@"unknown"]) {
+        NSString *lower = normalized.lowercaseString;
+        if ([lower isEqualToString:@"mono"]) return @"Mono";
+        if ([lower isEqualToString:@"stereo"]) return @"Stereo";
+        return normalized;
+    }
+    switch (channelCount) {
+        case 1: return @"Mono";
+        case 2: return @"Stereo";
+        case 6: return @"5.1";
+        case 8: return @"7.1";
+        default:
+            return channelCount > 0 ? [NSString stringWithFormat:@"%dch", channelCount] : nil;
+    }
+}
+
+- (NSString *)codecDisplayName:(NSString *)value {
+    NSString *raw = [self ifNotBlank:value];
+    if (!raw) return nil;
+    NSString *codec = raw.lowercaseString;
+    if ([codec containsString:@"eac3"] || [codec containsString:@"e-ac-3"] || [codec containsString:@"e ac-3"]) {
+        return ([codec containsString:@"joc"] || [codec containsString:@"atmos"]) ? @"E-AC-3-JOC" : @"E-AC-3";
+    }
+    if ([codec containsString:@"truehd"] || [codec containsString:@"true hd"]) return @"TrueHD";
+    if ([codec containsString:@"ac3"] || [codec containsString:@"ac-3"]) return @"AC-3";
+    if ([codec containsString:@"dts-hd"] || [codec containsString:@"dtshd"] || [codec containsString:@"dts hd"]) return @"DTS-HD";
+    if ([codec containsString:@"dts"] || [codec isEqualToString:@"dca"]) return @"DTS";
+    if ([codec containsString:@"aac"]) return @"AAC";
+    if ([codec containsString:@"mp3"] || [codec containsString:@"mpeg audio"]) return @"MP3";
+    if ([codec containsString:@"mp2"]) return @"MP2";
+    if ([codec containsString:@"opus"]) return @"Opus";
+    if ([codec containsString:@"vorbis"]) return @"Vorbis";
+    if ([codec containsString:@"flac"]) return @"FLAC";
+    if ([codec containsString:@"alac"]) return @"ALAC";
+    if ([codec containsString:@"pcm"] || [codec containsString:@"wav"]) return @"WAV";
+    if ([codec containsString:@"amr_wb"] || [codec containsString:@"amr-wb"]) return @"AMR-WB";
+    if ([codec containsString:@"amr_nb"] || [codec containsString:@"amr-nb"]) return @"AMR-NB";
+    if ([codec containsString:@"amr"]) return @"AMR";
+    if ([codec containsString:@"iamf"]) return @"IAMF";
+    if ([codec containsString:@"mpegh"] || [codec containsString:@"mpeg-h"]) return @"MPEG-H";
+    if ([codec containsString:@"pgs"] || [codec containsString:@"hdmv"]) return @"PGS";
+    if ([codec containsString:@"subrip"] || [codec isEqualToString:@"srt"]) return @"SRT";
+    if ([codec containsString:@"ass"] || [codec containsString:@"ssa"]) return @"SSA";
+    if ([codec containsString:@"webvtt"] || [codec isEqualToString:@"vtt"]) return @"VTT";
+    if ([codec containsString:@"ttml"]) return @"TTML";
+    if ([codec containsString:@"mov_text"] || [codec containsString:@"tx3g"]) return @"TX3G";
+    if ([codec containsString:@"dvb"]) return @"DVB";
+    return raw;
+}
+
 - (void)handleScriptMessage:(NSDictionary *)message {
     NSString *type = message[@"type"];
     if (![type isKindOfClass:[NSString class]]) {
@@ -527,6 +851,17 @@ static NSString *javaScriptStringLiteral(NSString *value) {
     }
 
     NSNumber *value = message[@"value"];
+    if ([type isEqualToString:@"selectAudioTrack"] && value) {
+        [self selectAudioTrackId:(int)llround(value.doubleValue)];
+        [self syncControls];
+        return;
+    }
+    if ([type isEqualToString:@"selectSubtitleTrack"] && value) {
+        [self selectSubtitleTrackId:(int)llround(value.doubleValue)];
+        [self syncControls];
+        return;
+    }
+
     if (_eventSink && _eventMethod) {
         [self sendPlayerEvent:type value:value ? value.doubleValue : 0.0];
         return;
@@ -790,4 +1125,155 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_speed(
     if (handle == 0) return 1.0f;
     MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
     return (jfloat)[player speed];
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setResizeMode(
+    JNIEnv * /* env */,
+    jobject /* bridge */,
+    jlong handle,
+    jint mode
+) {
+    if (handle == 0) return;
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player setResizeMode:(int)mode];
+    });
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_audioTracksJson(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle
+) {
+    if (handle == 0) return env->NewStringUTF("[]");
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    NSString *json = [player audioTracksJson] ?: @"[]";
+    return env->NewStringUTF(json.UTF8String);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_subtitleTracksJson(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle
+) {
+    if (handle == 0) return env->NewStringUTF("[]");
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    NSString *json = [player subtitleTracksJson] ?: @"[]";
+    return env->NewStringUTF(json.UTF8String);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_selectAudioTrack(
+    JNIEnv * /* env */,
+    jobject /* bridge */,
+    jlong handle,
+    jint trackId
+) {
+    if (handle == 0) return;
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player selectAudioTrackId:(int)trackId];
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_selectSubtitleTrack(
+    JNIEnv * /* env */,
+    jobject /* bridge */,
+    jlong handle,
+    jint trackId
+) {
+    if (handle == 0) return;
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player selectSubtitleTrackId:(int)trackId];
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_addSubtitleUrl(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle,
+    jstring url
+) {
+    if (handle == 0) return;
+    std::string subtitleUrl = jstringToString(env, url);
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player addSubtitleUrl:[NSString stringWithUTF8String:subtitleUrl.c_str()]];
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_clearExternalSubtitles(
+    JNIEnv * /* env */,
+    jobject /* bridge */,
+    jlong handle
+) {
+    if (handle == 0) return;
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player removeExternalSubtitles];
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_clearExternalSubtitlesAndSelect(
+    JNIEnv * /* env */,
+    jobject /* bridge */,
+    jlong handle,
+    jint trackId
+) {
+    if (handle == 0) return;
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player removeExternalSubtitlesAndSelect:(int)trackId];
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSubtitleDelayMs(
+    JNIEnv * /* env */,
+    jobject /* bridge */,
+    jlong handle,
+    jint delayMs
+) {
+    if (handle == 0) return;
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player setSubtitleDelayMs:(int)delayMs];
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_applySubtitleStyle(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle,
+    jstring textColor,
+    jstring backgroundColor,
+    jstring outlineColor,
+    jfloat outlineSize,
+    jboolean bold,
+    jfloat fontSize,
+    jint subPos
+) {
+    if (handle == 0) return;
+    std::string text = jstringToString(env, textColor);
+    std::string background = jstringToString(env, backgroundColor);
+    std::string outline = jstringToString(env, outlineColor);
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player applySubtitleStyleWithTextColor:[NSString stringWithUTF8String:text.c_str()]
+                                backgroundColor:[NSString stringWithUTF8String:background.c_str()]
+                                    outlineColor:[NSString stringWithUTF8String:outline.c_str()]
+                                     outlineSize:(double)outlineSize
+                                            bold:bold == JNI_TRUE
+                                        fontSize:(double)fontSize
+                                          subPos:(int)subPos];
+    });
 }

@@ -1,22 +1,44 @@
 package com.nuvio.app.features.player.desktop
 
+import androidx.compose.ui.graphics.Color
+import com.nuvio.app.features.player.PlayerControlAddonSubtitleItem
+import com.nuvio.app.features.player.PlayerControlEpisodeItem
+import com.nuvio.app.features.player.PlayerControlFilterItem
+import com.nuvio.app.features.player.PlayerControlSeasonItem
+import com.nuvio.app.features.player.PlayerControlSourceItem
+import com.nuvio.app.features.player.PlayerControlSubtitleCueItem
 import com.nuvio.app.features.player.AudioTrack
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.PlayerEngineController
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
+import com.nuvio.app.features.player.PlayerResizeMode
+import com.nuvio.app.features.player.SUBTITLE_DELAY_MAX_MS
+import com.nuvio.app.features.player.SUBTITLE_DELAY_MIN_MS
+import com.nuvio.app.features.player.SubtitleColorSwatches
+import com.nuvio.app.features.player.SubtitleStyleState
 import com.nuvio.app.features.player.SubtitleTrack
+import com.nuvio.app.features.player.inferForcedSubtitleTrack
+import com.nuvio.app.features.player.toStorageHexString
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import javax.swing.SwingUtilities
 import kotlin.concurrent.Volatile
 
 internal class NativePlayerController(
     private val host: NativePlayerHost,
 ) : PlayerEngineController {
+    private companion object {
+        val json = Json { ignoreUnknownKeys = true }
+    }
+
     @Volatile
     private var handle: Long = 0L
     private var pendingSource: PendingSource? = null
     private var controlsState = PlayerControlsState()
     private var onAction: (PlayerControlsAction) -> Boolean = { false }
+    private var onEvent: (String, Double) -> Boolean = { _, _ -> false }
     private var onScrubChange: (Long) -> Boolean = { false }
     private var onScrubFinished: (Long) -> Boolean = { false }
     private val eventSink = NativePlayerEventSink { type, value ->
@@ -64,10 +86,12 @@ internal class NativePlayerController(
 
     fun setControlCallbacks(
         onAction: (PlayerControlsAction) -> Boolean,
+        onEvent: (String, Double) -> Boolean,
         onScrubChange: (Long) -> Boolean,
         onScrubFinished: (Long) -> Boolean,
     ) {
         this.onAction = onAction
+        this.onEvent = onEvent
         this.onScrubChange = onScrubChange
         this.onScrubFinished = onScrubFinished
     }
@@ -76,6 +100,19 @@ internal class NativePlayerController(
         controlsState = state
         handle.takeIf { it != 0L }?.let { current ->
             NativePlayerBridge.updateControls(current, state.toControlsJson())
+        }
+    }
+
+    fun setResizeMode(mode: PlayerResizeMode) {
+        handle.takeIf { it != 0L }?.let { current ->
+            NativePlayerBridge.setResizeMode(
+                handle = current,
+                mode = when (mode) {
+                    PlayerResizeMode.Fit -> 0
+                    PlayerResizeMode.Fill -> 1
+                    PlayerResizeMode.Zoom -> 2
+                },
+            )
         }
     }
 
@@ -92,6 +129,7 @@ internal class NativePlayerController(
                 }
             }
             else -> {
+                if (onEvent(type, value)) return
                 val action = type.toPlayerControlsAction() ?: return
                 if (!onAction(action)) {
                     handleFallbackAction(action)
@@ -179,13 +217,145 @@ internal class NativePlayerController(
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.setSpeed(it, speed) }
     }
 
-    override fun getAudioTracks(): List<AudioTrack> = emptyList()
-    override fun getSubtitleTracks(): List<SubtitleTrack> = emptyList()
-    override fun selectAudioTrack(index: Int) = Unit
-    override fun selectSubtitleTrack(index: Int) = Unit
-    override fun setSubtitleUri(url: String) = Unit
-    override fun clearExternalSubtitle() = Unit
-    override fun clearExternalSubtitleAndSelect(trackIndex: Int) = Unit
+    override fun getAudioTracks(): List<AudioTrack> =
+        decodeTracks { NativePlayerBridge.audioTracksJson(it) }.map { track ->
+            AudioTrack(
+                index = track.index,
+                id = track.id,
+                label = track.label,
+                language = track.language.takeUnless(String::isBlank),
+                isSelected = track.selected,
+            )
+        }
+
+    override fun getSubtitleTracks(): List<SubtitleTrack> =
+        decodeTracks { NativePlayerBridge.subtitleTracksJson(it) }.map { track ->
+            SubtitleTrack(
+                index = track.index,
+                id = track.id,
+                label = track.label,
+                language = track.language.takeUnless(String::isBlank),
+                isSelected = track.selected,
+                isForced = track.forced || inferForcedSubtitleTrack(
+                    label = track.label,
+                    language = track.language,
+                    trackId = track.id,
+                ),
+            )
+        }
+
+    override fun selectAudioTrack(index: Int) {
+        val current = handle.takeIf { it != 0L } ?: return
+        val trackId = resolveTrackId(index, decodeTracks { NativePlayerBridge.audioTracksJson(it) }) ?: return
+        NativePlayerBridge.selectAudioTrack(current, trackId)
+    }
+
+    override fun selectSubtitleTrack(index: Int) {
+        val current = handle.takeIf { it != 0L } ?: return
+        if (index < 0) {
+            NativePlayerBridge.selectSubtitleTrack(current, -1)
+            return
+        }
+        val trackId = resolveTrackId(index, decodeTracks { NativePlayerBridge.subtitleTracksJson(it) }) ?: return
+        NativePlayerBridge.selectSubtitleTrack(current, trackId)
+    }
+
+    override fun setSubtitleUri(url: String) {
+        handle.takeIf { it != 0L }?.let { NativePlayerBridge.addSubtitleUrl(it, url) }
+    }
+
+    override fun clearExternalSubtitle() {
+        handle.takeIf { it != 0L }?.let(NativePlayerBridge::clearExternalSubtitles)
+    }
+
+    override fun clearExternalSubtitleAndSelect(trackIndex: Int) {
+        val current = handle.takeIf { it != 0L } ?: return
+        val trackId = if (trackIndex < 0) {
+            -1
+        } else {
+            resolveTrackId(trackIndex, decodeTracks { NativePlayerBridge.subtitleTracksJson(it) }) ?: return
+        }
+        NativePlayerBridge.clearExternalSubtitlesAndSelect(current, trackId)
+    }
+
+    override fun setSubtitleDelayMs(delayMs: Int) {
+        handle.takeIf { it != 0L }?.let { current ->
+            NativePlayerBridge.setSubtitleDelayMs(
+                current,
+                delayMs.coerceIn(SUBTITLE_DELAY_MIN_MS, SUBTITLE_DELAY_MAX_MS),
+            )
+        }
+    }
+
+    override fun applySubtitleStyle(style: SubtitleStyleState) {
+        handle.takeIf { it != 0L }?.let { current ->
+            NativePlayerBridge.applySubtitleStyle(
+                handle = current,
+                textColor = style.textColor.toMpvColorString(),
+                backgroundColor = style.backgroundColor.toMpvColorString(),
+                outlineColor = style.outlineColor.toMpvColorString(),
+                outlineSize = if (style.outlineEnabled) style.outlineWidth.toFloat() else 0f,
+                bold = style.bold,
+                fontSize = style.toMpvSubtitleFontSize(),
+                subPos = style.toMpvSubtitlePosition(),
+            )
+        }
+    }
+
+    private fun decodeTracks(readJson: (Long) -> String): List<NativeMpvTrack> {
+        val current = handle.takeIf { it != 0L } ?: return emptyList()
+        return runCatching {
+            json.decodeFromString<List<NativeMpvTrack>>(readJson(current))
+        }.getOrDefault(emptyList())
+    }
+}
+
+@Serializable
+private data class NativeMpvTrack(
+    val index: Int = 0,
+    val id: String = "",
+    val label: String = "",
+    val language: String = "",
+    val selected: Boolean = false,
+    val forced: Boolean = false,
+)
+
+private fun resolveTrackId(index: Int, tracks: List<NativeMpvTrack>): Int? =
+    tracks.firstNotNullOfOrNull { track ->
+        if (track.index == index) {
+            track.id.toIntOrNull()
+        } else {
+            null
+        }
+    } ?: tracks.getOrNull(index)?.id?.toIntOrNull()
+
+private fun Color.toMpvColorString(): String {
+    val alphaInt = (alpha * 255f).toInt().coerceIn(0, 255)
+    val redInt = (red * 255f).toInt().coerceIn(0, 255)
+    val greenInt = (green * 255f).toInt().coerceIn(0, 255)
+    val blueInt = (blue * 255f).toInt().coerceIn(0, 255)
+    return buildString {
+        append('#')
+        append(alphaInt.toHexByte())
+        append(redInt.toHexByte())
+        append(greenInt.toHexByte())
+        append(blueInt.toHexByte())
+    }
+}
+
+private fun SubtitleStyleState.toMpvSubtitlePosition(): Int =
+    (100 - (bottomOffset / 2)).coerceIn(0, 150)
+
+private fun SubtitleStyleState.toMpvSubtitleFontSize(): Float =
+    (fontSizeSp * 3f).coerceIn(24f, 96f)
+
+private fun Int.toHexByte(): String {
+    val digits = "0123456789ABCDEF"
+    val value = coerceIn(0, 255)
+    return buildString {
+        append(digits[value / 16])
+        append(digits[value % 16])
+    }
 }
 
 private data class PendingSource(
@@ -277,6 +447,100 @@ private fun PlayerControlsState.toControlsJson(): String =
         append(',')
         appendJsonField("tapToUnlockLabel", tapToUnlockLabel)
         append(',')
+        appendJsonField("sourcesPanelTitle", sourcesPanelTitle)
+        append(',')
+        appendJsonField("episodesPanelTitle", episodesPanelTitle)
+        append(',')
+        appendJsonField("streamsPanelTitle", streamsPanelTitle)
+        append(',')
+        appendJsonField("allFilterLabel", allFilterLabel)
+        append(',')
+        appendJsonField("reloadLabel", reloadLabel)
+        append(',')
+        appendJsonField("backLabel", backLabel)
+        append(',')
+        appendJsonField("panelCloseLabel", panelCloseLabel)
+        append(',')
+        appendJsonField("cancelLabel", cancelLabel)
+        append(',')
+        appendJsonField("playingLabel", playingLabel)
+        append(',')
+        appendJsonField("noStreamsLabel", noStreamsLabel)
+        append(',')
+        appendJsonField("noEpisodesLabel", noEpisodesLabel)
+        append(',')
+        appendJsonField("submitIntroPanelTitle", submitIntroPanelTitle)
+        append(',')
+        appendJsonField("submitIntroSegmentTypeLabel", submitIntroSegmentTypeLabel)
+        append(',')
+        appendJsonField("submitIntroSegmentIntroLabel", submitIntroSegmentIntroLabel)
+        append(',')
+        appendJsonField("submitIntroSegmentRecapLabel", submitIntroSegmentRecapLabel)
+        append(',')
+        appendJsonField("submitIntroSegmentOutroLabel", submitIntroSegmentOutroLabel)
+        append(',')
+        appendJsonField("submitIntroStartTimeLabel", submitIntroStartTimeLabel)
+        append(',')
+        appendJsonField("submitIntroEndTimeLabel", submitIntroEndTimeLabel)
+        append(',')
+        appendJsonField("submitIntroCaptureLabel", submitIntroCaptureLabel)
+        append(',')
+        appendJsonField("submitIntroSubmitLabel", submitIntroSubmitLabel)
+        append(',')
+        appendJsonField("p2pConsentTitle", p2pConsentTitle)
+        append(',')
+        appendJsonField("p2pConsentBody", p2pConsentBody)
+        append(',')
+        appendJsonField("p2pConsentEnableLabel", p2pConsentEnableLabel)
+        append(',')
+        appendJsonField("p2pConsentCancelLabel", p2pConsentCancelLabel)
+        append(',')
+        appendJsonField("subtitlesPanelTitle", subtitlesPanelTitle)
+        append(',')
+        appendJsonField("subtitleBuiltInTabLabel", subtitleBuiltInTabLabel)
+        append(',')
+        appendJsonField("subtitleAddonsTabLabel", subtitleAddonsTabLabel)
+        append(',')
+        appendJsonField("subtitleStyleTabLabel", subtitleStyleTabLabel)
+        append(',')
+        appendJsonField("noneLabel", noneLabel)
+        append(',')
+        appendJsonField("fetchSubtitlesLabel", fetchSubtitlesLabel)
+        append(',')
+        appendJsonField("subtitleDelayLabel", subtitleDelayLabel)
+        append(',')
+        appendJsonField("resetLabel", resetLabel)
+        append(',')
+        appendJsonField("autoSyncLabel", autoSyncLabel)
+        append(',')
+        appendJsonField("reloadSmallLabel", reloadSmallLabel)
+        append(',')
+        appendJsonField("captureLineLabel", captureLineLabel)
+        append(',')
+        appendJsonField("selectAddonSubtitleFirstLabel", selectAddonSubtitleFirstLabel)
+        append(',')
+        appendJsonField("loadingSubtitleLinesLabel", loadingSubtitleLinesLabel)
+        append(',')
+        appendJsonField("fontSizeLabel", fontSizeLabel)
+        append(',')
+        appendJsonField("outlineLabel", outlineLabel)
+        append(',')
+        appendJsonField("boldLabel", boldLabel)
+        append(',')
+        appendJsonField("bottomOffsetLabel", bottomOffsetLabel)
+        append(',')
+        appendJsonField("colorLabel", colorLabel)
+        append(',')
+        appendJsonField("textOpacityLabel", textOpacityLabel)
+        append(',')
+        appendJsonField("outlineColorLabel", outlineColorLabel)
+        append(',')
+        appendJsonField("resetDefaultsLabel", resetDefaultsLabel)
+        append(',')
+        appendJsonField("onLabel", onLabel)
+        append(',')
+        appendJsonField("offLabel", offLabel)
+        append(',')
         appendJsonField("isPlaying", isPlaying)
         append(',')
         appendJsonField("isLoading", isLoading)
@@ -300,6 +564,66 @@ private fun PlayerControlsState.toControlsJson(): String =
         appendJsonField("durationMs", durationMs)
         append(',')
         appendJsonField("positionMs", positionMs)
+        append(',')
+        appendJsonField("sourceIsLoading", sourceIsLoading)
+        append(',')
+        appendJsonArrayField("sourceFilters", sourceFilters) { appendFilterItemJson(it) }
+        append(',')
+        appendJsonArrayField("sourceItems", sourceItems) { appendSourceItemJson(it) }
+        append(',')
+        appendJsonArrayField("episodeItems", episodeItems) { appendEpisodeItemJson(it) }
+        append(',')
+        appendJsonArrayField("episodeSeasons", episodeSeasons) { appendSeasonItemJson(it) }
+        append(',')
+        appendJsonField("episodeStreamsVisible", episodeStreamsVisible)
+        append(',')
+        appendJsonField("episodeStreamsIsLoading", episodeStreamsIsLoading)
+        append(',')
+        appendJsonField("selectedEpisodeLabel", selectedEpisodeLabel)
+        append(',')
+        appendJsonArrayField("episodeStreamFilters", episodeStreamFilters) { appendFilterItemJson(it) }
+        append(',')
+        appendJsonArrayField("episodeStreamItems", episodeStreamItems) { appendSourceItemJson(it) }
+        append(',')
+        appendJsonField("submitIntroSegmentType", submitIntroSegmentType)
+        append(',')
+        appendJsonField("submitIntroStartTime", submitIntroStartTime)
+        append(',')
+        appendJsonField("submitIntroEndTime", submitIntroEndTime)
+        append(',')
+        appendJsonField("isSubmitIntroSubmitting", isSubmitIntroSubmitting)
+        append(',')
+        appendJsonField("submitIntroStatusMessage", submitIntroStatusMessage)
+        append(',')
+        appendJsonField("showP2pConsent", showP2pConsent)
+        append(',')
+        appendJsonField("subtitleActiveTab", subtitleActiveTab)
+        append(',')
+        appendJsonArrayField("addonSubtitleItems", addonSubtitleItems) { appendAddonSubtitleItemJson(it) }
+        append(',')
+        appendJsonField("isLoadingAddonSubtitles", isLoadingAddonSubtitles)
+        append(',')
+        appendJsonField("selectedAddonSubtitleId", selectedAddonSubtitleId)
+        append(',')
+        appendJsonField("useCustomSubtitles", useCustomSubtitles)
+        append(',')
+        appendJsonField("subtitleDelayMs", subtitleDelayMs)
+        append(',')
+        appendJsonField("hasSelectedAddonSubtitle", hasSelectedAddonSubtitle)
+        append(',')
+        appendJsonField("subtitleAutoSyncCapturedPositionMs", subtitleAutoSyncCapturedPositionMs)
+        append(',')
+        appendJsonArrayField("subtitleAutoSyncCues", subtitleAutoSyncCues) { appendSubtitleCueItemJson(it) }
+        append(',')
+        appendJsonField("subtitleAutoSyncIsLoading", subtitleAutoSyncIsLoading)
+        append(',')
+        appendJsonField("subtitleAutoSyncErrorMessage", subtitleAutoSyncErrorMessage)
+        append(',')
+        appendJsonField("subtitleStyle", subtitleStyle)
+        append(',')
+        appendJsonArrayField("subtitleColorSwatches", SubtitleColorSwatches.map { it.toStorageHexString() }) { append(it.toJsonString()) }
+        append(',')
+        appendJsonField("closeModalsToken", closeModalsToken)
         append('}')
     }
 
@@ -314,6 +638,138 @@ private fun StringBuilder.appendJsonField(name: String, value: Boolean) {
 
 private fun StringBuilder.appendJsonField(name: String, value: Long) {
     append('"').append(name).append("\":").append(value)
+}
+
+private fun StringBuilder.appendJsonField(name: String, value: Int) {
+    append('"').append(name).append("\":").append(value)
+}
+
+private fun StringBuilder.appendJsonField(name: String, value: SubtitleStyleState) {
+    append('"').append(name).append("\":")
+    appendSubtitleStyleJson(value)
+}
+
+private inline fun <T> StringBuilder.appendJsonArrayField(
+    name: String,
+    values: List<T>,
+    appendValue: StringBuilder.(T) -> Unit,
+) {
+    append('"').append(name).append("\":[")
+    values.forEachIndexed { index, value ->
+        if (index > 0) append(',')
+        appendValue(value)
+    }
+    append(']')
+}
+
+private fun StringBuilder.appendFilterItemJson(item: PlayerControlFilterItem) {
+    append('{')
+    appendJsonField("id", item.id)
+    append(',')
+    appendJsonField("label", item.label)
+    append(',')
+    appendJsonField("isSelected", item.isSelected)
+    append(',')
+    appendJsonField("isLoading", item.isLoading)
+    append(',')
+    appendJsonField("hasError", item.hasError)
+    append('}')
+}
+
+private fun StringBuilder.appendSeasonItemJson(item: PlayerControlSeasonItem) {
+    append('{')
+    appendJsonField("season", item.season)
+    append(',')
+    appendJsonField("label", item.label)
+    append(',')
+    appendJsonField("isSelected", item.isSelected)
+    append('}')
+}
+
+private fun StringBuilder.appendSourceItemJson(item: PlayerControlSourceItem) {
+    append('{')
+    appendJsonField("index", item.index)
+    append(',')
+    appendJsonField("filterId", item.filterId)
+    append(',')
+    appendJsonField("label", item.label)
+    append(',')
+    appendJsonField("subtitle", item.subtitle)
+    append(',')
+    appendJsonField("addonName", item.addonName)
+    append(',')
+    appendJsonField("isCurrent", item.isCurrent)
+    append(',')
+    appendJsonField("isEnabled", item.isEnabled)
+    append('}')
+}
+
+private fun StringBuilder.appendEpisodeItemJson(item: PlayerControlEpisodeItem) {
+    append('{')
+    appendJsonField("index", item.index)
+    append(',')
+    appendJsonField("id", item.id)
+    append(',')
+    appendJsonField("title", item.title)
+    append(',')
+    appendJsonField("code", item.code)
+    append(',')
+    appendJsonField("overview", item.overview)
+    append(',')
+    appendJsonField("thumbnail", item.thumbnail)
+    append(',')
+    appendJsonField("season", item.season)
+    append(',')
+    appendJsonField("episode", item.episode)
+    append(',')
+    appendJsonField("isCurrent", item.isCurrent)
+    append(',')
+    appendJsonField("isWatched", item.isWatched)
+    append('}')
+}
+
+private fun StringBuilder.appendAddonSubtitleItemJson(item: PlayerControlAddonSubtitleItem) {
+    append('{')
+    appendJsonField("index", item.index)
+    append(',')
+    appendJsonField("id", item.id)
+    append(',')
+    appendJsonField("display", item.display)
+    append(',')
+    appendJsonField("languageLabel", item.languageLabel)
+    append(',')
+    appendJsonField("addonName", item.addonName)
+    append(',')
+    appendJsonField("isSelected", item.isSelected)
+    append('}')
+}
+
+private fun StringBuilder.appendSubtitleCueItemJson(item: PlayerControlSubtitleCueItem) {
+    append('{')
+    appendJsonField("index", item.index)
+    append(',')
+    appendJsonField("timeMs", item.timeMs)
+    append(',')
+    appendJsonField("timeLabel", item.timeLabel)
+    append(',')
+    appendJsonField("text", item.text)
+    append('}')
+}
+
+private fun StringBuilder.appendSubtitleStyleJson(style: SubtitleStyleState) {
+    append('{')
+    appendJsonField("textColor", style.textColor.toStorageHexString())
+    append(',')
+    appendJsonField("outlineColor", style.outlineColor.toStorageHexString())
+    append(',')
+    appendJsonField("outlineEnabled", style.outlineEnabled)
+    append(',')
+    appendJsonField("bold", style.bold)
+    append(',')
+    appendJsonField("fontSizeSp", style.fontSizeSp)
+    append(',')
+    appendJsonField("bottomOffset", style.bottomOffset)
+    append('}')
 }
 
 private fun String.toJsonString(): String =

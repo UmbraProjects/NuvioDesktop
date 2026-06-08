@@ -19,6 +19,7 @@
       --header-icon: 20px;
       --header-button: 36px;
       --side-pad: 10px;
+      --side-icon: 26px;
       --play-pad: 13px;
       --play-icon: 34px;
       color-scheme: dark;
@@ -40,6 +41,7 @@
         --header-icon: 20px;
         --header-button: 36px;
         --side-pad: 12px;
+        --side-icon: 30px;
         --play-pad: 15px;
         --play-icon: 38px;
       }
@@ -61,6 +63,7 @@
         --header-icon: 22px;
         --header-button: 38px;
         --side-pad: 13px;
+        --side-icon: 32px;
         --play-pad: 16px;
         --play-icon: 42px;
       }
@@ -82,6 +85,7 @@
         --header-icon: 24px;
         --header-button: 40px;
         --side-pad: 14px;
+        --side-icon: 34px;
         --play-pad: 18px;
         --play-icon: 44px;
       }
@@ -183,8 +187,8 @@
     .header {
       position: absolute;
       top: calc(var(--vp) / 4 + env(safe-area-inset-top));
-      left: calc(var(--hp) * 2);
-      right: calc(var(--hp) * 2);
+      left: var(--hp);
+      right: var(--hp);
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
@@ -289,7 +293,11 @@
       padding: var(--play-pad);
     }
 
-    .side-control svg,
+    .side-control svg {
+      width: var(--side-icon);
+      height: var(--side-icon);
+    }
+
     .play-control svg {
       width: var(--play-icon);
       height: var(--play-icon);
@@ -297,8 +305,8 @@
 
     .progress {
       position: absolute;
-      left: calc(var(--hp) * 2);
-      right: calc(var(--hp) * 2);
+      left: var(--hp);
+      right: var(--hp);
       bottom: var(--slider-bottom);
       display: flex;
       flex-direction: column;
@@ -436,6 +444,510 @@
       font-weight: 500;
     }
 
+    .modal-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 30;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(0, 0, 0, .54);
+    }
+
+    .track-panel {
+      width: min(90vw, 420px);
+      max-height: min(90vh, 600px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, .16);
+      background: #16171d;
+      color: #fff;
+      box-shadow: 0 20px 70px rgba(0, 0, 0, .45);
+    }
+
+    .track-panel.wide {
+      width: min(92vw, 680px);
+    }
+
+    .track-panel.submit {
+      width: min(92vw, 520px);
+    }
+
+    .track-header {
+      padding: 20px;
+      font-size: 18px;
+      line-height: 1.25;
+      font-weight: 700;
+    }
+
+    .track-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 18px 20px 14px;
+    }
+
+    .track-title {
+      min-width: 0;
+      font-size: 18px;
+      line-height: 1.25;
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .panel-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+
+    .panel-button,
+    .filter-chip,
+    .capture-button {
+      min-height: 32px;
+      padding: 7px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      background: rgba(255, 255, 255, .08);
+      color: rgba(255, 255, 255, .72);
+      font-size: 12px;
+      line-height: 1.2;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .panel-button.primary,
+    .filter-chip.selected,
+    .segment-button.selected {
+      background: #2f6fed;
+      color: #fff;
+      border-color: rgba(255, 255, 255, .18);
+    }
+
+    .filter-row {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 0 20px 12px;
+    }
+
+    .subtitle-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      padding: 0 20px 16px;
+    }
+
+    .subtitle-tab {
+      min-width: 0;
+      min-height: 34px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      background: rgba(255, 255, 255, .08);
+      color: rgba(255, 255, 255, .72);
+      font-size: 12px;
+      line-height: 1.2;
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .subtitle-tab.selected {
+      border-radius: 12px;
+      background: #2f6fed;
+      color: #fff;
+    }
+
+    .style-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow: auto;
+      padding: 0 20px 20px;
+    }
+
+    .style-card {
+      display: flex;
+      flex-direction: column;
+      gap: 13px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      background: rgba(255, 255, 255, .07);
+      padding: 14px;
+    }
+
+    .style-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .style-label {
+      min-width: 0;
+      color: rgba(255, 255, 255, .72);
+      font-size: 13px;
+      line-height: 1.25;
+      font-weight: 700;
+    }
+
+    .stepper {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+
+    .stepper-value {
+      min-width: 64px;
+      text-align: center;
+      color: rgba(255, 255, 255, .92);
+      font-size: 13px;
+      line-height: 1.2;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .round-step {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      background: rgba(255, 255, 255, .08);
+      color: #fff;
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .swatch-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .swatch-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .swatch {
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      border: 2px solid rgba(255, 255, 255, .28);
+      background: var(--swatch);
+    }
+
+    .swatch.transparent {
+      background:
+        linear-gradient(45deg, rgba(255,255,255,.16) 25%, transparent 25% 75%, rgba(255,255,255,.16) 75%),
+        linear-gradient(45deg, rgba(255,255,255,.16) 25%, transparent 25% 75%, rgba(255,255,255,.16) 75%);
+      background-position: 0 0, 6px 6px;
+      background-size: 12px 12px;
+    }
+
+    .swatch.selected {
+      border-color: #9ecaff;
+      box-shadow: 0 0 0 2px rgba(47, 111, 237, .35);
+    }
+
+    .auto-sync-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, .1);
+      background: rgba(0, 0, 0, .22);
+      padding: 12px;
+    }
+
+    .sync-cue {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      width: 100%;
+      padding: 8px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .08);
+      text-align: left;
+    }
+
+    .sync-time {
+      flex: 0 0 auto;
+      color: #9ecaff;
+      font-size: 11px;
+      line-height: 1.25;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sync-text {
+      min-width: 0;
+      color: rgba(255, 255, 255, .82);
+      font-size: 12px;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .track-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow: auto;
+      padding: 0 20px 20px;
+    }
+
+    .track-row {
+      width: 100%;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .08);
+      color: rgba(255, 255, 255, .92);
+      text-align: left;
+    }
+
+    .track-row.stream-row,
+    .track-row.episode-row {
+      align-items: stretch;
+      justify-content: flex-start;
+      min-height: 62px;
+    }
+
+    .track-row.disabled {
+      opacity: .45;
+    }
+
+    .track-row.selected {
+      background: #26384f;
+      color: #e2ecff;
+      font-weight: 700;
+    }
+
+    .track-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    .track-copy,
+    .episode-copy {
+      min-width: 0;
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .track-row-top,
+    .episode-row-top {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .stream-name,
+    .episode-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+      line-height: 1.25;
+      font-weight: 700;
+    }
+
+    .stream-subtitle,
+    .episode-overview,
+    .stream-addon {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: rgba(255, 255, 255, .64);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+
+    .episode-overview {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      white-space: normal;
+    }
+
+    .stream-addon {
+      color: rgba(255, 255, 255, .5);
+      font-style: italic;
+      white-space: nowrap;
+    }
+
+    .status-chip,
+    .episode-code {
+      flex: 0 0 auto;
+      border-radius: 999px;
+      padding: 3px 7px;
+      font-size: 10px;
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: 0;
+      background: rgba(255, 255, 255, .12);
+      color: rgba(255, 255, 255, .68);
+    }
+
+    .status-chip {
+      background: #2f6fed;
+      color: #fff;
+    }
+
+    .episode-thumb {
+      width: 82px;
+      height: 48px;
+      flex: 0 0 auto;
+      overflow: hidden;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .08);
+    }
+
+    .episode-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .track-check {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+      color: #9ecaff;
+      opacity: 0;
+    }
+
+    .track-row.selected .track-check {
+      opacity: 1;
+    }
+
+    .track-empty {
+      padding: 36px 12px 44px;
+      color: rgba(255, 255, 255, .64);
+      font-size: 14px;
+      line-height: 1.35;
+      text-align: center;
+    }
+
+    .intro-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow: auto;
+      padding: 0 20px 20px;
+    }
+
+    .form-label {
+      color: rgba(255, 255, 255, .64);
+      font-size: 11px;
+      line-height: 1.2;
+      font-weight: 800;
+    }
+
+    .segment-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .segment-button {
+      min-width: 0;
+      min-height: 42px;
+      padding: 9px 8px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      background: rgba(255, 255, 255, .08);
+      color: rgba(255, 255, 255, .72);
+      font-size: 13px;
+      line-height: 1.2;
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .time-field-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .time-field-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .time-input {
+      width: 100%;
+      min-height: 46px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, .08);
+      color: #fff;
+      font: inherit;
+      font-size: 16px;
+      outline: none;
+    }
+
+    .submit-status {
+      min-height: 18px;
+      color: #ffb4b4;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .consent-body {
+      overflow: auto;
+      padding: 0 20px 20px;
+      color: rgba(255, 255, 255, .74);
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: pre-line;
+    }
+
+    .consent-body + .modal-actions {
+      padding: 0 20px 20px;
+    }
+
+    .modal-actions {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+      gap: 10px;
+    }
+
     @media (max-width: 760px) {
       .header {
         left: var(--hp);
@@ -454,6 +966,14 @@
       }
 
       .action.optional {
+        display: none;
+      }
+
+      .modal-layer {
+        padding: 14px;
+      }
+
+      .episode-thumb {
         display: none;
       }
     }
@@ -520,6 +1040,9 @@
     <symbol id="icon-open" viewBox="0 0 24 24">
       <path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3ZM5 5h6v2H7v10h10v-4h2v6H5V5Z"/>
     </symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24">
+      <path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2Z"/>
+    </symbol>
   </svg>
 
   <div class="player" id="playerRoot">
@@ -573,6 +1096,188 @@
           <div class="locked-label" id="lockedLabel">Tap to unlock</div>
         </div>
       </section>
+      <section class="modal-layer" id="audioModal" aria-label="Audio tracks" hidden>
+        <div class="track-panel">
+          <div class="track-header">Audio tracks</div>
+          <div class="track-list" id="audioTrackList"></div>
+        </div>
+      </section>
+      <section class="modal-layer" id="subtitleModal" aria-label="Subtitles" hidden>
+        <div class="track-panel">
+          <div class="track-header" id="subtitlePanelTitle">Subtitles</div>
+          <div class="subtitle-tabs">
+            <button class="subtitle-tab selected" id="subtitleBuiltInTab" type="button">Built-in</button>
+            <button class="subtitle-tab" id="subtitleAddonsTab" type="button">Addons</button>
+            <button class="subtitle-tab" id="subtitleStyleTab" type="button">Style</button>
+          </div>
+          <div class="track-list" id="subtitleTrackList"></div>
+          <div class="track-list" id="addonSubtitleList" hidden></div>
+          <div class="style-panel" id="subtitleStylePanel" hidden>
+            <div class="style-card">
+              <div class="style-row">
+                <span class="style-label" id="subtitleDelayLabel">Subtitle Delay</span>
+                <div class="stepper">
+                  <button class="round-step" id="subtitleDelayMinus" type="button">-</button>
+                  <span class="stepper-value" id="subtitleDelayValue">+0.000s</span>
+                  <button class="round-step" id="subtitleDelayPlus" type="button">+</button>
+                </div>
+              </div>
+              <div class="style-row">
+                <span></span>
+                <button class="panel-button" id="subtitleDelayReset" type="button">Reset</button>
+              </div>
+              <div class="auto-sync-card">
+                <div class="style-row">
+                  <span class="style-label" id="autoSyncLabel">Auto Sync</span>
+                  <div class="panel-actions">
+                    <button class="panel-button" id="autoSyncReload" type="button">Reload</button>
+                    <button class="panel-button" id="autoSyncCapture" type="button">Capture</button>
+                  </div>
+                </div>
+                <div class="stream-subtitle" id="autoSyncStatus"></div>
+                <div id="autoSyncCueList"></div>
+              </div>
+              <div class="style-row">
+                <span class="style-label" id="fontSizeLabel">Font Size</span>
+                <div class="stepper">
+                  <button class="round-step" id="fontSizeMinus" type="button">-</button>
+                  <span class="stepper-value" id="fontSizeValue">18sp</span>
+                  <button class="round-step" id="fontSizePlus" type="button">+</button>
+                </div>
+              </div>
+              <div class="style-row">
+                <span class="style-label" id="outlineLabel">Outline</span>
+                <button class="panel-button" id="outlineToggle" type="button">On</button>
+              </div>
+              <div class="style-row">
+                <span class="style-label" id="boldLabel">Bold</span>
+                <button class="panel-button" id="boldToggle" type="button">Off</button>
+              </div>
+              <div class="style-row">
+                <span class="style-label" id="bottomOffsetLabel">Bottom Offset</span>
+                <div class="stepper">
+                  <button class="round-step" id="bottomOffsetMinus" type="button">-</button>
+                  <span class="stepper-value" id="bottomOffsetValue">20</span>
+                  <button class="round-step" id="bottomOffsetPlus" type="button">+</button>
+                </div>
+              </div>
+              <div class="swatch-section">
+                <span class="style-label" id="subtitleColorLabel">Color</span>
+                <div class="swatch-row" id="subtitleColorSwatches"></div>
+              </div>
+              <div class="style-row">
+                <span class="style-label" id="textOpacityLabel">Text Opacity</span>
+                <div class="stepper">
+                  <button class="round-step" id="textOpacityMinus" type="button">-</button>
+                  <span class="stepper-value" id="textOpacityValue">100%</span>
+                  <button class="round-step" id="textOpacityPlus" type="button">+</button>
+                </div>
+              </div>
+              <div class="swatch-section">
+                <span class="style-label" id="outlineColorLabel">Outline Color</span>
+                <div class="swatch-row" id="outlineColorSwatches"></div>
+              </div>
+              <div class="style-row">
+                <span></span>
+                <button class="panel-button" id="subtitleStyleReset" type="button">Reset Defaults</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="modal-layer" id="sourceModal" aria-label="Sources" hidden>
+        <div class="track-panel wide">
+          <div class="track-header-row">
+            <div class="track-title" id="sourcePanelTitle">Sources</div>
+            <div class="panel-actions">
+              <button class="panel-button" id="sourceReloadButton" type="button">Reload</button>
+              <button class="panel-button" id="sourceCloseButton" type="button">Close</button>
+            </div>
+          </div>
+          <div class="filter-row" id="sourceFilterList"></div>
+          <div class="track-list" id="sourceList"></div>
+        </div>
+      </section>
+      <section class="modal-layer" id="episodesModal" aria-label="Episodes" hidden>
+        <div class="track-panel wide">
+          <div id="episodeListView">
+            <div class="track-header-row">
+              <div class="track-title" id="episodesPanelTitle">Episodes</div>
+              <div class="panel-actions">
+                <button class="panel-button" id="episodesCloseButton" type="button">Close</button>
+              </div>
+            </div>
+            <div class="filter-row" id="seasonFilterList"></div>
+            <div class="track-list" id="episodeList"></div>
+          </div>
+          <div id="episodeStreamsView" hidden>
+            <div class="track-header-row">
+              <div class="track-title" id="streamsPanelTitle">Streams</div>
+              <div class="panel-actions">
+                <button class="panel-button" id="episodeBackButton" type="button">Back</button>
+                <button class="panel-button" id="episodeReloadButton" type="button">Reload</button>
+                <button class="panel-button" id="episodeStreamsCloseButton" type="button">Close</button>
+              </div>
+            </div>
+            <div class="filter-row" id="episodeStreamFilterList"></div>
+            <div class="track-list" id="episodeStreamList"></div>
+          </div>
+        </div>
+      </section>
+      <section class="modal-layer" id="submitIntroModal" aria-label="Submit timestamps" hidden>
+        <div class="track-panel submit">
+          <div class="track-header-row">
+            <div class="track-title" id="submitIntroPanelTitle">Submit Timestamps</div>
+            <div class="panel-actions">
+              <button class="panel-button" id="submitIntroCloseButton" type="button">Close</button>
+            </div>
+          </div>
+          <div class="intro-form">
+            <div class="time-field-wrap">
+              <div class="form-label" id="segmentTypeLabel">SEGMENT TYPE</div>
+              <div class="segment-row">
+                <button class="segment-button selected" id="segmentIntroButton" type="button" data-segment="intro">Intro</button>
+                <button class="segment-button" id="segmentRecapButton" type="button" data-segment="recap">Recap</button>
+                <button class="segment-button" id="segmentOutroButton" type="button" data-segment="outro">Outro</button>
+              </div>
+            </div>
+            <div class="time-field-row">
+              <label class="time-field-wrap">
+                <span class="form-label" id="startTimeLabel">START TIME (MM:SS)</span>
+                <input class="time-input" id="submitIntroStartInput" value="00:00" inputmode="decimal">
+              </label>
+              <button class="capture-button" id="captureStartButton" type="button">Capture</button>
+            </div>
+            <div class="time-field-row">
+              <label class="time-field-wrap">
+                <span class="form-label" id="endTimeLabel">END TIME (MM:SS)</span>
+                <input class="time-input" id="submitIntroEndInput" value="00:00" inputmode="decimal">
+              </label>
+              <button class="capture-button" id="captureEndButton" type="button">Capture</button>
+            </div>
+            <div class="submit-status" id="submitIntroStatus"></div>
+            <div class="modal-actions">
+              <button class="panel-button" id="submitIntroCancelButton" type="button">Cancel</button>
+              <button class="panel-button primary" id="submitIntroSubmitButton" type="button">Submit</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="modal-layer" id="p2pConsentModal" aria-label="P2P streaming consent" hidden>
+        <div class="track-panel submit">
+          <div class="track-header-row">
+            <div class="track-title" id="p2pConsentTitle">P2P Streaming</div>
+            <div class="panel-actions">
+              <button class="panel-button" id="p2pConsentCloseButton" type="button">Cancel</button>
+            </div>
+          </div>
+          <div class="consent-body" id="p2pConsentBody"></div>
+          <div class="modal-actions">
+            <button class="panel-button" id="p2pConsentCancelButton" type="button">Cancel</button>
+            <button class="panel-button primary" id="p2pConsentEnableButton" type="button">Enable P2P</button>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -603,6 +1308,88 @@
     const episodesButton = document.getElementById("episodesButton");
     const externalButton = document.getElementById("externalButton");
     const lockedLabel = document.getElementById("lockedLabel");
+    const audioModal = document.getElementById("audioModal");
+    const subtitleModal = document.getElementById("subtitleModal");
+    const audioTrackList = document.getElementById("audioTrackList");
+    const subtitleTrackList = document.getElementById("subtitleTrackList");
+    const subtitlePanelTitle = document.getElementById("subtitlePanelTitle");
+    const subtitleBuiltInTab = document.getElementById("subtitleBuiltInTab");
+    const subtitleAddonsTab = document.getElementById("subtitleAddonsTab");
+    const subtitleStyleTab = document.getElementById("subtitleStyleTab");
+    const addonSubtitleList = document.getElementById("addonSubtitleList");
+    const subtitleStylePanel = document.getElementById("subtitleStylePanel");
+    const subtitleDelayLabel = document.getElementById("subtitleDelayLabel");
+    const subtitleDelayMinus = document.getElementById("subtitleDelayMinus");
+    const subtitleDelayValue = document.getElementById("subtitleDelayValue");
+    const subtitleDelayPlus = document.getElementById("subtitleDelayPlus");
+    const subtitleDelayReset = document.getElementById("subtitleDelayReset");
+    const autoSyncLabel = document.getElementById("autoSyncLabel");
+    const autoSyncReload = document.getElementById("autoSyncReload");
+    const autoSyncCapture = document.getElementById("autoSyncCapture");
+    const autoSyncStatus = document.getElementById("autoSyncStatus");
+    const autoSyncCueList = document.getElementById("autoSyncCueList");
+    const fontSizeLabel = document.getElementById("fontSizeLabel");
+    const fontSizeMinus = document.getElementById("fontSizeMinus");
+    const fontSizeValue = document.getElementById("fontSizeValue");
+    const fontSizePlus = document.getElementById("fontSizePlus");
+    const outlineLabel = document.getElementById("outlineLabel");
+    const outlineToggle = document.getElementById("outlineToggle");
+    const boldLabel = document.getElementById("boldLabel");
+    const boldToggle = document.getElementById("boldToggle");
+    const bottomOffsetLabel = document.getElementById("bottomOffsetLabel");
+    const bottomOffsetMinus = document.getElementById("bottomOffsetMinus");
+    const bottomOffsetValue = document.getElementById("bottomOffsetValue");
+    const bottomOffsetPlus = document.getElementById("bottomOffsetPlus");
+    const subtitleColorLabel = document.getElementById("subtitleColorLabel");
+    const subtitleColorSwatches = document.getElementById("subtitleColorSwatches");
+    const textOpacityLabel = document.getElementById("textOpacityLabel");
+    const textOpacityMinus = document.getElementById("textOpacityMinus");
+    const textOpacityValue = document.getElementById("textOpacityValue");
+    const textOpacityPlus = document.getElementById("textOpacityPlus");
+    const outlineColorLabel = document.getElementById("outlineColorLabel");
+    const outlineColorSwatches = document.getElementById("outlineColorSwatches");
+    const subtitleStyleReset = document.getElementById("subtitleStyleReset");
+    const sourceModal = document.getElementById("sourceModal");
+    const sourcePanelTitle = document.getElementById("sourcePanelTitle");
+    const sourceReloadButton = document.getElementById("sourceReloadButton");
+    const sourceCloseButton = document.getElementById("sourceCloseButton");
+    const sourceFilterList = document.getElementById("sourceFilterList");
+    const sourceList = document.getElementById("sourceList");
+    const episodesModal = document.getElementById("episodesModal");
+    const episodeListView = document.getElementById("episodeListView");
+    const episodeStreamsView = document.getElementById("episodeStreamsView");
+    const episodesPanelTitle = document.getElementById("episodesPanelTitle");
+    const episodesCloseButton = document.getElementById("episodesCloseButton");
+    const seasonFilterList = document.getElementById("seasonFilterList");
+    const episodeList = document.getElementById("episodeList");
+    const streamsPanelTitle = document.getElementById("streamsPanelTitle");
+    const episodeBackButton = document.getElementById("episodeBackButton");
+    const episodeReloadButton = document.getElementById("episodeReloadButton");
+    const episodeStreamsCloseButton = document.getElementById("episodeStreamsCloseButton");
+    const episodeStreamFilterList = document.getElementById("episodeStreamFilterList");
+    const episodeStreamList = document.getElementById("episodeStreamList");
+    const submitIntroModal = document.getElementById("submitIntroModal");
+    const submitIntroPanelTitle = document.getElementById("submitIntroPanelTitle");
+    const submitIntroCloseButton = document.getElementById("submitIntroCloseButton");
+    const segmentTypeLabel = document.getElementById("segmentTypeLabel");
+    const segmentIntroButton = document.getElementById("segmentIntroButton");
+    const segmentRecapButton = document.getElementById("segmentRecapButton");
+    const segmentOutroButton = document.getElementById("segmentOutroButton");
+    const startTimeLabel = document.getElementById("startTimeLabel");
+    const endTimeLabel = document.getElementById("endTimeLabel");
+    const submitIntroStartInput = document.getElementById("submitIntroStartInput");
+    const submitIntroEndInput = document.getElementById("submitIntroEndInput");
+    const captureStartButton = document.getElementById("captureStartButton");
+    const captureEndButton = document.getElementById("captureEndButton");
+    const submitIntroStatus = document.getElementById("submitIntroStatus");
+    const submitIntroCancelButton = document.getElementById("submitIntroCancelButton");
+    const submitIntroSubmitButton = document.getElementById("submitIntroSubmitButton");
+    const p2pConsentModal = document.getElementById("p2pConsentModal");
+    const p2pConsentTitle = document.getElementById("p2pConsentTitle");
+    const p2pConsentCloseButton = document.getElementById("p2pConsentCloseButton");
+    const p2pConsentBody = document.getElementById("p2pConsentBody");
+    const p2pConsentCancelButton = document.getElementById("p2pConsentCancelButton");
+    const p2pConsentEnableButton = document.getElementById("p2pConsentEnableButton");
 
     let state = {
       title: "",
@@ -624,6 +1411,53 @@
       submitIntroLabel: "Submit Intro",
       videoSettingsLabel: "Video settings",
       tapToUnlockLabel: "Tap to unlock",
+      sourcesPanelTitle: "Sources",
+      episodesPanelTitle: "Episodes",
+      streamsPanelTitle: "Streams",
+      allFilterLabel: "All",
+      reloadLabel: "Reload",
+      backLabel: "Back",
+      panelCloseLabel: "Close",
+      cancelLabel: "Cancel",
+      playingLabel: "Playing",
+      noStreamsLabel: "No streams found",
+      noEpisodesLabel: "No episodes available",
+      submitIntroPanelTitle: "Submit Timestamps",
+      submitIntroSegmentTypeLabel: "SEGMENT TYPE",
+      submitIntroSegmentIntroLabel: "Intro",
+      submitIntroSegmentRecapLabel: "Recap",
+      submitIntroSegmentOutroLabel: "Outro",
+      submitIntroStartTimeLabel: "START TIME (MM:SS)",
+      submitIntroEndTimeLabel: "END TIME (MM:SS)",
+      submitIntroCaptureLabel: "Capture",
+      submitIntroSubmitLabel: "Submit",
+      p2pConsentTitle: "P2P Streaming",
+      p2pConsentBody: "",
+      p2pConsentEnableLabel: "Enable P2P",
+      p2pConsentCancelLabel: "Cancel",
+      subtitlesPanelTitle: "Subtitles",
+      subtitleBuiltInTabLabel: "Built-in",
+      subtitleAddonsTabLabel: "Addons",
+      subtitleStyleTabLabel: "Style",
+      noneLabel: "None",
+      fetchSubtitlesLabel: "Tap to fetch subtitles",
+      subtitleDelayLabel: "Subtitle Delay",
+      resetLabel: "Reset",
+      autoSyncLabel: "Auto Sync",
+      reloadSmallLabel: "Reload",
+      captureLineLabel: "Capture",
+      selectAddonSubtitleFirstLabel: "Select an addon subtitle first",
+      loadingSubtitleLinesLabel: "Loading subtitle lines...",
+      fontSizeLabel: "Font Size",
+      outlineLabel: "Outline",
+      boldLabel: "Bold",
+      bottomOffsetLabel: "Bottom Offset",
+      colorLabel: "Color",
+      textOpacityLabel: "Text Opacity",
+      outlineColorLabel: "Outline Color",
+      resetDefaultsLabel: "Reset Defaults",
+      onLabel: "On",
+      offLabel: "Off",
       isPlaying: false,
       isLoading: false,
       isLocked: false,
@@ -636,10 +1470,59 @@
       showExternalPlayer: false,
       durationMs: 0,
       positionMs: 0,
+      audioTracks: [],
+      subtitleTracks: [],
+      sourceIsLoading: false,
+      sourceFilters: [],
+      sourceItems: [],
+      episodeItems: [],
+      episodeSeasons: [],
+      episodeStreamsVisible: false,
+      episodeStreamsIsLoading: false,
+      selectedEpisodeLabel: "",
+      episodeStreamFilters: [],
+      episodeStreamItems: [],
+      submitIntroSegmentType: "intro",
+      submitIntroStartTime: "00:00",
+      submitIntroEndTime: "00:00",
+      isSubmitIntroSubmitting: false,
+      submitIntroStatusMessage: "",
+      showP2pConsent: false,
+      subtitleActiveTab: "BuiltIn",
+      addonSubtitleItems: [],
+      isLoadingAddonSubtitles: false,
+      selectedAddonSubtitleId: "",
+      useCustomSubtitles: false,
+      subtitleDelayMs: 0,
+      hasSelectedAddonSubtitle: false,
+      subtitleAutoSyncCapturedPositionMs: -1,
+      subtitleAutoSyncCues: [],
+      subtitleAutoSyncIsLoading: false,
+      subtitleAutoSyncErrorMessage: "",
+      subtitleStyle: {
+        textColor: "#FFFFFFFF",
+        outlineColor: "#FF000000",
+        outlineEnabled: true,
+        bold: false,
+        fontSizeSp: 18,
+        bottomOffset: 20,
+      },
+      subtitleColorSwatches: [],
+      closeModalsToken: 0,
     };
     let isScrubbing = false;
     let scrubPositionMs = 0;
     let tapTimer = 0;
+    let activeModal = "";
+    let sourceFilterId = "";
+    let selectedEpisodeSeason = null;
+    let episodeStreamFilterId = "";
+    let submitIntroDraft = {
+      segmentType: "intro",
+      startTime: "00:00",
+      endTime: "00:00",
+      status: "",
+    };
 
     const send = (type, value = 0) => {
       const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
@@ -679,6 +1562,574 @@
       return durationMs > 0 ? Math.round(durationMs * Number(seek.value) / 1000) : 0;
     };
 
+    const modalElements = [audioModal, subtitleModal, sourceModal, episodesModal, submitIntroModal, p2pConsentModal];
+
+    const closePlayerModal = (notifyDismiss = false) => {
+      const closingModal = activeModal;
+      activeModal = "";
+      modalElements.forEach(modal => {
+        modal.hidden = true;
+      });
+      if (notifyDismiss && closingModal === "p2pConsent") {
+        send("cancelP2pForPlayerControls", 0);
+      }
+    };
+
+    const openPlayerModal = modal => {
+      activeModal = modal;
+      audioModal.hidden = modal !== "audio";
+      subtitleModal.hidden = modal !== "subtitles";
+      sourceModal.hidden = modal !== "sources";
+      episodesModal.hidden = modal !== "episodes";
+      submitIntroModal.hidden = modal !== "submitIntro";
+      p2pConsentModal.hidden = modal !== "p2pConsent";
+      if (modal === "submitIntro") {
+        submitIntroDraft = {
+          segmentType: state.submitIntroSegmentType || "intro",
+          startTime: state.submitIntroStartTime || "00:00",
+          endTime: state.submitIntroEndTime || "00:00",
+          status: "",
+        };
+      }
+      renderActiveModal();
+    };
+
+    const normalizeTracks = tracks =>
+      Array.isArray(tracks) ? tracks.filter(track => track && typeof track === "object") : [];
+
+    const trackIdValue = track => {
+      const parsed = Number(track && track.id);
+      return Number.isFinite(parsed) ? parsed : -1;
+    };
+
+    const buildCheckIcon = () => {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("class", "track-check");
+      const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+      use.setAttribute("href", "#icon-check");
+      svg.appendChild(use);
+      return svg;
+    };
+
+    const appendTrackRow = (container, label, selected, onSelect, closeAfterSelect = true) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = `track-row${selected ? " selected" : ""}`;
+      row.addEventListener("click", event => {
+        event.stopPropagation();
+        onSelect();
+        if (closeAfterSelect) window.setTimeout(closePlayerModal, 120);
+      });
+
+      const text = document.createElement("span");
+      text.className = "track-label";
+      text.textContent = label;
+      row.appendChild(text);
+      row.appendChild(buildCheckIcon());
+      container.appendChild(row);
+    };
+
+    const appendEmptyTrackState = (container, label) => {
+      const empty = document.createElement("div");
+      empty.className = "track-empty";
+      empty.textContent = label;
+      container.appendChild(empty);
+    };
+
+    const renderAudioTrackList = () => {
+      audioTrackList.textContent = "";
+      const tracks = normalizeTracks(state.audioTracks);
+      if (tracks.length === 0) {
+        appendEmptyTrackState(audioTrackList, "No audio tracks available");
+        return;
+      }
+      tracks.forEach(track => {
+        appendTrackRow(
+          audioTrackList,
+          track.label || track.language || `Track ${Number(track.index || 0) + 1}`,
+          Boolean(track.selected),
+          () => send("selectAudioTrack", trackIdValue(track)),
+        );
+      });
+    };
+
+    const renderSubtitleTrackList = () => {
+      subtitleTrackList.textContent = "";
+      const tracks = normalizeTracks(state.subtitleTracks);
+      const hasSelected = tracks.some(track => Boolean(track.selected));
+      appendTrackRow(
+        subtitleTrackList,
+        state.noneLabel || "None",
+        !hasSelected,
+        () => send("selectBuiltInSubtitleTrack", -1),
+        false,
+      );
+      tracks.forEach(track => {
+        appendTrackRow(
+          subtitleTrackList,
+          track.label || track.language || `Subtitle ${Number(track.index || 0) + 1}`,
+          Boolean(track.selected),
+          () => send("selectBuiltInSubtitleTrack", Number(track.index) || 0),
+          false,
+        );
+      });
+    };
+
+    const renderAddonSubtitleList = () => {
+      addonSubtitleList.textContent = "";
+      if (state.isLoadingAddonSubtitles) {
+        appendEmptyTrackState(addonSubtitleList, "Loading subtitles...");
+        return;
+      }
+      const items = normalizeItems(state.addonSubtitleItems);
+      if (items.length === 0) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "track-row";
+        row.addEventListener("click", event => {
+          event.stopPropagation();
+          send("fetchAddonSubtitles", 0);
+        });
+        const text = document.createElement("span");
+        text.className = "track-label";
+        text.textContent = state.fetchSubtitlesLabel || "Tap to fetch subtitles";
+        row.appendChild(text);
+        addonSubtitleList.appendChild(row);
+        return;
+      }
+      items.forEach(item => {
+        const label = item.display || item.languageLabel || "Subtitle";
+        const secondary = [item.languageLabel, item.addonName].filter(Boolean).join(" • ");
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = `track-row stream-row${item.isSelected ? " selected" : ""}`;
+        row.addEventListener("click", event => {
+          event.stopPropagation();
+          send("selectAddonSubtitle", Number(item.index) || 0);
+        });
+        const copy = document.createElement("span");
+        copy.className = "track-copy";
+        const name = document.createElement("span");
+        name.className = "stream-name";
+        name.textContent = label;
+        copy.appendChild(name);
+        if (secondary) {
+          const detail = document.createElement("span");
+          detail.className = "stream-addon";
+          detail.textContent = secondary;
+          copy.appendChild(detail);
+        }
+        row.appendChild(copy);
+        row.appendChild(buildCheckIcon());
+        addonSubtitleList.appendChild(row);
+      });
+    };
+
+    const formatDelay = delayMs => {
+      const value = Number(delayMs) || 0;
+      const sign = value >= 0 ? "+" : "-";
+      const absolute = Math.abs(value);
+      const seconds = Math.floor(absolute / 1000);
+      const millis = absolute % 1000;
+      return `${sign}${seconds}.${String(millis).padStart(3, "0")}s`;
+    };
+
+    const parseArgb = value => {
+      const raw = String(value || "").replace("#", "");
+      const hex = raw.length === 8 ? raw : `FF${raw.padStart(6, "0")}`;
+      const alpha = parseInt(hex.slice(0, 2), 16);
+      const red = parseInt(hex.slice(2, 4), 16);
+      const green = parseInt(hex.slice(4, 6), 16);
+      const blue = parseInt(hex.slice(6, 8), 16);
+      return { alpha, red, green, blue, css: `rgba(${red}, ${green}, ${blue}, ${(alpha / 255).toFixed(3)})` };
+    };
+
+    const sameRgb = (left, right) => {
+      const a = parseArgb(left);
+      const b = parseArgb(right);
+      return a.red === b.red && a.green === b.green && a.blue === b.blue;
+    };
+
+    const renderSwatches = (container, selectedColor, eventType) => {
+      container.textContent = "";
+      const colors = Array.isArray(state.subtitleColorSwatches) ? state.subtitleColorSwatches : [];
+      colors.forEach((color, index) => {
+        const parsed = parseArgb(color);
+        const swatch = document.createElement("button");
+        swatch.type = "button";
+        swatch.className = `swatch${parsed.alpha === 0 ? " transparent" : ""}${sameRgb(color, selectedColor) ? " selected" : ""}`;
+        swatch.style.setProperty("--swatch", parsed.css);
+        swatch.addEventListener("click", event => {
+          event.stopPropagation();
+          send(eventType, index);
+        });
+        container.appendChild(swatch);
+      });
+    };
+
+    const renderAutoSyncCues = () => {
+      autoSyncCueList.textContent = "";
+      if (!state.hasSelectedAddonSubtitle) {
+        autoSyncStatus.textContent = state.selectAddonSubtitleFirstLabel || "Select an addon subtitle first";
+        return;
+      }
+      if (state.subtitleAutoSyncIsLoading) {
+        autoSyncStatus.textContent = state.loadingSubtitleLinesLabel || "Loading subtitle lines...";
+      } else {
+        autoSyncStatus.textContent = state.subtitleAutoSyncErrorMessage || "";
+      }
+      normalizeItems(state.subtitleAutoSyncCues).forEach(cue => {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "sync-cue";
+        row.addEventListener("click", event => {
+          event.stopPropagation();
+          send("subtitleAutoSyncCue", Number(cue.index) || 0);
+        });
+        const time = document.createElement("span");
+        time.className = "sync-time";
+        time.textContent = cue.timeLabel || "";
+        const text = document.createElement("span");
+        text.className = "sync-text";
+        text.textContent = cue.text || "";
+        row.appendChild(time);
+        row.appendChild(text);
+        autoSyncCueList.appendChild(row);
+      });
+    };
+
+    const renderSubtitleStylePanel = () => {
+      const style = state.subtitleStyle || {};
+      subtitleDelayLabel.textContent = state.subtitleDelayLabel || "Subtitle Delay";
+      subtitleDelayValue.textContent = formatDelay(state.subtitleDelayMs);
+      subtitleDelayReset.textContent = state.resetLabel || "Reset";
+      autoSyncLabel.textContent = state.autoSyncLabel || "Auto Sync";
+      autoSyncReload.textContent = state.reloadSmallLabel || "Reload";
+      autoSyncCapture.textContent = state.captureLineLabel || "Capture";
+      fontSizeLabel.textContent = state.fontSizeLabel || "Font Size";
+      fontSizeValue.textContent = `${Number(style.fontSizeSp) || 18}sp`;
+      outlineLabel.textContent = state.outlineLabel || "Outline";
+      outlineToggle.textContent = style.outlineEnabled ? (state.onLabel || "On") : (state.offLabel || "Off");
+      outlineToggle.classList.toggle("primary", Boolean(style.outlineEnabled));
+      boldLabel.textContent = state.boldLabel || "Bold";
+      boldToggle.textContent = style.bold ? (state.onLabel || "On") : (state.offLabel || "Off");
+      boldToggle.classList.toggle("primary", Boolean(style.bold));
+      bottomOffsetLabel.textContent = state.bottomOffsetLabel || "Bottom Offset";
+      bottomOffsetValue.textContent = String(Number(style.bottomOffset) || 0);
+      subtitleColorLabel.textContent = state.colorLabel || "Color";
+      textOpacityLabel.textContent = state.textOpacityLabel || "Text Opacity";
+      const textAlpha = Math.round((parseArgb(style.textColor).alpha / 255) * 100);
+      textOpacityValue.textContent = `${textAlpha}%`;
+      outlineColorLabel.textContent = state.outlineColorLabel || "Outline Color";
+      subtitleStyleReset.textContent = state.resetDefaultsLabel || "Reset Defaults";
+      renderSwatches(subtitleColorSwatches, style.textColor, "subtitleTextColor");
+      renderSwatches(outlineColorSwatches, style.outlineColor, "subtitleOutlineColor");
+      renderAutoSyncCues();
+    };
+
+    const renderSubtitleModal = () => {
+      const tab = state.subtitleActiveTab || "BuiltIn";
+      subtitlePanelTitle.textContent = state.subtitlesPanelTitle || "Subtitles";
+      subtitleBuiltInTab.textContent = state.subtitleBuiltInTabLabel || "Built-in";
+      subtitleAddonsTab.textContent = state.subtitleAddonsTabLabel || "Addons";
+      subtitleStyleTab.textContent = state.subtitleStyleTabLabel || "Style";
+      subtitleBuiltInTab.classList.toggle("selected", tab === "BuiltIn");
+      subtitleAddonsTab.classList.toggle("selected", tab === "Addons");
+      subtitleStyleTab.classList.toggle("selected", tab === "Style");
+      subtitleTrackList.hidden = tab !== "BuiltIn";
+      addonSubtitleList.hidden = tab !== "Addons";
+      subtitleStylePanel.hidden = tab !== "Style";
+      if (tab === "BuiltIn") renderSubtitleTrackList();
+      if (tab === "Addons") renderAddonSubtitleList();
+      if (tab === "Style") renderSubtitleStylePanel();
+    };
+
+    const normalizeItems = items =>
+      Array.isArray(items) ? items.filter(item => item && typeof item === "object") : [];
+
+    const appendFilterChip = (container, label, selected, onSelect) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = `filter-chip${selected ? " selected" : ""}`;
+      chip.textContent = label;
+      chip.addEventListener("click", event => {
+        event.stopPropagation();
+        onSelect();
+      });
+      container.appendChild(chip);
+    };
+
+    const renderFilterRow = (container, filters, selectedId, onSelect) => {
+      container.textContent = "";
+      const list = normalizeItems(filters);
+      container.hidden = list.length === 0;
+      list.forEach(filter => {
+        appendFilterChip(
+          container,
+          filter.label || state.allFilterLabel || "All",
+          String(filter.id || "") === String(selectedId || ""),
+          () => onSelect(String(filter.id || "")),
+        );
+      });
+    };
+
+    const appendSourceRow = (container, item, onSelect) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = `track-row stream-row${item.isCurrent ? " selected" : ""}${item.isEnabled === false ? " disabled" : ""}`;
+      row.disabled = item.isEnabled === false;
+      row.addEventListener("click", event => {
+        event.stopPropagation();
+        onSelect(item);
+      });
+
+      const copy = document.createElement("span");
+      copy.className = "track-copy";
+
+      const top = document.createElement("span");
+      top.className = "track-row-top";
+      const name = document.createElement("span");
+      name.className = "stream-name";
+      name.textContent = item.label || "Stream";
+      top.appendChild(name);
+      if (item.isCurrent) {
+        const chip = document.createElement("span");
+        chip.className = "status-chip";
+        chip.textContent = state.playingLabel || "Playing";
+        top.appendChild(chip);
+      }
+      copy.appendChild(top);
+
+      if (item.subtitle) {
+        const subtitle = document.createElement("span");
+        subtitle.className = "stream-subtitle";
+        subtitle.textContent = item.subtitle;
+        copy.appendChild(subtitle);
+      }
+
+      const addon = document.createElement("span");
+      addon.className = "stream-addon";
+      addon.textContent = item.addonName || "";
+      copy.appendChild(addon);
+      row.appendChild(copy);
+      container.appendChild(row);
+    };
+
+    const renderSourceModal = () => {
+      sourcePanelTitle.textContent = state.sourcesPanelTitle || "Sources";
+      sourceReloadButton.textContent = state.reloadLabel || "Reload";
+      sourceCloseButton.textContent = state.panelCloseLabel || "Close";
+
+      const filters = normalizeItems(state.sourceFilters);
+      if (sourceFilterId && !filters.some(filter => String(filter.id || "") === sourceFilterId)) {
+        sourceFilterId = "";
+      }
+      renderFilterRow(sourceFilterList, filters, sourceFilterId, id => {
+        sourceFilterId = id;
+        renderSourceModal();
+      });
+
+      sourceList.textContent = "";
+      let items = normalizeItems(state.sourceItems);
+      if (sourceFilterId) {
+        items = items.filter(item => String(item.filterId || "") === sourceFilterId);
+      }
+      if (items.length === 0) {
+        appendEmptyTrackState(
+          sourceList,
+          state.sourceIsLoading ? "Loading streams..." : (state.noStreamsLabel || "No streams found"),
+        );
+        return;
+      }
+      items.forEach(item => appendSourceRow(sourceList, item, selected => {
+        send("selectSource", Number(selected.index) || 0);
+        window.setTimeout(closePlayerModal, 120);
+      }));
+    };
+
+    const appendEpisodeRow = (container, item) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = `track-row episode-row${item.isCurrent ? " selected" : ""}`;
+      row.addEventListener("click", event => {
+        event.stopPropagation();
+        send("selectEpisode", Number(item.index) || 0);
+      });
+
+      if (item.thumbnail) {
+        const thumb = document.createElement("span");
+        thumb.className = "episode-thumb";
+        const image = document.createElement("img");
+        image.src = item.thumbnail;
+        image.alt = "";
+        thumb.appendChild(image);
+        row.appendChild(thumb);
+      }
+
+      const copy = document.createElement("span");
+      copy.className = "episode-copy";
+      const top = document.createElement("span");
+      top.className = "episode-row-top";
+      if (item.code) {
+        const code = document.createElement("span");
+        code.className = "episode-code";
+        code.textContent = item.code;
+        top.appendChild(code);
+      }
+      if (item.isCurrent) {
+        const chip = document.createElement("span");
+        chip.className = "status-chip";
+        chip.textContent = state.playingLabel || "Playing";
+        top.appendChild(chip);
+      }
+      copy.appendChild(top);
+      const name = document.createElement("span");
+      name.className = "episode-name";
+      name.textContent = item.title || item.code || "Episode";
+      copy.appendChild(name);
+      if (item.overview) {
+        const overview = document.createElement("span");
+        overview.className = "episode-overview";
+        overview.textContent = item.overview;
+        copy.appendChild(overview);
+      }
+      row.appendChild(copy);
+      container.appendChild(row);
+    };
+
+    const ensureEpisodeSeason = () => {
+      const seasons = normalizeItems(state.episodeSeasons);
+      if (seasons.length === 0) {
+        selectedEpisodeSeason = null;
+        return null;
+      }
+      if (!seasons.some(season => Number(season.season) === Number(selectedEpisodeSeason))) {
+        const preferred = seasons.find(season => Boolean(season.isSelected)) || seasons[0];
+        selectedEpisodeSeason = Number(preferred.season) || 0;
+      }
+      return selectedEpisodeSeason;
+    };
+
+    const renderEpisodeList = () => {
+      episodesPanelTitle.textContent = state.episodesPanelTitle || "Episodes";
+      episodesCloseButton.textContent = state.panelCloseLabel || "Close";
+
+      const selectedSeason = ensureEpisodeSeason();
+      const seasons = normalizeItems(state.episodeSeasons);
+      renderFilterRow(
+        seasonFilterList,
+        seasons.map(season => ({ id: String(season.season), label: season.label })),
+        selectedSeason == null ? "" : String(selectedSeason),
+        id => {
+          selectedEpisodeSeason = Number(id);
+          renderEpisodeList();
+        },
+      );
+
+      episodeList.textContent = "";
+      let items = normalizeItems(state.episodeItems);
+      if (selectedSeason != null) {
+        items = items.filter(item => Number(item.season) === Number(selectedSeason));
+      }
+      if (items.length === 0) {
+        appendEmptyTrackState(episodeList, state.noEpisodesLabel || "No episodes available");
+        return;
+      }
+      items.forEach(item => appendEpisodeRow(episodeList, item));
+    };
+
+    const renderEpisodeStreams = () => {
+      streamsPanelTitle.textContent = state.selectedEpisodeLabel || state.streamsPanelTitle || "Streams";
+      episodeBackButton.textContent = state.backLabel || "Back";
+      episodeReloadButton.textContent = state.reloadLabel || "Reload";
+      episodeStreamsCloseButton.textContent = state.panelCloseLabel || "Close";
+
+      const filters = normalizeItems(state.episodeStreamFilters);
+      if (episodeStreamFilterId && !filters.some(filter => String(filter.id || "") === episodeStreamFilterId)) {
+        episodeStreamFilterId = "";
+      }
+      renderFilterRow(episodeStreamFilterList, filters, episodeStreamFilterId, id => {
+        episodeStreamFilterId = id;
+        renderEpisodeStreams();
+      });
+
+      episodeStreamList.textContent = "";
+      let items = normalizeItems(state.episodeStreamItems);
+      if (episodeStreamFilterId) {
+        items = items.filter(item => String(item.filterId || "") === episodeStreamFilterId);
+      }
+      if (items.length === 0) {
+        appendEmptyTrackState(
+          episodeStreamList,
+          state.episodeStreamsIsLoading ? "Loading streams..." : (state.noStreamsLabel || "No streams found"),
+        );
+        return;
+      }
+      items.forEach(item => appendSourceRow(episodeStreamList, item, selected => {
+        send("selectEpisodeStream", Number(selected.index) || 0);
+        window.setTimeout(closePlayerModal, 120);
+      }));
+    };
+
+    const renderEpisodesModal = () => {
+      const showStreams = Boolean(state.episodeStreamsVisible);
+      episodeListView.hidden = showStreams;
+      episodeStreamsView.hidden = !showStreams;
+      if (showStreams) {
+        renderEpisodeStreams();
+      } else {
+        renderEpisodeList();
+      }
+    };
+
+    const setInputValue = (input, value) => {
+      if (document.activeElement !== input && input.value !== value) {
+        input.value = value;
+      }
+    };
+
+    const renderSubmitIntroModal = () => {
+      submitIntroPanelTitle.textContent = state.submitIntroPanelTitle || "Submit Timestamps";
+      submitIntroCloseButton.textContent = state.panelCloseLabel || "Close";
+      segmentTypeLabel.textContent = state.submitIntroSegmentTypeLabel || "SEGMENT TYPE";
+      segmentIntroButton.textContent = state.submitIntroSegmentIntroLabel || "Intro";
+      segmentRecapButton.textContent = state.submitIntroSegmentRecapLabel || "Recap";
+      segmentOutroButton.textContent = state.submitIntroSegmentOutroLabel || "Outro";
+      startTimeLabel.textContent = state.submitIntroStartTimeLabel || "START TIME (MM:SS)";
+      endTimeLabel.textContent = state.submitIntroEndTimeLabel || "END TIME (MM:SS)";
+      captureStartButton.textContent = state.submitIntroCaptureLabel || "Capture";
+      captureEndButton.textContent = state.submitIntroCaptureLabel || "Capture";
+      submitIntroCancelButton.textContent = state.cancelLabel || "Cancel";
+      submitIntroSubmitButton.textContent = state.isSubmitIntroSubmitting
+        ? `${state.submitIntroSubmitLabel || "Submit"}...`
+        : (state.submitIntroSubmitLabel || "Submit");
+      submitIntroSubmitButton.disabled = Boolean(state.isSubmitIntroSubmitting);
+
+      [segmentIntroButton, segmentRecapButton, segmentOutroButton].forEach(button => {
+        button.classList.toggle("selected", button.dataset.segment === submitIntroDraft.segmentType);
+      });
+      setInputValue(submitIntroStartInput, submitIntroDraft.startTime);
+      setInputValue(submitIntroEndInput, submitIntroDraft.endTime);
+      submitIntroStatus.textContent = submitIntroDraft.status || state.submitIntroStatusMessage || "";
+    };
+
+    const renderP2pConsentModal = () => {
+      p2pConsentTitle.textContent = state.p2pConsentTitle || "P2P Streaming";
+      p2pConsentBody.textContent = state.p2pConsentBody || "";
+      p2pConsentCloseButton.textContent = state.p2pConsentCancelLabel || "Cancel";
+      p2pConsentCancelButton.textContent = state.p2pConsentCancelLabel || "Cancel";
+      p2pConsentEnableButton.textContent = state.p2pConsentEnableLabel || "Enable P2P";
+    };
+
+    const renderActiveModal = () => {
+      if (activeModal === "audio") renderAudioTrackList();
+      if (activeModal === "subtitles") renderSubtitleModal();
+      if (activeModal === "sources") renderSourceModal();
+      if (activeModal === "episodes") renderEpisodesModal();
+      if (activeModal === "submitIntro") renderSubmitIntroModal();
+      if (activeModal === "p2pConsent") renderP2pConsentModal();
+    };
+
     const render = () => {
       const durationMs = Math.max(0, Number(state.durationMs) || 0);
       const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
@@ -716,13 +2167,241 @@
       videoSettingsButton.setAttribute("aria-label", state.videoSettingsLabel || "Video settings");
       seek.disabled = Boolean(state.isLocked);
       setProgress(positionMs, durationMs);
+      renderActiveModal();
     };
 
     document.querySelectorAll("[data-command]").forEach(button => {
       button.addEventListener("click", event => {
         event.stopPropagation();
-        send(button.dataset.command, 0);
+        const command = button.dataset.command;
+        if (command === "audio") {
+          openPlayerModal("audio");
+          return;
+        }
+        if (command === "subtitles") {
+          openPlayerModal("subtitles");
+          return;
+        }
+        if (command === "sources") {
+          sourceFilterId = "";
+          openPlayerModal("sources");
+          send("sources", 0);
+          return;
+        }
+        if (command === "episodes") {
+          episodeStreamFilterId = "";
+          openPlayerModal("episodes");
+          send("episodes", 0);
+          return;
+        }
+        if (command === "submitIntro") {
+          openPlayerModal("submitIntro");
+          return;
+        }
+        send(command, 0);
       });
+    });
+
+    modalElements.forEach(modal => {
+      modal.addEventListener("click", event => {
+        event.stopPropagation();
+        if (event.target === modal) closePlayerModal(true);
+      });
+    });
+
+    const selectSubtitleTab = (tab, index) => {
+      state = { ...state, subtitleActiveTab: tab };
+      renderSubtitleModal();
+      send("subtitleTab", index);
+    };
+
+    subtitleBuiltInTab.addEventListener("click", event => {
+      event.stopPropagation();
+      selectSubtitleTab("BuiltIn", 0);
+    });
+    subtitleAddonsTab.addEventListener("click", event => {
+      event.stopPropagation();
+      selectSubtitleTab("Addons", 1);
+    });
+    subtitleStyleTab.addEventListener("click", event => {
+      event.stopPropagation();
+      selectSubtitleTab("Style", 2);
+    });
+    subtitleDelayMinus.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleDelayDelta", -100);
+    });
+    subtitleDelayPlus.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleDelayDelta", 100);
+    });
+    subtitleDelayReset.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleDelayReset", 0);
+    });
+    autoSyncReload.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleAutoSyncReload", 0);
+    });
+    autoSyncCapture.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleAutoSyncCapture", 0);
+    });
+    fontSizeMinus.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleFontSizeDelta", -2);
+    });
+    fontSizePlus.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleFontSizeDelta", 2);
+    });
+    outlineToggle.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleOutlineToggle", 0);
+    });
+    boldToggle.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleBoldToggle", 0);
+    });
+    bottomOffsetMinus.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleBottomOffsetDelta", -5);
+    });
+    bottomOffsetPlus.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleBottomOffsetDelta", 5);
+    });
+    textOpacityMinus.addEventListener("click", event => {
+      event.stopPropagation();
+      const style = state.subtitleStyle || {};
+      const next = Math.max(0, Math.round((parseArgb(style.textColor).alpha / 255) * 100) - 10);
+      send("subtitleTextOpacity", next);
+    });
+    textOpacityPlus.addEventListener("click", event => {
+      event.stopPropagation();
+      const style = state.subtitleStyle || {};
+      const next = Math.min(100, Math.round((parseArgb(style.textColor).alpha / 255) * 100) + 10);
+      send("subtitleTextOpacity", next);
+    });
+    subtitleStyleReset.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleStyleReset", 0);
+    });
+
+    sourceReloadButton.addEventListener("click", event => {
+      event.stopPropagation();
+      send("reloadSources", 0);
+    });
+    sourceCloseButton.addEventListener("click", event => {
+      event.stopPropagation();
+      closePlayerModal();
+    });
+    episodesCloseButton.addEventListener("click", event => {
+      event.stopPropagation();
+      closePlayerModal();
+    });
+    episodeStreamsCloseButton.addEventListener("click", event => {
+      event.stopPropagation();
+      closePlayerModal();
+    });
+    episodeBackButton.addEventListener("click", event => {
+      event.stopPropagation();
+      episodeStreamFilterId = "";
+      send("backToEpisodes", 0);
+    });
+    episodeReloadButton.addEventListener("click", event => {
+      event.stopPropagation();
+      send("reloadEpisodeStreams", 0);
+    });
+
+    const updateSubmitSegment = segment => {
+      submitIntroDraft.segmentType = segment;
+      submitIntroDraft.status = "";
+      renderSubmitIntroModal();
+    };
+
+    [segmentIntroButton, segmentRecapButton, segmentOutroButton].forEach(button => {
+      button.addEventListener("click", event => {
+        event.stopPropagation();
+        updateSubmitSegment(button.dataset.segment || "intro");
+      });
+    });
+
+    const currentTimeText = () => formatTime(isScrubbing ? scrubPositionMs : state.positionMs);
+
+    captureStartButton.addEventListener("click", event => {
+      event.stopPropagation();
+      submitIntroDraft.startTime = currentTimeText();
+      submitIntroDraft.status = "";
+      renderSubmitIntroModal();
+    });
+    captureEndButton.addEventListener("click", event => {
+      event.stopPropagation();
+      submitIntroDraft.endTime = currentTimeText();
+      submitIntroDraft.status = "";
+      renderSubmitIntroModal();
+    });
+
+    submitIntroCloseButton.addEventListener("click", event => {
+      event.stopPropagation();
+      closePlayerModal();
+    });
+    submitIntroCancelButton.addEventListener("click", event => {
+      event.stopPropagation();
+      closePlayerModal();
+    });
+
+    const parseIntroTime = raw => {
+      const value = String(raw || "").trim();
+      if (!value) return null;
+      const separator = value.includes(":") ? ":" : (value.includes(".") ? "." : "");
+      if (separator) {
+        const parts = value.split(separator);
+        if (parts.length !== 2) return null;
+        const minutes = Number(parts[0]);
+        const seconds = Number(parts[1]);
+        if (!Number.isFinite(minutes) || !Number.isFinite(seconds) || seconds < 0 || seconds >= 60) return null;
+        return minutes * 60 + seconds;
+      }
+      const seconds = Number(value);
+      return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+    };
+
+    submitIntroSubmitButton.addEventListener("click", event => {
+      event.stopPropagation();
+      submitIntroDraft.startTime = submitIntroStartInput.value;
+      submitIntroDraft.endTime = submitIntroEndInput.value;
+      const start = parseIntroTime(submitIntroDraft.startTime);
+      const end = parseIntroTime(submitIntroDraft.endTime);
+      if (start == null || end == null || end <= start) {
+        submitIntroDraft.status = "Check the start and end times.";
+        renderSubmitIntroModal();
+        return;
+      }
+      const segmentIndex = submitIntroDraft.segmentType === "recap" ? 1 : (submitIntroDraft.segmentType === "outro" ? 2 : 0);
+      submitIntroDraft.status = "";
+      send("submitIntroSegment", segmentIndex);
+      send("submitIntroStart", start);
+      send("submitIntroEnd", end);
+      send("submitIntroCommit", 0);
+    });
+
+    const cancelP2pConsent = () => {
+      send("cancelP2pForPlayerControls", 0);
+      closePlayerModal();
+    };
+
+    p2pConsentCloseButton.addEventListener("click", event => {
+      event.stopPropagation();
+      cancelP2pConsent();
+    });
+    p2pConsentCancelButton.addEventListener("click", event => {
+      event.stopPropagation();
+      cancelP2pConsent();
+    });
+    p2pConsentEnableButton.addEventListener("click", event => {
+      event.stopPropagation();
+      send("enableP2pForPlayerControls", 0);
     });
 
     seek.addEventListener("input", () => {
@@ -747,11 +2426,23 @@
         durationMs,
         positionMs,
         isPlaying: !Boolean(state.paused),
+        audioTracks: normalizeTracks(state.audioTracks),
+        subtitleTracks: normalizeTracks(state.subtitleTracks),
       });
     };
 
     window.playerControls = nextState => {
+      const previousCloseToken = Number(state.closeModalsToken) || 0;
       state = { ...state, ...nextState };
+      const closeToken = Number(state.closeModalsToken) || 0;
+      if (closeToken !== previousCloseToken) {
+        closePlayerModal();
+      }
+      if (state.showP2pConsent && activeModal !== "p2pConsent") {
+        openPlayerModal("p2pConsent");
+      } else if (!state.showP2pConsent && activeModal === "p2pConsent") {
+        closePlayerModal();
+      }
       render();
     };
 
@@ -769,6 +2460,13 @@
       const bounds = root.getBoundingClientRect();
       const localX = event.clientX - bounds.left;
       send(localX < bounds.width / 2 ? "doubleTapSeekBack" : "doubleTapSeekForward");
+    });
+
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && activeModal) {
+        event.preventDefault();
+        closePlayerModal(true);
+      }
     });
 
     setProgress(0, 0);

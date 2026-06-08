@@ -36,6 +36,7 @@ actual fun PlatformPlayerSurface(
     useNativeController: Boolean,
     playerControlsState: PlayerControlsState,
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
+    onPlayerControlsEvent: (String, Double) -> Boolean,
     onPlayerControlsScrubChange: (Long) -> Boolean,
     onPlayerControlsScrubFinished: (Long) -> Boolean,
     onControllerReady: (PlayerEngineController) -> Unit,

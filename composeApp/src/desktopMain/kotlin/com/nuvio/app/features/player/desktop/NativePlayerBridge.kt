@@ -27,10 +27,29 @@ internal object NativePlayerBridge {
     external fun seekTo(handle: Long, positionMs: Long)
     external fun seekBy(handle: Long, offsetMs: Long)
     external fun setSpeed(handle: Long, speed: Float)
+    external fun setResizeMode(handle: Long, mode: Int)
     external fun durationMs(handle: Long): Long
     external fun positionMs(handle: Long): Long
     external fun isPaused(handle: Long): Boolean
     external fun speed(handle: Long): Float
+    external fun audioTracksJson(handle: Long): String
+    external fun subtitleTracksJson(handle: Long): String
+    external fun selectAudioTrack(handle: Long, trackId: Int)
+    external fun selectSubtitleTrack(handle: Long, trackId: Int)
+    external fun addSubtitleUrl(handle: Long, url: String)
+    external fun clearExternalSubtitles(handle: Long)
+    external fun clearExternalSubtitlesAndSelect(handle: Long, trackId: Int)
+    external fun setSubtitleDelayMs(handle: Long, delayMs: Int)
+    external fun applySubtitleStyle(
+        handle: Long,
+        textColor: String,
+        backgroundColor: String,
+        outlineColor: String,
+        outlineSize: Float,
+        bold: Boolean,
+        fontSize: Float,
+        subPos: Int,
+    )
 
     val controlsHtml: String by lazy {
         val resource = "/player-ui/controls.html"

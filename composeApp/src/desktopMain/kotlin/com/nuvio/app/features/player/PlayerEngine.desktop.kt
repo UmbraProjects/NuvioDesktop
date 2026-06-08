@@ -32,6 +32,7 @@ actual fun PlatformPlayerSurface(
     useNativeController: Boolean,
     playerControlsState: PlayerControlsState,
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
+    onPlayerControlsEvent: (String, Double) -> Boolean,
     onPlayerControlsScrubChange: (Long) -> Boolean,
     onPlayerControlsScrubFinished: (Long) -> Boolean,
     onControllerReady: (PlayerEngineController) -> Unit,
@@ -44,8 +45,10 @@ actual fun PlatformPlayerSurface(
             sourceHeaders = sourceHeaders,
             modifier = modifier,
             playWhenReady = playWhenReady,
+            resizeMode = resizeMode,
             playerControlsState = playerControlsState,
             onPlayerControlsAction = onPlayerControlsAction,
+            onPlayerControlsEvent = onPlayerControlsEvent,
             onPlayerControlsScrubChange = onPlayerControlsScrubChange,
             onPlayerControlsScrubFinished = onPlayerControlsScrubFinished,
             onControllerReady = onControllerReady,
@@ -68,8 +71,10 @@ private fun NativePlayerSurface(
     sourceHeaders: Map<String, String>,
     modifier: Modifier,
     playWhenReady: Boolean,
+    resizeMode: PlayerResizeMode,
     playerControlsState: PlayerControlsState,
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
+    onPlayerControlsEvent: (String, Double) -> Boolean,
     onPlayerControlsScrubChange: (Long) -> Boolean,
     onPlayerControlsScrubFinished: (Long) -> Boolean,
     onControllerReady: (PlayerEngineController) -> Unit,
@@ -80,6 +85,7 @@ private fun NativePlayerSurface(
     val controller = remember(host) { NativePlayerController(host) }
     val playbackHeaders = remember(sourceHeaders) { sanitizePlaybackHeaders(sourceHeaders) }
     val latestOnPlayerControlsAction = rememberUpdatedState(onPlayerControlsAction)
+    val latestOnPlayerControlsEvent = rememberUpdatedState(onPlayerControlsEvent)
     val latestOnPlayerControlsScrubChange = rememberUpdatedState(onPlayerControlsScrubChange)
     val latestOnPlayerControlsScrubFinished = rememberUpdatedState(onPlayerControlsScrubFinished)
 
@@ -90,6 +96,7 @@ private fun NativePlayerSurface(
     LaunchedEffect(controller) {
         controller.setControlCallbacks(
             onAction = { action -> latestOnPlayerControlsAction.value(action) },
+            onEvent = { type, value -> latestOnPlayerControlsEvent.value(type, value) },
             onScrubChange = { positionMs -> latestOnPlayerControlsScrubChange.value(positionMs) },
             onScrubFinished = { positionMs -> latestOnPlayerControlsScrubFinished.value(positionMs) },
         )
@@ -111,6 +118,10 @@ private fun NativePlayerSurface(
         } else {
             controller.pause()
         }
+    }
+
+    LaunchedEffect(controller, resizeMode) {
+        controller.setResizeMode(resizeMode)
     }
 
     LaunchedEffect(controller, playerControlsState) {
