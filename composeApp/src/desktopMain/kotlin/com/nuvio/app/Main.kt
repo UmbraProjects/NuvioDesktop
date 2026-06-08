@@ -19,8 +19,10 @@ import javax.swing.JComponent
 
 private val NuvioDesktopNativeBackground = AwtColor(0x0D, 0x0D, 0x0D)
 private const val NuvioDesktopIconPath = "icons/nuvio-app-icon.png"
+private const val MacosDarkAquaAppearance = "NSAppearanceNameDarkAqua"
 
 fun main() {
+    configureDesktopChrome()
     preloadNativePlayerBridgeAsync()
 
     application {
@@ -57,5 +59,11 @@ fun main() {
                 error?.let { println("Nuvio desktop player smoke error: $it") }
             }
         }
+    }
+}
+
+private fun configureDesktopChrome() {
+    if (System.getProperty("os.name").contains("mac", ignoreCase = true)) {
+        System.setProperty("apple.awt.application.appearance", MacosDarkAquaAppearance)
     }
 }

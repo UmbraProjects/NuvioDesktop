@@ -442,6 +442,7 @@ compose.desktop {
         val smokePlayerUrl = providers.gradleProperty("nuvio.desktop.smokePlayerUrl").orNull
             ?: System.getenv("NUVIO_DESKTOP_SMOKE_PLAYER_URL")
         jvmArgs += listOfNotNull(
+            "-Dapple.awt.application.appearance=NSAppearanceNameDarkAqua",
             "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
