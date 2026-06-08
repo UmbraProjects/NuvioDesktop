@@ -135,6 +135,10 @@
       height: 100%;
     }
 
+    .player:focus {
+      outline: none;
+    }
+
     .top-gradient,
     .bottom-gradient,
     .metadata,
@@ -337,6 +341,52 @@
       display: flex;
       align-items: center;
       gap: var(--center-gap);
+    }
+
+    .center-status {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 44px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      background: rgba(0, 0, 0, .56);
+      color: rgba(255, 255, 255, .92);
+      font-size: 13px;
+      line-height: 1.2;
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, calc(-50% - var(--center-lift) + 10px)) scale(.98);
+      transition:
+        opacity var(--motion-standard) ease,
+        transform var(--motion-standard) var(--ease-out);
+      will-change: opacity, transform;
+    }
+
+    .center-status.visible {
+      opacity: 1;
+      transform: translate(-50%, calc(-50% - var(--center-lift))) scale(1);
+    }
+
+    .center-spinner {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      border: 2px solid rgba(255, 255, 255, .3);
+      border-top-color: #fff;
+      animation: center-spin 760ms linear infinite;
+    }
+
+    @keyframes center-spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     .side-control,
@@ -1146,6 +1196,7 @@
       .metadata,
       .header-actions,
       .center-controls,
+      .center-status,
       .progress,
       .modal-layer,
       .track-panel,
@@ -1164,6 +1215,7 @@
       .track-row,
       .segment-button {
         transition-duration: 1ms;
+        animation-duration: 1ms;
       }
     }
 
@@ -1234,7 +1286,7 @@
     </symbol>
   </svg>
 
-  <div class="player" id="playerRoot">
+  <div class="player" id="playerRoot" tabindex="-1">
     <div class="top-gradient"></div>
     <div class="bottom-gradient"></div>
     <div class="content">
@@ -1255,11 +1307,10 @@
         </nav>
       </header>
 
-      <main class="center-controls" aria-label="Playback controls">
-        <button class="side-control" data-command="seekBack" aria-label="Seek back 10 seconds"><svg><use href="#icon-replay10"></use></svg></button>
-        <button class="play-control" id="toggle" data-command="toggle" aria-label="Pause"><svg><use id="toggleIcon" href="#icon-pause"></use></svg></button>
-        <button class="side-control" data-command="seekForward" aria-label="Seek forward 10 seconds"><svg><use href="#icon-forward10"></use></svg></button>
-      </main>
+      <section class="center-status" id="bufferingStatus" aria-live="polite" aria-label="Buffering" aria-hidden="true">
+        <span class="center-spinner" aria-hidden="true"></span>
+        <span id="bufferingLabel">Buffering...</span>
+      </section>
 
       <section class="progress" aria-label="Playback progress">
         <input id="seek" class="scrub" type="range" min="0" max="1000" value="0" aria-label="Seek">
@@ -1475,6 +1526,8 @@
     const seek = document.getElementById("seek");
     const positionLabel = document.getElementById("position");
     const durationLabel = document.getElementById("duration");
+    const bufferingStatus = document.getElementById("bufferingStatus");
+    const bufferingLabel = document.getElementById("bufferingLabel");
     const toggle = document.getElementById("toggle");
     const toggleIcon = document.getElementById("toggleIcon");
     const lockIcon = document.getElementById("lockIcon");
@@ -1594,6 +1647,7 @@
       externalPlayerLabel: "External",
       playLabel: "Play",
       pauseLabel: "Pause",
+      bufferingLabel: "Buffering...",
       closeLabel: "Close player",
       lockLabel: "Lock player controls",
       unlockLabel: "Unlock player controls",
@@ -1718,7 +1772,13 @@
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const modalTransitionMs = prefersReducedMotion ? 1 : 240;
 
-    const sourceDiagnosticCommands = new Set([
+    const diagnosticCommands = new Set([
+      "toggle",
+      "seekBack",
+      "seekForward",
+      "doubleTapSeekBack",
+      "doubleTapSeekForward",
+      "scrubFinish",
       "sources",
       "reloadSources",
       "selectSource",
@@ -1741,7 +1801,7 @@
 
     const send = (type, value = 0) => {
       const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
-      if (sourceDiagnosticCommands.has(type)) {
+      if (diagnosticCommands.has(type)) {
         postDiagnostic(`event type=${type} value=${value} activeModal=${activeModal || "none"}`);
       }
       if (bridge) bridge.postMessage({ type, value });
@@ -1837,6 +1897,7 @@
       if (notifyDismiss && closingModal === "p2pConsent") {
         send("cancelP2pForPlayerControls", 0);
       }
+      renderChrome();
     };
 
     const openPlayerModal = modal => {
@@ -1858,6 +1919,7 @@
       modalElements.forEach(modalElement => {
         setModalVisibility(modalElement, modalElement === targetModal);
       });
+      renderChrome();
     };
 
     const normalizeTracks = tracks =>
@@ -2452,6 +2514,11 @@
       episodesLabel.textContent = state.episodesLabel || "Episodes";
       externalLabel.textContent = state.externalPlayerLabel || "External";
       lockedLabel.textContent = state.tapToUnlockLabel || "Tap to unlock";
+      bufferingLabel.textContent = state.bufferingLabel || "Buffering...";
+
+      const showBuffering = Boolean(state.isLoading && !state.isLocked && !activeModal);
+      bufferingStatus.classList.toggle("visible", showBuffering);
+      bufferingStatus.setAttribute("aria-hidden", showBuffering ? "false" : "true");
 
       setVisible(submitIntroButton, Boolean(state.showSubmitIntro));
       setVisible(videoSettingsButton, Boolean(state.showVideoSettings));
@@ -2461,8 +2528,12 @@
 
       const isPlaying = Boolean(state.isPlaying);
       const playPauseLabel = isPlaying ? state.pauseLabel : state.playLabel;
-      toggle.setAttribute("aria-label", playPauseLabel || (isPlaying ? "Pause" : "Play"));
-      toggleIcon.setAttribute("href", isPlaying ? "#icon-pause" : "#icon-play");
+      if (toggle) {
+        toggle.setAttribute("aria-label", playPauseLabel || (isPlaying ? "Pause" : "Play"));
+      }
+      if (toggleIcon) {
+        toggleIcon.setAttribute("href", isPlaying ? "#icon-pause" : "#icon-play");
+      }
       lockButton.setAttribute("aria-label", state.isLocked ? state.unlockLabel : state.lockLabel);
       lockIcon.setAttribute("href", state.isLocked ? "#icon-lock-open" : "#icon-lock");
       backButton.setAttribute("aria-label", state.closeLabel || "Close player");
@@ -2477,6 +2548,34 @@
       renderActiveModal();
     };
 
+    const focusShortcutRoot = () => {
+      if (document.activeElement !== root) {
+        root.focus({ preventScroll: true });
+      }
+    };
+
+    const isTextEntryTarget = target => {
+      const element = target && target.closest && target.closest("input, textarea, select, [contenteditable='true']");
+      return Boolean(element);
+    };
+
+    const shortcutCommandForEvent = event => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return "";
+      switch (event.code) {
+        case "Space":
+        case "KeyK":
+          return "toggle";
+        case "ArrowLeft":
+        case "KeyJ":
+          return "seekBack";
+        case "ArrowRight":
+        case "KeyL":
+          return "seekForward";
+        default:
+          return "";
+      }
+    };
+
     const clearPressedButton = () => {
       if (!pressedButton) return;
       pressedButton.classList.remove("is-pressed");
@@ -2484,6 +2583,9 @@
     };
 
     document.addEventListener("pointerdown", event => {
+      if (!isTextEntryTarget(event.target)) {
+        focusShortcutRoot();
+      }
       const button = event.target.closest("button");
       if (!button || button.disabled) return;
       clearPressedButton();
@@ -2757,6 +2859,7 @@
         durationMs,
         positionMs,
         isPlaying: !Boolean(update.paused),
+        isLoading: Boolean(update.loading || update.isLoading),
         audioTracks,
         subtitleTracks,
       };
@@ -2807,10 +2910,23 @@
       if (event.key === "Escape" && activeModal) {
         event.preventDefault();
         closePlayerModal(true);
+        focusShortcutRoot();
+        return;
       }
+      if (activeModal || isTextEntryTarget(event.target)) {
+        return;
+      }
+      const command = shortcutCommandForEvent(event);
+      if (!command) {
+        return;
+      }
+      event.preventDefault();
+      focusShortcutRoot();
+      send(command, 0);
     });
 
     setProgress(0, 0);
+    focusShortcutRoot();
     render();
   </script>
 </body>

@@ -138,7 +138,7 @@ internal class NativePlayerController(
     }
 
     private fun handlePlayerEvent(type: String, value: Double) {
-        val shouldLog = type.isStreamControlsDiagnosticEvent()
+        val shouldLog = type.isControlsDiagnosticEvent()
         if (shouldLog) {
             println("[NuvioDesktopControls] event received type=$type value=$value")
         }
@@ -149,7 +149,14 @@ internal class NativePlayerController(
                 }
             }
             "scrubFinish" -> {
-                if (!onScrubFinished(value.toLong())) {
+                val scrubHandled = onScrubFinished(value.toLong())
+                if (shouldLog) {
+                    println(
+                        "[NuvioDesktopControls] event route type=$type " +
+                            "onScrubFinished=$scrubHandled fallback=${!scrubHandled}",
+                    )
+                }
+                if (!scrubHandled) {
                     seekTo(value.toLong())
                 }
             }
@@ -183,16 +190,41 @@ internal class NativePlayerController(
     private fun handleFallbackAction(action: PlayerControlsAction) {
         when (action) {
             PlayerControlsAction.TogglePlayback -> {
-                handle.takeIf { it != 0L }?.let { current ->
-                    NativePlayerBridge.setPaused(current, !NativePlayerBridge.isPaused(current))
+                val current = handle
+                if (current == 0L) {
+                    println("[NuvioDesktopControls] fallback direct action=$action handleReady=false")
+                    return
+                }
+                val isEnded = NativePlayerBridge.isEnded(current)
+                val isPaused = NativePlayerBridge.isPaused(current)
+                println(
+                    "[NuvioDesktopControls] fallback direct action=$action " +
+                        "handleReady=true ended=$isEnded paused=$isPaused",
+                )
+                if (isEnded) {
+                    NativePlayerBridge.seekTo(current, 0L)
+                    NativePlayerBridge.setPaused(current, false)
+                } else {
+                    NativePlayerBridge.setPaused(current, !isPaused)
                 }
             }
-            PlayerControlsAction.SeekBack -> seekBy(-10_000L)
-            PlayerControlsAction.SeekForward -> seekBy(10_000L)
-            PlayerControlsAction.DoubleTapSeekBack -> seekBy(-10_000L)
-            PlayerControlsAction.DoubleTapSeekForward -> seekBy(10_000L)
+            PlayerControlsAction.SeekBack -> fallbackSeekBy(action, -10_000L)
+            PlayerControlsAction.SeekForward -> fallbackSeekBy(action, 10_000L)
+            PlayerControlsAction.DoubleTapSeekBack -> fallbackSeekBy(action, -10_000L)
+            PlayerControlsAction.DoubleTapSeekForward -> fallbackSeekBy(action, 10_000L)
             PlayerControlsAction.Speed -> cycleFallbackSpeed()
             else -> Unit
+        }
+    }
+
+    private fun fallbackSeekBy(action: PlayerControlsAction, offsetMs: Long) {
+        val current = handle
+        println(
+            "[NuvioDesktopControls] fallback direct action=$action " +
+                "handleReady=${current != 0L} offsetMs=$offsetMs",
+        )
+        if (current != 0L) {
+            NativePlayerBridge.seekBy(current, offsetMs)
         }
     }
 
@@ -453,8 +485,14 @@ private fun String.toPlayerControlsAction(): PlayerControlsAction? =
         else -> null
     }
 
-private fun String.isStreamControlsDiagnosticEvent(): Boolean =
+private fun String.isControlsDiagnosticEvent(): Boolean =
     when (this) {
+        "toggle",
+        "seekBack",
+        "seekForward",
+        "doubleTapSeekBack",
+        "doubleTapSeekForward",
+        "scrubFinish",
         "sources",
         "reloadSources",
         "selectSource",

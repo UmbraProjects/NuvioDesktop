@@ -247,6 +247,7 @@ val missingMpvKitMacosShellMessage = missingMpvKitMacosMessage.replace("'", "'\"
 val macosPlayerBridgeSourceFile = macosPlayerBridgeSource.asFile
 val macosPlayerBridgeOutputFile = macosPlayerBridgeOutput.get().asFile
 val macosPlayerBridgeJavaHome = providers.systemProperty("java.home").get()
+val mpvKitLibmpvStaticLib = File(mpvKitLibmpvRoot, "lib/libmpv.a")
 if (isMacHost) {
     macosPlayerBridgeOutputFile.parentFile.mkdirs()
 }
@@ -300,6 +301,13 @@ val buildMacosPlayerBridge = tasks.register<Exec>("buildMacosPlayerBridge") {
     notCompatibleWithConfigurationCache("Builds a host-local player bridge against MPVKit's macOS libmpv artifacts.")
     enabled = isMacHost
     inputs.file(macosPlayerBridgeSource)
+    if (mpvKitLibmpvStaticLib.exists()) {
+        inputs.file(mpvKitLibmpvStaticLib)
+    }
+    if (mpvKitLibmpvPkgConfigFile.exists()) {
+        inputs.file(mpvKitLibmpvPkgConfigFile)
+    }
+    inputs.files(mpvKitGeneratedPkgConfigDirs.mapNotNull { it.parentFile?.resolve("lib")?.takeIf(File::exists) })
     outputs.file(macosPlayerBridgeOutput)
     commandLine(macosPlayerBridgeCommand)
 }

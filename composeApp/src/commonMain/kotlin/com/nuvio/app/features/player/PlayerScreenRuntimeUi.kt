@@ -517,9 +517,21 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
             flushWatchProgress()
             args.onBack()
         }
-        PlayerControlsAction.TogglePlayback -> togglePlayback()
-        PlayerControlsAction.SeekBack -> seekBy(-10_000L)
-        PlayerControlsAction.SeekForward -> seekBy(10_000L)
+        PlayerControlsAction.TogglePlayback -> {
+            println("[NuvioPlayerControls] action toggle route=native-fallback")
+            prepareTogglePlaybackForNativeFallback()
+            return false
+        }
+        PlayerControlsAction.SeekBack -> {
+            println("[NuvioPlayerControls] action seekBack route=native-fallback")
+            prepareSeekByForNativeFallback(-10_000L)
+            return false
+        }
+        PlayerControlsAction.SeekForward -> {
+            println("[NuvioPlayerControls] action seekForward route=native-fallback")
+            prepareSeekByForNativeFallback(10_000L)
+            return false
+        }
         PlayerControlsAction.ResizeMode -> cycleResizeMode()
         PlayerControlsAction.Speed -> cyclePlaybackSpeed()
         PlayerControlsAction.Subtitles -> {
@@ -550,8 +562,16 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
                 controlsVisible = true
             }
         }
-        PlayerControlsAction.DoubleTapSeekBack -> handleDoubleTapSeek(PlayerSeekDirection.Backward)
-        PlayerControlsAction.DoubleTapSeekForward -> handleDoubleTapSeek(PlayerSeekDirection.Forward)
+        PlayerControlsAction.DoubleTapSeekBack -> {
+            println("[NuvioPlayerControls] action doubleTapSeekBack route=native-fallback")
+            prepareDoubleTapSeekForNativeFallback(PlayerSeekDirection.Backward)
+            return false
+        }
+        PlayerControlsAction.DoubleTapSeekForward -> {
+            println("[NuvioPlayerControls] action doubleTapSeekForward route=native-fallback")
+            prepareDoubleTapSeekForNativeFallback(PlayerSeekDirection.Forward)
+            return false
+        }
     }
     return true
 }

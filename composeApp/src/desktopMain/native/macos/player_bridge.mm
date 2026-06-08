@@ -68,6 +68,7 @@ void mpv_set_wakeup_callback(mpv_handle *ctx, void (*cb)(void *d), void *d);
 - (int64_t)wid;
 - (double)edrMax;
 - (double)hdrTargetPeakNits;
+- (void)updateMetalLayerLayout;
 - (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries;
 @end
 
@@ -115,6 +116,10 @@ void mpv_set_wakeup_callback(mpv_handle *ctx, void (*cb)(void *d), void *d);
                                 fontSize:(double)fontSize
                                   subPos:(int)subPos;
 - (void)handleScriptMessage:(NSDictionary *)message;
+- (void)focusControlsWebViewIfNeeded;
+- (void)layoutNativeSubviews;
+- (void)hostViewBoundsDidChange:(NSNotification *)notification;
+- (void)hostViewFrameDidChange:(NSNotification *)notification;
 - (void)scheduleMpvEventDrain;
 @end
 
@@ -414,6 +419,16 @@ static double hdrMetadataMaxNits(void) {
     [self updateMetalLayerLayout];
 }
 
+- (void)setFrameSize:(NSSize)newSize {
+    [super setFrameSize:newSize];
+    [self updateMetalLayerLayout];
+}
+
+- (void)setBoundsSize:(NSSize)newSize {
+    [super setBoundsSize:newSize];
+    [self updateMetalLayerLayout];
+}
+
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
     [self updateMetalLayerLayout];
@@ -560,8 +575,14 @@ static NSString *redactUrlsInText(NSString *text) {
                                       withTemplate:@"<redacted-url>"];
 }
 
-static BOOL isControlsStreamDiagnosticMessage(NSString *type) {
-    return [type isEqualToString:@"sources"]
+static BOOL isControlsDiagnosticMessage(NSString *type) {
+    return [type isEqualToString:@"toggle"]
+        || [type isEqualToString:@"seekBack"]
+        || [type isEqualToString:@"seekForward"]
+        || [type isEqualToString:@"doubleTapSeekBack"]
+        || [type isEqualToString:@"doubleTapSeekForward"]
+        || [type isEqualToString:@"scrubFinish"]
+        || [type isEqualToString:@"sources"]
         || [type isEqualToString:@"reloadSources"]
         || [type isEqualToString:@"selectSource"]
         || [type isEqualToString:@"episodes"]
@@ -596,6 +617,7 @@ static NSString *limitDiagnosticText(NSString *text) {
     dispatch_queue_t _mpvEventQueue;
     std::atomic_bool _eventDrainScheduled;
     BOOL _didLogSoftwareDecodeWarning;
+    BOOL _didFocusControlsWebView;
     double _initialStartSeconds;
 }
 
@@ -623,6 +645,8 @@ static NSString *limitDiagnosticText(NSString *text) {
     _hostView = hostView;
     _hostView.wantsLayer = YES;
     _hostView.layer.backgroundColor = NSColor.blackColor.CGColor;
+    [_hostView setPostsFrameChangedNotifications:YES];
+    [_hostView setPostsBoundsChangedNotifications:YES];
 
     _videoView = [[PlayerMetalView alloc] initWithFrame:_hostView.bounds];
     [_hostView addSubview:_videoView];
@@ -640,6 +664,18 @@ static NSString *limitDiagnosticText(NSString *text) {
     [_webView setValue:@NO forKey:@"drawsBackground"];
     [_hostView addSubview:_webView positioned:NSWindowAbove relativeTo:_videoView];
     [_webView loadHTMLString:controlsHtml baseURL:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(hostViewFrameDidChange:)
+                                                 name:NSViewFrameDidChangeNotification
+                                               object:_hostView];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(hostViewBoundsDidChange:)
+                                                 name:NSViewBoundsDidChangeNotification
+                                               object:_hostView];
+    [self layoutNativeSubviews];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self focusControlsWebViewIfNeeded];
+    });
 
     [self startMpvWithSource:sourceUrl
                  headerLines:headerLines
@@ -651,6 +687,47 @@ static NSString *limitDiagnosticText(NSString *text) {
                                            userInfo:nil
                                             repeats:YES];
     return self;
+}
+
+- (void)focusControlsWebViewIfNeeded {
+    if (_didFocusControlsWebView || !_webView || !_webView.window) {
+        return;
+    }
+    _didFocusControlsWebView = YES;
+    [_webView.window makeFirstResponder:_webView];
+}
+
+- (void)layoutNativeSubviews {
+    if (!_hostView) {
+        return;
+    }
+    NSRect bounds = _hostView.bounds;
+    if (bounds.size.width <= 0.0 || bounds.size.height <= 0.0) {
+        return;
+    }
+
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    if (_videoView) {
+        _videoView.frame = bounds;
+        [_videoView setNeedsLayout:YES];
+        [_videoView layoutSubtreeIfNeeded];
+        [_videoView updateMetalLayerLayout];
+    }
+    if (_webView) {
+        _webView.frame = bounds;
+        [_webView setNeedsLayout:YES];
+        [_webView layoutSubtreeIfNeeded];
+    }
+    [CATransaction commit];
+}
+
+- (void)hostViewFrameDidChange:(NSNotification *)notification {
+    [self layoutNativeSubviews];
+}
+
+- (void)hostViewBoundsDidChange:(NSNotification *)notification {
+    [self layoutNativeSubviews];
 }
 
 - (void)startMpvWithSource:(NSString *)sourceUrl
@@ -748,9 +825,12 @@ static NSString *limitDiagnosticText(NSString *text) {
     if (!_webView || !_mpv) {
         return;
     }
+    [self layoutNativeSubviews];
+    [self focusControlsWebViewIfNeeded];
     double duration = [self doubleProperty:"duration" fallback:0.0];
     double position = [self doubleProperty:"time-pos" fallback:0.0];
     BOOL paused = [self isPaused];
+    BOOL loading = [self isLoading];
     NSString *audioTracks = [self audioTracksJson] ?: @"[]";
     NSString *subtitleTracks = [self subtitleTracksJson] ?: @"[]";
     [self scheduleMpvEventDrain];
@@ -758,10 +838,11 @@ static NSString *limitDiagnosticText(NSString *text) {
     [self logHdrTargetIfNeeded];
     [self logHwdecIfNeeded];
     NSString *script = [NSString stringWithFormat:
-        @"window.playerUpdate({duration:%0.3f,position:%0.3f,paused:%@,audioTracks:%@,subtitleTracks:%@})",
+        @"window.playerUpdate({duration:%0.3f,position:%0.3f,paused:%@,loading:%@,audioTracks:%@,subtitleTracks:%@})",
         duration,
         position,
         paused ? @"true" : @"false",
+        loading ? @"true" : @"false",
         audioTracks,
         subtitleTracks];
     [_webView evaluateJavaScript:script completionHandler:nil];
@@ -1116,6 +1197,7 @@ static NSString *limitDiagnosticText(NSString *text) {
 }
 
 - (void)shutdown {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [_timer invalidate];
     _timer = nil;
     if (_mpv) {
@@ -1573,7 +1655,7 @@ static NSString *limitDiagnosticText(NSString *text) {
         }
         return;
     }
-    if (isControlsStreamDiagnosticMessage(type)) {
+    if (isControlsDiagnosticMessage(type)) {
         NSLog(@"[NuvioDesktopControls][native] script event type=%@ value=%@", type, value ?: @0);
     }
     if ([type isEqualToString:@"selectAudioTrack"] && value) {

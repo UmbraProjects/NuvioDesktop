@@ -162,8 +162,21 @@ internal fun PlayerScreenRuntime.togglePlayback() {
     controlsVisible = true
 }
 
+internal fun PlayerScreenRuntime.prepareTogglePlaybackForNativeFallback() {
+    shouldPlay = !playbackSnapshot.isPlaying
+    controlsVisible = true
+}
+
 internal fun PlayerScreenRuntime.seekBy(offsetMs: Long) {
     playerController?.seekBy(offsetMs)
+    applySeekByControlFeedback(offsetMs)
+}
+
+internal fun PlayerScreenRuntime.prepareSeekByForNativeFallback(offsetMs: Long) {
+    applySeekByControlFeedback(offsetMs)
+}
+
+private fun PlayerScreenRuntime.applySeekByControlFeedback(offsetMs: Long) {
     scheduleProgressSyncAfterSeek()
     controlsVisible = true
     when {
@@ -173,6 +186,17 @@ internal fun PlayerScreenRuntime.seekBy(offsetMs: Long) {
 }
 
 internal fun PlayerScreenRuntime.handleDoubleTapSeek(direction: PlayerSeekDirection) {
+    handleDoubleTapSeek(direction, sendToController = true)
+}
+
+internal fun PlayerScreenRuntime.prepareDoubleTapSeekForNativeFallback(direction: PlayerSeekDirection) {
+    handleDoubleTapSeek(direction, sendToController = false)
+}
+
+private fun PlayerScreenRuntime.handleDoubleTapSeek(
+    direction: PlayerSeekDirection,
+    sendToController: Boolean,
+) {
     val currentPositionMs = playbackSnapshot.positionMs.coerceAtLeast(0L)
     val currentSeekState = accumulatedSeekState
     val nextState = if (currentSeekState?.direction == direction) {
@@ -196,7 +220,9 @@ internal fun PlayerScreenRuntime.handleDoubleTapSeek(direction: PlayerSeekDirect
             maxDurationMs?.let { unclamped.coerceAtMost(it) } ?: unclamped
         }
     }
-    playerController?.seekTo(targetPositionMs)
+    if (sendToController) {
+        playerController?.seekTo(targetPositionMs)
+    }
     scheduleProgressSyncAfterSeek()
     showSeekFeedback(direction, nextState.amountMs)
 
