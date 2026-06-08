@@ -164,7 +164,8 @@ internal class NativePlayerController(
 
     private fun handleFallbackAction(action: PlayerControlsAction) {
         when (action) {
-            PlayerControlsAction.TogglePlayback -> {
+            PlayerControlsAction.TogglePlayback,
+            PlayerControlsAction.KeyboardTogglePlayback -> {
                 val current = handle
                 if (current == 0L) return
                 val isEnded = NativePlayerBridge.isEnded(current)
@@ -176,8 +177,10 @@ internal class NativePlayerController(
                     NativePlayerBridge.setPaused(current, !isPaused)
                 }
             }
-            PlayerControlsAction.SeekBack -> fallbackSeekBy(-10_000L)
-            PlayerControlsAction.SeekForward -> fallbackSeekBy(10_000L)
+            PlayerControlsAction.SeekBack,
+            PlayerControlsAction.KeyboardSeekBack -> fallbackSeekBy(-10_000L)
+            PlayerControlsAction.SeekForward,
+            PlayerControlsAction.KeyboardSeekForward -> fallbackSeekBy(10_000L)
             PlayerControlsAction.DoubleTapSeekBack -> fallbackSeekBy(-10_000L)
             PlayerControlsAction.DoubleTapSeekForward -> fallbackSeekBy(10_000L)
             PlayerControlsAction.Speed -> cycleFallbackSpeed()
@@ -432,8 +435,11 @@ private fun String.toPlayerControlsAction(): PlayerControlsAction? =
         "revealLockedOverlay" -> PlayerControlsAction.RevealLockedOverlay
         "back" -> PlayerControlsAction.Back
         "toggle" -> PlayerControlsAction.TogglePlayback
+        "keyboardToggle" -> PlayerControlsAction.KeyboardTogglePlayback
         "seekBack" -> PlayerControlsAction.SeekBack
+        "keyboardSeekBack" -> PlayerControlsAction.KeyboardSeekBack
         "seekForward" -> PlayerControlsAction.SeekForward
+        "keyboardSeekForward" -> PlayerControlsAction.KeyboardSeekForward
         "resize" -> PlayerControlsAction.ResizeMode
         "speed" -> PlayerControlsAction.Speed
         "subtitles" -> PlayerControlsAction.Subtitles

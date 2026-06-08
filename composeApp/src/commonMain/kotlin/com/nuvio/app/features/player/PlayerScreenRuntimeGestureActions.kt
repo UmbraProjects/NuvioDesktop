@@ -162,9 +162,11 @@ internal fun PlayerScreenRuntime.togglePlayback() {
     controlsVisible = true
 }
 
-internal fun PlayerScreenRuntime.prepareTogglePlaybackForNativeFallback() {
+internal fun PlayerScreenRuntime.prepareTogglePlaybackForNativeFallback(revealControls: Boolean = true) {
     shouldPlay = !playbackSnapshot.isPlaying
-    controlsVisible = true
+    if (revealControls) {
+        controlsVisible = true
+    }
 }
 
 internal fun PlayerScreenRuntime.seekBy(offsetMs: Long) {
@@ -172,13 +174,21 @@ internal fun PlayerScreenRuntime.seekBy(offsetMs: Long) {
     applySeekByControlFeedback(offsetMs)
 }
 
-internal fun PlayerScreenRuntime.prepareSeekByForNativeFallback(offsetMs: Long) {
-    applySeekByControlFeedback(offsetMs)
+internal fun PlayerScreenRuntime.prepareSeekByForNativeFallback(
+    offsetMs: Long,
+    revealControls: Boolean = true,
+) {
+    applySeekByControlFeedback(offsetMs, revealControls)
 }
 
-private fun PlayerScreenRuntime.applySeekByControlFeedback(offsetMs: Long) {
+private fun PlayerScreenRuntime.applySeekByControlFeedback(
+    offsetMs: Long,
+    revealControls: Boolean = true,
+) {
     scheduleProgressSyncAfterSeek()
-    controlsVisible = true
+    if (revealControls) {
+        controlsVisible = true
+    }
     when {
         offsetMs > 0L -> showSeekFeedback(PlayerSeekDirection.Forward, offsetMs)
         offsetMs < 0L -> showSeekFeedback(PlayerSeekDirection.Backward, abs(offsetMs))

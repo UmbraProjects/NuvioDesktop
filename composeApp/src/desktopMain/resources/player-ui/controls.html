@@ -166,7 +166,6 @@
     .player.chrome-hidden .top-gradient,
     .player.chrome-hidden .bottom-gradient,
     .player.chrome-hidden .metadata,
-    .player.chrome-hidden .parental-guide,
     .player.chrome-hidden .header-actions,
     .player.chrome-hidden .center-controls,
     .player.chrome-hidden .progress,
@@ -226,7 +225,7 @@
 
     .header {
       position: absolute;
-      top: calc(var(--vp) / 4 + env(safe-area-inset-top));
+      top: calc(var(--slider-bottom) + env(safe-area-inset-top));
       left: var(--hp);
       right: var(--hp);
       display: flex;
@@ -310,7 +309,7 @@
 
     .parental-guide {
       position: absolute;
-      top: calc(var(--vp) / 4 + env(safe-area-inset-top));
+      top: calc(var(--slider-bottom) + env(safe-area-inset-top));
       left: var(--hp);
       z-index: 5;
       display: flex;
@@ -3090,16 +3089,26 @@
       switch (event.code) {
         case "Space":
         case "KeyK":
-          return "toggle";
+          return "keyboardToggle";
         case "ArrowLeft":
         case "KeyJ":
-          return "seekBack";
+          return "keyboardSeekBack";
         case "ArrowRight":
         case "KeyL":
-          return "seekForward";
+          return "keyboardSeekForward";
         default:
           return "";
       }
+    };
+
+    const toggleChrome = () => {
+      if (state.isLocked) {
+        send("revealLockedOverlay", 0);
+        return;
+      }
+      state = { ...state, controlsVisible: !state.controlsVisible };
+      renderChrome();
+      send("toggleChrome", 0);
     };
 
     const clearPressedButton = () => {
@@ -3158,6 +3167,9 @@
 
     openingOverlay.addEventListener("click", event => {
       event.stopPropagation();
+      if (!event.target.closest("button,input")) {
+        toggleChrome();
+      }
     });
 
     modalElements.forEach(modal => {
@@ -3420,7 +3432,7 @@
       if (event.target.closest("button,input")) return;
       window.clearTimeout(tapTimer);
       tapTimer = window.setTimeout(() => {
-        send(state.isLocked ? "revealLockedOverlay" : "toggleChrome");
+        toggleChrome();
       }, 220);
     });
 
@@ -3437,6 +3449,11 @@
         event.preventDefault();
         closePlayerModal(true);
         focusShortcutRoot();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        send("back", 0);
         return;
       }
       if (activeModal || isTextEntryTarget(event.target)) {

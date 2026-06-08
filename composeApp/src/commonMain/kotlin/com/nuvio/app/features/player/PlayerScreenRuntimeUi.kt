@@ -226,7 +226,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         isLoading = playbackSnapshot.isLoading,
         isLocked = playerControlsLocked,
         lockedOverlayVisible = lockedOverlayVisible,
-        controlsVisible = (controlsVisible || showParentalGuide) && !playerControlsLocked,
+        controlsVisible = controlsVisible && !playerControlsLocked,
         parentalWarnings = parentalWarnings,
         showParentalGuide = showParentalGuide,
         showSubmitIntro = isSeries &&
@@ -508,12 +508,24 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
             prepareTogglePlaybackForNativeFallback()
             return false
         }
+        PlayerControlsAction.KeyboardTogglePlayback -> {
+            prepareTogglePlaybackForNativeFallback(revealControls = false)
+            return false
+        }
         PlayerControlsAction.SeekBack -> {
             prepareSeekByForNativeFallback(-10_000L)
             return false
         }
+        PlayerControlsAction.KeyboardSeekBack -> {
+            prepareSeekByForNativeFallback(-10_000L, revealControls = false)
+            return false
+        }
         PlayerControlsAction.SeekForward -> {
             prepareSeekByForNativeFallback(10_000L)
+            return false
+        }
+        PlayerControlsAction.KeyboardSeekForward -> {
+            prepareSeekByForNativeFallback(10_000L, revealControls = false)
             return false
         }
         PlayerControlsAction.ResizeMode -> cycleResizeMode()
