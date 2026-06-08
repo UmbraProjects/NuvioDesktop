@@ -68,8 +68,15 @@ void mpv_set_wakeup_callback(mpv_handle *ctx, void (*cb)(void *d), void *d);
 - (int64_t)wid;
 - (double)edrMax;
 - (double)hdrTargetPeakNits;
+- (CGSize)drawableSize;
+- (NSString *)diagnosticSummary;
 - (void)updateMetalLayerLayout;
+- (void)refreshMetalLayerEdrState;
 - (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries;
+@end
+
+@interface NuvioPlayerMetalLayer : CAMetalLayer
+@property(nonatomic, assign, getter=isNuvioLiveResize) BOOL nuvioLiveResize;
 @end
 
 @interface PlayerScriptHandler : NSObject <WKScriptMessageHandler>
@@ -120,6 +127,10 @@ void mpv_set_wakeup_callback(mpv_handle *ctx, void (*cb)(void *d), void *d);
 - (void)layoutNativeSubviews;
 - (void)hostViewBoundsDidChange:(NSNotification *)notification;
 - (void)hostViewFrameDidChange:(NSNotification *)notification;
+- (void)schedulePostResizeRefreshWithReason:(NSString *)reason;
+- (void)handleResizeSettleTimer:(NSTimer *)timer;
+- (void)configureHdrForCurrentScreenWithReason:(NSString *)reason force:(BOOL)force;
+- (void)logResizeStateWithReason:(NSString *)reason;
 - (void)scheduleMpvEventDrain;
 @end
 
@@ -192,6 +203,59 @@ static void clearLayerEdrMetadata(CALayer *layer) {
     typedef void (*Setter)(id, SEL, id);
     Setter setter = (Setter)[layer methodForSelector:selector];
     setter(layer, selector, nil);
+}
+
+static NSString *diagnosticSize(CGSize size) {
+    return [NSString stringWithFormat:@"%0.0fx%0.0f", size.width, size.height];
+}
+
+static NSString *diagnosticRect(NSRect rect) {
+    return [NSString stringWithFormat:
+        @"%0.0fx%0.0f@%0.0f,%0.0f",
+        rect.size.width,
+        rect.size.height,
+        rect.origin.x,
+        rect.origin.y
+    ];
+}
+
+static NSString *metalPixelFormatName(MTLPixelFormat format) {
+    switch (format) {
+        case MTLPixelFormatRGBA16Float: return @"rgba16Float";
+        case MTLPixelFormatBGRA8Unorm: return @"bgra8Unorm";
+        case MTLPixelFormatBGRA8Unorm_sRGB: return @"bgra8Unorm_srgb";
+        case MTLPixelFormatRGBA8Unorm: return @"rgba8Unorm";
+        case MTLPixelFormatRGBA8Unorm_sRGB: return @"rgba8Unorm_srgb";
+        case MTLPixelFormatRGB10A2Unorm: return @"rgb10a2Unorm";
+        case MTLPixelFormatBGR10A2Unorm: return @"bgr10a2Unorm";
+        default: return [NSString stringWithFormat:@"%lu", (unsigned long)format];
+    }
+}
+
+static NSString *layerColorSpaceName(CALayer *layer) {
+    SEL selector = NSSelectorFromString(@"colorspace");
+    if (!layer || ![layer respondsToSelector:selector]) {
+        return @"unavailable";
+    }
+    typedef CGColorSpaceRef (*Getter)(id, SEL);
+    Getter getter = (Getter)[layer methodForSelector:selector];
+    CGColorSpaceRef colorSpace = getter(layer, selector);
+    if (!colorSpace) {
+        return @"nil";
+    }
+    NSString *name = (__bridge_transfer NSString *)CGColorSpaceCopyName(colorSpace);
+    return name.length > 0 ? name : @"unnamed";
+}
+
+static NSString *layerEdrMetadataName(CALayer *layer) {
+    SEL selector = NSSelectorFromString(@"EDRMetadata");
+    if (!layer || ![layer respondsToSelector:selector]) {
+        return @"unavailable";
+    }
+    typedef id (*Getter)(id, SEL);
+    Getter getter = (Getter)[layer methodForSelector:selector];
+    id metadata = getter(layer, selector);
+    return metadata ? NSStringFromClass([metadata class]) : @"none";
 }
 
 static CGDirectDisplayID displayIdForScreen(NSScreen *screen) {
@@ -362,6 +426,16 @@ static double hdrMetadataMaxNits(void) {
     return 1000.0;
 }
 
+@implementation NuvioPlayerMetalLayer
+- (void)setDrawableSize:(CGSize)drawableSize {
+    // MoltenVK temporarily writes 1x1 during swapchain churn. Letting that
+    // reach CAMetalLayer produces a visible black flash during playback resize.
+    if (drawableSize.width > 1.0 && drawableSize.height > 1.0) {
+        [super setDrawableSize:drawableSize];
+    }
+}
+@end
+
 @implementation PlayerMetalView {
     CAMetalLayer *_metalLayer;
     BOOL _hasConfiguredEdr;
@@ -377,7 +451,7 @@ static double hdrMetadataMaxNits(void) {
     self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.wantsLayer = YES;
 
-    _metalLayer = [CAMetalLayer layer];
+    _metalLayer = [NuvioPlayerMetalLayer layer];
     _metalLayer.device = MTLCreateSystemDefaultDevice();
     _metalLayer.frame = self.bounds;
     _metalLayer.contentsGravity = kCAGravityResize;
@@ -403,7 +477,7 @@ static double hdrMetadataMaxNits(void) {
 }
 
 - (CALayer *)makeBackingLayer {
-    return _metalLayer ?: [CAMetalLayer layer];
+    return _metalLayer ?: [NuvioPlayerMetalLayer layer];
 }
 
 - (CAMetalLayer *)metalLayer {
@@ -438,8 +512,24 @@ static double hdrMetadataMaxNits(void) {
     setBoolWithSelector(_metalLayer, @"setWantsExtendedDynamicRangeContent:", YES);
 }
 
+- (void)viewWillStartLiveResize {
+    [super viewWillStartLiveResize];
+    ((NuvioPlayerMetalLayer *)_metalLayer).nuvioLiveResize = YES;
+}
+
+- (void)viewDidEndLiveResize {
+    [super viewDidEndLiveResize];
+    ((NuvioPlayerMetalLayer *)_metalLayer).nuvioLiveResize = NO;
+    [self updateMetalLayerLayout];
+}
+
 - (void)updateMetalLayerLayout {
     if (!_metalLayer) {
+        return;
+    }
+
+    NSSize boundsSize = self.bounds.size;
+    if (boundsSize.width <= 1.0 || boundsSize.height <= 1.0) {
         return;
     }
 
@@ -447,24 +537,61 @@ static double hdrMetadataMaxNits(void) {
         ? self.window.backingScaleFactor
         : NSScreen.mainScreen.backingScaleFactor;
     CGSize drawableSize = CGSizeMake(
-        MAX(1.0, llround(self.bounds.size.width * scale)),
-        MAX(1.0, llround(self.bounds.size.height * scale))
+        llround(boundsSize.width * scale),
+        llround(boundsSize.height * scale)
     );
+    if (drawableSize.width <= 1.0 || drawableSize.height <= 1.0) {
+        return;
+    }
 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    ((NuvioPlayerMetalLayer *)_metalLayer).nuvioLiveResize = self.inLiveResize;
     _metalLayer.contentsScale = scale;
     _metalLayer.frame = self.bounds;
-    if (!CGSizeEqualToSize(_metalLayer.drawableSize, drawableSize)) {
+    CGSize previousDrawableSize = _metalLayer.drawableSize;
+    if (!CGSizeEqualToSize(previousDrawableSize, drawableSize)) {
         _metalLayer.drawableSize = drawableSize;
+        NSLog(
+            @"[NuvioDesktopPlayer] resize: drawable old=%@ new=%@ viewBounds=%@ scale=%.2f layer=%@",
+            diagnosticSize(previousDrawableSize),
+            diagnosticSize(drawableSize),
+            diagnosticRect(self.bounds),
+            scale,
+            [self diagnosticSummary]
+        );
     }
+    [self refreshMetalLayerEdrState];
     [CATransaction commit];
 }
 
-- (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries {
-    if (_hasConfiguredEdr && _edrEnabled == enabled) {
+- (void)refreshMetalLayerEdrState {
+    if (!_hasConfiguredEdr || !_metalLayer) {
         return;
     }
+
+    setBoolWithSelector(self, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(self.window, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(self.window.contentView, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(_metalLayer, @"setWantsExtendedDynamicRangeContent:", YES);
+
+    CGColorSpaceRef colorSpace = _edrEnabled
+        ? CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_PQ)
+        : CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    if (colorSpace) {
+        setLayerColorSpace(_metalLayer, colorSpace);
+        CGColorSpaceRelease(colorSpace);
+    }
+
+    if (_edrEnabled) {
+        setLayerEdrMetadata(_metalLayer, 0.0, hdrMetadataMaxNits(), 1.0);
+    } else {
+        clearLayerEdrMetadata(_metalLayer);
+    }
+}
+
+- (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries {
+    BOOL stateChanged = !_hasConfiguredEdr || _edrEnabled != enabled;
     _hasConfiguredEdr = YES;
     _edrEnabled = enabled;
 
@@ -492,11 +619,13 @@ static double hdrMetadataMaxNits(void) {
     }
 
     NSLog(
-        @"[NuvioDesktopPlayer] macos_edr: CAMetalLayer EDR %@ primaries=%@ edrMax=%.2f pixelFormat=rgba16Float metadata=%@",
-        enabled ? @"enabled" : @"disabled",
+        @"[NuvioDesktopPlayer] macos_edr: CAMetalLayer EDR %@ primaries=%@ edrMax=%.2f pixelFormat=%@ layerCS=%@ metadata=%@",
+        stateChanged ? (enabled ? @"enabled" : @"disabled") : (enabled ? @"refreshed-enabled" : @"refreshed-disabled"),
         primaries ?: @"unknown",
         [self edrMax],
-        didSetMetadata ? @"hdr10-1000" : @"none"
+        metalPixelFormatName(_metalLayer.pixelFormat),
+        layerColorSpaceName(_metalLayer),
+        didSetMetadata ? layerEdrMetadataName(_metalLayer) : @"none"
     );
 }
 
@@ -506,6 +635,30 @@ static double hdrMetadataMaxNits(void) {
 
 - (double)hdrTargetPeakNits {
     return hdrTargetPeakNitsForScreen(self.window.screen ?: NSScreen.mainScreen);
+}
+
+- (CGSize)drawableSize {
+    return _metalLayer ? _metalLayer.drawableSize : CGSizeZero;
+}
+
+- (NSString *)diagnosticSummary {
+    if (!_metalLayer) {
+        return @"layer=none";
+    }
+    return [NSString stringWithFormat:
+        @"frame=%@ bounds=%@ drawable=%@ scale=%.2f liveResize=%@ pixelFormat=%@ edr=%@ layerCS=%@ metadata=%@ edrMax=%.2f screenPeak=%.0f",
+        diagnosticRect(self.frame),
+        diagnosticRect(self.bounds),
+        diagnosticSize(_metalLayer.drawableSize),
+        _metalLayer.contentsScale,
+        ((NuvioPlayerMetalLayer *)_metalLayer).nuvioLiveResize ? @"yes" : @"no",
+        metalPixelFormatName(_metalLayer.pixelFormat),
+        _edrEnabled ? @"on" : @"off",
+        layerColorSpaceName(_metalLayer),
+        layerEdrMetadataName(_metalLayer),
+        [self edrMax],
+        [self hdrTargetPeakNits]
+    ];
 }
 
 @end
@@ -607,12 +760,14 @@ static NSString *limitDiagnosticText(NSString *text) {
     PlayerScriptHandler *_scriptHandler;
     mpv_handle *_mpv;
     NSTimer *_timer;
+    NSTimer *_resizeSettleTimer;
     JavaVM *_javaVm;
     jobject _eventSink;
     jmethodID _eventMethod;
     NSString *_lastLoggedHwdec;
     NSString *_lastConfiguredHdrKey;
     NSString *_lastLoggedHdrTargetKey;
+    NSString *_lastResizeDiagnosticKey;
     NSMutableSet<NSString *> *_loggedMpvDiagnostics;
     dispatch_queue_t _mpvEventQueue;
     std::atomic_bool _eventDrainScheduled;
@@ -706,6 +861,7 @@ static NSString *limitDiagnosticText(NSString *text) {
         return;
     }
 
+    CGSize previousDrawableSize = _videoView ? [_videoView drawableSize] : CGSizeZero;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     if (_videoView) {
@@ -720,6 +876,29 @@ static NSString *limitDiagnosticText(NSString *text) {
         [_webView layoutSubtreeIfNeeded];
     }
     [CATransaction commit];
+
+    CGSize currentDrawableSize = _videoView ? [_videoView drawableSize] : CGSizeZero;
+    NSString *resizeKey = [NSString stringWithFormat:
+        @"%@:%@:%@:%@",
+        diagnosticRect(bounds),
+        _videoView ? diagnosticRect(_videoView.frame) : @"none",
+        _webView ? diagnosticRect(_webView.frame) : @"none",
+        diagnosticSize(currentDrawableSize)
+    ];
+    if (!_lastResizeDiagnosticKey || ![_lastResizeDiagnosticKey isEqualToString:resizeKey]) {
+        _lastResizeDiagnosticKey = resizeKey;
+        NSLog(
+            @"[NuvioDesktopPlayer] resize: layout host=%@ video=%@ web=%@ drawableOld=%@ drawableNow=%@",
+            diagnosticRect(bounds),
+            _videoView ? diagnosticRect(_videoView.frame) : @"none",
+            _webView ? diagnosticRect(_webView.frame) : @"none",
+            diagnosticSize(previousDrawableSize),
+            diagnosticSize(currentDrawableSize)
+        );
+        if (_mpv) {
+            [self schedulePostResizeRefreshWithReason:@"layout"];
+        }
+    }
 }
 
 - (void)hostViewFrameDidChange:(NSNotification *)notification {
@@ -728,6 +907,28 @@ static NSString *limitDiagnosticText(NSString *text) {
 
 - (void)hostViewBoundsDidChange:(NSNotification *)notification {
     [self layoutNativeSubviews];
+}
+
+- (void)schedulePostResizeRefreshWithReason:(NSString *)reason {
+    if (!_mpv || !_videoView) {
+        return;
+    }
+    [_resizeSettleTimer invalidate];
+    _resizeSettleTimer = [NSTimer scheduledTimerWithTimeInterval:0.20
+                                                          target:self
+                                                        selector:@selector(handleResizeSettleTimer:)
+                                                        userInfo:reason ?: @"unknown"
+                                                         repeats:NO];
+}
+
+- (void)handleResizeSettleTimer:(NSTimer *)timer {
+    _resizeSettleTimer = nil;
+    if (!_mpv || !_videoView) {
+        return;
+    }
+    NSString *reason = [NSString stringWithFormat:@"resize-settled/%@", timer.userInfo ?: @"unknown"];
+    [self configureHdrForCurrentScreenWithReason:reason force:YES];
+    [self logResizeStateWithReason:@"settled"];
 }
 
 - (void)startMpvWithSource:(NSString *)sourceUrl
@@ -834,7 +1035,7 @@ static NSString *limitDiagnosticText(NSString *text) {
     NSString *audioTracks = [self audioTracksJson] ?: @"[]";
     NSString *subtitleTracks = [self subtitleTracksJson] ?: @"[]";
     [self scheduleMpvEventDrain];
-    [self configureHdrForCurrentScreenIfNeeded];
+    [self configureHdrForCurrentScreenWithReason:@"sync" force:NO];
     [self logHdrTargetIfNeeded];
     [self logHwdecIfNeeded];
     NSString *script = [NSString stringWithFormat:
@@ -849,6 +1050,10 @@ static NSString *limitDiagnosticText(NSString *text) {
 }
 
 - (void)configureHdrForCurrentScreenIfNeeded {
+    [self configureHdrForCurrentScreenWithReason:@"legacy" force:NO];
+}
+
+- (void)configureHdrForCurrentScreenWithReason:(NSString *)reason force:(BOOL)force {
     if (!_mpv || !_videoView) {
         return;
     }
@@ -874,7 +1079,7 @@ static NSString *limitDiagnosticText(NSString *text) {
         edrMax,
         screenPeak
     ];
-    if (_lastConfiguredHdrKey && [_lastConfiguredHdrKey isEqualToString:stateKey]) {
+    if (!force && _lastConfiguredHdrKey && [_lastConfiguredHdrKey isEqualToString:stateKey]) {
         return;
     }
     _lastConfiguredHdrKey = stateKey;
@@ -894,7 +1099,9 @@ static NSString *limitDiagnosticText(NSString *text) {
         NSString *targetPrimariesLog = [[self stringProperty:"video-target-params/primaries" fallback:@""] lowercaseString];
         NSString *targetSigPeak = [self stringProperty:"video-target-params/sig-peak" fallback:@""];
         NSLog(
-            @"[NuvioDesktopPlayer] macos_edr: HDR enabled via MPVKit Metal primaries=%@ gamma=%@ edrMax=%.2f screenPeak=%.0f metadataPeak=%.0f targetPeak=auto toneMapping=auto hdrComputePeak=no hint=source targetPrimaries=%@ targetGamma=%@ targetSigPeak=%@",
+            @"[NuvioDesktopPlayer] macos_edr: HDR enabled via MPVKit Metal reason=%@%@ primaries=%@ gamma=%@ edrMax=%.2f screenPeak=%.0f metadataPeak=%.0f targetPeak=auto toneMapping=auto hdrComputePeak=no hint=source targetPrimaries=%@ targetGamma=%@ targetSigPeak=%@",
+            reason ?: @"unknown",
+            force ? @" force=true" : @"",
             targetPrimaries,
             gamma.length > 0 ? gamma : @"unknown",
             edrMax,
@@ -905,18 +1112,67 @@ static NSString *limitDiagnosticText(NSString *text) {
             targetSigPeak.length > 0 ? targetSigPeak : @"unknown"
         );
     } else {
-        NSString *reason = isHlg
+        NSString *sdrReason = isHlg
             ? @"display-edr-unavailable-for-hlg"
             : (isPq ? @"display-edr-unavailable" : @"video-sdr");
         NSLog(
-            @"[NuvioDesktopPlayer] macos_edr: SDR mode primaries=%@ gamma=%@ edrMax=%.2f screenPeak=%.0f reason=%@",
+            @"[NuvioDesktopPlayer] macos_edr: SDR mode configureReason=%@%@ primaries=%@ gamma=%@ edrMax=%.2f screenPeak=%.0f reason=%@",
+            reason ?: @"unknown",
+            force ? @" force=true" : @"",
             primaries.length > 0 ? primaries : @"unknown",
             gamma.length > 0 ? gamma : @"unknown",
             edrMax,
             screenPeak,
-            reason
+            sdrReason
         );
     }
+}
+
+- (void)logResizeStateWithReason:(NSString *)reason {
+    if (!_mpv || !_videoView) {
+        return;
+    }
+
+    NSString *sourcePrimaries = [[self stringProperty:"video-params/primaries" fallback:@""] lowercaseString];
+    NSString *sourceGamma = [[self stringProperty:"video-params/gamma" fallback:@""] lowercaseString];
+    NSString *sourceFormat = [self stringProperty:"video-params/pixelformat" fallback:@""];
+    NSString *targetPrimaries = [[self stringProperty:"video-target-params/primaries" fallback:@""] lowercaseString];
+    NSString *targetGamma = [[self stringProperty:"video-target-params/gamma" fallback:@""] lowercaseString];
+    NSString *targetSigPeak = [self stringProperty:"video-target-params/sig-peak" fallback:@""];
+    NSString *targetFormat = [self stringProperty:"video-target-params/pixelformat" fallback:@""];
+    NSString *targetHint = [self stringProperty:"target-colorspace-hint" fallback:@""];
+    NSString *targetHintMode = [self stringProperty:"target-colorspace-hint-mode" fallback:@""];
+    NSString *targetPrim = [self stringProperty:"target-prim" fallback:@""];
+    NSString *targetTrc = [self stringProperty:"target-trc" fallback:@""];
+    NSString *targetPeak = [self stringProperty:"target-peak" fallback:@""];
+    NSString *toneMapping = [self stringProperty:"tone-mapping" fallback:@""];
+    NSString *hdrComputePeak = [self stringProperty:"hdr-compute-peak" fallback:@""];
+    NSString *hwdec = [self stringProperty:"hwdec-current" fallback:@""];
+    NSString *hwPixelformat = [self stringProperty:"video-params/hw-pixelformat" fallback:@""];
+
+    NSLog(
+        @"[NuvioDesktopPlayer] resize: state reason=%@ host=%@ web=%@ video={%@} source=%@/%@/%@ target=%@/%@ sigPeak=%@ format=%@ hint=%@/%@ mpvTarget=%@/%@ peak=%@ tone=%@ hdrComputePeak=%@ hwdec=%@ hwPixfmt=%@",
+        reason ?: @"unknown",
+        _hostView ? diagnosticRect(_hostView.bounds) : @"none",
+        _webView ? diagnosticRect(_webView.frame) : @"none",
+        [_videoView diagnosticSummary],
+        sourcePrimaries.length > 0 ? sourcePrimaries : @"unknown",
+        sourceGamma.length > 0 ? sourceGamma : @"unknown",
+        sourceFormat.length > 0 ? sourceFormat : @"unknown",
+        targetPrimaries.length > 0 ? targetPrimaries : @"unknown",
+        targetGamma.length > 0 ? targetGamma : @"unknown",
+        targetSigPeak.length > 0 ? targetSigPeak : @"unknown",
+        targetFormat.length > 0 ? targetFormat : @"unknown",
+        targetHint.length > 0 ? targetHint : @"unknown",
+        targetHintMode.length > 0 ? targetHintMode : @"unknown",
+        targetPrim.length > 0 ? targetPrim : @"unknown",
+        targetTrc.length > 0 ? targetTrc : @"unknown",
+        targetPeak.length > 0 ? targetPeak : @"unknown",
+        toneMapping.length > 0 ? toneMapping : @"unknown",
+        hdrComputePeak.length > 0 ? hdrComputePeak : @"unknown",
+        hwdec.length > 0 ? hwdec : @"unknown",
+        hwPixelformat.length > 0 ? hwPixelformat : @"unknown"
+    );
 }
 
 - (void)logHdrTargetIfNeeded {
@@ -1200,6 +1456,8 @@ static NSString *limitDiagnosticText(NSString *text) {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [_timer invalidate];
     _timer = nil;
+    [_resizeSettleTimer invalidate];
+    _resizeSettleTimer = nil;
     if (_mpv) {
         mpv_set_wakeup_callback(_mpv, nullptr, nullptr);
     }
