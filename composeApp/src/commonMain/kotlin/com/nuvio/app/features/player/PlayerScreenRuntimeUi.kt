@@ -143,6 +143,21 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             }
         }
     }.orEmpty()
+    val nativeSkipInterval = activeSkipInterval.takeIf { initialLoadCompleted && !pausedOverlayVisible }
+    val nextEpisodeForControls = nextEpisodeInfo.takeIf { isSeries && showNextEpisodeCard }
+    val nextEpisodeStatus = when {
+        nextEpisodeForControls == null -> ""
+        !nextEpisodeForControls.hasAired && !nextEpisodeForControls.unairedMessage.isNullOrBlank() ->
+            nextEpisodeForControls.unairedMessage.orEmpty()
+        nextEpisodeAutoPlaySearching -> stringResource(Res.string.player_next_episode_finding_source)
+        !nextEpisodeAutoPlaySourceName.isNullOrBlank() && nextEpisodeAutoPlayCountdown != null ->
+            stringResource(
+                Res.string.player_next_episode_playing_via_countdown,
+                nextEpisodeAutoPlaySourceName.orEmpty(),
+                nextEpisodeAutoPlayCountdown ?: 0,
+            )
+        else -> ""
+    }
     val playerControlsState = PlayerControlsState(
         title = title,
         episodeText = episodeText,
@@ -274,6 +289,29 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         openingTitle = title,
         openingMessage = p2pInitialLoadingMessage,
         openingProgress = p2pInitialLoadingProgress,
+        skipPromptVisible = nativeSkipInterval != null && !playerControlsLocked,
+        skipPromptLabel = skipPromptLabel(nativeSkipInterval?.type),
+        skipPromptStartMs = ((nativeSkipInterval?.startTime ?: 0.0) * 1000).toLong().coerceAtLeast(0L),
+        skipPromptEndMs = ((nativeSkipInterval?.endTime ?: 0.0) * 1000).toLong().coerceAtLeast(0L),
+        skipPromptDismissed = skipIntervalDismissed,
+        nextEpisodeVisible = nextEpisodeForControls != null && !playerControlsLocked,
+        nextEpisodeHeaderLabel = stringResource(Res.string.player_next_episode),
+        nextEpisodeTitle = nextEpisodeForControls?.let {
+            stringResource(
+                Res.string.compose_player_episode_title_format,
+                it.season,
+                it.episode,
+                it.title,
+            )
+        }.orEmpty(),
+        nextEpisodeThumbnail = nextEpisodeForControls?.thumbnail.orEmpty(),
+        nextEpisodeStatus = nextEpisodeStatus,
+        nextEpisodeActionLabel = if (nextEpisodeForControls?.hasAired == true) {
+            stringResource(Res.string.detail_btn_play)
+        } else {
+            stringResource(Res.string.player_next_episode_unaired)
+        },
+        nextEpisodePlayable = nextEpisodeForControls?.hasAired == true,
     )
     val gestureCallbacks = rememberSurfaceGestureCallbacks()
 
@@ -629,6 +667,18 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             submitIntroStatusMessage = null
         }
         "submitIntroCommit" -> submitIntroFromPlayerControls()
+        "skipInterval" -> {
+            val interval = activeSkipInterval ?: return true
+            playerController?.seekTo((interval.endTime * 1000).toLong())
+            scheduleProgressSyncAfterSeek()
+            skipIntervalDismissed = true
+        }
+        "playNextEpisode" -> {
+            if (nextEpisodeInfo?.hasAired == true) {
+                nextEpisodeAutoPlayJob?.cancel()
+                playNextEpisode()
+            }
+        }
         "enableP2pForPlayerControls" -> enableP2pForPlayerControls()
         "cancelP2pForPlayerControls" -> {
             playerControlsPendingP2pSwitch = null
@@ -829,6 +879,15 @@ private fun PlayerScreenRuntime.activeSubmitIntroImdbId(): String? =
     activeVideoId?.split(":")?.firstOrNull()?.takeIf { it.startsWith("tt") }
         ?: parentMetaId.takeIf { it.startsWith("tt") }
         ?: metaUiState.meta?.id?.takeIf { it.startsWith("tt") }
+
+@Composable
+private fun skipPromptLabel(type: String?): String =
+    when (type?.lowercase()) {
+        "intro", "op", "mixed-op" -> stringResource(Res.string.player_skip_intro)
+        "outro", "ed", "mixed-ed", "credits" -> stringResource(Res.string.player_skip_outro)
+        "recap" -> stringResource(Res.string.player_skip_recap)
+        else -> stringResource(Res.string.player_skip)
+    }
 
 private fun formatPlayerControlsSeconds(seconds: Double): String {
     val totalSeconds = seconds
@@ -1107,7 +1166,7 @@ private fun BoxScope.RenderPlaybackOverlays(
             renderedGestureFeedback = renderedGestureFeedback,
             initialLoadCompleted = initialLoadCompleted,
             pausedOverlayVisible = pausedOverlayVisible,
-            activeSkipInterval = activeSkipInterval,
+            activeSkipInterval = activeSkipInterval.takeUnless { isDesktop },
             skipIntervalDismissed = skipIntervalDismissed,
             controlsVisible = controlsVisible,
             onSkipInterval = { interval ->
@@ -1120,7 +1179,7 @@ private fun BoxScope.RenderPlaybackOverlays(
             overlayBottomPadding = overlayBottomPadding,
             isSeries = isSeries,
             nextEpisodeInfo = nextEpisodeInfo,
-            showNextEpisodeCard = showNextEpisodeCard,
+            showNextEpisodeCard = showNextEpisodeCard && !isDesktop,
             nextEpisodeAutoPlaySearching = nextEpisodeAutoPlaySearching,
             nextEpisodeAutoPlaySourceName = nextEpisodeAutoPlaySourceName,
             nextEpisodeAutoPlayCountdown = nextEpisodeAutoPlayCountdown,

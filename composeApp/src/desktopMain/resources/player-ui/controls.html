@@ -17,6 +17,7 @@
       --slider-bottom: 16px;
       --slider-touch: 22px;
       --slider-scale: .82;
+      --overlay-bottom: calc(var(--slider-bottom) + var(--slider-touch) + 98px);
       --time: 12px;
       --header-icon: 20px;
       --header-button: 36px;
@@ -157,6 +158,8 @@
     .bottom-gradient,
     .metadata,
     .parental-guide,
+    .skip-prompt,
+    .next-episode-card,
     .header-actions,
     .center-controls,
     .progress {
@@ -180,6 +183,8 @@
     .player.opening-active .top-gradient,
     .player.opening-active .bottom-gradient,
     .player.opening-active .parental-guide,
+    .player.opening-active .skip-prompt,
+    .player.opening-active .next-episode-card,
     .player.opening-active .content {
       visibility: hidden;
       opacity: 0;
@@ -381,6 +386,191 @@
       color: rgba(255, 255, 255, .5);
     }
 
+    .skip-prompt {
+      position: absolute;
+      left: var(--hp);
+      bottom: calc(var(--overlay-bottom) + env(safe-area-inset-bottom));
+      z-index: 7;
+      min-width: max-content;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-radius: 16px;
+      background: rgba(30, 30, 30, .85);
+      color: #fff;
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(.8);
+      transform-origin: left bottom;
+      transition:
+        opacity 300ms ease,
+        transform 300ms var(--ease-out);
+    }
+
+    .skip-prompt.visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: scale(1);
+    }
+
+    .skip-prompt-row {
+      display: flex;
+      align-items: center;
+      padding: 12px 18px;
+    }
+
+    .skip-prompt svg {
+      width: 20px;
+      height: 20px;
+      flex: 0 0 auto;
+    }
+
+    .skip-prompt-label {
+      padding-left: 8px;
+      font-size: 14px;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .skip-progress-track {
+      display: none;
+      width: 100%;
+      height: 3px;
+      overflow: hidden;
+      border-radius: 0 0 16px 16px;
+      background: rgba(255, 255, 255, .15);
+    }
+
+    .skip-prompt.show-progress .skip-progress-track {
+      display: block;
+    }
+
+    .skip-progress-fill {
+      width: 0%;
+      height: 100%;
+      background: rgba(30, 30, 30, .85);
+    }
+
+    .next-episode-card {
+      position: absolute;
+      right: var(--hp);
+      bottom: calc(var(--overlay-bottom) + env(safe-area-inset-bottom));
+      z-index: 7;
+      width: min(292px, calc(100vw - (var(--hp) * 2)));
+      display: flex;
+      align-items: center;
+      padding: 8px 9px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      background: rgba(25, 25, 25, .89);
+      color: #fff;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(50%) scale(.98);
+      transition:
+        opacity 220ms ease,
+        transform 260ms var(--ease-out);
+    }
+
+    .next-episode-card.visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0) scale(1);
+    }
+
+    .next-episode-card:not(.playable) {
+      cursor: default;
+    }
+
+    .next-episode-thumb {
+      position: relative;
+      width: 78px;
+      height: 44px;
+      flex: 0 0 auto;
+      overflow: hidden;
+      border-radius: 9px;
+      background: rgba(255, 255, 255, .08);
+    }
+
+    .next-episode-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .next-episode-card:not(.has-thumb) .next-episode-thumb img {
+      display: none;
+    }
+
+    .next-episode-thumb::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, .32));
+    }
+
+    .next-episode-copy {
+      min-width: 0;
+      flex: 1 1 auto;
+      padding-left: 8px;
+    }
+
+    .next-episode-header {
+      display: block;
+      color: rgba(255, 255, 255, .8);
+      font-size: 10px;
+      line-height: 1.25;
+      font-weight: 500;
+    }
+
+    .next-episode-title {
+      display: block;
+      margin-top: 2px;
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.25;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .next-episode-status {
+      display: block;
+      margin-top: 2px;
+      color: rgba(255, 255, 255, .78);
+      font-size: 10px;
+      line-height: 1.25;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .next-episode-action {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      flex: 0 0 auto;
+      margin-left: 4px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, .2);
+      color: #fff;
+      font-size: 11px;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .next-episode-card:not(.playable) .next-episode-action {
+      color: rgba(255, 255, 255, .72);
+    }
+
+    .next-episode-action svg {
+      width: 13px;
+      height: 13px;
+      color: inherit;
+    }
+
     .header-actions {
       display: flex;
       gap: 10px;
@@ -400,6 +590,8 @@
     .header-button,
     .side-control,
     .play-control,
+    .skip-prompt,
+    .next-episode-card,
     .locked-button,
     .action,
     .panel-button,
@@ -435,6 +627,10 @@
 
     .header-button:active,
     .header-button.is-pressed,
+    .skip-prompt:active,
+    .skip-prompt.is-pressed,
+    .next-episode-card.playable:active,
+    .next-episode-card.playable.is-pressed,
     .locked-button:active,
     .locked-button.is-pressed,
     .side-control:active,
@@ -1507,6 +1703,9 @@
       .header-actions,
       .center-controls,
       .center-status,
+      .skip-prompt,
+      .next-episode-card,
+      .skip-progress-fill,
       .progress,
       .opening-overlay,
       .opening-progress-bar,
@@ -1554,6 +1753,9 @@
     <symbol id="icon-forward10" viewBox="0 0 24 24">
       <path d="M12 5V2l4.5 4.5L12 11V8c-3.31 0-6 2.69-6 6 0 1.45.52 2.78 1.38 3.82l-1.42 1.42A7.95 7.95 0 0 1 4 14c0-4.42 3.58-9 8-9Z"/>
       <path d="M8.7 17.8H7.55v-4.35l-1.25.38v-.95l2.25-.72h.15v5.64ZM15.25 16.47c0 .88-.63 1.42-1.62 1.42h-1.2c-.99 0-1.62-.54-1.62-1.42v-2.85c0-.88.63-1.42 1.62-1.42h1.2c.99 0 1.62.54 1.62 1.42v2.85Zm-1.13-2.64c0-.36-.2-.55-.58-.55h-1.02c-.38 0-.58.19-.58.55v2.43c0 .36.2.55.58.55h1.02c.38 0 .58-.19.58-.55v-2.43Z"/>
+    </symbol>
+    <symbol id="icon-skip-next" viewBox="0 0 24 24">
+      <path d="M5 4.9c0-.78.86-1.26 1.53-.84L15 9.36V5a1 1 0 1 1 2 0v14a1 1 0 1 1-2 0v-4.36l-8.47 5.3A1 1 0 0 1 5 19.1V4.9Z"/>
     </symbol>
     <symbol id="icon-lock" viewBox="0 0 24 24">
       <path d="M17 9h-1V7a4 4 0 0 0-8 0v2H7c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2Zm-7 0V7a2 2 0 0 1 4 0v2h-4Z"/>
@@ -1642,6 +1844,31 @@
       <section class="center-status" id="bufferingStatus" aria-label="Buffering" aria-hidden="true">
         <span class="center-spinner" aria-hidden="true"></span>
       </section>
+
+      <button class="skip-prompt" id="skipPrompt" type="button" aria-label="Skip" aria-hidden="true">
+        <span class="skip-prompt-row">
+          <svg><use href="#icon-skip-next"></use></svg>
+          <span class="skip-prompt-label" id="skipPromptLabel">Skip</span>
+        </span>
+        <span class="skip-progress-track">
+          <span class="skip-progress-fill" id="skipPromptProgress"></span>
+        </span>
+      </button>
+
+      <button class="next-episode-card" id="nextEpisodeCard" type="button" aria-hidden="true">
+        <span class="next-episode-thumb">
+          <img id="nextEpisodeThumb" alt="">
+        </span>
+        <span class="next-episode-copy">
+          <span class="next-episode-header" id="nextEpisodeHeader">Next episode</span>
+          <span class="next-episode-title" id="nextEpisodeTitle"></span>
+          <span class="next-episode-status" id="nextEpisodeStatus"></span>
+        </span>
+        <span class="next-episode-action">
+          <svg><use href="#icon-play"></use></svg>
+          <span id="nextEpisodeAction">Play</span>
+        </span>
+      </button>
 
       <section class="progress" aria-label="Playback progress">
         <section class="metadata" aria-label="Playback metadata">
@@ -1900,6 +2127,15 @@
     const parentalGuide = document.getElementById("parentalGuide");
     const parentalGuideLine = document.getElementById("parentalGuideLine");
     const parentalGuideList = document.getElementById("parentalGuideList");
+    const skipPrompt = document.getElementById("skipPrompt");
+    const skipPromptLabel = document.getElementById("skipPromptLabel");
+    const skipPromptProgress = document.getElementById("skipPromptProgress");
+    const nextEpisodeCard = document.getElementById("nextEpisodeCard");
+    const nextEpisodeThumb = document.getElementById("nextEpisodeThumb");
+    const nextEpisodeHeader = document.getElementById("nextEpisodeHeader");
+    const nextEpisodeTitle = document.getElementById("nextEpisodeTitle");
+    const nextEpisodeStatus = document.getElementById("nextEpisodeStatus");
+    const nextEpisodeAction = document.getElementById("nextEpisodeAction");
     const sourcesButton = document.getElementById("sourcesButton");
     const episodesButton = document.getElementById("episodesButton");
     const externalButton = document.getElementById("externalButton");
@@ -2079,6 +2315,18 @@
       openingTitle: "",
       openingMessage: "",
       openingProgress: null,
+      skipPromptVisible: false,
+      skipPromptLabel: "Skip",
+      skipPromptStartMs: 0,
+      skipPromptEndMs: 0,
+      skipPromptDismissed: false,
+      nextEpisodeVisible: false,
+      nextEpisodeHeaderLabel: "Next episode",
+      nextEpisodeTitle: "",
+      nextEpisodeThumbnail: "",
+      nextEpisodeStatus: "",
+      nextEpisodeActionLabel: "Play",
+      nextEpisodePlayable: false,
       showSubmitIntro: false,
       showVideoSettings: false,
       showSources: false,
@@ -2144,6 +2392,11 @@
     let parentalGuideRunId = 0;
     let parentalGuideStartedKey = "";
     let parentalGuideCompletedKey = "";
+    let skipPromptKey = "";
+    let skipPromptWasDismissed = false;
+    let skipPromptAutoHidden = false;
+    let skipPromptAutoHideTimer = 0;
+    let skipPromptAutoHideActive = false;
     const prefersReducedMotion = window.matchMedia &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const modalTransitionMs = prefersReducedMotion ? 1 : 240;
@@ -3018,6 +3271,78 @@
       return showOpening;
     };
 
+    const resetSkipPromptAutoHide = () => {
+      window.clearTimeout(skipPromptAutoHideTimer);
+      skipPromptAutoHideTimer = 0;
+      skipPromptAutoHideActive = false;
+      skipPromptAutoHidden = false;
+      skipPromptProgress.style.transition = "none";
+      skipPromptProgress.style.width = "0%";
+    };
+
+    const startSkipPromptAutoHide = () => {
+      if (skipPromptAutoHideActive || skipPromptAutoHidden) return;
+      skipPromptAutoHideActive = true;
+      skipPromptProgress.style.transition = "none";
+      skipPromptProgress.style.width = "0%";
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          skipPromptProgress.style.transition = `width ${prefersReducedMotion ? 1 : 10000}ms linear`;
+          skipPromptProgress.style.width = "100%";
+        });
+      });
+      skipPromptAutoHideTimer = window.setTimeout(() => {
+        skipPromptAutoHideActive = false;
+        skipPromptAutoHidden = true;
+        renderNativePlaybackPrompts();
+      }, prefersReducedMotion ? 1 : 10000);
+    };
+
+    const renderNativePlaybackPrompts = () => {
+      const nextSkipKey = [
+        state.skipPromptStartMs || 0,
+        state.skipPromptEndMs || 0,
+        state.skipPromptLabel || "",
+      ].join(":");
+      if (
+        nextSkipKey !== skipPromptKey ||
+        !state.skipPromptVisible ||
+        (skipPromptWasDismissed && !state.skipPromptDismissed)
+      ) {
+        skipPromptKey = nextSkipKey;
+        resetSkipPromptAutoHide();
+      }
+      skipPromptWasDismissed = Boolean(state.skipPromptDismissed);
+
+      const shouldShowSkip = Boolean(state.skipPromptVisible && (!state.skipPromptDismissed || state.controlsVisible));
+      const showSkip = Boolean(shouldShowSkip && (!skipPromptAutoHidden || state.controlsVisible));
+      const showSkipProgress = Boolean(showSkip && !state.controlsVisible && !skipPromptAutoHidden && !state.skipPromptDismissed);
+      skipPromptLabel.textContent = state.skipPromptLabel || "Skip";
+      skipPrompt.setAttribute("aria-label", state.skipPromptLabel || "Skip");
+      skipPrompt.setAttribute("aria-hidden", showSkip ? "false" : "true");
+      skipPrompt.classList.toggle("visible", showSkip);
+      skipPrompt.classList.toggle("show-progress", showSkipProgress);
+      if (showSkipProgress) {
+        startSkipPromptAutoHide();
+      } else if (!showSkip || state.controlsVisible || state.skipPromptDismissed) {
+        window.clearTimeout(skipPromptAutoHideTimer);
+        skipPromptAutoHideTimer = 0;
+        skipPromptAutoHideActive = false;
+      }
+
+      const showNextEpisode = Boolean(state.nextEpisodeVisible);
+      const nextThumbUrl = setImageSource(nextEpisodeThumb, state.nextEpisodeThumbnail);
+      nextEpisodeHeader.textContent = state.nextEpisodeHeaderLabel || "Next episode";
+      nextEpisodeTitle.textContent = state.nextEpisodeTitle || "";
+      nextEpisodeStatus.textContent = state.nextEpisodeStatus || "";
+      nextEpisodeStatus.hidden = !state.nextEpisodeStatus;
+      nextEpisodeAction.textContent = state.nextEpisodeActionLabel || "Play";
+      nextEpisodeCard.setAttribute("aria-hidden", showNextEpisode ? "false" : "true");
+      nextEpisodeCard.classList.toggle("visible", showNextEpisode);
+      nextEpisodeCard.classList.toggle("playable", Boolean(state.nextEpisodePlayable));
+      nextEpisodeCard.classList.toggle("has-thumb", Boolean(nextThumbUrl));
+    };
+
     const renderChrome = () => {
       const durationMs = Math.max(0, Number(state.durationMs) || 0);
       const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
@@ -3065,6 +3390,7 @@
       videoSettingsButton.setAttribute("aria-label", state.videoSettingsLabel || "Video settings");
       seek.disabled = Boolean(state.isLocked);
       setProgress(positionMs, durationMs);
+      renderNativePlaybackPrompts();
     };
 
     const render = () => {
@@ -3372,6 +3698,18 @@
     p2pConsentEnableButton.addEventListener("click", event => {
       event.stopPropagation();
       send("enableP2pForPlayerControls", 0);
+    });
+
+    skipPrompt.addEventListener("click", event => {
+      event.stopPropagation();
+      send("skipInterval", 0);
+    });
+
+    nextEpisodeCard.addEventListener("click", event => {
+      event.stopPropagation();
+      if (state.nextEpisodePlayable) {
+        send("playNextEpisode", 0);
+      }
     });
 
     seek.addEventListener("input", () => {
