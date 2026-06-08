@@ -1,6 +1,7 @@
 package com.nuvio.app
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -11,6 +12,10 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.player.PlatformPlayerSurface
+import java.awt.Color as AwtColor
+import javax.swing.JComponent
+
+private val NuvioDesktopNativeBackground = AwtColor(0x0D, 0x0D, 0x0D)
 
 fun main() = application {
     val smokePlayerUrl = (
@@ -24,6 +29,13 @@ fun main() = application {
         title = if (smokePlayerUrl == null) "Nuvio" else "Nuvio Player Smoke",
         state = WindowState(width = 1280.dp, height = 820.dp),
     ) {
+        SideEffect {
+            window.background = NuvioDesktopNativeBackground
+            window.rootPane.background = NuvioDesktopNativeBackground
+            window.contentPane.background = NuvioDesktopNativeBackground
+            (window.contentPane as? JComponent)?.isOpaque = true
+        }
+
         if (smokePlayerUrl == null) {
             App()
         } else {
