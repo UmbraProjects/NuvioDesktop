@@ -254,6 +254,8 @@ val buildMacosPlayerBridge = tasks.register<Exec>("buildMacosPlayerBridge") {
         "-framework",
         "CoreVideo",
         "-framework",
+        "IOKit",
+        "-framework",
         "OpenGL",
     )
 }

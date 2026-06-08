@@ -17,6 +17,7 @@ internal object NativePlayerBridge {
         sourceUrl: String,
         headerLines: Array<String>,
         playWhenReady: Boolean,
+        initialPositionMs: Long,
         controlsHtml: String,
         eventSink: NativePlayerEventSink,
     ): Long

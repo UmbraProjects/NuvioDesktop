@@ -29,6 +29,7 @@ actual fun PlatformPlayerSurface(
     modifier: Modifier,
     playWhenReady: Boolean,
     resizeMode: PlayerResizeMode,
+    initialPositionMs: Long,
     useNativeController: Boolean,
     playerControlsState: PlayerControlsState,
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
@@ -46,6 +47,7 @@ actual fun PlatformPlayerSurface(
             modifier = modifier,
             playWhenReady = playWhenReady,
             resizeMode = resizeMode,
+            initialPositionMs = initialPositionMs,
             playerControlsState = playerControlsState,
             onPlayerControlsAction = onPlayerControlsAction,
             onPlayerControlsEvent = onPlayerControlsEvent,
@@ -72,6 +74,7 @@ private fun NativePlayerSurface(
     modifier: Modifier,
     playWhenReady: Boolean,
     resizeMode: PlayerResizeMode,
+    initialPositionMs: Long,
     playerControlsState: PlayerControlsState,
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
     onPlayerControlsEvent: (String, Double) -> Boolean,
@@ -107,6 +110,7 @@ private fun NativePlayerSurface(
             sourceUrl = sourceUrl,
             sourceHeaders = playbackHeaders,
             playWhenReady = playWhenReady,
+            initialPositionMs = initialPositionMs,
             onError = onError,
         )
         onDispose { controller.dispose() }
