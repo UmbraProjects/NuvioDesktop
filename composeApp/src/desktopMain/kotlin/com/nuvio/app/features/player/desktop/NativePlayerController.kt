@@ -37,6 +37,7 @@ internal class NativePlayerController(
     private var handle: Long = 0L
     private var pendingSource: PendingSource? = null
     private var controlsState = PlayerControlsState()
+    private var lastSentControlsStructureKey: PlayerControlsState? = null
     private var onAction: (PlayerControlsAction) -> Boolean = { false }
     private var onEvent: (String, Double) -> Boolean = { _, _ -> false }
     private var onScrubChange: (Long) -> Boolean = { false }
@@ -100,9 +101,11 @@ internal class NativePlayerController(
 
     fun updateControls(state: PlayerControlsState) {
         controlsState = state
-        handle.takeIf { it != 0L }?.let { current ->
-            NativePlayerBridge.updateControls(current, state.toControlsJson())
-        }
+        val current = handle.takeIf { it != 0L } ?: return
+        val structureKey = state.nativeControlsStructureKey()
+        if (structureKey == lastSentControlsStructureKey) return
+        lastSentControlsStructureKey = structureKey
+        NativePlayerBridge.updateControls(current, state.toControlsJson())
     }
 
     fun setResizeMode(mode: PlayerResizeMode) {
@@ -191,6 +194,7 @@ internal class NativePlayerController(
     fun dispose() {
         val current = handle
         handle = 0L
+        lastSentControlsStructureKey = null
         if (current != 0L) {
             runCatching { NativePlayerBridge.dispose(current) }
         }
@@ -630,6 +634,14 @@ private fun PlayerControlsState.toControlsJson(): String =
         appendJsonField("closeModalsToken", closeModalsToken)
         append('}')
     }
+
+private fun PlayerControlsState.nativeControlsStructureKey(): PlayerControlsState =
+    copy(
+        isPlaying = false,
+        isLoading = false,
+        durationMs = 0L,
+        positionMs = 0L,
+    )
 
 private fun StringBuilder.appendJsonField(name: String, value: String) {
     append('"').append(name).append("\":")

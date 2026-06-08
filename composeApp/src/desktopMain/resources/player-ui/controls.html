@@ -2130,7 +2130,18 @@
       if (activeModal === "p2pConsent") renderP2pConsentModal();
     };
 
-    const render = () => {
+    const trackListSignature = tracks =>
+      normalizeTracks(tracks)
+        .map(track => [
+          track.id == null ? "" : String(track.id),
+          track.index == null ? "" : String(track.index),
+          track.label == null ? "" : String(track.label),
+          track.language == null ? "" : String(track.language),
+          Boolean(track.selected) ? "1" : "0",
+        ].join(":"))
+        .join("|");
+
+    const renderChrome = () => {
       const durationMs = Math.max(0, Number(state.durationMs) || 0);
       const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
       root.classList.toggle("locked", Boolean(state.isLocked));
@@ -2167,6 +2178,10 @@
       videoSettingsButton.setAttribute("aria-label", state.videoSettingsLabel || "Video settings");
       seek.disabled = Boolean(state.isLocked);
       setProgress(positionMs, durationMs);
+    };
+
+    const render = () => {
+      renderChrome();
       renderActiveModal();
     };
 
@@ -2419,16 +2434,26 @@
       render();
     });
 
-    window.playerUpdate = state => {
-      const durationMs = Math.round((Number(state.duration) || 0) * 1000);
-      const positionMs = Math.round((Number(state.position) || 0) * 1000);
-      window.playerControls({
+    window.playerUpdate = update => {
+      const durationMs = Math.round((Number(update.duration) || 0) * 1000);
+      const positionMs = Math.round((Number(update.position) || 0) * 1000);
+      const audioTracks = normalizeTracks(update.audioTracks);
+      const subtitleTracks = normalizeTracks(update.subtitleTracks);
+      const audioTracksChanged = trackListSignature(audioTracks) !== trackListSignature(state.audioTracks);
+      const subtitleTracksChanged = trackListSignature(subtitleTracks) !== trackListSignature(state.subtitleTracks);
+      state = {
+        ...state,
         durationMs,
         positionMs,
-        isPlaying: !Boolean(state.paused),
-        audioTracks: normalizeTracks(state.audioTracks),
-        subtitleTracks: normalizeTracks(state.subtitleTracks),
-      });
+        isPlaying: !Boolean(update.paused),
+        audioTracks,
+        subtitleTracks,
+      };
+      renderChrome();
+      if ((audioTracksChanged && activeModal === "audio") ||
+          (subtitleTracksChanged && activeModal === "subtitles")) {
+        renderActiveModal();
+      }
     };
 
     window.playerControls = nextState => {

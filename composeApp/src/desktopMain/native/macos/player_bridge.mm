@@ -1,10 +1,13 @@
 #import <Cocoa/Cocoa.h>
+#import <CoreVideo/CoreVideo.h>
+#import <OpenGL/OpenGL.h>
 #import <OpenGL/gl3.h>
 #import <QuartzCore/QuartzCore.h>
 #import <WebKit/WebKit.h>
 
 #include <jni.h>
 
+#include <atomic>
 #include <cmath>
 #include <dlfcn.h>
 #include <string>
@@ -88,6 +91,8 @@ uint64_t mpv_render_context_update(mpv_render_context *ctx);
 @interface PlayerOpenGLView : NSOpenGLView
 @property(nonatomic, assign) mpv_render_context *renderContext;
 - (void)requestRender;
+- (void)stopRendering;
+- (void)clearRenderContext;
 @end
 
 @interface PlayerScriptHandler : NSObject <WKScriptMessageHandler>
@@ -143,14 +148,29 @@ static void *getOpenGLProcAddress(void * /* ctx */, const char *name) {
     return openGlHandle ? dlsym(openGlHandle, name) : nullptr;
 }
 
+static CVReturn displayLinkCallback(
+    CVDisplayLinkRef /* displayLink */,
+    const CVTimeStamp * /* now */,
+    const CVTimeStamp * /* outputTime */,
+    CVOptionFlags /* flagsIn */,
+    CVOptionFlags * /* flagsOut */,
+    void *displayLinkContext
+);
+
 static void renderUpdateCallback(void *callbackContext) {
     PlayerOpenGLView *view = (__bridge PlayerOpenGLView *)callbackContext;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [view requestRender];
-    });
+    [view requestRender];
 }
 
-@implementation PlayerOpenGLView
+@implementation PlayerOpenGLView {
+    CVDisplayLinkRef _displayLink;
+    CGLContextObj _cglContext;
+    std::atomic_bool _renderRequested;
+    std::atomic_bool _drawableReady;
+    std::atomic_int _backingWidth;
+    std::atomic_int _backingHeight;
+    mpv_render_context *_renderContext;
+}
 
 + (NSOpenGLPixelFormat *)defaultPixelFormat {
     NSOpenGLPixelFormatAttribute attributes[] = {
@@ -172,6 +192,10 @@ static void renderUpdateCallback(void *callbackContext) {
     }
     self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.wantsBestResolutionOpenGLSurface = YES;
+    _renderRequested.store(false);
+    _drawableReady.store(false);
+    _backingWidth.store(0);
+    _backingHeight.store(0);
     return self;
 }
 
@@ -184,55 +208,183 @@ static void renderUpdateCallback(void *callbackContext) {
     [[self openGLContext] makeCurrentContext];
     GLint swapInterval = 1;
     [[self openGLContext] setValues:&swapInterval forParameter:NSOpenGLContextParameterSwapInterval];
+    _cglContext = [[self openGLContext] CGLContextObj];
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    [self updateBackingSize];
+    [self startDisplayLinkIfNeeded];
 }
 
 - (void)reshape {
     [super reshape];
-    [[self openGLContext] update];
+    CGLContextObj context = _cglContext ?: [[self openGLContext] CGLContextObj];
+    if (context) {
+        CGLLockContext(context);
+        [[self openGLContext] update];
+        CGLUnlockContext(context);
+    } else {
+        [[self openGLContext] update];
+    }
+    [self updateBackingSize];
     [self requestRender];
 }
 
-- (void)requestRender {
-    if (self.window) {
-        self.needsDisplay = YES;
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    [self updateBackingSize];
+    [self requestRender];
+}
+
+- (void)setRenderContext:(mpv_render_context *)renderContext {
+    @synchronized (self) {
+        _renderContext = renderContext;
     }
+    [self requestRender];
+}
+
+- (mpv_render_context *)renderContext {
+    @synchronized (self) {
+        return _renderContext;
+    }
+}
+
+- (void)requestRender {
+    _renderRequested.store(true);
+}
+
+- (void)startDisplayLinkIfNeeded {
+    if (_displayLink || !_cglContext) {
+        return;
+    }
+
+    CVDisplayLinkRef displayLink = NULL;
+    CVReturn createResult = CVDisplayLinkCreateWithActiveCGDisplays(&displayLink);
+    if (createResult != kCVReturnSuccess || !displayLink) {
+        return;
+    }
+
+    CVDisplayLinkSetOutputCallback(displayLink, displayLinkCallback, (__bridge void *)self);
+    CVDisplayLinkSetCurrentCGDisplayFromOpenGLContext(
+        displayLink,
+        _cglContext,
+        [[self pixelFormat] CGLPixelFormatObj]
+    );
+    CVReturn startResult = CVDisplayLinkStart(displayLink);
+    if (startResult != kCVReturnSuccess) {
+        CVDisplayLinkRelease(displayLink);
+        return;
+    }
+    _displayLink = displayLink;
+}
+
+- (void)stopRendering {
+    CVDisplayLinkRef displayLink = _displayLink;
+    _displayLink = NULL;
+    if (displayLink) {
+        CVDisplayLinkStop(displayLink);
+        CVDisplayLinkRelease(displayLink);
+    }
+    [self clearRenderContext];
+}
+
+- (void)clearRenderContext {
+    @synchronized (self) {
+        _renderContext = nullptr;
+    }
+    _renderRequested.store(false);
+}
+
+- (void)updateBackingSize {
+    NSRect backingBounds = [self convertRectToBacking:self.bounds];
+    int width = (int)llround(backingBounds.size.width);
+    int height = (int)llround(backingBounds.size.height);
+    _backingWidth.store(MAX(width, 0));
+    _backingHeight.store(MAX(height, 0));
+    _drawableReady.store(self.window != nil && width > 0 && height > 0);
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
     (void)dirtyRect;
-    [[self openGLContext] makeCurrentContext];
-
+    [self requestRender];
     if (!self.renderContext) {
+        CGLContextObj context = _cglContext ?: [[self openGLContext] CGLContextObj];
+        if (!context) {
+            return;
+        }
+        CGLLockContext(context);
+        CGLSetCurrentContext(context);
         glClear(GL_COLOR_BUFFER_BIT);
-        [[self openGLContext] flushBuffer];
+        CGLFlushDrawable(context);
+        CGLUnlockContext(context);
+    }
+}
+
+- (void)renderFrameFromDisplayLink {
+    if (!_renderRequested.exchange(false)) {
+        return;
+    }
+    if (!_drawableReady.load()) {
         return;
     }
 
-    NSRect backingBounds = [self convertRectToBacking:self.bounds];
-    GLint currentFbo = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &currentFbo);
+    @synchronized (self) {
+        mpv_render_context *context = _renderContext;
+        CGLContextObj glContext = _cglContext;
+        int width = _backingWidth.load();
+        int height = _backingHeight.load();
+        if (!context || !glContext || width <= 0 || height <= 0) {
+            return;
+        }
 
-    mpv_opengl_fbo fbo = {
-        (int)currentFbo,
-        (int)backingBounds.size.width,
-        (int)backingBounds.size.height,
-        GL_RGBA8
-    };
-    int flipY = 1;
-    mpv_render_param params[] = {
-        {MPV_RENDER_PARAM_OPENGL_FBO, &fbo},
-        {MPV_RENDER_PARAM_FLIP_Y, &flipY},
-        {MPV_RENDER_PARAM_INVALID, nullptr},
-    };
+        CGLLockContext(glContext);
+        CGLSetCurrentContext(glContext);
 
-    mpv_render_context_update(self.renderContext);
-    mpv_render_context_render(self.renderContext, params);
-    [[self openGLContext] flushBuffer];
-    mpv_render_context_report_swap(self.renderContext);
+        GLint currentFbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &currentFbo);
+
+        mpv_opengl_fbo fbo = {
+            (int)currentFbo,
+            width,
+            height,
+            GL_RGBA8
+        };
+        int flipY = 1;
+        mpv_render_param params[] = {
+            {MPV_RENDER_PARAM_OPENGL_FBO, &fbo},
+            {MPV_RENDER_PARAM_FLIP_Y, &flipY},
+            {MPV_RENDER_PARAM_INVALID, nullptr},
+        };
+
+        // MPV frame rendering is intentionally display-linked and off AppKit's
+        // main thread so WKWebView controls stay responsive during playback.
+        mpv_render_context_update(context);
+        mpv_render_context_render(context, params);
+        CGLFlushDrawable(glContext);
+        mpv_render_context_report_swap(context);
+
+        CGLUnlockContext(glContext);
+    }
+}
+
+- (void)dealloc {
+    [self stopRendering];
 }
 
 @end
+
+static CVReturn displayLinkCallback(
+    CVDisplayLinkRef /* displayLink */,
+    const CVTimeStamp * /* now */,
+    const CVTimeStamp * /* outputTime */,
+    CVOptionFlags /* flagsIn */,
+    CVOptionFlags * /* flagsOut */,
+    void *displayLinkContext
+) {
+    @autoreleasepool {
+        PlayerOpenGLView *view = (__bridge PlayerOpenGLView *)displayLinkContext;
+        [view renderFrameFromDisplayLink];
+    }
+    return kCVReturnSuccess;
+}
 
 @implementation PlayerScriptHandler
 - (void)userContentController:(WKUserContentController *)userContentController
@@ -462,7 +614,7 @@ static NSString *javaScriptStringLiteral(NSString *value) {
     _timer = nil;
     if (_renderContext) {
         mpv_render_context_set_update_callback(_renderContext, nullptr, nullptr);
-        _videoView.renderContext = nullptr;
+        [_videoView stopRendering];
         mpv_render_context_free(_renderContext);
         _renderContext = nullptr;
     }
