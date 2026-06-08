@@ -88,7 +88,6 @@ For comprehensive legal information, including the full disclaimer, third-party 
 - Compose Multiplatform for Desktop
 - Kotlin
 - MPVKit and libmpv
-- Native macOS integrations
 
 <!-- MARKDOWN LINKS & IMAGES -->
 [license-shield]: https://img.shields.io/github/license/NuvioMedia/NuvioDesktop.svg?style=for-the-badge

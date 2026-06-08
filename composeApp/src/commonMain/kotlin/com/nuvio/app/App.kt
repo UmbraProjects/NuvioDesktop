@@ -823,6 +823,7 @@ private fun MainAppContent(
             NetworkCondition.ServersUnreachable,
             -> {
                 offlineLaunchRouteHandled = true
+                if (!AppFeaturePolicy.downloadsEnabled) return@LaunchedEffect
                 val hasPlayableDownload = downloadsUiState.completedItems.any {
                     DownloadsRepository.playableLocalFileUri(it) != null
                 }
@@ -940,9 +941,11 @@ private fun MainAppContent(
                     }
 
                     AppDeepLink.Downloads -> {
-                        selectedTab = AppScreenTab.Settings
-                        navController.navigate(DownloadsSettingsRoute) {
-                            launchSingleTop = true
+                        if (AppFeaturePolicy.downloadsEnabled) {
+                            selectedTab = AppScreenTab.Settings
+                            navController.navigate(DownloadsSettingsRoute) {
+                                launchSingleTop = true
+                            }
                         }
                         AppDeepLinkRepository.markConsumed(deepLink)
                     }
@@ -1069,7 +1072,7 @@ private fun MainAppContent(
             val targetResumePositionMs = if (startFromBeginning) 0L else (resumePositionMs ?: 0L)
             val targetResumeProgressFraction = if (startFromBeginning) null else resumeProgressFraction
 
-            if (!manualSelection) {
+            if (!manualSelection && AppFeaturePolicy.downloadsEnabled) {
                 val downloadedItem = DownloadsRepository.findPlayableDownload(
                     parentMetaId = parentMetaId,
                     seasonNumber = seasonNumber,
@@ -1438,7 +1441,11 @@ private fun MainAppContent(
                                         onHomescreenSettingsClick = { navController.navigate(HomescreenSettingsRoute) },
                                         onMetaScreenSettingsClick = { navController.navigate(MetaScreenSettingsRoute) },
                                         onContinueWatchingSettingsClick = { navController.navigate(ContinueWatchingSettingsRoute) },
-                                        onDownloadsSettingsClick = { navController.navigate(DownloadsSettingsRoute) },
+                                        onDownloadsSettingsClick = {
+                                            if (AppFeaturePolicy.downloadsEnabled) {
+                                                navController.navigate(DownloadsSettingsRoute)
+                                            }
+                                        },
                                         onAddonsSettingsClick = { navController.navigate(AddonsSettingsRoute) },
                                         onPluginsSettingsClick = {
                                             if (AppFeaturePolicy.pluginsEnabled) {
@@ -2422,51 +2429,53 @@ private fun MainAppContent(
                         onBack = onBack,
                     )
                 }
-                composable<DownloadsSettingsRoute> { backStackEntry ->
-                    val onBack = rememberGuardedPopBackStack(
-                        navController = navController,
-                        backStackEntry = backStackEntry,
-                    )
-                    DownloadsScreen(
-                        onBack = onBack,
-                        onOpenDownload = { item ->
-                            val sourceUrl = DownloadsRepository.playableLocalFileUri(item) ?: return@DownloadsScreen
-                            val resumeEntry = item.videoId
-                                .takeIf { it.isNotBlank() }
-                                ?.let(WatchProgressRepository::progressForVideo)
-                                ?.takeIf { it.isResumable }
+                if (AppFeaturePolicy.downloadsEnabled) {
+                    composable<DownloadsSettingsRoute> { backStackEntry ->
+                        val onBack = rememberGuardedPopBackStack(
+                            navController = navController,
+                            backStackEntry = backStackEntry,
+                        )
+                        DownloadsScreen(
+                            onBack = onBack,
+                            onOpenDownload = { item ->
+                                val sourceUrl = DownloadsRepository.playableLocalFileUri(item) ?: return@DownloadsScreen
+                                val resumeEntry = item.videoId
+                                    .takeIf { it.isNotBlank() }
+                                    ?.let(WatchProgressRepository::progressForVideo)
+                                    ?.takeIf { it.isResumable }
 
-                            val playerLaunch = PlayerLaunch(
-                                    title = item.title,
-                                    sourceUrl = sourceUrl,
-                                    sourceHeaders = emptyMap(),
-                                    sourceResponseHeaders = emptyMap(),
-                                    logo = item.logo,
-                                    poster = item.poster,
-                                    background = item.background,
-                                    seasonNumber = item.seasonNumber,
-                                    episodeNumber = item.episodeNumber,
-                                    episodeTitle = item.episodeTitle,
-                                    episodeThumbnail = item.episodeThumbnail,
-                                    streamTitle = item.streamTitle,
-                                    streamSubtitle = item.streamSubtitle,
-                                    providerName = item.providerName,
-                                    providerAddonId = item.providerAddonId,
-                                    contentType = item.contentType,
-                                    videoId = item.videoId,
-                                    parentMetaId = item.parentMetaId,
-                                    parentMetaType = item.parentMetaType,
-                                    initialPositionMs = resumeEntry?.lastPositionMs?.takeIf { it > 0L } ?: 0L,
-                                    initialProgressFraction = resumeEntry?.progressFraction?.takeIf { it > 0f },
-                            )
-                            if (playerSettingsUiState.externalPlayerEnabled) {
-                                coroutineScope.launch { openExternalPlayback(playerLaunch) }
-                                return@DownloadsScreen
-                            }
-                            val launchId = PlayerLaunchStore.put(playerLaunch)
-                            navController.navigate(PlayerRoute(launchId = launchId))
-                        },
-                    )
+                                val playerLaunch = PlayerLaunch(
+                                        title = item.title,
+                                        sourceUrl = sourceUrl,
+                                        sourceHeaders = emptyMap(),
+                                        sourceResponseHeaders = emptyMap(),
+                                        logo = item.logo,
+                                        poster = item.poster,
+                                        background = item.background,
+                                        seasonNumber = item.seasonNumber,
+                                        episodeNumber = item.episodeNumber,
+                                        episodeTitle = item.episodeTitle,
+                                        episodeThumbnail = item.episodeThumbnail,
+                                        streamTitle = item.streamTitle,
+                                        streamSubtitle = item.streamSubtitle,
+                                        providerName = item.providerName,
+                                        providerAddonId = item.providerAddonId,
+                                        contentType = item.contentType,
+                                        videoId = item.videoId,
+                                        parentMetaId = item.parentMetaId,
+                                        parentMetaType = item.parentMetaType,
+                                        initialPositionMs = resumeEntry?.lastPositionMs?.takeIf { it > 0L } ?: 0L,
+                                        initialProgressFraction = resumeEntry?.progressFraction?.takeIf { it > 0f },
+                                )
+                                if (playerSettingsUiState.externalPlayerEnabled) {
+                                    coroutineScope.launch { openExternalPlayback(playerLaunch) }
+                                    return@DownloadsScreen
+                                }
+                                val launchId = PlayerLaunchStore.put(playerLaunch)
+                                navController.navigate(PlayerRoute(launchId = launchId))
+                            },
+                        )
+                    }
                 }
                 composable<AddonsSettingsRoute> { backStackEntry ->
                     val onBack = rememberGuardedPopBackStack(
