@@ -35,9 +35,10 @@ When releases are ready, desktop builds will be published from the Nuvio Desktop
 ## Development
 
 ```bash
-git clone https://github.com/NuvioMedia/NuvioDesktop.git
+git clone --branch Dev --recurse-submodules https://github.com/NuvioMedia/NuvioDesktop.git
 cd NuvioDesktop
-git checkout Dev
+git submodule update --init --recursive MPVKit
+git -C MPVKit switch Nuvio
 ./gradlew :composeApp:run
 ```
 
@@ -48,7 +49,16 @@ Useful commands:
 ./gradlew :composeApp:packageDmg
 ```
 
-The native player bridge currently uses MPVKit macOS libmpv artifacts. If Gradle reports missing MPVKit artifacts, build the macOS runtime before running the app:
+The native player bridge currently uses MPVKit macOS libmpv artifacts from the `MPVKit` submodule. For development, the submodule is configured to use [NuvioMedia/MPVKit](https://github.com/NuvioMedia/MPVKit) on the `Nuvio` branch. If you already have a checkout, sync and update it with:
+
+```bash
+git submodule sync MPVKit
+git submodule update --init --recursive MPVKit
+git -C MPVKit switch Nuvio
+git -C MPVKit pull --ff-only
+```
+
+If Gradle reports missing MPVKit artifacts, build the macOS runtime before running the app:
 
 ```bash
 cd MPVKit
