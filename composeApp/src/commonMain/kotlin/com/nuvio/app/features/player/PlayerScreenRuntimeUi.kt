@@ -8,6 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import com.nuvio.app.features.debrid.DebridSettingsRepository
@@ -23,7 +28,9 @@ import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.isSelectableForPlayback
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import com.nuvio.app.features.watching.application.WatchingState
+import com.nuvio.app.isDesktop
 import com.nuvio.app.isIos
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import nuvio.composeapp.generated.resources.*
@@ -277,9 +284,45 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             ),
     ) {
         val playerSurfaceSourceUrl = if (isP2pPlaybackActive) p2pResolvedSourceUrl else activeSourceUrl
-        if (playerSurfaceSourceUrl != null) {
+        val desktopOpeningGateEnabled = isDesktop &&
+            playerSettingsUiState.showLoadingOverlay &&
+            !initialLoadCompleted &&
+            errorMessage == null &&
+            playerSurfaceSourceUrl != null
+        var desktopPlayerMountGateOpen by remember(playerSurfaceSourceUrl, desktopOpeningGateEnabled) {
+            mutableStateOf(!desktopOpeningGateEnabled)
+        }
+
+        LaunchedEffect(playerSurfaceSourceUrl, desktopOpeningGateEnabled) {
+            if (playerSurfaceSourceUrl == null) {
+                desktopPlayerMountGateOpen = true
+                return@LaunchedEffect
+            }
+            if (!desktopOpeningGateEnabled) {
+                if (isDesktop) {
+                    logDesktopPlayerGate(
+                        "mount immediate",
+                        playerSurfaceSourceUrl,
+                        "overlay=${playerSettingsUiState.showLoadingOverlay}, initialLoaded=$initialLoadCompleted, error=${errorMessage != null}",
+                    )
+                }
+                desktopPlayerMountGateOpen = true
+                return@LaunchedEffect
+            }
+
+            desktopPlayerMountGateOpen = false
+            logDesktopPlayerGate("hold native mount", playerSurfaceSourceUrl, "${DesktopPlayerOpeningGateDelayMs}ms")
+            delay(DesktopPlayerOpeningGateDelayMs)
+            desktopPlayerMountGateOpen = true
+            logDesktopPlayerGate("open native mount", playerSurfaceSourceUrl)
+        }
+
+        val shouldMountPlayerSurface = playerSurfaceSourceUrl != null &&
+            (!desktopOpeningGateEnabled || desktopPlayerMountGateOpen)
+        val mountedPlayerSurfaceSourceUrl = playerSurfaceSourceUrl.takeIf { shouldMountPlayerSurface }
+        if (mountedPlayerSurfaceSourceUrl != null) {
             PlatformPlayerSurface(
-                sourceUrl = playerSurfaceSourceUrl,
+                sourceUrl = mountedPlayerSurfaceSourceUrl,
                 sourceAudioUrl = activeSourceAudioUrl,
                 sourceHeaders = activeSourceHeaders,
                 sourceResponseHeaders = activeSourceResponseHeaders,
@@ -349,6 +392,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             showP2pRebufferStats = showP2pRebufferStats,
             p2pRebufferMessage = p2pRebufferMessage,
             p2pRebufferProgress = p2pRebufferProgress,
+            suppressOpeningOverlay = isDesktop && desktopPlayerMountGateOpen && playerSurfaceSourceUrl != null,
         )
         RenderPlayerModals(displayedPositionMs = displayedPositionMs)
     }
@@ -991,68 +1035,90 @@ private fun BoxScope.RenderPlaybackOverlays(
     showP2pRebufferStats: Boolean,
     p2pRebufferMessage: String?,
     p2pRebufferProgress: Float?,
+    suppressOpeningOverlay: Boolean,
 ) {
     runtime.run {
         PlayerPlaybackOverlays(
             playerControlsLocked = playerControlsLocked,
             lockedOverlayVisible = lockedOverlayVisible,
             playbackSnapshot = playbackSnapshot,
-        displayedPositionMs = displayedPositionMs,
-        metrics = metrics,
-        horizontalSafePadding = horizontalSafePadding,
-        onUnlock = { unlockPlayerControls() },
-        showOpeningOverlay = playerSettingsUiState.showLoadingOverlay && !initialLoadCompleted && errorMessage == null,
-        backdropArtwork = background ?: poster,
-        logo = logo,
-        title = title,
-        onBackWithProgress = {
-            flushWatchProgress()
-            args.onBack()
-        },
-        p2pInitialLoadingMessage = p2pInitialLoadingMessage,
-        p2pInitialLoadingProgress = p2pInitialLoadingProgress,
-        showP2pRebufferStats = showP2pRebufferStats,
-        p2pRebufferMessage = p2pRebufferMessage,
-        p2pRebufferProgress = p2pRebufferProgress,
-        currentGestureFeedback = currentGestureFeedback,
-        renderedGestureFeedback = renderedGestureFeedback,
-        initialLoadCompleted = initialLoadCompleted,
-        pausedOverlayVisible = pausedOverlayVisible,
-        activeSkipInterval = activeSkipInterval,
-        skipIntervalDismissed = skipIntervalDismissed,
-        controlsVisible = controlsVisible,
-        onSkipInterval = { interval ->
-            playerController?.seekTo((interval.endTime * 1000).toLong())
-            scheduleProgressSyncAfterSeek()
-            skipIntervalDismissed = true
-        },
-        onDismissSkipInterval = { skipIntervalDismissed = true },
-        sliderEdgePadding = sliderEdgePadding,
-        overlayBottomPadding = overlayBottomPadding,
-        isSeries = isSeries,
-        nextEpisodeInfo = nextEpisodeInfo,
-        showNextEpisodeCard = showNextEpisodeCard,
-        nextEpisodeAutoPlaySearching = nextEpisodeAutoPlaySearching,
-        nextEpisodeAutoPlaySourceName = nextEpisodeAutoPlaySourceName,
-        nextEpisodeAutoPlayCountdown = nextEpisodeAutoPlayCountdown,
-        onPlayNextEpisode = {
-            nextEpisodeAutoPlayJob?.cancel()
-            playNextEpisode()
-        },
-        onDismissNextEpisode = {
-            nextEpisodeAutoPlayJob?.cancel()
-            showNextEpisodeCard = false
-            nextEpisodeAutoPlaySearching = false
-            nextEpisodeAutoPlaySourceName = null
-            nextEpisodeAutoPlayCountdown = null
-        },
-        errorMessage = errorMessage,
+            displayedPositionMs = displayedPositionMs,
+            metrics = metrics,
+            horizontalSafePadding = horizontalSafePadding,
+            onUnlock = { unlockPlayerControls() },
+            showOpeningOverlay = playerSettingsUiState.showLoadingOverlay &&
+                !initialLoadCompleted &&
+                errorMessage == null &&
+                !suppressOpeningOverlay,
+            backdropArtwork = background ?: poster,
+            logo = logo,
+            title = title,
+            onBackWithProgress = {
+                flushWatchProgress()
+                args.onBack()
+            },
+            p2pInitialLoadingMessage = p2pInitialLoadingMessage,
+            p2pInitialLoadingProgress = p2pInitialLoadingProgress,
+            showP2pRebufferStats = showP2pRebufferStats,
+            p2pRebufferMessage = p2pRebufferMessage,
+            p2pRebufferProgress = p2pRebufferProgress,
+            currentGestureFeedback = currentGestureFeedback,
+            renderedGestureFeedback = renderedGestureFeedback,
+            initialLoadCompleted = initialLoadCompleted,
+            pausedOverlayVisible = pausedOverlayVisible,
+            activeSkipInterval = activeSkipInterval,
+            skipIntervalDismissed = skipIntervalDismissed,
+            controlsVisible = controlsVisible,
+            onSkipInterval = { interval ->
+                playerController?.seekTo((interval.endTime * 1000).toLong())
+                scheduleProgressSyncAfterSeek()
+                skipIntervalDismissed = true
+            },
+            onDismissSkipInterval = { skipIntervalDismissed = true },
+            sliderEdgePadding = sliderEdgePadding,
+            overlayBottomPadding = overlayBottomPadding,
+            isSeries = isSeries,
+            nextEpisodeInfo = nextEpisodeInfo,
+            showNextEpisodeCard = showNextEpisodeCard,
+            nextEpisodeAutoPlaySearching = nextEpisodeAutoPlaySearching,
+            nextEpisodeAutoPlaySourceName = nextEpisodeAutoPlaySourceName,
+            nextEpisodeAutoPlayCountdown = nextEpisodeAutoPlayCountdown,
+            onPlayNextEpisode = {
+                nextEpisodeAutoPlayJob?.cancel()
+                playNextEpisode()
+            },
+            onDismissNextEpisode = {
+                nextEpisodeAutoPlayJob?.cancel()
+                showNextEpisodeCard = false
+                nextEpisodeAutoPlaySearching = false
+                nextEpisodeAutoPlaySourceName = null
+                nextEpisodeAutoPlayCountdown = null
+            },
+            errorMessage = errorMessage,
             onDismissError = {
                 flushWatchProgress()
                 args.onBack()
             },
         )
     }
+}
+
+private fun logDesktopPlayerGate(event: String, sourceUrl: String, detail: String? = null) {
+    val suffix = detail?.let { " ($it)" }.orEmpty()
+    println("[NuvioDesktopPlayerGate] $event source=${sourceUrl.redactedPlaybackSourceForLog()}$suffix")
+}
+
+private fun String.redactedPlaybackSourceForLog(): String {
+    val schemeEnd = indexOf("://")
+    if (schemeEnd < 0) return "opaque"
+    val scheme = substring(0, schemeEnd)
+    if (scheme == "file") return "file://<local>"
+    val host = substring(schemeEnd + 3)
+        .substringBefore('/')
+        .substringBefore('?')
+        .takeIf { it.isNotBlank() }
+        ?: "<host>"
+    return "$scheme://$host/<redacted>"
 }
 
 @Composable

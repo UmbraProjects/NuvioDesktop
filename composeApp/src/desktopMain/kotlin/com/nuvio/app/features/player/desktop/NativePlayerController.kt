@@ -64,7 +64,9 @@ internal class NativePlayerController(
     private fun attachPending() {
         val pending = pendingSource ?: return
         SwingUtilities.invokeLater {
-            if (!host.isDisplayable) return@invokeLater
+            if (!host.isDisplayable) {
+                return@invokeLater
+            }
             dispose()
             runCatching {
                 val hostViewPtr = AwtNativeViewResolver.resolveNativeViewPointer(host)
@@ -172,16 +174,18 @@ internal class NativePlayerController(
         val current = handle
         if (current == 0L) return PlayerPlaybackSnapshot(isLoading = true)
         return runCatching {
+            val isLoading = NativePlayerBridge.isLoading(current)
+            val isEnded = NativePlayerBridge.isEnded(current)
             PlayerPlaybackSnapshot(
-                isLoading = false,
-                isPlaying = !NativePlayerBridge.isPaused(current),
-                isEnded = false,
+                isLoading = isLoading,
+                isPlaying = !NativePlayerBridge.isPaused(current) && !isLoading && !isEnded,
+                isEnded = isEnded,
                 durationMs = NativePlayerBridge.durationMs(current),
                 positionMs = NativePlayerBridge.positionMs(current),
-                bufferedPositionMs = NativePlayerBridge.positionMs(current),
+                bufferedPositionMs = NativePlayerBridge.bufferedPositionMs(current),
                 playbackSpeed = NativePlayerBridge.speed(current),
             )
-        }.getOrDefault(PlayerPlaybackSnapshot(isLoading = false))
+        }.getOrDefault(PlayerPlaybackSnapshot(isLoading = true))
     }
 
     fun dispose() {

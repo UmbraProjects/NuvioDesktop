@@ -30,6 +30,9 @@ internal object NativePlayerBridge {
     external fun setResizeMode(handle: Long, mode: Int)
     external fun durationMs(handle: Long): Long
     external fun positionMs(handle: Long): Long
+    external fun bufferedPositionMs(handle: Long): Long
+    external fun isLoading(handle: Long): Boolean
+    external fun isEnded(handle: Long): Boolean
     external fun isPaused(handle: Long): Boolean
     external fun speed(handle: Long): Float
     external fun audioTracksJson(handle: Long): String

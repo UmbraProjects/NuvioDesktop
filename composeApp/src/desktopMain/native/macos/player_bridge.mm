@@ -114,6 +114,9 @@ uint64_t mpv_render_context_update(mpv_render_context *ctx);
 - (void)setResizeMode:(int)mode;
 - (long long)durationMs;
 - (long long)positionMs;
+- (long long)bufferedPositionMs;
+- (BOOL)isLoading;
+- (BOOL)isEnded;
 - (NSString *)audioTracksJson;
 - (NSString *)subtitleTracksJson;
 - (void)selectAudioTrackId:(int)trackId;
@@ -549,6 +552,27 @@ static NSString *javaScriptStringLiteral(NSString *value) {
 
 - (long long)positionMs {
     return (long long)llround([self doubleProperty:"time-pos" fallback:0.0] * 1000.0);
+}
+
+- (long long)bufferedPositionMs {
+    double position = [self doubleProperty:"time-pos" fallback:0.0];
+    double cached = [self doubleProperty:"demuxer-cache-time" fallback:0.0];
+    return (long long)llround(fmax(position + cached, 0.0) * 1000.0);
+}
+
+- (BOOL)isLoading {
+    BOOL paused = [self isPaused];
+    BOOL eofReached = [self isEnded];
+    BOOL idle = [self flagProperty:"core-idle" fallback:YES];
+    BOOL seeking = [self flagProperty:"seeking" fallback:NO];
+    BOOL bufferingCache = [self flagProperty:"paused-for-cache" fallback:NO];
+    BOOL fileReady = [self doubleProperty:"duration" fallback:0.0] > 0.0
+        || [self int64Property:"track-list/count" fallback:0] > 0;
+    return !fileReady || (idle && !paused && !eofReached) || seeking || bufferingCache;
+}
+
+- (BOOL)isEnded {
+    return [self flagProperty:"eof-reached" fallback:NO];
 }
 
 - (NSString *)audioTracksJson {
@@ -1103,6 +1127,39 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_positionMs(
     if (handle == 0) return 0;
     MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
     return [player positionMs];
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_bufferedPositionMs(
+    JNIEnv * /* env */,
+    jobject /* bridge */,
+    jlong handle
+) {
+    if (handle == 0) return 0;
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    return [player bufferedPositionMs];
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_isLoading(
+    JNIEnv * /* env */,
+    jobject /* bridge */,
+    jlong handle
+) {
+    if (handle == 0) return JNI_TRUE;
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    return [player isLoading] ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_isEnded(
+    JNIEnv * /* env */,
+    jobject /* bridge */,
+    jlong handle
+) {
+    if (handle == 0) return JNI_FALSE;
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    return [player isEnded] ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

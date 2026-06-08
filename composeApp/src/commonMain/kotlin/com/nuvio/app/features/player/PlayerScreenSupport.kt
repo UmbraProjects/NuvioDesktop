@@ -16,6 +16,7 @@ internal const val PlayerVerticalGestureMinHeightFraction = 0.06f
 internal const val PlayerVerticalGestureDominanceRatio = 1.2f
 internal const val PlayerSeekProgressSyncDebounceMs = 700L
 internal const val P2pInitialPreloadTargetBytes = 5_242_880L
+internal const val DesktopPlayerOpeningGateDelayMs = 1_800L
 internal const val NEXT_EPISODE_HARD_TIMEOUT_MS = 120_000L
 
 internal val PlayerSideGestureSystemEdgeExclusion = 72.dp
