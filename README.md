@@ -4,63 +4,75 @@
   <br />
   <br />
 
-  [![Contributors][contributors-shield]][contributors-url]
-  [![Forks][forks-shield]][forks-url]
-  [![Stargazers][stars-shield]][stars-url]
-  [![Issues][issues-shield]][issues-url]
   [![License][license-shield]][license-url]
 
   <p>
-    A modern media hub for Android and iOS built with Kotlin Multiplatform and Compose Multiplatform.
+    Nuvio Desktop is a desktop media hub built with Kotlin Multiplatform and Compose Multiplatform.
     <br />
-    Stremio addon ecosystem • Cross-platform
+    Desktop app in development
   </p>
 
 </div>
 
 ## About
 
-Nuvio is the current Kotlin Multiplatform rewrite of the original React Native app. It delivers a shared Compose UI for Android and iOS while keeping the playback-focused experience, collection tools, watch progress flows, downloads, and Stremio addon ecosystem integration that shaped the earlier app.
+Nuvio Desktop brings the Nuvio media experience to desktop. It keeps the playback-focused browsing, collection, watch progress, downloads, and Stremio addon ecosystem integration from Nuvio while adapting the app for desktop input, desktop storage, and native desktop playback.
 
-The mobile app is built from a single shared codebase in [composeApp](./composeApp), with native platform entry points for Android and iOS.
+The desktop app is built from the shared Kotlin Multiplatform codebase in [composeApp](./composeApp), with desktop-specific code in [composeApp/src/desktopMain](./composeApp/src/desktopMain). Desktop packaging is configured through Gradle, with macOS development builds currently active and Windows and Linux support planned later.
+
+## Platform Status
+
+- macOS: actively being developed.
+- Windows: planned later.
+- Linux: planned later.
 
 ## Installation
 
-### Android
+Public desktop releases are not available yet. Current builds are development builds.
 
-Download the latest Android build from [GitHub Releases](https://github.com/NuvioMedia/NuvioMobile/releases/latest).
-
-### iOS
-
-- [TestFlight](https://testflight.apple.com/join/u4y7MHK9)
+When releases are ready, desktop builds will be published from the Nuvio Desktop repository.
 
 ## Development
 
 ```bash
-git clone https://github.com/NuvioMedia/NuvioMobile.git
-cd NuvioMobile
-./scripts/run-mobile.sh android
-# or
-./scripts/run-mobile.sh ios
+git clone https://github.com/NuvioMedia/NuvioDesktop.git
+cd NuvioDesktop
+git checkout Dev
+./gradlew :composeApp:run
 ```
-
-### Project Structure
-
-- `composeApp/` contains the shared Kotlin Multiplatform and Compose Multiplatform app code.
-- `composeApp/src/commonMain/` contains shared UI, features, repositories, and platform-agnostic logic.
-- `composeApp/src/androidMain/` contains Android-specific integrations.
-- `composeApp/src/iosMain/` contains iOS-specific integrations.
-- `iosApp/` contains the native Xcode project and iOS entry point.
 
 Useful commands:
 
 ```bash
-./gradlew :composeApp:assembleDebug
-./gradlew :composeApp:compileKotlinIosSimulatorArm64
-./scripts/build-distribution.sh
+./gradlew :composeApp:compileKotlinDesktop
+./gradlew :composeApp:packageDmg
 ```
 
-Versioning is driven from `iosApp/Configuration/Version.xcconfig`, which is used as the shared source of truth for both iOS and Android builds.
+The native player bridge currently uses MPVKit macOS libmpv artifacts. If Gradle reports missing MPVKit artifacts, build the macOS runtime before running the app:
+
+```bash
+cd MPVKit
+make build platform=macos
+```
+
+You can also point Gradle at a separate MPVKit checkout:
+
+```bash
+./gradlew :composeApp:run -Pnuvio.mpvkit.dir=/absolute/path/to/MPVKit
+```
+
+## Project Structure
+
+- `composeApp/` contains the Kotlin Multiplatform and Compose Multiplatform app code.
+- `composeApp/src/commonMain/` contains shared UI, features, repositories, and platform-agnostic logic.
+- `composeApp/src/desktopMain/` contains desktop-specific app code, storage, settings, player integration, and desktop resources.
+- `composeApp/src/desktopMain/native/macos/` contains the macOS native player bridge.
+- `composeApp/src/desktopMain/resources/player-ui/` contains the desktop native player control UI.
+- `composeApp/src/desktopMain/resources/icons/` contains desktop app icons for macOS, Windows, and Linux packaging.
+
+## Desktop Player
+
+Nuvio Desktop uses a native desktop player path with MPVKit/libmpv integration and desktop-owned controls. The desktop player is separate from the mobile Compose player surface so desktop behavior can match desktop input, keyboard, windowing, and playback expectations.
 
 ## Legal & DMCA
 
@@ -68,34 +80,16 @@ Nuvio functions solely as a client-side interface for browsing metadata and play
 
 Nuvio is not affiliated with any third-party extensions, catalogs, sources, or content providers. It does not host, store, or distribute any media content.
 
-For comprehensive legal information, including our full disclaimer, third-party extension policy, and DMCA/Copyright information, please visit our [Legal & Disclaimer Page](https://nuvioapp.space/legal).
+For comprehensive legal information, including the full disclaimer, third-party extension policy, and DMCA/Copyright information, please visit the [Legal & Disclaimer Page](https://nuvioapp.space/legal).
 
 ## Built With
 
 - Kotlin Multiplatform
-- Compose Multiplatform
+- Compose Multiplatform for Desktop
 - Kotlin
-- AndroidX Media3
-- AVFoundation and native iOS integrations
-
-## Star History
-
-<a href="https://www.star-history.com/#NuvioMedia/NuvioMobile&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=NuvioMedia/NuvioMobile&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=NuvioMedia/NuvioMobile&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=NuvioMedia/NuvioMobile&type=date&legend=top-left" />
- </picture>
-</a>
+- MPVKit and libmpv
+- Native macOS integrations
 
 <!-- MARKDOWN LINKS & IMAGES -->
-[contributors-shield]: https://img.shields.io/github/contributors/NuvioMedia/NuvioMobile.svg?style=for-the-badge
-[contributors-url]: https://github.com/NuvioMedia/NuvioMobile/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/NuvioMedia/NuvioMobile.svg?style=for-the-badge
-[forks-url]: https://github.com/NuvioMedia/NuvioMobile/network/members
-[stars-shield]: https://img.shields.io/github/stars/NuvioMedia/NuvioMobile.svg?style=for-the-badge
-[stars-url]: https://github.com/NuvioMedia/NuvioMobile/stargazers
-[issues-shield]: https://img.shields.io/github/issues/NuvioMedia/NuvioMobile.svg?style=for-the-badge
-[issues-url]: https://github.com/NuvioMedia/NuvioMobile/issues
-[license-shield]: https://img.shields.io/github/license/NuvioMedia/NuvioMobile.svg?style=for-the-badge
-[license-url]: https://github.com/NuvioMedia/NuvioMobile/blob/main/LICENSE
+[license-shield]: https://img.shields.io/github/license/NuvioMedia/NuvioDesktop.svg?style=for-the-badge
+[license-url]: https://github.com/NuvioMedia/NuvioDesktop/blob/Dev/LICENSE
