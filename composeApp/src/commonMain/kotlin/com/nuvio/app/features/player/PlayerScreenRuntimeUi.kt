@@ -9,10 +9,6 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import com.nuvio.app.features.debrid.DebridSettingsRepository
@@ -30,7 +26,6 @@ import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import com.nuvio.app.features.watching.application.WatchingState
 import com.nuvio.app.isDesktop
 import com.nuvio.app.isIos
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import nuvio.composeapp.generated.resources.*
@@ -103,6 +98,10 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             (bufferedSeconds / 10f).coerceIn(0f, 1f)
         }
     }
+    val playerSurfaceSourceUrl = if (isP2pPlaybackActive) p2pResolvedSourceUrl else activeSourceUrl
+    val openingOverlayWanted = playerSettingsUiState.showLoadingOverlay &&
+        !initialLoadCompleted &&
+        errorMessage == null
     val episodeText = if (seasonNumber != null && episodeNumber != null && !episodeTitle.isNullOrBlank()) {
         stringResource(
             Res.string.compose_player_episode_title_format,
@@ -250,7 +249,52 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         subtitleAutoSyncIsLoading = subtitleAutoSyncState.isLoading,
         subtitleAutoSyncErrorMessage = subtitleAutoSyncState.errorMessage.orEmpty(),
         closeModalsToken = playerControlsCloseModalsToken,
+        showOpeningOverlay = openingOverlayWanted,
+        openingArtwork = background ?: poster,
+        openingLogo = logo,
+        openingTitle = title,
+        openingMessage = p2pInitialLoadingMessage,
+        openingProgress = p2pInitialLoadingProgress,
     )
+    val desktopControlsReadinessSignature = listOf(
+        playerSurfaceSourceUrl != null,
+        title.isNotBlank(),
+        episodeText.isNotBlank(),
+        activeStreamTitle.isNotBlank(),
+        activeProviderName.isNotBlank(),
+        openingOverlayWanted,
+        playbackSnapshot.isLoading,
+        initialLoadCompleted,
+        errorMessage != null,
+        background != null || poster != null,
+        logo != null,
+        p2pInitialLoadingMessage != null,
+        p2pInitialLoadingProgress != null,
+    ).joinToString("|")
+    LaunchedEffect(isDesktop, desktopControlsReadinessSignature) {
+        if (!isDesktop) return@LaunchedEffect
+        println(
+            "[NuvioDesktopPlayerHandoff] compose controls " +
+                "sourceReady=${playerSurfaceSourceUrl != null} " +
+                "titleReady=${title.isNotBlank()} titleLen=${title.length} " +
+                "episodeReady=${episodeText.isNotBlank()} " +
+                "streamReady=${activeStreamTitle.isNotBlank()} streamLen=${activeStreamTitle.length} " +
+                "providerReady=${activeProviderName.isNotBlank()} providerLen=${activeProviderName.length} " +
+                "openingWanted=$openingOverlayWanted nativeLoading=${playbackSnapshot.isLoading} " +
+                "initialLoadCompleted=$initialLoadCompleted error=${errorMessage != null} " +
+                "artwork=${background != null || poster != null} logo=${logo != null} " +
+                "p2pMessage=${p2pInitialLoadingMessage != null} p2pProgress=${p2pInitialLoadingProgress != null}",
+        )
+    }
+    LaunchedEffect(isDesktop, playerSurfaceSourceUrl) {
+        if (isDesktop) {
+            println(
+                "[NuvioDesktopPlayerHandoff] surface source " +
+                    "ready=${playerSurfaceSourceUrl != null} " +
+                    "mode=${if (isP2pPlaybackActive) "p2p" else "direct"}",
+            )
+        }
+    }
     val gestureCallbacks = rememberSurfaceGestureCallbacks()
 
     Box(
@@ -283,46 +327,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 commitHorizontalSeekState = gestureCallbacks.commitHorizontalSeek,
             ),
     ) {
-        val playerSurfaceSourceUrl = if (isP2pPlaybackActive) p2pResolvedSourceUrl else activeSourceUrl
-        val desktopOpeningGateEnabled = isDesktop &&
-            playerSettingsUiState.showLoadingOverlay &&
-            !initialLoadCompleted &&
-            errorMessage == null &&
-            playerSurfaceSourceUrl != null
-        var desktopPlayerMountGateOpen by remember(playerSurfaceSourceUrl, desktopOpeningGateEnabled) {
-            mutableStateOf(!desktopOpeningGateEnabled)
-        }
-
-        LaunchedEffect(playerSurfaceSourceUrl, desktopOpeningGateEnabled) {
-            if (playerSurfaceSourceUrl == null) {
-                desktopPlayerMountGateOpen = true
-                return@LaunchedEffect
-            }
-            if (!desktopOpeningGateEnabled) {
-                if (isDesktop) {
-                    logDesktopPlayerGate(
-                        "mount immediate",
-                        playerSurfaceSourceUrl,
-                        "overlay=${playerSettingsUiState.showLoadingOverlay}, initialLoaded=$initialLoadCompleted, error=${errorMessage != null}",
-                    )
-                }
-                desktopPlayerMountGateOpen = true
-                return@LaunchedEffect
-            }
-
-            desktopPlayerMountGateOpen = false
-            logDesktopPlayerGate("hold native mount", playerSurfaceSourceUrl, "${DesktopPlayerOpeningGateDelayMs}ms")
-            delay(DesktopPlayerOpeningGateDelayMs)
-            desktopPlayerMountGateOpen = true
-            logDesktopPlayerGate("open native mount", playerSurfaceSourceUrl)
-        }
-
-        val shouldMountPlayerSurface = playerSurfaceSourceUrl != null &&
-            (!desktopOpeningGateEnabled || desktopPlayerMountGateOpen)
-        val mountedPlayerSurfaceSourceUrl = playerSurfaceSourceUrl.takeIf { shouldMountPlayerSurface }
-        if (mountedPlayerSurfaceSourceUrl != null) {
+        if (playerSurfaceSourceUrl != null) {
             PlatformPlayerSurface(
-                sourceUrl = mountedPlayerSurfaceSourceUrl,
+                sourceUrl = playerSurfaceSourceUrl,
                 sourceAudioUrl = activeSourceAudioUrl,
                 sourceHeaders = activeSourceHeaders,
                 sourceResponseHeaders = activeSourceResponseHeaders,
@@ -342,10 +349,34 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     true
                 },
                 onControllerReady = { controller ->
+                    if (isDesktop) {
+                        println(
+                            "[NuvioDesktopPlayerHandoff] controller ready " +
+                                "titleReady=${title.isNotBlank()} streamReady=${activeStreamTitle.isNotBlank()}",
+                        )
+                    }
                     playerController = controller
                     playerControllerSourceUrl = activeSourceUrl
                 },
                 onSnapshot = { snapshot ->
+                    val previousSnapshot = playbackSnapshot
+                    if (
+                        isDesktop &&
+                        (
+                            previousSnapshot.isLoading != snapshot.isLoading ||
+                                previousSnapshot.isPlaying != snapshot.isPlaying ||
+                                (previousSnapshot.durationMs <= 0L && snapshot.durationMs > 0L) ||
+                                previousSnapshot.isEnded != snapshot.isEnded
+                            )
+                    ) {
+                        println(
+                            "[NuvioDesktopPlayerHandoff] snapshot " +
+                                "loading=${snapshot.isLoading} wasLoading=${previousSnapshot.isLoading} " +
+                                "playing=${snapshot.isPlaying} durationMs=${snapshot.durationMs} " +
+                                "positionMs=${snapshot.positionMs} ended=${snapshot.isEnded} " +
+                                "initialLoadCompletedBefore=$initialLoadCompleted",
+                        )
+                    }
                     playbackSnapshot = snapshot
                     if (!snapshot.isLoading) initialLoadCompleted = true
                     if (snapshot.isEnded) {
@@ -393,7 +424,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             showP2pRebufferStats = showP2pRebufferStats,
             p2pRebufferMessage = p2pRebufferMessage,
             p2pRebufferProgress = p2pRebufferProgress,
-            suppressOpeningOverlay = isDesktop && desktopPlayerMountGateOpen && playerSurfaceSourceUrl != null,
+            suppressOpeningOverlay = isDesktop && playerSurfaceSourceUrl != null,
         )
         RenderPlayerModals(displayedPositionMs = displayedPositionMs)
     }
@@ -1155,24 +1186,6 @@ private fun BoxScope.RenderPlaybackOverlays(
             },
         )
     }
-}
-
-private fun logDesktopPlayerGate(event: String, sourceUrl: String, detail: String? = null) {
-    val suffix = detail?.let { " ($it)" }.orEmpty()
-    println("[NuvioDesktopPlayerGate] $event source=${sourceUrl.redactedPlaybackSourceForLog()}$suffix")
-}
-
-private fun String.redactedPlaybackSourceForLog(): String {
-    val schemeEnd = indexOf("://")
-    if (schemeEnd < 0) return "opaque"
-    val scheme = substring(0, schemeEnd)
-    if (scheme == "file") return "file://<local>"
-    val host = substring(schemeEnd + 3)
-        .substringBefore('/')
-        .substringBefore('?')
-        .takeIf { it.isNotBlank() }
-        ?: "<host>"
-    return "$scheme://$host/<redacted>"
 }
 
 @Composable

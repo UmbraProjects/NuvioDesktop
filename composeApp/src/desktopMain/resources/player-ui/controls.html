@@ -161,6 +161,15 @@
       pointer-events: none;
     }
 
+    .player.opening-active .top-gradient,
+    .player.opening-active .bottom-gradient,
+    .player.opening-active .content {
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+      transition: none !important;
+    }
+
     .player.locked.locked-visible .bottom-gradient,
     .player.locked.locked-visible .progress {
       opacity: 1;
@@ -381,6 +390,215 @@
       border: 2px solid rgba(255, 255, 255, .3);
       border-top-color: #fff;
       animation: center-spin 760ms linear infinite;
+    }
+
+    .opening-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background: rgba(0, 0, 0, .85);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms ease;
+    }
+
+    .opening-overlay.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .opening-back {
+      position: absolute;
+      top: calc(20px + env(safe-area-inset-top));
+      right: calc(var(--hp) + 20px);
+      z-index: 3;
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, .3);
+    }
+
+    .opening-back:hover {
+      background: rgba(255, 255, 255, .14);
+    }
+
+    .opening-back:active,
+    .opening-back.is-pressed {
+      transform: scale(.94);
+    }
+
+    .opening-back svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .opening-artwork {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+    }
+
+    .opening-overlay.has-artwork .opening-artwork {
+      opacity: 1;
+    }
+
+    .opening-scrim {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, .3),
+        rgba(0, 0, 0, .6),
+        rgba(0, 0, 0, .8),
+        rgba(0, 0, 0, .9)
+      );
+      opacity: 0;
+    }
+
+    .opening-overlay.has-artwork .opening-scrim {
+      opacity: 1;
+    }
+
+    .opening-content {
+      position: relative;
+      z-index: 2;
+      width: min(100%, 720px);
+      min-height: 260px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+      opacity: 0;
+    }
+
+    .opening-overlay.visible .opening-content {
+      animation: opening-content-in 700ms linear 400ms forwards;
+    }
+
+    .opening-logo-slot {
+      position: relative;
+      width: 300px;
+      max-width: min(78vw, 300px);
+      height: 180px;
+    }
+
+    .opening-logo {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      animation: opening-logo-pulse 2000ms linear infinite alternate;
+    }
+
+    .opening-overlay.has-progress .opening-logo {
+      animation: none;
+    }
+
+    .opening-logo-base {
+      opacity: 1;
+    }
+
+    .opening-overlay.has-progress .opening-logo-base {
+      opacity: .25;
+    }
+
+    .opening-logo-fill-clip {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0%;
+      overflow: hidden;
+    }
+
+    .opening-logo-fill {
+      width: 300px;
+      max-width: min(78vw, 300px);
+      height: 180px;
+      object-fit: contain;
+    }
+
+    .opening-title {
+      max-width: min(84vw, 680px);
+      margin: 0;
+      color: #fff;
+      font-size: 42px;
+      line-height: 1.12;
+      font-weight: 800;
+      text-align: center;
+      animation: opening-logo-pulse 2000ms linear infinite alternate;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .opening-spinner {
+      width: 54px;
+      height: 54px;
+      border-radius: 999px;
+      border: 3px solid rgba(229, 9, 20, .22);
+      border-top-color: #e50914;
+      animation: center-spin 760ms linear infinite;
+    }
+
+    .opening-status {
+      width: 100%;
+      min-height: 40px;
+      margin-top: 16px;
+      display: grid;
+      place-items: center;
+      color: rgba(255, 255, 255, .72);
+      font-size: 13px;
+      line-height: 1.35;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .opening-status span {
+      max-width: min(84vw, 620px);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .opening-progress-track {
+      width: 240px;
+      height: 4px;
+      margin-top: 10px;
+      overflow: hidden;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, .2);
+    }
+
+    .opening-progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: rgba(255, 255, 255, .85);
+      transition: width 900ms cubic-bezier(.4, 0, .2, 1);
+    }
+
+    @keyframes opening-content-in {
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes opening-logo-pulse {
+      to {
+        transform: scale(1.04);
+      }
     }
 
     @keyframes center-spin {
@@ -1198,6 +1416,11 @@
       .center-controls,
       .center-status,
       .progress,
+      .opening-overlay,
+      .opening-content,
+      .opening-logo,
+      .opening-title,
+      .opening-progress-bar,
       .modal-layer,
       .track-panel,
       .header-button,
@@ -1289,6 +1512,29 @@
   <div class="player" id="playerRoot" tabindex="-1">
     <div class="top-gradient"></div>
     <div class="bottom-gradient"></div>
+    <section class="opening-overlay" id="openingOverlay" aria-label="Opening player" aria-hidden="true">
+      <img class="opening-artwork" id="openingArtwork" alt="">
+      <div class="opening-scrim"></div>
+      <button class="opening-back" id="openingBackButton" data-command="back" aria-label="Close player">
+        <svg><use href="#icon-close"></use></svg>
+      </button>
+      <div class="opening-content">
+        <div class="opening-logo-slot" id="openingLogoSlot" hidden>
+          <img class="opening-logo opening-logo-base" id="openingLogoBase" alt="">
+          <div class="opening-logo-fill-clip" id="openingLogoFillClip">
+            <img class="opening-logo-fill" id="openingLogoFill" alt="">
+          </div>
+        </div>
+        <h1 class="opening-title" id="openingTitle" hidden></h1>
+        <div class="opening-spinner" id="openingSpinner" aria-hidden="true"></div>
+        <div class="opening-status" id="openingStatus" hidden>
+          <span id="openingMessage"></span>
+        </div>
+        <div class="opening-progress-track" id="openingProgressTrack" hidden>
+          <div class="opening-progress-bar" id="openingProgressBar"></div>
+        </div>
+      </div>
+    </section>
     <div class="content">
       <header class="header">
         <section class="metadata" aria-label="Playback metadata">
@@ -1546,6 +1792,19 @@
     const lockButton = document.getElementById("lockButton");
     const videoSettingsButton = document.getElementById("videoSettingsButton");
     const backButton = document.getElementById("backButton");
+    const openingOverlay = document.getElementById("openingOverlay");
+    const openingArtwork = document.getElementById("openingArtwork");
+    const openingBackButton = document.getElementById("openingBackButton");
+    const openingLogoSlot = document.getElementById("openingLogoSlot");
+    const openingLogoBase = document.getElementById("openingLogoBase");
+    const openingLogoFillClip = document.getElementById("openingLogoFillClip");
+    const openingLogoFill = document.getElementById("openingLogoFill");
+    const openingTitle = document.getElementById("openingTitle");
+    const openingSpinner = document.getElementById("openingSpinner");
+    const openingStatus = document.getElementById("openingStatus");
+    const openingMessage = document.getElementById("openingMessage");
+    const openingProgressTrack = document.getElementById("openingProgressTrack");
+    const openingProgressBar = document.getElementById("openingProgressBar");
     const sourcesButton = document.getElementById("sourcesButton");
     const episodesButton = document.getElementById("episodesButton");
     const externalButton = document.getElementById("externalButton");
@@ -1702,10 +1961,16 @@
       onLabel: "On",
       offLabel: "Off",
       isPlaying: false,
-      isLoading: false,
+      isLoading: true,
       isLocked: false,
       lockedOverlayVisible: false,
       controlsVisible: true,
+      showOpeningOverlay: false,
+      openingArtwork: "",
+      openingLogo: "",
+      openingTitle: "",
+      openingMessage: "",
+      openingProgress: null,
       showSubmitIntro: false,
       showVideoSettings: false,
       showSources: false,
@@ -1768,6 +2033,13 @@
       status: "",
     };
     let lastSourceControlsDiagnostic = "";
+    let lastMetadataDiagnostic = "";
+    let lastOpeningDiagnostic = "";
+    let lastNativeUpdateDiagnostic = "";
+    let lastControlsUpdateDiagnostic = "";
+    let playerNativeUpdateCount = 0;
+    let playerControlsUpdateCount = 0;
+    let hasReceivedPlayerControls = false;
     const prefersReducedMotion = window.matchMedia &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const modalTransitionMs = prefersReducedMotion ? 1 : 240;
@@ -1833,6 +2105,50 @@
 
     const setVisible = (element, visible) => {
       element.hidden = !visible;
+    };
+
+    const setImageSource = (element, source) => {
+      const url = String(source || "").trim();
+      if (!url) {
+        element.removeAttribute("src");
+        return "";
+      }
+      if (element.getAttribute("src") !== url) {
+        element.setAttribute("src", url);
+      }
+      return url;
+    };
+
+    const normalizedOpeningProgress = () => {
+      const progress = Number(state.openingProgress);
+      return Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : null;
+    };
+
+    const booleanFlag = value => Boolean(value) ? "1" : "0";
+
+    const textReadiness = text => {
+      const value = String(text || "");
+      return `${booleanFlag(value.trim())}:${value.length}`;
+    };
+
+    const progressReadiness = progress =>
+      progress === null ? "none" : `${Math.round(progress * 100)}%`;
+
+    const controlsReadinessDiagnostic = () => {
+      const progress = normalizedOpeningProgress();
+      return [
+        `title=${textReadiness(state.title)}`,
+        `episode=${textReadiness(state.episodeText)}`,
+        `stream=${textReadiness(state.streamTitle)}`,
+        `provider=${textReadiness(state.providerName)}`,
+        `openingWanted=${booleanFlag(state.showOpeningOverlay)}`,
+        `nativeLoading=${booleanFlag(state.isLoading)}`,
+        `artwork=${booleanFlag(state.openingArtwork)}`,
+        `logo=${booleanFlag(state.openingLogo)}`,
+        `openingTitle=${textReadiness(state.openingTitle)}`,
+        `message=${textReadiness(state.openingMessage)}`,
+        `progress=${progressReadiness(progress)}`,
+      ].join(" ");
     };
 
     const rangePositionMs = () => {
@@ -2495,12 +2811,76 @@
         ].join(":"))
         .join("|");
 
+    const renderOpeningOverlay = () => {
+      const progress = normalizedOpeningProgress();
+      const artworkUrl = setImageSource(openingArtwork, state.openingArtwork);
+      const logoUrl = setImageSource(openingLogoBase, state.openingLogo);
+      setImageSource(openingLogoFill, state.openingLogo);
+
+      const hasProgress = progress !== null;
+      const openingBootstrap = !hasReceivedPlayerControls;
+      const wantsOpening = Boolean(openingBootstrap || state.showOpeningOverlay);
+      const showOpening = Boolean(wantsOpening && state.isLoading);
+      const titleText = String(state.openingTitle || state.title || "").trim();
+      const messageText = String(state.openingMessage || "").trim();
+      const showHorizontalProgress = hasProgress && !logoUrl;
+      const openingDiagnostic = [
+        `visible=${booleanFlag(showOpening)}`,
+        `wanted=${booleanFlag(wantsOpening)}`,
+        `bootstrap=${booleanFlag(openingBootstrap)}`,
+        `nativeLoading=${booleanFlag(state.isLoading)}`,
+        `artwork=${booleanFlag(artworkUrl)}`,
+        `logo=${booleanFlag(logoUrl)}`,
+        `title=${textReadiness(titleText)}`,
+        `message=${textReadiness(messageText)}`,
+        `progress=${progressReadiness(progress)}`,
+      ].join(" ");
+      if (openingDiagnostic !== lastOpeningDiagnostic) {
+        lastOpeningDiagnostic = openingDiagnostic;
+        postDiagnostic(`opening ${openingDiagnostic}`);
+      }
+
+      root.classList.toggle("opening-active", showOpening);
+      openingOverlay.classList.toggle("visible", showOpening);
+      openingOverlay.classList.toggle("has-artwork", Boolean(artworkUrl));
+      openingOverlay.classList.toggle("has-progress", hasProgress);
+      openingOverlay.setAttribute("aria-hidden", showOpening ? "false" : "true");
+      openingBackButton.setAttribute("aria-label", state.closeLabel || "Close player");
+
+      openingLogoSlot.hidden = !logoUrl;
+      openingLogoFillClip.style.width = `${(progress || 0) * 100}%`;
+
+      openingTitle.textContent = titleText;
+      openingTitle.hidden = Boolean(logoUrl || !titleText);
+      openingSpinner.hidden = Boolean(logoUrl || titleText);
+
+      openingMessage.textContent = messageText;
+      openingStatus.hidden = !(messageText || showHorizontalProgress);
+      openingProgressTrack.hidden = !showHorizontalProgress;
+      openingProgressBar.style.width = `${(progress || 0) * 100}%`;
+
+      return showOpening;
+    };
+
     const renderChrome = () => {
       const durationMs = Math.max(0, Number(state.durationMs) || 0);
       const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
       root.classList.toggle("locked", Boolean(state.isLocked));
       root.classList.toggle("locked-visible", Boolean(state.isLocked && state.lockedOverlayVisible));
       root.classList.toggle("chrome-hidden", Boolean(!state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible)));
+      const showOpening = renderOpeningOverlay();
+      const metadataDiagnostic = [
+        `title=${textReadiness(state.title)}`,
+        `episode=${textReadiness(state.episodeText)}`,
+        `stream=${textReadiness(state.streamTitle)}`,
+        `provider=${textReadiness(state.providerName)}`,
+        `controlsVisible=${booleanFlag(state.controlsVisible)}`,
+        `locked=${booleanFlag(state.isLocked)}`,
+      ].join(" ");
+      if (metadataDiagnostic !== lastMetadataDiagnostic) {
+        lastMetadataDiagnostic = metadataDiagnostic;
+        postDiagnostic(`metadata ${metadataDiagnostic}`);
+      }
 
       title.textContent = state.title || "";
       setText(episode, state.episodeText);
@@ -2516,7 +2896,7 @@
       lockedLabel.textContent = state.tapToUnlockLabel || "Tap to unlock";
       bufferingLabel.textContent = state.bufferingLabel || "Buffering...";
 
-      const showBuffering = Boolean(state.isLoading && !state.isLocked && !activeModal);
+      const showBuffering = Boolean(state.isLoading && !state.isLocked && !activeModal && !showOpening);
       bufferingStatus.classList.toggle("visible", showBuffering);
       bufferingStatus.setAttribute("aria-hidden", showBuffering ? "false" : "true");
 
@@ -2628,6 +3008,10 @@
         }
         send(command, 0);
       });
+    });
+
+    openingOverlay.addEventListener("click", event => {
+      event.stopPropagation();
     });
 
     modalElements.forEach(modal => {
@@ -2848,12 +3232,25 @@
     });
 
     window.playerUpdate = update => {
+      playerNativeUpdateCount += 1;
       const durationMs = Math.round((Number(update.duration) || 0) * 1000);
       const positionMs = Math.round((Number(update.position) || 0) * 1000);
       const audioTracks = normalizeTracks(update.audioTracks);
       const subtitleTracks = normalizeTracks(update.subtitleTracks);
       const audioTracksChanged = trackListSignature(audioTracks) !== trackListSignature(state.audioTracks);
       const subtitleTracksChanged = trackListSignature(subtitleTracks) !== trackListSignature(state.subtitleTracks);
+      const nativeUpdateDiagnostic = [
+        `loading=${booleanFlag(update.loading || update.isLoading)}`,
+        `paused=${booleanFlag(update.paused)}`,
+        `durationReady=${booleanFlag(durationMs > 0)}`,
+        `audioTracks=${audioTracks.length}`,
+        `subtitleTracks=${subtitleTracks.length}`,
+        `openingWanted=${booleanFlag(state.showOpeningOverlay)}`,
+      ].join(" ");
+      if (nativeUpdateDiagnostic !== lastNativeUpdateDiagnostic) {
+        lastNativeUpdateDiagnostic = nativeUpdateDiagnostic;
+        postDiagnostic(`nativeUpdate #${playerNativeUpdateCount} ${nativeUpdateDiagnostic}`);
+      }
       state = {
         ...state,
         durationMs,
@@ -2871,8 +3268,15 @@
     };
 
     window.playerControls = nextState => {
+      playerControlsUpdateCount += 1;
       const previousCloseToken = Number(state.closeModalsToken) || 0;
       state = { ...state, ...nextState };
+      hasReceivedPlayerControls = true;
+      const controlsUpdateDiagnostic = controlsReadinessDiagnostic();
+      if (controlsUpdateDiagnostic !== lastControlsUpdateDiagnostic) {
+        lastControlsUpdateDiagnostic = controlsUpdateDiagnostic;
+        postDiagnostic(`controlsUpdate #${playerControlsUpdateCount} ${controlsUpdateDiagnostic}`);
+      }
       const sourceDiagnostic = sourceControlsDiagnostic(state);
       if (sourceDiagnostic !== lastSourceControlsDiagnostic) {
         lastSourceControlsDiagnostic = sourceDiagnostic;
@@ -2928,6 +3332,8 @@
     setProgress(0, 0);
     focusShortcutRoot();
     render();
+    postDiagnostic("controlsReady window.playerControls=1");
+    send("controlsReady", 0);
   </script>
 </body>
 </html>

@@ -773,6 +773,8 @@ static NSString *limitDiagnosticText(NSString *text) {
     std::atomic_bool _eventDrainScheduled;
     BOOL _didLogSoftwareDecodeWarning;
     BOOL _didFocusControlsWebView;
+    BOOL _controlsWebReady;
+    NSString *_pendingControlsJson;
     double _initialStartSeconds;
 }
 
@@ -1432,11 +1434,33 @@ static NSString *limitDiagnosticText(NSString *text) {
         NSLog(@"[NuvioDesktopControls][native] updateControls ignored nil controls JSON");
         return;
     }
+    _pendingControlsJson = [controlsJson copy];
+    NSLog(
+        @"[NuvioDesktopControls][native] updateControls queued ready=%@ jsonBytes=%lu",
+        _controlsWebReady ? @"true" : @"false",
+        (unsigned long)[_pendingControlsJson lengthOfBytesUsingEncoding:NSUTF8StringEncoding]
+    );
+    [self flushPendingControlsJsonIfReady:@"updateControls"];
+}
+
+- (void)flushPendingControlsJsonIfReady:(NSString *)reason {
+    if (!_webView || !_pendingControlsJson) {
+        return;
+    }
+    if (!_controlsWebReady) {
+        NSLog(
+            @"[NuvioDesktopControls][native] controls flush deferred reason=%@ ready=false jsonBytes=%lu",
+            reason ?: @"unknown",
+            (unsigned long)[_pendingControlsJson lengthOfBytesUsingEncoding:NSUTF8StringEncoding]
+        );
+        return;
+    }
+    NSString *controlsJson = [_pendingControlsJson copy];
     NSString *jsonString = javaScriptStringLiteral(controlsJson);
     NSString *script = [NSString stringWithFormat:
-        @"if (window.playerControls) window.playerControls(JSON.parse(%@))",
+        @"(function(){if(!window.playerControls)return 'missing';window.playerControls(JSON.parse(%@));return 'applied';})()",
         jsonString];
-    [_webView evaluateJavaScript:script completionHandler:^(id _Nullable, NSError * _Nullable error) {
+    [_webView evaluateJavaScript:script completionHandler:^(id _Nullable jsResult, NSError * _Nullable error) {
         if (error) {
             NSDictionary *userInfo = error.userInfo ?: @{};
             id message = userInfo[@"WKJavaScriptExceptionMessage"] ?: error.localizedDescription;
@@ -1448,6 +1472,21 @@ static NSString *limitDiagnosticText(NSString *text) {
                 line,
                 column
             );
+            return;
+        }
+        NSString *resultText = [jsResult isKindOfClass:[NSString class]] ? (NSString *)jsResult : @"unknown";
+        NSLog(
+            @"[NuvioDesktopControls][native] controls flush reason=%@ result=%@ jsonBytes=%lu",
+            reason ?: @"unknown",
+            resultText,
+            (unsigned long)[controlsJson lengthOfBytesUsingEncoding:NSUTF8StringEncoding]
+        );
+        if ([resultText isEqualToString:@"missing"]) {
+            _controlsWebReady = NO;
+            return;
+        }
+        if (_pendingControlsJson && [_pendingControlsJson isEqualToString:controlsJson]) {
+            _pendingControlsJson = nil;
         }
     }];
 }
@@ -1458,6 +1497,8 @@ static NSString *limitDiagnosticText(NSString *text) {
     _timer = nil;
     [_resizeSettleTimer invalidate];
     _resizeSettleTimer = nil;
+    _controlsWebReady = NO;
+    _pendingControlsJson = nil;
     if (_mpv) {
         mpv_set_wakeup_callback(_mpv, nullptr, nullptr);
     }
@@ -1906,6 +1947,16 @@ static NSString *limitDiagnosticText(NSString *text) {
 
     id rawValue = message[@"value"];
     NSNumber *value = [rawValue isKindOfClass:[NSNumber class]] ? rawValue : nil;
+    if ([type isEqualToString:@"controlsReady"]) {
+        _controlsWebReady = YES;
+        NSLog(
+            @"[NuvioDesktopControls][native] controlsReady pending=%@",
+            _pendingControlsJson ? @"true" : @"false"
+        );
+        [self flushPendingControlsJsonIfReady:@"controlsReady"];
+        [self syncControls];
+        return;
+    }
     if ([type isEqualToString:@"diagnostic"]) {
         id rawText = message[@"message"];
         if ([rawText isKindOfClass:[NSString class]]) {
