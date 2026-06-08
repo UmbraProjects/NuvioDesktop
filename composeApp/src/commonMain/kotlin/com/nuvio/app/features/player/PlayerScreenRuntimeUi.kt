@@ -938,13 +938,16 @@ private fun PlayerScreenRuntime.buildPlayerControlEpisodeStreamItems(): List<Pla
 }
 
 private fun PlayerScreenRuntime.isCurrentPlayerControlStream(stream: StreamItem): Boolean {
+    val activeKey = activeSourceIdentityKey
+    val streamKey = stream.playerSourceIdentityKey()
+    if (activeKey != null) {
+        return streamKey == activeKey
+    }
     val directUrl = stream.playableDirectUrl
     if (directUrl != null && directUrl == activeSourceUrl) return true
     val infoHash = stream.p2pInfoHash
     if (infoHash != null && infoHash == activeTorrentInfoHash) return true
-    return activeStreamTitle.isNotBlank() &&
-        stream.streamLabel.equals(activeStreamTitle, ignoreCase = true) &&
-        stream.addonName.equals(activeProviderName, ignoreCase = true)
+    return false
 }
 
 @Composable

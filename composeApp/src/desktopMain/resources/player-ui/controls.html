@@ -22,6 +22,10 @@
       --side-icon: 26px;
       --play-pad: 13px;
       --play-icon: 34px;
+      --motion-fast: 120ms;
+      --motion-standard: 180ms;
+      --motion-panel: 220ms;
+      --ease-out: cubic-bezier(.2, .8, .2, 1);
       color-scheme: dark;
     }
 
@@ -117,6 +121,11 @@
       color: inherit;
       background: transparent;
       font: inherit;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    button:disabled {
       cursor: default;
     }
 
@@ -263,6 +272,58 @@
       background: rgba(0, 0, 0, .35);
     }
 
+    .header-button,
+    .side-control,
+    .play-control,
+    .locked-button,
+    .action,
+    .panel-button,
+    .filter-chip,
+    .capture-button,
+    .subtitle-tab,
+    .round-step,
+    .swatch,
+    .sync-cue,
+    .track-row,
+    .segment-button {
+      transform: translateZ(0);
+      transition:
+        transform var(--motion-fast) var(--ease-out),
+        background-color var(--motion-standard) ease,
+        border-color var(--motion-standard) ease,
+        color var(--motion-standard) ease,
+        opacity var(--motion-standard) ease,
+        box-shadow var(--motion-standard) ease;
+      will-change: transform;
+    }
+
+    .header-button:hover,
+    .locked-button:hover {
+      background: rgba(255, 255, 255, .14);
+    }
+
+    .side-control:hover,
+    .play-control:hover,
+    .action:hover {
+      background: rgba(255, 255, 255, .12);
+    }
+
+    .header-button:active,
+    .header-button.is-pressed,
+    .locked-button:active,
+    .locked-button.is-pressed,
+    .side-control:active,
+    .side-control.is-pressed,
+    .action:active,
+    .action.is-pressed {
+      transform: scale(.94);
+    }
+
+    .play-control:active,
+    .play-control.is-pressed {
+      transform: scale(.91);
+    }
+
     .header-button svg {
       width: var(--header-icon);
       height: var(--header-icon);
@@ -379,6 +440,14 @@
       border-radius: 999px;
       background: #fff;
       box-shadow: 0 0 0 1px rgba(255, 255, 255, .18);
+      transition:
+        transform var(--motion-fast) var(--ease-out),
+        box-shadow var(--motion-standard) ease;
+    }
+
+    .scrub:active::-webkit-slider-thumb {
+      transform: scale(1.18);
+      box-shadow: 0 0 0 6px rgba(255, 255, 255, .16);
     }
 
     .time-row {
@@ -451,7 +520,20 @@
       display: grid;
       place-items: center;
       padding: 24px;
-      background: rgba(0, 0, 0, .54);
+      background-color: rgba(0, 0, 0, .54);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--motion-standard) ease;
+    }
+
+    .modal-layer.modal-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-layer.modal-closing {
+      opacity: 0;
+      pointer-events: none;
     }
 
     .track-panel {
@@ -465,6 +547,22 @@
       background: #16171d;
       color: #fff;
       box-shadow: 0 20px 70px rgba(0, 0, 0, .45);
+      opacity: 0;
+      transform: translateY(14px) scale(.985);
+      transition:
+        transform var(--motion-panel) var(--ease-out),
+        opacity var(--motion-standard) ease;
+      will-change: transform, opacity;
+    }
+
+    .modal-layer.modal-visible .track-panel {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    .modal-layer.modal-closing .track-panel {
+      opacity: 0;
+      transform: translateY(10px) scale(.99);
     }
 
     .track-panel.wide {
@@ -522,12 +620,47 @@
       white-space: nowrap;
     }
 
+    .panel-button:hover:not(:disabled),
+    .filter-chip:hover:not(:disabled),
+    .capture-button:hover:not(:disabled),
+    .subtitle-tab:hover:not(:disabled),
+    .round-step:hover:not(:disabled),
+    .segment-button:hover:not(:disabled) {
+      background: rgba(255, 255, 255, .13);
+      color: rgba(255, 255, 255, .9);
+    }
+
+    .panel-button:active:not(:disabled),
+    .panel-button.is-pressed:not(:disabled),
+    .filter-chip:active:not(:disabled),
+    .filter-chip.is-pressed:not(:disabled),
+    .capture-button:active:not(:disabled),
+    .capture-button.is-pressed:not(:disabled),
+    .subtitle-tab:active:not(:disabled),
+    .subtitle-tab.is-pressed:not(:disabled),
+    .round-step:active:not(:disabled),
+    .round-step.is-pressed:not(:disabled),
+    .segment-button:active:not(:disabled),
+    .segment-button.is-pressed:not(:disabled),
+    .swatch:active:not(:disabled),
+    .swatch.is-pressed:not(:disabled),
+    .sync-cue:active:not(:disabled),
+    .sync-cue.is-pressed:not(:disabled) {
+      transform: scale(.96);
+    }
+
     .panel-button.primary,
     .filter-chip.selected,
     .segment-button.selected {
       background: #2f6fed;
       color: #fff;
       border-color: rgba(255, 255, 255, .18);
+    }
+
+    .panel-button.primary:hover:not(:disabled),
+    .filter-chip.selected:hover:not(:disabled),
+    .segment-button.selected:hover:not(:disabled) {
+      background: #3c7bff;
     }
 
     .filter-row {
@@ -740,10 +873,23 @@
       opacity: .45;
     }
 
+    .track-row:hover:not(:disabled) {
+      background: rgba(255, 255, 255, .13);
+    }
+
+    .track-row:active:not(:disabled),
+    .track-row.is-pressed:not(:disabled) {
+      transform: scale(.985);
+    }
+
     .track-row.selected {
       background: #26384f;
       color: #e2ecff;
       font-weight: 700;
+    }
+
+    .track-row.selected:hover:not(:disabled) {
+      background: #2d4565;
     }
 
     .track-label {
@@ -859,6 +1005,12 @@
 
     .track-row.selected .track-check {
       opacity: 1;
+    }
+
+    button:focus-visible,
+    .scrub:focus-visible {
+      outline: 2px solid rgba(158, 202, 255, .95);
+      outline-offset: 3px;
     }
 
     .track-empty {
@@ -985,6 +1137,33 @@
 
       .episode-thumb {
         display: none;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .top-gradient,
+      .bottom-gradient,
+      .metadata,
+      .header-actions,
+      .center-controls,
+      .progress,
+      .modal-layer,
+      .track-panel,
+      .header-button,
+      .side-control,
+      .play-control,
+      .locked-button,
+      .action,
+      .panel-button,
+      .filter-chip,
+      .capture-button,
+      .subtitle-tab,
+      .round-step,
+      .swatch,
+      .sync-cue,
+      .track-row,
+      .segment-button {
+        transition-duration: 1ms;
       }
     }
 
@@ -1524,6 +1703,7 @@
     let scrubPositionMs = 0;
     let tapTimer = 0;
     let activeModal = "";
+    let pressedButton = null;
     let sourceFilterId = "";
     let selectedEpisodeSeason = null;
     let episodeStreamFilterId = "";
@@ -1534,6 +1714,9 @@
       status: "",
     };
     let lastSourceControlsDiagnostic = "";
+    const prefersReducedMotion = window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const modalTransitionMs = prefersReducedMotion ? 1 : 240;
 
     const sourceDiagnosticCommands = new Set([
       "sources",
@@ -1597,13 +1780,59 @@
       return durationMs > 0 ? Math.round(durationMs * Number(seek.value) / 1000) : 0;
     };
 
-    const modalElements = [audioModal, subtitleModal, sourceModal, episodesModal, submitIntroModal, p2pConsentModal];
+    const modalByName = {
+      audio: audioModal,
+      subtitles: subtitleModal,
+      sources: sourceModal,
+      episodes: episodesModal,
+      submitIntro: submitIntroModal,
+      p2pConsent: p2pConsentModal,
+    };
+    const modalElements = Object.values(modalByName);
+    const modalCloseTimers = new Map();
 
-    const closePlayerModal = (notifyDismiss = false) => {
+    const setModalVisibility = (modal, visible, animated = true) => {
+      const pendingTimer = modalCloseTimers.get(modal);
+      if (pendingTimer) {
+        window.clearTimeout(pendingTimer);
+        modalCloseTimers.delete(modal);
+      }
+      if (visible) {
+        modal.dataset.modalState = "open";
+        modal.hidden = false;
+        modal.classList.remove("modal-closing");
+        window.requestAnimationFrame(() => {
+          if (modal.dataset.modalState === "open") {
+            modal.classList.add("modal-visible");
+          }
+        });
+        return;
+      }
+
+      modal.dataset.modalState = "closed";
+      modal.classList.remove("modal-visible");
+      if (!animated || modal.hidden) {
+        modal.hidden = true;
+        modal.classList.remove("modal-closing");
+        return;
+      }
+
+      modal.classList.add("modal-closing");
+      const timer = window.setTimeout(() => {
+        modalCloseTimers.delete(modal);
+        if (modal.dataset.modalState === "closed") {
+          modal.hidden = true;
+          modal.classList.remove("modal-closing");
+        }
+      }, modalTransitionMs);
+      modalCloseTimers.set(modal, timer);
+    };
+
+    const closePlayerModal = (notifyDismiss = false, animated = true) => {
       const closingModal = activeModal;
       activeModal = "";
       modalElements.forEach(modal => {
-        modal.hidden = true;
+        setModalVisibility(modal, false, animated);
       });
       if (notifyDismiss && closingModal === "p2pConsent") {
         send("cancelP2pForPlayerControls", 0);
@@ -1611,13 +1840,12 @@
     };
 
     const openPlayerModal = modal => {
+      const targetModal = modalByName[modal];
+      if (!targetModal) {
+        closePlayerModal(false);
+        return;
+      }
       activeModal = modal;
-      audioModal.hidden = modal !== "audio";
-      subtitleModal.hidden = modal !== "subtitles";
-      sourceModal.hidden = modal !== "sources";
-      episodesModal.hidden = modal !== "episodes";
-      submitIntroModal.hidden = modal !== "submitIntro";
-      p2pConsentModal.hidden = modal !== "p2pConsent";
       if (modal === "submitIntro") {
         submitIntroDraft = {
           segmentType: state.submitIntroSegmentType || "intro",
@@ -1627,6 +1855,9 @@
         };
       }
       renderActiveModal();
+      modalElements.forEach(modalElement => {
+        setModalVisibility(modalElement, modalElement === targetModal);
+      });
     };
 
     const normalizeTracks = tracks =>
@@ -2245,6 +2476,25 @@
       renderChrome();
       renderActiveModal();
     };
+
+    const clearPressedButton = () => {
+      if (!pressedButton) return;
+      pressedButton.classList.remove("is-pressed");
+      pressedButton = null;
+    };
+
+    document.addEventListener("pointerdown", event => {
+      const button = event.target.closest("button");
+      if (!button || button.disabled) return;
+      clearPressedButton();
+      pressedButton = button;
+      button.classList.add("is-pressed");
+    }, true);
+
+    document.addEventListener("pointerup", clearPressedButton, true);
+    document.addEventListener("pointercancel", clearPressedButton, true);
+    document.addEventListener("dragend", clearPressedButton, true);
+    window.addEventListener("blur", clearPressedButton);
 
     document.querySelectorAll("[data-command]").forEach(button => {
       button.addEventListener("click", event => {
