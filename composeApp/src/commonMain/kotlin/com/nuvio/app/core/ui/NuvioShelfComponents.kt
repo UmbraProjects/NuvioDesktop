@@ -344,6 +344,7 @@ internal fun Modifier.posterCardClickable(
             onClick = { onClick?.invoke() },
             onLongClick = onLongClick,
         )
+            .secondaryClick(onLongClick)
     } else {
         this
     }

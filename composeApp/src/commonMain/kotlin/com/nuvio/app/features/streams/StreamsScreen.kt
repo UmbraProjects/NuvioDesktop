@@ -84,6 +84,7 @@ import com.nuvio.app.core.ui.NuvioBottomSheetDivider
 import com.nuvio.app.core.ui.NuvioModalBottomSheet
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.dismissNuvioBottomSheet
+import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.downloads.DownloadsRepository
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -1039,6 +1040,7 @@ private fun StreamCard(
                 onClick = onClick,
                 onLongClick = onLongClick,
             )
+            .secondaryClick(if (enabled) onLongClick else null)
             .padding(14.dp),
         verticalAlignment = Alignment.Top,
     ) {
