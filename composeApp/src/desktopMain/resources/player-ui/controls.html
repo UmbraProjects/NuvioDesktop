@@ -1122,7 +1122,8 @@
     }
 
     .track-panel.wide {
-      width: min(92vw, 680px);
+      width: min(94vw, 860px);
+      max-height: min(92vh, 760px);
     }
 
     .track-panel.submit {
@@ -1404,6 +1405,24 @@
       min-height: 0;
     }
 
+    .track-list.virtualized {
+      display: block;
+      gap: 0;
+      contain: content;
+    }
+
+    .source-virtual-spacer {
+      position: relative;
+      width: 100%;
+    }
+
+    .source-virtual-row {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+    }
+
     .track-row {
       width: 100%;
       min-height: 42px;
@@ -1423,6 +1442,11 @@
       align-items: stretch;
       justify-content: flex-start;
       min-height: 72px;
+    }
+
+    .track-row.source-row {
+      min-height: 0;
+      align-items: flex-start;
     }
 
     .track-row.disabled {
@@ -1515,6 +1539,18 @@
       color: rgba(255, 255, 255, .5);
       font-style: italic;
       white-space: nowrap;
+    }
+
+    .source-row .stream-name,
+    .source-row .stream-subtitle,
+    .source-row .stream-addon {
+      display: block;
+      overflow: visible;
+      overflow-wrap: anywhere;
+      text-overflow: clip;
+      white-space: normal;
+      -webkit-line-clamp: unset;
+      -webkit-box-orient: initial;
     }
 
     .status-chip,
@@ -2380,6 +2416,13 @@
     let activeModal = "";
     let pressedButton = null;
     let sourceFilterId = "";
+    let sourceVirtualKey = "";
+    let sourceVirtualItems = [];
+    let sourceVirtualHeights = [];
+    let sourceVirtualOffsets = [];
+    let sourceVirtualTotalHeight = 0;
+    let sourceVirtualSpacer = null;
+    let sourceVirtualRenderRaf = 0;
     let selectedEpisodeSeason = null;
     let episodeStreamFilterId = "";
     let submitIntroDraft = {
@@ -2967,10 +3010,69 @@
       });
     };
 
-    const appendSourceRow = (container, item, onSelect) => {
+    const SourceRowEstimatedHeight = 116;
+    const SourceRowGap = 10;
+    const SourceRowOverscanPx = 720;
+
+    const sourceKeyForItems = items => {
+      const first = items[0] || {};
+      const last = items[items.length - 1] || {};
+      return [
+        sourceFilterId || "",
+        items.length,
+        first.index == null ? "" : first.index,
+        first.label || "",
+        last.index == null ? "" : last.index,
+        last.label || "",
+      ].join("\u0001");
+    };
+
+    const resetSourceVirtualState = (items, key) => {
+      sourceVirtualKey = key;
+      sourceVirtualItems = items;
+      sourceVirtualHeights = new Array(items.length).fill(SourceRowEstimatedHeight);
+      sourceVirtualOffsets = [];
+      sourceVirtualTotalHeight = 0;
+      sourceVirtualSpacer = null;
+      window.cancelAnimationFrame(sourceVirtualRenderRaf);
+      sourceVirtualRenderRaf = 0;
+    };
+
+    const rebuildSourceVirtualLayout = () => {
+      let offset = 0;
+      sourceVirtualOffsets = sourceVirtualItems.map((_, index) => {
+        const current = offset;
+        offset += sourceVirtualHeights[index] || SourceRowEstimatedHeight;
+        if (index < sourceVirtualItems.length - 1) offset += SourceRowGap;
+        return current;
+      });
+      sourceVirtualTotalHeight = offset;
+      if (sourceVirtualSpacer) {
+        sourceVirtualSpacer.style.height = `${sourceVirtualTotalHeight}px`;
+      }
+    };
+
+    const sourceIndexForOffset = offset => {
+      let low = 0;
+      let high = sourceVirtualOffsets.length - 1;
+      let result = 0;
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const rowBottom = sourceVirtualOffsets[mid] + (sourceVirtualHeights[mid] || SourceRowEstimatedHeight);
+        if (rowBottom < offset) {
+          low = mid + 1;
+        } else {
+          result = mid;
+          high = mid - 1;
+        }
+      }
+      return result;
+    };
+
+    const buildSourceRow = (item, onSelect) => {
       const row = document.createElement("button");
       row.type = "button";
-      row.className = `track-row stream-row${item.isCurrent ? " selected" : ""}${item.isEnabled === false ? " disabled" : ""}`;
+      row.className = `track-row stream-row source-row${item.isCurrent ? " selected" : ""}${item.isEnabled === false ? " disabled" : ""}`;
       row.disabled = item.isEnabled === false;
       row.addEventListener("click", event => {
         event.stopPropagation();
@@ -3001,12 +3103,68 @@
         copy.appendChild(subtitle);
       }
 
-      const addon = document.createElement("span");
-      addon.className = "stream-addon";
-      addon.textContent = item.addonName || "";
-      copy.appendChild(addon);
+      if (item.addonName) {
+        const addon = document.createElement("span");
+        addon.className = "stream-addon";
+        addon.textContent = item.addonName;
+        copy.appendChild(addon);
+      }
       row.appendChild(copy);
-      container.appendChild(row);
+      return row;
+    };
+
+    const renderSourceVirtualRows = () => {
+      sourceVirtualRenderRaf = 0;
+      if (!sourceVirtualSpacer) return;
+      const count = sourceVirtualItems.length;
+      if (count === 0) return;
+
+      const viewportTop = Math.max(0, sourceList.scrollTop - SourceRowOverscanPx);
+      const viewportBottom = sourceList.scrollTop + sourceList.clientHeight + SourceRowOverscanPx;
+      const start = sourceIndexForOffset(viewportTop);
+      let end = start;
+      while (end < count && sourceVirtualOffsets[end] <= viewportBottom) {
+        end += 1;
+      }
+      end = Math.min(count, Math.max(end + 1, start + 1));
+
+      sourceVirtualSpacer.textContent = "";
+      const fragment = document.createDocumentFragment();
+      const rendered = [];
+      for (let index = start; index < end; index += 1) {
+        const item = sourceVirtualItems[index];
+        const wrapper = document.createElement("div");
+        wrapper.className = "source-virtual-row";
+        wrapper.style.transform = `translateY(${sourceVirtualOffsets[index]}px)`;
+        const row = buildSourceRow(item, selected => {
+          send("selectSource", Number(selected.index) || 0);
+          window.setTimeout(closePlayerModal, 120);
+        });
+        wrapper.appendChild(row);
+        fragment.appendChild(wrapper);
+        rendered.push({ index, wrapper });
+      }
+      sourceVirtualSpacer.appendChild(fragment);
+
+      window.requestAnimationFrame(() => {
+        let changed = false;
+        rendered.forEach(({ index, wrapper }) => {
+          const measured = Math.ceil(wrapper.getBoundingClientRect().height);
+          if (measured > 0 && Math.abs((sourceVirtualHeights[index] || SourceRowEstimatedHeight) - measured) > 1) {
+            sourceVirtualHeights[index] = measured;
+            changed = true;
+          }
+        });
+        if (changed) {
+          rebuildSourceVirtualLayout();
+          requestSourceVirtualRender();
+        }
+      });
+    };
+
+    const requestSourceVirtualRender = () => {
+      if (sourceVirtualRenderRaf) return;
+      sourceVirtualRenderRaf = window.requestAnimationFrame(renderSourceVirtualRows);
     };
 
     const renderSourceModal = () => {
@@ -3020,25 +3178,40 @@
       }
       renderFilterRow(sourceFilterList, filters, sourceFilterId, id => {
         sourceFilterId = id;
+        sourceList.scrollTop = 0;
         renderSourceModal();
       });
 
       sourceList.textContent = "";
+      sourceList.classList.remove("virtualized");
       let items = normalizeItems(state.sourceItems);
       if (sourceFilterId) {
         items = items.filter(item => String(item.filterId || "") === sourceFilterId);
       }
       if (items.length === 0) {
+        sourceVirtualItems = [];
+        sourceVirtualSpacer = null;
+        window.cancelAnimationFrame(sourceVirtualRenderRaf);
+        sourceVirtualRenderRaf = 0;
         appendEmptyTrackState(
           sourceList,
           state.sourceIsLoading ? "Loading streams..." : (state.noStreamsLabel || "No streams found"),
         );
         return;
       }
-      items.forEach(item => appendSourceRow(sourceList, item, selected => {
-        send("selectSource", Number(selected.index) || 0);
-        window.setTimeout(closePlayerModal, 120);
-      }));
+      const nextKey = sourceKeyForItems(items);
+      if (nextKey !== sourceVirtualKey) {
+        resetSourceVirtualState(items, nextKey);
+        sourceList.scrollTop = 0;
+      } else {
+        sourceVirtualItems = items;
+      }
+      sourceList.classList.add("virtualized");
+      sourceVirtualSpacer = document.createElement("div");
+      sourceVirtualSpacer.className = "source-virtual-spacer";
+      sourceList.appendChild(sourceVirtualSpacer);
+      rebuildSourceVirtualLayout();
+      renderSourceVirtualRows();
     };
 
     const appendEpisodeRow = (container, item) => {
@@ -3592,6 +3765,11 @@
       event.stopPropagation();
       closePlayerModal();
     });
+    sourceList.addEventListener("scroll", () => {
+      if (activeModal === "sources") {
+        requestSourceVirtualRender();
+      }
+    }, { passive: true });
     episodesCloseButton.addEventListener("click", event => {
       event.stopPropagation();
       closePlayerModal();
