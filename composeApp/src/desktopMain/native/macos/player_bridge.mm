@@ -419,6 +419,7 @@ static NSString *javaScriptStringLiteral(NSString *value) {
     JavaVM *_javaVm;
     jobject _eventSink;
     jmethodID _eventMethod;
+    NSString *_lastLoggedHwdec;
 }
 
 - (instancetype)initWithHostView:(NSView *)hostView
@@ -486,6 +487,14 @@ static NSString *javaScriptStringLiteral(NSString *value) {
     mpv_set_option_string(_mpv, "input-vo-keyboard", "no");
     mpv_set_option_string(_mpv, "keep-open", "yes");
     mpv_set_option_string(_mpv, "vo", "libmpv");
+    mpv_set_option_string(_mpv, "hwdec", "videotoolbox");
+    mpv_set_option_string(_mpv, "hwdec-codecs", "all");
+    mpv_set_option_string(_mpv, "vd-lavc-dr", "yes");
+    mpv_set_option_string(_mpv, "vd-lavc-threads", "4");
+    mpv_set_option_string(_mpv, "demuxer-max-bytes", "64MiB");
+    mpv_set_option_string(_mpv, "demuxer-max-back-bytes", "16MiB");
+    mpv_set_option_string(_mpv, "demuxer-seekable-cache", "no");
+    mpv_set_option_string(_mpv, "cache-secs", "30");
 
     if (headerLines.count > 0) {
         NSString *headers = [headerLines componentsJoinedByString:@","];
@@ -539,6 +548,7 @@ static NSString *javaScriptStringLiteral(NSString *value) {
     BOOL paused = [self isPaused];
     NSString *audioTracks = [self audioTracksJson] ?: @"[]";
     NSString *subtitleTracks = [self subtitleTracksJson] ?: @"[]";
+    [self logHwdecIfNeeded];
     NSString *script = [NSString stringWithFormat:
         @"window.playerUpdate({duration:%0.3f,position:%0.3f,paused:%@,audioTracks:%@,subtitleTracks:%@})",
         duration,
@@ -547,6 +557,32 @@ static NSString *javaScriptStringLiteral(NSString *value) {
         audioTracks,
         subtitleTracks];
     [_webView evaluateJavaScript:script completionHandler:nil];
+}
+
+- (void)logHwdecIfNeeded {
+    if (!_mpv) {
+        return;
+    }
+    NSString *hwdec = [self stringProperty:"hwdec-current" fallback:@""];
+    if (hwdec.length == 0) {
+        return;
+    }
+    NSString *codec = [self stringProperty:"video-codec" fallback:@"unknown"];
+    long long width = [self int64Property:"width" fallback:0];
+    long long height = [self int64Property:"height" fallback:0];
+    NSString *diagnosticKey = [NSString stringWithFormat:@"%@:%@:%lldx%lld", hwdec, codec, width, height];
+    if (_lastLoggedHwdec && [_lastLoggedHwdec isEqualToString:diagnosticKey]) {
+        return;
+    }
+    _lastLoggedHwdec = diagnosticKey;
+    NSLog(
+        @"[NuvioDesktopPlayer] hwdec-current=%@ codec=%@ size=%lldx%lld cache=%.1fs",
+        hwdec,
+        codec,
+        width,
+        height,
+        [self doubleProperty:"demuxer-cache-time" fallback:0.0]
+    );
 }
 
 - (JNIEnv *)jniEnvDidAttach:(BOOL *)didAttach {
