@@ -2,12 +2,15 @@ package com.nuvio.app.features.player.desktop
 
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun interface NativePlayerEventSink {
     fun onPlayerEvent(type: String, value: Double)
 }
 
 internal object NativePlayerBridge {
+    private val preloadStarted = AtomicBoolean(false)
+
     init {
         loadNativeLibrary()
     }
@@ -62,6 +65,17 @@ internal object NativePlayerBridge {
         input.bufferedReader().use { it.readText() }
     }
 
+    fun preloadAsync() {
+        if (!preloadStarted.compareAndSet(false, true)) return
+        Thread {
+            runCatching { controlsHtml }
+        }.apply {
+            name = "nuvio-native-player-preload"
+            isDaemon = true
+            start()
+        }
+    }
+
     private fun loadNativeLibrary() {
         val platform = DesktopHostOs.current
         require(platform == DesktopHostOs.MACOS) {
@@ -111,4 +125,10 @@ internal object NativePlayerBridge {
             DesktopHostOs.LINUX -> "libplayer_bridge.so"
             DesktopHostOs.UNKNOWN -> "player_bridge"
         }
+}
+
+internal fun preloadNativePlayerBridgeAsync() {
+    if (DesktopHostOs.current == DesktopHostOs.MACOS) {
+        NativePlayerBridge.preloadAsync()
+    }
 }

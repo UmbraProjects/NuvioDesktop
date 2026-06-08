@@ -7,10 +7,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaVideo
@@ -28,6 +31,7 @@ import com.nuvio.app.isDesktop
 import com.nuvio.app.isIos
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
@@ -128,6 +132,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     val episodeStreamItems = buildPlayerControlEpisodeStreamItems()
     val playerControlAddonSubtitles = buildPlayerControlAddonSubtitleItems()
     val playerControlAutoSyncCues = buildPlayerControlSubtitleCueItems()
+    val themeColors = MaterialTheme.nuvio.colors
     val selectedEpisodeLabel = episodeStreamsPanelState.selectedEpisode?.let { selected ->
         val selectedCode = selected.playerControlsEpisodeCode()
         buildString {
@@ -205,6 +210,18 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         resetDefaultsLabel = stringResource(Res.string.compose_player_reset_defaults),
         onLabel = stringResource(Res.string.compose_action_on),
         offLabel = stringResource(Res.string.compose_action_off),
+        themeAccentColor = themeColors.accent.toCssColorString(),
+        themeAccentStrongColor = themeColors.accentStrong.toCssColorString(),
+        themeOnAccentColor = themeColors.onAccent.toCssColorString(),
+        themeFocusColor = themeColors.focusRing.toCssColorString(),
+        themeSelectedSurfaceColor = themeColors.accent.copy(alpha = 0.24f).toCssColorString(),
+        themeSelectedSurfaceHoverColor = themeColors.accent.copy(alpha = 0.34f).toCssColorString(),
+        themeSelectedRingColor = themeColors.accent.copy(alpha = 0.35f).toCssColorString(),
+        themeTimelineFillColor = themeColors.playerTimelineFill.toCssColorString(),
+        themeTimelineTrackColor = themeColors.playerTimelineTrack.toCssColorString(),
+        themeBufferingColor = themeColors.playerBuffering.toCssColorString(),
+        themeBufferingTrackColor = themeColors.playerBuffering.copy(alpha = 0.28f).toCssColorString(),
+        themeControlForegroundColor = themeColors.playerControlsForeground.toCssColorString(),
         isPlaying = playbackSnapshot.isPlaying,
         isLoading = playbackSnapshot.isLoading,
         isLocked = playerControlsLocked,
@@ -716,6 +733,19 @@ private fun PlayerScreenRuntime.prepareSourcesForPlayerControls(forceRefresh: Bo
         episode = activeEpisodeNumber,
         forceRefresh = forceRefresh,
     )
+}
+
+private fun Color.toCssColorString(): String {
+    val redInt = (red * 255f).roundToInt().coerceIn(0, 255)
+    val greenInt = (green * 255f).roundToInt().coerceIn(0, 255)
+    val blueInt = (blue * 255f).roundToInt().coerceIn(0, 255)
+    val alphaValue = alpha.coerceIn(0f, 1f)
+    return "rgba($redInt, $greenInt, $blueInt, ${alphaValue.toCssAlphaString()})"
+}
+
+private fun Float.toCssAlphaString(): String {
+    val rounded = (this * 1000f).roundToInt() / 1000f
+    return rounded.toString().trimEnd('0').trimEnd('.').ifEmpty { "0" }
 }
 
 private fun PlayerScreenRuntime.prepareEpisodesForPlayerControls() {

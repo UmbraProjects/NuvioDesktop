@@ -12,42 +12,47 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.player.PlatformPlayerSurface
+import com.nuvio.app.features.player.desktop.preloadNativePlayerBridgeAsync
 import java.awt.Color as AwtColor
 import javax.swing.JComponent
 
 private val NuvioDesktopNativeBackground = AwtColor(0x0D, 0x0D, 0x0D)
 
-fun main() = application {
-    val smokePlayerUrl = (
-        System.getProperty("nuvio.desktop.smokePlayerUrl")
-            ?: System.getenv("NUVIO_DESKTOP_SMOKE_PLAYER_URL")
-        )
-        ?.takeIf { it.isNotBlank() }
+fun main() {
+    preloadNativePlayerBridgeAsync()
 
-    Window(
-        onCloseRequest = ::exitApplication,
-        title = if (smokePlayerUrl == null) "Nuvio" else "Nuvio Player Smoke",
-        state = WindowState(width = 1280.dp, height = 820.dp),
-    ) {
-        SideEffect {
-            window.background = NuvioDesktopNativeBackground
-            window.rootPane.background = NuvioDesktopNativeBackground
-            window.contentPane.background = NuvioDesktopNativeBackground
-            (window.contentPane as? JComponent)?.isOpaque = true
-        }
-
-        if (smokePlayerUrl == null) {
-            App()
-        } else {
-            var error by remember { mutableStateOf<String?>(null) }
-            PlatformPlayerSurface(
-                sourceUrl = smokePlayerUrl,
-                modifier = Modifier.fillMaxSize(),
-                onControllerReady = {},
-                onSnapshot = {},
-                onError = { error = it },
+    application {
+        val smokePlayerUrl = (
+            System.getProperty("nuvio.desktop.smokePlayerUrl")
+                ?: System.getenv("NUVIO_DESKTOP_SMOKE_PLAYER_URL")
             )
-            error?.let { println("Nuvio desktop player smoke error: $it") }
+            ?.takeIf { it.isNotBlank() }
+
+        Window(
+            onCloseRequest = ::exitApplication,
+            title = if (smokePlayerUrl == null) "Nuvio" else "Nuvio Player Smoke",
+            state = WindowState(width = 1280.dp, height = 820.dp),
+        ) {
+            SideEffect {
+                window.background = NuvioDesktopNativeBackground
+                window.rootPane.background = NuvioDesktopNativeBackground
+                window.contentPane.background = NuvioDesktopNativeBackground
+                (window.contentPane as? JComponent)?.isOpaque = true
+            }
+
+            if (smokePlayerUrl == null) {
+                App()
+            } else {
+                var error by remember { mutableStateOf<String?>(null) }
+                PlatformPlayerSurface(
+                    sourceUrl = smokePlayerUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    onControllerReady = {},
+                    onSnapshot = {},
+                    onError = { error = it },
+                )
+                error?.let { println("Nuvio desktop player smoke error: $it") }
+            }
         }
     }
 }

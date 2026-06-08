@@ -26,6 +26,18 @@
       --motion-standard: 180ms;
       --motion-panel: 220ms;
       --ease-out: cubic-bezier(.2, .8, .2, 1);
+      --theme-accent: #2f6fed;
+      --theme-accent-strong: #3c7bff;
+      --theme-on-accent: #fff;
+      --theme-focus: #9ecaff;
+      --theme-selected-surface: #26384f;
+      --theme-selected-surface-hover: #2d4565;
+      --theme-selected-ring: rgba(47, 111, 237, .35);
+      --theme-timeline-fill: #fff;
+      --theme-timeline-track: rgba(255, 255, 255, .28);
+      --theme-buffering: #fff;
+      --theme-buffering-track: rgba(255, 255, 255, .28);
+      --theme-control-foreground: #fff;
       color-scheme: dark;
     }
 
@@ -356,18 +368,10 @@
       position: absolute;
       left: 50%;
       top: 50%;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-height: 44px;
-      padding: 10px 16px;
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, .14);
-      background: rgba(0, 0, 0, .56);
-      color: rgba(255, 255, 255, .92);
-      font-size: 13px;
-      line-height: 1.2;
-      font-weight: 700;
+      width: 48px;
+      height: 48px;
+      display: grid;
+      place-items: center;
       opacity: 0;
       pointer-events: none;
       transform: translate(-50%, calc(-50% - var(--center-lift) + 10px)) scale(.98);
@@ -383,12 +387,11 @@
     }
 
     .center-spinner {
-      width: 18px;
-      height: 18px;
-      flex: 0 0 auto;
+      width: 42px;
+      height: 42px;
       border-radius: 999px;
-      border: 2px solid rgba(255, 255, 255, .3);
-      border-top-color: #fff;
+      border: 3px solid var(--theme-buffering-track);
+      border-top-color: var(--theme-buffering);
       animation: center-spin 760ms linear infinite;
     }
 
@@ -546,8 +549,8 @@
       width: 54px;
       height: 54px;
       border-radius: 999px;
-      border: 3px solid rgba(229, 9, 20, .22);
-      border-top-color: #e50914;
+      border: 3px solid var(--theme-buffering-track);
+      border-top-color: var(--theme-buffering);
       animation: center-spin 760ms linear infinite;
     }
 
@@ -585,7 +588,7 @@
       width: 0%;
       height: 100%;
       border-radius: inherit;
-      background: rgba(255, 255, 255, .85);
+      background: var(--theme-timeline-fill);
       transition: width 900ms cubic-bezier(.4, 0, .2, 1);
     }
 
@@ -697,7 +700,7 @@
       height: 4px;
       border-radius: 999px;
       background:
-        linear-gradient(to right, #fff 0 var(--progress, 0%), rgba(255, 255, 255, .28) var(--progress, 0%) 100%);
+        linear-gradient(to right, var(--theme-timeline-fill) 0 var(--progress, 0%), var(--theme-timeline-track) var(--progress, 0%) 100%);
     }
 
     .scrub::-webkit-slider-thumb {
@@ -706,7 +709,7 @@
       height: 14px;
       margin-top: -5px;
       border-radius: 999px;
-      background: #fff;
+      background: var(--theme-control-foreground);
       box-shadow: 0 0 0 1px rgba(255, 255, 255, .18);
       transition:
         transform var(--motion-fast) var(--ease-out),
@@ -920,15 +923,15 @@
     .panel-button.primary,
     .filter-chip.selected,
     .segment-button.selected {
-      background: #2f6fed;
-      color: #fff;
+      background: var(--theme-accent);
+      color: var(--theme-on-accent);
       border-color: rgba(255, 255, 255, .18);
     }
 
     .panel-button.primary:hover:not(:disabled),
     .filter-chip.selected:hover:not(:disabled),
     .segment-button.selected:hover:not(:disabled) {
-      background: #3c7bff;
+      background: var(--theme-accent-strong);
     }
 
     .filter-row {
@@ -964,8 +967,8 @@
 
     .subtitle-tab.selected {
       border-radius: 12px;
-      background: #2f6fed;
-      color: #fff;
+      background: var(--theme-accent);
+      color: var(--theme-on-accent);
     }
 
     .style-panel {
@@ -1062,8 +1065,8 @@
     }
 
     .swatch.selected {
-      border-color: #9ecaff;
-      box-shadow: 0 0 0 2px rgba(47, 111, 237, .35);
+      border-color: var(--theme-focus);
+      box-shadow: 0 0 0 2px var(--theme-selected-ring);
     }
 
     .auto-sync-card {
@@ -1089,7 +1092,7 @@
 
     .sync-time {
       flex: 0 0 auto;
-      color: #9ecaff;
+      color: var(--theme-focus);
       font-size: 11px;
       line-height: 1.25;
       font-weight: 800;
@@ -1151,13 +1154,13 @@
     }
 
     .track-row.selected {
-      background: #26384f;
-      color: #e2ecff;
+      background: var(--theme-selected-surface);
+      color: var(--theme-control-foreground);
       font-weight: 700;
     }
 
     .track-row.selected:hover:not(:disabled) {
-      background: #2d4565;
+      background: var(--theme-selected-surface-hover);
     }
 
     .track-label {
@@ -1243,8 +1246,8 @@
     }
 
     .status-chip {
-      background: #2f6fed;
-      color: #fff;
+      background: var(--theme-accent);
+      color: var(--theme-on-accent);
     }
 
     .episode-thumb {
@@ -1267,7 +1270,7 @@
       width: 18px;
       height: 18px;
       flex: 0 0 auto;
-      color: #9ecaff;
+      color: var(--theme-focus);
       opacity: 0;
     }
 
@@ -1553,9 +1556,8 @@
         </nav>
       </header>
 
-      <section class="center-status" id="bufferingStatus" aria-live="polite" aria-label="Buffering" aria-hidden="true">
+      <section class="center-status" id="bufferingStatus" aria-label="Buffering" aria-hidden="true">
         <span class="center-spinner" aria-hidden="true"></span>
-        <span id="bufferingLabel">Buffering...</span>
       </section>
 
       <section class="progress" aria-label="Playback progress">
@@ -1773,7 +1775,6 @@
     const positionLabel = document.getElementById("position");
     const durationLabel = document.getElementById("duration");
     const bufferingStatus = document.getElementById("bufferingStatus");
-    const bufferingLabel = document.getElementById("bufferingLabel");
     const toggle = document.getElementById("toggle");
     const toggleIcon = document.getElementById("toggleIcon");
     const lockIcon = document.getElementById("lockIcon");
@@ -1906,7 +1907,6 @@
       externalPlayerLabel: "External",
       playLabel: "Play",
       pauseLabel: "Pause",
-      bufferingLabel: "Buffering...",
       closeLabel: "Close player",
       lockLabel: "Lock player controls",
       unlockLabel: "Unlock player controls",
@@ -1960,6 +1960,18 @@
       resetDefaultsLabel: "Reset Defaults",
       onLabel: "On",
       offLabel: "Off",
+      themeAccentColor: "#2f6fed",
+      themeAccentStrongColor: "#3c7bff",
+      themeOnAccentColor: "#fff",
+      themeFocusColor: "#9ecaff",
+      themeSelectedSurfaceColor: "#26384f",
+      themeSelectedSurfaceHoverColor: "#2d4565",
+      themeSelectedRingColor: "rgba(47, 111, 237, .35)",
+      themeTimelineFillColor: "#fff",
+      themeTimelineTrackColor: "rgba(255, 255, 255, .28)",
+      themeBufferingColor: "#fff",
+      themeBufferingTrackColor: "rgba(255, 255, 255, .28)",
+      themeControlForegroundColor: "#fff",
       isPlaying: false,
       isLoading: true,
       isLocked: false,
@@ -2040,6 +2052,30 @@
     const send = (type, value = 0) => {
       const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
       if (bridge) bridge.postMessage({ type, value });
+    };
+
+    const cssColorOrFallback = (value, fallback) => {
+      const text = String(value || "").trim();
+      return /^(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\))$/.test(text) ? text : fallback;
+    };
+
+    const applyTheme = () => {
+      const style = document.documentElement.style;
+      const setColor = (name, value, fallback) => {
+        style.setProperty(name, cssColorOrFallback(value, fallback));
+      };
+      setColor("--theme-accent", state.themeAccentColor, "#2f6fed");
+      setColor("--theme-accent-strong", state.themeAccentStrongColor, "#3c7bff");
+      setColor("--theme-on-accent", state.themeOnAccentColor, "#fff");
+      setColor("--theme-focus", state.themeFocusColor, "#9ecaff");
+      setColor("--theme-selected-surface", state.themeSelectedSurfaceColor, "#26384f");
+      setColor("--theme-selected-surface-hover", state.themeSelectedSurfaceHoverColor, "#2d4565");
+      setColor("--theme-selected-ring", state.themeSelectedRingColor, "rgba(47, 111, 237, .35)");
+      setColor("--theme-timeline-fill", state.themeTimelineFillColor, "#fff");
+      setColor("--theme-timeline-track", state.themeTimelineTrackColor, "rgba(255, 255, 255, .28)");
+      setColor("--theme-buffering", state.themeBufferingColor, "#fff");
+      setColor("--theme-buffering-track", state.themeBufferingTrackColor, "rgba(255, 255, 255, .28)");
+      setColor("--theme-control-foreground", state.themeControlForegroundColor, "#fff");
     };
 
     const formatTime = milliseconds => {
@@ -2777,8 +2813,6 @@
       episodesLabel.textContent = state.episodesLabel || "Episodes";
       externalLabel.textContent = state.externalPlayerLabel || "External";
       lockedLabel.textContent = state.tapToUnlockLabel || "Tap to unlock";
-      bufferingLabel.textContent = state.bufferingLabel || "Buffering...";
-
       const showBuffering = Boolean(state.isLoading && !state.isLocked && !activeModal && !showOpening);
       bufferingStatus.classList.toggle("visible", showBuffering);
       bufferingStatus.setAttribute("aria-hidden", showBuffering ? "false" : "true");
@@ -2807,6 +2841,7 @@
     };
 
     const render = () => {
+      applyTheme();
       renderChrome();
       renderActiveModal();
     };
