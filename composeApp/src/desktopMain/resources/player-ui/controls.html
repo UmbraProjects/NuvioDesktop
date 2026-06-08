@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
+    /* __NUVIO_PLAYER_FONT_FACES__ */
+
     :root {
       --hp: 20px;
       --vp: 16px;
@@ -120,7 +122,7 @@
       overflow: hidden;
       background: transparent;
       color: #fff;
-      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Nuvio JetBrains Sans", "JetBrains Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
       user-select: none;
     }
@@ -154,6 +156,7 @@
     .top-gradient,
     .bottom-gradient,
     .metadata,
+    .parental-guide,
     .header-actions,
     .center-controls,
     .progress {
@@ -163,10 +166,12 @@
     .player.chrome-hidden .top-gradient,
     .player.chrome-hidden .bottom-gradient,
     .player.chrome-hidden .metadata,
+    .player.chrome-hidden .parental-guide,
     .player.chrome-hidden .header-actions,
     .player.chrome-hidden .center-controls,
     .player.chrome-hidden .progress,
     .player.locked .metadata,
+    .player.locked .parental-guide,
     .player.locked .header-actions,
     .player.locked .center-controls {
       opacity: 0;
@@ -175,6 +180,7 @@
 
     .player.opening-active .top-gradient,
     .player.opening-active .bottom-gradient,
+    .player.opening-active .parental-guide,
     .player.opening-active .content {
       visibility: hidden;
       opacity: 0;
@@ -224,7 +230,7 @@
       left: var(--hp);
       right: var(--hp);
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-end;
       align-items: flex-start;
       gap: 18px;
     }
@@ -233,12 +239,13 @@
       min-width: 0;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 0;
       opacity: 1;
+      padding: 0 14px 10px;
     }
 
     .title {
-      max-width: min(760px, 64vw);
+      max-width: min(760px, 100%);
       font-size: var(--title);
       line-height: 1.16;
       font-weight: 700;
@@ -249,7 +256,8 @@
     }
 
     .episode {
-      max-width: min(760px, 64vw);
+      max-width: min(760px, 100%);
+      margin-top: 4px;
       font-size: var(--episode);
       line-height: 1.3;
       color: rgba(255, 255, 255, .9);
@@ -262,8 +270,27 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      max-width: min(760px, 64vw);
+      max-width: min(760px, 100%);
       min-width: 0;
+      max-height: 0;
+      margin-top: 0;
+      opacity: 0;
+      overflow: hidden;
+      pointer-events: none;
+      transform: translateY(6px);
+      transition:
+        opacity 180ms ease,
+        max-height 180ms ease,
+        margin-top 180ms ease,
+        transform 180ms var(--ease-out);
+    }
+
+    .player.source-visible .meta-row {
+      max-height: 24px;
+      margin-top: 6px;
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
     }
 
     .stream-title,
@@ -279,6 +306,80 @@
 
     .provider {
       font-style: italic;
+    }
+
+    .parental-guide {
+      position: absolute;
+      top: calc(var(--vp) / 4 + env(safe-area-inset-top));
+      left: var(--hp);
+      z-index: 5;
+      display: flex;
+      align-items: flex-start;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 300ms ease;
+    }
+
+    .player.parental-visible .parental-guide {
+      opacity: 1;
+    }
+
+    .parental-guide-line {
+      width: 3px;
+      height: 0;
+      border-radius: 1px;
+      background: var(--theme-accent);
+      transform: scaleY(0);
+      transform-origin: top;
+      transition: transform 400ms var(--ease-out);
+    }
+
+    .player.parental-line-visible .parental-guide-line {
+      transform: scaleY(1);
+    }
+
+    .parental-guide-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding-left: 10px;
+    }
+
+    .parental-guide-row {
+      height: 18px;
+      display: flex;
+      align-items: center;
+      opacity: 0;
+      transform: translateY(2px);
+      transition:
+        opacity 200ms ease,
+        transform 200ms var(--ease-out);
+      white-space: nowrap;
+    }
+
+    .parental-guide-row.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .parental-guide-label,
+    .parental-guide-separator,
+    .parental-guide-severity {
+      font-size: 11px;
+      line-height: 18px;
+    }
+
+    .parental-guide-label {
+      color: rgba(255, 255, 255, .85);
+      font-weight: 600;
+    }
+
+    .parental-guide-separator {
+      color: rgba(255, 255, 255, .4);
+    }
+
+    .parental-guide-severity {
+      color: rgba(255, 255, 255, .5);
     }
 
     .header-actions {
@@ -676,11 +777,11 @@
     }
 
     .scrub {
-      width: 100%;
+      width: calc(100% - 28px);
       height: var(--slider-touch);
       transform: scaleY(var(--slider-scale));
       transform-origin: center;
-      margin: 0;
+      margin: 0 14px;
       appearance: none;
       background: transparent;
     }
@@ -1379,7 +1480,7 @@
       .title,
       .episode,
       .meta-row {
-        max-width: 52vw;
+        max-width: 100%;
       }
 
       .progress {
@@ -1526,14 +1627,6 @@
     </section>
     <div class="content">
       <header class="header">
-        <section class="metadata" aria-label="Playback metadata">
-          <div class="title" id="title"></div>
-          <div class="episode" id="episode" hidden></div>
-          <div class="meta-row">
-            <span class="stream-title" id="streamTitle"></span>
-            <span class="provider" id="providerName"></span>
-          </div>
-        </section>
         <nav class="header-actions" aria-label="Player actions">
           <button class="header-button" id="submitIntroButton" data-command="submitIntro" aria-label="Submit intro"><svg><use href="#icon-flag"></use></svg></button>
           <button class="header-button" id="lockButton" data-command="lock" aria-label="Lock controls"><svg><use id="lockIcon" href="#icon-lock"></use></svg></button>
@@ -1542,11 +1635,24 @@
         </nav>
       </header>
 
+      <section class="parental-guide" id="parentalGuide" aria-label="Parental guide" aria-hidden="true">
+        <div class="parental-guide-line" id="parentalGuideLine"></div>
+        <div class="parental-guide-list" id="parentalGuideList"></div>
+      </section>
+
       <section class="center-status" id="bufferingStatus" aria-label="Buffering" aria-hidden="true">
         <span class="center-spinner" aria-hidden="true"></span>
       </section>
 
       <section class="progress" aria-label="Playback progress">
+        <section class="metadata" aria-label="Playback metadata">
+          <div class="title" id="title"></div>
+          <div class="episode" id="episode" hidden></div>
+          <div class="meta-row">
+            <span class="stream-title" id="streamTitle"></span>
+            <span class="provider" id="providerName"></span>
+          </div>
+        </section>
         <input id="seek" class="scrub" type="range" min="0" max="1000" value="0" aria-label="Seek">
         <div class="time-row">
           <span class="time-pill" id="position">00:00</span>
@@ -1792,6 +1898,9 @@
     const openingMessage = document.getElementById("openingMessage");
     const openingProgressTrack = document.getElementById("openingProgressTrack");
     const openingProgressBar = document.getElementById("openingProgressBar");
+    const parentalGuide = document.getElementById("parentalGuide");
+    const parentalGuideLine = document.getElementById("parentalGuideLine");
+    const parentalGuideList = document.getElementById("parentalGuideList");
     const sourcesButton = document.getElementById("sourcesButton");
     const episodesButton = document.getElementById("episodesButton");
     const externalButton = document.getElementById("externalButton");
@@ -1963,6 +2072,8 @@
       isLocked: false,
       lockedOverlayVisible: false,
       controlsVisible: true,
+      parentalWarnings: [],
+      showParentalGuide: false,
       showOpeningOverlay: false,
       openingArtwork: "",
       openingLogo: "",
@@ -2031,6 +2142,9 @@
       status: "",
     };
     let hasReceivedPlayerControls = false;
+    let parentalGuideRunId = 0;
+    let parentalGuideStartedKey = "";
+    let parentalGuideCompletedKey = "";
     const prefersReducedMotion = window.matchMedia &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const modalTransitionMs = prefersReducedMotion ? 1 : 240;
@@ -2038,6 +2152,132 @@
     const send = (type, value = 0) => {
       const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
       if (bridge) bridge.postMessage({ type, value });
+    };
+
+    const animationDelay = ms => new Promise(resolve => {
+      window.setTimeout(resolve, prefersReducedMotion ? 1 : ms);
+    });
+
+    const normalizedParentalWarnings = () =>
+      Array.isArray(state.parentalWarnings)
+        ? state.parentalWarnings
+            .map(warning => ({
+              label: String(warning && warning.label || "").trim(),
+              severity: String(warning && warning.severity || "").trim(),
+            }))
+            .filter(warning => warning.label || warning.severity)
+            .slice(0, 5)
+        : [];
+
+    const parentalWarningKey = warnings =>
+      warnings.map(warning => `${warning.label}\u0000${warning.severity}`).join("\u0001");
+
+    const hideParentalGuide = () => {
+      root.classList.remove("parental-visible", "parental-line-visible");
+      parentalGuide.setAttribute("aria-hidden", "true");
+      parentalGuideList.querySelectorAll(".parental-guide-row").forEach(row => {
+        row.classList.remove("visible");
+      });
+    };
+
+    const renderParentalGuideRows = warnings => {
+      parentalGuideList.innerHTML = "";
+      const rowHeight = 18;
+      const rowGap = 2;
+      const totalHeight = warnings.length > 0
+        ? (rowHeight * warnings.length) + (rowGap * (warnings.length - 1))
+        : 0;
+      parentalGuideLine.style.height = `${totalHeight}px`;
+
+      warnings.forEach(warning => {
+        const row = document.createElement("div");
+        row.className = "parental-guide-row";
+
+        const label = document.createElement("span");
+        label.className = "parental-guide-label";
+        label.textContent = warning.label;
+
+        const separator = document.createElement("span");
+        separator.className = "parental-guide-separator";
+        separator.textContent = " · ";
+
+        const severity = document.createElement("span");
+        severity.className = "parental-guide-severity";
+        severity.textContent = warning.severity;
+
+        row.appendChild(label);
+        row.appendChild(separator);
+        row.appendChild(severity);
+        parentalGuideList.appendChild(row);
+      });
+    };
+
+    const runParentalGuideAnimation = async (warnings, key, runId) => {
+      renderParentalGuideRows(warnings);
+      parentalGuide.setAttribute("aria-hidden", "false");
+      root.classList.add("parental-visible");
+      await animationDelay(300);
+      if (runId !== parentalGuideRunId) return;
+
+      root.classList.add("parental-line-visible");
+      await animationDelay(400);
+      if (runId !== parentalGuideRunId) return;
+
+      const rows = Array.from(parentalGuideList.querySelectorAll(".parental-guide-row"));
+      for (const row of rows) {
+        await animationDelay(80);
+        if (runId !== parentalGuideRunId) return;
+        row.classList.add("visible");
+        await animationDelay(200);
+        if (runId !== parentalGuideRunId) return;
+      }
+
+      await animationDelay(5000);
+      if (runId !== parentalGuideRunId) return;
+
+      for (const row of rows.slice().reverse()) {
+        await animationDelay(60);
+        if (runId !== parentalGuideRunId) return;
+        row.classList.remove("visible");
+        await animationDelay(150);
+        if (runId !== parentalGuideRunId) return;
+      }
+
+      await animationDelay(100);
+      if (runId !== parentalGuideRunId) return;
+      root.classList.remove("parental-line-visible");
+
+      await animationDelay(300);
+      if (runId !== parentalGuideRunId) return;
+
+      await animationDelay(200);
+      if (runId !== parentalGuideRunId) return;
+      root.classList.remove("parental-visible");
+      await animationDelay(300);
+      if (runId !== parentalGuideRunId) return;
+      parentalGuide.setAttribute("aria-hidden", "true");
+      parentalGuideCompletedKey = key;
+      send("parentalGuideComplete", 0);
+    };
+
+    const syncParentalGuide = showOpening => {
+      const warnings = normalizedParentalWarnings();
+      const shouldShow = Boolean(state.showParentalGuide && warnings.length && !showOpening && !state.isLocked);
+      if (!shouldShow) {
+        parentalGuideRunId += 1;
+        parentalGuideStartedKey = "";
+        if (!state.showParentalGuide) {
+          parentalGuideCompletedKey = "";
+        }
+        hideParentalGuide();
+        return;
+      }
+
+      const key = parentalWarningKey(warnings);
+      if (parentalGuideStartedKey === key || parentalGuideCompletedKey === key) return;
+      parentalGuideStartedKey = key;
+      parentalGuideRunId += 1;
+      runParentalGuideAnimation(warnings, key, parentalGuideRunId);
     };
 
     const cssColorOrFallback = (value, fallback) => {
@@ -2782,10 +3022,13 @@
     const renderChrome = () => {
       const durationMs = Math.max(0, Number(state.durationMs) || 0);
       const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
+      const isPlaying = Boolean(state.isPlaying);
       root.classList.toggle("locked", Boolean(state.isLocked));
       root.classList.toggle("locked-visible", Boolean(state.isLocked && state.lockedOverlayVisible));
       root.classList.toggle("chrome-hidden", Boolean(!state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible)));
+      root.classList.toggle("source-visible", Boolean(!isPlaying && !state.isLoading && (state.streamTitle || state.providerName)));
       const showOpening = renderOpeningOverlay();
+      syncParentalGuide(showOpening);
 
       title.textContent = state.title || "";
       setText(episode, state.episodeText);
@@ -2809,7 +3052,6 @@
       setVisible(episodesButton, Boolean(state.showEpisodes));
       setVisible(externalButton, Boolean(state.showExternalPlayer));
 
-      const isPlaying = Boolean(state.isPlaying);
       const playPauseLabel = isPlaying ? state.pauseLabel : state.playLabel;
       if (toggle) {
         toggle.setAttribute("aria-label", playPauseLabel || (isPlaying ? "Pause" : "Play"));

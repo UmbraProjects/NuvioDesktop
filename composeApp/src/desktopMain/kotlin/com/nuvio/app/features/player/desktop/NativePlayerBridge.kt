@@ -2,6 +2,7 @@ package com.nuvio.app.features.player.desktop
 
 import java.io.File
 import java.nio.file.Files
+import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun interface NativePlayerEventSink {
@@ -63,6 +64,7 @@ internal object NativePlayerBridge {
         val input = NativePlayerBridge::class.java.getResourceAsStream(resource)
             ?: error("Missing native player controls resource: $resource")
         input.bufferedReader().use { it.readText() }
+            .replace("/* __NUVIO_PLAYER_FONT_FACES__ */", nativePlayerFontFaces())
     }
 
     fun preloadAsync() {
@@ -125,6 +127,39 @@ internal object NativePlayerBridge {
             DesktopHostOs.LINUX -> "libplayer_bridge.so"
             DesktopHostOs.UNKNOWN -> "player_bridge"
         }
+
+    private fun nativePlayerFontFaces(): String =
+        listOfNotNull(
+            nativePlayerFontFace(
+                fileName = "jetbrains_sans_regular.ttf",
+                weight = "400",
+            ),
+            nativePlayerFontFace(
+                fileName = "jetbrains_sans_semibold.ttf",
+                weight = "600",
+            ),
+            nativePlayerFontFace(
+                fileName = "jetbrains_sans_bold.ttf",
+                weight = "700 900",
+            ),
+        ).joinToString(separator = "\n")
+
+    private fun nativePlayerFontFace(fileName: String, weight: String): String? {
+        val resource = "/composeResources/nuvio.composeapp.generated.resources/font/$fileName"
+        val bytes = NativePlayerBridge::class.java.getResourceAsStream(resource)
+            ?.use { it.readBytes() }
+            ?: return null
+        val encoded = Base64.getEncoder().encodeToString(bytes)
+        return """
+            @font-face {
+              font-family: "Nuvio JetBrains Sans";
+              src: url("data:font/ttf;base64,$encoded") format("truetype");
+              font-weight: $weight;
+              font-style: normal;
+              font-display: block;
+            }
+        """.trimIndent()
+    }
 }
 
 internal fun preloadNativePlayerBridgeAsync() {

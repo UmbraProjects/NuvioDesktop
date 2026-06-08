@@ -8,6 +8,7 @@ import com.nuvio.app.features.player.PlayerControlSeasonItem
 import com.nuvio.app.features.player.PlayerControlSourceItem
 import com.nuvio.app.features.player.PlayerControlSubtitleCueItem
 import com.nuvio.app.features.player.AudioTrack
+import com.nuvio.app.features.player.ParentalWarning
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.PlayerEngineController
@@ -617,6 +618,10 @@ private fun PlayerControlsState.toControlsJson(): String =
         append(',')
         appendJsonField("controlsVisible", controlsVisible)
         append(',')
+        appendJsonArrayField("parentalWarnings", parentalWarnings) { appendParentalWarningJson(it) }
+        append(',')
+        appendJsonField("showParentalGuide", showParentalGuide)
+        append(',')
         appendJsonField("showOpeningOverlay", showOpeningOverlay)
         append(',')
         appendJsonField("openingArtwork", openingArtwork.orEmpty())
@@ -848,6 +853,14 @@ private fun StringBuilder.appendSubtitleCueItemJson(item: PlayerControlSubtitleC
     appendJsonField("timeLabel", item.timeLabel)
     append(',')
     appendJsonField("text", item.text)
+    append('}')
+}
+
+private fun StringBuilder.appendParentalWarningJson(item: ParentalWarning) {
+    append('{')
+    appendJsonField("label", item.label)
+    append(',')
+    appendJsonField("severity", item.severity)
     append('}')
 }
 

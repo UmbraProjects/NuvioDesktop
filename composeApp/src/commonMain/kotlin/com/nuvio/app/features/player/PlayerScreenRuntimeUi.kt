@@ -227,6 +227,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         isLocked = playerControlsLocked,
         lockedOverlayVisible = lockedOverlayVisible,
         controlsVisible = (controlsVisible || showParentalGuide) && !playerControlsLocked,
+        parentalWarnings = parentalWarnings,
+        showParentalGuide = showParentalGuide,
         showSubmitIntro = isSeries &&
             playerSettingsUiState.introSubmitEnabled &&
             playerSettingsUiState.introDbApiKey.isNotBlank() &&
@@ -687,6 +689,9 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(textColor = subtitleStyle.textColor.copy(alpha = alpha)))
         }
         "subtitleStyleReset" -> PlayerSettingsRepository.setSubtitleStyle(SubtitleStyleState.DEFAULT)
+        "parentalGuideComplete" -> {
+            showParentalGuide = false
+        }
         else -> return false
     }
     return true
