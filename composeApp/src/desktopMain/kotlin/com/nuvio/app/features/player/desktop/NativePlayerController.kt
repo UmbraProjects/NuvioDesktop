@@ -38,8 +38,6 @@ internal class NativePlayerController(
     private var pendingSource: PendingSource? = null
     private var controlsState = PlayerControlsState()
     private var lastSentControlsStructureKey: PlayerControlsState? = null
-    private var lastSourceControlsDiagnostics: String? = null
-    private var lastPlayerControlsDiagnostics: String? = null
     private var onAction: (PlayerControlsAction) -> Boolean = { false }
     private var onEvent: (String, Double) -> Boolean = { _, _ -> false }
     private var onScrubChange: (Long) -> Boolean = { false }
@@ -57,11 +55,6 @@ internal class NativePlayerController(
         initialPositionMs: Long,
         onError: (String?) -> Unit,
     ) {
-        println(
-            "[NuvioDesktopControls] attach requested " +
-                "source=${sourceUrl.redactedPlaybackSourceForLog()} " +
-                "headers=${sourceHeaders.size} playWhenReady=$playWhenReady initialPositionMs=$initialPositionMs",
-        )
         val pending = PendingSource(
             sourceUrl = sourceUrl,
             headerLines = sourceHeaders.toHeaderLines(),
@@ -80,19 +73,10 @@ internal class NativePlayerController(
         val pending = pendingSource ?: return
         SwingUtilities.invokeLater {
             if (!host.isDisplayable) {
-                println(
-                    "[NuvioDesktopControls] attach pending " +
-                        "hostDisplayable=false source=${pending.sourceUrl.redactedPlaybackSourceForLog()}",
-                )
                 return@invokeLater
             }
             dispose()
             runCatching {
-                println(
-                    "[NuvioDesktopControls] create native player " +
-                        "source=${pending.sourceUrl.redactedPlaybackSourceForLog()} " +
-                        "headers=${pending.headerLines.size} initialPositionMs=${pending.initialPositionMs}",
-                )
                 val hostViewPtr = AwtNativeViewResolver.resolveNativeViewPointer(host)
                 handle = NativePlayerBridge.create(
                     hostViewPtr = hostViewPtr,
@@ -104,16 +88,8 @@ internal class NativePlayerController(
                     eventSink = eventSink,
                 )
                 if (handle == 0L) error("Native player did not return a handle.")
-                println(
-                    "[NuvioDesktopControls] create native player success " +
-                        "handleReady=true source=${pending.sourceUrl.redactedPlaybackSourceForLog()}",
-                )
                 updateControls(controlsState)
             }.onFailure { error ->
-                println(
-                    "[NuvioDesktopControls] create native player failed " +
-                        "source=${pending.sourceUrl.redactedPlaybackSourceForLog()} error=${error.message}",
-                )
                 pending.onError(error.message)
             }
         }
@@ -135,29 +111,10 @@ internal class NativePlayerController(
         controlsState = state
         val currentHandle = handle
         val structureKey = state.nativeControlsStructureKey()
-        val willSend = currentHandle != 0L && structureKey != lastSentControlsStructureKey
-        val sourceDiagnostics = state.sourceControlsDiagnostics()
-        if (sourceDiagnostics != lastSourceControlsDiagnostics) {
-            println("[NuvioDesktopControls] state handleReady=${currentHandle != 0L} willSend=$willSend $sourceDiagnostics")
-            lastSourceControlsDiagnostics = sourceDiagnostics
-        }
-        val playerDiagnostics = state.playerControlsDiagnostics()
-        if (playerDiagnostics != lastPlayerControlsDiagnostics) {
-            println(
-                "[NuvioDesktopControls] controls handleReady=${currentHandle != 0L} " +
-                    "willSend=$willSend changed=${structureKey != lastSentControlsStructureKey} $playerDiagnostics",
-            )
-            lastPlayerControlsDiagnostics = playerDiagnostics
-        }
         val current = currentHandle.takeIf { it != 0L } ?: return
         if (structureKey == lastSentControlsStructureKey) return
         lastSentControlsStructureKey = structureKey
-        val controlsJson = state.toControlsJson()
-        println(
-            "[NuvioDesktopControls] controls send " +
-                "jsonBytes=${controlsJson.length} $playerDiagnostics",
-        )
-        NativePlayerBridge.updateControls(current, controlsJson)
+        NativePlayerBridge.updateControls(current, state.toControlsJson())
     }
 
     fun setResizeMode(mode: PlayerResizeMode) {
@@ -174,10 +131,6 @@ internal class NativePlayerController(
     }
 
     private fun handlePlayerEvent(type: String, value: Double) {
-        val shouldLog = type.isControlsDiagnosticEvent()
-        if (shouldLog) {
-            println("[NuvioDesktopControls] event received type=$type value=$value")
-        }
         when (type) {
             "scrubChange" -> {
                 if (!onScrubChange(value.toLong())) {
@@ -186,31 +139,16 @@ internal class NativePlayerController(
             }
             "scrubFinish" -> {
                 val scrubHandled = onScrubFinished(value.toLong())
-                if (shouldLog) {
-                    println(
-                        "[NuvioDesktopControls] event route type=$type " +
-                            "onScrubFinished=$scrubHandled fallback=${!scrubHandled}",
-                    )
-                }
                 if (!scrubHandled) {
                     seekTo(value.toLong())
                 }
             }
             else -> {
                 val eventHandled = onEvent(type, value)
-                if (shouldLog) {
-                    println("[NuvioDesktopControls] event route type=$type onEvent=$eventHandled")
-                }
                 if (eventHandled) return
                 val action = type.toPlayerControlsAction()
-                if (shouldLog) {
-                    println("[NuvioDesktopControls] event map type=$type action=${action ?: "none"}")
-                }
                 if (action == null) return
                 val actionHandled = onAction(action)
-                if (shouldLog) {
-                    println("[NuvioDesktopControls] event action=$action onAction=$actionHandled fallback=${!actionHandled}")
-                }
                 if (!actionHandled) {
                     handleFallbackAction(action)
                 }
@@ -227,16 +165,9 @@ internal class NativePlayerController(
         when (action) {
             PlayerControlsAction.TogglePlayback -> {
                 val current = handle
-                if (current == 0L) {
-                    println("[NuvioDesktopControls] fallback direct action=$action handleReady=false")
-                    return
-                }
+                if (current == 0L) return
                 val isEnded = NativePlayerBridge.isEnded(current)
                 val isPaused = NativePlayerBridge.isPaused(current)
-                println(
-                    "[NuvioDesktopControls] fallback direct action=$action " +
-                        "handleReady=true ended=$isEnded paused=$isPaused",
-                )
                 if (isEnded) {
                     NativePlayerBridge.seekTo(current, 0L)
                     NativePlayerBridge.setPaused(current, false)
@@ -244,21 +175,17 @@ internal class NativePlayerController(
                     NativePlayerBridge.setPaused(current, !isPaused)
                 }
             }
-            PlayerControlsAction.SeekBack -> fallbackSeekBy(action, -10_000L)
-            PlayerControlsAction.SeekForward -> fallbackSeekBy(action, 10_000L)
-            PlayerControlsAction.DoubleTapSeekBack -> fallbackSeekBy(action, -10_000L)
-            PlayerControlsAction.DoubleTapSeekForward -> fallbackSeekBy(action, 10_000L)
+            PlayerControlsAction.SeekBack -> fallbackSeekBy(-10_000L)
+            PlayerControlsAction.SeekForward -> fallbackSeekBy(10_000L)
+            PlayerControlsAction.DoubleTapSeekBack -> fallbackSeekBy(-10_000L)
+            PlayerControlsAction.DoubleTapSeekForward -> fallbackSeekBy(10_000L)
             PlayerControlsAction.Speed -> cycleFallbackSpeed()
             else -> Unit
         }
     }
 
-    private fun fallbackSeekBy(action: PlayerControlsAction, offsetMs: Long) {
+    private fun fallbackSeekBy(offsetMs: Long) {
         val current = handle
-        println(
-            "[NuvioDesktopControls] fallback direct action=$action " +
-                "handleReady=${current != 0L} offsetMs=$offsetMs",
-        )
         if (current != 0L) {
             NativePlayerBridge.seekBy(current, offsetMs)
         }
@@ -521,25 +448,6 @@ private fun String.toPlayerControlsAction(): PlayerControlsAction? =
         else -> null
     }
 
-private fun String.isControlsDiagnosticEvent(): Boolean =
-    when (this) {
-        "toggle",
-        "seekBack",
-        "seekForward",
-        "doubleTapSeekBack",
-        "doubleTapSeekForward",
-        "scrubFinish",
-        "sources",
-        "reloadSources",
-        "selectSource",
-        "episodes",
-        "reloadEpisodeStreams",
-        "selectEpisode",
-        "selectEpisodeStream",
-        "backToEpisodes" -> true
-        else -> false
-    }
-
 private fun PlayerControlsState.toControlsJson(): String =
     buildString {
         append('{')
@@ -780,46 +688,6 @@ private fun PlayerControlsState.nativeControlsStructureKey(): PlayerControlsStat
         durationMs = 0L,
         positionMs = 0L,
     )
-
-private fun PlayerControlsState.sourceControlsDiagnostics(): String {
-    val loadingFilters = sourceFilters.count { it.isLoading }
-    val errorFilters = sourceFilters.count { it.hasError }
-    val currentItems = sourceItems.count { it.isCurrent }
-    val disabledItems = sourceItems.count { !it.isEnabled }
-    val firstItem = sourceItems.firstOrNull()?.let { item ->
-        "${item.addonName}:${item.label}".replace('\n', ' ').take(96)
-    } ?: "none"
-    return "sources(show=$showSources loading=$sourceIsLoading filters=${sourceFilters.size} " +
-        "filterLoading=$loadingFilters filterErrors=$errorFilters items=${sourceItems.size} " +
-        "current=$currentItems disabled=$disabledItems first=$firstItem)"
-}
-
-private fun PlayerControlsState.playerControlsDiagnostics(): String {
-    val openingProgressLabel = openingProgress?.let { value ->
-        (value.coerceIn(0f, 1f) * 100).toInt().toString() + "%"
-    } ?: "none"
-    return "metadata(title=${title.isNotBlank()}:${title.length} " +
-        "episode=${episodeText.isNotBlank()}:${episodeText.length} " +
-        "stream=${streamTitle.isNotBlank()}:${streamTitle.length} " +
-        "provider=${providerName.isNotBlank()}:${providerName.length}) " +
-        "opening(wanted=$showOpeningOverlay artwork=${!openingArtwork.isNullOrBlank()} " +
-        "logo=${!openingLogo.isNullOrBlank()} title=${openingTitle.isNotBlank()}:${openingTitle.length} " +
-        "message=${!openingMessage.isNullOrBlank()} progress=$openingProgressLabel) " +
-        "playback(loading=$isLoading playing=$isPlaying controlsVisible=$controlsVisible locked=$isLocked)"
-}
-
-private fun String.redactedPlaybackSourceForLog(): String {
-    val schemeEnd = indexOf("://")
-    if (schemeEnd < 0) return "opaque"
-    val scheme = substring(0, schemeEnd)
-    if (scheme == "file") return "file://<local>"
-    val host = substring(schemeEnd + 3)
-        .substringBefore('/')
-        .substringBefore('?')
-        .takeIf { it.isNotBlank() }
-        ?: "<host>"
-    return "$scheme://$host/<redacted>"
-}
 
 private fun StringBuilder.appendJsonField(name: String, value: String) {
     append('"').append(name).append("\":")

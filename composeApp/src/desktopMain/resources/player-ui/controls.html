@@ -2032,50 +2032,13 @@
       endTime: "00:00",
       status: "",
     };
-    let lastSourceControlsDiagnostic = "";
-    let lastMetadataDiagnostic = "";
-    let lastOpeningDiagnostic = "";
-    let lastNativeUpdateDiagnostic = "";
-    let lastControlsUpdateDiagnostic = "";
-    let playerNativeUpdateCount = 0;
-    let playerControlsUpdateCount = 0;
     let hasReceivedPlayerControls = false;
     const prefersReducedMotion = window.matchMedia &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const modalTransitionMs = prefersReducedMotion ? 1 : 240;
 
-    const diagnosticCommands = new Set([
-      "toggle",
-      "seekBack",
-      "seekForward",
-      "doubleTapSeekBack",
-      "doubleTapSeekForward",
-      "scrubFinish",
-      "sources",
-      "reloadSources",
-      "selectSource",
-      "episodes",
-      "reloadEpisodeStreams",
-      "selectEpisode",
-      "selectEpisodeStream",
-      "backToEpisodes",
-    ]);
-
-    const postDiagnostic = message => {
-      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
-      if (!bridge) return;
-      try {
-        bridge.postMessage({ type: "diagnostic", value: 0, message });
-      } catch (_) {
-        // Diagnostics must never break controls.
-      }
-    };
-
     const send = (type, value = 0) => {
       const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
-      if (diagnosticCommands.has(type)) {
-        postDiagnostic(`event type=${type} value=${value} activeModal=${activeModal || "none"}`);
-      }
       if (bridge) bridge.postMessage({ type, value });
     };
 
@@ -2122,33 +2085,6 @@
     const normalizedOpeningProgress = () => {
       const progress = Number(state.openingProgress);
       return Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : null;
-    };
-
-    const booleanFlag = value => Boolean(value) ? "1" : "0";
-
-    const textReadiness = text => {
-      const value = String(text || "");
-      return `${booleanFlag(value.trim())}:${value.length}`;
-    };
-
-    const progressReadiness = progress =>
-      progress === null ? "none" : `${Math.round(progress * 100)}%`;
-
-    const controlsReadinessDiagnostic = () => {
-      const progress = normalizedOpeningProgress();
-      return [
-        `title=${textReadiness(state.title)}`,
-        `episode=${textReadiness(state.episodeText)}`,
-        `stream=${textReadiness(state.streamTitle)}`,
-        `provider=${textReadiness(state.providerName)}`,
-        `openingWanted=${booleanFlag(state.showOpeningOverlay)}`,
-        `nativeLoading=${booleanFlag(state.isLoading)}`,
-        `artwork=${booleanFlag(state.openingArtwork)}`,
-        `logo=${booleanFlag(state.openingLogo)}`,
-        `openingTitle=${textReadiness(state.openingTitle)}`,
-        `message=${textReadiness(state.openingMessage)}`,
-        `progress=${progressReadiness(progress)}`,
-      ].join(" ");
     };
 
     const rangePositionMs = () => {
@@ -2559,27 +2495,6 @@
       container.appendChild(row);
     };
 
-    const sourceControlsDiagnostic = controlsState => {
-      const filters = normalizeItems(controlsState.sourceFilters);
-      const items = normalizeItems(controlsState.sourceItems);
-      const loadingFilters = filters.filter(filter => Boolean(filter.isLoading)).length;
-      const errorFilters = filters.filter(filter => Boolean(filter.hasError)).length;
-      const currentItems = items.filter(item => Boolean(item.isCurrent)).length;
-      const disabledItems = items.filter(item => item.isEnabled === false).length;
-      return [
-        `activeModal=${activeModal || "none"}`,
-        `showSources=${Boolean(controlsState.showSources)}`,
-        `sourceLoading=${Boolean(controlsState.sourceIsLoading)}`,
-        `filters=${filters.length}`,
-        `filterLoading=${loadingFilters}`,
-        `filterErrors=${errorFilters}`,
-        `items=${items.length}`,
-        `current=${currentItems}`,
-        `disabled=${disabledItems}`,
-        `sourceFilter=${sourceFilterId || "all"}`,
-      ].join(" ");
-    };
-
     const renderSourceModal = () => {
       sourcePanelTitle.textContent = state.sourcesPanelTitle || "Sources";
       sourceReloadButton.textContent = state.reloadLabel || "Reload";
@@ -2600,11 +2515,6 @@
         items = items.filter(item => String(item.filterId || "") === sourceFilterId);
       }
       if (items.length === 0) {
-        postDiagnostic(
-          `render sources empty loading=${Boolean(state.sourceIsLoading)} ` +
-          `rawItems=${normalizeItems(state.sourceItems).length} filters=${filters.length} ` +
-          `sourceFilter=${sourceFilterId || "all"}`,
-        );
         appendEmptyTrackState(
           sourceList,
           state.sourceIsLoading ? "Loading streams..." : (state.noStreamsLabel || "No streams found"),
@@ -2824,21 +2734,6 @@
       const titleText = String(state.openingTitle || state.title || "").trim();
       const messageText = String(state.openingMessage || "").trim();
       const showHorizontalProgress = hasProgress && !logoUrl;
-      const openingDiagnostic = [
-        `visible=${booleanFlag(showOpening)}`,
-        `wanted=${booleanFlag(wantsOpening)}`,
-        `bootstrap=${booleanFlag(openingBootstrap)}`,
-        `nativeLoading=${booleanFlag(state.isLoading)}`,
-        `artwork=${booleanFlag(artworkUrl)}`,
-        `logo=${booleanFlag(logoUrl)}`,
-        `title=${textReadiness(titleText)}`,
-        `message=${textReadiness(messageText)}`,
-        `progress=${progressReadiness(progress)}`,
-      ].join(" ");
-      if (openingDiagnostic !== lastOpeningDiagnostic) {
-        lastOpeningDiagnostic = openingDiagnostic;
-        postDiagnostic(`opening ${openingDiagnostic}`);
-      }
 
       root.classList.toggle("opening-active", showOpening);
       openingOverlay.classList.toggle("visible", showOpening);
@@ -2869,18 +2764,6 @@
       root.classList.toggle("locked-visible", Boolean(state.isLocked && state.lockedOverlayVisible));
       root.classList.toggle("chrome-hidden", Boolean(!state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible)));
       const showOpening = renderOpeningOverlay();
-      const metadataDiagnostic = [
-        `title=${textReadiness(state.title)}`,
-        `episode=${textReadiness(state.episodeText)}`,
-        `stream=${textReadiness(state.streamTitle)}`,
-        `provider=${textReadiness(state.providerName)}`,
-        `controlsVisible=${booleanFlag(state.controlsVisible)}`,
-        `locked=${booleanFlag(state.isLocked)}`,
-      ].join(" ");
-      if (metadataDiagnostic !== lastMetadataDiagnostic) {
-        lastMetadataDiagnostic = metadataDiagnostic;
-        postDiagnostic(`metadata ${metadataDiagnostic}`);
-      }
 
       title.textContent = state.title || "";
       setText(episode, state.episodeText);
@@ -3232,25 +3115,12 @@
     });
 
     window.playerUpdate = update => {
-      playerNativeUpdateCount += 1;
       const durationMs = Math.round((Number(update.duration) || 0) * 1000);
       const positionMs = Math.round((Number(update.position) || 0) * 1000);
       const audioTracks = normalizeTracks(update.audioTracks);
       const subtitleTracks = normalizeTracks(update.subtitleTracks);
       const audioTracksChanged = trackListSignature(audioTracks) !== trackListSignature(state.audioTracks);
       const subtitleTracksChanged = trackListSignature(subtitleTracks) !== trackListSignature(state.subtitleTracks);
-      const nativeUpdateDiagnostic = [
-        `loading=${booleanFlag(update.loading || update.isLoading)}`,
-        `paused=${booleanFlag(update.paused)}`,
-        `durationReady=${booleanFlag(durationMs > 0)}`,
-        `audioTracks=${audioTracks.length}`,
-        `subtitleTracks=${subtitleTracks.length}`,
-        `openingWanted=${booleanFlag(state.showOpeningOverlay)}`,
-      ].join(" ");
-      if (nativeUpdateDiagnostic !== lastNativeUpdateDiagnostic) {
-        lastNativeUpdateDiagnostic = nativeUpdateDiagnostic;
-        postDiagnostic(`nativeUpdate #${playerNativeUpdateCount} ${nativeUpdateDiagnostic}`);
-      }
       state = {
         ...state,
         durationMs,
@@ -3268,20 +3138,9 @@
     };
 
     window.playerControls = nextState => {
-      playerControlsUpdateCount += 1;
       const previousCloseToken = Number(state.closeModalsToken) || 0;
       state = { ...state, ...nextState };
       hasReceivedPlayerControls = true;
-      const controlsUpdateDiagnostic = controlsReadinessDiagnostic();
-      if (controlsUpdateDiagnostic !== lastControlsUpdateDiagnostic) {
-        lastControlsUpdateDiagnostic = controlsUpdateDiagnostic;
-        postDiagnostic(`controlsUpdate #${playerControlsUpdateCount} ${controlsUpdateDiagnostic}`);
-      }
-      const sourceDiagnostic = sourceControlsDiagnostic(state);
-      if (sourceDiagnostic !== lastSourceControlsDiagnostic) {
-        lastSourceControlsDiagnostic = sourceDiagnostic;
-        postDiagnostic(`state ${sourceDiagnostic}`);
-      }
       const closeToken = Number(state.closeModalsToken) || 0;
       if (closeToken !== previousCloseToken) {
         closePlayerModal();
@@ -3332,7 +3191,6 @@
     setProgress(0, 0);
     focusShortcutRoot();
     render();
-    postDiagnostic("controlsReady window.playerControls=1");
     send("controlsReady", 0);
   </script>
 </body>

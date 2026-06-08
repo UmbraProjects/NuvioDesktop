@@ -256,45 +256,6 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         openingMessage = p2pInitialLoadingMessage,
         openingProgress = p2pInitialLoadingProgress,
     )
-    val desktopControlsReadinessSignature = listOf(
-        playerSurfaceSourceUrl != null,
-        title.isNotBlank(),
-        episodeText.isNotBlank(),
-        activeStreamTitle.isNotBlank(),
-        activeProviderName.isNotBlank(),
-        openingOverlayWanted,
-        playbackSnapshot.isLoading,
-        initialLoadCompleted,
-        errorMessage != null,
-        background != null || poster != null,
-        logo != null,
-        p2pInitialLoadingMessage != null,
-        p2pInitialLoadingProgress != null,
-    ).joinToString("|")
-    LaunchedEffect(isDesktop, desktopControlsReadinessSignature) {
-        if (!isDesktop) return@LaunchedEffect
-        println(
-            "[NuvioDesktopPlayerHandoff] compose controls " +
-                "sourceReady=${playerSurfaceSourceUrl != null} " +
-                "titleReady=${title.isNotBlank()} titleLen=${title.length} " +
-                "episodeReady=${episodeText.isNotBlank()} " +
-                "streamReady=${activeStreamTitle.isNotBlank()} streamLen=${activeStreamTitle.length} " +
-                "providerReady=${activeProviderName.isNotBlank()} providerLen=${activeProviderName.length} " +
-                "openingWanted=$openingOverlayWanted nativeLoading=${playbackSnapshot.isLoading} " +
-                "initialLoadCompleted=$initialLoadCompleted error=${errorMessage != null} " +
-                "artwork=${background != null || poster != null} logo=${logo != null} " +
-                "p2pMessage=${p2pInitialLoadingMessage != null} p2pProgress=${p2pInitialLoadingProgress != null}",
-        )
-    }
-    LaunchedEffect(isDesktop, playerSurfaceSourceUrl) {
-        if (isDesktop) {
-            println(
-                "[NuvioDesktopPlayerHandoff] surface source " +
-                    "ready=${playerSurfaceSourceUrl != null} " +
-                    "mode=${if (isP2pPlaybackActive) "p2p" else "direct"}",
-            )
-        }
-    }
     val gestureCallbacks = rememberSurfaceGestureCallbacks()
 
     Box(
@@ -349,34 +310,10 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     true
                 },
                 onControllerReady = { controller ->
-                    if (isDesktop) {
-                        println(
-                            "[NuvioDesktopPlayerHandoff] controller ready " +
-                                "titleReady=${title.isNotBlank()} streamReady=${activeStreamTitle.isNotBlank()}",
-                        )
-                    }
                     playerController = controller
                     playerControllerSourceUrl = activeSourceUrl
                 },
                 onSnapshot = { snapshot ->
-                    val previousSnapshot = playbackSnapshot
-                    if (
-                        isDesktop &&
-                        (
-                            previousSnapshot.isLoading != snapshot.isLoading ||
-                                previousSnapshot.isPlaying != snapshot.isPlaying ||
-                                (previousSnapshot.durationMs <= 0L && snapshot.durationMs > 0L) ||
-                                previousSnapshot.isEnded != snapshot.isEnded
-                            )
-                    ) {
-                        println(
-                            "[NuvioDesktopPlayerHandoff] snapshot " +
-                                "loading=${snapshot.isLoading} wasLoading=${previousSnapshot.isLoading} " +
-                                "playing=${snapshot.isPlaying} durationMs=${snapshot.durationMs} " +
-                                "positionMs=${snapshot.positionMs} ended=${snapshot.isEnded} " +
-                                "initialLoadCompletedBefore=$initialLoadCompleted",
-                        )
-                    }
                     playbackSnapshot = snapshot
                     if (!snapshot.isLoading) initialLoadCompleted = true
                     if (snapshot.isEnded) {
@@ -549,17 +486,14 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
             args.onBack()
         }
         PlayerControlsAction.TogglePlayback -> {
-            println("[NuvioPlayerControls] action toggle route=native-fallback")
             prepareTogglePlaybackForNativeFallback()
             return false
         }
         PlayerControlsAction.SeekBack -> {
-            println("[NuvioPlayerControls] action seekBack route=native-fallback")
             prepareSeekByForNativeFallback(-10_000L)
             return false
         }
         PlayerControlsAction.SeekForward -> {
-            println("[NuvioPlayerControls] action seekForward route=native-fallback")
             prepareSeekByForNativeFallback(10_000L)
             return false
         }
@@ -574,7 +508,6 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
             showAudioModal = true
         }
         PlayerControlsAction.Sources -> {
-            println("[NuvioPlayerControls] action sources")
             prepareSourcesForPlayerControls()
         }
         PlayerControlsAction.Episodes -> {
@@ -594,12 +527,10 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
             }
         }
         PlayerControlsAction.DoubleTapSeekBack -> {
-            println("[NuvioPlayerControls] action doubleTapSeekBack route=native-fallback")
             prepareDoubleTapSeekForNativeFallback(PlayerSeekDirection.Backward)
             return false
         }
         PlayerControlsAction.DoubleTapSeekForward -> {
-            println("[NuvioPlayerControls] action doubleTapSeekForward route=native-fallback")
             prepareDoubleTapSeekForNativeFallback(PlayerSeekDirection.Forward)
             return false
         }
@@ -610,15 +541,10 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
 private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: Double): Boolean {
     when (type) {
         "reloadSources" -> {
-            println("[NuvioPlayerControls] event reloadSources")
             prepareSourcesForPlayerControls(forceRefresh = true)
         }
         "selectSource" -> {
             val streams = sourceStreamsState.groups.flatMap { it.streams }
-            println(
-                "[NuvioPlayerControls] event selectSource index=${value.toInt()} " +
-                    "available=${streams.size} ${sourceStreamsState.playerControlsStreamsSummary()}",
-            )
             val stream = streams.getOrNull(value.toInt()) ?: return true
             if (requestP2pConsentForPlayerControls(stream = stream, episode = null)) return true
             switchToSource(stream)
@@ -780,18 +706,9 @@ private fun PlayerScreenRuntime.enableP2pForPlayerControls() {
 private fun PlayerScreenRuntime.prepareSourcesForPlayerControls(forceRefresh: Boolean = false) {
     val vid = activeVideoId
     if (vid == null) {
-        println(
-            "[NuvioPlayerControls] loadSources ignored reason=no-active-video " +
-                "type=${contentType ?: parentMetaType} parent=$parentMetaId force=$forceRefresh",
-        )
         return
     }
     val requestType = contentType ?: parentMetaType
-    println(
-        "[NuvioPlayerControls] loadSources request type=$requestType id=$vid " +
-            "season=$activeSeasonNumber episode=$activeEpisodeNumber force=$forceRefresh " +
-            "before=${sourceStreamsState.playerControlsStreamsSummary()}",
-    )
     PlayerStreamsRepository.loadSources(
         type = requestType,
         videoId = vid,
@@ -822,14 +739,6 @@ private fun PlayerScreenRuntime.requestEpisodeStreamsForPlayerControls(
         forceRefresh = forceRefresh,
     )
     episodeStreamsPanelState = EpisodeStreamsPanelState(showStreams = true, selectedEpisode = episode)
-}
-
-private fun com.nuvio.app.features.streams.StreamsUiState.playerControlsStreamsSummary(): String {
-    val streams = groups.sumOf { it.streams.size }
-    val loadingGroups = groups.count { it.isLoading }
-    val errorGroups = groups.count { !it.error.isNullOrBlank() }
-    return "groups=${groups.size} streams=$streams isAnyLoading=$isAnyLoading " +
-        "loadingGroups=$loadingGroups errorGroups=$errorGroups empty=${emptyStateReason ?: "none"}"
 }
 
 private fun PlayerScreenRuntime.submitIntroFromPlayerControls() {
