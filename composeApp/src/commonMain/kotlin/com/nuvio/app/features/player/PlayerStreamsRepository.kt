@@ -224,10 +224,14 @@ object PlayerStreamsRepository {
         }
 
         val installedAddonOrder = streamAddons.map { it.addonName }
-        val warmedAddonGroups = AddonStreamWarmupRepository
-            .cachedGroups(type = type, videoId = videoId, season = season, episode = episode)
-            .orEmpty()
-            .associateBy { it.addonId }
+        val warmedAddonGroups = if (forceRefresh) {
+            emptyMap()
+        } else {
+            AddonStreamWarmupRepository
+                .cachedGroups(type = type, videoId = videoId, season = season, episode = episode)
+                .orEmpty()
+                .associateBy { it.addonId }
+        }
         val warmedAddonIds = warmedAddonGroups.keys
         log.d {
             "targets $panelName request=$requestKey installed=${installedAddons.size} " +
