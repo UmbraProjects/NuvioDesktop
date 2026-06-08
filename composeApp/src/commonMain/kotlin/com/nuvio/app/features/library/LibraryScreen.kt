@@ -88,6 +88,7 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun LibraryScreen(
     modifier: Modifier = Modifier,
+    topChromePadding: Dp? = null,
     scrollToTopRequests: Flow<Unit> = emptyFlow(),
     onPosterClick: ((LibraryItem) -> Unit)? = null,
     onPosterLongClick: ((LibraryItem, LibrarySection) -> Unit)? = null,
@@ -174,6 +175,7 @@ fun LibraryScreen(
     NuvioScreen(
         modifier = modifier,
         horizontalPadding = 0.dp,
+        topPadding = if (topChromePadding != null) 0.dp else null,
         listState = listState,
     ) {
         stickyHeader {
@@ -192,6 +194,7 @@ fun LibraryScreen(
                         stringResource(Res.string.library_title)
                     },
                     modifier = Modifier.padding(horizontal = 16.dp),
+                    topPadding = topChromePadding,
                 )
                 LibrarySourceSwitch(
                     selectedMode = sourceMode,

@@ -83,6 +83,7 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun SearchScreen(
     modifier: Modifier = Modifier,
+    topChromePadding: Dp? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     searchFocusRequestCount: Int = 0,
@@ -238,6 +239,7 @@ fun SearchScreen(
 
         NuvioScreen(
             horizontalPadding = 0.dp,
+            topPadding = if (topChromePadding != null) 0.dp else null,
             listState = listState,
             modifier = Modifier.fillMaxSize(),
         ) {
@@ -251,6 +253,7 @@ fun SearchScreen(
                 NuvioScreenHeader(
                     title = headerTitle,
                     modifier = Modifier.padding(horizontal = 16.dp),
+                    topPadding = topChromePadding,
                 )
                 androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(6.dp))
                 androidx.compose.foundation.layout.Box(modifier = Modifier.padding(horizontal = 16.dp)) {

@@ -55,7 +55,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.max
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -1327,6 +1329,12 @@ private fun MainAppContent(
                         val isTabletLayout = maxWidth >= 768.dp
                         val useNativeBottomTabs =
                             liquidGlassNativeTabBarSupported && liquidGlassNativeTabBarEnabled && initialHomeReady
+                        val topChromePadding = if (isTabletLayout && !useNativeBottomTabs) {
+                            val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+                            max(statusBarPadding + 24.dp, 48.dp) + 64.dp
+                        } else {
+                            null
+                        }
                         val tabsRouteActive = currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true
                         val onProfileSelected: (NuvioProfile) -> Unit = { profile ->
                             profileSwitchLoading = true
@@ -1386,6 +1394,7 @@ private fun MainAppContent(
                                             .fillMaxSize()
                                             .padding(innerPadding),
                                         selectedTab = selectedTab,
+                                        topChromePadding = topChromePadding,
                                         searchFocusRequestCount = searchFocusRequestCount,
                                         rootActionsEnabled = tabsRouteActive,
                                         homeScrollToTopRequests = homeScrollToTopRequests,
@@ -2808,6 +2817,7 @@ private fun rememberGuardedPopBackStack(
 private fun AppTabHost(
     selectedTab: AppScreenTab,
     modifier: Modifier = Modifier,
+    topChromePadding: Dp? = null,
     searchFocusRequestCount: Int = 0,
     rootActionsEnabled: Boolean = true,
     homeScrollToTopRequests: Flow<Unit>,
@@ -2865,6 +2875,7 @@ private fun AppTabHost(
                 AppScreenTab.Search -> {
                     SearchScreen(
                         modifier = Modifier.fillMaxSize(),
+                        topChromePadding = topChromePadding,
                         onPosterClick = onPosterClick,
                         onPosterLongClick = onPosterLongClick,
                         searchFocusRequestCount = searchFocusRequestCount,
@@ -2875,6 +2886,7 @@ private fun AppTabHost(
                 AppScreenTab.Library -> {
                     LibraryScreen(
                         modifier = Modifier.fillMaxSize(),
+                        topChromePadding = topChromePadding,
                         scrollToTopRequests = libraryScrollToTopRequests,
                         onPosterClick = onLibraryPosterClick,
                         onPosterLongClick = onLibraryPosterLongClick,
