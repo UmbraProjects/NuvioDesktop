@@ -682,11 +682,6 @@ static NSString *javaScriptStringLiteral(NSString *value) {
     NSError *error = nil;
     NSData *data = [NSJSONSerialization dataWithJSONObject:array options:0 error:&error];
     if (!data) {
-        NSLog(
-            @"[NuvioDesktopControls][native] failed to encode JS string literal length=%lu error=%@",
-            (unsigned long)(value ? value.length : 0),
-            error.localizedDescription ?: @"unknown"
-        );
         return @"\"\"";
     }
     NSString *jsonArray = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
@@ -726,31 +721,6 @@ static NSString *redactUrlsInText(NSString *text) {
                                            options:0
                                              range:range
                                       withTemplate:@"<redacted-url>"];
-}
-
-static BOOL isControlsDiagnosticMessage(NSString *type) {
-    return [type isEqualToString:@"toggle"]
-        || [type isEqualToString:@"seekBack"]
-        || [type isEqualToString:@"seekForward"]
-        || [type isEqualToString:@"doubleTapSeekBack"]
-        || [type isEqualToString:@"doubleTapSeekForward"]
-        || [type isEqualToString:@"scrubFinish"]
-        || [type isEqualToString:@"sources"]
-        || [type isEqualToString:@"reloadSources"]
-        || [type isEqualToString:@"selectSource"]
-        || [type isEqualToString:@"episodes"]
-        || [type isEqualToString:@"reloadEpisodeStreams"]
-        || [type isEqualToString:@"selectEpisode"]
-        || [type isEqualToString:@"selectEpisodeStream"]
-        || [type isEqualToString:@"backToEpisodes"];
-}
-
-static NSString *limitDiagnosticText(NSString *text) {
-    NSString *safeText = redactUrlsInText(text ?: @"");
-    if (safeText.length <= 600) {
-        return safeText;
-    }
-    return [[safeText substringToIndex:600] stringByAppendingString:@"..."];
 }
 
 @implementation MpvWebPlayer {
@@ -1431,28 +1401,17 @@ static NSString *limitDiagnosticText(NSString *text) {
         return;
     }
     if (!controlsJson) {
-        NSLog(@"[NuvioDesktopControls][native] updateControls ignored nil controls JSON");
         return;
     }
     _pendingControlsJson = [controlsJson copy];
-    NSLog(
-        @"[NuvioDesktopControls][native] updateControls queued ready=%@ jsonBytes=%lu",
-        _controlsWebReady ? @"true" : @"false",
-        (unsigned long)[_pendingControlsJson lengthOfBytesUsingEncoding:NSUTF8StringEncoding]
-    );
-    [self flushPendingControlsJsonIfReady:@"updateControls"];
+    [self flushPendingControlsJsonIfReady];
 }
 
-- (void)flushPendingControlsJsonIfReady:(NSString *)reason {
+- (void)flushPendingControlsJsonIfReady {
     if (!_webView || !_pendingControlsJson) {
         return;
     }
     if (!_controlsWebReady) {
-        NSLog(
-            @"[NuvioDesktopControls][native] controls flush deferred reason=%@ ready=false jsonBytes=%lu",
-            reason ?: @"unknown",
-            (unsigned long)[_pendingControlsJson lengthOfBytesUsingEncoding:NSUTF8StringEncoding]
-        );
         return;
     }
     NSString *controlsJson = [_pendingControlsJson copy];
@@ -1462,25 +1421,9 @@ static NSString *limitDiagnosticText(NSString *text) {
         jsonString];
     [_webView evaluateJavaScript:script completionHandler:^(id _Nullable jsResult, NSError * _Nullable error) {
         if (error) {
-            NSDictionary *userInfo = error.userInfo ?: @{};
-            id message = userInfo[@"WKJavaScriptExceptionMessage"] ?: error.localizedDescription;
-            id line = userInfo[@"WKJavaScriptExceptionLineNumber"] ?: @"?";
-            id column = userInfo[@"WKJavaScriptExceptionColumnNumber"] ?: @"?";
-            NSLog(
-                @"[NuvioDesktopControls][native] updateControls JS error: %@ line=%@ column=%@",
-                message,
-                line,
-                column
-            );
             return;
         }
         NSString *resultText = [jsResult isKindOfClass:[NSString class]] ? (NSString *)jsResult : @"unknown";
-        NSLog(
-            @"[NuvioDesktopControls][native] controls flush reason=%@ result=%@ jsonBytes=%lu",
-            reason ?: @"unknown",
-            resultText,
-            (unsigned long)[controlsJson lengthOfBytesUsingEncoding:NSUTF8StringEncoding]
-        );
         if ([resultText isEqualToString:@"missing"]) {
             _controlsWebReady = NO;
             return;
@@ -1949,23 +1892,9 @@ static NSString *limitDiagnosticText(NSString *text) {
     NSNumber *value = [rawValue isKindOfClass:[NSNumber class]] ? rawValue : nil;
     if ([type isEqualToString:@"controlsReady"]) {
         _controlsWebReady = YES;
-        NSLog(
-            @"[NuvioDesktopControls][native] controlsReady pending=%@",
-            _pendingControlsJson ? @"true" : @"false"
-        );
-        [self flushPendingControlsJsonIfReady:@"controlsReady"];
+        [self flushPendingControlsJsonIfReady];
         [self syncControls];
         return;
-    }
-    if ([type isEqualToString:@"diagnostic"]) {
-        id rawText = message[@"message"];
-        if ([rawText isKindOfClass:[NSString class]]) {
-            NSLog(@"[NuvioDesktopControls][html] %@", limitDiagnosticText((NSString *)rawText));
-        }
-        return;
-    }
-    if (isControlsDiagnosticMessage(type)) {
-        NSLog(@"[NuvioDesktopControls][native] script event type=%@ value=%@", type, value ?: @0);
     }
     if ([type isEqualToString:@"selectAudioTrack"] && value) {
         [self selectAudioTrackId:(int)llround(value.doubleValue)];
