@@ -76,7 +76,7 @@ internal class NativePlayerController(
             if (!host.isDisplayable) {
                 return@invokeLater
             }
-            dispose()
+            disposePlayerHandle()
             runCatching {
                 val hostViewPtr = AwtNativeViewResolver.resolveNativeViewPointer(host)
                 handle = NativePlayerBridge.create(
@@ -144,6 +144,7 @@ internal class NativePlayerController(
                     seekTo(value.toLong())
                 }
             }
+            "toggleFullscreen" -> toggleDesktopAppFullscreen(SwingUtilities.getWindowAncestor(host))
             else -> {
                 val eventHandled = onEvent(type, value)
                 if (eventHandled) return
@@ -181,8 +182,6 @@ internal class NativePlayerController(
             PlayerControlsAction.KeyboardSeekBack -> fallbackSeekBy(-10_000L)
             PlayerControlsAction.SeekForward,
             PlayerControlsAction.KeyboardSeekForward -> fallbackSeekBy(10_000L)
-            PlayerControlsAction.DoubleTapSeekBack -> fallbackSeekBy(-10_000L)
-            PlayerControlsAction.DoubleTapSeekForward -> fallbackSeekBy(10_000L)
             PlayerControlsAction.Speed -> cycleFallbackSpeed()
             else -> Unit
         }
@@ -223,6 +222,10 @@ internal class NativePlayerController(
     }
 
     fun dispose() {
+        disposePlayerHandle()
+    }
+
+    private fun disposePlayerHandle() {
         val current = handle
         handle = 0L
         lastSentControlsStructureKey = null
@@ -450,8 +453,6 @@ private fun String.toPlayerControlsAction(): PlayerControlsAction? =
         "submitIntro" -> PlayerControlsAction.SubmitIntro
         "lock" -> PlayerControlsAction.LockToggle
         "videoSettings" -> PlayerControlsAction.VideoSettings
-        "doubleTapSeekBack" -> PlayerControlsAction.DoubleTapSeekBack
-        "doubleTapSeekForward" -> PlayerControlsAction.DoubleTapSeekForward
         else -> null
     }
 

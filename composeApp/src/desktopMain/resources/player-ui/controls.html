@@ -202,6 +202,85 @@
       display: none !important;
     }
 
+    .next-episode-thumb,
+    .episode-thumb {
+      isolation: isolate;
+    }
+
+    .next-episode-thumb::before,
+    .episode-thumb::before,
+    .opening-overlay::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(100deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, .14) 48%, rgba(255, 255, 255, 0) 92%),
+        linear-gradient(135deg, rgba(255, 255, 255, .09), rgba(255, 255, 255, .028));
+      background-size: 260% 100%, 100% 100%;
+      opacity: 0;
+      transform: translateZ(0);
+      transition: opacity 260ms ease;
+    }
+
+    .opening-overlay::before {
+      z-index: 1;
+    }
+
+    .next-episode-thumb.image-loading::before,
+    .episode-thumb.image-loading::before {
+      opacity: .78;
+      animation: image-shimmer 1600ms ease-in-out infinite;
+    }
+
+    .opening-overlay.visible:not(.image-loaded)::before {
+      opacity: .68;
+      animation: image-shimmer 3200ms ease-in-out infinite;
+    }
+
+    .next-episode-thumb img,
+    .episode-thumb img,
+    .opening-artwork,
+    .opening-logo {
+      opacity: 0;
+      filter: blur(14px) saturate(.92);
+      transform: scale(1.035);
+      transform-origin: center;
+      will-change: opacity, filter, transform;
+      transition:
+        opacity 260ms ease,
+        filter 520ms var(--ease-out),
+        transform 620ms var(--ease-out);
+    }
+
+    .next-episode-thumb img.image-loaded,
+    .episode-thumb img.image-loaded,
+    .opening-artwork.image-loaded,
+    .opening-logo.image-loaded {
+      opacity: 1;
+      filter: blur(0) saturate(1);
+      transform: scale(1);
+    }
+
+    .image-error::before {
+      opacity: .65;
+      animation: none;
+      background:
+        radial-gradient(circle at 30% 24%, rgba(255, 255, 255, .12), rgba(255, 255, 255, 0) 34%),
+        linear-gradient(135deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .03));
+    }
+
+    @keyframes image-shimmer {
+      from { background-position: 190% 0, 0 0; }
+      to { background-position: -90% 0, 0 0; }
+    }
+
+    @keyframes opening-artwork-drift {
+      from { transform: scale(1.015) translate3d(-.35%, -.25%, 0); }
+      to { transform: scale(1.04) translate3d(.35%, .25%, 0); }
+    }
+
     .top-gradient,
     .bottom-gradient {
       position: absolute;
@@ -742,11 +821,14 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      opacity: 0;
     }
 
-    .opening-overlay.has-artwork .opening-artwork {
-      opacity: 1;
+    .opening-overlay.has-artwork.image-loading::before {
+      z-index: 1;
+    }
+
+    .opening-overlay.has-artwork .opening-artwork.image-loaded {
+      animation: opening-artwork-drift 14000ms ease-in-out infinite alternate;
     }
 
     .opening-scrim {
@@ -794,12 +876,11 @@
       height: 100%;
       object-fit: contain;
       transform-origin: center;
-      will-change: transform;
       animation: opening-logo-pulse 2000ms linear infinite alternate !important;
     }
 
     .opening-logo-base {
-      opacity: 1;
+      opacity: 0;
     }
 
     .opening-logo-fill-clip {
@@ -1572,6 +1653,7 @@
     }
 
     .episode-thumb {
+      position: relative;
       width: 82px;
       height: 48px;
       flex: 0 0 auto;
@@ -1745,6 +1827,11 @@
       .progress,
       .opening-overlay,
       .opening-progress-bar,
+      .opening-artwork,
+      .opening-logo,
+      .next-episode-thumb img,
+      .episode-thumb img,
+      .image-loading::before,
       .modal-layer,
       .track-panel,
       .header-button,
@@ -2632,14 +2719,43 @@
       element.hidden = !visible;
     };
 
+    const setImageVisualState = (element, stateName) => {
+      const frame = element.parentElement;
+      [element, frame].filter(Boolean).forEach(target => {
+        target.classList.remove("image-loading", "image-loaded", "image-error");
+        if (stateName) target.classList.add(`image-${stateName}`);
+      });
+    };
+
     const setImageSource = (element, source) => {
       const url = String(source || "").trim();
       if (!url) {
         element.removeAttribute("src");
+        element.removeAttribute("data-loaded-src");
+        setImageVisualState(element, "");
         return "";
       }
-      if (element.getAttribute("src") !== url) {
+      const currentUrl = element.getAttribute("src") || "";
+      const loadedUrl = element.getAttribute("data-loaded-src") || "";
+      if (currentUrl !== url) {
+        element.setAttribute("decoding", "async");
+        setImageVisualState(element, "loading");
+        element.onload = () => {
+          if (element.getAttribute("src") !== url) return;
+          element.setAttribute("data-loaded-src", url);
+          window.requestAnimationFrame(() => setImageVisualState(element, "loaded"));
+        };
+        element.onerror = () => {
+          if (element.getAttribute("src") !== url) return;
+          element.removeAttribute("data-loaded-src");
+          setImageVisualState(element, "error");
+        };
         element.setAttribute("src", url);
+        if (element.complete && element.naturalWidth > 0) {
+          element.onload();
+        }
+      } else if (loadedUrl === url) {
+        setImageVisualState(element, "loaded");
       }
       return url;
     };
@@ -3232,8 +3348,9 @@
         const thumb = document.createElement("span");
         thumb.className = "episode-thumb";
         const image = document.createElement("img");
-        image.src = item.thumbnail;
         image.alt = "";
+        image.loading = "lazy";
+        setImageSource(image, item.thumbnail);
         thumb.appendChild(image);
         row.appendChild(thumb);
       }
@@ -3959,10 +4076,9 @@
 
     root.addEventListener("dblclick", event => {
       if (event.target.closest("button,input")) return;
+      event.preventDefault();
       window.clearTimeout(tapTimer);
-      const bounds = root.getBoundingClientRect();
-      const localX = event.clientX - bounds.left;
-      send(localX < bounds.width / 2 ? "doubleTapSeekBack" : "doubleTapSeekForward");
+      send("toggleFullscreen", 0);
     });
 
     document.addEventListener("keydown", event => {
@@ -3975,6 +4091,13 @@
       if (event.key === "Escape") {
         event.preventDefault();
         send("back", 0);
+        return;
+      }
+      const isMacFullscreenShortcut = event.code === "KeyF" && event.metaKey && event.ctrlKey && !event.altKey;
+      if (event.code === "F11" || isMacFullscreenShortcut) {
+        event.preventDefault();
+        focusShortcutRoot();
+        send("toggleFullscreen", 0);
         return;
       }
       if (activeModal || isTextEntryTarget(event.target)) {
