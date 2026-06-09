@@ -80,13 +80,14 @@ internal object NativePlayerBridge {
 
     private fun loadNativeLibrary() {
         val platform = DesktopHostOs.current
-        require(platform == DesktopHostOs.MACOS) {
+        require(platform == DesktopHostOs.MACOS || platform == DesktopHostOs.WINDOWS) {
             "Native desktop playback is not implemented for $platform yet."
         }
 
         val libraryName = nativeLibraryName(platform)
         val platformDir = nativeDirectoryName(platform)
         findLocalBuildLibrary(platformDir, libraryName)?.let { localLibrary ->
+            copyLocalRuntimeResources(platformDir, localLibrary.parentFile)
             System.load(localLibrary.absolutePath)
             return
         }
@@ -98,10 +99,42 @@ internal object NativePlayerBridge {
         val suffix = libraryName.substringAfter("player_bridge", ".dylib")
         val file = Files.createTempFile(dir.toPath(), "player-bridge-", suffix).toFile()
         file.deleteOnExit()
+        extractBundledRuntimeResources(platformDir, dir)
         input.use { source ->
             file.outputStream().use { target -> source.copyTo(target) }
         }
         System.load(file.absolutePath)
+    }
+
+    private fun extractBundledRuntimeResources(platformDir: String, dir: File) {
+        val runtimeNames = bundledRuntimeResourceNames(platformDir)
+        runtimeNames.forEach { name ->
+            val resource = "/native/$platformDir/$name"
+            val input = NativePlayerBridge::class.java.getResourceAsStream(resource) ?: return@forEach
+            val target = dir.resolve(name)
+            input.use { source ->
+                target.outputStream().use { output -> source.copyTo(output) }
+            }
+            target.deleteOnExit()
+        }
+    }
+
+    private fun bundledRuntimeResourceNames(platformDir: String): List<String> {
+        val indexResource = "/native/$platformDir/runtime-files.txt"
+        val indexed = NativePlayerBridge::class.java.getResourceAsStream(indexResource)
+            ?.bufferedReader()
+            ?.useLines { lines ->
+                lines.map(String::trim)
+                    .filter { it.isNotEmpty() && !it.startsWith("#") }
+                    .toList()
+            }
+            .orEmpty()
+        if (indexed.isNotEmpty()) return indexed
+
+        return when (platformDir) {
+            "windows" -> listOf("libmpv-2.dll")
+            else -> emptyList()
+        }
     }
 
     private fun findLocalBuildLibrary(platformDir: String, libraryName: String): File? {
@@ -110,6 +143,21 @@ internal object NativePlayerBridge {
             File("build/native/$platformDir/$libraryName"),
         )
         return candidates.firstOrNull { it.exists() }
+    }
+
+    private fun copyLocalRuntimeResources(platformDir: String, targetDir: File) {
+        val runtimeDirs = listOf(
+            File("composeApp/build/native/$platformDir-runtime"),
+            File("build/native/$platformDir-runtime"),
+        )
+        runtimeDirs.firstOrNull(File::isDirectory)
+            ?.listFiles { file -> file.isFile }
+            ?.forEach { runtimeFile ->
+                val target = targetDir.resolve(runtimeFile.name)
+                if (runtimeFile.absolutePath != target.absolutePath) {
+                    runCatching { runtimeFile.copyTo(target, overwrite = true) }
+                }
+            }
     }
 
     private fun nativeDirectoryName(platform: DesktopHostOs): String =
@@ -163,7 +211,7 @@ internal object NativePlayerBridge {
 }
 
 internal fun preloadNativePlayerBridgeAsync() {
-    if (DesktopHostOs.current == DesktopHostOs.MACOS) {
+    if (DesktopHostOs.current == DesktopHostOs.MACOS || DesktopHostOs.current == DesktopHostOs.WINDOWS) {
         NativePlayerBridge.preloadAsync()
     }
 }

@@ -2446,7 +2446,12 @@
 
     const send = (type, value = 0) => {
       const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
-      if (bridge) bridge.postMessage({ type, value });
+      if (bridge) {
+        bridge.postMessage({ type, value });
+        return;
+      }
+      const webViewBridge = window.chrome && window.chrome.webview;
+      if (webViewBridge) webViewBridge.postMessage({ type, value });
     };
 
     const animationDelay = ms => new Promise(resolve => {
