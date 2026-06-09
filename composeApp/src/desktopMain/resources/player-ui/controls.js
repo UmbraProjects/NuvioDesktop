@@ -329,9 +329,13 @@ let skipPromptAutoHideActive = false;
 let pauseMetadataReady = false;
 let pauseMetadataTimer = 0;
 let pauseMetadataEligibilityKey = "";
+let chromeAutoHideTimer = 0;
+let chromeAutoHideKey = "";
+let chromeAutoHideActivity = 0;
 const prefersReducedMotion = window.matchMedia &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const modalTransitionMs = prefersReducedMotion ? 1 : 240;
+const chromeAutoHideDelayMs = 3500;
 
 const send = (type, value = 0) => {
   const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
@@ -1496,6 +1500,70 @@ const renderNativePlaybackPrompts = () => {
   nextEpisodeCard.classList.toggle("has-thumb", Boolean(nextThumbUrl));
 };
 
+const isOpeningOverlayActive = () =>
+  Boolean((!hasReceivedPlayerControls || state.showOpeningOverlay) && state.isLoading);
+
+const canAutoHideChrome = showOpening => Boolean(
+  state.controlsVisible &&
+  state.isPlaying &&
+  !state.isLoading &&
+  !state.isLocked &&
+  !activeModal &&
+  !isScrubbing &&
+  !showOpening,
+);
+
+const currentChromeAutoHideKey = showOpening => {
+  if (!canAutoHideChrome(showOpening)) return "";
+  return [
+    chromeAutoHideActivity,
+    state.controlsVisible ? "visible" : "hidden",
+    state.isPlaying ? "playing" : "paused",
+    state.isLoading ? "loading" : "ready",
+    state.isLocked ? "locked" : "unlocked",
+    activeModal || "none",
+    isScrubbing ? "scrubbing" : "idle",
+    showOpening ? "opening" : "ready",
+  ].join(":");
+};
+
+const clearChromeAutoHideTimer = () => {
+  window.clearTimeout(chromeAutoHideTimer);
+  chromeAutoHideTimer = 0;
+  chromeAutoHideKey = "";
+};
+
+const hideChromeFromAutoTimer = () => {
+  if (!canAutoHideChrome(isOpeningOverlayActive())) return;
+  state = { ...state, controlsVisible: false };
+  renderChrome();
+  send("hideChrome", 0);
+};
+
+const syncChromeAutoHideTimer = showOpening => {
+  const key = currentChromeAutoHideKey(showOpening);
+  if (!key) {
+    clearChromeAutoHideTimer();
+    return;
+  }
+  if (chromeAutoHideKey === key) return;
+
+  window.clearTimeout(chromeAutoHideTimer);
+  chromeAutoHideKey = key;
+  chromeAutoHideTimer = window.setTimeout(() => {
+    chromeAutoHideTimer = 0;
+    if (currentChromeAutoHideKey(isOpeningOverlayActive()) !== key) return;
+    chromeAutoHideKey = "";
+    hideChromeFromAutoTimer();
+  }, chromeAutoHideDelayMs);
+};
+
+const noteChromeActivity = () => {
+  if (!state.controlsVisible || state.isLocked) return;
+  chromeAutoHideActivity += 1;
+  syncChromeAutoHideTimer(isOpeningOverlayActive());
+};
+
 const renderChrome = () => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
   const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
@@ -1545,6 +1613,7 @@ const renderChrome = () => {
   seek.disabled = Boolean(state.isLocked);
   setProgress(positionMs, durationMs);
   renderNativePlaybackPrompts();
+  syncChromeAutoHideTimer(showOpening);
 };
 
 const render = () => {
@@ -1586,7 +1655,13 @@ const toggleChrome = () => {
     send("revealLockedOverlay", 0);
     return;
   }
-  state = { ...state, controlsVisible: !state.controlsVisible };
+  const nextControlsVisible = !state.controlsVisible;
+  if (nextControlsVisible) {
+    chromeAutoHideActivity += 1;
+  } else {
+    clearChromeAutoHideTimer();
+  }
+  state = { ...state, controlsVisible: nextControlsVisible };
   renderChrome();
   send("toggleChrome", 0);
 };
@@ -1600,6 +1675,7 @@ const clearPressedButton = () => {
 document.addEventListener("pointerdown", event => {
   if (!isTextEntryTarget(event.target)) {
     focusShortcutRoot();
+    noteChromeActivity();
   }
   const button = event.target.closest("button");
   if (!button || button.disabled) return;
@@ -1872,6 +1948,7 @@ nextEpisodeCard.addEventListener("click", event => {
 });
 
 seek.addEventListener("input", () => {
+  noteChromeActivity();
   isScrubbing = true;
   scrubPositionMs = rangePositionMs();
   setProgress(scrubPositionMs, state.durationMs);
@@ -1879,6 +1956,7 @@ seek.addEventListener("input", () => {
 });
 
 seek.addEventListener("change", () => {
+  noteChromeActivity();
   scrubPositionMs = rangePositionMs();
   isScrubbing = false;
   send("scrubFinish", scrubPositionMs);
@@ -1968,6 +2046,7 @@ document.addEventListener("keydown", event => {
   }
   event.preventDefault();
   focusShortcutRoot();
+  noteChromeActivity();
   send(command, 0);
 });
 

@@ -621,6 +621,9 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
 
 private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: Double): Boolean {
     when (type) {
+        "hideChrome" -> {
+            controlsVisible = false
+        }
         "reloadSources" -> {
             prepareSourcesForPlayerControls(forceRefresh = true)
         }
