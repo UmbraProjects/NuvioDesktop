@@ -104,19 +104,21 @@ fun HomeScreen(
     onFirstCatalogRendered: (() -> Unit)? = null,
 ) {
     LaunchedEffect(Unit) {
-        AddonRepository.initialize()
-        CollectionRepository.initialize()
-        ContinueWatchingPreferencesRepository.ensureLoaded()
-        WatchedRepository.ensureLoaded()
-        WatchProgressRepository.ensureLoaded()
+        withContext(Dispatchers.Default) {
+            AddonRepository.initialize()
+            CollectionRepository.initialize()
+            ContinueWatchingPreferencesRepository.ensureLoaded()
+            HomeCatalogSettingsRepository.snapshot()
+            TraktSettingsRepository.ensureLoaded()
+            TraktAuthRepository.ensureLoaded()
+            WatchedRepository.ensureLoaded()
+            WatchProgressRepository.ensureLoaded()
+        }
     }
 
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val homeUiState by HomeRepository.uiState.collectAsStateWithLifecycle()
-    val homeSettingsUiState by remember {
-        HomeCatalogSettingsRepository.snapshot()
-        HomeCatalogSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
+    val homeSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     val homeListState = rememberLazyListState()
     val collections by CollectionRepository.collections.collectAsStateWithLifecycle()
     val continueWatchingPreferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
@@ -124,14 +126,8 @@ fun HomeScreen(
     val watchProgressUiState by WatchProgressRepository.uiState.collectAsStateWithLifecycle()
     val cloudLibraryUiState by CloudLibraryRepository.uiState.collectAsStateWithLifecycle()
     val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
-    val traktSettingsUiState by remember {
-        TraktSettingsRepository.ensureLoaded()
-        TraktSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val isTraktAuthenticated by remember {
-        TraktAuthRepository.ensureLoaded()
-        TraktAuthRepository.isAuthenticated
-    }.collectAsStateWithLifecycle()
+    val traktSettingsUiState by TraktSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val isTraktAuthenticated by TraktAuthRepository.isAuthenticated.collectAsStateWithLifecycle()
     var observedOfflineState by remember { mutableStateOf(false) }
 
     LaunchedEffect(scrollToTopRequests) {
