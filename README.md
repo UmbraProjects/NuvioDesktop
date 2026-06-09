@@ -18,13 +18,11 @@
 
 Nuvio Desktop brings the Nuvio media experience to desktop. It keeps the playback-focused browsing, collection, watch progress, downloads, and Stremio addon ecosystem integration from Nuvio while adapting the app for desktop input, desktop storage, and native desktop playback.
 
-The desktop app is built from the shared Kotlin Multiplatform codebase in [composeApp](./composeApp), with desktop-specific code in [composeApp/src/desktopMain](./composeApp/src/desktopMain). Desktop packaging is configured through Gradle, with macOS development builds currently active and Windows and Linux support planned later.
+The desktop app is built from the shared Kotlin Multiplatform codebase in [composeApp](./composeApp), with desktop-specific code in [composeApp/src/desktopMain](./composeApp/src/desktopMain). Desktop packaging is configured through Gradle, with development builds active for desktop hosts and broader platform coverage continuing over time.
 
 ## Platform Status
 
-- macOS: actively being developed.
-- Windows: planned later.
-- Linux: planned later.
+Current desktop builds are actively being developed. Linux support is planned for a later phase, and public release targets are not finalized yet.
 
 ## Installation
 
@@ -34,7 +32,7 @@ When releases are ready, desktop builds will be published from the Nuvio Desktop
 
 ## Development
 
-macOS development checkout:
+Desktop development checkout:
 
 ```bash
 git clone --branch Dev --recurse-submodules https://github.com/NuvioMedia/NuvioDesktop.git
@@ -50,10 +48,10 @@ Useful commands:
 
 ```bash
 ./gradlew :composeApp:compileKotlinDesktop
-./gradlew :composeApp:packageDmg
+./gradlew :composeApp:packageDistributionForCurrentOS
 ```
 
-The native player bridge currently uses MPVKit macOS libmpv artifacts from the `MPVKit` submodule. For development, the submodule is configured to use [NuvioMedia/MPVKit](https://github.com/NuvioMedia/MPVKit) on the `Nuvio` branch. If you already have a checkout, sync and update it with:
+On macOS, the native player bridge uses MPVKit libmpv artifacts from the `MPVKit` submodule. For development, the submodule is configured to use [NuvioMedia/MPVKit](https://github.com/NuvioMedia/MPVKit) on the `Nuvio` branch. If you already have a checkout, sync and update it with:
 
 ```bash
 git submodule sync MPVKit
@@ -82,7 +80,7 @@ You can also point Gradle at a separate MPVKit checkout:
 - `composeApp/` contains the Kotlin Multiplatform and Compose Multiplatform app code.
 - `composeApp/src/commonMain/` contains shared UI, features, repositories, and platform-agnostic logic.
 - `composeApp/src/desktopMain/` contains desktop-specific app code, storage, settings, player integration, and desktop resources.
-- `composeApp/src/desktopMain/native/macos/` contains the macOS native player bridge.
+- `composeApp/src/desktopMain/native/macos/` and `composeApp/src/desktopMain/native/windows/` contain the native player bridges.
 - `composeApp/src/desktopMain/resources/player-ui/` contains the desktop native player control UI.
 - `composeApp/src/desktopMain/resources/icons/` contains desktop app icons for macOS, Windows, and Linux packaging.
 
