@@ -200,10 +200,17 @@ val releaseAppVersionName = readXcconfigValue(appVersionConfigFile, "MARKETING_V
 val releaseAppVersionCode = readXcconfigValue(appVersionConfigFile, "CURRENT_PROJECT_VERSION")
     ?.toIntOrNull()
     ?: error("CURRENT_PROJECT_VERSION is missing or invalid in ${appVersionConfigFile.path}")
+val desktopVersionConfigFile = rootProject.file("composeApp/Configuration/DesktopVersion.properties")
+val desktopVersionProps = Properties().apply {
+    if (desktopVersionConfigFile.exists()) {
+        desktopVersionConfigFile.inputStream().use { load(it) }
+    }
+}
 val desktopReleaseVersionName = (
     providers.gradleProperty("nuvio.desktop.versionName").orNull
         ?: System.getenv("NUVIO_DESKTOP_VERSION_NAME")
         ?: supabaseProps.getProperty("NUVIO_DESKTOP_VERSION_NAME")
+        ?: desktopVersionProps.getProperty("VERSION_NAME")
         ?: "0.1.0"
     ).trim()
 require(desktopReleaseVersionName.isNotBlank()) {
@@ -213,6 +220,7 @@ val desktopReleaseVersionCode = (
     providers.gradleProperty("nuvio.desktop.versionCode").orNull
         ?: System.getenv("NUVIO_DESKTOP_VERSION_CODE")
         ?: supabaseProps.getProperty("NUVIO_DESKTOP_VERSION_CODE")
+        ?: desktopVersionProps.getProperty("VERSION_CODE")
     )?.trim()
     ?.takeIf { it.isNotBlank() }
     ?.toIntOrNull()
