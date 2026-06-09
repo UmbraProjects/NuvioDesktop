@@ -1481,9 +1481,22 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
+      flex: 1 1 auto;
       overflow: auto;
       padding: 4px 20px 20px;
       min-height: 0;
+    }
+
+    #episodeListView,
+    #episodeStreamsView {
+      min-height: 0;
+      flex: 1 1 auto;
+      flex-direction: column;
+    }
+
+    #episodeListView:not([hidden]),
+    #episodeStreamsView:not([hidden]) {
+      display: flex;
     }
 
     .track-list.virtualized {
