@@ -30,6 +30,12 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
     @get:Input
     abstract val appVersionCode: Property<Int>
 
+    @get:Input
+    abstract val desktopAppVersionName: Property<String>
+
+    @get:Input
+    abstract val desktopAppVersionCode: Property<Int>
+
     @TaskAction
     fun generate() {
         val props = Properties()
@@ -116,6 +122,8 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |object AppVersionConfig {
                 |    const val VERSION_NAME = "${appVersionName.get()}"
                 |    const val VERSION_CODE = ${appVersionCode.get()}
+                |    const val DESKTOP_VERSION_NAME = "${desktopAppVersionName.get()}"
+                |    const val DESKTOP_VERSION_CODE = ${desktopAppVersionCode.get()}
                 |}
                 """.trimMargin()
             )
@@ -192,6 +200,23 @@ val releaseAppVersionName = readXcconfigValue(appVersionConfigFile, "MARKETING_V
 val releaseAppVersionCode = readXcconfigValue(appVersionConfigFile, "CURRENT_PROJECT_VERSION")
     ?.toIntOrNull()
     ?: error("CURRENT_PROJECT_VERSION is missing or invalid in ${appVersionConfigFile.path}")
+val desktopReleaseVersionName = (
+    providers.gradleProperty("nuvio.desktop.versionName").orNull
+        ?: System.getenv("NUVIO_DESKTOP_VERSION_NAME")
+        ?: supabaseProps.getProperty("NUVIO_DESKTOP_VERSION_NAME")
+        ?: "0.1.0"
+    ).trim()
+require(desktopReleaseVersionName.isNotBlank()) {
+    "Desktop version name must not be blank."
+}
+val desktopReleaseVersionCode = (
+    providers.gradleProperty("nuvio.desktop.versionCode").orNull
+        ?: System.getenv("NUVIO_DESKTOP_VERSION_CODE")
+        ?: supabaseProps.getProperty("NUVIO_DESKTOP_VERSION_CODE")
+    )?.trim()
+    ?.takeIf { it.isNotBlank() }
+    ?.toIntOrNull()
+    ?: 1
 val iosDistribution = (
     providers.gradleProperty("nuvio.ios.distribution").orNull
         ?: System.getenv("NUVIO_IOS_DISTRIBUTION")
@@ -226,6 +251,8 @@ val generateRuntimeConfigs = tasks.register<GenerateRuntimeConfigsTask>("generat
     localPropertiesFile.set(rootProject.layout.projectDirectory.file("local.properties"))
     appVersionName.set(releaseAppVersionName)
     appVersionCode.set(releaseAppVersionCode)
+    desktopAppVersionName.set(desktopReleaseVersionName)
+    desktopAppVersionCode.set(desktopReleaseVersionCode)
 }
 
 val isMacHost = System.getProperty("os.name").contains("mac", ignoreCase = true)
@@ -708,7 +735,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Nuvio"
-            packageVersion = releaseAppVersionName
+            packageVersion = desktopReleaseVersionName
             macOS {
                 iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon.icns"))
             }
