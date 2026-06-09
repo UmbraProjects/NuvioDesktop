@@ -427,6 +427,7 @@ private fun DesktopHomeHeroFrame(
                 ) {
                     DesktopHeroContentBlock(
                         item = items[layer.page],
+                        layout = layout,
                         onItemClick = onItemClick,
                     )
                 }
@@ -590,6 +591,7 @@ private fun HeroContentBlock(
 @Composable
 private fun DesktopHeroContentBlock(
     item: MetaPreview,
+    layout: HomeHeroLayout,
     onItemClick: ((MetaPreview) -> Unit)?,
 ) {
     Column(
@@ -601,15 +603,23 @@ private fun DesktopHeroContentBlock(
         horizontalAlignment = Alignment.Start,
     ) {
         if (item.logo != null) {
-            AsyncImage(
-                model = item.logo,
-                contentDescription = item.name,
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.74f)
-                    .aspectRatio(2.7f),
-                alignment = Alignment.CenterStart,
-                contentScale = ContentScale.Fit,
-            )
+                    .fillMaxWidth()
+                    .height(desktopHeroLogoSlotHeight(layout)),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                AsyncImage(
+                    model = item.logo,
+                    contentDescription = item.name,
+                    modifier = Modifier
+                        .fillMaxWidth(desktopHeroLogoWidthFraction(layout))
+                        .fillMaxHeight(),
+                    alignment = Alignment.CenterStart,
+                    contentScale = ContentScale.Fit,
+                    clipToBounds = false,
+                )
+            }
         } else {
             Text(
                 text = item.name,
@@ -648,6 +658,20 @@ private fun DesktopHeroContentBlock(
         }
     }
 }
+
+private fun desktopHeroLogoWidthFraction(layout: HomeHeroLayout): Float =
+    when {
+        layout.contentMaxWidth >= 640.dp -> 0.74f
+        layout.contentMaxWidth >= 520.dp -> 0.74f
+        else -> 0.8f
+    }
+
+private fun desktopHeroLogoSlotHeight(layout: HomeHeroLayout): Dp =
+    when {
+        layout.contentMaxWidth >= 640.dp -> 156.dp
+        layout.contentMaxWidth >= 520.dp -> 136.dp
+        else -> 104.dp
+    }
 
 private fun desktopHeroGenreText(item: MetaPreview): String =
     item.genres
