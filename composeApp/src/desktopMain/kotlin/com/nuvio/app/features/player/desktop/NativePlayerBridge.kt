@@ -197,14 +197,20 @@ internal object NativePlayerBridge {
     private fun exportControlsPageAssets(): ControlsPageAssets {
         val root = File(System.getProperty("java.io.tmpdir"), "nuvio-player-ui").apply { mkdirs() }
         val fontsDir = root.resolve("fonts").apply { mkdirs() }
-        val htmlResource = "/player-ui/controls.html"
-        val html = NativePlayerBridge::class.java.getResourceAsStream(htmlResource)
-            ?.bufferedReader()
-            ?.use { it.readText() }
-            ?: error("Missing native player controls resource: $htmlResource")
-        val resolvedHtml = html.replace("/* __NUVIO_PLAYER_FONT_FACES__ */", nativePlayerFontFaces())
         val htmlFile = root.resolve("controls.html")
-        writeTextIfChanged(htmlFile, resolvedHtml)
+        writeTextIfChanged(
+            target = htmlFile,
+            text = readTextResource("/player-ui/controls.html"),
+        )
+        writeTextIfChanged(
+            target = root.resolve("controls.css"),
+            text = readTextResource("/player-ui/controls.css")
+                .replace("/* __NUVIO_PLAYER_FONT_FACES__ */", nativePlayerFontFaces()),
+        )
+        copyResourceIfChanged(
+            resource = "/player-ui/controls.js",
+            target = root.resolve("controls.js"),
+        )
         copyResourceIfChanged(
             resource = "/composeResources/nuvio.composeapp.generated.resources/font/jetbrains_sans_regular.ttf",
             target = fontsDir.resolve("jetbrains_sans_regular.ttf"),
@@ -246,6 +252,12 @@ internal object NativePlayerBridge {
               font-display: block;
             }
         """.trimIndent()
+
+    private fun readTextResource(resource: String): String =
+        NativePlayerBridge::class.java.getResourceAsStream(resource)
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() }
+            ?: error("Missing native player controls resource: $resource")
 
     private fun writeTextIfChanged(target: File, text: String) {
         val bytes = text.toByteArray(Charsets.UTF_8)
