@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <dwmapi.h>
 #include <wrl.h>
 #include <WebView2.h>
 #include <jni.h>
@@ -59,6 +60,11 @@ constexpr UINT WM_NUVIO_TASK = WM_APP + 0x4E50;
 constexpr UINT_PTR NUVIO_TIMER_ID = 0x4E50;
 const wchar_t *kMessageWindowClass = L"NuvioPlayerBridgeMessageWindow";
 const wchar_t *kContainerWindowClass = L"NuvioPlayerBridgeContainerWindow";
+constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
+constexpr DWORD kDwmwaUseImmersiveDarkModeLegacy = 19;
+constexpr DWORD kDwmwaBorderColor = 34;
+constexpr DWORD kDwmwaCaptionColor = 35;
+constexpr DWORD kDwmwaTextColor = 36;
 
 std::wstring toWide(const std::string &value) {
     if (value.empty()) return std::wstring();
@@ -129,6 +135,36 @@ std::string lowerCopy(std::string value) {
         return (char)std::tolower(ch);
     });
     return value;
+}
+
+COLORREF rgbIntToColorRef(jint rgb) {
+    BYTE red = (BYTE)((rgb >> 16) & 0xFF);
+    BYTE green = (BYTE)((rgb >> 8) & 0xFF);
+    BYTE blue = (BYTE)(rgb & 0xFF);
+    return RGB(red, green, blue);
+}
+
+void setDwmWindowAttribute(HWND hwnd, DWORD attribute, const void *value, DWORD valueSize) {
+    (void)DwmSetWindowAttribute(hwnd, attribute, value, valueSize);
+}
+
+void applyDwmWindowChrome(HWND hwnd, bool darkMode, COLORREF captionColor, COLORREF borderColor, COLORREF textColor) {
+    if (!hwnd || !IsWindow(hwnd)) return;
+
+    BOOL enabled = darkMode ? TRUE : FALSE;
+    HRESULT darkModeResult = DwmSetWindowAttribute(
+        hwnd,
+        kDwmwaUseImmersiveDarkMode,
+        &enabled,
+        sizeof(enabled)
+    );
+    if (FAILED(darkModeResult)) {
+        setDwmWindowAttribute(hwnd, kDwmwaUseImmersiveDarkModeLegacy, &enabled, sizeof(enabled));
+    }
+
+    setDwmWindowAttribute(hwnd, kDwmwaCaptionColor, &captionColor, sizeof(captionColor));
+    setDwmWindowAttribute(hwnd, kDwmwaBorderColor, &borderColor, sizeof(borderColor));
+    setDwmWindowAttribute(hwnd, kDwmwaTextColor, &textColor, sizeof(textColor));
 }
 
 bool containsCaseInsensitive(const std::string &haystack, const std::string &needle) {
@@ -1652,6 +1688,25 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_clearExternalSubtitlesAndSelect(JNIEnv *, jobject, jlong handle, jint trackId) {
     auto player = playerFromHandle(handle);
     if (player) player->removeExternalSubtitlesAndSelect(trackId);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_applyWindowChrome(
+    JNIEnv *,
+    jobject,
+    jlong windowHwnd,
+    jboolean darkMode,
+    jint captionColorRgb,
+    jint borderColorRgb,
+    jint textColorRgb
+) {
+    applyDwmWindowChrome(
+        (HWND)(intptr_t)windowHwnd,
+        darkMode == JNI_TRUE,
+        rgbIntToColorRef(captionColorRgb),
+        rgbIntToColorRef(borderColorRgb),
+        rgbIntToColorRef(textColorRgb)
+    );
 }
 
 extern "C" JNIEXPORT void JNICALL

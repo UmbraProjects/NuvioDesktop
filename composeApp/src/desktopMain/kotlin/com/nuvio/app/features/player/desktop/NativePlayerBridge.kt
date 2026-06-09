@@ -47,6 +47,14 @@ internal object NativePlayerBridge {
     external fun addSubtitleUrl(handle: Long, url: String)
     external fun clearExternalSubtitles(handle: Long)
     external fun clearExternalSubtitlesAndSelect(handle: Long, trackId: Int)
+    external fun applyWindowChrome(
+        windowHwnd: Long,
+        darkMode: Boolean,
+        captionColorRgb: Int,
+        borderColorRgb: Int,
+        textColorRgb: Int,
+    )
+
     external fun setSubtitleDelayMs(handle: Long, delayMs: Int)
     external fun applySubtitleStyle(
         handle: Long,

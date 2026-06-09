@@ -428,6 +428,7 @@ val windowsPlayerBridgeCommand = if (missingWindowsPlayerBridgeInputs.isNotEmpty
         "Ole32.lib",
         "User32.lib",
         "Gdi32.lib",
+        "Dwmapi.lib",
     ).joinToString(" ")
     val powershellCompileCommand = compileCommand.replace("\"", "__DQ__")
     val powershellCommand = """

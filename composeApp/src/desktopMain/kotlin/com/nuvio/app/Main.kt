@@ -1,6 +1,7 @@
 package com.nuvio.app
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -9,6 +10,7 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.player.PlatformPlayerSurface
+import com.nuvio.app.features.player.desktop.applyNativeDesktopWindowChrome
 import com.nuvio.app.features.player.desktop.preloadNativePlayerBridgeAsync
 import java.awt.Color as AwtColor
 import javax.swing.JComponent
@@ -39,6 +41,9 @@ fun main() {
                 window.rootPane.background = NuvioDesktopNativeBackground
                 window.contentPane.background = NuvioDesktopNativeBackground
                 (window.contentPane as? JComponent)?.isOpaque = true
+            }
+            LaunchedEffect(window) {
+                applyNativeDesktopWindowChrome(window)
             }
 
             if (smokePlayerUrl == null) {
