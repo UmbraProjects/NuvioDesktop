@@ -36,6 +36,11 @@ private const val MinCustomDownscaleRatio = 1.08f
 private const val MaxDesktopSourceSizePx = 1536
 private const val MaxScaledBitmapPixels = 1_250_000L
 
+private val IsWindowsDesktop: Boolean =
+    System.getProperty("os.name")
+        ?.startsWith("Windows", ignoreCase = true)
+        ?: false
+
 @Composable
 internal actual fun NuvioAsyncImage(
     model: Any?,
@@ -56,8 +61,11 @@ internal actual fun NuvioAsyncImage(
     desktopImageScaling: NuvioDesktopImageScaling,
 ) {
     val context = LocalPlatformContext.current
-    val requestModel = remember(context, model, desktopImageScaling) {
-        if (desktopImageScaling == NuvioDesktopImageScaling.Disabled) {
+    val effectiveDesktopImageScaling = remember(desktopImageScaling) {
+        if (IsWindowsDesktop) desktopImageScaling else NuvioDesktopImageScaling.Disabled
+    }
+    val requestModel = remember(context, model, effectiveDesktopImageScaling) {
+        if (effectiveDesktopImageScaling == NuvioDesktopImageScaling.Disabled) {
             model
         } else {
             model.withDesktopHighQualitySize(context)
@@ -67,7 +75,7 @@ internal actual fun NuvioAsyncImage(
         placeholder,
         error,
         fallback,
-        desktopImageScaling,
+        effectiveDesktopImageScaling,
     ) {
         { state ->
             when (state) {
@@ -75,7 +83,7 @@ internal actual fun NuvioAsyncImage(
                     placeholder?.let { state.copy(painter = it) } ?: state
                 }
                 is AsyncImagePainter.State.Success -> {
-                    state.result.image.toScaledBitmapPainter(desktopImageScaling)
+                    state.result.image.toScaledBitmapPainter(effectiveDesktopImageScaling)
                         ?.let { state.copy(painter = it) }
                         ?: state
                 }
