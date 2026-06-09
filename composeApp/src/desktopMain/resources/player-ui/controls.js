@@ -1391,10 +1391,6 @@ window.nuvioNativeViewportChanged = () => {
   if (activeModal) renderActiveModal();
 };
 
-window.addEventListener("resize", () => {
-  window.nuvioNativeViewportChanged();
-});
-
 const trackListSignature = tracks =>
   normalizeTracks(tracks)
     .map(track => [

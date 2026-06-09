@@ -1183,9 +1183,6 @@ static NSString *redactUrlsInText(NSString *text) {
     _webView = [[WKWebView alloc] initWithFrame:_hostView.bounds configuration:configuration];
     _webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _webView.wantsLayer = YES;
-    _webView.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
-    _webView.layer.needsDisplayOnBoundsChange = YES;
-    _webView.layer.drawsAsynchronously = YES;
     [_webView setValue:@NO forKey:@"drawsBackground"];
     [_hostView addSubview:_webView positioned:NSWindowAbove relativeTo:_videoView];
     NSURL *controlsURL = [NSURL URLWithString:controlsUrl ?: @""];

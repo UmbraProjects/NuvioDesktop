@@ -160,10 +160,19 @@ button:disabled {
   transition: opacity 160ms ease;
 }
 
-.player.native-resizing,
-.player.native-resizing * {
+.player.native-resizing .top-gradient,
+.player.native-resizing .bottom-gradient,
+.player.native-resizing .metadata,
+.player.native-resizing .parental-guide,
+.player.native-resizing .skip-prompt,
+.player.native-resizing .next-episode-card,
+.player.native-resizing .header-actions,
+.player.native-resizing .center-controls,
+.player.native-resizing .progress,
+.player.native-resizing .locked-overlay,
+.player.native-resizing .modal-layer,
+.player.native-resizing .track-panel {
   transition-duration: 1ms !important;
-  animation-duration: 1ms !important;
 }
 
 .player.chrome-hidden .top-gradient,
