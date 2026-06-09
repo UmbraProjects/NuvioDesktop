@@ -55,6 +55,7 @@ fun DetailHero(
     isTablet: Boolean = false,
     scrollOffset: Int = 0,
     contentMaxWidth: Dp = 560.dp,
+    viewportHeight: Dp = 0.dp,
     onHeightChanged: (Int) -> Unit = {},
     heroTrailerSourceUrl: String? = null,
     heroTrailerSourceAudioUrl: String? = null,
@@ -70,7 +71,7 @@ fun DetailHero(
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth(),
     ) {
-        val heroHeight = detailHeroHeight(maxWidth, isTablet)
+        val heroHeight = detailHeroHeight(maxWidth, viewportHeight, isTablet)
         val trailerAlpha by animateFloatAsState(
             targetValue = if (heroTrailerReady) 1f else 0f,
             animationSpec = tween(durationMillis = 300),
@@ -96,6 +97,7 @@ fun DetailHero(
                 contentAlignment = Alignment.BottomCenter,
             ) {
                 val imageUrl = meta.background ?: meta.poster
+                val backdropScale = if (isTablet) 1f else 1.08f
                 if (imageUrl != null) {
                     AsyncImage(
                         model = imageUrl,
@@ -104,10 +106,10 @@ fun DetailHero(
                             .fillMaxSize()
                             .graphicsLayer {
                                 translationY = scrollOffset * 0.5f
-                                scaleX = 1.08f
-                                scaleY = 1.08f
+                                scaleX = backdropScale
+                                scaleY = backdropScale
                             },
-                        alignment = if (isTablet) Alignment.TopCenter else Alignment.Center,
+                        alignment = Alignment.Center,
                         contentScale = ContentScale.Crop,
                         desktopImageScaling = NuvioDesktopImageScaling.Disabled,
                     )
@@ -129,8 +131,8 @@ fun DetailHero(
                             .graphicsLayer {
                                 alpha = trailerAlpha
                                 translationY = scrollOffset * 0.5f
-                                scaleX = 1.08f
-                                scaleY = 1.08f
+                                scaleX = backdropScale
+                                scaleY = backdropScale
                             },
                         onReady = onHeroTrailerReady,
                         onEnded = onHeroTrailerEnded,
@@ -235,9 +237,13 @@ fun DetailHero(
     }
 }
 
-private fun detailHeroHeight(maxWidth: Dp, isTablet: Boolean): Dp =
+private fun detailHeroHeight(maxWidth: Dp, viewportHeight: Dp, isTablet: Boolean): Dp =
     if (!isTablet) {
         (maxWidth * 1.33f).coerceIn(420.dp, 760.dp)
     } else {
-        (maxWidth * 0.42f).coerceIn(300.dp, 420.dp)
+        val viewportLimit = viewportHeight
+            .takeIf { it > 0.dp }
+            ?.let { it * 0.72f }
+            ?: 1080.dp
+        minOf(maxWidth * 9f / 16f, viewportLimit).coerceIn(420.dp, 1080.dp)
     }

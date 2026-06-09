@@ -749,6 +749,7 @@ fun MetaDetailsScreen(
 
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val isTablet = maxWidth >= 720.dp
+                    val viewportHeight = maxHeight
                     val contentHorizontalPadding = if (isTablet) 32.dp else 18.dp
                     val contentMaxWidth = detailTabletContentMaxWidth(maxWidth, isTablet)
                     val cinematicEnabled = metaScreenSettingsUiState.cinematicBackground
@@ -782,6 +783,7 @@ fun MetaDetailsScreen(
                                 meta = meta,
                                 isTablet = isTablet,
                                 contentMaxWidth = contentMaxWidth,
+                                viewportHeight = viewportHeight,
                                 scrollOffset = scrollState.value,
                                 onHeightChanged = { heroHeightPx = it },
                                 heroTrailerSourceUrl = heroTrailerSourceUrl,
