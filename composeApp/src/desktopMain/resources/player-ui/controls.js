@@ -3,6 +3,13 @@ const seek = document.getElementById("seek");
 const positionLabel = document.getElementById("position");
 const durationLabel = document.getElementById("duration");
 const bufferingStatus = document.getElementById("bufferingStatus");
+const pauseMetadataOverlay = document.getElementById("pauseMetadataOverlay");
+const pauseWatchingLabel = document.getElementById("pauseWatchingLabel");
+const pauseLogo = document.getElementById("pauseLogo");
+const pauseTitle = document.getElementById("pauseTitle");
+const pauseEpisodeInfo = document.getElementById("pauseEpisodeInfo");
+const pauseEpisodeTitle = document.getElementById("pauseEpisodeTitle");
+const pauseDescription = document.getElementById("pauseDescription");
 const toggle = document.getElementById("toggle");
 const toggleIcon = document.getElementById("toggleIcon");
 const lockIcon = document.getElementById("lockIcon");
@@ -138,6 +145,11 @@ let state = {
   episodeText: "",
   streamTitle: "",
   providerName: "",
+  pauseOverlayWatchingLabel: "You're watching",
+  pauseOverlayLogo: "",
+  pauseOverlayEpisodeInfo: "",
+  pauseOverlayEpisodeTitle: "",
+  pauseOverlayDescription: "",
   resizeModeLabel: "Fit",
   playbackSpeedLabel: "1x",
   subtitlesLabel: "Subs",
@@ -314,6 +326,9 @@ let skipPromptWasDismissed = false;
 let skipPromptAutoHidden = false;
 let skipPromptAutoHideTimer = 0;
 let skipPromptAutoHideActive = false;
+let pauseMetadataReady = false;
+let pauseMetadataTimer = 0;
+let pauseMetadataEligibilityKey = "";
 const prefersReducedMotion = window.matchMedia &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const modalTransitionMs = prefersReducedMotion ? 1 : 240;
@@ -545,6 +560,62 @@ const setImageSource = (element, source) => {
     setImageVisualState(element, "loaded");
   }
   return url;
+};
+
+const resetPauseMetadataTimer = () => {
+  window.clearTimeout(pauseMetadataTimer);
+  pauseMetadataTimer = 0;
+  pauseMetadataReady = false;
+  pauseMetadataEligibilityKey = "";
+};
+
+const syncPauseMetadataTimer = showOpening => {
+  const durationMs = Math.max(0, Number(state.durationMs) || 0);
+  const eligible = Boolean(!state.isPlaying && !state.isLoading && durationMs > 0 && !showOpening);
+  const key = eligible ? `${Math.round(durationMs)}:${state.title || ""}:${state.pauseOverlayEpisodeInfo || ""}` : "";
+  if (!eligible) {
+    resetPauseMetadataTimer();
+    return;
+  }
+  if (pauseMetadataEligibilityKey === key) return;
+  window.clearTimeout(pauseMetadataTimer);
+  pauseMetadataReady = false;
+  pauseMetadataEligibilityKey = key;
+  pauseMetadataTimer = window.setTimeout(() => {
+    pauseMetadataTimer = 0;
+    pauseMetadataReady = true;
+    renderChrome();
+  }, prefersReducedMotion ? 1 : 5000);
+};
+
+const renderPauseMetadataOverlay = showOpening => {
+  syncPauseMetadataTimer(showOpening);
+
+  const logoUrl = setImageSource(pauseLogo, state.pauseOverlayLogo);
+  const titleText = String(state.title || "").trim();
+  const episodeInfo = String(state.pauseOverlayEpisodeInfo || state.providerName || "").trim();
+  const episodeTitleText = String(state.pauseOverlayEpisodeTitle || "").trim();
+  const descriptionText = String(state.pauseOverlayDescription || "").trim();
+  const showOverlay = Boolean(
+    pauseMetadataReady &&
+    !state.controlsVisible &&
+    !state.isLocked &&
+    !activeModal &&
+    !showOpening,
+  );
+
+  pauseWatchingLabel.textContent = state.pauseOverlayWatchingLabel || "You're watching";
+  pauseLogo.hidden = !logoUrl;
+  pauseTitle.textContent = titleText;
+  pauseTitle.hidden = Boolean(logoUrl || !titleText);
+  pauseEpisodeInfo.textContent = episodeInfo;
+  pauseEpisodeInfo.hidden = !episodeInfo;
+  pauseEpisodeTitle.textContent = episodeTitleText;
+  pauseEpisodeTitle.hidden = !episodeTitleText;
+  pauseDescription.textContent = descriptionText;
+  pauseDescription.hidden = !descriptionText;
+  pauseMetadataOverlay.classList.toggle("visible", showOverlay);
+  pauseMetadataOverlay.setAttribute("aria-hidden", showOverlay ? "false" : "true");
 };
 
 const normalizedOpeningProgress = () => {
@@ -1434,6 +1505,7 @@ const renderChrome = () => {
   root.classList.toggle("chrome-hidden", Boolean(!state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible)));
   root.classList.toggle("source-visible", Boolean(!isPlaying && !state.isLoading && (state.streamTitle || state.providerName)));
   const showOpening = renderOpeningOverlay();
+  renderPauseMetadataOverlay(showOpening);
   syncParentalGuide(showOpening);
 
   title.textContent = state.title || "";
