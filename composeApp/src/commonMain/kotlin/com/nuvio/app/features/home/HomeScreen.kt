@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.isDesktop
 import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.ui.LocalNuvioBottomNavigationOverlayPadding
@@ -646,6 +647,7 @@ fun HomeScreen(
                             modifier = Modifier,
                             viewportHeight = maxHeight,
                             mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
+                            sectionPadding = if (isDesktop) homeSectionPadding else null,
                         )
 
                         homeUiState.heroItems.isNotEmpty() -> HomeHeroSection(
@@ -653,6 +655,7 @@ fun HomeScreen(
                             modifier = Modifier,
                             viewportHeight = maxHeight,
                             mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
+                            sectionPadding = if (isDesktop) homeSectionPadding else null,
                             listState = homeListState,
                             onItemClick = onPosterClick,
                         )
