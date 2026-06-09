@@ -5,8 +5,11 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskAction
 import org.gradle.jvm.tasks.Jar
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -151,6 +154,21 @@ fun readXcconfigValue(file: File, key: String): String? {
 
 fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
 
+fun cmdQuote(value: String): String = "\"${value.replace("\"", "\"\"")}\""
+
+fun psSingleQuote(value: String): String = "'${value.replace("'", "''")}'"
+
+fun semanticVersionSortKey(value: String): String =
+    value.split('.', '-', '_')
+        .joinToString(".") { part ->
+            part.toIntOrNull()?.toString()?.padStart(8, '0') ?: part
+        }
+
+fun newestDirectory(root: File): File? =
+    root.takeIf(File::exists)
+        ?.listFiles(File::isDirectory)
+        ?.maxByOrNull { semanticVersionSortKey(it.name) }
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidApplication)
@@ -211,6 +229,7 @@ val generateRuntimeConfigs = tasks.register<GenerateRuntimeConfigsTask>("generat
 }
 
 val isMacHost = System.getProperty("os.name").contains("mac", ignoreCase = true)
+val isWindowsHost = System.getProperty("os.name").contains("win", ignoreCase = true)
 val mpvKitDir = providers.gradleProperty("nuvio.mpvkit.dir")
     .orElse(rootProject.layout.projectDirectory.dir("MPVKit").asFile.absolutePath)
 val macosPlayerBridgeSource = layout.projectDirectory.file("src/desktopMain/native/macos/player_bridge.mm")
@@ -312,12 +331,247 @@ val buildMacosPlayerBridge = tasks.register<Exec>("buildMacosPlayerBridge") {
     commandLine(macosPlayerBridgeCommand)
 }
 
+val windowsPlayerBridgeArch = when (System.getProperty("os.arch").lowercase()) {
+    "aarch64", "arm64" -> "arm64"
+    "x86" -> "x86"
+    else -> "x64"
+}
+val windowsPlayerBridgeSource = layout.projectDirectory.file("src/desktopMain/native/windows/player_bridge.cpp")
+val windowsPlayerBridgeOutput = layout.buildDirectory.file("native/windows/player_bridge.dll")
+val windowsPlayerBridgeImportLib = layout.buildDirectory.file("native/windows/player_bridge.lib")
+val windowsPlayerBridgePdb = layout.buildDirectory.file("native/windows/player_bridge.pdb")
+val windowsPlayerBridgeObj = layout.buildDirectory.file("native/windows/player_bridge.obj")
+val windowsPlayerBridgeScript = layout.buildDirectory.file("native/windows/build-player-bridge.bat")
+val windowsPlayerRuntimeOutput = layout.buildDirectory.dir("native/windows-runtime")
+if (isWindowsHost) {
+    windowsPlayerBridgeOutput.get().asFile.parentFile.mkdirs()
+}
+val windowsWebView2Root = providers.gradleProperty("nuvio.webview2.dir").orNull
+    ?.takeIf { it.isNotBlank() }
+    ?.let(::File)
+    ?: newestDirectory(File(System.getProperty("user.home"), ".nuget/packages/microsoft.web.webview2"))
+    ?: File("__missing_webview2__")
+val windowsWebView2IncludeDir = File(windowsWebView2Root, "build/native/include")
+val windowsWebView2NativeDir = File(windowsWebView2Root, "build/native/$windowsPlayerBridgeArch")
+val windowsWebView2LoaderLib = File(windowsWebView2NativeDir, "WebView2Loader.dll.lib")
+val windowsWebView2LoaderDll = File(windowsWebView2NativeDir, "WebView2Loader.dll")
+val windowsLibmpvRuntimeDir = providers.gradleProperty("nuvio.windows.libmpv.runtimeDir").orNull
+    ?.takeIf { it.isNotBlank() }
+    ?.let(::File)
+    ?: listOf(
+        File("C:/Program Files (x86)/Nuvio/app/native"),
+        File("C:/Program Files/Nuvio/app/native"),
+    ).firstOrNull { File(it, "libmpv-2.dll").exists() }
+val windowsLibmpvDll = providers.gradleProperty("nuvio.windows.libmpv.dll").orNull
+    ?.takeIf { it.isNotBlank() }
+    ?.let(::File)
+    ?: windowsLibmpvRuntimeDir?.resolve("libmpv-2.dll")
+    ?: listOf(
+        File("C:/msys64/ucrt64/bin/libmpv-2.dll"),
+        File("C:/msys64/mingw64/bin/libmpv-2.dll"),
+    ).firstOrNull(File::exists)
+val windowsVsWhere = File("C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe")
+val windowsVcvarsRelativePath = when (windowsPlayerBridgeArch) {
+    "x86" -> "VC\\Auxiliary\\Build\\vcvars32.bat"
+    "arm64" -> "VC\\Auxiliary\\Build\\vcvarsarm64.bat"
+    else -> "VC\\Auxiliary\\Build\\vcvars64.bat"
+}
+val windowsVcvarsPath = providers.gradleProperty("nuvio.windows.vcvars.path").orNull
+    ?.takeIf { it.isNotBlank() }
+val windowsPlayerBridgeJavaHome = providers.systemProperty("java.home").get()
+val missingWindowsPlayerBridgeInputs = listOfNotNull(
+    "WebView2.h".takeUnless { windowsWebView2IncludeDir.resolve("WebView2.h").exists() },
+    "WebView2Loader.dll.lib".takeUnless { windowsWebView2LoaderLib.exists() },
+)
+val missingWindowsPlayerBridgeMessage = """
+    Windows desktop player bridge inputs are missing: ${missingWindowsPlayerBridgeInputs.joinToString()}.
+    Install the Microsoft.Web.WebView2 NuGet package or pass -Pnuvio.webview2.dir=C:/path/to/microsoft.web.webview2/version.
+    libmpv is loaded at runtime; pass -Pnuvio.windows.libmpv.runtimeDir=C:/path/to/mpv-dlls to bundle it.
+""".trimIndent()
+val windowsPlayerBridgeCommand = if (missingWindowsPlayerBridgeInputs.isNotEmpty()) {
+    listOf(
+        "cmd",
+        "/c",
+        "echo ${missingWindowsPlayerBridgeMessage.replace("\n", " ")} 1>&2 && exit /b 1",
+    )
+} else {
+    val sourceFile = windowsPlayerBridgeSource.asFile
+    val outputFile = windowsPlayerBridgeOutput.get().asFile
+    val importLibFile = windowsPlayerBridgeImportLib.get().asFile
+    val pdbFile = windowsPlayerBridgePdb.get().asFile
+    val objFile = windowsPlayerBridgeObj.get().asFile
+    val javaIncludeDir = File(windowsPlayerBridgeJavaHome, "include")
+    val javaWin32IncludeDir = File(javaIncludeDir, "win32")
+    val compileCommand = listOf(
+        "cl",
+        "/nologo",
+        "/EHsc",
+        "/std:c++17",
+        "/LD",
+        "/DUNICODE",
+        "/D_UNICODE",
+        "/DNOMINMAX",
+        "/DWIN32_LEAN_AND_MEAN",
+        "/permissive-",
+        cmdQuote(sourceFile.absolutePath),
+        "/I${cmdQuote(javaIncludeDir.absolutePath)}",
+        "/I${cmdQuote(javaWin32IncludeDir.absolutePath)}",
+        "/I${cmdQuote(windowsWebView2IncludeDir.absolutePath)}",
+        "/Fo${cmdQuote(objFile.absolutePath)}",
+        "/Fd${cmdQuote(pdbFile.absolutePath)}",
+        "/Fe${cmdQuote(outputFile.absolutePath)}",
+        "/link",
+        "/NOLOGO",
+        "/INCREMENTAL:NO",
+        "/IMPLIB:${cmdQuote(importLibFile.absolutePath)}",
+        cmdQuote(windowsWebView2LoaderLib.absolutePath),
+        "Ole32.lib",
+        "User32.lib",
+        "Gdi32.lib",
+    ).joinToString(" ")
+    val powershellCompileCommand = compileCommand.replace("\"", "__DQ__")
+    val powershellCommand = """
+        ${'$'}ErrorActionPreference = 'Stop'
+        ${'$'}dq = [char]34
+        ${'$'}vcvars = ${psSingleQuote(windowsVcvarsPath.orEmpty())}
+        if ([string]::IsNullOrWhiteSpace(${'$'}vcvars)) {
+          ${'$'}vswhere = ${psSingleQuote(windowsVsWhere.absolutePath)}
+          if (Test-Path -LiteralPath ${'$'}vswhere) {
+            ${'$'}vcvars = & ${'$'}vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find ${psSingleQuote(windowsVcvarsRelativePath)} | Select-Object -First 1
+          }
+        }
+        if ([string]::IsNullOrWhiteSpace(${'$'}vcvars) -or -not (Test-Path -LiteralPath ${'$'}vcvars)) {
+          Write-Error 'Visual Studio C++ toolchain was not found. Install MSVC or pass -Pnuvio.windows.vcvars.path=C:\path\to\vcvars64.bat.'
+          exit 1
+        }
+        ${'$'}vcvars = ([string]${'$'}vcvars).Trim()
+        ${'$'}bat = ${psSingleQuote(windowsPlayerBridgeScript.get().asFile.absolutePath)}
+        ${'$'}compile = ${psSingleQuote(powershellCompileCommand)}.Replace('__DQ__', ${'$'}dq)
+        ${'$'}lines = @(
+          '@echo off',
+          ('set {0}VCVARS={1}{0}' -f ${'$'}dq, ${'$'}vcvars),
+          ('call {0}%VCVARS%{0} >nul' -f ${'$'}dq),
+          'if errorlevel 1 exit /b %errorlevel%',
+          ${'$'}compile,
+          'exit /b %ERRORLEVEL%'
+        )
+        Set-Content -LiteralPath ${'$'}bat -Value ${'$'}lines -Encoding ASCII
+        & cmd.exe /d /c ${'$'}bat
+        ${'$'}code = ${'$'}LASTEXITCODE
+        if (${'$'}code -ne 0) { exit ${'$'}code }
+    """.trimIndent()
+    listOf(
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        powershellCommand,
+    )
+}
+val buildWindowsPlayerBridge = tasks.register<Exec>("buildWindowsPlayerBridge") {
+    notCompatibleWithConfigurationCache("Builds a host-local player bridge against WebView2 and libmpv for Windows.")
+    enabled = isWindowsHost
+    inputs.file(windowsPlayerBridgeSource)
+    if (windowsWebView2IncludeDir.exists()) {
+        inputs.dir(windowsWebView2IncludeDir)
+    }
+    if (windowsWebView2LoaderLib.exists()) {
+        inputs.file(windowsWebView2LoaderLib)
+    }
+    outputs.file(windowsPlayerBridgeOutput)
+    outputs.file(windowsPlayerBridgeImportLib)
+    outputs.file(windowsPlayerBridgePdb)
+    commandLine(windowsPlayerBridgeCommand)
+}
+
+val prepareWindowsPlayerRuntime = tasks.register<Sync>("prepareWindowsPlayerRuntime") {
+    enabled = isWindowsHost
+    into(windowsPlayerRuntimeOutput)
+    if (windowsWebView2LoaderDll.exists()) {
+        from(windowsWebView2LoaderDll)
+    }
+    when {
+        windowsLibmpvRuntimeDir?.exists() == true -> {
+            from(windowsLibmpvRuntimeDir) {
+                include("*.dll")
+            }
+        }
+        windowsLibmpvDll?.exists() == true -> {
+            from(windowsLibmpvDll)
+        }
+    }
+}
+
+val generateWindowsPlayerRuntimeIndex = tasks.register<GenerateNativeRuntimeIndexTask>("generateWindowsPlayerRuntimeIndex") {
+    enabled = isWindowsHost
+    dependsOn(prepareWindowsPlayerRuntime)
+    runtimeDir.set(windowsPlayerRuntimeOutput)
+    indexFile.set(windowsPlayerRuntimeOutput.map { it.file("runtime-files.txt") })
+}
+
+abstract class GenerateNativeRuntimeIndexTask : DefaultTask() {
+    @get:InputDirectory
+    abstract val runtimeDir: DirectoryProperty
+
+    @get:OutputFile
+    abstract val indexFile: RegularFileProperty
+
+    @TaskAction
+    fun generate() {
+        val dir = runtimeDir.get().asFile
+        val files = dir
+            .listFiles { file -> file.isFile && file.name != indexFile.get().asFile.name }
+            .orEmpty()
+            .map { it.name }
+            .sorted()
+        indexFile.get().asFile.writeText(files.joinToString(separator = "\n", postfix = "\n"))
+    }
+}
+
 tasks.withType<Jar>().configureEach {
     if (isMacHost && name == "desktopJar") {
         dependsOn(buildMacosPlayerBridge)
         from(macosPlayerBridgeOutput) {
             into("native/macos")
         }
+    }
+    if (isWindowsHost && name == "desktopJar") {
+        dependsOn(buildWindowsPlayerBridge, prepareWindowsPlayerRuntime, generateWindowsPlayerRuntimeIndex)
+        from(windowsPlayerBridgeOutput) {
+            into("native/windows")
+        }
+        from(windowsPlayerRuntimeOutput) {
+            into("native/windows")
+        }
+    }
+}
+
+if (isWindowsHost) {
+    val desktopNativePlayerTasks = setOf(
+        "run",
+        "runRelease",
+        "desktopRun",
+        "runDistributable",
+        "runReleaseDistributable",
+        "desktopRunHot",
+        "hotRunDesktop",
+        "hotRunDesktopAsync",
+        "hotDevDesktop",
+        "hotDevDesktopAsync",
+        "createDistributable",
+        "createReleaseDistributable",
+        "createRuntimeImage",
+        "package",
+        "packageDistributionForCurrentOS",
+        "packageMsi",
+        "packageUberJarForCurrentOS",
+        "packageReleaseDistributionForCurrentOS",
+        "packageReleaseMsi",
+        "packageReleaseUberJarForCurrentOS",
+    )
+    tasks.matching { it.name in desktopNativePlayerTasks }.configureEach {
+        dependsOn(buildWindowsPlayerBridge, prepareWindowsPlayerRuntime, generateWindowsPlayerRuntimeIndex)
     }
 }
 
@@ -446,6 +700,7 @@ compose.desktop {
             "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
+            "--add-opens=java.desktop/sun.awt.windows=ALL-UNNAMED",
             smokePlayerUrl?.takeIf { it.isNotBlank() }?.let { "-Dnuvio.desktop.smokePlayerUrl=$it" },
         )
 

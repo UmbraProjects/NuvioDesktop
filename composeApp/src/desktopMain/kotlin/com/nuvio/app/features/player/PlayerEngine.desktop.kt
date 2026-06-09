@@ -40,7 +40,7 @@ actual fun PlatformPlayerSurface(
     onSnapshot: (PlayerPlaybackSnapshot) -> Unit,
     onError: (String?) -> Unit,
 ) {
-    if (DesktopHostOs.current == DesktopHostOs.MACOS) {
+    if (DesktopHostOs.current == DesktopHostOs.MACOS || DesktopHostOs.current == DesktopHostOs.WINDOWS) {
         NativePlayerSurface(
             sourceUrl = sourceUrl,
             sourceHeaders = sourceHeaders,

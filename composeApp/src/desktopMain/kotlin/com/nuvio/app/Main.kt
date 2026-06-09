@@ -2,10 +2,6 @@ package com.nuvio.app
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
@@ -48,15 +44,13 @@ fun main() {
             if (smokePlayerUrl == null) {
                 App()
             } else {
-                var error by remember { mutableStateOf<String?>(null) }
                 PlatformPlayerSurface(
                     sourceUrl = smokePlayerUrl,
                     modifier = Modifier.fillMaxSize(),
                     onControllerReady = {},
                     onSnapshot = {},
-                    onError = { error = it },
+                    onError = {},
                 )
-                error?.let { println("Nuvio desktop player smoke error: $it") }
             }
         }
     }
