@@ -85,7 +85,7 @@ internal class NativePlayerController(
                     headerLines = pending.headerLines.toTypedArray(),
                     playWhenReady = pending.playWhenReady,
                     initialPositionMs = pending.initialPositionMs,
-                    controlsHtml = NativePlayerBridge.controlsHtml,
+                    controlsPageUrl = NativePlayerBridge.controlsPageUrl,
                     eventSink = eventSink,
                 )
                 if (handle == 0L) error("Native player did not return a handle.")

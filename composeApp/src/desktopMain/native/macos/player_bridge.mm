@@ -86,10 +86,10 @@ void mpv_set_wakeup_callback(mpv_handle *ctx, void (*cb)(void *d), void *d);
 @interface MpvWebPlayer : NSObject
 - (instancetype)initWithHostView:(NSView *)hostView
                        sourceUrl:(NSString *)sourceUrl
-                     headerLines:(NSArray<NSString *> *)headerLines
-                    playWhenReady:(BOOL)playWhenReady
-                 initialPositionMs:(long long)initialPositionMs
-                     controlsHtml:(NSString *)controlsHtml
+                    headerLines:(NSArray<NSString *> *)headerLines
+                   playWhenReady:(BOOL)playWhenReady
+                initialPositionMs:(long long)initialPositionMs
+                      controlsUrl:(NSString *)controlsUrl
                            javaVm:(JavaVM *)javaVm
                         eventSink:(jobject)eventSink
                       eventMethod:(jmethodID)eventMethod;
@@ -750,10 +750,10 @@ static NSString *redactUrlsInText(NSString *text) {
 
 - (instancetype)initWithHostView:(NSView *)hostView
                        sourceUrl:(NSString *)sourceUrl
-                     headerLines:(NSArray<NSString *> *)headerLines
-                    playWhenReady:(BOOL)playWhenReady
-                 initialPositionMs:(long long)initialPositionMs
-                     controlsHtml:(NSString *)controlsHtml
+                    headerLines:(NSArray<NSString *> *)headerLines
+                   playWhenReady:(BOOL)playWhenReady
+                initialPositionMs:(long long)initialPositionMs
+                      controlsUrl:(NSString *)controlsUrl
                            javaVm:(JavaVM *)javaVm
                         eventSink:(jobject)eventSink
                       eventMethod:(jmethodID)eventMethod {
@@ -790,7 +790,17 @@ static NSString *redactUrlsInText(NSString *text) {
     _webView.wantsLayer = YES;
     [_webView setValue:@NO forKey:@"drawsBackground"];
     [_hostView addSubview:_webView positioned:NSWindowAbove relativeTo:_videoView];
-    [_webView loadHTMLString:controlsHtml baseURL:nil];
+    NSURL *controlsURL = [NSURL URLWithString:controlsUrl ?: @""];
+    if (!controlsURL) {
+        @throw [NSException exceptionWithName:@"PlayerBridgeError"
+                                       reason:@"Invalid native player controls URL."
+                                     userInfo:nil];
+    }
+    if (controlsURL.isFileURL) {
+        [_webView loadFileURL:controlsURL allowingReadAccessToURL:[controlsURL URLByDeletingLastPathComponent]];
+    } else {
+        [_webView loadRequest:[NSURLRequest requestWithURL:controlsURL]];
+    }
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(hostViewFrameDidChange:)
                                                  name:NSViewFrameDidChangeNotification
@@ -1994,7 +2004,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jobjectArray headerLines,
     jboolean playWhenReady,
     jlong initialPositionMs,
-    jstring controlsHtml,
+    jstring controlsPageUrl,
     jobject eventSink
 ) {
     NSView *hostView = (__bridge NSView *)(void *)(intptr_t)hostViewPtr;
@@ -2022,7 +2032,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     }
 
     std::string source = jstringToString(env, sourceUrl);
-    std::string controls = jstringToString(env, controlsHtml);
+    std::string controls = jstringToString(env, controlsPageUrl);
     NSArray<NSString *> *headers = jstringArrayToNSArray(env, headerLines);
     __block MpvWebPlayer *player = nil;
     __block NSString *error = nil;
@@ -2034,7 +2044,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
                     headerLines:headers
                    playWhenReady:playWhenReady == JNI_TRUE
                 initialPositionMs:initialPositionMs
-                    controlsHtml:[NSString stringWithUTF8String:controls.c_str()]
+                     controlsUrl:[NSString stringWithUTF8String:controls.c_str()]
                           javaVm:javaVm
                        eventSink:eventSinkRef
                      eventMethod:eventMethod];

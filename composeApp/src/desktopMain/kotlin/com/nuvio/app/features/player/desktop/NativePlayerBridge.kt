@@ -2,7 +2,6 @@ package com.nuvio.app.features.player.desktop
 
 import java.io.File
 import java.nio.file.Files
-import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun interface NativePlayerEventSink {
@@ -22,7 +21,7 @@ internal object NativePlayerBridge {
         headerLines: Array<String>,
         playWhenReady: Boolean,
         initialPositionMs: Long,
-        controlsHtml: String,
+        controlsPageUrl: String,
         eventSink: NativePlayerEventSink,
     ): Long
 
@@ -66,23 +65,34 @@ internal object NativePlayerBridge {
         fontSize: Float,
         subPos: Int,
     )
+    external fun warmupWebView2(controlsPageUrl: String): Boolean
+    external fun shutdownWebView2Warmup()
 
-    val controlsHtml: String by lazy {
-        val resource = "/player-ui/controls.html"
-        val input = NativePlayerBridge::class.java.getResourceAsStream(resource)
-            ?: error("Missing native player controls resource: $resource")
-        input.bufferedReader().use { it.readText() }
-            .replace("/* __NUVIO_PLAYER_FONT_FACES__ */", nativePlayerFontFaces())
-    }
+    val controlsPageUrl: String by lazy { controlsPageAssets.url }
+    private val controlsPageAssets: ControlsPageAssets by lazy { exportControlsPageAssets() }
 
     fun preloadAsync() {
         if (!preloadStarted.compareAndSet(false, true)) return
         Thread {
-            runCatching { controlsHtml }
+            val controlsPage = runCatching { controlsPageAssets }
+                .getOrNull()
+                ?: return@Thread
+            if (DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+                runCatching { warmupWebView2(controlsPage.url) }
+            }
         }.apply {
             name = "nuvio-native-player-preload"
             isDaemon = true
             start()
+        }
+        if (DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+            Runtime.getRuntime().addShutdownHook(
+                Thread {
+                    runCatching { shutdownWebView2Warmup() }
+                }.apply {
+                    name = "nuvio-webview2-warmup-shutdown"
+                }
+            )
         }
     }
 
@@ -184,38 +194,77 @@ internal object NativePlayerBridge {
             DesktopHostOs.UNKNOWN -> "player_bridge"
         }
 
-    private fun nativePlayerFontFaces(): String =
-        listOfNotNull(
-            nativePlayerFontFace(
-                fileName = "jetbrains_sans_regular.ttf",
-                weight = "400",
-            ),
-            nativePlayerFontFace(
-                fileName = "jetbrains_sans_semibold.ttf",
-                weight = "600",
-            ),
-            nativePlayerFontFace(
-                fileName = "jetbrains_sans_bold.ttf",
-                weight = "700 900",
-            ),
-        ).joinToString(separator = "\n")
+    private fun exportControlsPageAssets(): ControlsPageAssets {
+        val root = File(System.getProperty("java.io.tmpdir"), "nuvio-player-ui").apply { mkdirs() }
+        val fontsDir = root.resolve("fonts").apply { mkdirs() }
+        val htmlResource = "/player-ui/controls.html"
+        val html = NativePlayerBridge::class.java.getResourceAsStream(htmlResource)
+            ?.bufferedReader()
+            ?.use { it.readText() }
+            ?: error("Missing native player controls resource: $htmlResource")
+        val resolvedHtml = html.replace("/* __NUVIO_PLAYER_FONT_FACES__ */", nativePlayerFontFaces())
+        val htmlFile = root.resolve("controls.html")
+        writeTextIfChanged(htmlFile, resolvedHtml)
+        copyResourceIfChanged(
+            resource = "/composeResources/nuvio.composeapp.generated.resources/font/jetbrains_sans_regular.ttf",
+            target = fontsDir.resolve("jetbrains_sans_regular.ttf"),
+        )
+        copyResourceIfChanged(
+            resource = "/composeResources/nuvio.composeapp.generated.resources/font/jetbrains_sans_semibold.ttf",
+            target = fontsDir.resolve("jetbrains_sans_semibold.ttf"),
+        )
+        copyResourceIfChanged(
+            resource = "/composeResources/nuvio.composeapp.generated.resources/font/jetbrains_sans_bold.ttf",
+            target = fontsDir.resolve("jetbrains_sans_bold.ttf"),
+        )
+        return ControlsPageAssets(
+            url = htmlFile.toURI().toASCIIString(),
+        )
+    }
 
-    private fun nativePlayerFontFace(fileName: String, weight: String): String? {
-        val resource = "/composeResources/nuvio.composeapp.generated.resources/font/$fileName"
-        val bytes = NativePlayerBridge::class.java.getResourceAsStream(resource)
-            ?.use { it.readBytes() }
-            ?: return null
-        val encoded = Base64.getEncoder().encodeToString(bytes)
-        return """
+    private fun nativePlayerFontFaces(): String =
+        """
             @font-face {
               font-family: "Nuvio JetBrains Sans";
-              src: url("data:font/ttf;base64,$encoded") format("truetype");
-              font-weight: $weight;
+              src: url("fonts/jetbrains_sans_regular.ttf") format("truetype");
+              font-weight: 400;
+              font-style: normal;
+              font-display: block;
+            }
+            @font-face {
+              font-family: "Nuvio JetBrains Sans";
+              src: url("fonts/jetbrains_sans_semibold.ttf") format("truetype");
+              font-weight: 600;
+              font-style: normal;
+              font-display: block;
+            }
+            @font-face {
+              font-family: "Nuvio JetBrains Sans";
+              src: url("fonts/jetbrains_sans_bold.ttf") format("truetype");
+              font-weight: 700 900;
               font-style: normal;
               font-display: block;
             }
         """.trimIndent()
+
+    private fun writeTextIfChanged(target: File, text: String) {
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        if (target.exists() && target.readBytes().contentEquals(bytes)) return
+        target.writeBytes(bytes)
     }
+
+    private fun copyResourceIfChanged(resource: String, target: File) {
+        val bytes = NativePlayerBridge::class.java.getResourceAsStream(resource)
+            ?.use { it.readBytes() }
+            ?: error("Missing native player controls resource: $resource")
+        if (target.exists() && target.readBytes().contentEquals(bytes)) return
+        Files.createDirectories(target.parentFile.toPath())
+        target.writeBytes(bytes)
+    }
+
+    private data class ControlsPageAssets(
+        val url: String,
+    )
 }
 
 internal fun preloadNativePlayerBridgeAsync() {

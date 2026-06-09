@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cctype>
@@ -369,6 +370,217 @@ void registerWindowClasses() {
     });
 }
 
+std::mutex gWebView2WarmupMutex;
+std::condition_variable gWebView2WarmupCv;
+std::thread gWebView2WarmupThread;
+DWORD gWebView2WarmupThreadId = 0;
+bool gWebView2WarmupStarted = false;
+bool gWebView2WarmupReady = false;
+bool gWebView2WarmupSucceeded = false;
+
+void notifyWebView2WarmupReady(bool succeeded) {
+    {
+        std::lock_guard<std::mutex> lock(gWebView2WarmupMutex);
+        if (!gWebView2WarmupReady) {
+            gWebView2WarmupReady = true;
+            gWebView2WarmupSucceeded = succeeded;
+        }
+    }
+    gWebView2WarmupCv.notify_all();
+}
+
+void runWebView2WarmupThread(std::string controlsUrl) {
+    {
+        std::lock_guard<std::mutex> lock(gWebView2WarmupMutex);
+        gWebView2WarmupThreadId = GetCurrentThreadId();
+    }
+    gWebView2WarmupCv.notify_all();
+
+    MSG queueProbe = {};
+    PeekMessageW(&queueProbe, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+
+    bool didOleInitialize = false;
+    ComPtr<ICoreWebView2Environment> environment;
+    ComPtr<ICoreWebView2Controller> controller;
+    ComPtr<ICoreWebView2> webView;
+    EventRegistrationToken messageToken = {};
+    EventRegistrationToken navigationToken = {};
+
+    HRESULT oleResult = OleInitialize(nullptr);
+    didOleInitialize = SUCCEEDED(oleResult);
+    if (FAILED(oleResult)) {
+        notifyWebView2WarmupReady(false);
+        return;
+    }
+
+    std::wstring userDataDir = tempUserDataDirectory();
+    HRESULT envCallResult = CreateCoreWebView2EnvironmentWithOptions(
+        nullptr,
+        userDataDir.c_str(),
+        nullptr,
+        Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+            [&](HRESULT envResult, ICoreWebView2Environment *createdEnvironment) -> HRESULT {
+                if (FAILED(envResult) || !createdEnvironment) {
+                    notifyWebView2WarmupReady(false);
+                    PostQuitMessage(0);
+                    return S_OK;
+                }
+
+                environment = createdEnvironment;
+                HRESULT controllerCallResult = createdEnvironment->CreateCoreWebView2Controller(
+                    HWND_MESSAGE,
+                    Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                        [&](HRESULT controllerResult, ICoreWebView2Controller *createdController) -> HRESULT {
+                            if (FAILED(controllerResult) || !createdController) {
+                                notifyWebView2WarmupReady(false);
+                                PostQuitMessage(0);
+                                return S_OK;
+                            }
+
+                            controller = createdController;
+                            controller->put_IsVisible(FALSE);
+                            createdController->get_CoreWebView2(&webView);
+                            if (!webView) {
+                                notifyWebView2WarmupReady(false);
+                                PostQuitMessage(0);
+                                return S_OK;
+                            }
+
+                            webView->add_WebMessageReceived(
+                                Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+                                    [&](ICoreWebView2 *, ICoreWebView2WebMessageReceivedEventArgs *args) -> HRESULT {
+                                        if (!args) return S_OK;
+                                        PWSTR messageJson = nullptr;
+                                        if (SUCCEEDED(args->get_WebMessageAsJson(&messageJson)) && messageJson) {
+                                            std::wstring message(messageJson);
+                                            CoTaskMemFree(messageJson);
+                                            if (message.find(L"controlsReady") != std::wstring::npos) {
+                                                notifyWebView2WarmupReady(true);
+                                            }
+                                        }
+                                        return S_OK;
+                                    }
+                                ).Get(),
+                                &messageToken
+                            );
+
+                            webView->add_NavigationCompleted(
+                                Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                                    [&](ICoreWebView2 *, ICoreWebView2NavigationCompletedEventArgs *args) -> HRESULT {
+                                        BOOL navigationSucceeded = FALSE;
+                                        if (args) {
+                                            args->get_IsSuccess(&navigationSucceeded);
+                                        }
+                                        notifyWebView2WarmupReady(navigationSucceeded == TRUE);
+                                        return S_OK;
+                                    }
+                                ).Get(),
+                                &navigationToken
+                            );
+
+                            std::wstring url = toWide(controlsUrl);
+                            HRESULT navigateResult = webView->Navigate(url.c_str());
+                            if (FAILED(navigateResult)) {
+                                notifyWebView2WarmupReady(false);
+                                PostQuitMessage(0);
+                            }
+                            return S_OK;
+                        }
+                    ).Get()
+                );
+                if (FAILED(controllerCallResult)) {
+                    notifyWebView2WarmupReady(false);
+                    PostQuitMessage(0);
+                }
+                return S_OK;
+            }
+        ).Get()
+    );
+    if (FAILED(envCallResult)) {
+        notifyWebView2WarmupReady(false);
+    } else {
+        MSG msg = {};
+        while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+
+    if (webView && messageToken.value != 0) {
+        webView->remove_WebMessageReceived(messageToken);
+    }
+    if (webView && navigationToken.value != 0) {
+        webView->remove_NavigationCompleted(navigationToken);
+    }
+    if (controller) {
+        controller->Close();
+        controller.Reset();
+    }
+    webView.Reset();
+    environment.Reset();
+    if (didOleInitialize) {
+        OleUninitialize();
+    }
+}
+
+bool startWebView2Warmup(const std::string &controlsUrl) {
+    {
+        std::lock_guard<std::mutex> lock(gWebView2WarmupMutex);
+        if (!gWebView2WarmupStarted) {
+            gWebView2WarmupStarted = true;
+            gWebView2WarmupReady = false;
+            gWebView2WarmupSucceeded = false;
+            gWebView2WarmupThread = std::thread(runWebView2WarmupThread, controlsUrl);
+        }
+    }
+
+    std::unique_lock<std::mutex> waitLock(gWebView2WarmupMutex);
+    bool completed = gWebView2WarmupCv.wait_for(
+        waitLock,
+        std::chrono::seconds(5),
+        []() { return gWebView2WarmupReady; }
+    );
+    if (!completed) return false;
+    return gWebView2WarmupSucceeded;
+}
+
+void stopWebView2Warmup() {
+    std::thread threadToJoin;
+    DWORD threadId = 0;
+    {
+        std::unique_lock<std::mutex> lock(gWebView2WarmupMutex);
+        if (!gWebView2WarmupStarted) return;
+        gWebView2WarmupCv.wait_for(
+            lock,
+            std::chrono::seconds(1),
+            []() { return gWebView2WarmupThreadId != 0; }
+        );
+        threadId = gWebView2WarmupThreadId;
+    }
+
+    if (threadId != 0) {
+        PostThreadMessageW(threadId, WM_QUIT, 0, 0);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(gWebView2WarmupMutex);
+        if (gWebView2WarmupThread.joinable()) {
+            threadToJoin = std::move(gWebView2WarmupThread);
+        }
+    }
+    if (threadToJoin.joinable()) {
+        threadToJoin.join();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(gWebView2WarmupMutex);
+        gWebView2WarmupStarted = false;
+        gWebView2WarmupReady = false;
+        gWebView2WarmupSucceeded = false;
+        gWebView2WarmupThreadId = 0;
+    }
+}
+
 class WindowsMpvWebPlayer : public std::enable_shared_from_this<WindowsMpvWebPlayer> {
     struct InitializationState {
         std::mutex mutex;
@@ -384,7 +596,7 @@ public:
         const std::vector<std::string> &headerLines,
         bool playWhenReady,
         long long initialPositionMs,
-        const std::string &controlsHtml,
+        const std::string &controlsUrl,
         JavaVM *vm,
         jobject sink,
         jmethodID method
@@ -401,8 +613,8 @@ public:
         auto initState = std::make_shared<InitializationState>();
         auto self = shared_from_this();
         uiThread = std::thread(
-            [self, sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsHtml, initState]() {
-                self->runNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsHtml, initState);
+            [self, sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, initState]() {
+                self->runNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, initState);
             }
         );
 
@@ -693,12 +905,12 @@ private:
         std::vector<std::string> headerLines,
         bool playWhenReady,
         long long initialPositionMs,
-        std::string controlsHtml,
+        std::string controlsUrl,
         std::shared_ptr<InitializationState> initState
     ) {
         std::string failure;
         try {
-            initializeOnNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsHtml);
+            initializeOnNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl);
         } catch (const std::exception &error) {
             failure = error.what();
             cleanupUiResources();
@@ -727,7 +939,7 @@ private:
         const std::vector<std::string> &headerLines,
         bool playWhenReady,
         long long initialPositionMs,
-        const std::string &controlsHtml
+        const std::string &controlsUrl
     ) {
         registerWindowClasses();
         uiThreadId = GetCurrentThreadId();
@@ -777,7 +989,7 @@ private:
             throw std::runtime_error("Unable to create native player container window.");
         }
 
-        startWebView(controlsHtml);
+        startWebView(controlsUrl);
         startMpv(sourceUrl, headerLines, playWhenReady, initialPositionMs);
         layoutNativeSubviews();
         if (!SetTimer(messageHwnd, NUVIO_TIMER_ID, 500, nullptr)) {
@@ -852,7 +1064,7 @@ private:
         doneCv->wait(waitLock, [&]() { return *done; });
     }
 
-    void startWebView(const std::string &controlsHtml) {
+    void startWebView(const std::string &controlsUrl) {
         std::wstring userDataDir = tempUserDataDirectory();
         auto weakSelf = weak_from_this();
         HRESULT result = CreateCoreWebView2EnvironmentWithOptions(
@@ -860,7 +1072,7 @@ private:
             userDataDir.c_str(),
             nullptr,
             Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-                [weakSelf, controlsHtml](HRESULT envResult, ICoreWebView2Environment *createdEnvironment) -> HRESULT {
+                [weakSelf, controlsUrl](HRESULT envResult, ICoreWebView2Environment *createdEnvironment) -> HRESULT {
                     auto self = weakSelf.lock();
                     if (!self || self->shuttingDown.load()) return S_OK;
                     if (FAILED(envResult) || !createdEnvironment) {
@@ -871,7 +1083,7 @@ private:
                     HRESULT controllerResult = createdEnvironment->CreateCoreWebView2Controller(
                         self->containerHwnd,
                         Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                            [controllerWeakSelf, controlsHtml](HRESULT controllerResult, ICoreWebView2Controller *createdController) -> HRESULT {
+                            [controllerWeakSelf, controlsUrl](HRESULT controllerResult, ICoreWebView2Controller *createdController) -> HRESULT {
                                 auto controllerSelf = controllerWeakSelf.lock();
                                 if (!controllerSelf || controllerSelf->shuttingDown.load()) return S_OK;
                                 if (FAILED(controllerResult) || !createdController) {
@@ -910,8 +1122,8 @@ private:
                                         &controllerSelf->messageToken
                                     );
                                     controllerSelf->layoutNativeSubviews();
-                                    std::wstring html = toWide(controlsHtml);
-                                    controllerSelf->webView->NavigateToString(html.c_str());
+                                    std::wstring url = toWide(controlsUrl);
+                                    controllerSelf->webView->Navigate(url.c_str());
                                     createdController->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
                                 }
                                 return S_OK;
@@ -1512,13 +1724,13 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jobjectArray headerLines,
     jboolean playWhenReady,
     jlong initialPositionMs,
-    jstring controlsHtml,
+    jstring controlsPageUrl,
     jobject eventSink
 ) {
     HWND hostHwnd = (HWND)(intptr_t)hostViewPtr;
     std::string sourceUrlText = jstringToUtf8(env, sourceUrl);
     std::vector<std::string> headerLineValues = jstringArrayToVector(env, headerLines);
-    std::string controlsHtmlText = jstringToUtf8(env, controlsHtml);
+    std::string controlsPageUrlText = jstringToUtf8(env, controlsPageUrl);
     JavaVM *javaVm = nullptr;
     env->GetJavaVM(&javaVm);
 
@@ -1544,7 +1756,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
             headerLineValues,
             playWhenReady == JNI_TRUE,
             initialPositionMs,
-            controlsHtmlText,
+            controlsPageUrlText,
             javaVm,
             eventSinkRef,
             eventMethod
@@ -1558,6 +1770,17 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     auto *holder = new std::shared_ptr<WindowsMpvWebPlayer>(player);
     jlong handle = (jlong)(intptr_t)holder;
     return handle;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_warmupWebView2(JNIEnv *env, jobject, jstring controlsPageUrl) {
+    std::string controlsPageUrlText = jstringToUtf8(env, controlsPageUrl);
+    return startWebView2Warmup(controlsPageUrlText) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_shutdownWebView2Warmup(JNIEnv *, jobject) {
+    stopWebView2Warmup();
 }
 
 extern "C" JNIEXPORT void JNICALL
