@@ -1,10 +1,15 @@
 #import <Cocoa/Cocoa.h>
 #import <IOKit/IOKitLib.h>
-#import <Metal/Metal.h>
+#define GL_SILENCE_DEPRECATION
+#import <OpenGL/OpenGL.h>
+#import <OpenGL/gl3.h>
 #import <QuartzCore/QuartzCore.h>
 #import <WebKit/WebKit.h>
 
 #include <jni.h>
+#include <mpv/client.h>
+#include <mpv/render.h>
+#include <mpv/render_gl.h>
 
 #include <atomic>
 #include <cmath>
@@ -12,71 +17,40 @@
 #include <string>
 #include <vector>
 
-extern "C" {
-typedef struct mpv_handle mpv_handle;
-
-typedef enum mpv_format {
-    MPV_FORMAT_NONE = 0,
-    MPV_FORMAT_STRING = 1,
-    MPV_FORMAT_OSD_STRING = 2,
-    MPV_FORMAT_FLAG = 3,
-    MPV_FORMAT_INT64 = 4,
-    MPV_FORMAT_DOUBLE = 5,
-} mpv_format;
-
-typedef enum mpv_event_id {
-    MPV_EVENT_NONE = 0,
-    MPV_EVENT_SHUTDOWN = 1,
-    MPV_EVENT_LOG_MESSAGE = 2,
-} mpv_event_id;
-
-typedef struct mpv_event_log_message {
-    const char *prefix;
-    const char *level;
-    const char *text;
-    int log_level;
-} mpv_event_log_message;
-
-typedef struct mpv_event {
-    mpv_event_id event_id;
-    int error;
-    uint64_t reply_userdata;
-    void *data;
-} mpv_event;
-
-mpv_handle *mpv_create(void);
-int mpv_initialize(mpv_handle *ctx);
-void mpv_terminate_destroy(mpv_handle *ctx);
-int mpv_set_option(mpv_handle *ctx, const char *name, mpv_format format, void *data);
-int mpv_set_option_string(mpv_handle *ctx, const char *name, const char *data);
-int mpv_set_property(mpv_handle *ctx, const char *name, mpv_format format, void *data);
-int mpv_set_property_string(mpv_handle *ctx, const char *name, const char *data);
-int mpv_get_property(mpv_handle *ctx, const char *name, mpv_format format, void *data);
-int mpv_command(mpv_handle *ctx, const char **args);
-const char *mpv_error_string(int error);
-void mpv_free(void *data);
-int mpv_request_log_messages(mpv_handle *ctx, const char *min_level);
-mpv_event *mpv_wait_event(mpv_handle *ctx, double timeout);
-void mpv_set_wakeup_callback(mpv_handle *ctx, void (*cb)(void *d), void *d);
-}
-
 @class PlayerMetalView;
 @class MpvWebPlayer;
+@class NuvioPlayerOpenGLLayer;
 
 @interface PlayerMetalView : NSView
-@property(nonatomic, readonly) CAMetalLayer *metalLayer;
-- (int64_t)wid;
 - (double)edrMax;
 - (double)hdrTargetPeakNits;
 - (CGSize)drawableSize;
 - (NSString *)diagnosticSummary;
 - (void)updateMetalLayerLayout;
 - (void)refreshMetalLayerEdrState;
-- (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries;
+- (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries targetPeakNits:(double)targetPeakNits;
+- (BOOL)createMpvRenderContext:(mpv_handle *)mpv error:(NSString **)error;
+- (void)destroyMpvRenderContext;
+- (void)scheduleRenderUpdate;
+- (void)setFullscreenTransitionActive:(BOOL)active;
 @end
 
-@interface NuvioPlayerMetalLayer : CAMetalLayer
+@interface NuvioMainThreadPriorityLock : NSObject
+- (void)beforeLocking;
+- (void)afterLocked;
+@end
+
+@interface NuvioPlayerOpenGLLayer : CAOpenGLLayer
 @property(nonatomic, assign, getter=isNuvioLiveResize) BOOL nuvioLiveResize;
+@property(nonatomic, assign, readonly) GLint bufferDepth;
+- (instancetype)initWithOwner:(PlayerMetalView *)owner;
+- (void)setMpvRenderContext:(mpv_render_context *)renderContext;
+- (void)clearMpvRenderContext;
+- (void)requestRender;
+- (void)requestRenderForced:(BOOL)force;
+- (void)lockAndSetContext;
+- (void)unlockContext;
+- (NSString *)pixelFormatSummary;
 @end
 
 @interface PlayerScriptHandler : NSObject <WKScriptMessageHandler>
@@ -127,6 +101,14 @@ void mpv_set_wakeup_callback(mpv_handle *ctx, void (*cb)(void *d), void *d);
 - (void)layoutNativeSubviews;
 - (void)hostViewBoundsDidChange:(NSNotification *)notification;
 - (void)hostViewFrameDidChange:(NSNotification *)notification;
+- (void)windowWillEnterFullScreen:(NSNotification *)notification;
+- (void)windowDidEnterFullScreen:(NSNotification *)notification;
+- (void)windowWillExitFullScreen:(NSNotification *)notification;
+- (void)windowDidExitFullScreen:(NSNotification *)notification;
+- (void)activateFullscreenTransitionWithReason:(NSString *)reason;
+- (void)beginFullscreenTransitionWithReason:(NSString *)reason;
+- (void)finishFullscreenTransitionWithReason:(NSString *)reason;
+- (void)handleFullscreenTransitionTimer:(NSTimer *)timer;
 - (void)schedulePostResizeRefreshWithReason:(NSString *)reason;
 - (void)handleResizeSettleTimer:(NSTimer *)timer;
 - (void)configureHdrForCurrentScreenWithReason:(NSString *)reason force:(BOOL)force;
@@ -205,6 +187,14 @@ static void clearLayerEdrMetadata(CALayer *layer) {
     setter(layer, selector, nil);
 }
 
+static CGColorSpaceRef copyPqColorSpaceForPrimaries(NSString *primaries) {
+    NSString *normalized = [[primaries ?: @"" lowercaseString] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    CFStringRef name = [normalized isEqualToString:@"display-p3"]
+        ? kCGColorSpaceDisplayP3_PQ
+        : kCGColorSpaceITUR_2100_PQ;
+    return CGColorSpaceCreateWithName(name);
+}
+
 static NSString *diagnosticSize(CGSize size) {
     return [NSString stringWithFormat:@"%0.0fx%0.0f", size.width, size.height];
 }
@@ -217,19 +207,6 @@ static NSString *diagnosticRect(NSRect rect) {
         rect.origin.x,
         rect.origin.y
     ];
-}
-
-static NSString *metalPixelFormatName(MTLPixelFormat format) {
-    switch (format) {
-        case MTLPixelFormatRGBA16Float: return @"rgba16Float";
-        case MTLPixelFormatBGRA8Unorm: return @"bgra8Unorm";
-        case MTLPixelFormatBGRA8Unorm_sRGB: return @"bgra8Unorm_srgb";
-        case MTLPixelFormatRGBA8Unorm: return @"rgba8Unorm";
-        case MTLPixelFormatRGBA8Unorm_sRGB: return @"rgba8Unorm_srgb";
-        case MTLPixelFormatRGB10A2Unorm: return @"rgb10a2Unorm";
-        case MTLPixelFormatBGR10A2Unorm: return @"bgr10a2Unorm";
-        default: return [NSString stringWithFormat:@"%lu", (unsigned long)format];
-    }
 }
 
 static NSString *layerColorSpaceName(CALayer *layer) {
@@ -426,20 +403,353 @@ static double hdrMetadataMaxNits(void) {
     return 1000.0;
 }
 
-@implementation NuvioPlayerMetalLayer
-- (void)setDrawableSize:(CGSize)drawableSize {
-    // MoltenVK temporarily writes 1x1 during swapchain churn. Letting that
-    // reach CAMetalLayer produces a visible black flash during playback resize.
-    if (drawableSize.width > 1.0 && drawableSize.height > 1.0) {
-        [super setDrawableSize:drawableSize];
+static double normalizedHdrMetadataMaxNits(double targetPeakNits) {
+    if (std::isfinite(targetPeakNits) && targetPeakNits >= 100.0 && targetPeakNits <= 10000.0) {
+        return targetPeakNits;
     }
+    return hdrMetadataMaxNits();
 }
+
+static CGLPixelFormatObj createPlayerOpenGLPixelFormat(GLint *bufferDepth) {
+    CGLPixelFormatObj pixelFormat = nullptr;
+    GLint pixelCount = 0;
+    CGLPixelFormatAttribute hdrAttributes[] = {
+        kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,
+        kCGLPFAAccelerated,
+        kCGLPFADoubleBuffer,
+        kCGLPFAColorSize, (CGLPixelFormatAttribute)64,
+        kCGLPFAColorFloat,
+        kCGLPFANoRecovery,
+        kCGLPFAAllowOfflineRenderers,
+        (CGLPixelFormatAttribute)0
+    };
+    CGLError error = CGLChoosePixelFormat(hdrAttributes, &pixelFormat, &pixelCount);
+    if (error == kCGLNoError && pixelFormat) {
+        if (bufferDepth) {
+            *bufferDepth = 16;
+        }
+        return pixelFormat;
+    }
+
+    CGLPixelFormatAttribute fallbackAttributes[] = {
+        kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,
+        kCGLPFAAccelerated,
+        kCGLPFADoubleBuffer,
+        kCGLPFAColorSize, (CGLPixelFormatAttribute)32,
+        kCGLPFANoRecovery,
+        kCGLPFAAllowOfflineRenderers,
+        (CGLPixelFormatAttribute)0
+    };
+    pixelFormat = nullptr;
+    pixelCount = 0;
+    error = CGLChoosePixelFormat(fallbackAttributes, &pixelFormat, &pixelCount);
+    if (error == kCGLNoError && pixelFormat) {
+        if (bufferDepth) {
+            *bufferDepth = 8;
+        }
+        return pixelFormat;
+    }
+    return nullptr;
+}
+
+static CGLContextObj createPlayerOpenGLContext(CGLPixelFormatObj pixelFormat) {
+    CGLContextObj context = nullptr;
+    if (!pixelFormat || CGLCreateContext(pixelFormat, nullptr, &context) != kCGLNoError || !context) {
+        return nullptr;
+    }
+    GLint swapInterval = 1;
+    CGLSetParameter(context, kCGLCPSwapInterval, &swapInterval);
+    CGLEnable(context, kCGLCEMPEngine);
+    return context;
+}
+
+static void *mpvOpenGLGetProcAddress(void *ctx, const char *name) {
+    if (!name) {
+        return nullptr;
+    }
+    CFBundleRef framework = CFBundleGetBundleWithIdentifier(CFSTR("com.apple.opengl"));
+    if (!framework) {
+        return nullptr;
+    }
+    CFStringRef symbol = CFStringCreateWithCString(kCFAllocatorDefault, name, kCFStringEncodingASCII);
+    if (!symbol) {
+        return nullptr;
+    }
+    void *address = CFBundleGetFunctionPointerForName(framework, symbol);
+    CFRelease(symbol);
+    return address;
+}
+
+@implementation NuvioMainThreadPriorityLock {
+    NSCondition *_condition;
+    BOOL _mainThreadNeedsLock;
+}
+
+- (instancetype)init {
+    self = [super init];
+    if (!self) {
+        return nil;
+    }
+    _condition = [NSCondition new];
+    return self;
+}
+
+- (void)beforeLocking {
+    [_condition lock];
+    if ([NSThread isMainThread]) {
+        _mainThreadNeedsLock = YES;
+    } else {
+        while (_mainThreadNeedsLock) {
+            [_condition wait];
+        }
+    }
+    [_condition unlock];
+}
+
+- (void)afterLocked {
+    if (![NSThread isMainThread]) {
+        return;
+    }
+    [_condition lock];
+    _mainThreadNeedsLock = NO;
+    [_condition broadcast];
+    [_condition unlock];
+}
+
 @end
 
+@implementation NuvioPlayerOpenGLLayer {
+    __weak PlayerMetalView *_owner;
+    CGLPixelFormatObj _pixelFormat;
+    CGLContextObj _glContext;
+    dispatch_queue_t _renderQueue;
+    NSRecursiveLock *_displayLock;
+    NuvioMainThreadPriorityLock *_mainThreadPriorityLock;
+    NSRecursiveLock *_renderLock;
+    mpv_render_context *_renderContext;
+    BOOL _needsFlip;
+    BOOL _forceDraw;
+    BOOL _renderQueued;
+}
+
+@synthesize nuvioLiveResize = _nuvioLiveResize;
+@synthesize bufferDepth = _bufferDepth;
+
+- (instancetype)initWithOwner:(PlayerMetalView *)owner {
+    self = [super init];
+    if (!self) {
+        return nil;
+    }
+    _owner = owner;
+    _renderQueue = dispatch_queue_create("com.nuvio.player.mpvgl", DISPATCH_QUEUE_SERIAL);
+    dispatch_set_target_queue(_renderQueue, dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
+    _displayLock = [NSRecursiveLock new];
+    _mainThreadPriorityLock = [NuvioMainThreadPriorityLock new];
+    _renderLock = [NSRecursiveLock new];
+    _pixelFormat = createPlayerOpenGLPixelFormat(&_bufferDepth);
+    _glContext = createPlayerOpenGLContext(_pixelFormat);
+    self.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
+    self.backgroundColor = NSColor.blackColor.CGColor;
+    self.opaque = YES;
+    self.asynchronous = NO;
+    self.needsDisplayOnBoundsChange = YES;
+    if (_bufferDepth > 8) {
+        self.contentsFormat = kCAContentsFormatRGBA16Float;
+    }
+    return self;
+}
+
+- (void)dealloc {
+    if (_glContext) {
+        CGLReleaseContext(_glContext);
+        _glContext = nullptr;
+    }
+    if (_pixelFormat) {
+        CGLReleasePixelFormat(_pixelFormat);
+        _pixelFormat = nullptr;
+    }
+}
+
+- (void)setNuvioLiveResize:(BOOL)nuvioLiveResize {
+    if (_nuvioLiveResize == nuvioLiveResize) {
+        return;
+    }
+    _nuvioLiveResize = nuvioLiveResize;
+    if (nuvioLiveResize) {
+        self.asynchronous = YES;
+        [self requestRenderForced:YES];
+    } else {
+        self.asynchronous = NO;
+    }
+}
+
+- (CGLPixelFormatObj)copyCGLPixelFormatForDisplayMask:(uint32_t)mask {
+    return _pixelFormat ? CGLRetainPixelFormat(_pixelFormat) : nullptr;
+}
+
+- (CGLContextObj)copyCGLContextForPixelFormat:(CGLPixelFormatObj)pixelFormat {
+    return _glContext ? CGLRetainContext(_glContext) : nullptr;
+}
+
+- (BOOL)canDrawInCGLContext:(CGLContextObj)ctx
+                pixelFormat:(CGLPixelFormatObj)pf
+               forLayerTime:(CFTimeInterval)t
+                displayTime:(const CVTimeStamp *)ts {
+    if (_nuvioLiveResize && [NSThread isMainThread]) {
+        return NO;
+    }
+    if (!_nuvioLiveResize) {
+        self.asynchronous = NO;
+    }
+
+    [_renderLock lock];
+    BOOL canDraw = _forceDraw || _needsFlip;
+    [_renderLock unlock];
+    return canDraw;
+}
+
+- (void)drawInCGLContext:(CGLContextObj)ctx
+             pixelFormat:(CGLPixelFormatObj)pf
+            forLayerTime:(CFTimeInterval)t
+             displayTime:(const CVTimeStamp *)ts {
+    [_renderLock lock];
+    mpv_render_context *renderContext = _renderContext;
+    _needsFlip = NO;
+    _forceDraw = NO;
+    if (!renderContext) {
+        glClearColor(0.0, 0.0, 0.0, 1.0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glFlush();
+        [_renderLock unlock];
+        return;
+    }
+
+    GLint framebuffer = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &framebuffer);
+    CGFloat scale = self.contentsScale > 0.0 ? self.contentsScale : 1.0;
+    CGSize drawableSize = CGSizeMake(
+        llround(self.bounds.size.width * scale),
+        llround(self.bounds.size.height * scale)
+    );
+    if (drawableSize.width <= 1.0 || drawableSize.height <= 1.0) {
+        glClearColor(0.0, 0.0, 0.0, 1.0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glFlush();
+        [_renderLock unlock];
+        return;
+    }
+    glViewport(0, 0, (GLsizei)drawableSize.width, (GLsizei)drawableSize.height);
+    mpv_opengl_fbo fbo = {
+        (int)framebuffer,
+        (int)drawableSize.width,
+        (int)drawableSize.height,
+        0
+    };
+    int flipY = 1;
+    int depth = (int)_bufferDepth;
+    mpv_render_param params[] = {
+        { MPV_RENDER_PARAM_OPENGL_FBO, &fbo },
+        { MPV_RENDER_PARAM_FLIP_Y, &flipY },
+        { MPV_RENDER_PARAM_DEPTH, &depth },
+        { MPV_RENDER_PARAM_INVALID, nullptr }
+    };
+    mpv_render_context_render(renderContext, params);
+    mpv_render_context_report_swap(renderContext);
+    glFlush();
+    [_renderLock unlock];
+}
+
+- (void)display {
+    [_mainThreadPriorityLock beforeLocking];
+    [_displayLock lock];
+    [_mainThreadPriorityLock afterLocked];
+    if ([NSThread isMainThread]) {
+        [super display];
+    } else {
+        [CATransaction begin];
+        [super display];
+        [CATransaction commit];
+    }
+    [CATransaction flush];
+    [_displayLock unlock];
+}
+
+- (void)setMpvRenderContext:(mpv_render_context *)renderContext {
+    [_renderLock lock];
+    _renderContext = renderContext;
+    _forceDraw = YES;
+    [_renderLock unlock];
+    [self requestRenderForced:YES];
+}
+
+- (void)clearMpvRenderContext {
+    [_renderLock lock];
+    _renderContext = nullptr;
+    _needsFlip = NO;
+    _forceDraw = YES;
+    [_renderLock unlock];
+}
+
+- (void)requestRender {
+    [self requestRenderForced:NO];
+}
+
+- (void)requestRenderForced:(BOOL)force {
+    [_renderLock lock];
+    if (force) {
+        _forceDraw = YES;
+    }
+    _needsFlip = YES;
+    if (_renderQueued) {
+        [_renderLock unlock];
+        return;
+    }
+    _renderQueued = YES;
+    [_renderLock unlock];
+
+    dispatch_async(_renderQueue, ^{
+        [self->_renderLock lock];
+        self->_renderQueued = NO;
+        [self->_renderLock unlock];
+        [self display];
+    });
+}
+
+- (void)lockAndSetContext {
+    if (!_glContext) {
+        return;
+    }
+    CGLLockContext(_glContext);
+    CGLSetCurrentContext(_glContext);
+}
+
+- (void)unlockContext {
+    if (!_glContext) {
+        return;
+    }
+    CGLUnlockContext(_glContext);
+}
+
+- (NSString *)pixelFormatSummary {
+    return _bufferDepth > 8 ? @"opengl64Float" : @"opengl32";
+}
+
+@end
+
+static void mpvRenderUpdateCallback(void *callbackContext) {
+    PlayerMetalView *view = (__bridge PlayerMetalView *)callbackContext;
+    [view scheduleRenderUpdate];
+}
+
 @implementation PlayerMetalView {
-    CAMetalLayer *_metalLayer;
+    NuvioPlayerOpenGLLayer *_openGLLayer;
+    mpv_render_context *_mpvRenderContext;
     BOOL _hasConfiguredEdr;
     BOOL _edrEnabled;
+    BOOL _fullscreenTransitionActive;
+    NSString *_edrPrimaries;
+    NSString *_lastAppliedEdrLayerKey;
+    double _edrMetadataMaxNits;
 }
 
 - (instancetype)initWithFrame:(NSRect)frameRect {
@@ -450,24 +760,17 @@ static double hdrMetadataMaxNits(void) {
 
     self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.wantsLayer = YES;
-
-    _metalLayer = [NuvioPlayerMetalLayer layer];
-    _metalLayer.device = MTLCreateSystemDefaultDevice();
-    _metalLayer.frame = self.bounds;
-    _metalLayer.contentsGravity = kCAGravityResize;
-    _metalLayer.framebufferOnly = YES;
-    _metalLayer.pixelFormat = MTLPixelFormatRGBA16Float;
-    _metalLayer.opaque = YES;
-    _metalLayer.backgroundColor = NSColor.blackColor.CGColor;
-    setBoolWithSelector(_metalLayer, @"setWantsExtendedDynamicRangeContent:", YES);
-    self.layer = _metalLayer;
+    _openGLLayer = [[NuvioPlayerOpenGLLayer alloc] initWithOwner:self];
+    _openGLLayer.frame = self.bounds;
+    _openGLLayer.contentsGravity = kCAGravityResize;
+    self.layer = _openGLLayer;
     [self updateMetalLayerLayout];
 
     NSLog(
-        @"[NuvioDesktopPlayer] render: MPVKit Metal surface attached (%0.0fx%0.0f) device=%@ pixelFormat=rgba16Float",
+        @"[NuvioDesktopPlayer] render: MPVKit libmpv/OpenGL surface attached (%0.0fx%0.0f) pixelFormat=%@",
         frameRect.size.width,
         frameRect.size.height,
-        _metalLayer.device.name ?: @"none"
+        [_openGLLayer pixelFormatSummary]
     );
     return self;
 }
@@ -477,15 +780,7 @@ static double hdrMetadataMaxNits(void) {
 }
 
 - (CALayer *)makeBackingLayer {
-    return _metalLayer ?: [NuvioPlayerMetalLayer layer];
-}
-
-- (CAMetalLayer *)metalLayer {
-    return _metalLayer;
-}
-
-- (int64_t)wid {
-    return (int64_t)(intptr_t)_metalLayer;
+    return _openGLLayer ?: [[NuvioPlayerOpenGLLayer alloc] initWithOwner:self];
 }
 
 - (void)layout {
@@ -509,22 +804,32 @@ static double hdrMetadataMaxNits(void) {
     setBoolWithSelector(self, @"setWantsExtendedDynamicRangeContent:", YES);
     setBoolWithSelector(self.window, @"setWantsExtendedDynamicRangeContent:", YES);
     setBoolWithSelector(self.window.contentView, @"setWantsExtendedDynamicRangeContent:", YES);
-    setBoolWithSelector(_metalLayer, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(_openGLLayer, @"setWantsExtendedDynamicRangeContent:", YES);
 }
 
 - (void)viewWillStartLiveResize {
     [super viewWillStartLiveResize];
-    ((NuvioPlayerMetalLayer *)_metalLayer).nuvioLiveResize = YES;
+    _openGLLayer.nuvioLiveResize = YES;
 }
 
 - (void)viewDidEndLiveResize {
     [super viewDidEndLiveResize];
-    ((NuvioPlayerMetalLayer *)_metalLayer).nuvioLiveResize = NO;
-    [self updateMetalLayerLayout];
+    // The bridge clears resize mode on its settle timer, after AppKit has
+    // finished the release/fullscreen layout burst.
+}
+
+- (void)setFullscreenTransitionActive:(BOOL)active {
+    _fullscreenTransitionActive = active;
+    BOOL transitionLike = active || self.inLiveResize || self.window.inLiveResize;
+    _openGLLayer.nuvioLiveResize = transitionLike;
+    if (!transitionLike) {
+        [self updateMetalLayerLayout];
+        [_openGLLayer requestRenderForced:YES];
+    }
 }
 
 - (void)updateMetalLayerLayout {
-    if (!_metalLayer) {
+    if (!_openGLLayer) {
         return;
     }
 
@@ -536,97 +841,172 @@ static double hdrMetadataMaxNits(void) {
     CGFloat scale = self.window.backingScaleFactor > 0.0
         ? self.window.backingScaleFactor
         : NSScreen.mainScreen.backingScaleFactor;
-    CGSize drawableSize = CGSizeMake(
-        llround(boundsSize.width * scale),
-        llround(boundsSize.height * scale)
-    );
-    if (drawableSize.width <= 1.0 || drawableSize.height <= 1.0) {
-        return;
-    }
-
+    BOOL liveResize = self.inLiveResize || self.window.inLiveResize || _fullscreenTransitionActive;
+    CGSize previousDrawableSize = [self drawableSize];
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    ((NuvioPlayerMetalLayer *)_metalLayer).nuvioLiveResize = self.inLiveResize;
-    _metalLayer.contentsScale = scale;
-    _metalLayer.frame = self.bounds;
-    CGSize previousDrawableSize = _metalLayer.drawableSize;
-    if (!CGSizeEqualToSize(previousDrawableSize, drawableSize)) {
-        _metalLayer.drawableSize = drawableSize;
+    _openGLLayer.nuvioLiveResize = liveResize;
+    _openGLLayer.contentsScale = scale;
+    _openGLLayer.frame = self.bounds;
+    if (!liveResize) {
+        [self refreshMetalLayerEdrState];
+        [_openGLLayer requestRenderForced:NO];
+    }
+    [CATransaction commit];
+
+    CGSize currentDrawableSize = [self drawableSize];
+    if (!liveResize && !CGSizeEqualToSize(previousDrawableSize, currentDrawableSize)) {
         NSLog(
             @"[NuvioDesktopPlayer] resize: drawable old=%@ new=%@ viewBounds=%@ scale=%.2f layer=%@",
             diagnosticSize(previousDrawableSize),
-            diagnosticSize(drawableSize),
+            diagnosticSize(currentDrawableSize),
             diagnosticRect(self.bounds),
             scale,
             [self diagnosticSummary]
         );
     }
-    [self refreshMetalLayerEdrState];
-    [CATransaction commit];
 }
 
 - (void)refreshMetalLayerEdrState {
-    if (!_hasConfiguredEdr || !_metalLayer) {
+    if (!_hasConfiguredEdr || !_openGLLayer) {
+        return;
+    }
+    NSString *stateKey = [NSString stringWithFormat:
+        @"%@:%@:%0.0f",
+        _edrEnabled ? @"hdr" : @"sdr",
+        _edrPrimaries ?: @"auto",
+        normalizedHdrMetadataMaxNits(_edrMetadataMaxNits)
+    ];
+    if (_lastAppliedEdrLayerKey && [_lastAppliedEdrLayerKey isEqualToString:stateKey]) {
         return;
     }
 
     setBoolWithSelector(self, @"setWantsExtendedDynamicRangeContent:", YES);
     setBoolWithSelector(self.window, @"setWantsExtendedDynamicRangeContent:", YES);
     setBoolWithSelector(self.window.contentView, @"setWantsExtendedDynamicRangeContent:", YES);
-    setBoolWithSelector(_metalLayer, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(_openGLLayer, @"setWantsExtendedDynamicRangeContent:", YES);
 
     CGColorSpaceRef colorSpace = _edrEnabled
-        ? CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_PQ)
+        ? copyPqColorSpaceForPrimaries(_edrPrimaries)
         : CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
     if (colorSpace) {
-        setLayerColorSpace(_metalLayer, colorSpace);
+        setLayerColorSpace(_openGLLayer, colorSpace);
         CGColorSpaceRelease(colorSpace);
     }
 
     if (_edrEnabled) {
-        setLayerEdrMetadata(_metalLayer, 0.0, hdrMetadataMaxNits(), 1.0);
+        setLayerEdrMetadata(_openGLLayer, 0.0, normalizedHdrMetadataMaxNits(_edrMetadataMaxNits), 1.0);
     } else {
-        clearLayerEdrMetadata(_metalLayer);
+        clearLayerEdrMetadata(_openGLLayer);
     }
+    _lastAppliedEdrLayerKey = [stateKey copy];
+    [_openGLLayer requestRender];
 }
 
-- (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries {
+- (void)configureExtendedDynamicRange:(BOOL)enabled primaries:(NSString *)primaries targetPeakNits:(double)targetPeakNits {
     BOOL stateChanged = !_hasConfiguredEdr || _edrEnabled != enabled;
     _hasConfiguredEdr = YES;
     _edrEnabled = enabled;
+    _edrPrimaries = [primaries copy];
+    _edrMetadataMaxNits = enabled ? normalizedHdrMetadataMaxNits(targetPeakNits) : hdrMetadataMaxNits();
+    _lastAppliedEdrLayerKey = nil;
 
     setBoolWithSelector(self, @"setWantsExtendedDynamicRangeContent:", YES);
     setBoolWithSelector(self.window, @"setWantsExtendedDynamicRangeContent:", YES);
     setBoolWithSelector(self.window.contentView, @"setWantsExtendedDynamicRangeContent:", YES);
-    setBoolWithSelector(_metalLayer, @"setWantsExtendedDynamicRangeContent:", YES);
+    setBoolWithSelector(_openGLLayer, @"setWantsExtendedDynamicRangeContent:", YES);
 
     CGColorSpaceRef colorSpace = enabled
-        ? CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_PQ)
+        ? copyPqColorSpaceForPrimaries(primaries)
         : CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    BOOL didSetColorSpace = colorSpace ? setLayerColorSpace(_metalLayer, colorSpace) : NO;
+    BOOL didSetColorSpace = colorSpace ? setLayerColorSpace(_openGLLayer, colorSpace) : NO;
     if (colorSpace) {
         CGColorSpaceRelease(colorSpace);
     }
     if (enabled && !didSetColorSpace) {
-        NSLog(@"[NuvioDesktopPlayer] macos_edr: CAMetalLayer colorspace selector unavailable");
+        NSLog(@"[NuvioDesktopPlayer] macos_edr: CAOpenGLLayer colorspace selector unavailable");
     }
 
     BOOL didSetMetadata = NO;
     if (enabled) {
-        didSetMetadata = setLayerEdrMetadata(_metalLayer, 0.0, hdrMetadataMaxNits(), 1.0);
+        didSetMetadata = setLayerEdrMetadata(_openGLLayer, 0.0, _edrMetadataMaxNits, 1.0);
     } else {
-        clearLayerEdrMetadata(_metalLayer);
+        clearLayerEdrMetadata(_openGLLayer);
     }
+    _lastAppliedEdrLayerKey = [[NSString stringWithFormat:
+        @"%@:%@:%0.0f",
+        enabled ? @"hdr" : @"sdr",
+        primaries ?: @"auto",
+        _edrMetadataMaxNits
+    ] copy];
+    [_openGLLayer requestRender];
 
     NSLog(
-        @"[NuvioDesktopPlayer] macos_edr: CAMetalLayer EDR %@ primaries=%@ edrMax=%.2f pixelFormat=%@ layerCS=%@ metadata=%@",
+        @"[NuvioDesktopPlayer] macos_edr: CAOpenGLLayer EDR %@ primaries=%@ edrMax=%.2f pixelFormat=%@ layerCS=%@ metadata=%@",
         stateChanged ? (enabled ? @"enabled" : @"disabled") : (enabled ? @"refreshed-enabled" : @"refreshed-disabled"),
         primaries ?: @"unknown",
         [self edrMax],
-        metalPixelFormatName(_metalLayer.pixelFormat),
-        layerColorSpaceName(_metalLayer),
-        didSetMetadata ? layerEdrMetadataName(_metalLayer) : @"none"
+        [_openGLLayer pixelFormatSummary],
+        layerColorSpaceName(_openGLLayer),
+        didSetMetadata ? layerEdrMetadataName(_openGLLayer) : @"none"
     );
+}
+
+- (BOOL)createMpvRenderContext:(mpv_handle *)mpv error:(NSString **)error {
+    if (_mpvRenderContext) {
+        return YES;
+    }
+    if (!_openGLLayer) {
+        if (error) {
+            *error = @"OpenGL layer unavailable";
+        }
+        return NO;
+    }
+
+    [_openGLLayer lockAndSetContext];
+    const char *apiType = MPV_RENDER_API_TYPE_OPENGL;
+    mpv_opengl_init_params initParams = {
+        mpvOpenGLGetProcAddress,
+        nullptr
+    };
+    mpv_render_param params[] = {
+        { MPV_RENDER_PARAM_API_TYPE, (void *)apiType },
+        { MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &initParams },
+        { MPV_RENDER_PARAM_INVALID, nullptr }
+    };
+    int result = mpv_render_context_create(&_mpvRenderContext, mpv, params);
+    [_openGLLayer unlockContext];
+    if (result < 0) {
+        if (error) {
+            *error = [NSString stringWithFormat:@"mpv_render_context_create failed: %s", mpv_error_string(result)];
+        }
+        return NO;
+    }
+
+    [_openGLLayer setMpvRenderContext:_mpvRenderContext];
+    mpv_render_context_set_update_callback(
+        _mpvRenderContext,
+        mpvRenderUpdateCallback,
+        (__bridge void *)self
+    );
+    return YES;
+}
+
+- (void)destroyMpvRenderContext {
+    if (!_mpvRenderContext) {
+        return;
+    }
+    mpv_render_context *renderContext = _mpvRenderContext;
+    _mpvRenderContext = nullptr;
+    mpv_render_context_set_update_callback(renderContext, nullptr, nullptr);
+    [_openGLLayer clearMpvRenderContext];
+    [_openGLLayer lockAndSetContext];
+    mpv_render_context_free(renderContext);
+    [_openGLLayer unlockContext];
+}
+
+- (void)scheduleRenderUpdate {
+    [_openGLLayer requestRender];
 }
 
 - (double)edrMax {
@@ -638,24 +1018,31 @@ static double hdrMetadataMaxNits(void) {
 }
 
 - (CGSize)drawableSize {
-    return _metalLayer ? _metalLayer.drawableSize : CGSizeZero;
+    if (!_openGLLayer) {
+        return CGSizeZero;
+    }
+    CGFloat scale = _openGLLayer.contentsScale > 0.0 ? _openGLLayer.contentsScale : 1.0;
+    return CGSizeMake(
+        llround(_openGLLayer.bounds.size.width * scale),
+        llround(_openGLLayer.bounds.size.height * scale)
+    );
 }
 
 - (NSString *)diagnosticSummary {
-    if (!_metalLayer) {
+    if (!_openGLLayer) {
         return @"layer=none";
     }
     return [NSString stringWithFormat:
         @"frame=%@ bounds=%@ drawable=%@ scale=%.2f liveResize=%@ pixelFormat=%@ edr=%@ layerCS=%@ metadata=%@ edrMax=%.2f screenPeak=%.0f",
         diagnosticRect(self.frame),
         diagnosticRect(self.bounds),
-        diagnosticSize(_metalLayer.drawableSize),
-        _metalLayer.contentsScale,
-        ((NuvioPlayerMetalLayer *)_metalLayer).nuvioLiveResize ? @"yes" : @"no",
-        metalPixelFormatName(_metalLayer.pixelFormat),
+        diagnosticSize([self drawableSize]),
+        _openGLLayer.contentsScale,
+        _openGLLayer.nuvioLiveResize ? @"yes" : @"no",
+        [_openGLLayer pixelFormatSummary],
         _edrEnabled ? @"on" : @"off",
-        layerColorSpaceName(_metalLayer),
-        layerEdrMetadataName(_metalLayer),
+        layerColorSpaceName(_openGLLayer),
+        layerEdrMetadataName(_openGLLayer),
         [self edrMax],
         [self hdrTargetPeakNits]
     ];
@@ -731,6 +1118,7 @@ static NSString *redactUrlsInText(NSString *text) {
     mpv_handle *_mpv;
     NSTimer *_timer;
     NSTimer *_resizeSettleTimer;
+    NSTimer *_fullscreenTransitionTimer;
     JavaVM *_javaVm;
     jobject _eventSink;
     jmethodID _eventMethod;
@@ -744,8 +1132,12 @@ static NSString *redactUrlsInText(NSString *text) {
     BOOL _didLogSoftwareDecodeWarning;
     BOOL _didFocusControlsWebView;
     BOOL _controlsWebReady;
+    BOOL _fullscreenTransitionActive;
     NSString *_pendingControlsJson;
     double _initialStartSeconds;
+    NSRect _lastAppliedNativeLayoutBounds;
+    BOOL _lastAppliedNativeLayoutWasLiveResize;
+    NSTimeInterval _lightweightResizeSettleUntil;
 }
 
 - (instancetype)initWithHostView:(NSView *)hostView
@@ -809,6 +1201,22 @@ static NSString *redactUrlsInText(NSString *text) {
                                              selector:@selector(hostViewBoundsDidChange:)
                                                  name:NSViewBoundsDidChangeNotification
                                                object:_hostView];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(windowWillEnterFullScreen:)
+                                                 name:NSWindowWillEnterFullScreenNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(windowDidEnterFullScreen:)
+                                                 name:NSWindowDidEnterFullScreenNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(windowWillExitFullScreen:)
+                                                 name:NSWindowWillExitFullScreenNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(windowDidExitFullScreen:)
+                                                 name:NSWindowDidExitFullScreenNotification
+                                               object:nil];
     [self layoutNativeSubviews];
     dispatch_async(dispatch_get_main_queue(), ^{
         [self focusControlsWebViewIfNeeded];
@@ -843,21 +1251,70 @@ static NSString *redactUrlsInText(NSString *text) {
         return;
     }
 
+    NSTimeInterval now = NSDate.timeIntervalSinceReferenceDate;
+    BOOL nativeLiveResize = _hostView.inLiveResize || _hostView.window.inLiveResize;
+    BOOL wasResizeLikeLayout = _lastAppliedNativeLayoutWasLiveResize
+        || _fullscreenTransitionActive
+        || (_lightweightResizeSettleUntil > now);
+    BOOL hasPreviousBounds = _lastAppliedNativeLayoutBounds.size.width > 1.0
+        && _lastAppliedNativeLayoutBounds.size.height > 1.0;
+    if (!_fullscreenTransitionActive && !nativeLiveResize && hasPreviousBounds && !NSEqualRects(bounds, _lastAppliedNativeLayoutBounds)) {
+        double previousArea = _lastAppliedNativeLayoutBounds.size.width * _lastAppliedNativeLayoutBounds.size.height;
+        double currentArea = bounds.size.width * bounds.size.height;
+        double areaRatio = previousArea > 1.0 ? currentArea / previousArea : 1.0;
+        CGFloat widthDelta = fabs(bounds.size.width - _lastAppliedNativeLayoutBounds.size.width);
+        CGFloat heightDelta = fabs(bounds.size.height - _lastAppliedNativeLayoutBounds.size.height);
+        if (areaRatio > 1.75 || areaRatio < 0.60 || widthDelta > 480.0 || heightDelta > 320.0) {
+            [self activateFullscreenTransitionWithReason:@"layout-jump"];
+        }
+    }
+
+    BOOL liveResize = nativeLiveResize || _fullscreenTransitionActive;
+    BOOL settlingFromResize = !liveResize && wasResizeLikeLayout;
+    if (liveResize
+        && _lastAppliedNativeLayoutWasLiveResize
+        && NSEqualRects(bounds, _lastAppliedNativeLayoutBounds)) {
+        return;
+    }
+    if (liveResize || settlingFromResize) {
+        _lightweightResizeSettleUntil = now + 0.45;
+    }
+    _lastAppliedNativeLayoutBounds = bounds;
+    _lastAppliedNativeLayoutWasLiveResize = liveResize;
+
     CGSize previousDrawableSize = _videoView ? [_videoView drawableSize] : CGSizeZero;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     if (_videoView) {
-        _videoView.frame = bounds;
-        [_videoView setNeedsLayout:YES];
-        [_videoView layoutSubtreeIfNeeded];
-        [_videoView updateMetalLayerLayout];
+        if (liveResize || settlingFromResize) {
+            [_videoView setFullscreenTransitionActive:YES];
+        }
+        if (!NSEqualRects(_videoView.frame, bounds)) {
+            _videoView.frame = bounds;
+        }
+        if (!liveResize && !settlingFromResize) {
+            [_videoView setNeedsLayout:YES];
+            [_videoView layoutSubtreeIfNeeded];
+            [_videoView updateMetalLayerLayout];
+        }
     }
     if (_webView) {
-        _webView.frame = bounds;
-        [_webView setNeedsLayout:YES];
-        [_webView layoutSubtreeIfNeeded];
+        if (!NSEqualRects(_webView.frame, bounds)) {
+            _webView.frame = bounds;
+        }
+        if (!liveResize && !settlingFromResize) {
+            [_webView setNeedsLayout:YES];
+            [_webView layoutSubtreeIfNeeded];
+        }
     }
     [CATransaction commit];
+
+    if (liveResize || settlingFromResize) {
+        if (_mpv) {
+            [self schedulePostResizeRefreshWithReason:liveResize ? @"live-layout" : @"settle-layout"];
+        }
+        return;
+    }
 
     CGSize currentDrawableSize = _videoView ? [_videoView drawableSize] : CGSizeZero;
     NSString *resizeKey = [NSString stringWithFormat:
@@ -891,12 +1348,81 @@ static NSString *redactUrlsInText(NSString *text) {
     [self layoutNativeSubviews];
 }
 
+- (BOOL)notificationBelongsToHostWindow:(NSNotification *)notification {
+    NSWindow *window = [notification.object isKindOfClass:[NSWindow class]] ? (NSWindow *)notification.object : nil;
+    return window && _hostView.window && window == _hostView.window;
+}
+
+- (void)windowWillEnterFullScreen:(NSNotification *)notification {
+    if (![self notificationBelongsToHostWindow:notification]) {
+        return;
+    }
+    [self beginFullscreenTransitionWithReason:@"will-enter-fullscreen"];
+}
+
+- (void)windowDidEnterFullScreen:(NSNotification *)notification {
+    if (![self notificationBelongsToHostWindow:notification]) {
+        return;
+    }
+    [self finishFullscreenTransitionWithReason:@"did-enter-fullscreen"];
+}
+
+- (void)windowWillExitFullScreen:(NSNotification *)notification {
+    if (![self notificationBelongsToHostWindow:notification]) {
+        return;
+    }
+    [self beginFullscreenTransitionWithReason:@"will-exit-fullscreen"];
+}
+
+- (void)windowDidExitFullScreen:(NSNotification *)notification {
+    if (![self notificationBelongsToHostWindow:notification]) {
+        return;
+    }
+    [self finishFullscreenTransitionWithReason:@"did-exit-fullscreen"];
+}
+
+- (void)activateFullscreenTransitionWithReason:(NSString *)reason {
+    _fullscreenTransitionActive = YES;
+    [_fullscreenTransitionTimer invalidate];
+    [_videoView setFullscreenTransitionActive:YES];
+    _fullscreenTransitionTimer = [NSTimer scheduledTimerWithTimeInterval:1.25
+                                                                  target:self
+                                                                selector:@selector(handleFullscreenTransitionTimer:)
+                                                                userInfo:reason ?: @"unknown"
+                                                                 repeats:NO];
+}
+
+- (void)beginFullscreenTransitionWithReason:(NSString *)reason {
+    [self activateFullscreenTransitionWithReason:reason];
+    [self layoutNativeSubviews];
+}
+
+- (void)finishFullscreenTransitionWithReason:(NSString *)reason {
+    if (!_fullscreenTransitionActive && !_fullscreenTransitionTimer) {
+        return;
+    }
+    [_fullscreenTransitionTimer invalidate];
+    _fullscreenTransitionTimer = nil;
+    _fullscreenTransitionActive = NO;
+    [self layoutNativeSubviews];
+    [_resizeSettleTimer invalidate];
+    _resizeSettleTimer = nil;
+    if (_mpv) {
+        NSString *refreshReason = [NSString stringWithFormat:@"fullscreen/%@", reason ?: @"unknown"];
+        [self schedulePostResizeRefreshWithReason:refreshReason];
+    }
+}
+
+- (void)handleFullscreenTransitionTimer:(NSTimer *)timer {
+    [self finishFullscreenTransitionWithReason:[NSString stringWithFormat:@"timer/%@", timer.userInfo ?: @"unknown"]];
+}
+
 - (void)schedulePostResizeRefreshWithReason:(NSString *)reason {
     if (!_mpv || !_videoView) {
         return;
     }
     [_resizeSettleTimer invalidate];
-    _resizeSettleTimer = [NSTimer scheduledTimerWithTimeInterval:0.20
+    _resizeSettleTimer = [NSTimer scheduledTimerWithTimeInterval:0.35
                                                           target:self
                                                         selector:@selector(handleResizeSettleTimer:)
                                                         userInfo:reason ?: @"unknown"
@@ -908,9 +1434,15 @@ static NSString *redactUrlsInText(NSString *text) {
     if (!_mpv || !_videoView) {
         return;
     }
+    if (_hostView.inLiveResize || _hostView.window.inLiveResize || _fullscreenTransitionActive) {
+        [self schedulePostResizeRefreshWithReason:timer.userInfo ?: @"unknown"];
+        return;
+    }
+    _lightweightResizeSettleUntil = 0.0;
+    [_videoView setFullscreenTransitionActive:NO];
+    [_videoView updateMetalLayerLayout];
     NSString *reason = [NSString stringWithFormat:@"resize-settled/%@", timer.userInfo ?: @"unknown"];
-    [self configureHdrForCurrentScreenWithReason:reason force:YES];
-    [self logResizeStateWithReason:@"settled"];
+    [self configureHdrForCurrentScreenWithReason:reason force:NO];
 }
 
 - (void)startMpvWithSource:(NSString *)sourceUrl
@@ -930,13 +1462,12 @@ static NSString *redactUrlsInText(NSString *text) {
     setMpvOptionString(_mpv, "input-default-bindings", "yes");
     setMpvOptionString(_mpv, "input-vo-keyboard", "no");
     setMpvOptionString(_mpv, "keep-open", "yes");
-    setMpvOptionString(_mpv, "vo", "gpu-next");
-    setMpvOptionString(_mpv, "gpu-api", "vulkan");
-    setMpvOptionString(_mpv, "gpu-context", "moltenvk");
-    setMpvOptionString(_mpv, "msg-level", "ffmpeg/video=warn,vd=warn,vo=info,gpu=warn,vulkan=warn");
-    setMpvOptionString(_mpv, "hwdec", "videotoolbox");
+    setMpvOptionString(_mpv, "vo", "libmpv");
+    setMpvOptionString(_mpv, "msg-level", "ffmpeg/video=warn,vd=warn,vo=info,gpu=warn,opengl=warn");
+    setMpvOptionString(_mpv, "hwdec", "auto");
+    setMpvOptionString(_mpv, "gpu-hwdec-interop", "auto");
     setMpvOptionString(_mpv, "hwdec-codecs", "all");
-    setMpvOptionString(_mpv, "vd-lavc-software-fallback", "no");
+    setMpvOptionString(_mpv, "vd-lavc-software-fallback", "yes");
     setMpvOptionString(_mpv, "vd-lavc-threads", "4");
     setMpvOptionString(_mpv, "target-colorspace-hint", "yes");
     setMpvOptionString(_mpv, "target-colorspace-hint-mode", "source");
@@ -947,24 +1478,15 @@ static NSString *redactUrlsInText(NSString *text) {
     setMpvOptionString(_mpv, "deband", "yes");
     setMpvOptionString(_mpv, "scale", "spline36");
     setMpvOptionString(_mpv, "cscale", "spline36");
-    setMpvOptionString(_mpv, "vulkan-swap-mode", "fifo");
-    setMpvOptionString(_mpv, "vulkan-queue-count", "1");
-    setMpvOptionString(_mpv, "vulkan-async-compute", "no");
-    setMpvOptionString(_mpv, "vulkan-async-transfer", "no");
     setMpvOptionString(_mpv, "demuxer-max-bytes", "64MiB");
     setMpvOptionString(_mpv, "demuxer-max-back-bytes", "16MiB");
     setMpvOptionString(_mpv, "demuxer-seekable-cache", "no");
     setMpvOptionString(_mpv, "cache-secs", "30");
     setMpvOptionString(_mpv, "hr-seek", "no");
     NSLog(
-        @"[NuvioDesktopPlayer] render: MPVKit gpu-next vulkan/moltenvk wid=%lld hwdec=videotoolbox softwareFallback=no layerFormat=rgba16Float",
-        (long long)[_videoView wid]
+        @"[NuvioDesktopPlayer] render: MPVKit libmpv/OpenGL hwdec=auto softwareFallback=yes layer=%@",
+        [_videoView diagnosticSummary]
     );
-    int64_t wid = [_videoView wid];
-    int widResult = mpv_set_option(_mpv, "wid", MPV_FORMAT_INT64, &wid);
-    if (widResult < 0) {
-        NSLog(@"[NuvioDesktopPlayer] mpv option failed wid error=%s", mpv_error_string(widResult));
-    }
 
     int logResult = mpv_request_log_messages(_mpv, "info");
     if (logResult < 0) {
@@ -980,6 +1502,12 @@ static NSString *redactUrlsInText(NSString *text) {
     int initResult = mpv_initialize(_mpv);
     if (initResult < 0) {
         NSString *reason = [NSString stringWithFormat:@"mpv_initialize failed: %s", mpv_error_string(initResult)];
+        @throw [NSException exceptionWithName:@"PlayerBridgeError" reason:reason userInfo:nil];
+    }
+
+    NSString *renderError = nil;
+    if (![_videoView createMpvRenderContext:_mpv error:&renderError]) {
+        NSString *reason = renderError ?: @"mpv render context failed";
         @throw [NSException exceptionWithName:@"PlayerBridgeError" reason:reason userInfo:nil];
     }
 
@@ -1055,7 +1583,7 @@ static NSString *redactUrlsInText(NSString *text) {
     NSString *targetPrimaries = hdrDetected && primaries.length > 0 ? primaries : @"auto";
     NSString *stateKey = [NSString stringWithFormat:
         @"%@:%@:%@:%0.2f:%0.0f",
-        hdrDetected ? @"native-metal-edr" : @"sdr",
+        hdrDetected ? @"native-opengl-edr" : @"sdr",
         gamma ?: @"",
         targetPrimaries,
         edrMax,
@@ -1066,30 +1594,37 @@ static NSString *redactUrlsInText(NSString *text) {
     }
     _lastConfiguredHdrKey = stateKey;
 
-    [_videoView configureExtendedDynamicRange:hdrDetected primaries:targetPrimaries];
+    double targetPeakNits = normalizedHdrMetadataMaxNits(screenPeak);
+    [_videoView configureExtendedDynamicRange:hdrDetected primaries:targetPrimaries targetPeakNits:targetPeakNits];
+    NSString *targetTransfer = hdrDetected ? @"pq" : @"auto";
+    NSString *toneMapping = hdrDetected ? @"" : @"auto";
+    NSString *targetPeak = hdrDetected ? [NSString stringWithFormat:@"%.0f", targetPeakNits] : @"auto";
     [self setStringProperty:"target-colorspace-hint" value:@"yes"];
     [self setStringProperty:"target-colorspace-hint-mode" value:hdrDetected ? @"source" : @"target"];
     [self setStringProperty:"target-colorspace-hint-strict" value:@"no"];
-    [self setStringProperty:"tone-mapping" value:@"auto"];
+    [self setStringProperty:"tone-mapping" value:toneMapping];
     [self setStringProperty:"hdr-compute-peak" value:@"no"];
-    [self setStringProperty:"target-prim" value:hdrDetected ? @"bt.2020" : @"auto"];
-    [self setStringProperty:"target-trc" value:isPq ? @"pq" : (isHlg ? @"hlg" : @"auto")];
-    [self setStringProperty:"target-peak" value:@"auto"];
+    [self setStringProperty:"target-prim" value:targetPrimaries];
+    [self setStringProperty:"target-trc" value:targetTransfer];
+    [self setStringProperty:"target-peak" value:targetPeak];
 
     if (hdrDetected) {
         NSString *targetGamma = [[self stringProperty:"video-target-params/gamma" fallback:@""] lowercaseString];
         NSString *targetPrimariesLog = [[self stringProperty:"video-target-params/primaries" fallback:@""] lowercaseString];
         NSString *targetSigPeak = [self stringProperty:"video-target-params/sig-peak" fallback:@""];
         NSLog(
-            @"[NuvioDesktopPlayer] macos_edr: HDR enabled via MPVKit Metal reason=%@%@ primaries=%@ gamma=%@ edrMax=%.2f screenPeak=%.0f metadataPeak=%.0f targetPeak=auto toneMapping=auto hdrComputePeak=no hint=source targetPrimaries=%@ targetGamma=%@ targetSigPeak=%@",
+            @"[NuvioDesktopPlayer] macos_edr: HDR enabled via MPVKit libmpv/OpenGL reason=%@%@ primaries=%@ gamma=%@ edrMax=%.2f screenPeak=%.0f metadataPeak=%.0f targetPeak=%@ toneMapping=%@ hdrComputePeak=no hint=source targetPrimaries=%@ targetTransfer=%@ targetGamma=%@ targetSigPeak=%@",
             reason ?: @"unknown",
             force ? @" force=true" : @"",
             targetPrimaries,
             gamma.length > 0 ? gamma : @"unknown",
             edrMax,
             screenPeak,
-            hdrMetadataMaxNits(),
+            targetPeakNits,
+            targetPeak,
+            toneMapping.length > 0 ? toneMapping : @"disabled",
             targetPrimariesLog.length > 0 ? targetPrimariesLog : @"unknown",
+            targetTransfer,
             targetGamma.length > 0 ? targetGamma : @"unknown",
             targetSigPeak.length > 0 ? targetSigPeak : @"unknown"
         );
@@ -1450,6 +1985,8 @@ static NSString *redactUrlsInText(NSString *text) {
     _timer = nil;
     [_resizeSettleTimer invalidate];
     _resizeSettleTimer = nil;
+    [_fullscreenTransitionTimer invalidate];
+    _fullscreenTransitionTimer = nil;
     _controlsWebReady = NO;
     _pendingControlsJson = nil;
     if (_mpv) {
@@ -1458,6 +1995,7 @@ static NSString *redactUrlsInText(NSString *text) {
     if (_mpvEventQueue) {
         dispatch_sync(_mpvEventQueue, ^{});
     }
+    [_videoView destroyMpvRenderContext];
     if (_mpv) {
         mpv_terminate_destroy(_mpv);
         _mpv = NULL;
@@ -1915,6 +2453,9 @@ static NSString *redactUrlsInText(NSString *text) {
         [self selectSubtitleTrackId:(int)llround(value.doubleValue)];
         [self syncControls];
         return;
+    }
+    if ([type isEqualToString:@"toggleFullscreen"]) {
+        [self beginFullscreenTransitionWithReason:@"control-toggle"];
     }
 
     if (_eventSink && _eventMethod) {
