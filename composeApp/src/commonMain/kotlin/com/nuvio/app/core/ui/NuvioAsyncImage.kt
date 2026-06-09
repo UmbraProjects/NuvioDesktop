@@ -10,6 +10,11 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImagePainter
 
+internal enum class NuvioDesktopImageScaling {
+    Auto,
+    Disabled,
+}
+
 @Composable
 internal expect fun NuvioAsyncImage(
     model: Any?,
@@ -27,4 +32,5 @@ internal expect fun NuvioAsyncImage(
     colorFilter: ColorFilter? = null,
     filterQuality: FilterQuality? = null,
     clipToBounds: Boolean = true,
+    desktopImageScaling: NuvioDesktopImageScaling = NuvioDesktopImageScaling.Auto,
 )
