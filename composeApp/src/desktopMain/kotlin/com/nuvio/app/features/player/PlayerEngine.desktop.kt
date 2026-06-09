@@ -3,18 +3,22 @@ package com.nuvio.app.features.player
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.player.desktop.DesktopHostOs
+import com.nuvio.app.features.player.desktop.DesktopPlayerLaunchShield
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
 import kotlinx.coroutines.delay
@@ -86,14 +90,42 @@ private fun NativePlayerSurface(
 ) {
     val host = remember { NativePlayerHost() }
     val controller = remember(host) { NativePlayerController(host) }
+    val hostFirstPaintComplete = remember { mutableStateOf(false) }
+    val hostFirstFullSizePaintComplete = remember { mutableStateOf(false) }
+    LaunchedEffect(sourceUrl) {
+        DesktopPlayerLaunchShield.showForActiveWindow()
+    }
     val playbackHeaders = remember(sourceHeaders) { sanitizePlaybackHeaders(sourceHeaders) }
     val latestOnPlayerControlsAction = rememberUpdatedState(onPlayerControlsAction)
     val latestOnPlayerControlsEvent = rememberUpdatedState(onPlayerControlsEvent)
     val latestOnPlayerControlsScrubChange = rememberUpdatedState(onPlayerControlsScrubChange)
     val latestOnPlayerControlsScrubFinished = rememberUpdatedState(onPlayerControlsScrubFinished)
+    val latestOnError = rememberUpdatedState(onError)
 
     LaunchedEffect(controller) {
         onControllerReady(controller)
+    }
+
+    DisposableEffect(host) {
+        host.onDisplayableChanged = { displayable ->
+            if (!displayable) {
+                hostFirstPaintComplete.value = false
+                hostFirstFullSizePaintComplete.value = false
+            }
+        }
+        host.onFirstPaint = {
+            hostFirstPaintComplete.value = true
+        }
+        host.onFirstFullSizePaint = {
+            hostFirstFullSizePaintComplete.value = true
+            DesktopPlayerLaunchShield.hideAfter()
+        }
+        onDispose {
+            host.onDisplayableChanged = null
+            host.onFirstPaint = null
+            host.onFirstFullSizePaint = null
+            DesktopPlayerLaunchShield.hide()
+        }
     }
 
     LaunchedEffect(controller) {
@@ -106,14 +138,21 @@ private fun NativePlayerSurface(
     }
 
     DisposableEffect(controller, sourceUrl, playbackHeaders) {
+        onDispose { controller.dispose() }
+    }
+
+    LaunchedEffect(controller, sourceUrl, playbackHeaders, hostFirstFullSizePaintComplete.value) {
+        if (!hostFirstFullSizePaintComplete.value) {
+            return@LaunchedEffect
+        }
+        delay(16L)
         controller.attach(
             sourceUrl = sourceUrl,
             sourceHeaders = playbackHeaders,
             playWhenReady = playWhenReady,
             initialPositionMs = initialPositionMs,
-            onError = onError,
+            onError = { message -> latestOnError.value(message) },
         )
-        onDispose { controller.dispose() }
     }
 
     LaunchedEffect(controller, playWhenReady) {
@@ -139,10 +178,25 @@ private fun NativePlayerSurface(
         }
     }
 
-    SwingPanel(
-        factory = { host },
-        modifier = modifier.fillMaxSize(),
-    )
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
+        SwingPanel(
+            factory = {
+                host
+            },
+            modifier = if (hostFirstPaintComplete.value) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .requiredSize(1.dp)
+            },
+            background = Color.Black,
+        )
+    }
 }
 
 @Composable
