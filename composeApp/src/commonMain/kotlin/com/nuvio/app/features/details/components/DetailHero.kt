@@ -43,7 +43,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.graphicsLayer
-import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.features.details.MetaDetails
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource

@@ -38,7 +38,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.home_view_all
@@ -187,7 +186,7 @@ fun NuvioPosterCard(
             contentAlignment = Alignment.Center,
         ) {
             if (imageUrl != null) {
-                AsyncImage(
+                NuvioAsyncImage(
                     model = imageUrl,
                     contentDescription = title,
                     modifier = Modifier.matchParentSize(),
@@ -212,7 +211,7 @@ fun NuvioPosterCard(
                         .padding(horizontal = NuvioTokens.Space.s10, vertical = NuvioTokens.Space.s10),
                 ) {
                     if (!bottomLeftLogoUrl.isNullOrBlank()) {
-                        AsyncImage(
+                        NuvioAsyncImage(
                             model = bottomLeftLogoUrl,
                             contentDescription = stringResource(Res.string.poster_logo_content_description, title),
                             modifier = Modifier

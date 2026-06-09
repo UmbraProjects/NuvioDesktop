@@ -56,7 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import kotlinx.coroutines.delay
