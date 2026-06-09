@@ -99,6 +99,7 @@
 - (void)handleScriptMessage:(NSDictionary *)message;
 - (void)focusControlsWebViewIfNeeded;
 - (void)layoutNativeSubviews;
+- (void)layoutControlsWebViewToBounds:(NSRect)bounds immediate:(BOOL)immediate;
 - (void)hostViewBoundsDidChange:(NSNotification *)notification;
 - (void)hostViewFrameDidChange:(NSNotification *)notification;
 - (void)windowWillEnterFullScreen:(NSNotification *)notification;
@@ -1138,6 +1139,8 @@ static NSString *redactUrlsInText(NSString *text) {
     NSRect _lastAppliedNativeLayoutBounds;
     BOOL _lastAppliedNativeLayoutWasLiveResize;
     NSTimeInterval _lightweightResizeSettleUntil;
+    NSSize _lastControlsViewportNudgeSize;
+    NSTimeInterval _lastControlsViewportNudgeAt;
 }
 
 - (instancetype)initWithHostView:(NSView *)hostView
@@ -1180,6 +1183,9 @@ static NSString *redactUrlsInText(NSString *text) {
     _webView = [[WKWebView alloc] initWithFrame:_hostView.bounds configuration:configuration];
     _webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _webView.wantsLayer = YES;
+    _webView.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
+    _webView.layer.needsDisplayOnBoundsChange = YES;
+    _webView.layer.drawsAsynchronously = YES;
     [_webView setValue:@NO forKey:@"drawsBackground"];
     [_hostView addSubview:_webView positioned:NSWindowAbove relativeTo:_videoView];
     NSURL *controlsURL = [NSURL URLWithString:controlsUrl ?: @""];
@@ -1242,6 +1248,34 @@ static NSString *redactUrlsInText(NSString *text) {
     [_webView.window makeFirstResponder:_webView];
 }
 
+- (void)layoutControlsWebViewToBounds:(NSRect)bounds immediate:(BOOL)immediate {
+    if (!_webView) {
+        return;
+    }
+
+    if (!NSEqualRects(_webView.frame, bounds)) {
+        _webView.frame = bounds;
+    }
+    if (!immediate) {
+        return;
+    }
+
+    [_webView setNeedsLayout:YES];
+    [_webView layoutSubtreeIfNeeded];
+    [_webView setNeedsDisplay:YES];
+
+    NSTimeInterval now = NSDate.timeIntervalSinceReferenceDate;
+    BOOL sizeChanged = !NSEqualSizes(_lastControlsViewportNudgeSize, bounds.size);
+    if (!_controlsWebReady || !sizeChanged || now - _lastControlsViewportNudgeAt < 0.05) {
+        return;
+    }
+
+    _lastControlsViewportNudgeSize = bounds.size;
+    _lastControlsViewportNudgeAt = now;
+    NSString *script = @"window.nuvioNativeViewportChanged ? window.nuvioNativeViewportChanged() : window.dispatchEvent(new Event('resize'));";
+    [_webView evaluateJavaScript:script completionHandler:nil];
+}
+
 - (void)layoutNativeSubviews {
     if (!_hostView) {
         return;
@@ -1299,13 +1333,8 @@ static NSString *redactUrlsInText(NSString *text) {
         }
     }
     if (_webView) {
-        if (!NSEqualRects(_webView.frame, bounds)) {
-            _webView.frame = bounds;
-        }
-        if (!liveResize && !settlingFromResize) {
-            [_webView setNeedsLayout:YES];
-            [_webView layoutSubtreeIfNeeded];
-        }
+        BOOL immediateControlsLayout = _fullscreenTransitionActive || settlingFromResize || (!liveResize && !settlingFromResize);
+        [self layoutControlsWebViewToBounds:bounds immediate:immediateControlsLayout];
     }
     [CATransaction commit];
 
@@ -1439,6 +1468,7 @@ static NSString *redactUrlsInText(NSString *text) {
         return;
     }
     _lightweightResizeSettleUntil = 0.0;
+    [self layoutControlsWebViewToBounds:_hostView.bounds immediate:YES];
     [_videoView setFullscreenTransitionActive:NO];
     [_videoView updateMetalLayerLayout];
     NSString *reason = [NSString stringWithFormat:@"resize-settled/%@", timer.userInfo ?: @"unknown"];

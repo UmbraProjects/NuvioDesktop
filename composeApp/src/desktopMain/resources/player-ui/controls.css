@@ -160,6 +160,12 @@ button:disabled {
   transition: opacity 160ms ease;
 }
 
+.player.native-resizing,
+.player.native-resizing * {
+  transition-duration: 1ms !important;
+  animation-duration: 1ms !important;
+}
+
 .player.chrome-hidden .top-gradient,
 .player.chrome-hidden .bottom-gradient,
 .player.chrome-hidden .metadata,

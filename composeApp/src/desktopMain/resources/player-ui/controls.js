@@ -332,6 +332,7 @@ let pauseMetadataEligibilityKey = "";
 let chromeAutoHideTimer = 0;
 let chromeAutoHideKey = "";
 let chromeAutoHideActivity = 0;
+let nativeViewportTimer = 0;
 const prefersReducedMotion = window.matchMedia &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const modalTransitionMs = prefersReducedMotion ? 1 : 240;
@@ -1380,6 +1381,19 @@ const renderActiveModal = () => {
   if (activeModal === "submitIntro") renderSubmitIntroModal();
   if (activeModal === "p2pConsent") renderP2pConsentModal();
 };
+
+window.nuvioNativeViewportChanged = () => {
+  root.classList.add("native-resizing");
+  window.clearTimeout(nativeViewportTimer);
+  nativeViewportTimer = window.setTimeout(() => {
+    root.classList.remove("native-resizing");
+  }, 180);
+  if (activeModal) renderActiveModal();
+};
+
+window.addEventListener("resize", () => {
+  window.nuvioNativeViewportChanged();
+});
 
 const trackListSignature = tracks =>
   normalizeTracks(tracks)
