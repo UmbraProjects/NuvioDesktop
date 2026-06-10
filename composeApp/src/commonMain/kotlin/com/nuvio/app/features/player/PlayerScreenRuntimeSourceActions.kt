@@ -56,7 +56,6 @@ internal fun PlayerScreenRuntime.stopActiveP2pStream() {
     activeTorrentInfoHash = null
     activeTorrentFileIdx = null
     activeTorrentFilename = null
-    activeTorrentMagnetUri = null
     activeTorrentTrackers = emptyList()
     p2pResolvedSourceUrl = null
 }
@@ -84,12 +83,11 @@ internal fun PlayerScreenRuntime.saveP2pStreamForReuse(
         addonId = stream.addonId,
         requestHeaders = emptyMap(),
         responseHeaders = emptyMap(),
-        filename = stream.p2pFilename,
+        filename = stream.behaviorHints.filename,
         videoSize = stream.behaviorHints.videoSize,
         infoHash = infoHash,
-        fileIdx = stream.p2pFileIdx,
-        magnetUri = stream.torrentMagnetUri,
-        sources = stream.p2pSourceHints,
+        fileIdx = stream.fileIdx,
+        sources = stream.sources,
         bingeGroup = stream.behaviorHints.bingeGroup,
     )
 }
@@ -110,14 +108,13 @@ internal fun PlayerScreenRuntime.switchToP2pSourceStream(stream: StreamItem) {
         season = activeSeasonNumber,
         episode = activeEpisodeNumber,
     )
-    activeSourceUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
+    activeSourceUrl = p2pSentinelUrl(infoHash, stream.fileIdx)
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
     activeSourceResponseHeaders = emptyMap()
     activeTorrentInfoHash = infoHash
-    activeTorrentFileIdx = stream.p2pFileIdx
-    activeTorrentFilename = stream.p2pFilename
-    activeTorrentMagnetUri = stream.torrentMagnetUri
+    activeTorrentFileIdx = stream.fileIdx
+    activeTorrentFilename = stream.behaviorHints.filename
     activeTorrentTrackers = stream.p2pTrackers
     activeStreamTitle = stream.streamLabel
     activeStreamSubtitle = stream.streamSubtitle
@@ -152,14 +149,13 @@ internal fun PlayerScreenRuntime.switchToP2pEpisodeStream(
         season = episode.season,
         episode = episode.episode,
     )
-    activeSourceUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
+    activeSourceUrl = p2pSentinelUrl(infoHash, stream.fileIdx)
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
     activeSourceResponseHeaders = emptyMap()
     activeTorrentInfoHash = infoHash
-    activeTorrentFileIdx = stream.p2pFileIdx
-    activeTorrentFilename = stream.p2pFilename
-    activeTorrentMagnetUri = stream.torrentMagnetUri
+    activeTorrentFileIdx = stream.fileIdx
+    activeTorrentFilename = stream.behaviorHints.filename
     activeTorrentTrackers = stream.p2pTrackers
     applyEpisodeStreamMetadata(stream, episode, resume)
 }

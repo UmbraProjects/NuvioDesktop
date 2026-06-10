@@ -52,7 +52,6 @@ internal class PlayerScreenRuntime(
     val torrentInfoHash: String? get() = args.torrentInfoHash
     val torrentFileIdx: Int? get() = args.torrentFileIdx
     val torrentFilename: String? get() = args.torrentFilename
-    val torrentMagnetUri: String? get() = args.torrentMagnetUri
     val torrentTrackers: List<String> get() = args.torrentTrackers
     val initialPositionMs: Long get() = args.initialPositionMs
     val initialProgressFraction: Float? get() = args.initialProgressFraction
@@ -99,7 +98,6 @@ internal class PlayerScreenRuntime(
     var activeTorrentInfoHash by mutableStateOf(torrentInfoHash)
     var activeTorrentFileIdx by mutableStateOf(torrentFileIdx)
     var activeTorrentFilename by mutableStateOf(torrentFilename)
-    var activeTorrentMagnetUri by mutableStateOf(torrentMagnetUri)
     var activeTorrentTrackers by mutableStateOf(torrentTrackers)
     var p2pResolvedSourceUrl by mutableStateOf<String?>(null)
     var activeStreamTitle by mutableStateOf(streamTitle)
