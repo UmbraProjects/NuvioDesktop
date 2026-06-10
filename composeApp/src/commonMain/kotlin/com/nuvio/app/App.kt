@@ -342,6 +342,9 @@ private fun PlayerLaunch.toExternalPlayerPlaybackRequest(): ExternalPlayerPlayba
         streamTitle = streamTitle,
         sourceHeaders = sourceHeaders,
         resumePositionMs = initialPositionMs,
+        season = seasonNumber,
+        episode = episodeNumber,
+        episodeTitle = episodeTitle,
     )
 
 private enum class AppGateScreen {
