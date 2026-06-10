@@ -3,6 +3,11 @@ const seek = document.getElementById("seek");
 const positionLabel = document.getElementById("position");
 const durationLabel = document.getElementById("duration");
 const bufferingStatus = document.getElementById("bufferingStatus");
+const playbackError = document.getElementById("playbackError");
+const playbackErrorTitle = document.getElementById("playbackErrorTitle");
+const playbackErrorMessage = document.getElementById("playbackErrorMessage");
+const playbackErrorAction = document.getElementById("playbackErrorAction");
+const playbackErrorActionLabel = document.getElementById("playbackErrorActionLabel");
 const pauseMetadataOverlay = document.getElementById("pauseMetadataOverlay");
 const pauseWatchingLabel = document.getElementById("pauseWatchingLabel");
 const pauseLogo = document.getElementById("pauseLogo");
@@ -163,6 +168,9 @@ let state = {
   submitIntroLabel: "Submit Intro",
   videoSettingsLabel: "Video settings",
   tapToUnlockLabel: "Tap to unlock",
+  playbackErrorTitle: "Playback error",
+  playbackErrorMessage: "",
+  playbackErrorActionLabel: "Go back",
   sourcesPanelTitle: "Sources",
   episodesPanelTitle: "Episodes",
   streamsPanelTitle: "Streams",
@@ -644,6 +652,8 @@ const normalizedOpeningProgress = () => {
   const progress = Number(state.openingProgress);
   return Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : null;
 };
+
+const playbackErrorText = () => String(state.playbackErrorMessage || "").trim();
 
 const rangePositionMs = () => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
@@ -1419,7 +1429,7 @@ const trackListSignature = tracks =>
     ].join(":"))
     .join("|");
 
-const renderOpeningOverlay = () => {
+const renderOpeningOverlay = suppress => {
   const progress = normalizedOpeningProgress();
   const artworkUrl = setImageSource(openingArtwork, state.openingArtwork);
   const logoUrl = setImageSource(openingLogoBase, state.openingLogo);
@@ -1428,7 +1438,7 @@ const renderOpeningOverlay = () => {
   const hasProgress = progress !== null;
   const openingBootstrap = !hasReceivedPlayerControls;
   const wantsOpening = Boolean(openingBootstrap || state.showOpeningOverlay);
-  const showOpening = Boolean(wantsOpening && state.isLoading);
+  const showOpening = Boolean(!suppress && wantsOpening && state.isLoading);
   const titleText = String(state.openingTitle || state.title || "").trim();
   const messageText = String(state.openingMessage || "").trim();
   const showHorizontalProgress = hasProgress && !logoUrl;
@@ -1453,6 +1463,24 @@ const renderOpeningOverlay = () => {
   openingProgressBar.style.width = `${(progress || 0) * 100}%`;
 
   return showOpening;
+};
+
+const renderPlaybackError = () => {
+  const messageText = playbackErrorText();
+  const showError = Boolean(messageText);
+  const titleText = String(state.playbackErrorTitle || "Playback error").trim();
+  const actionText = String(state.playbackErrorActionLabel || "Go back").trim();
+
+  root.classList.toggle("error-active", showError);
+  playbackError.classList.toggle("visible", showError);
+  playbackError.setAttribute("aria-hidden", showError ? "false" : "true");
+  playbackError.setAttribute("aria-label", titleText || "Playback error");
+  playbackErrorTitle.textContent = titleText || "Playback error";
+  playbackErrorMessage.textContent = messageText;
+  playbackErrorActionLabel.textContent = actionText || "Go back";
+  playbackErrorAction.setAttribute("aria-label", actionText || "Go back");
+
+  return showError;
 };
 
 const resetSkipPromptAutoHide = () => {
@@ -1544,6 +1572,7 @@ const canAutoHideChrome = showOpening => Boolean(
   !activeModal &&
   !isScrubbing &&
   !isInteractingWithChrome() &&
+  !playbackErrorText() &&
   !showOpening,
 );
 
@@ -1626,13 +1655,14 @@ const renderChrome = () => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
   const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
   const isPlaying = Boolean(state.isPlaying);
+  const showError = renderPlaybackError();
   root.classList.toggle("locked", Boolean(state.isLocked));
   root.classList.toggle("locked-visible", Boolean(state.isLocked && state.lockedOverlayVisible));
-  root.classList.toggle("chrome-hidden", Boolean(!state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible)));
-  root.classList.toggle("source-visible", Boolean(!isPlaying && !state.isLoading && (state.streamTitle || state.providerName)));
-  const showOpening = renderOpeningOverlay();
-  renderPauseMetadataOverlay(showOpening);
-  syncParentalGuide(showOpening);
+  root.classList.toggle("chrome-hidden", Boolean(showError || (!state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible))));
+  root.classList.toggle("source-visible", Boolean(!showError && !isPlaying && !state.isLoading && (state.streamTitle || state.providerName)));
+  const showOpening = renderOpeningOverlay(showError);
+  renderPauseMetadataOverlay(showOpening || showError);
+  syncParentalGuide(showOpening || showError);
 
   title.textContent = state.title || "";
   setText(episode, state.episodeText);
@@ -1645,7 +1675,7 @@ const renderChrome = () => {
   sourcesLabel.textContent = state.sourcesLabel || "Sources";
   episodesLabel.textContent = state.episodesLabel || "Episodes";
   lockedLabel.textContent = state.tapToUnlockLabel || "Tap to unlock";
-  const showBuffering = Boolean(state.isLoading && !state.isLocked && !activeModal && !showOpening);
+  const showBuffering = Boolean(!showError && state.isLoading && !state.isLocked && !activeModal && !showOpening);
   bufferingStatus.classList.toggle("visible", showBuffering);
   bufferingStatus.setAttribute("aria-hidden", showBuffering ? "false" : "true");
 
@@ -1668,7 +1698,14 @@ const renderChrome = () => {
   videoSettingsButton.setAttribute("aria-label", state.videoSettingsLabel || "Video settings");
   seek.disabled = Boolean(state.isLocked);
   setProgress(positionMs, durationMs);
-  renderNativePlaybackPrompts();
+  if (showError) {
+    skipPrompt.classList.remove("visible", "show-progress");
+    skipPrompt.setAttribute("aria-hidden", "true");
+    nextEpisodeCard.classList.remove("visible");
+    nextEpisodeCard.setAttribute("aria-hidden", "true");
+  } else {
+    renderNativePlaybackPrompts();
+  }
   syncChromeAutoHideTimer(showOpening);
 };
 
@@ -1707,6 +1744,7 @@ const shortcutCommandForEvent = event => {
 };
 
 const toggleChrome = () => {
+  if (playbackErrorText()) return;
   if (state.isLocked) {
     send("revealLockedOverlay", 0);
     return;
@@ -2098,6 +2136,7 @@ window.playerControls = nextState => {
 };
 
 root.addEventListener("click", event => {
+  if (playbackErrorText()) return;
   if (event.target.closest("button,input")) return;
   window.clearTimeout(tapTimer);
   tapTimer = window.setTimeout(() => {
@@ -2106,6 +2145,7 @@ root.addEventListener("click", event => {
 });
 
 root.addEventListener("dblclick", event => {
+  if (playbackErrorText()) return;
   if (event.target.closest("button,input")) return;
   event.preventDefault();
   window.clearTimeout(tapTimer);
@@ -2113,6 +2153,11 @@ root.addEventListener("dblclick", event => {
 });
 
 document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && playbackErrorText()) {
+    event.preventDefault();
+    send("back", 0);
+    return;
+  }
   if (event.key === "Escape" && activeModal) {
     event.preventDefault();
     closePlayerModal(true);
@@ -2124,6 +2169,7 @@ document.addEventListener("keydown", event => {
     send("back", 0);
     return;
   }
+  if (playbackErrorText()) return;
   const isMacFullscreenShortcut = event.code === "KeyF" && event.metaKey && event.ctrlKey && !event.altKey;
   if (event.code === "F11" || isMacFullscreenShortcut) {
     event.preventDefault();
