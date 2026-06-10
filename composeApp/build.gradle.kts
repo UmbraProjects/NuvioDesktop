@@ -748,15 +748,24 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Nuvio"
             packageVersion = desktopReleaseVersionName
+            vendor = "Nuvio Media"
+            modules("java.net.http")
             macOS {
                 iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon.icns"))
             }
             windows {
                 iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon.ico"))
+                shortcut = true
+                menu = true
+                menuGroup = "Nuvio"
             }
             linux {
                 iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon.png"))
             }
+        }
+
+        buildTypes.release.proguard {
+            isEnabled.set(false)
         }
     }
 }
