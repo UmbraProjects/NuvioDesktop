@@ -23,7 +23,6 @@ const subtitlesLabel = document.getElementById("subtitlesLabel");
 const audioLabel = document.getElementById("audioLabel");
 const sourcesLabel = document.getElementById("sourcesLabel");
 const episodesLabel = document.getElementById("episodesLabel");
-const externalLabel = document.getElementById("externalLabel");
 const submitIntroButton = document.getElementById("submitIntroButton");
 const lockButton = document.getElementById("lockButton");
 const videoSettingsButton = document.getElementById("videoSettingsButton");
@@ -55,7 +54,6 @@ const nextEpisodeStatus = document.getElementById("nextEpisodeStatus");
 const nextEpisodeAction = document.getElementById("nextEpisodeAction");
 const sourcesButton = document.getElementById("sourcesButton");
 const episodesButton = document.getElementById("episodesButton");
-const externalButton = document.getElementById("externalButton");
 const lockedLabel = document.getElementById("lockedLabel");
 const audioModal = document.getElementById("audioModal");
 const subtitleModal = document.getElementById("subtitleModal");
@@ -1596,7 +1594,6 @@ const renderChrome = () => {
   audioLabel.textContent = state.audioLabel || "Audio";
   sourcesLabel.textContent = state.sourcesLabel || "Sources";
   episodesLabel.textContent = state.episodesLabel || "Episodes";
-  externalLabel.textContent = state.externalPlayerLabel || "External";
   lockedLabel.textContent = state.tapToUnlockLabel || "Tap to unlock";
   const showBuffering = Boolean(state.isLoading && !state.isLocked && !activeModal && !showOpening);
   bufferingStatus.classList.toggle("visible", showBuffering);
@@ -1606,7 +1603,6 @@ const renderChrome = () => {
   setVisible(videoSettingsButton, Boolean(state.showVideoSettings));
   setVisible(sourcesButton, Boolean(state.showSources));
   setVisible(episodesButton, Boolean(state.showEpisodes));
-  setVisible(externalButton, Boolean(state.showExternalPlayer));
 
   const playPauseLabel = isPlaying ? state.pauseLabel : state.playLabel;
   if (toggle) {
