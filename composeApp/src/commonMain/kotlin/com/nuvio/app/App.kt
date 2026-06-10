@@ -542,21 +542,26 @@ fun App() {
             if (gateScreen == AppGateScreen.ProfileSwitching.name) return@LaunchedEffect
 
             val cachedProfiles = profileState.profiles
-            val allowOfflineProfileAccess =
+            val hasCachedProfileAccess =
                 cachedProfiles.isNotEmpty() &&
-                    authState !is AuthState.Authenticated &&
-                    networkStatusUiState.condition != NetworkCondition.Online
+                    authState !is AuthState.Authenticated
+            val allowCachedProfileAccess =
+                hasCachedProfileAccess &&
+                    (
+                        networkStatusUiState.condition != NetworkCondition.Online ||
+                            gateScreen != AppGateScreen.Auth.name
+                    )
 
             when (authState) {
                 is AuthState.Loading -> {
-                    if (allowOfflineProfileAccess) {
+                    if (hasCachedProfileAccess) {
                         enterProfileGate(cachedProfiles, syncOnEnter = false)
                     } else {
                         gateScreen = AppGateScreen.Loading.name
                     }
                 }
                 is AuthState.Unauthenticated -> {
-                    if (allowOfflineProfileAccess) {
+                    if (allowCachedProfileAccess) {
                         enterProfileGate(cachedProfiles, syncOnEnter = false)
                     } else {
                         ProfileRepository.clearInMemory()
