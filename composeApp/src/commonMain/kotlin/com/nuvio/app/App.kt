@@ -977,6 +977,14 @@ private fun MainAppContent(
         }
     }
 
+    LaunchedEffect(currentBackStackEntry?.destination) {
+        val inPlaybackFlow = currentBackStackEntry?.destination?.hasRoute<StreamRoute>() == true ||
+            currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true
+        if (inPlaybackFlow) {
+            resumePromptItem = null
+        }
+    }
+
         LaunchedEffect(navController) {
             AppDeepLinkRepository.pendingDeepLink.collectLatest { deepLink ->
                 when (deepLink) {
@@ -1268,6 +1276,7 @@ private fun MainAppContent(
         }
 
         val openContinueWatching: (ContinueWatchingItem, Boolean, Boolean) -> Unit = { item, manualSelection, startFromBeginning ->
+            resumePromptItem = null
             if (item.isCloudLibraryContinueWatchingItem()) {
                 coroutineScope.launch {
                     when (
