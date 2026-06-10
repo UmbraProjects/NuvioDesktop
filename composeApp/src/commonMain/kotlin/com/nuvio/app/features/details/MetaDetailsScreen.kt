@@ -60,7 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.build.TrailerPlaybackMode
 import com.nuvio.app.core.network.NetworkCondition
@@ -781,6 +781,7 @@ fun MetaDetailsScreen(
 
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val isTablet = maxWidth >= 720.dp
+                    val viewportHeight = maxHeight
                     val contentHorizontalPadding = if (isTablet) 32.dp else 18.dp
                     val contentMaxWidth = detailTabletContentMaxWidth(maxWidth, isTablet)
                     val cinematicEnabled = metaScreenSettingsUiState.cinematicBackground && deferredMetaWorkAllowed
@@ -815,6 +816,7 @@ fun MetaDetailsScreen(
                                     meta = meta,
                                     isTablet = isTablet,
                                     contentMaxWidth = contentMaxWidth,
+                                    viewportHeight = viewportHeight,
                                     scrollOffset = heroScrollOffset,
                                     onHeightChanged = { heroHeightPx = it },
                                     heroTrailerSourceUrl = heroTrailerSourceUrl,

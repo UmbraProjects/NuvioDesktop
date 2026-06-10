@@ -1,7 +1,7 @@
 package com.nuvio.app.features.trakt
 
 import co.touchlab.kermit.Logger
-import com.nuvio.app.core.build.AppVersionConfig
+import com.nuvio.app.core.build.AppVersionPolicy
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.CancellationException
@@ -243,7 +243,7 @@ internal object TraktScrobbleRepository {
                     ids = item.ids.toRequestBodyOrNull(),
                 ),
                 progress = clampedProgress,
-                appVersion = AppVersionConfig.VERSION_NAME,
+                appVersion = AppVersionPolicy.displayVersionName,
             )
 
             is TraktScrobbleItem.Episode -> TraktScrobbleRequest(
@@ -258,7 +258,7 @@ internal object TraktScrobbleRepository {
                     number = item.number,
                 ),
                 progress = clampedProgress,
-                appVersion = AppVersionConfig.VERSION_NAME,
+                appVersion = AppVersionPolicy.displayVersionName,
             )
         }
     }

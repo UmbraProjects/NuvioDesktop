@@ -16,6 +16,7 @@ import com.nuvio.app.features.streams.StreamLinkCacheRepository
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.hasLikelyExpiringPlaybackCredentials
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
+import com.nuvio.app.isDesktop
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -227,6 +228,10 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             else -> 0L
         }
         if (targetPositionMs <= 0L) {
+            initialSeekApplied = true
+            return@LaunchedEffect
+        }
+        if (isDesktop && activeInitialPositionMs > 0L) {
             initialSeekApplied = true
             return@LaunchedEffect
         }
