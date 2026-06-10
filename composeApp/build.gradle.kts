@@ -241,6 +241,7 @@ val iosDistributionSourceDir = if (iosDistribution == "full") {
 }
 val iosFrameworkBundleId = "com.nuvio.media"
 val fullCommonSourceDir = project.file("src/fullCommonMain/kotlin")
+val fullPluginSourceDir = fullCommonSourceDir.resolve("com/nuvio/app/features/plugins")
 val generatedRuntimeConfigDir = layout.buildDirectory.dir("generated/runtime-config/kotlin")
 val requestedGradleTasks = gradle.startParameter.taskNames.map { taskName ->
     taskName.substringAfterLast(':').lowercase()
@@ -692,10 +693,13 @@ kotlin {
             implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("lib-*.aar"))))
         }
         val desktopMain by getting {
+            kotlin.srcDir(fullPluginSourceDir)
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.ktor.client.cio)
+                implementation(libs.quickjs.kt)
+                implementation(libs.ksoup)
             }
         }
         commonMain.dependencies {
