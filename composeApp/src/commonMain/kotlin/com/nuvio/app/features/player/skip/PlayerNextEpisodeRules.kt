@@ -111,10 +111,6 @@ object PlayerNextEpisodeRules {
     }
 
     val OUTRO_SEGMENT_TYPES = setOf("outro", "ed", "mixed-ed")
-
-    const val POST_OUTRO_AUTOPLAY_GAP_MS = 5_000L
-
-    const val END_OF_VIDEO_EPSILON_MS = 1_000L
 }
 
 internal expect fun currentDateComponents(): DateComponents
