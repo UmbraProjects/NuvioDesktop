@@ -380,6 +380,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 sourceAudioUrl = activeSourceAudioUrl,
                 sourceHeaders = activeSourceHeaders,
                 sourceResponseHeaders = activeSourceResponseHeaders,
+                streamType = activeStreamType,
                 modifier = Modifier.fillMaxSize(),
                 playWhenReady = shouldPlay,
                 resizeMode = resizeMode,

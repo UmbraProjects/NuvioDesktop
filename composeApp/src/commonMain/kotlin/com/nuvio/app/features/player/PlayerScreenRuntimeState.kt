@@ -32,6 +32,7 @@ internal class PlayerScreenRuntime(
     val sourceAudioUrl: String? get() = args.sourceAudioUrl
     val sourceHeaders: Map<String, String> get() = args.sourceHeaders
     val sourceResponseHeaders: Map<String, String> get() = args.sourceResponseHeaders
+    val streamType: String? get() = args.streamType
     val providerName: String get() = args.providerName
     val streamTitle: String get() = args.streamTitle
     val streamSubtitle: String? get() = args.streamSubtitle
@@ -96,6 +97,7 @@ internal class PlayerScreenRuntime(
     var activeSourceAudioUrl by mutableStateOf(sourceAudioUrl)
     var activeSourceHeaders by mutableStateOf(sanitizePlaybackHeaders(sourceHeaders))
     var activeSourceResponseHeaders by mutableStateOf(sanitizePlaybackResponseHeaders(sourceResponseHeaders))
+    var activeStreamType by mutableStateOf(streamType)
     var activeTorrentInfoHash by mutableStateOf(torrentInfoHash)
     var activeTorrentFileIdx by mutableStateOf(torrentFileIdx)
     var activeTorrentFilename by mutableStateOf(torrentFilename)

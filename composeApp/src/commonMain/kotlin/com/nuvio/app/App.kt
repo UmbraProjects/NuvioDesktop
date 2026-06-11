@@ -1895,6 +1895,7 @@ private fun MainAppContent(
                             sourceUrl = sentinelUrl,
                             sourceHeaders = emptyMap(),
                             sourceResponseHeaders = emptyMap(),
+                            streamType = stream.streamType,
                             logo = launch.logo,
                             poster = launch.poster,
                             background = launch.background,
@@ -2014,6 +2015,7 @@ private fun MainAppContent(
                                     sourceUrl = cached.url,
                                     sourceHeaders = sanitizePlaybackHeaders(cached.requestHeaders),
                                     sourceResponseHeaders = sanitizePlaybackResponseHeaders(cached.responseHeaders),
+                                    streamType = cached.streamType,
                                     logo = launch.logo,
                                     poster = launch.poster,
                                     background = launch.background,
@@ -2139,6 +2141,7 @@ private fun MainAppContent(
                                 filename = stream.behaviorHints.filename,
                                 videoSize = stream.behaviorHints.videoSize,
                                 bingeGroup = stream.behaviorHints.bingeGroup,
+                                streamType = stream.streamType,
                             )
                         }
                         val playerLaunch = PlayerLaunch(
@@ -2146,6 +2149,7 @@ private fun MainAppContent(
                                 sourceUrl = sourceUrl,
                                 sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
                                 sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
+                                streamType = stream.streamType,
                                 logo = launch.logo,
                                 poster = launch.poster,
                                 background = launch.background,
@@ -2263,6 +2267,7 @@ private fun MainAppContent(
                                 filename = stream.behaviorHints.filename,
                                 videoSize = stream.behaviorHints.videoSize,
                                 bingeGroup = stream.behaviorHints.bingeGroup,
+                                streamType = stream.streamType,
                             )
                         }
                         val playerLaunch = PlayerLaunch(
@@ -2270,6 +2275,7 @@ private fun MainAppContent(
                             sourceUrl = sourceUrl,
                             sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
                             sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
+                            streamType = stream.streamType,
                             logo = launch.logo,
                             poster = launch.poster,
                             background = launch.background,
@@ -2428,6 +2434,7 @@ private fun MainAppContent(
                         sourceAudioUrl = launch.sourceAudioUrl,
                         sourceHeaders = launch.sourceHeaders,
                         sourceResponseHeaders = launch.sourceResponseHeaders,
+                        streamType = launch.streamType,
                         logo = launch.logo,
                         poster = launch.poster,
                         background = launch.background,

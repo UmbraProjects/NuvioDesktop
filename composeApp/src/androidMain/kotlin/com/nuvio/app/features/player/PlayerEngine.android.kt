@@ -75,6 +75,7 @@ actual fun PlatformPlayerSurface(
     sourceAudioUrl: String?,
     sourceHeaders: Map<String, String>,
     sourceResponseHeaders: Map<String, String>,
+    streamType: String?,
     useYoutubeChunkedPlayback: Boolean,
     modifier: Modifier,
     playWhenReady: Boolean,
@@ -116,6 +117,7 @@ actual fun PlatformPlayerSurface(
         sourceAudioUrl.orEmpty(),
         sanitizedSourceHeaders,
         sanitizedSourceResponseHeaders,
+        streamType.orEmpty(),
         useYoutubeChunkedPlayback,
     )
     var subtitleDelayMs by remember(playerSourceKey) { mutableStateOf(0) }
@@ -168,6 +170,7 @@ actual fun PlatformPlayerSurface(
         sourceAudioUrl,
         sanitizedSourceHeaders,
         sanitizedSourceResponseHeaders,
+        streamType,
         useYoutubeChunkedPlayback,
         effectiveDecoderPriority,
     ) {
@@ -232,6 +235,7 @@ actual fun PlatformPlayerSurface(
                 videoMediaItem = playbackMediaItemFromUrl(
                     url = sourceUrl,
                     responseHeaders = sanitizedSourceResponseHeaders,
+                    streamType = streamType,
                 ),
                 startPositionMs = fallbackStartPositionMs,
             )
