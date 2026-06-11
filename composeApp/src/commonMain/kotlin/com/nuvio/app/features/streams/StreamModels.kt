@@ -18,6 +18,7 @@ data class StreamItem(
     val addonName: String,
     val addonId: String,
     val addonLogo: String? = null,
+    val streamType: String? = null,
     val behaviorHints: StreamBehaviorHints = StreamBehaviorHints(),
     val clientResolve: StreamClientResolve? = null,
     val debridCacheStatus: StreamDebridCacheStatus? = null,

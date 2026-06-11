@@ -288,6 +288,7 @@ internal object MetaDetailsParser {
                 externalUrl = externalUrl,
                 addonName = addonName,
                 addonId = "embedded",
+                streamType = obj.string("type"),
                 behaviorHints = StreamBehaviorHints(
                     bingeGroup = hintsObj?.string("bingeGroup"),
                     notWebReady = (hintsObj?.boolean("notWebReady") ?: false) || proxyHeaders != null,

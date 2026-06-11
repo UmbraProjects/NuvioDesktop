@@ -503,6 +503,7 @@ private fun PluginRuntimeResult.toStreamItem(scraper: PluginScraper): StreamItem
         infoHash = infoHash,
         addonName = scraper.name,
         addonId = "plugin:${scraper.id}",
+        streamType = type,
         behaviorHints = if (requestHeaders.isEmpty()) {
             com.nuvio.app.features.streams.StreamBehaviorHints()
         } else {
