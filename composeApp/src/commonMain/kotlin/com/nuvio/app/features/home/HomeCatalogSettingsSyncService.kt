@@ -63,6 +63,22 @@ private data class RemoteHomeCatalogSettings(
     val hasHideCatalogUnderline: Boolean,
 )
 
+private data class PullToken(
+    val userId: String,
+    val profileId: Int,
+)
+
+private data class ObservedHomeCatalogChange(
+    val signature: String,
+    val token: PullToken?,
+    val initialPullCompleteAtEmission: Boolean,
+)
+
+private data class HomeCatalogChangeSignature(
+    val signature: String,
+    val token: PullToken,
+)
+
 object HomeCatalogSettingsSyncService {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val log = Logger.withTag("HomeCatalogSettingsSyncService")
@@ -81,6 +97,12 @@ object HomeCatalogSettingsSyncService {
     private var pushJob: Job? = null
     private var observeJob: Job? = null
 
+    @Volatile
+    private var completedInitialPull: PullToken? = null
+
+    @Volatile
+    private var remoteAppliedSignature: HomeCatalogChangeSignature? = null
+
     fun startObserving() {
         if (observeJob?.isActive == true) return
         observeLocalChangesAndPush()
@@ -88,14 +110,13 @@ object HomeCatalogSettingsSyncService {
 
     suspend fun pullFromServer(profileId: Int) {
         runCatching {
+            val pullToken = currentPullToken(profileId) ?: return
             val localPayload = HomeCatalogSettingsRepository.exportToSyncPayload()
             val remote = fetchBestRemotePayload(profileId, localPayload)
 
             if (remote == null) {
-                log.i { "pullFromServer — no remote home catalog settings found" }
-                if (localPayload.items.isNotEmpty()) {
-                    pushToRemote(profileId)
-                }
+                log.i { "pullFromServer — no remote home catalog settings found; preserving local" }
+                markInitialPullComplete(pullToken)
                 return
             }
 
@@ -103,23 +124,14 @@ object HomeCatalogSettingsSyncService {
 
             if (remotePayload.items.isEmpty()) {
                 log.i { "pullFromServer — remote has empty items, preserving local catalog order" }
-                isSyncingFromRemote = true
-                HomeCatalogSettingsRepository.applyFromRemote(remotePayload)
-                isSyncingFromRemote = false
-                val localPayload = HomeCatalogSettingsRepository.exportToSyncPayload()
-                if (localPayload.items.isNotEmpty()) {
-                    pushToRemote(profileId)
-                }
+                applyRemotePayload(remotePayload, pullToken)
+                markInitialPullComplete(pullToken)
                 return
             }
 
-            isSyncingFromRemote = true
-            HomeCatalogSettingsRepository.applyFromRemote(remotePayload)
-            isSyncingFromRemote = false
+            applyRemotePayload(remotePayload, pullToken)
             log.i { "pullFromServer — applied ${remotePayload.items.size} items from remote" }
-            if (remote.platform != HOME_CATALOG_SHARED_SYNC_PLATFORM) {
-                pushToRemote(profileId)
-            }
+            markInitialPullComplete(pullToken)
         }.onFailure { e ->
             isSyncingFromRemote = false
             log.e(e) { "pullFromServer — FAILED" }
@@ -127,18 +139,18 @@ object HomeCatalogSettingsSyncService {
     }
 
     fun triggerPush() {
+        val requestedToken = currentPullToken()
+        if (requestedToken == null || !hasCompletedInitialPull(requestedToken)) {
+            log.d { "triggerPush — skipped before initial home catalog pull completed" }
+            return
+        }
         pushJob?.cancel()
         pushJob = scope.launch {
             delay(500)
             if (isSyncingFromRemote) return@launch
-            val authState = AuthRepository.state.value
-            if (authState !is AuthState.Authenticated || authState.isAnonymous) return@launch
-            pushToRemote()
+            if (currentPullToken() != requestedToken) return@launch
+            pushToRemote(requestedToken.profileId)
         }
-    }
-
-    private suspend fun pushToRemote() {
-        pushToRemote(ProfileRepository.activeProfileId)
     }
 
     private suspend fun pushToRemote(profileId: Int) {
@@ -162,16 +174,68 @@ object HomeCatalogSettingsSyncService {
     private fun observeLocalChangesAndPush() {
         observeJob = scope.launch {
             HomeCatalogSettingsRepository.uiState
-                .map { it.signature }
+                .map { state ->
+                    val token = currentPullToken()
+                    ObservedHomeCatalogChange(
+                        signature = state.signature,
+                        token = token,
+                        initialPullCompleteAtEmission = token?.let(::hasCompletedInitialPull) == true,
+                    )
+                }
                 .drop(1)
                 .distinctUntilChanged()
                 .debounce(PUSH_DEBOUNCE_MS)
-                .collect {
+                .collect { change ->
+                    val token = change.token ?: return@collect
+                    val changeSignature = HomeCatalogChangeSignature(change.signature, token)
+                    if (!change.initialPullCompleteAtEmission) {
+                        if (changeSignature == remoteAppliedSignature) {
+                            remoteAppliedSignature = null
+                        }
+                        log.d { "observeLocalChangesAndPush — skipped before initial home catalog pull completed" }
+                        return@collect
+                    }
+                    if (changeSignature == remoteAppliedSignature) {
+                        remoteAppliedSignature = null
+                        log.d { "observeLocalChangesAndPush — skipped remote-applied catalog change" }
+                        return@collect
+                    }
                     if (isSyncingFromRemote) return@collect
-                    val authState = AuthRepository.state.value
-                    if (authState !is AuthState.Authenticated || authState.isAnonymous) return@collect
-                    pushToRemote()
+                    if (currentPullToken() != token) return@collect
+                    pushToRemote(token.profileId)
                 }
+        }
+    }
+
+    private fun currentPullToken(profileId: Int = ProfileRepository.activeProfileId): PullToken? {
+        val authState = AuthRepository.state.value
+        if (authState !is AuthState.Authenticated || authState.isAnonymous) return null
+        return PullToken(
+            userId = authState.userId,
+            profileId = profileId,
+        )
+    }
+
+    private fun hasCompletedInitialPull(token: PullToken): Boolean =
+        completedInitialPull == token
+
+    private fun markInitialPullComplete(token: PullToken) {
+        completedInitialPull = token
+    }
+
+    private fun applyRemotePayload(
+        payload: SyncHomeCatalogPayload,
+        token: PullToken,
+    ) {
+        isSyncingFromRemote = true
+        try {
+            HomeCatalogSettingsRepository.applyFromRemote(payload)
+            remoteAppliedSignature = HomeCatalogChangeSignature(
+                signature = HomeCatalogSettingsRepository.uiState.value.signature,
+                token = token,
+            )
+        } finally {
+            isSyncingFromRemote = false
         }
     }
 
