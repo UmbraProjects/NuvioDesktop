@@ -530,6 +530,11 @@ internal fun settingsSearchEntries(
                 stringResource(Res.string.settings_playback_hold_to_speed),
                 stringResource(Res.string.settings_playback_hold_to_speed_description),
             ),
+            PlaybackSearchRow(
+                "touch-gestures",
+                stringResource(Res.string.settings_playback_touch_gestures),
+                stringResource(Res.string.settings_playback_touch_gestures_description),
+            ),
             PlaybackSearchRow("hold-speed", stringResource(Res.string.settings_playback_hold_speed)),
         ),
     )

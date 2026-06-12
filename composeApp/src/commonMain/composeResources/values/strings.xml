@@ -851,6 +851,8 @@
     <string name="settings_playback_default_speed">Default Speed</string>
     <string name="settings_playback_mouse_move_reveals_controls">Show Controls on Mouse Move</string>
     <string name="settings_playback_mouse_move_reveals_controls_description">Moving the mouse over the player brings up the playback controls.</string>
+    <string name="settings_playback_touch_gestures">Touch Gestures</string>
+    <string name="settings_playback_touch_gestures_description">Allow swipes and double-taps on the player surface to seek, adjust brightness, or adjust volume.</string>
     <string name="settings_playback_invalid_regex_pattern">Invalid regex pattern</string>
     <string name="settings_playback_last_link_cache_duration">Last Link Cache Duration</string>
     <string name="settings_playback_map_dv7_to_hevc">DV7 - HEVC Fallback</string>
