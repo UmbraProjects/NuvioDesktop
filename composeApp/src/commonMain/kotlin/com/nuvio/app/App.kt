@@ -1865,7 +1865,7 @@ private fun MainAppContent(
                         replaceStreamRoute: Boolean,
                     ) {
                         val infoHash = stream.p2pInfoHash ?: return
-                        val sentinelUrl = p2pSentinelUrl(infoHash, stream.fileIdx)
+                        val sentinelUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
                         if (playerSettings.streamReuseLastLinkEnabled) {
                             val cacheKey = StreamLinkCacheRepository.contentKey(
                                 type = launch.type,
@@ -1885,7 +1885,7 @@ private fun MainAppContent(
                                 filename = stream.behaviorHints.filename,
                                 videoSize = stream.behaviorHints.videoSize,
                                 infoHash = infoHash,
-                                fileIdx = stream.fileIdx,
+                                fileIdx = stream.p2pFileIdx,
                                 sources = stream.sources,
                                 bingeGroup = stream.behaviorHints.bingeGroup,
                             )
@@ -1914,7 +1914,7 @@ private fun MainAppContent(
                             parentMetaId = launch.parentMetaId ?: effectiveVideoId,
                             parentMetaType = launch.parentMetaType ?: launch.type,
                             torrentInfoHash = infoHash,
-                            torrentFileIdx = stream.fileIdx,
+                            torrentFileIdx = stream.p2pFileIdx,
                             torrentFilename = stream.behaviorHints.filename,
                             torrentTrackers = stream.p2pTrackers,
                             initialPositionMs = resolvedResumePositionMs ?: 0L,
