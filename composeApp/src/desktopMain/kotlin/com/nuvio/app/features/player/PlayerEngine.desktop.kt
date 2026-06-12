@@ -22,6 +22,10 @@ import com.nuvio.app.features.player.desktop.DesktopPlayerLaunchShield
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
 import kotlinx.coroutines.delay
+import java.awt.KeyEventDispatcher
+import java.awt.KeyboardFocusManager
+import java.awt.event.KeyEvent
+import javax.swing.text.JTextComponent
 
 @Composable
 actual fun PlatformPlayerSurface(
@@ -102,7 +106,7 @@ private fun NativePlayerSurface(
     val latestOnPlayerControlsScrubFinished = rememberUpdatedState(onPlayerControlsScrubFinished)
     val latestOnError = rememberUpdatedState(onError)
 
-    LaunchedEffect(controller) {
+    LaunchedEffect(controller, sourceUrl) {
         onControllerReady(controller)
     }
 
@@ -135,6 +139,30 @@ private fun NativePlayerSurface(
             onScrubChange = { positionMs -> latestOnPlayerControlsScrubChange.value(positionMs) },
             onScrubFinished = { positionMs -> latestOnPlayerControlsScrubFinished.value(positionMs) },
         )
+    }
+
+    DisposableEffect(controller) {
+        val dispatcher = KeyEventDispatcher { event ->
+            if (event.id != KeyEvent.KEY_PRESSED) return@KeyEventDispatcher false
+            if (event.isMetaDown || event.isControlDown || event.isAltDown) return@KeyEventDispatcher false
+            val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
+            if (focusOwner is JTextComponent) return@KeyEventDispatcher false
+            val type = when (event.keyCode) {
+                KeyEvent.VK_LEFT, KeyEvent.VK_J -> "keyboardSeekBack"
+                KeyEvent.VK_RIGHT, KeyEvent.VK_L -> "keyboardSeekForward"
+                KeyEvent.VK_UP -> "volumeUp"
+                KeyEvent.VK_DOWN -> "volumeDown"
+                KeyEvent.VK_SPACE, KeyEvent.VK_K -> "keyboardToggle"
+                else -> return@KeyEventDispatcher false
+            }
+            controller.dispatchKeyboardShortcut(type)
+            event.consume()
+            true
+        }
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(dispatcher)
+        onDispose {
+            KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(dispatcher)
+        }
     }
 
     DisposableEffect(controller, sourceUrl, playbackHeaders) {

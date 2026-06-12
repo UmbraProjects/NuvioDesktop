@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -683,6 +685,22 @@ fun App() {
                 }
             }
         }
+    }
+}
+
+/**
+ * Navigates only if the current back stack entry is RESUMED, guarding against the
+ * well-known double-navigation issue where a click registered just before/while a
+ * pop transition is animating can fire navigate() twice (or navigate while the
+ * destination is mid-disposal), leaving the AnimatedContent transition in an
+ * inconsistent state and the window stuck rendering a black frame.
+ */
+private fun NavController.navigateIfResumed(route: Any) {
+    if (currentBackStackEntry?.lifecycle?.currentState == Lifecycle.State.RESUMED) {
+        // launchSingleTop avoids stacking a second instance of the same destination
+        // (e.g. the same details page) on top of itself, which would register
+        // duplicate shared-element transition keys and freeze the renderer.
+        navigate(route) { launchSingleTop = true }
     }
 }
 
@@ -1477,14 +1495,14 @@ private fun MainAppContent(
                                         animateHomeCollectionGifs = tabsRouteActive,
                                         onCatalogClick = onCatalogClick,
                                         onPosterClick = { meta ->
-                                            navController.navigate(DetailRoute(type = meta.type, id = meta.id))
+                                            navController.navigateIfResumed(DetailRoute(type = meta.type, id = meta.id))
                                         },
                                         onPosterLongClick = { meta ->
                                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                             selectedPosterActionTarget = PosterActionTarget(preview = meta)
                                         },
                                         onLibraryPosterClick = { item ->
-                                            navController.navigate(DetailRoute(type = item.type, id = item.id))
+                                            navController.navigateIfResumed(DetailRoute(type = item.type, id = item.id))
                                         },
                                         onLibraryPosterLongClick = { item, section ->
                                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1578,6 +1596,28 @@ private fun MainAppContent(
                                         onAddProfileRequested = onSwitchProfile,
                                     )
                                 }
+
+                                if (isDesktop) {
+                                    val tokens = MaterialTheme.nuvio
+                                    val fullscreen = isAppFullscreen()
+                                    Surface(
+                                        onClick = { toggleAppFullscreen() },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 16.dp, end = 16.dp)
+                                            .size(40.dp),
+                                        shape = tokens.shapes.avatar,
+                                        color = tokens.colors.surface.copy(alpha = tokens.opacity.strong),
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                                                contentDescription = null,
+                                                tint = tokens.colors.textPrimary,
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1587,12 +1627,14 @@ private fun MainAppContent(
                     val directorRole = stringResource(Res.string.person_role_director)
                     val writerRole = stringResource(Res.string.person_role_writer)
                     val creatorRole = stringResource(Res.string.person_role_creator)
+                    val onBackFromDetail = rememberGuardedPopBackStack(
+                        navController = navController,
+                        backStackEntry = backStackEntry,
+                    )
                     MetaDetailsScreen(
                         type = route.type,
                         id = route.id,
-                        onBack = {
-                            navController.popBackStack()
-                        },
+                        onBack = onBackFromDetail,
                         onPlay = onPlay,
                         onPlayManually = onPlayManually,
                         onOpenMeta = { preview ->
@@ -1608,7 +1650,7 @@ private fun MainAppContent(
                                 } else {
                                     preview.id
                                 }
-                                navController.navigate(
+                                navController.navigateIfResumed(
                                     DetailRoute(
                                         type = preview.type,
                                         id = resolvedId,
@@ -1619,7 +1661,7 @@ private fun MainAppContent(
                         onCastClick = { person, avatarTransitionKey ->
                             val tmdbId = person.tmdbId
                             if (tmdbId != null && tmdbId > 0) {
-                                navController.navigate(
+                                navController.navigateIfResumed(
                                     PersonDetailRoute(
                                         personId = tmdbId,
                                         personName = person.name,
@@ -1640,7 +1682,7 @@ private fun MainAppContent(
                         onCompanyClick = { company, entityKind ->
                             val tmdbId = company.tmdbId
                             if (tmdbId != null && tmdbId > 0) {
-                                navController.navigate(
+                                navController.navigateIfResumed(
                                     EntityBrowseRoute(
                                         entityKind = entityKind,
                                         entityId = tmdbId,
@@ -1677,7 +1719,7 @@ private fun MainAppContent(
                                 } else {
                                     preview.id
                                 }
-                                navController.navigate(
+                                navController.navigateIfResumed(
                                     DetailRoute(
                                         type = preview.type,
                                         id = resolvedId,
@@ -1711,7 +1753,7 @@ private fun MainAppContent(
                                 } else {
                                     preview.id
                                 }
-                                navController.navigate(
+                                navController.navigateIfResumed(
                                     DetailRoute(
                                         type = preview.type,
                                         id = resolvedId,
@@ -2468,7 +2510,7 @@ private fun MainAppContent(
                             navController.popBackStack()
                         },
                         onPosterClick = { meta ->
-                            navController.navigate(DetailRoute(type = meta.type, id = meta.id))
+                            navController.navigateIfResumed(DetailRoute(type = meta.type, id = meta.id))
                         },
                         onPosterLongClick = { meta ->
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -2641,7 +2683,7 @@ private fun MainAppContent(
                         },
                         onCatalogClick = onCatalogClick,
                         onPosterClick = { meta ->
-                            navController.navigate(DetailRoute(type = meta.type, id = meta.id))
+                            navController.navigateIfResumed(DetailRoute(type = meta.type, id = meta.id))
                         },
                     )
                 }
@@ -2731,7 +2773,7 @@ private fun MainAppContent(
                 onDismiss = { selectedContinueWatchingForActions = null },
                 onOpenDetails = {
                     selectedContinueWatchingForActions?.let { item ->
-                        navController.navigate(
+                        navController.navigateIfResumed(
                             DetailRoute(
                                 type = item.parentMetaType,
                                 id = item.parentMetaId,
@@ -3259,7 +3301,7 @@ private fun TabletFloatingTopBar(
         contentAlignment = Alignment.TopCenter,
     ) {
         Surface(
-            color = tokens.colors.surface.copy(alpha = tokens.opacity.visible - tokens.opacity.subtle),
+            color = tokens.colors.surface.copy(alpha = tokens.opacity.strong),
             shape = tokens.shapes.chip,
             tonalElevation = tokens.elevation.playerControls,
             shadowElevation = tokens.elevation.overlay,
@@ -3329,7 +3371,7 @@ private fun TabletFloatingTopBar(
                     shape = tokens.shapes.chip,
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = tokens.spacing.listGap, vertical = tokens.spacing.controlGap),
+                        modifier = Modifier.padding(horizontal = tokens.spacing.listGap, vertical = NuvioTokens.Space.s4),
                         horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -3368,10 +3410,10 @@ private fun TabletTopPillItem(
 ) {
     val tokens = MaterialTheme.nuvio
     Surface(
+        onClick = onClick,
         color = if (selected) tokens.colors.overlaySelected else tokens.colors.surface,
         shape = tokens.shapes.chip,
         tonalElevation = if (selected) tokens.elevation.raised else tokens.elevation.flat,
-        modifier = Modifier.clickable(onClick = onClick),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = tokens.components.chipHorizontalPadding, vertical = NuvioTokens.Space.s10),

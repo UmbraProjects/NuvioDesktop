@@ -56,6 +56,7 @@ import nuvio.composeapp.generated.resources.settings_poster_width_balanced
 import nuvio.composeapp.generated.resources.settings_poster_width_comfort
 import nuvio.composeapp.generated.resources.settings_poster_width_compact
 import nuvio.composeapp.generated.resources.settings_poster_width_dense
+import nuvio.composeapp.generated.resources.settings_poster_width_extra_large
 import nuvio.composeapp.generated.resources.settings_poster_width_large
 import nuvio.composeapp.generated.resources.settings_poster_width_standard
 import org.jetbrains.compose.resources.stringResource
@@ -112,6 +113,7 @@ private fun PosterCardStyleControls(
         PresetOption(stringResource(Res.string.settings_poster_width_balanced), 126),
         PresetOption(stringResource(Res.string.settings_poster_width_comfort), 134),
         PresetOption(stringResource(Res.string.settings_poster_width_large), 140),
+        PresetOption(stringResource(Res.string.settings_poster_width_extra_large), 210),
     )
     val radiusOptions = listOf(
         PresetOption(stringResource(Res.string.settings_poster_radius_sharp), 0),
@@ -208,8 +210,8 @@ private fun PosterCardLivePreview(
     cornerRadiusDp: Int,
 ) {
     val targetHeightDp = (widthDp * 3) / 2
-    val previewFrameWidthDp = 140
-    val previewFrameHeightDp = 210
+    val previewFrameWidthDp = 210
+    val previewFrameHeightDp = 315
     val animatedWidth = animateDpAsState(
         targetValue = widthDp.dp,
         animationSpec = tween(durationMillis = 280),

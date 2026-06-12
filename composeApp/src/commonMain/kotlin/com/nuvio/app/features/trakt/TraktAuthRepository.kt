@@ -86,17 +86,20 @@ object TraktAuthRepository {
             errorMessage = null,
         )
 
+        TraktAuthCallbackServer.ensureStarted()
         return buildAuthorizationUrl(oauthState)
     }
 
     fun pendingAuthorizationUrl(): String? {
         ensureLoaded()
         val oauthState = authState.pendingAuthorizationState ?: return null
+        TraktAuthCallbackServer.ensureStarted()
         return buildAuthorizationUrl(oauthState)
     }
 
     fun onCancelAuthorization() {
         ensureLoaded()
+        TraktAuthCallbackServer.stop()
         clearPendingAuthorization()
         persist()
         publish(statusMessage = null, errorMessage = null)
@@ -174,6 +177,7 @@ object TraktAuthRepository {
     }
 
     private suspend fun completeAuthorizationFromCallback(callbackUrl: String) {
+        TraktAuthCallbackServer.stop()
         publish(isLoading = true, errorMessage = null)
 
         val parsedUrl = runCatching { Url(callbackUrl) }

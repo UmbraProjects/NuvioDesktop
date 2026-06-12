@@ -78,6 +78,7 @@ import com.nuvio.app.features.plugins.PluginsUiState
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.streams.StreamAutoPlayMode
 import com.nuvio.app.features.streams.StreamAutoPlaySource
+import com.nuvio.app.isDesktop
 import com.nuvio.app.isIos
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
@@ -91,6 +92,7 @@ internal fun LazyListScope.playbackSettingsContent(
     showLoadingOverlay: Boolean,
     holdToSpeedEnabled: Boolean,
     holdToSpeedValue: Float,
+    defaultPlaybackSpeed: Float,
     preferredAudioLanguage: String,
     secondaryPreferredAudioLanguage: String?,
     preferredSubtitleLanguage: String,
@@ -109,6 +111,7 @@ internal fun LazyListScope.playbackSettingsContent(
             showLoadingOverlay = showLoadingOverlay,
             holdToSpeedEnabled = holdToSpeedEnabled,
             holdToSpeedValue = holdToSpeedValue,
+            defaultPlaybackSpeed = defaultPlaybackSpeed,
             preferredAudioLanguage = preferredAudioLanguage,
             secondaryPreferredAudioLanguage = secondaryPreferredAudioLanguage,
             preferredSubtitleLanguage = preferredSubtitleLanguage,
@@ -243,6 +246,7 @@ private fun PlaybackSettingsSection(
     showLoadingOverlay: Boolean,
     holdToSpeedEnabled: Boolean,
     holdToSpeedValue: Float,
+    defaultPlaybackSpeed: Float,
     preferredAudioLanguage: String,
     secondaryPreferredAudioLanguage: String?,
     preferredSubtitleLanguage: String,
@@ -268,6 +272,7 @@ private fun PlaybackSettingsSection(
     var showReuseCacheDurationDialog by remember { mutableStateOf(false) }
     var showDecoderPriorityDialog by remember { mutableStateOf(false) }
     var showHoldToSpeedValueDialog by remember { mutableStateOf(false) }
+    var showDefaultPlaybackSpeedDialog by remember { mutableStateOf(false) }
     var showIosAudioOutputDialog by remember { mutableStateOf(false) }
     var showIosHardwareDecoderDialog by remember { mutableStateOf(false) }
     var showIosTargetPrimariesDialog by remember { mutableStateOf(false) }
@@ -366,6 +371,23 @@ private fun PlaybackSettingsSection(
                         description = formatPlaybackSpeedLabel(holdToSpeedValue),
                         isTablet = isTablet,
                         onClick = { showHoldToSpeedValueDialog = true },
+                    )
+                }
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_default_speed),
+                    description = formatPlaybackSpeedLabel(defaultPlaybackSpeed),
+                    isTablet = isTablet,
+                    onClick = { showDefaultPlaybackSpeedDialog = true },
+                )
+                if (isDesktop) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_mouse_move_reveals_controls),
+                        description = stringResource(Res.string.settings_playback_mouse_move_reveals_controls_description),
+                        checked = autoPlayPlayerSettings.mouseMoveRevealsControlsEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setMouseMoveRevealsControlsEnabled,
                     )
                 }
             }
@@ -1265,6 +1287,17 @@ private fun PlaybackSettingsSection(
         )
     }
 
+    if (showDefaultPlaybackSpeedDialog) {
+        DefaultPlaybackSpeedDialog(
+            selectedSpeed = defaultPlaybackSpeed,
+            onSpeedSelected = { speed ->
+                PlayerSettingsRepository.setDefaultPlaybackSpeed(speed)
+                showDefaultPlaybackSpeedDialog = false
+            },
+            onDismiss = { showDefaultPlaybackSpeedDialog = false },
+        )
+    }
+
     if (showIosHardwareDecoderDialog) {
         IosEnumSelectionDialog(
             title = stringResource(Res.string.settings_playback_ios_hw_decoder_dialog),
@@ -2044,6 +2077,93 @@ private fun HoldToSpeedValueDialog(
             ) {
                 Text(
                     text = stringResource(Res.string.settings_playback_hold_speed),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    options.forEach { speed ->
+                        val isSelected = speed == selectedSpeed
+                        val containerColor = if (isSelected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSpeedSelected(speed) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = containerColor,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = formatPlaybackSpeedLabel(speed),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Box(
+                                    modifier = Modifier.size(24.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = stringResource(Res.string.settings_playback_dialog_close),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun DefaultPlaybackSpeedDialog(
+    selectedSpeed: Float,
+    onSpeedSelected: (Float) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val options = listOf(1f, 1.25f, 1.5f, 1.75f, 2f)
+
+    BasicAlertDialog(
+        onDismissRequest = onDismiss,
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.settings_playback_default_speed),
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold,

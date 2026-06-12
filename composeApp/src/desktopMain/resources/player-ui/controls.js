@@ -48,6 +48,9 @@ const openingProgressBar = document.getElementById("openingProgressBar");
 const parentalGuide = document.getElementById("parentalGuide");
 const parentalGuideLine = document.getElementById("parentalGuideLine");
 const parentalGuideList = document.getElementById("parentalGuideList");
+const volumePill = document.getElementById("volumePill");
+const volumePillIcon = document.getElementById("volumePillIcon");
+const volumePillLabel = document.getElementById("volumePillLabel");
 const skipPrompt = document.getElementById("skipPrompt");
 const skipPromptLabel = document.getElementById("skipPromptLabel");
 const skipPromptProgress = document.getElementById("skipPromptProgress");
@@ -235,6 +238,7 @@ let state = {
   isLocked: false,
   lockedOverlayVisible: false,
   controlsVisible: true,
+  mouseMoveRevealsControlsEnabled: false,
   parentalWarnings: [],
   showParentalGuide: false,
   showOpeningOverlay: false,
@@ -1658,7 +1662,12 @@ const renderChrome = () => {
   const showError = renderPlaybackError();
   root.classList.toggle("locked", Boolean(state.isLocked));
   root.classList.toggle("locked-visible", Boolean(state.isLocked && state.lockedOverlayVisible));
-  root.classList.toggle("chrome-hidden", Boolean(showError || (!state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible))));
+  const isChromeHidden = Boolean(showError || (!state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible)));
+  root.classList.toggle("chrome-hidden", isChromeHidden);
+  if (isChromeHidden !== lastCursorHidden) {
+    lastCursorHidden = isChromeHidden;
+    send("cursorVisibility", isChromeHidden ? 0 : 1);
+  }
   root.classList.toggle("source-visible", Boolean(!showError && !isPlaying && !state.isLoading && (state.streamTitle || state.providerName)));
   const showOpening = renderOpeningOverlay(showError);
   renderPauseMetadataOverlay(showOpening || showError);
@@ -1738,9 +1747,41 @@ const shortcutCommandForEvent = event => {
     case "ArrowRight":
     case "KeyL":
       return "keyboardSeekForward";
+    case "ArrowUp":
+      return "volumeUp";
+    case "ArrowDown":
+      return "volumeDown";
     default:
       return "";
   }
+};
+
+let localVolume = 100;
+let volumePillHideTimer = null;
+let lastCursorHidden = null;
+
+const showVolumePill = () => {
+  if (!volumePill) return;
+  const percentage = Math.round(localVolume);
+  volumePillLabel.textContent = `${percentage}%`;
+  if (volumePillIcon) {
+    volumePillIcon.setAttribute("href", percentage <= 0 ? "#icon-volume-mute" : "#icon-volume");
+  }
+  volumePill.classList.add("visible");
+  window.clearTimeout(volumePillHideTimer);
+  volumePillHideTimer = window.setTimeout(() => {
+    volumePill.classList.remove("visible");
+  }, 900);
+};
+
+const adjustLocalVolume = deltaPercent => {
+  localVolume = Math.max(0, Math.min(100, localVolume + deltaPercent));
+  showVolumePill();
+};
+
+window.nuvioShowVolumePill = percentage => {
+  localVolume = Math.max(0, Math.min(100, Number(percentage) || 0));
+  showVolumePill();
 };
 
 const toggleChrome = () => {
@@ -1789,7 +1830,16 @@ document.addEventListener("pointerdown", event => {
 document.addEventListener("pointermove", event => {
   const inside = isChromeInteractionTarget(event.target);
   updateChromePointerInside(inside);
-  if (inside) {
+  if (state.mouseMoveRevealsControlsEnabled && !state.isLocked) {
+    if (!state.controlsVisible) {
+      chromeAutoHideActivity += 1;
+      state = { ...state, controlsVisible: true };
+      renderChrome();
+      send("revealChrome", 0);
+    } else {
+      noteChromeActivity();
+    }
+  } else if (inside) {
     noteChromeActivity();
   }
 }, true);
@@ -2138,11 +2188,26 @@ window.playerControls = nextState => {
 root.addEventListener("click", event => {
   if (playbackErrorText()) return;
   if (event.target.closest("button,input")) return;
+  const onVideoSurface = !isChromeInteractionTarget(event.target);
   window.clearTimeout(tapTimer);
   tapTimer = window.setTimeout(() => {
+    if (onVideoSurface && !state.isLocked) {
+      send("toggle", 0);
+    }
     toggleChrome();
   }, 220);
 });
+
+root.addEventListener("wheel", event => {
+  if (playbackErrorText()) return;
+  if (state.isLocked) return;
+  if (isChromeInteractionTarget(event.target)) return;
+  event.preventDefault();
+  const direction = event.deltaY > 0 ? -1 : event.deltaY < 0 ? 1 : 0;
+  if (direction === 0) return;
+  adjustLocalVolume(direction * 5);
+  send("volumeDelta", direction * 0.05);
+}, { passive: false });
 
 root.addEventListener("dblclick", event => {
   if (playbackErrorText()) return;
@@ -2187,6 +2252,11 @@ document.addEventListener("keydown", event => {
   event.preventDefault();
   focusShortcutRoot();
   noteChromeActivity();
+  if (command === "volumeUp") {
+    adjustLocalVolume(5);
+  } else if (command === "volumeDown") {
+    adjustLocalVolume(-5);
+  }
   send(command, 0);
 });
 

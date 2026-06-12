@@ -27,6 +27,8 @@ internal object NativePlayerBridge {
 
     external fun dispose(handle: Long)
     external fun updateControls(handle: Long, controlsJson: String)
+    external fun runJavaScript(handle: Long, script: String)
+    external fun setCursorHidden(handle: Long, hidden: Boolean)
     external fun setPaused(handle: Long, paused: Boolean)
     external fun seekTo(handle: Long, positionMs: Long)
     external fun seekBy(handle: Long, offsetMs: Long)
@@ -39,6 +41,10 @@ internal object NativePlayerBridge {
     external fun isEnded(handle: Long): Boolean
     external fun isPaused(handle: Long): Boolean
     external fun speed(handle: Long): Float
+    external fun setVolume(handle: Long, volume: Float)
+    external fun volume(handle: Long): Float
+    external fun setMute(handle: Long, muted: Boolean)
+    external fun isMuted(handle: Long): Boolean
     external fun audioTracksJson(handle: Long): String
     external fun subtitleTracksJson(handle: Long): String
     external fun selectAudioTrack(handle: Long, trackId: Int)
@@ -53,6 +59,8 @@ internal object NativePlayerBridge {
         borderColorRgb: Int,
         textColorRgb: Int,
     )
+
+    external fun setBorderlessFullscreen(windowHwnd: Long, enabled: Boolean)
 
     external fun setSubtitleDelayMs(handle: Long, delayMs: Int)
     external fun applySubtitleStyle(
@@ -110,6 +118,19 @@ internal object NativePlayerBridge {
             return
         }
 
+        // On Windows, dependent DLLs (libmpv, ffmpeg, etc.) are only resolved from the
+        // directory the host executable was launched from, the system directories, or
+        // PATH - not from the directory of the loaded DLL itself. For a packaged
+        // jpackage app image, that's the app's install directory (parent of java.home).
+        // Extract the native bridge and its runtime DLLs there once so dependency
+        // resolution works without any PATH setup.
+        appInstallDir(platform)?.let { installDir ->
+            if (extractBundledNativeLibraryIfNeeded(platformDir, libraryName, installDir)) {
+                System.load(installDir.resolve(libraryName).absolutePath)
+                return
+            }
+        }
+
         val resource = "/native/$platformDir/$libraryName"
         val input = NativePlayerBridge::class.java.getResourceAsStream(resource)
             ?: error("Missing bundled native player bridge: $resource")
@@ -122,6 +143,36 @@ internal object NativePlayerBridge {
             file.outputStream().use { target -> source.copyTo(target) }
         }
         System.load(file.absolutePath)
+    }
+
+    private fun appInstallDir(platform: DesktopHostOs): File? {
+        if (platform != DesktopHostOs.WINDOWS) return null
+        val javaHome = System.getProperty("java.home")?.takeIf { it.isNotBlank() }?.let(::File) ?: return null
+        val installDir = javaHome.parentFile ?: return null
+        return installDir.takeIf { it.isDirectory && it.canWrite() }
+    }
+
+    private fun extractBundledNativeLibraryIfNeeded(platformDir: String, libraryName: String, dir: File): Boolean {
+        val mainFile = dir.resolve(libraryName)
+        val runtimeNames = bundledRuntimeResourceNames(platformDir)
+        if (mainFile.exists() && runtimeNames.all { dir.resolve(it).exists() }) {
+            return true
+        }
+        return runCatching {
+            copyResourceTo("/native/$platformDir/$libraryName", mainFile)
+            runtimeNames.forEach { name ->
+                copyResourceTo("/native/$platformDir/$name", dir.resolve(name))
+            }
+            true
+        }.getOrElse { false }
+    }
+
+    private fun copyResourceTo(resource: String, target: File) {
+        val input = NativePlayerBridge::class.java.getResourceAsStream(resource)
+            ?: error("Missing bundled native resource: $resource")
+        input.use { source ->
+            target.outputStream().use { output -> source.copyTo(output) }
+        }
     }
 
     private fun extractBundledRuntimeResources(platformDir: String, dir: File) {

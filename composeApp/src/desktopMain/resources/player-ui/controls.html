@@ -66,6 +66,15 @@
     <symbol id="icon-check" viewBox="0 0 24 24">
       <path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2Z"/>
     </symbol>
+    <symbol id="icon-volume" viewBox="0 0 24 24">
+      <path d="M3 10v4h4l5 5V5L7 10H3Z"/>
+      <path d="M16 8.5a4 4 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <path d="M18.5 6a7 7 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-volume-mute" viewBox="0 0 24 24">
+      <path d="M3 10v4h4l5 5V5L7 10H3Z"/>
+      <path d="M16 9.5 21 14.5M21 9.5 16 14.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
   </svg>
 
   <div class="player" id="playerRoot" tabindex="-1">
@@ -133,6 +142,11 @@
           <div class="pause-description" id="pauseDescription"></div>
         </div>
       </section>
+
+      <div class="gesture-pill" id="volumePill" aria-hidden="true">
+        <svg><use id="volumePillIcon" href="#icon-volume"></use></svg>
+        <span class="gesture-pill-label" id="volumePillLabel">100%</span>
+      </div>
 
       <button class="skip-prompt" id="skipPrompt" type="button" aria-label="Skip" aria-hidden="true">
         <span class="skip-prompt-row">

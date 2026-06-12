@@ -67,6 +67,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         credentialRefreshJob = null
         credentialRefreshAttemptedSourceUrl = null
         initialLoadCompleted = false
+        defaultPlaybackSpeedApplied = false
         lastProgressPersistEpochMs = 0L
         previousIsPlaying = false
         pendingScrobbleStartAfterSeek = false
@@ -261,6 +262,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
 private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
     LaunchedEffect(
         controlsVisible,
+        mouseActivitySignal,
         isScrubbingTimeline,
         playbackSnapshot.isPlaying,
         playbackSnapshot.isLoading,

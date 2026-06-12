@@ -749,7 +749,7 @@ compose.desktop {
             packageName = "Nuvio"
             packageVersion = desktopReleaseVersionName
             vendor = "Nuvio Media"
-            modules("java.net.http")
+            modules("java.net.http", "jdk.httpserver")
             macOS {
                 iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon.icns"))
             }

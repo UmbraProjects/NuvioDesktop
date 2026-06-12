@@ -19,3 +19,12 @@ internal fun applyNativeDesktopWindowChrome(window: Window) {
         )
     }
 }
+
+internal fun applyNativeBorderlessFullscreen(window: Window, enabled: Boolean) {
+    if (DesktopHostOs.current != DesktopHostOs.WINDOWS || !window.isDisplayable) return
+
+    runCatching {
+        val hwnd = AwtNativeViewResolver.resolveNativeViewPointer(window)
+        NativePlayerBridge.setBorderlessFullscreen(hwnd, enabled)
+    }
+}

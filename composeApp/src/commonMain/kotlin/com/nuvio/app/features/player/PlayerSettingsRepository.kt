@@ -36,6 +36,8 @@ data class PlayerSettingsUiState(
     val resizeMode: PlayerResizeMode = PlayerResizeMode.Fit,
     val holdToSpeedEnabled: Boolean = true,
     val holdToSpeedValue: Float = 2f,
+    val defaultPlaybackSpeed: Float = 1f,
+    val mouseMoveRevealsControlsEnabled: Boolean = true,
     val externalPlayerEnabled: Boolean = false,
     val externalPlayerForwardSubtitles: Boolean = false,
     val externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId(),
@@ -95,6 +97,8 @@ object PlayerSettingsRepository {
     private var resizeMode = PlayerResizeMode.Fit
     private var holdToSpeedEnabled = true
     private var holdToSpeedValue = 2f
+    private var defaultPlaybackSpeed = 1f
+    private var mouseMoveRevealsControlsEnabled = true
     private var externalPlayerEnabled = false
     private var externalPlayerForwardSubtitles = false
     private var externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId()
@@ -159,6 +163,8 @@ object PlayerSettingsRepository {
         resizeMode = PlayerResizeMode.Fit
         holdToSpeedEnabled = true
         holdToSpeedValue = 2f
+        defaultPlaybackSpeed = 1f
+        mouseMoveRevealsControlsEnabled = true
         externalPlayerEnabled = false
         externalPlayerForwardSubtitles = false
         externalPlayerId = ExternalPlayerPlatform.defaultPlayerId()
@@ -218,6 +224,8 @@ object PlayerSettingsRepository {
             ?: PlayerResizeMode.Fit
         holdToSpeedEnabled = PlayerSettingsStorage.loadHoldToSpeedEnabled() ?: true
         holdToSpeedValue = PlayerSettingsStorage.loadHoldToSpeedValue() ?: 2f
+        defaultPlaybackSpeed = PlayerSettingsStorage.loadDefaultPlaybackSpeed() ?: 1f
+        mouseMoveRevealsControlsEnabled = PlayerSettingsStorage.loadMouseMoveRevealsControlsEnabled() ?: true
         externalPlayerEnabled = PlayerSettingsStorage.loadExternalPlayerEnabled() ?: false
         externalPlayerForwardSubtitles = PlayerSettingsStorage.loadExternalPlayerForwardSubtitles() ?: false
         externalPlayerId = PlayerSettingsStorage.loadExternalPlayerId()
@@ -367,6 +375,23 @@ object PlayerSettingsRepository {
         holdToSpeedValue = normalized
         publish()
         PlayerSettingsStorage.saveHoldToSpeedValue(normalized)
+    }
+
+    fun setDefaultPlaybackSpeed(speed: Float) {
+        ensureLoaded()
+        val normalized = speed.coerceIn(0.25f, 4f)
+        if (defaultPlaybackSpeed == normalized) return
+        defaultPlaybackSpeed = normalized
+        publish()
+        PlayerSettingsStorage.saveDefaultPlaybackSpeed(normalized)
+    }
+
+    fun setMouseMoveRevealsControlsEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (mouseMoveRevealsControlsEnabled == enabled) return
+        mouseMoveRevealsControlsEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveMouseMoveRevealsControlsEnabled(enabled)
     }
 
     fun setExternalPlayerEnabled(enabled: Boolean) {
@@ -828,6 +853,8 @@ object PlayerSettingsRepository {
             resizeMode = resizeMode,
             holdToSpeedEnabled = holdToSpeedEnabled,
             holdToSpeedValue = holdToSpeedValue,
+            defaultPlaybackSpeed = defaultPlaybackSpeed,
+            mouseMoveRevealsControlsEnabled = mouseMoveRevealsControlsEnabled,
             externalPlayerEnabled = externalPlayerEnabled,
             externalPlayerForwardSubtitles = externalPlayerForwardSubtitles,
             externalPlayerId = externalPlayerId,
