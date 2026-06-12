@@ -121,8 +121,23 @@ internal fun PlayerScreenRuntime.emitTraktScrobbleStop(progressPercent: Float? =
 
     val percent = provided ?: currentPlaybackProgressPercent()
     val itemSnapshot = currentTraktScrobbleItem
+    val contentTypeSnapshot = contentType ?: parentMetaType
+    val parentMetaIdSnapshot = parentMetaId
+    val videoIdSnapshot = activeVideoId
+    val titleSnapshot = title
+    val seasonNumberSnapshot = activeSeasonNumber
+    val episodeNumberSnapshot = activeEpisodeNumber
+    val episodeTitleSnapshot = activeEpisodeTitle
     scope.launch(NonCancellable) {
-        val item = itemSnapshot ?: currentTraktScrobbleItem() ?: return@launch
+        val item = itemSnapshot ?: TraktScrobbleRepository.buildItem(
+            contentType = contentTypeSnapshot,
+            parentMetaId = parentMetaIdSnapshot,
+            videoId = videoIdSnapshot,
+            title = titleSnapshot,
+            seasonNumber = seasonNumberSnapshot,
+            episodeNumber = episodeNumberSnapshot,
+            episodeTitle = episodeTitleSnapshot,
+        ) ?: return@launch
         TraktScrobbleRepository.scrobbleStop(
             item = item,
             progressPercent = percent,
