@@ -90,6 +90,9 @@ data class StreamBadge(
     val borderColor: String = "",
 )
 
+fun normalizeStreamType(raw: String?): String? =
+    raw?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+
 private fun String?.isMagnetLink(): Boolean =
     this?.trimStart()?.startsWith("magnet:", ignoreCase = true) == true
 
