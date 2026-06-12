@@ -871,9 +871,10 @@ private fun resolveHeroTargetPage(
         abs(velocityX) > HERO_SWIPE_VELOCITY_THRESHOLD
     if (!thresholdPassed) return startPage
 
+    val currentPage = startPage.coerceIn(0, itemCount - 1)
     return when {
-        totalDx > 0f -> (startPage - 1).coerceAtLeast(0)
-        totalDx < 0f -> (startPage + 1).coerceAtMost(itemCount - 1)
-        else -> startPage
+        totalDx > 0f -> if (currentPage == 0) itemCount - 1 else currentPage - 1
+        totalDx < 0f -> if (currentPage == itemCount - 1) 0 else currentPage + 1
+        else -> currentPage
     }
 }
