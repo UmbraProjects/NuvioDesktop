@@ -251,6 +251,35 @@ object WatchProgressRepository {
         }
     }
 
+    suspend fun forceSnapshotRefreshFromServer(profileId: Int) {
+        ensureLoaded()
+        if (currentProfileId != profileId) {
+            loadFromDisk(profileId)
+        }
+
+        if (shouldUseTraktProgress()) {
+            log.d { "Force refreshing Trakt watch progress for profile $profileId" }
+            runCatching { TraktProgressRepository.refreshNow() }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    log.e(error) { "Failed to force refresh Trakt progress" }
+                }
+            publish()
+            return
+        }
+
+        val authState = AuthRepository.state.value
+        if (authState !is AuthState.Authenticated || authState.isAnonymous) {
+            log.d { "Skipping force watch progress refresh because Nuvio Sync is not authenticated" }
+            return
+        }
+
+        deltaCursorEventId = 0L
+        deltaInitialized = false
+        persist()
+        pullFromServer(profileId)
+    }
+
     private suspend fun pullSupabaseDeltaFromServer(
         profileId: Int,
         pullStartedEpochMs: Long,
