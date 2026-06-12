@@ -2,6 +2,7 @@ package com.nuvio.app.features.library
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.auth.AuthRepository
+import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.network.SupabaseProvider
 import com.nuvio.app.features.home.PosterShape
@@ -40,6 +41,7 @@ import kotlinx.serialization.json.put
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.library_local_tab_title
 import nuvio.composeapp.generated.resources.library_other
+import nuvio.composeapp.generated.resources.trakt_lists_update_failed
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 
@@ -218,7 +220,13 @@ object LibraryRepository {
         if (isTraktLibrarySourceActive()) {
             syncScope.launch {
                 runCatching { TraktLibraryRepository.toggleWatchlist(item) }
-                    .onFailure { e -> log.e(e) { "Failed to toggle Trakt watchlist" } }
+                    .onFailure { e ->
+                        log.e(e) { "Failed to toggle Trakt watchlist" }
+                        NuvioToastController.show(
+                            e.message?.takeIf { it.isNotBlank() }
+                                ?: getString(Res.string.trakt_lists_update_failed),
+                        )
+                    }
                 publish()
             }
             return
