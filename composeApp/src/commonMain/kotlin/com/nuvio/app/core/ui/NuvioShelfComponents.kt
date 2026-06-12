@@ -30,10 +30,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -296,12 +298,18 @@ private fun NuvioShelfSectionHeader(
                 )
             }
         }
-        if (onViewAllClick != null) {
-            NuvioViewAllPill(
-                onClick = onViewAllClick,
-                size = viewAllPillSize,
-            )
+        val viewAllPlaceholderModifier = if (onViewAllClick == null) {
+            Modifier
+                .alpha(0f)
+                .clearAndSetSemantics { }
+        } else {
+            Modifier
         }
+        NuvioViewAllPill(
+            onClick = onViewAllClick,
+            size = viewAllPillSize,
+            modifier = viewAllPlaceholderModifier,
+        )
     }
 }
 
@@ -309,6 +317,7 @@ private fun NuvioShelfSectionHeader(
 private fun NuvioViewAllPill(
     onClick: (() -> Unit)?,
     size: NuvioViewAllPillSize,
+    modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
     val horizontalPadding = if (size == NuvioViewAllPillSize.Compact) NuvioTokens.Space.s12 else NuvioTokens.Space.s18
@@ -321,7 +330,7 @@ private fun NuvioViewAllPill(
     val iconSpacing = if (size == NuvioViewAllPillSize.Compact) NuvioTokens.Space.s2 else NuvioTokens.Space.s4
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .background(
                 color = tokens.colors.surface,
                 shape = RoundedCornerShape(NuvioTokens.Radius.xl),
