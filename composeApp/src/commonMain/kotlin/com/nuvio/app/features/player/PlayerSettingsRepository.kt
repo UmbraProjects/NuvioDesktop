@@ -38,6 +38,7 @@ data class PlayerSettingsUiState(
     val holdToSpeedValue: Float = 2f,
     val defaultPlaybackSpeed: Float = 1f,
     val mouseMoveRevealsControlsEnabled: Boolean = true,
+    val touchGesturesEnabled: Boolean = true,
     val externalPlayerEnabled: Boolean = false,
     val externalPlayerForwardSubtitles: Boolean = false,
     val externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId(),
@@ -99,6 +100,7 @@ object PlayerSettingsRepository {
     private var holdToSpeedValue = 2f
     private var defaultPlaybackSpeed = 1f
     private var mouseMoveRevealsControlsEnabled = true
+    private var touchGesturesEnabled = true
     private var externalPlayerEnabled = false
     private var externalPlayerForwardSubtitles = false
     private var externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId()
@@ -165,6 +167,7 @@ object PlayerSettingsRepository {
         holdToSpeedValue = 2f
         defaultPlaybackSpeed = 1f
         mouseMoveRevealsControlsEnabled = true
+        touchGesturesEnabled = true
         externalPlayerEnabled = false
         externalPlayerForwardSubtitles = false
         externalPlayerId = ExternalPlayerPlatform.defaultPlayerId()
@@ -226,6 +229,7 @@ object PlayerSettingsRepository {
         holdToSpeedValue = PlayerSettingsStorage.loadHoldToSpeedValue() ?: 2f
         defaultPlaybackSpeed = PlayerSettingsStorage.loadDefaultPlaybackSpeed() ?: 1f
         mouseMoveRevealsControlsEnabled = PlayerSettingsStorage.loadMouseMoveRevealsControlsEnabled() ?: true
+        touchGesturesEnabled = PlayerSettingsStorage.loadTouchGesturesEnabled() ?: true
         externalPlayerEnabled = PlayerSettingsStorage.loadExternalPlayerEnabled() ?: false
         externalPlayerForwardSubtitles = PlayerSettingsStorage.loadExternalPlayerForwardSubtitles() ?: false
         externalPlayerId = PlayerSettingsStorage.loadExternalPlayerId()
@@ -392,6 +396,14 @@ object PlayerSettingsRepository {
         mouseMoveRevealsControlsEnabled = enabled
         publish()
         PlayerSettingsStorage.saveMouseMoveRevealsControlsEnabled(enabled)
+    }
+
+    fun setTouchGesturesEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (touchGesturesEnabled == enabled) return
+        touchGesturesEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveTouchGesturesEnabled(enabled)
     }
 
     fun setExternalPlayerEnabled(enabled: Boolean) {
@@ -855,6 +867,7 @@ object PlayerSettingsRepository {
             holdToSpeedValue = holdToSpeedValue,
             defaultPlaybackSpeed = defaultPlaybackSpeed,
             mouseMoveRevealsControlsEnabled = mouseMoveRevealsControlsEnabled,
+            touchGesturesEnabled = touchGesturesEnabled,
             externalPlayerEnabled = externalPlayerEnabled,
             externalPlayerForwardSubtitles = externalPlayerForwardSubtitles,
             externalPlayerId = externalPlayerId,

@@ -15,6 +15,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDefaultPlaybackSpeed(speed: Float)
     fun loadMouseMoveRevealsControlsEnabled(): Boolean?
     fun saveMouseMoveRevealsControlsEnabled(enabled: Boolean)
+    fun loadTouchGesturesEnabled(): Boolean?
+    fun saveTouchGesturesEnabled(enabled: Boolean)
     fun loadExternalPlayerEnabled(): Boolean?
     fun saveExternalPlayerEnabled(enabled: Boolean)
     fun loadExternalPlayerForwardSubtitles(): Boolean?
