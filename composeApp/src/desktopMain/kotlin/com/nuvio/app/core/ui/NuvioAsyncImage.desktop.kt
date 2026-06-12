@@ -83,9 +83,14 @@ internal actual fun NuvioAsyncImage(
                     placeholder?.let { state.copy(painter = it) } ?: state
                 }
                 is AsyncImagePainter.State.Success -> {
-                    state.result.image.toScaledBitmapPainter(effectiveDesktopImageScaling)
-                        ?.let { state.copy(painter = it) }
-                        ?: state
+                    val image = state.result.image
+                    if (image is SkiaAnimatedImage) {
+                        state.copy(painter = SkiaAnimatedPainter(image))
+                    } else {
+                        image.toScaledBitmapPainter(effectiveDesktopImageScaling)
+                            ?.let { state.copy(painter = it) }
+                            ?: state
+                    }
                 }
                 is AsyncImagePainter.State.Error -> {
                     val fallbackPainter = if (state.result.throwable is NullRequestDataException) {

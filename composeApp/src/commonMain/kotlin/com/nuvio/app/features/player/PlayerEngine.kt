@@ -11,6 +11,8 @@ interface PlayerEngineController {
     fun retry()
     fun setPlaybackSpeed(speed: Float)
     fun setMuted(muted: Boolean) {}
+    fun setVolume(fraction: Float): PlayerAudioLevel? = null
+    fun getVolume(): PlayerAudioLevel? = null
     fun getAudioTracks(): List<AudioTrack>
     fun getSubtitleTracks(): List<SubtitleTrack>
     fun selectAudioTrack(index: Int)
@@ -139,6 +141,7 @@ data class PlayerControlsState(
     val isLocked: Boolean = false,
     val lockedOverlayVisible: Boolean = false,
     val controlsVisible: Boolean = true,
+    val mouseMoveRevealsControlsEnabled: Boolean = false,
     val parentalWarnings: List<ParentalWarning> = emptyList(),
     val showParentalGuide: Boolean = false,
     val showOpeningOverlay: Boolean = false,

@@ -149,6 +149,63 @@ void setDwmWindowAttribute(HWND hwnd, DWORD attribute, const void *value, DWORD 
     (void)DwmSetWindowAttribute(hwnd, attribute, value, valueSize);
 }
 
+struct SavedWindowPlacement {
+    bool valid = false;
+    LONG_PTR style = 0;
+    RECT rect{};
+};
+
+SavedWindowPlacement g_borderlessFullscreenSaved;
+
+void setBorderlessFullscreen(HWND hwnd, bool enable) {
+    if (!hwnd || !IsWindow(hwnd)) return;
+
+    if (enable) {
+        if (g_borderlessFullscreenSaved.valid) return;
+
+        g_borderlessFullscreenSaved.style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        GetWindowRect(hwnd, &g_borderlessFullscreenSaved.rect);
+        g_borderlessFullscreenSaved.valid = true;
+
+        HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO monitorInfo{};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+        if (!GetMonitorInfoW(monitor, &monitorInfo)) {
+            g_borderlessFullscreenSaved.valid = false;
+            return;
+        }
+
+        LONG_PTR newStyle = g_borderlessFullscreenSaved.style & ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+        SetWindowLongPtrW(hwnd, GWL_STYLE, newStyle);
+
+        const RECT &monitorRect = monitorInfo.rcMonitor;
+        SetWindowPos(
+            hwnd,
+            HWND_TOP,
+            monitorRect.left,
+            monitorRect.top,
+            monitorRect.right - monitorRect.left,
+            monitorRect.bottom - monitorRect.top,
+            SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_ASYNCWINDOWPOS
+        );
+    } else {
+        if (!g_borderlessFullscreenSaved.valid) return;
+
+        SetWindowLongPtrW(hwnd, GWL_STYLE, g_borderlessFullscreenSaved.style);
+        const RECT &savedRect = g_borderlessFullscreenSaved.rect;
+        SetWindowPos(
+            hwnd,
+            nullptr,
+            savedRect.left,
+            savedRect.top,
+            savedRect.right - savedRect.left,
+            savedRect.bottom - savedRect.top,
+            SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_ASYNCWINDOWPOS
+        );
+        g_borderlessFullscreenSaved.valid = false;
+    }
+}
+
 void applyDwmWindowChrome(HWND hwnd, bool darkMode, COLORREF captionColor, COLORREF borderColor, COLORREF textColor) {
     if (!hwnd || !IsWindow(hwnd)) return;
 
@@ -692,6 +749,22 @@ public:
         syncControls();
     }
 
+    void runJavaScript(const std::string &script) {
+        postUiTask([self = shared_from_this(), script]() {
+            if (!self->webView || !self->controlsWebReady.load()) return;
+            std::wstring wideScript = toWide(script);
+            self->webView->ExecuteScript(wideScript.c_str(), nullptr);
+        });
+    }
+
+    void setCursorHidden(bool hidden) {
+        postUiTask([self = shared_from_this(), hidden]() {
+            if (self->cursorHidden == hidden) return;
+            self->cursorHidden = hidden;
+            ShowCursor(hidden ? FALSE : TRUE);
+        });
+    }
+
     void updateControlsJson(const std::string &controlsJson) {
         if (controlsJson.empty()) return;
         {
@@ -739,6 +812,28 @@ public:
 
     double speed() {
         return doubleProperty("speed", 1.0);
+    }
+
+    void setVolume(double volume) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        double clamped = std::max(0.0, std::min(100.0, volume));
+        mpvApi().setProperty(mpv, "volume", MPV_FORMAT_DOUBLE, &clamped);
+    }
+
+    double volume() {
+        return doubleProperty("volume", 100.0);
+    }
+
+    void setMute(bool muted) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        int flag = muted ? 1 : 0;
+        mpvApi().setProperty(mpv, "mute", MPV_FORMAT_FLAG, &flag);
+    }
+
+    bool isMuted() {
+        return flagProperty("mute", false);
     }
 
     void setResizeMode(int mode) {
@@ -872,6 +967,7 @@ private:
     HWND messageHwnd = nullptr;
     DWORD uiThreadId = 0;
     bool didOleInitialize = false;
+    bool cursorHidden = false;
     std::thread uiThread;
 
     ComPtr<ICoreWebView2Environment> environment;
@@ -998,6 +1094,10 @@ private:
     }
 
     void cleanupUiResources() {
+        if (cursorHidden) {
+            cursorHidden = false;
+            ShowCursor(TRUE);
+        }
         if (messageHwnd) {
             KillTimer(messageHwnd, NUVIO_TIMER_ID);
         }
@@ -1196,6 +1296,17 @@ private:
             int initResult = api.initialize(mpv);
             if (initResult < 0) {
                 throw std::runtime_error(std::string("mpv_initialize failed: ") + api.errorText(initResult));
+            }
+
+            // Up/Down are reserved for app-level volume control; explicitly
+            // disable mpv's built-in seek bindings for them so they can't
+            // intercept the keypress (e.g. if input-vo-keyboard is briefly
+            // bypassed while the player surface is recreated on source switch).
+            {
+                const char *unbindUp[] = {"keybind", "UP", "ignore", nullptr};
+                api.command(mpv, unbindUp);
+                const char *unbindDown[] = {"keybind", "DOWN", "ignore", nullptr};
+                api.command(mpv, unbindDown);
             }
 
             std::vector<const char *> loadCommand = {"loadfile", sourceUrl.c_str()};
@@ -1800,6 +1911,19 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_updateControls(JNI
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_runJavaScript(JNIEnv *env, jobject, jlong handle, jstring script) {
+    auto player = playerFromHandle(handle);
+    std::string scriptText = jstringToUtf8(env, script);
+    if (player) player->runJavaScript(scriptText);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setCursorHidden(JNIEnv *, jobject, jlong handle, jboolean hidden) {
+    auto player = playerFromHandle(handle);
+    if (player) player->setCursorHidden(hidden == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setPaused(JNIEnv *, jobject, jlong handle, jboolean paused) {
     auto player = playerFromHandle(handle);
     if (player) player->setPaused(paused == JNI_TRUE);
@@ -1863,6 +1987,30 @@ extern "C" JNIEXPORT jfloat JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_speed(JNIEnv *, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
     return player ? (jfloat)player->speed() : 1.0f;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setVolume(JNIEnv *, jobject, jlong handle, jfloat volume) {
+    auto player = playerFromHandle(handle);
+    if (player) player->setVolume(volume);
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_volume(JNIEnv *, jobject, jlong handle) {
+    auto player = playerFromHandle(handle);
+    return player ? (jfloat)player->volume() : 100.0f;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setMute(JNIEnv *, jobject, jlong handle, jboolean muted) {
+    auto player = playerFromHandle(handle);
+    if (player) player->setMute(muted == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_isMuted(JNIEnv *, jobject, jlong handle) {
+    auto player = playerFromHandle(handle);
+    return player && player->isMuted() ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -1930,6 +2078,11 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_applyWindowChrome(
         rgbIntToColorRef(borderColorRgb),
         rgbIntToColorRef(textColorRgb)
     );
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setBorderlessFullscreen(JNIEnv *, jobject, jlong windowHwnd, jboolean enabled) {
+    setBorderlessFullscreen((HWND)(intptr_t)windowHwnd, enabled == JNI_TRUE);
 }
 
 extern "C" JNIEXPORT void JNICALL

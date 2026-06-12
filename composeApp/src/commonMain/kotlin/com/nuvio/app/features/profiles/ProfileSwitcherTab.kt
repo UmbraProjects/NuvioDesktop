@@ -198,6 +198,7 @@ fun ProfileSwitcherTab(
 
     Box(
         modifier = modifier
+            .size(NuvioTokens.Space.s32)
             .onGloballyPositioned { triggerCoordinates = it }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -243,7 +244,7 @@ fun ProfileSwitcherTab(
                 profile = activeProfile,
                 avatars = avatars,
                 selected = selected,
-                size = 28,
+                size = 20,
             )
         }
 

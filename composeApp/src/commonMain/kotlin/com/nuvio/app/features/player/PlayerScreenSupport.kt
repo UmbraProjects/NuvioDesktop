@@ -10,6 +10,7 @@ internal const val PlayerDoubleTapSeekResetDelayMs = 800L
 internal const val PlayerLockedOverlayDurationMs = 2_000L
 internal const val PlayerLeftGestureBoundary = 0.4f
 internal const val PlayerRightGestureBoundary = 0.6f
+internal const val PlayerVolumeStepFraction = 0.05f
 internal const val PlayerVerticalGestureSensitivity = 0.65f
 internal const val PlayerVerticalGestureTouchSlopMultiplier = 3f
 internal const val PlayerVerticalGestureMinHeightFraction = 0.06f

@@ -9,6 +9,7 @@ import com.nuvio.app.features.player.PlayerControlSourceItem
 import com.nuvio.app.features.player.PlayerControlSubtitleCueItem
 import com.nuvio.app.features.player.AudioTrack
 import com.nuvio.app.features.player.ParentalWarning
+import com.nuvio.app.features.player.PlayerAudioLevel
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.PlayerEngineController
@@ -131,6 +132,19 @@ internal class NativePlayerController(
         }
     }
 
+    fun dispatchKeyboardShortcut(type: String, value: Double = 0.0) {
+        handlePlayerEvent(type, value)
+        if (type == "volumeUp" || type == "volumeDown") {
+            showVolumePillFromNative()
+        }
+    }
+
+    private fun showVolumePillFromNative() {
+        val current = handle.takeIf { it != 0L } ?: return
+        val percentage = NativePlayerBridge.volume(current).toInt().coerceIn(0, 100)
+        NativePlayerBridge.runJavaScript(current, "window.nuvioShowVolumePill && window.nuvioShowVolumePill($percentage)")
+    }
+
     private fun handlePlayerEvent(type: String, value: Double) {
         when (type) {
             "scrubChange" -> {
@@ -145,6 +159,10 @@ internal class NativePlayerController(
                 }
             }
             "toggleFullscreen" -> toggleDesktopAppFullscreen(SwingUtilities.getWindowAncestor(host))
+            "cursorVisibility" -> {
+                val current = handle.takeIf { it != 0L } ?: return
+                NativePlayerBridge.setCursorHidden(current, value == 0.0)
+            }
             else -> {
                 val eventHandled = onEvent(type, value)
                 if (eventHandled) return
@@ -263,6 +281,26 @@ internal class NativePlayerController(
 
     override fun setPlaybackSpeed(speed: Float) {
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.setSpeed(it, speed) }
+    }
+
+    override fun setMuted(muted: Boolean) {
+        handle.takeIf { it != 0L }?.let { NativePlayerBridge.setMute(it, muted) }
+    }
+
+    override fun setVolume(fraction: Float): PlayerAudioLevel? {
+        val current = handle.takeIf { it != 0L } ?: return null
+        val clamped = fraction.coerceIn(0f, 1f)
+        NativePlayerBridge.setVolume(current, clamped * 100f)
+        if (clamped > 0f && NativePlayerBridge.isMuted(current)) {
+            NativePlayerBridge.setMute(current, false)
+        }
+        return PlayerAudioLevel(fraction = clamped, isMuted = clamped <= 0f || NativePlayerBridge.isMuted(current))
+    }
+
+    override fun getVolume(): PlayerAudioLevel? {
+        val current = handle.takeIf { it != 0L } ?: return null
+        val fraction = (NativePlayerBridge.volume(current) / 100f).coerceIn(0f, 1f)
+        return PlayerAudioLevel(fraction = fraction, isMuted = fraction <= 0f || NativePlayerBridge.isMuted(current))
     }
 
     override fun getAudioTracks(): List<AudioTrack> =
@@ -640,6 +678,8 @@ private fun PlayerControlsState.toControlsJson(): String =
         appendJsonField("lockedOverlayVisible", lockedOverlayVisible)
         append(',')
         appendJsonField("controlsVisible", controlsVisible)
+        append(',')
+        appendJsonField("mouseMoveRevealsControlsEnabled", mouseMoveRevealsControlsEnabled)
         append(',')
         appendJsonArrayField("parentalWarnings", parentalWarnings) { appendParentalWarningJson(it) }
         append(',')

@@ -175,6 +175,10 @@ button:disabled {
   transition-duration: 1ms !important;
 }
 
+.player.chrome-hidden {
+  cursor: none;
+}
+
 .player.chrome-hidden .top-gradient,
 .player.chrome-hidden .bottom-gradient,
 .player.chrome-hidden .metadata,
@@ -195,6 +199,7 @@ button:disabled {
 .player.opening-active .pause-metadata-overlay,
 .player.opening-active .skip-prompt,
 .player.opening-active .next-episode-card,
+.player.opening-active .gesture-pill,
 .player.opening-active .content {
   visibility: hidden;
   opacity: 0;
@@ -209,6 +214,7 @@ button:disabled {
 .player.error-active .pause-metadata-overlay,
 .player.error-active .skip-prompt,
 .player.error-active .next-episode-card,
+.player.error-active .gesture-pill,
 .player.error-active .header-actions,
 .player.error-active .center-controls,
 .player.error-active .progress,
@@ -489,6 +495,47 @@ button:disabled {
 
 .parental-guide-severity {
   color: rgba(255, 255, 255, .5);
+}
+
+.gesture-pill {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(30, 30, 30, .65);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(.85);
+  transition:
+    opacity 200ms ease,
+    transform 200ms var(--ease-out);
+}
+
+.gesture-pill.visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.gesture-pill svg {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+}
+
+.gesture-pill-label {
+  font-size: 17px;
+  font-weight: 600;
+  min-width: 3.5ch;
+  text-align: left;
 }
 
 .skip-prompt {

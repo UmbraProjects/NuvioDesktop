@@ -148,6 +148,15 @@ internal fun PlayerScreenRuntime.showVolumeFeedback(level: PlayerAudioLevel) {
     )
 }
 
+internal fun PlayerScreenRuntime.adjustVolume(deltaFraction: Float) {
+    val controller = playerController ?: return
+    val current = controller.getVolume() ?: PlayerAudioLevel(fraction = 1f, isMuted = false)
+    val next = (current.fraction + deltaFraction).coerceIn(0f, 1f)
+    val level = controller.setVolume(next) ?: PlayerAudioLevel(fraction = next, isMuted = next <= 0f)
+    showVolumeFeedback(level)
+    controlsVisible = true
+}
+
 internal fun PlayerScreenRuntime.togglePlayback() {
     if (playbackSnapshot.isPlaying) {
         shouldPlay = false

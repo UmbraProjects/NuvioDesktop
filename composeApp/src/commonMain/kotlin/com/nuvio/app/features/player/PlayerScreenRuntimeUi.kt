@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.debrid.DebridSettingsRepository
@@ -35,6 +38,7 @@ import kotlin.math.roundToInt
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     val runtime = this
@@ -254,6 +258,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         isLocked = playerControlsLocked,
         lockedOverlayVisible = lockedOverlayVisible,
         controlsVisible = controlsVisible && !playerControlsLocked,
+        mouseMoveRevealsControlsEnabled = playerSettingsUiState.mouseMoveRevealsControlsEnabled,
         parentalWarnings = parentalWarnings,
         showParentalGuide = showParentalGuide,
         showSubmitIntro = isSeries &&
@@ -331,6 +336,18 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { layoutSize = it }
+            .then(
+                if (isDesktop && playerSettingsUiState.mouseMoveRevealsControlsEnabled) {
+                    Modifier.onPointerEvent(PointerEventType.Move) {
+                        mouseActivitySignal++
+                        if (!playerControlsLocked) {
+                            controlsVisible = true
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .playerSurfaceTapGestures(
                 layoutSize = layoutSize,
                 playerControlsLockedState = gestureCallbacks.playerControlsLocked,
@@ -385,6 +402,13 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 onSnapshot = { snapshot ->
                     playbackSnapshot = snapshot
                     if (!snapshot.isLoading) initialLoadCompleted = true
+                    if (!snapshot.isLoading && !defaultPlaybackSpeedApplied) {
+                        defaultPlaybackSpeedApplied = true
+                        val defaultSpeed = playerSettingsUiState.defaultPlaybackSpeed
+                        if (abs(defaultSpeed - 1f) > 0.01f) {
+                            playerController?.setPlaybackSpeed(defaultSpeed)
+                        }
+                    }
                     if (snapshot.isEnded) {
                         shouldPlay = false
                         controlsVisible = !playerControlsLocked
@@ -627,6 +651,12 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
 
 private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: Double): Boolean {
     when (type) {
+        "revealChrome" -> {
+            if (!playerControlsLocked) {
+                controlsVisible = true
+                mouseActivitySignal++
+            }
+        }
         "hideChrome" -> {
             controlsVisible = false
         }
@@ -775,6 +805,9 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         "parentalGuideComplete" -> {
             showParentalGuide = false
         }
+        "volumeUp" -> adjustVolume(PlayerVolumeStepFraction)
+        "volumeDown" -> adjustVolume(-PlayerVolumeStepFraction)
+        "volumeDelta" -> adjustVolume(value.toFloat())
         else -> return false
     }
     return true
