@@ -81,16 +81,39 @@ internal fun PlayerScreenRuntime.currentPlaybackProgressPercent(
         .coerceIn(0f, 100f)
 }
 
-internal suspend fun PlayerScreenRuntime.currentTraktScrobbleItem() =
+internal data class TraktScrobbleItemInputs(
+    val contentType: String,
+    val parentMetaId: String,
+    val videoId: String?,
+    val title: String,
+    val seasonNumber: Int?,
+    val episodeNumber: Int?,
+    val episodeTitle: String?,
+)
+
+internal fun PlayerScreenRuntime.snapshotTraktScrobbleItemInputs() = TraktScrobbleItemInputs(
+    contentType = contentType ?: parentMetaType,
+    parentMetaId = parentMetaId,
+    videoId = activeVideoId,
+    title = title,
+    seasonNumber = activeSeasonNumber,
+    episodeNumber = activeEpisodeNumber,
+    episodeTitle = activeEpisodeTitle,
+)
+
+private suspend fun TraktScrobbleItemInputs.buildItem() =
     TraktScrobbleRepository.buildItem(
-        contentType = contentType ?: parentMetaType,
+        contentType = contentType,
         parentMetaId = parentMetaId,
-        videoId = activeVideoId,
+        videoId = videoId,
         title = title,
-        seasonNumber = activeSeasonNumber,
-        episodeNumber = activeEpisodeNumber,
-        episodeTitle = activeEpisodeTitle,
+        seasonNumber = seasonNumber,
+        episodeNumber = episodeNumber,
+        episodeTitle = episodeTitle,
     )
+
+internal suspend fun PlayerScreenRuntime.currentTraktScrobbleItem() =
+    snapshotTraktScrobbleItemInputs().buildItem()
 
 internal fun PlayerScreenRuntime.emitTraktScrobbleStart() {
     if (hasRequestedScrobbleStartForCurrentItem) return
@@ -121,23 +144,9 @@ internal fun PlayerScreenRuntime.emitTraktScrobbleStop(progressPercent: Float? =
 
     val percent = provided ?: currentPlaybackProgressPercent()
     val itemSnapshot = currentTraktScrobbleItem
-    val contentTypeSnapshot = contentType ?: parentMetaType
-    val parentMetaIdSnapshot = parentMetaId
-    val videoIdSnapshot = activeVideoId
-    val titleSnapshot = title
-    val seasonNumberSnapshot = activeSeasonNumber
-    val episodeNumberSnapshot = activeEpisodeNumber
-    val episodeTitleSnapshot = activeEpisodeTitle
+    val inputsSnapshot = snapshotTraktScrobbleItemInputs()
     scope.launch(NonCancellable) {
-        val item = itemSnapshot ?: TraktScrobbleRepository.buildItem(
-            contentType = contentTypeSnapshot,
-            parentMetaId = parentMetaIdSnapshot,
-            videoId = videoIdSnapshot,
-            title = titleSnapshot,
-            seasonNumber = seasonNumberSnapshot,
-            episodeNumber = episodeNumberSnapshot,
-            episodeTitle = episodeTitleSnapshot,
-        ) ?: return@launch
+        val item = itemSnapshot ?: inputsSnapshot.buildItem() ?: return@launch
         TraktScrobbleRepository.scrobbleStop(
             item = item,
             progressPercent = percent,
