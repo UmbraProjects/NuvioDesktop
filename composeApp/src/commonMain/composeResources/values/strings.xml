@@ -450,7 +450,7 @@
     <string name="settings_advanced_remember_last_profile">Remember Last Profile</string>
     <string name="settings_advanced_remember_last_profile_description">Remember last selected profile at startup</string>
     <string name="settings_advanced_clear_cw_cache">Clear Continue Watching Cache</string>
-    <string name="settings_advanced_clear_cw_cache_subtitle">Remove cached thumbnails, titles, and enrichment data for Continue Watching</string>
+    <string name="settings_advanced_clear_cw_cache_subtitle">Remove cached Continue Watching data and refresh watch progress</string>
     <string name="settings_advanced_clear_cw_cache_done">Cache cleared</string>
     <string name="settings_licenses_attributions_section_app">APP LICENSE</string>
     <string name="settings_licenses_attributions_section_data">DATA &amp; SERVICES</string>
