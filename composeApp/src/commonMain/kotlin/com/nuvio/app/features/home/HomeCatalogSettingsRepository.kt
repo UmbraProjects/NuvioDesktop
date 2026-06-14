@@ -34,6 +34,7 @@ data class HomeCatalogSettingsUiState(
     val heroEnabled: Boolean = true,
     val hideUnreleasedContent: Boolean = false,
     val hideCatalogUnderline: Boolean = false,
+    val tvModeEnabled: Boolean = false,
     val items: List<HomeCatalogSettingsItem> = emptyList(),
 ) {
     val signature: String
@@ -43,6 +44,8 @@ data class HomeCatalogSettingsUiState(
             append(hideUnreleasedContent)
             append('|')
             append(hideCatalogUnderline)
+            append('|')
+            append(tvModeEnabled)
             append('|')
             append(
                 items.joinToString(separator = "|") { item ->
@@ -63,6 +66,7 @@ internal data class HomeCatalogSettingsSnapshot(
     val heroEnabled: Boolean,
     val hideUnreleasedContent: Boolean,
     val hideCatalogUnderline: Boolean,
+    val tvModeEnabled: Boolean,
     val preferences: Map<String, HomeCatalogPreference>,
 )
 
@@ -80,6 +84,7 @@ private data class StoredHomeCatalogSettingsPayload(
     val heroEnabled: Boolean = true,
     val hideUnreleasedContent: Boolean = false,
     val hideCatalogUnderline: Boolean = false,
+    val tvModeEnabled: Boolean = false,
     val items: List<StoredHomeCatalogPreference> = emptyList(),
 )
 
@@ -101,6 +106,7 @@ object HomeCatalogSettingsRepository {
     private var heroEnabled = true
     private var hideUnreleasedContent = false
     private var hideCatalogUnderline = false
+    private var tvModeEnabled = false
 
     fun onProfileChanged() {
         hasLoaded = false
@@ -108,6 +114,7 @@ object HomeCatalogSettingsRepository {
         heroEnabled = true
         hideUnreleasedContent = false
         hideCatalogUnderline = false
+        tvModeEnabled = false
         definitions = emptyList()
         collectionDefinitions = emptyList()
         _uiState.value = HomeCatalogSettingsUiState()
@@ -121,6 +128,7 @@ object HomeCatalogSettingsRepository {
         heroEnabled = true
         hideUnreleasedContent = false
         hideCatalogUnderline = false
+        tvModeEnabled = false
         _uiState.value = HomeCatalogSettingsUiState()
     }
 
@@ -154,6 +162,7 @@ object HomeCatalogSettingsRepository {
             heroEnabled = heroEnabled,
             hideUnreleasedContent = hideUnreleasedContent,
             hideCatalogUnderline = hideCatalogUnderline,
+            tvModeEnabled = tvModeEnabled,
             preferences = preferences.mapValues { (_, value) ->
                 HomeCatalogPreference(
                     customTitle = value.customTitle,
@@ -190,6 +199,15 @@ object HomeCatalogSettingsRepository {
         persist()
     }
 
+    fun setTvModeEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (tvModeEnabled == enabled) return
+        tvModeEnabled = enabled
+        publish()
+        persist()
+        HomeRepository.applyCurrentSettings()
+    }
+
     fun setHeroSourceEnabled(key: String, enabled: Boolean) {
         updatePreference(key) { preference ->
             if (!enabled) {
@@ -219,6 +237,7 @@ object HomeCatalogSettingsRepository {
         heroEnabled = true
         hideUnreleasedContent = false
         hideCatalogUnderline = false
+        tvModeEnabled = false
         preferences.clear()
         normalizePreferences()
         publish()
@@ -266,6 +285,7 @@ object HomeCatalogSettingsRepository {
             heroEnabled = parsedPayload.heroEnabled
             hideUnreleasedContent = parsedPayload.hideUnreleasedContent
             hideCatalogUnderline = parsedPayload.hideCatalogUnderline
+            tvModeEnabled = parsedPayload.tvModeEnabled
             preferences = parsedPayload.items.associateBy { it.key }.toMutableMap()
             publish()
             return
@@ -366,6 +386,7 @@ object HomeCatalogSettingsRepository {
             heroEnabled = heroEnabled,
             hideUnreleasedContent = hideUnreleasedContent,
             hideCatalogUnderline = hideCatalogUnderline,
+            tvModeEnabled = tvModeEnabled,
             items = items,
         )
     }
@@ -377,6 +398,7 @@ object HomeCatalogSettingsRepository {
                     heroEnabled = heroEnabled,
                     hideUnreleasedContent = hideUnreleasedContent,
                     hideCatalogUnderline = hideCatalogUnderline,
+                    tvModeEnabled = tvModeEnabled,
                     items = preferences.values.sortedBy { it.order },
                 ),
             ),

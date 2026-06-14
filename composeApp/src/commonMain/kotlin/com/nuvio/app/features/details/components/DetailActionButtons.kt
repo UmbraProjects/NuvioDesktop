@@ -61,6 +61,7 @@ fun DetailActionButtons(
     secondaryActions: List<DetailSecondaryAction> = emptyList(),
     actionsMenuLabel: String = "More actions",
     isTablet: Boolean = false,
+    focused: Boolean = false,
     onPlayClick: () -> Unit = {},
     onPlayLongClick: (() -> Unit)? = null,
 ) {
@@ -75,6 +76,7 @@ fun DetailActionButtons(
         animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
         label = "detail_action_menu_progress",
     )
+    val playScale by animateFloatAsState(targetValue = if (focused) 1.04f else 1f)
     val hasSecondaryActions = secondaryActions.isNotEmpty()
 
     Box(
@@ -93,7 +95,11 @@ fun DetailActionButtons(
             Surface(
                 modifier = Modifier
                     .weight(1f)
-                    .height(buttonHeight),
+                    .height(buttonHeight)
+                    .graphicsLayer {
+                        scaleX = playScale
+                        scaleY = playScale
+                    },
                 shape = playShape,
                 color = MaterialTheme.colorScheme.onBackground,
                 contentColor = MaterialTheme.colorScheme.background,

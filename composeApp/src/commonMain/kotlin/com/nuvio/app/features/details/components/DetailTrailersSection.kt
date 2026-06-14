@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
+import com.nuvio.app.core.ui.NuvioShelfItemSlot
 import com.nuvio.app.core.ui.desktopHorizontalListNavigation
 import com.nuvio.app.features.details.MetaTrailer
 import nuvio.composeapp.generated.resources.*
@@ -52,6 +54,7 @@ fun DetailTrailersSection(
     onTrailerClick: (MetaTrailer) -> Unit,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
+    focusedItemIndex: Int? = null,
 ) {
     if (trailers.isEmpty()) return
 
@@ -157,6 +160,21 @@ fun DetailTrailersSection(
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val sizing = trailerSectionSizing(maxWidth.value)
             val trailerListState = rememberLazyListState()
+
+            LaunchedEffect(focusedItemIndex, selectedTrailers) {
+                val target = focusedItemIndex
+                if (target == null || target !in selectedTrailers.indices) return@LaunchedEffect
+                val layoutInfo = trailerListState.layoutInfo
+                val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
+                    item.index == target &&
+                        item.offset >= layoutInfo.viewportStartOffset &&
+                        item.offset + item.size <= layoutInfo.viewportEndOffset
+                }
+                if (!isFullyVisible) {
+                    trailerListState.animateScrollToItem(target)
+                }
+            }
+
             LazyRow(
                 state = trailerListState,
                 modifier = Modifier
@@ -167,15 +185,17 @@ fun DetailTrailersSection(
                 itemsIndexed(
                     items = selectedTrailers,
                     key = { index, trailer -> "${trailer.type}-${trailer.id}-${trailer.seasonNumber ?: 0}#$index" },
-                ) { _, trailer ->
-                    TrailerCard(
-                        trailer = trailer,
-                        cardWidth = sizing.cardWidth,
-                        cornerRadius = sizing.cardRadius,
-                        titleFontSize = sizing.titleFontSize,
-                        metaFontSize = sizing.metaFontSize,
-                        onClick = { onTrailerClick(trailer) },
-                    )
+                ) { index, trailer ->
+                    NuvioShelfItemSlot(focused = index == focusedItemIndex) {
+                        TrailerCard(
+                            trailer = trailer,
+                            cardWidth = sizing.cardWidth,
+                            cornerRadius = sizing.cardRadius,
+                            titleFontSize = sizing.titleFontSize,
+                            metaFontSize = sizing.metaFontSize,
+                            onClick = { onTrailerClick(trailer) },
+                        )
+                    }
                 }
             }
         }

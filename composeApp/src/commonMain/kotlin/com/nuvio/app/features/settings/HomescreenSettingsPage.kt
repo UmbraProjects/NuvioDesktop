@@ -36,6 +36,7 @@ import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
+import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_reset
 import nuvio.composeapp.generated.resources.layout_hide_unreleased
@@ -58,6 +59,8 @@ import nuvio.composeapp.generated.resources.settings_homescreen_show_hero
 import nuvio.composeapp.generated.resources.settings_homescreen_show_hero_description
 import nuvio.composeapp.generated.resources.settings_homescreen_summary
 import nuvio.composeapp.generated.resources.settings_homescreen_summary_hint
+import nuvio.composeapp.generated.resources.settings_homescreen_tv_mode
+import nuvio.composeapp.generated.resources.settings_homescreen_tv_mode_description
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.ReorderableItem
@@ -68,6 +71,7 @@ internal fun LazyListScope.homescreenSettingsContent(
     heroEnabled: Boolean,
     hideUnreleasedContent: Boolean,
     hideCatalogUnderline: Boolean,
+    tvModeEnabled: Boolean = false,
     items: List<HomeCatalogSettingsItem>,
 ) {
     val selectedHeroSourceCount = items.count { it.heroSourceEnabled }
@@ -109,6 +113,16 @@ internal fun LazyListScope.homescreenSettingsContent(
                     isTablet = isTablet,
                     onCheckedChange = HomeCatalogSettingsRepository::setHideCatalogUnderline,
                 )
+                if (isDesktop) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_homescreen_tv_mode),
+                        description = stringResource(Res.string.settings_homescreen_tv_mode_description),
+                        checked = tvModeEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = HomeCatalogSettingsRepository::setTvModeEnabled,
+                    )
+                }
             }
         }
     }

@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -62,7 +63,6 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 
 private const val HERO_BACKGROUND_PARALLAX = 0.055f
-private const val HERO_BACKGROUND_SCALE = 1.14f
 private const val HERO_CONTENT_PARALLAX = 0.18f
 private const val HERO_SCROLL_PARALLAX = 0.3f
 private const val HERO_SCROLL_DOWN_SCALE_MULTIPLIER = 0.0001f
@@ -93,6 +93,7 @@ fun HomeHeroSection(
     mobileBelowSectionHeightHint: Dp? = null,
     sectionPadding: Dp? = null,
     listState: LazyListState? = null,
+    focusedItem: MetaPreview? = null,
     onItemClick: ((MetaPreview) -> Unit)? = null,
 ) {
     if (items.isEmpty()) return
@@ -155,6 +156,20 @@ fun HomeHeroSection(
             ?.let(items::get)
             ?: items[currentPage]
 
+        val focusedIndex = focusedItem?.let { focused -> items.indexOfFirst { it.id == focused.id } }
+            ?.takeIf { it >= 0 }
+        val displayItems = when {
+            focusedItem == null -> items
+            focusedIndex != null -> items
+            else -> items + focusedItem
+        }
+        val displayVisiblePages = if (focusedItem != null) {
+            listOf(HeroPageLayer(page = focusedIndex ?: (displayItems.size - 1), visibility = 1f, offset = 0f))
+        } else {
+            visiblePages
+        }
+        val displayCurrentItem = focusedItem ?: currentItem
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -172,27 +187,29 @@ fun HomeHeroSection(
 
             if (isDesktop) {
                 DesktopHomeHeroFrame(
-                    items = items,
-                    visiblePages = visiblePages,
+                    items = displayItems,
+                    visiblePages = displayVisiblePages,
                     layout = layout,
                     heroWidthPx = heroWidthPx,
                     heroScrollScale = heroScrollScale,
                     heroScrollTranslationY = heroScrollTranslationY,
                     contentHorizontalPadding = sectionPadding ?: layout.contentHorizontalPadding,
                     pagerState = pagerState,
+                    pageIndicatorCount = items.size,
                     coroutineScope = coroutineScope,
                     onItemClick = onItemClick,
                 )
             } else {
                 DefaultHomeHeroFrame(
-                    items = items,
-                    visiblePages = visiblePages,
-                    currentItem = currentItem,
+                    items = displayItems,
+                    visiblePages = displayVisiblePages,
+                    currentItem = displayCurrentItem,
                     layout = layout,
                     heroWidthPx = heroWidthPx,
                     heroScrollScale = heroScrollScale,
                     heroScrollTranslationY = heroScrollTranslationY,
                     pagerState = pagerState,
+                    pageIndicatorCount = items.size,
                     coroutineScope = coroutineScope,
                     onItemClick = onItemClick,
                 )
@@ -217,6 +234,7 @@ private fun DefaultHomeHeroFrame(
     heroScrollScale: Float,
     heroScrollTranslationY: Float,
     pagerState: PagerState,
+    pageIndicatorCount: Int = items.size,
     coroutineScope: CoroutineScope,
     onItemClick: ((MetaPreview) -> Unit)?,
 ) {
@@ -233,8 +251,11 @@ private fun DefaultHomeHeroFrame(
                         alpha = layer.visibility
                         translationX = -layer.offset * heroWidthPx * HERO_BACKGROUND_PARALLAX
                         translationY = heroScrollTranslationY
-                        scaleX = HERO_BACKGROUND_SCALE * heroScrollScale
-                        scaleY = HERO_BACKGROUND_SCALE * heroScrollScale
+                        scaleX = heroScrollScale
+                        scaleY = heroScrollScale
+                        if (layout.isTablet) {
+                            transformOrigin = TransformOrigin(0.5f, 0f)
+                        }
                     },
                 alignment = if (layout.isTablet) Alignment.TopCenter else Alignment.Center,
                 contentScale = ContentScale.Crop,
@@ -325,7 +346,7 @@ private fun DefaultHomeHeroFrame(
             }
 
             HeroPageIndicatorRow(
-                itemCount = items.size,
+                itemCount = pageIndicatorCount,
                 pagerState = pagerState,
                 coroutineScope = coroutineScope,
                 modifier = Modifier.padding(top = if (layout.isTablet) 14.dp else 12.dp),
@@ -344,6 +365,7 @@ private fun DesktopHomeHeroFrame(
     heroScrollTranslationY: Float,
     contentHorizontalPadding: Dp,
     pagerState: PagerState,
+    pageIndicatorCount: Int = items.size,
     coroutineScope: CoroutineScope,
     onItemClick: ((MetaPreview) -> Unit)?,
 ) {
@@ -364,15 +386,16 @@ private fun DesktopHomeHeroFrame(
                         alpha = layer.visibility
                         translationX = -layer.offset * heroWidthPx * HERO_BACKGROUND_PARALLAX
                         translationY = heroScrollTranslationY
-                        scaleX = 1.02f * heroScrollScale
-                        scaleY = 1.02f * heroScrollScale
+                        scaleX = heroScrollScale
+                        scaleY = heroScrollScale
+                        transformOrigin = TransformOrigin(0.5f, 0f)
                     },
             ) {
                 AsyncImage(
                     model = items[layer.page].banner ?: items[layer.page].poster,
                     contentDescription = items[layer.page].name,
                     modifier = Modifier.fillMaxSize(),
-                    alignment = Alignment.Center,
+                    alignment = Alignment.TopCenter,
                     contentScale = ContentScale.Crop,
                     desktopImageScaling = NuvioDesktopImageScaling.Disabled,
                 )
@@ -437,7 +460,7 @@ private fun DesktopHomeHeroFrame(
         }
 
         HeroPageIndicatorRow(
-            itemCount = items.size,
+            itemCount = pageIndicatorCount,
             pagerState = pagerState,
             coroutineScope = coroutineScope,
             modifier = Modifier
@@ -704,11 +727,12 @@ internal fun homeHeroLayout(
     viewportHeightDp: Float? = null,
     mobileBelowSectionHeightHintDp: Float? = null,
     preferDesktopLayout: Boolean = false,
+    heightMultiplier: Float = 1f,
 ): HomeHeroLayout =
     when {
         maxWidthDp >= 1200f -> HomeHeroLayout(
             isTablet = true,
-            heroHeight = (maxWidthDp * 0.42f).dp.coerceIn(360.dp, 440.dp),
+            heroHeight = ((maxWidthDp * 0.42f).coerceIn(360f, 440f) * heightMultiplier).dp,
             contentMaxWidth = 640.dp,
             contentWidthFraction = 0.56f,
             contentHorizontalPadding = 56.dp,
@@ -718,7 +742,7 @@ internal fun homeHeroLayout(
         )
         maxWidthDp >= 840f -> HomeHeroLayout(
             isTablet = true,
-            heroHeight = (maxWidthDp * 0.46f).dp.coerceIn(340.dp, 420.dp),
+            heroHeight = ((maxWidthDp * 0.46f).coerceIn(340f, 420f) * heightMultiplier).dp,
             contentMaxWidth = 560.dp,
             contentWidthFraction = 0.62f,
             contentHorizontalPadding = 40.dp,
@@ -728,7 +752,7 @@ internal fun homeHeroLayout(
         )
         maxWidthDp >= 600f -> HomeHeroLayout(
             isTablet = true,
-            heroHeight = (maxWidthDp * 0.58f).dp.coerceIn(320.dp, 380.dp),
+            heroHeight = ((maxWidthDp * 0.58f).coerceIn(320f, 380f) * heightMultiplier).dp,
             contentMaxWidth = 520.dp,
             contentWidthFraction = 0.72f,
             contentHorizontalPadding = 32.dp,
@@ -738,7 +762,7 @@ internal fun homeHeroLayout(
         )
         preferDesktopLayout -> HomeHeroLayout(
             isTablet = true,
-            heroHeight = (maxWidthDp * 0.68f).dp.coerceIn(300.dp, 360.dp),
+            heroHeight = ((maxWidthDp * 0.68f).coerceIn(300f, 360f) * heightMultiplier).dp,
             contentMaxWidth = 360.dp,
             contentWidthFraction = 0.56f,
             contentHorizontalPadding = 16.dp,
@@ -752,7 +776,7 @@ internal fun homeHeroLayout(
                 maxWidthDp = maxWidthDp,
                 viewportHeightDp = viewportHeightDp,
                 mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHintDp,
-            ),
+            ) * heightMultiplier,
             contentMaxWidth = 480.dp,
             contentWidthFraction = 1f,
             contentHorizontalPadding = 24.dp,

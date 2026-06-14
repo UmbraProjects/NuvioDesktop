@@ -17,22 +17,35 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.focusable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +61,8 @@ import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioPosterWatchedOverlay
+import com.nuvio.app.core.ui.NuvioShelfItemSlot
+import com.nuvio.app.core.ui.rememberMouseActivityState
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
@@ -58,6 +73,7 @@ import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watching.application.WatchingState
+import com.nuvio.app.isDesktop
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
@@ -65,6 +81,7 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 fun CatalogScreen(
     title: String,
     subtitle: String,
@@ -108,6 +125,26 @@ fun CatalogScreen(
     )
     var headerHeightPx by remember { mutableIntStateOf(0) }
     var observedOfflineState by remember { mutableStateOf(false) }
+
+    val tvModeEnabled = homeCatalogSettingsUiState.tvModeEnabled && isDesktop
+    val tvFocusRequester = remember { FocusRequester() }
+    val tvCoroutineScope = rememberCoroutineScope()
+    val mouseActivity = rememberMouseActivityState()
+    var focusedItemIndex by remember(manifestUrl, type, catalogId, genre) { mutableIntStateOf(0) }
+
+    LaunchedEffect(uiState.items.size) {
+        if (uiState.items.isEmpty()) {
+            focusedItemIndex = 0
+        } else if (focusedItemIndex > uiState.items.size - 1) {
+            focusedItemIndex = uiState.items.size - 1
+        }
+    }
+
+    LaunchedEffect(tvModeEnabled) {
+        if (tvModeEnabled) {
+            tvFocusRequester.requestFocus()
+        }
+    }
 
     LaunchedEffect(manifestUrl, type, catalogId, genre, supportsPagination, homeCatalogSettingsUiState.hideUnreleasedContent) {
         CatalogRepository.load(
@@ -182,7 +219,71 @@ fun CatalogScreen(
     ) {
         val columns = remember(maxWidth) { catalogGridColumnsForWidth(maxWidth) }
 
-        Box(modifier = Modifier.fillMaxSize()) {
+        LaunchedEffect(focusedItemIndex, uiState.items.size) {
+            if (uiState.items.isEmpty() || focusedItemIndex !in uiState.items.indices) return@LaunchedEffect
+            val layoutInfo = gridState.layoutInfo
+            val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
+                item.index == focusedItemIndex &&
+                    item.offset.y >= layoutInfo.viewportStartOffset &&
+                    item.offset.y + item.size.height <= layoutInfo.viewportEndOffset
+            }
+            if (!isFullyVisible) {
+                gridState.animateScrollToItem(focusedItemIndex)
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (tvModeEnabled) {
+                        Modifier
+                            .focusRequester(tvFocusRequester)
+                            .focusable()
+                            .onPointerEvent(PointerEventType.Move) { event ->
+                                mouseActivity.onMouseMoved(event.changes.first().position)
+                            }
+                            .onPreviewKeyEvent { event ->
+                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                if (event.key == Key.Backspace) {
+                                    onBack()
+                                    return@onPreviewKeyEvent true
+                                }
+                                if (uiState.items.isEmpty()) return@onPreviewKeyEvent false
+                                val lastIndex = uiState.items.size - 1
+                                when (event.key) {
+                                    Key.DirectionRight -> {
+                                        mouseActivity.onKeyboardNavigation()
+                                        focusedItemIndex = (focusedItemIndex + 1).coerceAtMost(lastIndex)
+                                        true
+                                    }
+                                    Key.DirectionLeft -> {
+                                        mouseActivity.onKeyboardNavigation()
+                                        focusedItemIndex = (focusedItemIndex - 1).coerceAtLeast(0)
+                                        true
+                                    }
+                                    Key.DirectionDown -> {
+                                        mouseActivity.onKeyboardNavigation()
+                                        focusedItemIndex = (focusedItemIndex + columns).coerceAtMost(lastIndex)
+                                        true
+                                    }
+                                    Key.DirectionUp -> {
+                                        mouseActivity.onKeyboardNavigation()
+                                        focusedItemIndex = (focusedItemIndex - columns).coerceAtLeast(0)
+                                        true
+                                    }
+                                    Key.Enter, Key.NumPadEnter -> {
+                                        uiState.items.getOrNull(focusedItemIndex)?.let { onPosterClick?.invoke(it) }
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            }
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(columns),
                 state = gridState,
@@ -219,22 +320,24 @@ fun CatalogScreen(
                         )
                     }
                 } else {
-                    items(
+                    itemsIndexed(
                         items = uiState.items.withDuplicateSafeLazyKeys { item -> item.stableKey() },
-                        key = { item -> item.lazyKey },
-                    ) { keyedItem ->
+                        key = { _, keyedItem -> keyedItem.lazyKey },
+                    ) { index, keyedItem ->
                         val item = keyedItem.value
-                        CatalogPosterTile(
-                            item = item,
-                            cornerRadiusDp = posterCardStyle.cornerRadiusDp,
-                            hideLabels = posterCardStyle.hideLabelsEnabled,
-                            isWatched = WatchingState.isPosterWatched(
-                                watchedKeys = watchedUiState.watchedKeys,
+                        NuvioShelfItemSlot(focused = tvModeEnabled && index == focusedItemIndex) {
+                            CatalogPosterTile(
                                 item = item,
-                            ),
-                            onClick = onPosterClick?.let { { it(item) } },
-                            onLongClick = onPosterLongClick?.let { { it(item) } },
-                        )
+                                cornerRadiusDp = posterCardStyle.cornerRadiusDp,
+                                hideLabels = posterCardStyle.hideLabelsEnabled,
+                                isWatched = WatchingState.isPosterWatched(
+                                    watchedKeys = watchedUiState.watchedKeys,
+                                    item = item,
+                                ),
+                                onClick = onPosterClick?.let { { it(item) } },
+                                onLongClick = onPosterLongClick?.let { { it(item) } },
+                            )
+                        }
                     }
                     if (uiState.isLoading) {
                         item(span = { GridItemSpan(maxLineSpan) }) {

@@ -191,6 +191,8 @@ internal fun HomeContinueWatchingSection(
     modifier: Modifier = Modifier,
     sectionPadding: Dp? = null,
     layout: ContinueWatchingLayout? = null,
+    focusedItemIndex: Int? = null,
+    onHoverItem: ((Int) -> Unit)? = null,
     onItemClick: ((ContinueWatchingItem) -> Unit)? = null,
     onItemLongPress: ((ContinueWatchingItem) -> Unit)? = null,
 ) {
@@ -205,6 +207,8 @@ internal fun HomeContinueWatchingSection(
             modifier = modifier.fillMaxWidth(),
             sectionPadding = sectionPadding,
             layout = layout,
+            focusedItemIndex = focusedItemIndex,
+            onHoverItem = onHoverItem,
             onItemClick = onItemClick,
             onItemLongPress = onItemLongPress,
         )
@@ -218,6 +222,8 @@ internal fun HomeContinueWatchingSection(
                 modifier = Modifier.fillMaxWidth(),
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
                 layout = rememberContinueWatchingLayout(maxWidth.value),
+                focusedItemIndex = focusedItemIndex,
+                onHoverItem = onHoverItem,
                 onItemClick = onItemClick,
                 onItemLongPress = onItemLongPress,
             )
@@ -234,6 +240,8 @@ private fun HomeContinueWatchingSectionContent(
     modifier: Modifier,
     sectionPadding: Dp,
     layout: ContinueWatchingLayout,
+    focusedItemIndex: Int?,
+    onHoverItem: ((Int) -> Unit)?,
     onItemClick: ((ContinueWatchingItem) -> Unit)?,
     onItemLongPress: ((ContinueWatchingItem) -> Unit)?,
 ) {
@@ -255,6 +263,8 @@ private fun HomeContinueWatchingSectionContent(
             rowContentPadding = PaddingValues(horizontal = sectionPadding),
             itemSpacing = layout.itemGap,
             showHeaderAccent = !homeCatalogSettings.hideCatalogUnderline,
+            focusedItemIndex = focusedItemIndex,
+            onHoverItem = onHoverItem,
             key = { item -> item.videoId },
         ) { item ->
             when (style) {
