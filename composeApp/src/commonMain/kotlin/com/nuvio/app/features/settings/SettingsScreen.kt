@@ -291,6 +291,7 @@ fun SettingsScreen(
                 homescreenHeroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                 homescreenHideCatalogUnderline = homescreenSettingsUiState.hideCatalogUnderline,
+                homescreenTvModeEnabled = homescreenSettingsUiState.tvModeEnabled,
                 homescreenItems = homescreenSettingsUiState.items,
                 metaScreenSettingsUiState = metaScreenSettingsUiState,
                 continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
@@ -342,6 +343,7 @@ fun SettingsScreen(
                 homescreenHeroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                 homescreenHideCatalogUnderline = homescreenSettingsUiState.hideCatalogUnderline,
+                homescreenTvModeEnabled = homescreenSettingsUiState.tvModeEnabled,
                 homescreenItems = homescreenSettingsUiState.items,
                 metaScreenSettingsUiState = metaScreenSettingsUiState,
                 continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
@@ -403,6 +405,7 @@ private fun MobileSettingsScreen(
     homescreenHeroEnabled: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenHideCatalogUnderline: Boolean,
+    homescreenTvModeEnabled: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
@@ -621,6 +624,7 @@ private fun MobileSettingsScreen(
                     heroEnabled = homescreenHeroEnabled,
                     hideUnreleasedContent = homescreenHideUnreleasedContent,
                     hideCatalogUnderline = homescreenHideCatalogUnderline,
+                    tvModeEnabled = homescreenTvModeEnabled,
                     items = homescreenItems,
                 )
                 SettingsPage.MetaScreen -> metaScreenSettingsContent(
@@ -746,6 +750,7 @@ private fun TabletSettingsScreen(
     homescreenHeroEnabled: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenHideCatalogUnderline: Boolean,
+    homescreenTvModeEnabled: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
@@ -1027,6 +1032,7 @@ private fun TabletSettingsScreen(
                         heroEnabled = homescreenHeroEnabled,
                         hideUnreleasedContent = homescreenHideUnreleasedContent,
                         hideCatalogUnderline = homescreenHideCatalogUnderline,
+                        tvModeEnabled = homescreenTvModeEnabled,
                         items = homescreenItems,
                     )
                     SettingsPage.MetaScreen -> metaScreenSettingsContent(

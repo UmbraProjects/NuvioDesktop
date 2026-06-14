@@ -100,6 +100,7 @@ import com.nuvio.app.core.ui.NuvioNavigationBar
 import com.nuvio.app.core.ui.NuvioContinueWatchingActionSheet
 import com.nuvio.app.core.ui.NuvioPosterActionSheet
 import com.nuvio.app.core.ui.NuvioStatusModal
+import com.nuvio.app.core.ui.DesktopNavigationGestureBridge
 import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.core.ui.platformExitApp
 import com.nuvio.app.core.ui.configurePlatformImageLoader
@@ -724,6 +725,13 @@ private fun MainAppContent(
             warmProfileBoundRepositories()
         }
         val currentBackStackEntry by navController.currentBackStackEntryAsState()
+        LaunchedEffect(navController) {
+            DesktopNavigationGestureBridge.backRequests.collect {
+                if (navController.previousBackStackEntry != null) {
+                    navController.popBackStack()
+                }
+            }
+        }
         val liquidGlassNativeTabBarEnabled by remember {
             ThemeSettingsRepository.liquidGlassNativeTabBarEnabled
         }.collectAsStateWithLifecycle()

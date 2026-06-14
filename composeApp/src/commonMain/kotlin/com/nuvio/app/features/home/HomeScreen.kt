@@ -1,8 +1,13 @@
 package com.nuvio.app.features.home
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -10,6 +15,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -21,6 +38,7 @@ import com.nuvio.app.core.ui.LocalNuvioBottomNavigationOverlayPadding
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
+import com.nuvio.app.core.ui.rememberMouseActivityState
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
@@ -73,11 +91,16 @@ import com.nuvio.app.features.watching.domain.isReleasedBy
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.home.components.HomeCollectionRowSection
+import com.nuvio.app.features.home.components.HomeTvFocusState
+import com.nuvio.app.features.home.components.HomeTvRow
+import com.nuvio.app.features.home.components.homeHeroLayout
+import androidx.compose.foundation.lazy.LazyListState
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.sync.Semaphore
@@ -91,6 +114,7 @@ import kotlinx.coroutines.CancellationException
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
@@ -610,7 +634,170 @@ fun HomeScreen(
         }
     }
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    val tvModeEnabled = homeSettingsUiState.tvModeEnabled && isDesktop
+    val heroFocusable = showHeroSlot
+    val tvFocus = remember { HomeTvFocusState() }
+    val tvFocusRequester = remember { FocusRequester() }
+    val tvCoroutineScope = rememberCoroutineScope()
+    val mouseActivity = rememberMouseActivityState()
+
+    val tvRows = remember(
+        continueWatchingPreferences.isVisible,
+        continueWatchingItems,
+        enabledHomeItems,
+        collectionsMap,
+        sectionsMap,
+        onContinueWatchingClick,
+        onFolderClick,
+        onPosterClick,
+    ) {
+        buildList {
+            if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
+                add(
+                    HomeTvRow(
+                        itemCount = continueWatchingItems.size,
+                        metaItems = null,
+                        onEnter = { index ->
+                            continueWatchingItems.getOrNull(index)?.let { onContinueWatchingClick?.invoke(it) }
+                        },
+                    ),
+                )
+            }
+            enabledHomeItems.forEach { settingsItem ->
+                if (settingsItem.isCollection) {
+                    val collection = collectionsMap[settingsItem.key]
+                    if (collection != null) {
+                        add(
+                            HomeTvRow(
+                                itemCount = collection.folders.size,
+                                metaItems = null,
+                                onEnter = { index ->
+                                    collection.folders.getOrNull(index)?.let {
+                                        onFolderClick?.invoke(collection.id, it.id)
+                                    }
+                                },
+                            ),
+                        )
+                    }
+                } else {
+                    val section = sectionsMap[settingsItem.key]
+                    if (section != null && section.items.isNotEmpty()) {
+                        val entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT)
+                        add(
+                            HomeTvRow(
+                                itemCount = entries.size,
+                                metaItems = entries,
+                                onEnter = { index ->
+                                    entries.getOrNull(index)?.let { onPosterClick?.invoke(it) }
+                                },
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    val tvSectionCount = (if (heroFocusable) 1 else 0) + tvRows.size
+
+    fun tvRowIndexForSection(sectionIndex: Int): Int =
+        if (heroFocusable) sectionIndex - 1 else sectionIndex
+
+    fun tvLazyItemIndexForSection(sectionIndex: Int): Int {
+        if (heroFocusable && sectionIndex == 0) return 0
+        return tvRowIndexForSection(sectionIndex)
+    }
+
+    fun tvItemCountForSection(sectionIndex: Int): Int {
+        if (heroFocusable && sectionIndex == 0) return homeUiState.heroItems.size
+        return tvRows.getOrNull(tvRowIndexForSection(sectionIndex))?.itemCount ?: 0
+    }
+
+    LaunchedEffect(tvSectionCount) {
+        if (tvSectionCount <= 0) {
+            tvFocus.sectionIndex = 0
+            tvFocus.itemIndex = 0
+        } else if (tvFocus.sectionIndex > tvSectionCount - 1) {
+            tvFocus.sectionIndex = tvSectionCount - 1
+            tvFocus.itemIndex = 0
+        }
+    }
+
+    LaunchedEffect(tvModeEnabled) {
+        if (tvModeEnabled) {
+            tvFocusRequester.requestFocus()
+        }
+    }
+
+    val tvFocusedRowIndex = if (tvModeEnabled) tvRowIndexForSection(tvFocus.sectionIndex) else -1
+    val tvFocusedHeroItem = if (tvFocusedRowIndex >= 0) {
+        tvRows.getOrNull(tvFocusedRowIndex)?.metaItems?.getOrNull(tvFocus.itemIndex)
+    } else {
+        null
+    }
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .then(
+                if (tvModeEnabled) {
+                    Modifier
+                        .focusRequester(tvFocusRequester)
+                        .focusable()
+                        .onPointerEvent(PointerEventType.Move) { event ->
+                            mouseActivity.onMouseMoved(event.changes.first().position)
+                        }
+                        .onPreviewKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            when (event.key) {
+                                Key.DirectionDown -> {
+                                    mouseActivity.onKeyboardNavigation()
+                                    tvFocus.moveSection(1, tvSectionCount)
+                                    tvFocus.itemIndex = tvFocus.itemIndex
+                                        .coerceIn(0, (tvItemCountForSection(tvFocus.sectionIndex) - 1).coerceAtLeast(0))
+                                    tvCoroutineScope.launch {
+                                        homeListState.animateScrollToItem(tvLazyItemIndexForSection(tvFocus.sectionIndex))
+                                    }
+                                    true
+                                }
+                                Key.DirectionUp -> {
+                                    mouseActivity.onKeyboardNavigation()
+                                    tvFocus.moveSection(-1, tvSectionCount)
+                                    tvFocus.itemIndex = tvFocus.itemIndex
+                                        .coerceIn(0, (tvItemCountForSection(tvFocus.sectionIndex) - 1).coerceAtLeast(0))
+                                    tvCoroutineScope.launch {
+                                        homeListState.animateScrollToItem(tvLazyItemIndexForSection(tvFocus.sectionIndex))
+                                    }
+                                    true
+                                }
+                                Key.DirectionRight -> {
+                                    mouseActivity.onKeyboardNavigation()
+                                    tvFocus.moveItem(1, tvItemCountForSection(tvFocus.sectionIndex))
+                                    true
+                                }
+                                Key.DirectionLeft -> {
+                                    mouseActivity.onKeyboardNavigation()
+                                    tvFocus.moveItem(-1, tvItemCountForSection(tvFocus.sectionIndex))
+                                    true
+                                }
+                                Key.Enter, Key.NumPadEnter -> {
+                                    if (heroFocusable && tvFocus.sectionIndex == 0) {
+                                        homeUiState.heroItems.getOrNull(tvFocus.itemIndex)?.let { onPosterClick?.invoke(it) }
+                                    } else {
+                                        tvRows.getOrNull(tvRowIndexForSection(tvFocus.sectionIndex))
+                                            ?.onEnter
+                                            ?.invoke(tvFocus.itemIndex)
+                                    }
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
         val homeSectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value)
         val continueWatchingLayout = rememberContinueWatchingLayout(maxWidth.value)
         val posterCardStyle = rememberPosterCardStyleUiState()
@@ -643,41 +830,35 @@ fun HomeScreen(
             )
         }
 
-        NuvioScreen(
-            modifier = Modifier.fillMaxSize(),
-            horizontalPadding = 0.dp,
-            topPadding = if (showHeroSlot) 0.dp else null,
-            listState = homeListState,
-        ) {
-            if (showHeroSlot) {
-                item {
-                    when {
-                        showHeroSkeleton -> HomeSkeletonHero(
-                            modifier = Modifier,
-                            viewportHeight = maxHeight,
-                            mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
-                            sectionPadding = if (isDesktop) homeSectionPadding else null,
-                        )
+        val renderHero: @Composable (LazyListState?) -> Unit = { heroListState ->
+            when {
+                showHeroSkeleton -> HomeSkeletonHero(
+                    modifier = Modifier,
+                    viewportHeight = maxHeight,
+                    mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
+                    sectionPadding = if (isDesktop) homeSectionPadding else null,
+                )
 
-                        homeUiState.heroItems.isNotEmpty() -> HomeHeroSection(
-                            items = homeUiState.heroItems,
-                            modifier = Modifier,
-                            viewportHeight = maxHeight,
-                            mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
-                            sectionPadding = if (isDesktop) homeSectionPadding else null,
-                            listState = homeListState,
-                            onItemClick = onPosterClick,
-                        )
+                homeUiState.heroItems.isNotEmpty() -> HomeHeroSection(
+                    items = homeUiState.heroItems,
+                    modifier = Modifier,
+                    viewportHeight = maxHeight,
+                    mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
+                    sectionPadding = if (isDesktop) homeSectionPadding else null,
+                    listState = heroListState,
+                    focusedItem = tvFocusedHeroItem,
+                    onItemClick = onPosterClick,
+                )
 
-                        else -> HomeHeroReservedSpace(
-                            modifier = Modifier,
-                            viewportHeight = maxHeight,
-                            mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
-                        )
-                    }
-                }
+                else -> HomeHeroReservedSpace(
+                    modifier = Modifier,
+                    viewportHeight = maxHeight,
+                    mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
+                )
             }
+        }
 
+        val rowsContent: LazyListScope.() -> Unit = {
             when {
                 !hasActiveAddons && !hasRenderableCollectionRows -> {
                     if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
@@ -753,7 +934,11 @@ fun HomeScreen(
                 }
 
                 else -> {
+                    var tvRowCursor = 0
+
                     if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
+                        val rowIndex = tvRowCursor++
+                        val sectionIndex = if (heroFocusable) rowIndex + 1 else rowIndex
                         item {
                             HomeContinueWatchingSection(
                                 items = continueWatchingItems,
@@ -763,6 +948,17 @@ fun HomeScreen(
                                 modifier = Modifier.padding(bottom = 12.dp),
                                 sectionPadding = homeSectionPadding,
                                 layout = continueWatchingLayout,
+                                focusedItemIndex = if (tvFocusedRowIndex == rowIndex) tvFocus.itemIndex else null,
+                                onHoverItem = if (tvModeEnabled) {
+                                    { itemIndex ->
+                                        if (mouseActivity.isMouseActive) {
+                                            tvFocus.sectionIndex = sectionIndex
+                                            tvFocus.itemIndex = itemIndex
+                                        }
+                                    }
+                                } else {
+                                    null
+                                },
                                 onItemClick = onContinueWatchingClick,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
@@ -773,12 +969,25 @@ fun HomeScreen(
                         if (settingsItem.isCollection) {
                             val collection = collectionsMap[settingsItem.key]
                             if (collection != null) {
+                                val rowIndex = tvRowCursor++
+                                val sectionIndex = if (heroFocusable) rowIndex + 1 else rowIndex
                                 item(key = settingsItem.key) {
                                     HomeCollectionRowSection(
                                         collection = collection,
                                         modifier = Modifier.padding(bottom = 12.dp),
                                         sectionPadding = homeSectionPadding,
                                         animateGifs = animateCollectionGifs,
+                                        focusedItemIndex = if (tvFocusedRowIndex == rowIndex) tvFocus.itemIndex else null,
+                                        onHoverItem = if (tvModeEnabled) {
+                                            { itemIndex ->
+                                                if (mouseActivity.isMouseActive) {
+                                                    tvFocus.sectionIndex = sectionIndex
+                                                    tvFocus.itemIndex = itemIndex
+                                                }
+                                            }
+                                        } else {
+                                            null
+                                        },
                                         onFolderClick = onFolderClick,
                                     )
                                 }
@@ -786,12 +995,25 @@ fun HomeScreen(
                         } else {
                             val section = sectionsMap[settingsItem.key]
                             if (section != null && section.items.isNotEmpty()) {
+                                val rowIndex = tvRowCursor++
+                                val sectionIndex = if (heroFocusable) rowIndex + 1 else rowIndex
                                 item(key = settingsItem.key) {
                                     HomeCatalogRowSection(
                                         section = section,
                                         entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
                                         modifier = Modifier.padding(bottom = 12.dp),
                                         sectionPadding = homeSectionPadding,
+                                        focusedItemIndex = if (tvFocusedRowIndex == rowIndex) tvFocus.itemIndex else null,
+                                        onHoverItem = if (tvModeEnabled) {
+                                            { itemIndex ->
+                                                if (mouseActivity.isMouseActive) {
+                                                    tvFocus.sectionIndex = sectionIndex
+                                                    tvFocus.itemIndex = itemIndex
+                                                }
+                                            }
+                                        } else {
+                                            null
+                                        },
                                         onViewAllClick = if (section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {
                                             onCatalogClick?.let { { it(section) } }
                                         } else {
@@ -806,6 +1028,45 @@ fun HomeScreen(
                         }
                     }
                 }
+            }
+        }
+
+        if (tvModeEnabled && showHeroSlot) {
+            val heroLayout = homeHeroLayout(
+                maxWidthDp = maxWidth.value,
+                viewportHeightDp = maxHeight.value,
+                mobileBelowSectionHeightHintDp = mobileHeroBelowSectionHeightHint?.value,
+                preferDesktopLayout = true,
+                heightMultiplier = 1.25f,
+            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                NuvioScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalPadding = 0.dp,
+                    topPadding = heroLayout.heroHeight,
+                    listState = homeListState,
+                    content = rowsContent,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(heroLayout.heroHeight)
+                        .align(Alignment.TopStart),
+                ) {
+                    renderHero(null)
+                }
+            }
+        } else {
+            NuvioScreen(
+                modifier = Modifier.fillMaxSize(),
+                horizontalPadding = 0.dp,
+                topPadding = if (showHeroSlot) 0.dp else null,
+                listState = homeListState,
+            ) {
+                if (showHeroSlot) {
+                    item { renderHero(homeListState) }
+                }
+                rowsContent()
             }
         }
     }

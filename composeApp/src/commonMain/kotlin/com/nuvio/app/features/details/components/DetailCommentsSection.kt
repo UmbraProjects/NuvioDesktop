@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nuvio.app.core.ui.NuvioShelfItemSlot
 import com.nuvio.app.core.ui.desktopHorizontalListNavigation
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.trakt.TraktCommentReview
@@ -57,8 +58,23 @@ fun DetailCommentsSection(
     onCommentClick: (TraktCommentReview) -> Unit,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
+    focusedItemIndex: Int? = null,
 ) {
     val listState = rememberLazyListState()
+
+    LaunchedEffect(focusedItemIndex) {
+        val target = focusedItemIndex
+        if (target == null || target !in comments.indices) return@LaunchedEffect
+        val layoutInfo = listState.layoutInfo
+        val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
+            item.index == target &&
+                item.offset >= layoutInfo.viewportStartOffset &&
+                item.offset + item.size <= layoutInfo.viewportEndOffset
+        }
+        if (!isFullyVisible) {
+            listState.animateScrollToItem(target)
+        }
+    }
 
     LaunchedEffect(listState, comments.size, canLoadMore, isLoadingMore, isLoading, error) {
         if (isLoading || !error.isNullOrBlank()) return@LaunchedEffect
@@ -126,15 +142,17 @@ fun DetailCommentsSection(
                     state = listState,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(
+                    itemsIndexed(
                         items = comments.withDuplicateSafeLazyKeys { it.id },
-                        key = { it.lazyKey },
-                    ) { keyedReview ->
+                        key = { _, keyedEntry -> keyedEntry.lazyKey },
+                    ) { index, keyedReview ->
                         val review = keyedReview.value
-                        CommentCard(
-                            review = review,
-                            onClick = { onCommentClick(review) },
-                        )
+                        NuvioShelfItemSlot(focused = index == focusedItemIndex) {
+                            CommentCard(
+                                review = review,
+                                onClick = { onCommentClick(review) },
+                            )
+                        }
                     }
                     if (isLoadingMore) {
                         item(key = "loading_more_comments") {

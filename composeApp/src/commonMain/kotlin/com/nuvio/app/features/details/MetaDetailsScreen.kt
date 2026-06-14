@@ -9,6 +9,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
@@ -45,13 +46,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
@@ -68,6 +80,7 @@ import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.TraktListPickerDialog
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
+import com.nuvio.app.core.ui.rememberMouseActivityState
 import com.nuvio.app.features.details.components.DetailActionButtons
 import com.nuvio.app.features.details.components.DetailSecondaryAction
 import com.nuvio.app.features.details.components.CommentDetailSheet
@@ -82,9 +95,13 @@ import com.nuvio.app.features.details.components.DetailProductionSection
 import com.nuvio.app.features.details.components.DetailSeriesContent
 import com.nuvio.app.features.details.components.DetailTrailersSection
 import com.nuvio.app.features.details.components.EpisodeWatchedActionSheet
+import com.nuvio.app.features.details.components.MetaDetailsTvFocusState
 import com.nuvio.app.features.details.components.SeasonWatchedActionSheet
 import com.nuvio.app.features.details.components.TrailerPlayerPopup
+import com.nuvio.app.features.details.components.rememberMetaDetailsTvFocusState
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.isDesktop
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.toLibraryItem
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -119,7 +136,7 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
-@OptIn(ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalSharedTransitionApi::class, ExperimentalComposeUiApi::class)
 fun MetaDetailsScreen(
     type: String,
     id: String,
@@ -140,6 +157,7 @@ fun MetaDetailsScreen(
         MetaScreenSettingsRepository.ensureLoaded()
         MetaScreenSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
+    val homeSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     val traktAuthUiState by remember {
         TraktAuthRepository.ensureLoaded()
         TraktAuthRepository.uiState
@@ -738,6 +756,196 @@ fun MetaDetailsScreen(
                     )
                 }
                 val listState = rememberLazyListState()
+
+                val tvModeEnabled = homeSettingsUiState.tvModeEnabled && isDesktop && !metaScreenSettingsUiState.tabLayout
+                val tvFocus = rememberMetaDetailsTvFocusState()
+                val tvFocusRequester = remember { FocusRequester() }
+                val tvCoroutineScope = rememberCoroutineScope()
+                val mouseActivity = rememberMouseActivityState()
+
+                val groupedEpisodesForTv = remember(meta.videos, meta.type) {
+                    val withSeasonOrEp = meta.videos.filter { it.season != null || it.episode != null }
+                    if (withSeasonOrEp.isNotEmpty()) {
+                        withSeasonOrEp
+                            .sortedWith(metaVideoSeasonEpisodeComparator)
+                            .groupBy { normalizeSeasonNumber(it.season) }
+                    } else if (meta.type != "series" && meta.videos.isNotEmpty()) {
+                        mapOf(normalizeSeasonNumber(null) to meta.videos)
+                    } else {
+                        emptyMap()
+                    }
+                }
+                val seasonsForTv = remember(groupedEpisodesForTv) {
+                    groupedEpisodesForTv.keys.sortedBy(::seasonSortKey)
+                }
+                val defaultSeasonForTv = remember(seasonsForTv, seriesAction) {
+                    seriesAction?.seasonNumber
+                        ?.let(::normalizeSeasonNumber)
+                        ?.takeIf { it in groupedEpisodesForTv }
+                        ?: seasonsForTv.firstOrNull()
+                        ?: SPECIALS_SEASON_NUMBER
+                }
+                var selectedSeasonForTv by rememberSaveable(meta.id) { mutableStateOf<Int?>(null) }
+                val currentSeasonForTv = selectedSeasonForTv
+                    ?.takeIf { it in groupedEpisodesForTv }
+                    ?: defaultSeasonForTv
+
+                val visibleSectionKeys = remember(
+                    metaScreenSettingsUiState.items,
+                    meta,
+                    hasProductionSection,
+                    hasTrailersSection,
+                    hasEpisodes,
+                    hasAdditionalInfoSection,
+                    hasCollectionSection,
+                    hasMoreLikeThisSection,
+                    shouldShowComments,
+                    comments,
+                    isCommentsLoading,
+                    commentsError,
+                ) {
+                    metaScreenSettingsUiState.items
+                        .filter { it.enabled }
+                        .filter { item ->
+                            metaSectionHasContent(
+                                key = item.key,
+                                meta = meta,
+                                hasProductionSection = hasProductionSection,
+                                hasTrailersSection = hasTrailersSection,
+                                hasEpisodes = hasEpisodes,
+                                hasAdditionalInfoSection = hasAdditionalInfoSection,
+                                hasCollectionSection = hasCollectionSection,
+                                hasMoreLikeThisSection = hasMoreLikeThisSection,
+                                shouldShowComments = shouldShowComments,
+                                comments = comments,
+                                isCommentsLoading = isCommentsLoading,
+                                commentsError = commentsError,
+                            )
+                        }
+                        .map { it.key }
+                }
+
+                val tvSections = remember(
+                    visibleSectionKeys,
+                    comments,
+                    meta.trailers,
+                    seasonsForTv,
+                    groupedEpisodesForTv,
+                    currentSeasonForTv,
+                    meta.collectionItems,
+                    meta.moreLikeThis,
+                    hasEpisodes,
+                    metaScreenSettingsUiState.episodeCardStyle,
+                ) {
+                    buildList {
+                        visibleSectionKeys.forEachIndexed { index, key ->
+                            val lazyItemIndex = index + 1
+                            when (key) {
+                                MetaScreenSectionKey.ACTIONS -> add(
+                                    MetaTvSection(
+                                        kind = MetaTvSectionKind.ACTIONS,
+                                        lazyItemIndex = lazyItemIndex,
+                                        itemCount = 1,
+                                        onEnter = { onPrimaryPlayClick() },
+                                    ),
+                                )
+                                MetaScreenSectionKey.COMMENTS -> if (comments.isNotEmpty()) {
+                                    add(
+                                        MetaTvSection(
+                                            kind = MetaTvSectionKind.COMMENTS,
+                                            lazyItemIndex = lazyItemIndex,
+                                            itemCount = comments.size,
+                                            onEnter = { idx -> comments.getOrNull(idx)?.let { selectedComment = it } },
+                                        ),
+                                    )
+                                }
+                                MetaScreenSectionKey.TRAILERS -> if (meta.trailers.isNotEmpty()) {
+                                    add(
+                                        MetaTvSection(
+                                            kind = MetaTvSectionKind.TRAILERS,
+                                            lazyItemIndex = lazyItemIndex,
+                                            itemCount = meta.trailers.size,
+                                            onEnter = { idx -> meta.trailers.getOrNull(idx)?.let { resolveTrailer(it) } },
+                                        ),
+                                    )
+                                }
+                                MetaScreenSectionKey.EPISODES -> {
+                                    if (seasonsForTv.size > 1) {
+                                        add(
+                                            MetaTvSection(
+                                                kind = MetaTvSectionKind.SEASONS,
+                                                lazyItemIndex = lazyItemIndex,
+                                                itemCount = seasonsForTv.size,
+                                                onEnter = { idx -> seasonsForTv.getOrNull(idx)?.let { selectedSeasonForTv = it } },
+                                            ),
+                                        )
+                                    }
+                                    val episodes = groupedEpisodesForTv[currentSeasonForTv].orEmpty()
+                                    if (episodes.isNotEmpty()) {
+                                        add(
+                                            MetaTvSection(
+                                                kind = MetaTvSectionKind.EPISODES,
+                                                lazyItemIndex = lazyItemIndex,
+                                                itemCount = episodes.size,
+                                                isVerticalEpisodeList = metaScreenSettingsUiState.episodeCardStyle == MetaEpisodeCardStyle.List,
+                                                onEnter = { idx -> episodes.getOrNull(idx)?.let { onEpisodePlayClick(it) } },
+                                            ),
+                                        )
+                                    }
+                                }
+                                MetaScreenSectionKey.COLLECTION -> if (!hasEpisodes && meta.collectionItems.isNotEmpty()) {
+                                    add(
+                                        MetaTvSection(
+                                            kind = MetaTvSectionKind.COLLECTION,
+                                            lazyItemIndex = lazyItemIndex,
+                                            itemCount = meta.collectionItems.size,
+                                            onEnter = { idx -> meta.collectionItems.getOrNull(idx)?.let { onOpenMeta?.invoke(it) } },
+                                        ),
+                                    )
+                                }
+                                MetaScreenSectionKey.MORE_LIKE_THIS -> if (meta.moreLikeThis.isNotEmpty()) {
+                                    add(
+                                        MetaTvSection(
+                                            kind = MetaTvSectionKind.MORE_LIKE_THIS,
+                                            lazyItemIndex = lazyItemIndex,
+                                            itemCount = meta.moreLikeThis.size,
+                                            onEnter = { idx -> meta.moreLikeThis.getOrNull(idx)?.let { onOpenMeta?.invoke(it) } },
+                                        ),
+                                    )
+                                }
+                                else -> Unit
+                            }
+                        }
+                    }
+                }
+
+                LaunchedEffect(tvSections.size) {
+                    if (tvSections.isEmpty()) {
+                        tvFocus.sectionIndex = 0
+                        tvFocus.itemIndex = 0
+                    } else if (tvFocus.sectionIndex > tvSections.size - 1) {
+                        tvFocus.sectionIndex = tvSections.size - 1
+                        tvFocus.itemIndex = 0
+                    }
+                }
+
+                LaunchedEffect(tvModeEnabled) {
+                    if (tvModeEnabled) {
+                        tvFocusRequester.requestFocus()
+                    }
+                }
+
+                val tvFocusedSection = if (tvModeEnabled) tvSections.getOrNull(tvFocus.sectionIndex) else null
+                val tvFocusInfo = MetaTvFocusInfo(
+                    actionsFocused = tvFocusedSection?.kind == MetaTvSectionKind.ACTIONS,
+                    focusedCommentsIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.COMMENTS },
+                    focusedTrailersIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.TRAILERS },
+                    focusedSeasonIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.SEASONS },
+                    focusedEpisodeIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.EPISODES },
+                    focusedCollectionIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.COLLECTION },
+                    focusedMoreLikeThisIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.MORE_LIKE_THIS },
+                )
+
                 val density = LocalDensity.current
                 val safeAreaTopPx = with(density) {
                     WindowInsets.statusBars
@@ -779,7 +987,101 @@ fun MetaDetailsScreen(
                     label = "detail_floating_header_progress",
                 )
 
-                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (tvModeEnabled) {
+                                Modifier
+                                    .focusRequester(tvFocusRequester)
+                                    .focusable()
+                                    .onPointerEvent(PointerEventType.Move) { event ->
+                                        mouseActivity.onMouseMoved(event.changes.first().position)
+                                    }
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                        if (event.key == Key.Backspace) {
+                                            onBack()
+                                            return@onPreviewKeyEvent true
+                                        }
+                                        if (tvSections.isEmpty()) return@onPreviewKeyEvent false
+                                        val current = tvSections.getOrNull(tvFocus.sectionIndex)
+                                            ?: return@onPreviewKeyEvent false
+                                        val isVerticalEpisodes = current.kind == MetaTvSectionKind.EPISODES &&
+                                            current.isVerticalEpisodeList
+                                        when (event.key) {
+                                            Key.DirectionDown -> {
+                                                mouseActivity.onKeyboardNavigation()
+                                                if (isVerticalEpisodes && tvFocus.itemIndex < current.itemCount - 1) {
+                                                    tvFocus.moveItem(1, current.itemCount)
+                                                } else {
+                                                    tvFocus.moveSection(1, tvSections.size)
+                                                    val next = tvSections[tvFocus.sectionIndex]
+                                                    if (isVerticalEpisodes) {
+                                                        tvFocus.itemIndex = 0
+                                                    } else {
+                                                        tvFocus.coerceItemIndex(next.itemCount)
+                                                    }
+                                                    tvCoroutineScope.launch {
+                                                        val targetIndex = if (next.kind == MetaTvSectionKind.ACTIONS) {
+                                                            0
+                                                        } else {
+                                                            next.lazyItemIndex
+                                                        }
+                                                        listState.animateScrollToItem(targetIndex)
+                                                    }
+                                                }
+                                                true
+                                            }
+                                            Key.DirectionUp -> {
+                                                mouseActivity.onKeyboardNavigation()
+                                                if (isVerticalEpisodes && tvFocus.itemIndex > 0) {
+                                                    tvFocus.moveItem(-1, current.itemCount)
+                                                } else {
+                                                    tvFocus.moveSection(-1, tvSections.size)
+                                                    val next = tvSections[tvFocus.sectionIndex]
+                                                    if (isVerticalEpisodes) {
+                                                        tvFocus.itemIndex = (next.itemCount - 1).coerceAtLeast(0)
+                                                    } else {
+                                                        tvFocus.coerceItemIndex(next.itemCount)
+                                                    }
+                                                    tvCoroutineScope.launch {
+                                                        val targetIndex = if (next.kind == MetaTvSectionKind.ACTIONS) {
+                                                            0
+                                                        } else {
+                                                            next.lazyItemIndex
+                                                        }
+                                                        listState.animateScrollToItem(targetIndex)
+                                                    }
+                                                }
+                                                true
+                                            }
+                                            Key.DirectionRight -> {
+                                                if (!isVerticalEpisodes) {
+                                                    mouseActivity.onKeyboardNavigation()
+                                                    tvFocus.moveItem(1, current.itemCount)
+                                                }
+                                                true
+                                            }
+                                            Key.DirectionLeft -> {
+                                                if (!isVerticalEpisodes) {
+                                                    mouseActivity.onKeyboardNavigation()
+                                                    tvFocus.moveItem(-1, current.itemCount)
+                                                }
+                                                true
+                                            }
+                                            Key.Enter, Key.NumPadEnter -> {
+                                                current.onEnter(tvFocus.itemIndex)
+                                                true
+                                            }
+                                            else -> false
+                                        }
+                                    }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
                     val isTablet = maxWidth >= 720.dp
                     val viewportHeight = maxHeight
                     val contentHorizontalPadding = if (isTablet) 32.dp else 18.dp
@@ -917,6 +1219,9 @@ fun MetaDetailsScreen(
                                 onCompanyClick = onCompanyClick,
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
+                                tvFocus = tvFocusInfo,
+                                externalSelectedSeason = currentSeasonForTv,
+                                onSeasonSelected = { season -> selectedSeasonForTv = season },
                             )
 
                             item(key = "detail-bottom-spacer") {
@@ -1340,6 +1645,9 @@ private fun LazyListScope.configuredMetaSectionItems(
     onCompanyClick: ((MetaCompany, String) -> Unit)?,
     sharedTransitionScope: SharedTransitionScope?,
     animatedVisibilityScope: AnimatedVisibilityScope?,
+    tvFocus: MetaTvFocusInfo = MetaTvFocusInfo(),
+    externalSelectedSeason: Int? = null,
+    onSeasonSelected: ((Int) -> Unit)? = null,
 ) {
     val enabledItems = settings.items.filter { it.enabled }
     fun sectionHasContent(key: MetaScreenSectionKey): Boolean =
@@ -1415,6 +1723,9 @@ private fun LazyListScope.configuredMetaSectionItems(
                     onCompanyClick = onCompanyClick,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
+                    tvFocus = tvFocus,
+                    externalSelectedSeason = externalSelectedSeason,
+                    onSeasonSelected = onSeasonSelected,
                 )
             }
         }
@@ -1517,6 +1828,28 @@ private fun metaSectionHasContent(
         MetaScreenSectionKey.MORE_LIKE_THIS -> hasMoreLikeThisSection
     }
 
+private enum class MetaTvSectionKind {
+    ACTIONS, COMMENTS, TRAILERS, SEASONS, EPISODES, COLLECTION, MORE_LIKE_THIS
+}
+
+private data class MetaTvSection(
+    val kind: MetaTvSectionKind,
+    val lazyItemIndex: Int,
+    val itemCount: Int,
+    val isVerticalEpisodeList: Boolean = false,
+    val onEnter: (Int) -> Unit,
+)
+
+private data class MetaTvFocusInfo(
+    val actionsFocused: Boolean = false,
+    val focusedCommentsIndex: Int? = null,
+    val focusedTrailersIndex: Int? = null,
+    val focusedSeasonIndex: Int? = null,
+    val focusedEpisodeIndex: Int? = null,
+    val focusedCollectionIndex: Int? = null,
+    val focusedMoreLikeThisIndex: Int? = null,
+)
+
 @Composable
 @OptIn(ExperimentalSharedTransitionApi::class)
 private fun ConfiguredMetaSections(
@@ -1563,6 +1896,9 @@ private fun ConfiguredMetaSections(
     onCompanyClick: ((MetaCompany, String) -> Unit)?,
     sharedTransitionScope: SharedTransitionScope?,
     animatedVisibilityScope: AnimatedVisibilityScope?,
+    tvFocus: MetaTvFocusInfo = MetaTvFocusInfo(),
+    externalSelectedSeason: Int? = null,
+    onSeasonSelected: ((Int) -> Unit)? = null,
 ) {
     val enabledItems = settings.items.filter { it.enabled }
 
@@ -1622,6 +1958,7 @@ private fun ConfiguredMetaSections(
                     isTablet = isTablet,
                     onPlayClick = onPrimaryPlayClick,
                     onPlayLongClick = if (showManualPlayOption) onPrimaryPlayLongClick else null,
+                    focused = tvFocus.actionsFocused,
                 )
             }
             MetaScreenSectionKey.OVERVIEW -> {
@@ -1653,12 +1990,18 @@ private fun ConfiguredMetaSections(
                         onLoadMore = onLoadMoreComments,
                         onCommentClick = onCommentClick,
                         showHeader = showHeader,
+                        focusedItemIndex = tvFocus.focusedCommentsIndex,
                     )
                 }
             }
             MetaScreenSectionKey.TRAILERS -> {
                 if (hasTrailersSection) {
-                    DetailTrailersSection(trailers = meta.trailers, onTrailerClick = onTrailerClick, showHeader = showHeader)
+                    DetailTrailersSection(
+                        trailers = meta.trailers,
+                        onTrailerClick = onTrailerClick,
+                        showHeader = showHeader,
+                        focusedItemIndex = tvFocus.focusedTrailersIndex,
+                    )
                 }
             }
             MetaScreenSectionKey.EPISODES -> {
@@ -1676,6 +2019,10 @@ private fun ConfiguredMetaSections(
                         onEpisodeClick = onEpisodeClick,
                         onEpisodeLongPress = onEpisodeLongPress,
                         onSeasonLongPress = onSeasonLongPress,
+                        externalSelectedSeason = externalSelectedSeason,
+                        onSeasonSelected = onSeasonSelected,
+                        focusedSeasonIndex = tvFocus.focusedSeasonIndex,
+                        focusedEpisodeIndex = tvFocus.focusedEpisodeIndex,
                     )
                 }
             }
@@ -1692,6 +2039,7 @@ private fun ConfiguredMetaSections(
                         watchedKeys = watchedKeys,
                         showHeader = showHeader,
                         onPosterClick = onOpenMeta,
+                        focusedItemIndex = tvFocus.focusedCollectionIndex,
                     )
                 }
             }
@@ -1709,6 +2057,7 @@ private fun ConfiguredMetaSections(
                         showHeader = showHeader,
                         sourceLabel = sourceLabel,
                         onPosterClick = onOpenMeta,
+                        focusedItemIndex = tvFocus.focusedMoreLikeThisIndex,
                     )
                 }
             }

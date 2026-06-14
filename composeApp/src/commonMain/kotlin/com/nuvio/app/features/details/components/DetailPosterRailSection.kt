@@ -27,6 +27,8 @@ fun DetailPosterRailSection(
     showHeader: Boolean = true,
     headerHorizontalPadding: Dp = 0.dp,
     sourceLabel: String? = null,
+    focusedItemIndex: Int? = null,
+    onHoverItem: ((Int) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
@@ -39,6 +41,8 @@ fun DetailPosterRailSection(
             headerHorizontalPadding = headerHorizontalPadding,
             rowContentPadding = PaddingValues(horizontal = headerHorizontalPadding),
             showHeaderAccent = false,
+            focusedItemIndex = focusedItemIndex,
+            onHoverItem = onHoverItem,
             key = { item -> item.stableKey() },
         ) { item ->
             HomePosterCard(

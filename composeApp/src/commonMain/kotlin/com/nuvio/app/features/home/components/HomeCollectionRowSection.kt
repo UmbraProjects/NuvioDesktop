@@ -42,6 +42,8 @@ fun HomeCollectionRowSection(
     modifier: Modifier = Modifier,
     sectionPadding: Dp? = null,
     animateGifs: Boolean = true,
+    focusedItemIndex: Int? = null,
+    onHoverItem: ((Int) -> Unit)? = null,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
 ) {
     if (collection.folders.isEmpty()) return
@@ -52,6 +54,8 @@ fun HomeCollectionRowSection(
             modifier = modifier.fillMaxWidth(),
             sectionPadding = sectionPadding,
             animateGifs = animateGifs,
+            focusedItemIndex = focusedItemIndex,
+            onHoverItem = onHoverItem,
             onFolderClick = onFolderClick,
         )
     } else {
@@ -61,6 +65,8 @@ fun HomeCollectionRowSection(
                 modifier = Modifier.fillMaxWidth(),
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
                 animateGifs = animateGifs,
+                focusedItemIndex = focusedItemIndex,
+                onHoverItem = onHoverItem,
                 onFolderClick = onFolderClick,
             )
         }
@@ -73,6 +79,8 @@ private fun HomeCollectionRowSectionContent(
     modifier: Modifier,
     sectionPadding: Dp,
     animateGifs: Boolean,
+    focusedItemIndex: Int?,
+    onHoverItem: ((Int) -> Unit)?,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)?,
 ) {
     val homeCatalogSettings by remember {
@@ -87,6 +95,8 @@ private fun HomeCollectionRowSectionContent(
         headerHorizontalPadding = sectionPadding,
         rowContentPadding = PaddingValues(horizontal = sectionPadding),
         showHeaderAccent = !homeCatalogSettings.hideCatalogUnderline,
+        focusedItemIndex = focusedItemIndex,
+        onHoverItem = onHoverItem,
         key = { folder -> "collection_${collection.id}_folder_${folder.id}" },
     ) { folder ->
         CollectionFolderCard(

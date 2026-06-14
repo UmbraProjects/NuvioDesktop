@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -66,6 +65,7 @@ import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.i18n.localizedSeasonEpisodeCode
 import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
 import com.nuvio.app.core.ui.NuvioProgressBar
+import com.nuvio.app.core.ui.NuvioShelfItemSlot
 import com.nuvio.app.core.ui.desktopHorizontalListNavigation
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.details.MetaDetails
@@ -105,6 +105,10 @@ fun DetailSeriesContent(
     onEpisodeClick: ((MetaVideo) -> Unit)? = null,
     onEpisodeLongPress: ((MetaVideo) -> Unit)? = null,
     onSeasonLongPress: ((Int) -> Unit)? = null,
+    externalSelectedSeason: Int? = null,
+    onSeasonSelected: ((Int) -> Unit)? = null,
+    focusedSeasonIndex: Int? = null,
+    focusedEpisodeIndex: Int? = null,
 ) {
     val hasVideos = meta.videos.isNotEmpty()
     if (meta.type != "series" && !hasVideos) return
@@ -170,9 +174,14 @@ fun DetailSeriesContent(
         ?.takeIf { it in groupedEpisodes }
         ?: seasons.first()
     var selectedSeasonOverride by rememberSaveable(meta.id) { mutableStateOf<Int?>(null) }
-    val currentSeason = selectedSeasonOverride
+    val currentSeason = externalSelectedSeason
         ?.takeIf { it in groupedEpisodes }
+        ?: selectedSeasonOverride?.takeIf { it in groupedEpisodes }
         ?: defaultSeason
+    val onSeasonSelect: (Int) -> Unit = { season ->
+        selectedSeasonOverride = season
+        onSeasonSelected?.invoke(season)
+    }
 
     var seasonViewMode by remember {
         mutableStateOf(SeasonViewModeStorage.load() ?: SeasonViewMode.Posters)
@@ -234,14 +243,16 @@ fun DetailSeriesContent(
                                     meta = meta,
                                     currentSeason = currentSeason,
                                     sizing = sizing,
-                                    onSelect = { selectedSeasonOverride = it },
+                                    focusedSeasonIndex = focusedSeasonIndex,
+                                    onSelect = onSeasonSelect,
                                     onLongPress = onSeasonLongPress,
                                 )
                                 SeasonViewMode.Text -> SeasonTextChipScrollRow(
                                     seasons = seasons,
                                     currentSeason = currentSeason,
                                     sizing = sizing,
-                                    onSelect = { selectedSeasonOverride = it },
+                                    focusedSeasonIndex = focusedSeasonIndex,
+                                    onSelect = onSeasonSelect,
                                     onLongPress = onSeasonLongPress,
                                 )
                             }
@@ -251,7 +262,8 @@ fun DetailSeriesContent(
                             seasons = seasons,
                             currentSeason = currentSeason,
                             sizing = sizing,
-                            onSelect = { selectedSeasonOverride = it },
+                            focusedSeasonIndex = focusedSeasonIndex,
+                            onSelect = onSeasonSelect,
                             onLongPress = onSeasonLongPress,
                         )
                     }
@@ -295,6 +307,7 @@ fun DetailSeriesContent(
                             episodeRatings = episodeRatings,
                             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                             preferredEpisodeNumber = preferredEpisodeNumber,
+                            focusedEpisodeIndex = focusedEpisodeIndex,
                             onEpisodeClick = onEpisodeClick,
                             onEpisodeLongPress = onEpisodeLongPress,
                         )
@@ -302,30 +315,32 @@ fun DetailSeriesContent(
                         Column(
                             verticalArrangement = Arrangement.spacedBy(sizing.cardGap),
                         ) {
-                            seasonEpisodes.forEach { episode ->
+                            seasonEpisodes.forEachIndexed { index, episode ->
                                 val episodeVideoId = buildPlaybackVideoId(
                                     parentMetaId = meta.id,
                                     seasonNumber = episode.season,
                                     episodeNumber = episode.episode,
                                     fallbackVideoId = episode.id,
                                 )
-                                EpisodeListCard(
-                                    video = episode,
-                                    fallbackImage = meta.background ?: meta.poster,
-                                    progressEntry = progressByVideoId[episodeVideoId],
-                                    imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
-                                    isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
-                                        WatchingState.isEpisodeWatched(
-                                            watchedKeys = watchedKeys,
-                                            metaType = meta.type,
-                                            metaId = meta.id,
-                                            episode = episode,
-                                        ),
-                                    blurUnwatchedEpisodes = blurUnwatchedEpisodes,
-                                    sizing = sizing,
-                                    onClick = { onEpisodeClick?.invoke(episode) },
-                                    onLongPress = { onEpisodeLongPress?.invoke(episode) },
-                                )
+                                NuvioShelfItemSlot(focused = index == focusedEpisodeIndex) {
+                                    EpisodeListCard(
+                                        video = episode,
+                                        fallbackImage = meta.background ?: meta.poster,
+                                        progressEntry = progressByVideoId[episodeVideoId],
+                                        imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
+                                        isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
+                                            WatchingState.isEpisodeWatched(
+                                                watchedKeys = watchedKeys,
+                                                metaType = meta.type,
+                                                metaId = meta.id,
+                                                episode = episode,
+                                            ),
+                                        blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+                                        sizing = sizing,
+                                        onClick = { onEpisodeClick?.invoke(episode) },
+                                        onLongPress = { onEpisodeLongPress?.invoke(episode) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -388,6 +403,7 @@ private fun SeasonTextChipScrollRow(
     sizing: SeriesContentSizing,
     onSelect: (Int) -> Unit,
     onLongPress: ((Int) -> Unit)?,
+    focusedSeasonIndex: Int? = null,
 ) {
     val seasonListState = rememberLazyListState()
     var hasPositionedSeasonRow by remember(seasons) { mutableStateOf(false) }
@@ -404,6 +420,20 @@ private fun SeasonTextChipScrollRow(
         }
     }
 
+    LaunchedEffect(focusedSeasonIndex) {
+        val target = focusedSeasonIndex
+        if (target == null || target !in seasons.indices) return@LaunchedEffect
+        val layoutInfo = seasonListState.layoutInfo
+        val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
+            item.index == target &&
+                item.offset >= layoutInfo.viewportStartOffset &&
+                item.offset + item.size <= layoutInfo.viewportEndOffset
+        }
+        if (!isFullyVisible) {
+            seasonListState.animateScrollToItem(target)
+        }
+    }
+
     LazyRow(
         state = seasonListState,
         modifier = Modifier
@@ -411,42 +441,44 @@ private fun SeasonTextChipScrollRow(
             .desktopHorizontalListNavigation(seasonListState),
         horizontalArrangement = Arrangement.spacedBy(sizing.seasonChipGap),
     ) {
-        items(seasons, key = { season -> season }) { season ->
+        itemsIndexed(seasons, key = { _, season -> season }) { index, season ->
             val isSelected = season == currentSeason
             val onSecondaryClick = onLongPress?.let { handler -> { handler(season) } }
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(sizing.seasonChipRadius))
-                    .background(
-                        if (isSelected) {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            NuvioShelfItemSlot(focused = index == focusedSeasonIndex) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(sizing.seasonChipRadius))
+                        .background(
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                            } else {
+                                Color.Transparent
+                            },
+                        )
+                        .combinedClickable(
+                            onClick = { onSelect(season) },
+                            onLongClick = onSecondaryClick,
+                        )
+                        .secondaryClick(onSecondaryClick)
+                        .padding(
+                            horizontal = sizing.seasonChipHorizontalPadding,
+                            vertical = sizing.seasonChipVerticalPadding,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = season.label(),
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = sizing.seasonChipTextSize,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                        ),
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.onBackground
                         } else {
-                            Color.Transparent
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
-                    .combinedClickable(
-                        onClick = { onSelect(season) },
-                        onLongClick = onSecondaryClick,
-                    )
-                    .secondaryClick(onSecondaryClick)
-                    .padding(
-                        horizontal = sizing.seasonChipHorizontalPadding,
-                        vertical = sizing.seasonChipVerticalPadding,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = season.label(),
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = sizing.seasonChipTextSize,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                    ),
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onBackground
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                }
             }
         }
     }
@@ -461,6 +493,7 @@ private fun SeasonPosterScrollRow(
     sizing: SeriesContentSizing,
     onSelect: (Int) -> Unit,
     onLongPress: ((Int) -> Unit)?,
+    focusedSeasonIndex: Int? = null,
 ) {
     val seasonListState = rememberLazyListState()
     var hasPositionedSeasonRow by remember(seasons) { mutableStateOf(false) }
@@ -477,6 +510,20 @@ private fun SeasonPosterScrollRow(
         }
     }
 
+    LaunchedEffect(focusedSeasonIndex) {
+        val target = focusedSeasonIndex
+        if (target == null || target !in seasons.indices) return@LaunchedEffect
+        val layoutInfo = seasonListState.layoutInfo
+        val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
+            item.index == target &&
+                item.offset >= layoutInfo.viewportStartOffset &&
+                item.offset + item.size <= layoutInfo.viewportEndOffset
+        }
+        if (!isFullyVisible) {
+            seasonListState.animateScrollToItem(target)
+        }
+    }
+
     LazyRow(
         state = seasonListState,
         modifier = Modifier
@@ -484,19 +531,21 @@ private fun SeasonPosterScrollRow(
             .desktopHorizontalListNavigation(seasonListState),
         horizontalArrangement = Arrangement.spacedBy(sizing.seasonChipGap),
     ) {
-        items(seasons, key = { season -> season }) { season ->
-            SeasonPosterButton(
-                label = season.label(),
-                imageUrl = groupedEpisodes[season]
-                    .orEmpty()
-                    .firstNotNullOfOrNull { episode -> episode.seasonPoster }
-                    ?: meta.poster
-                    ?: meta.background,
-                isSelected = season == currentSeason,
-                sizing = sizing,
-                onClick = { onSelect(season) },
-                onLongClick = onLongPress?.let { handler -> { handler(season) } },
-            )
+        itemsIndexed(seasons, key = { _, season -> season }) { index, season ->
+            NuvioShelfItemSlot(focused = index == focusedSeasonIndex) {
+                SeasonPosterButton(
+                    label = season.label(),
+                    imageUrl = groupedEpisodes[season]
+                        .orEmpty()
+                        .firstNotNullOfOrNull { episode -> episode.seasonPoster }
+                        ?: meta.poster
+                        ?: meta.background,
+                    isSelected = season == currentSeason,
+                    sizing = sizing,
+                    onClick = { onSelect(season) },
+                    onLongClick = onLongPress?.let { handler -> { handler(season) } },
+                )
+            }
         }
     }
 }
@@ -595,6 +644,7 @@ private fun EpisodeHorizontalRow(
     episodeRatings: Map<Pair<Int, Int>, Double>,
     blurUnwatchedEpisodes: Boolean,
     preferredEpisodeNumber: Int? = null,
+    focusedEpisodeIndex: Int? = null,
     onEpisodeClick: ((MetaVideo) -> Unit)?,
     onEpisodeLongPress: ((MetaVideo) -> Unit)?,
 ) {
@@ -619,6 +669,20 @@ private fun EpisodeHorizontalRow(
         }
     }
 
+    LaunchedEffect(focusedEpisodeIndex) {
+        val target = focusedEpisodeIndex
+        if (target == null || target !in episodes.indices) return@LaunchedEffect
+        val layoutInfo = listState.layoutInfo
+        val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
+            item.index == target &&
+                item.offset >= layoutInfo.viewportStartOffset &&
+                item.offset + item.size <= layoutInfo.viewportEndOffset
+        }
+        if (!isFullyVisible) {
+            listState.animateScrollToItem(target)
+        }
+    }
+
     LazyRow(
         state = listState,
         modifier = Modifier
@@ -630,30 +694,32 @@ private fun EpisodeHorizontalRow(
         itemsIndexed(
             items = episodes,
             key = { index, episode -> "${episode.season}:${episode.episode}:${episode.id}#$index" },
-        ) { _, episode ->
+        ) { index, episode ->
             val episodeVideoId = buildPlaybackVideoId(
                 parentMetaId = parentMetaId,
                 seasonNumber = episode.season,
                 episodeNumber = episode.episode,
                 fallbackVideoId = episode.id,
             )
-            EpisodeHorizontalCard(
-                video = episode,
-                fallbackImage = fallbackImage,
-                progressEntry = progressByVideoId[episodeVideoId],
-                imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
-                isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
-                    WatchingState.isEpisodeWatched(
-                        watchedKeys = watchedKeys,
-                        metaType = metaType,
-                        metaId = parentMetaId,
-                        episode = episode,
-                    ),
-                blurUnwatchedEpisodes = blurUnwatchedEpisodes,
-                metrics = rowMetrics,
-                onClick = { onEpisodeClick?.invoke(episode) },
-                onLongPress = { onEpisodeLongPress?.invoke(episode) },
-            )
+            NuvioShelfItemSlot(focused = index == focusedEpisodeIndex) {
+                EpisodeHorizontalCard(
+                    video = episode,
+                    fallbackImage = fallbackImage,
+                    progressEntry = progressByVideoId[episodeVideoId],
+                    imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
+                    isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
+                        WatchingState.isEpisodeWatched(
+                            watchedKeys = watchedKeys,
+                            metaType = metaType,
+                            metaId = parentMetaId,
+                            episode = episode,
+                        ),
+                    blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+                    metrics = rowMetrics,
+                    onClick = { onEpisodeClick?.invoke(episode) },
+                    onLongPress = { onEpisodeLongPress?.invoke(episode) },
+                )
+            }
         }
     }
 }
