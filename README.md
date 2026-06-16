@@ -16,6 +16,8 @@
 
 ## Fork Changes
 
+[![Nuvio TV Mode Demo](https://img.youtube.com/vi/bic_VKPs6Uo/maxresdefault.jpg)](https://www.youtube.com/watch?v=bic_VKPs6Uo)
+
 This fork is unaffiliated with the Nuvio team, here are the changes:
 
 1. Adapative Hero, with option to tint the background based on backdrop. Designed for full screen only.
