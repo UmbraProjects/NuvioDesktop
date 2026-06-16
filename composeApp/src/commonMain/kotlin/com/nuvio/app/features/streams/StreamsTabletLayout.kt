@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -64,6 +65,9 @@ internal fun TabletStreamsLayout(
     appendInstantServiceToDefaultName: Boolean,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
+    providerListState: LazyListState,
+    streamListState: LazyListState,
+    focusedStream: StreamItem?,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
     onStreamLongPress: (StreamItem) -> Unit,
     modifier: Modifier = Modifier,
@@ -191,6 +195,7 @@ internal fun TabletStreamsLayout(
                         ProviderFilterRow(
                             groups = uiState.groups,
                             selectedFilter = uiState.selectedFilter,
+                            listState = providerListState,
                             onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
                         )
 
@@ -207,6 +212,8 @@ internal fun TabletStreamsLayout(
                             onStreamLongPress = onStreamLongPress,
                             resumePositionMs = resumePositionMs,
                             resumeProgressFraction = resumeProgressFraction,
+                            listState = streamListState,
+                            focusedStream = focusedStream,
                             modifier = Modifier.weight(1f),
                         )
                     }

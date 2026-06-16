@@ -1,5 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
@@ -65,9 +66,9 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |package com.nuvio.app.features.trakt
                 |
                 |object TraktConfig {
-                |    const val CLIENT_ID = "${props.getProperty("TRAKT_CLIENT_ID", "")}" 
-                |    const val CLIENT_SECRET = "${props.getProperty("TRAKT_CLIENT_SECRET", "")}" 
-                |    const val REDIRECT_URI = "${props.getProperty("TRAKT_REDIRECT_URI", "nuvio://auth/trakt")}" 
+                |    const val CLIENT_ID = "" 
+                |    const val CLIENT_SECRET = "" 
+                |    const val REDIRECT_URI = "http://localhost:53682/callback" 
                 |}
                 """.trimMargin()
             )
@@ -426,21 +427,21 @@ val windowsWebView2IncludeDir = File(windowsWebView2Root, "build/native/include"
 val windowsWebView2NativeDir = File(windowsWebView2Root, "build/native/$windowsPlayerBridgeArch")
 val windowsWebView2LoaderLib = File(windowsWebView2NativeDir, "WebView2Loader.dll.lib")
 val windowsWebView2LoaderDll = File(windowsWebView2NativeDir, "WebView2Loader.dll")
+fun File.hasWindowsLibmpvRuntime(): Boolean =
+    isDirectory &&
+        resolve("libmpv-2.dll").exists() &&
+        (listFiles { file -> file.isFile && file.name.matches(Regex("avcodec-.*\\.dll", RegexOption.IGNORE_CASE)) }
+            ?.isNotEmpty() == true)
+
 val windowsLibmpvRuntimeDir = providers.gradleProperty("nuvio.windows.libmpv.runtimeDir").orNull
     ?.takeIf { it.isNotBlank() }
     ?.let(::File)
     ?: listOf(
         File("C:/Program Files (x86)/Nuvio/app/native"),
         File("C:/Program Files/Nuvio/app/native"),
-    ).firstOrNull { File(it, "libmpv-2.dll").exists() }
-val windowsLibmpvDll = providers.gradleProperty("nuvio.windows.libmpv.dll").orNull
-    ?.takeIf { it.isNotBlank() }
-    ?.let(::File)
-    ?: windowsLibmpvRuntimeDir?.resolve("libmpv-2.dll")
-    ?: listOf(
-        File("C:/msys64/ucrt64/bin/libmpv-2.dll"),
-        File("C:/msys64/mingw64/bin/libmpv-2.dll"),
-    ).firstOrNull(File::exists)
+        File("C:/msys64/ucrt64/bin"),
+        File("C:/msys64/mingw64/bin"),
+    ).firstOrNull { it.hasWindowsLibmpvRuntime() }
 val windowsVsWhere = File("C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe")
 val windowsVcvarsRelativePath = when (windowsPlayerBridgeArch) {
     "x86" -> "VC\\Auxiliary\\Build\\vcvars32.bat"
@@ -453,6 +454,10 @@ val windowsPlayerBridgeJavaHome = providers.systemProperty("java.home").get()
 val missingWindowsPlayerBridgeInputs = listOfNotNull(
     "WebView2.h".takeUnless { windowsWebView2IncludeDir.resolve("WebView2.h").exists() },
     "WebView2Loader.dll.lib".takeUnless { windowsWebView2LoaderLib.exists() },
+)
+val missingWindowsPlayerRuntimeInputs = listOfNotNull(
+    "WebView2Loader.dll".takeUnless { windowsWebView2LoaderDll.exists() },
+    "full libmpv runtime directory".takeUnless { windowsLibmpvRuntimeDir?.hasWindowsLibmpvRuntime() == true },
 )
 val missingWindowsPlayerBridgeMessage = """
     Windows desktop player bridge inputs are missing: ${missingWindowsPlayerBridgeInputs.joinToString()}.
@@ -558,19 +563,25 @@ val buildWindowsPlayerBridge = tasks.register<Exec>("buildWindowsPlayerBridge") 
 }
 
 val prepareWindowsPlayerRuntime = tasks.register<Sync>("prepareWindowsPlayerRuntime") {
+    notCompatibleWithConfigurationCache("Validates and bundles host-local Windows native player runtime DLLs.")
     enabled = isWindowsHost
     into(windowsPlayerRuntimeOutput)
+    doFirst {
+        if (missingWindowsPlayerRuntimeInputs.isNotEmpty()) {
+            throw GradleException(
+                """
+                Windows desktop player runtime inputs are missing: ${missingWindowsPlayerRuntimeInputs.joinToString()}.
+                Pass -Pnuvio.windows.libmpv.runtimeDir=C:/path/to/mpv-dlls so the app bundles libmpv-2.dll and its dependent DLLs.
+                """.trimIndent(),
+            )
+        }
+    }
     if (windowsWebView2LoaderDll.exists()) {
         from(windowsWebView2LoaderDll)
     }
-    when {
-        windowsLibmpvRuntimeDir?.exists() == true -> {
-            from(windowsLibmpvRuntimeDir) {
-                include("*.dll")
-            }
-        }
-        windowsLibmpvDll?.exists() == true -> {
-            from(windowsLibmpvDll)
+    if (windowsLibmpvRuntimeDir?.exists() == true) {
+        from(windowsLibmpvRuntimeDir) {
+            include("*.dll")
         }
     }
 }
@@ -644,6 +655,12 @@ if (isWindowsHost) {
     )
     tasks.matching { it.name in desktopNativePlayerTasks }.configureEach {
         dependsOn(buildWindowsPlayerBridge, prepareWindowsPlayerRuntime, generateWindowsPlayerRuntimeIndex)
+    }
+    // Windows doesn't search a loaded DLL's own directory for its dependencies; the DLL
+    // directory must be on PATH so player_bridge.dll can find libmpv-2.dll and friends.
+    tasks.withType<JavaExec>().matching { it.name in desktopNativePlayerTasks }.configureEach {
+        val nativeDllDir = layout.buildDirectory.dir("native/windows").get().asFile.absolutePath
+        environment("PATH", "$nativeDllDir;${System.getenv("PATH") ?: ""}")
     }
 }
 
@@ -772,6 +789,7 @@ compose.desktop {
             ?: System.getenv("NUVIO_DESKTOP_SMOKE_PLAYER_URL")
         jvmArgs += listOfNotNull(
             "-Dapple.awt.application.appearance=NSAppearanceNameDarkAqua",
+            "-Dskiko.renderApi=OPENGL",
             "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",

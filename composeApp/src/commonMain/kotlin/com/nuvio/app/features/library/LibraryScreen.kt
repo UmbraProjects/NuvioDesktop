@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,12 +17,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,13 +43,25 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -71,6 +86,7 @@ import com.nuvio.app.features.cloud.CloudLibraryItem
 import com.nuvio.app.features.cloud.CloudLibraryItemType
 import com.nuvio.app.features.cloud.CloudLibraryRepository
 import com.nuvio.app.features.cloud.CloudLibraryUiState
+import com.nuvio.app.isDesktop
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
@@ -85,6 +101,7 @@ import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun LibraryScreen(
     modifier: Modifier = Modifier,
@@ -95,6 +112,7 @@ fun LibraryScreen(
     onSectionViewAllClick: ((LibrarySection) -> Unit)? = null,
     onCloudFilePlay: ((CloudLibraryItem, CloudLibraryFile) -> Unit)? = null,
     onConnectCloudClick: (() -> Unit)? = null,
+    onNavigateToHome: (() -> Unit)? = null,
 ) {
     val uiState by remember {
         LibraryRepository.ensureLoaded()
@@ -127,7 +145,20 @@ fun LibraryScreen(
     var selectedCloudItemKey by rememberSaveable { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val screenFocusRequester = remember { FocusRequester() }
+    var focusedRowIndex by remember { mutableIntStateOf(0) }
+    var focusedItemIndex by remember { mutableIntStateOf(0) }
     val isTraktSource = uiState.sourceMode == LibrarySourceMode.TRAKT
+
+    LaunchedEffect(Unit) {
+        if (isDesktop) try { screenFocusRequester.requestFocus() } catch (_: Exception) {}
+    }
+
+    LaunchedEffect(uiState.sections.size) {
+        if (uiState.sections.isNotEmpty()) {
+            focusedRowIndex = focusedRowIndex.coerceAtMost(uiState.sections.lastIndex)
+        }
+    }
     val retryLibraryLoad: () -> Unit = {
         NetworkStatusRepository.requestRefresh(force = true)
         coroutineScope.launch {
@@ -173,7 +204,57 @@ fun LibraryScreen(
     }
 
     NuvioScreen(
-        modifier = modifier,
+        modifier = modifier.then(
+            if (isDesktop) {
+                Modifier
+                    .focusRequester(screenFocusRequester)
+                    .focusable()
+                    .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
+                        try { screenFocusRequester.requestFocus() } catch (_: Exception) {}
+                    }
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        val sections = uiState.sections
+                        when (event.key) {
+                            Key.L -> { onNavigateToHome?.invoke(); true }
+                            Key.DirectionDown -> {
+                                val maxRow = (sections.size - 1).coerceAtLeast(0)
+                                focusedRowIndex = (focusedRowIndex + 1).coerceAtMost(maxRow)
+                                focusedItemIndex = 0
+                                coroutineScope.launch {
+                                    listState.animateScrollToItem((focusedRowIndex + 1).coerceAtLeast(0))
+                                }
+                                true
+                            }
+                            Key.DirectionUp -> {
+                                focusedRowIndex = (focusedRowIndex - 1).coerceAtLeast(0)
+                                focusedItemIndex = 0
+                                coroutineScope.launch {
+                                    listState.animateScrollToItem(if (focusedRowIndex == 0) 0 else focusedRowIndex + 1)
+                                }
+                                true
+                            }
+                            Key.DirectionRight -> {
+                                val maxItem = (sections.getOrNull(focusedRowIndex)?.items?.take(LIBRARY_SECTION_PREVIEW_LIMIT)?.size?.minus(1) ?: 0).coerceAtLeast(0)
+                                focusedItemIndex = (focusedItemIndex + 1).coerceAtMost(maxItem)
+                                true
+                            }
+                            Key.DirectionLeft -> {
+                                focusedItemIndex = (focusedItemIndex - 1).coerceAtLeast(0)
+                                true
+                            }
+                            Key.Enter, Key.NumPadEnter -> {
+                                sections.getOrNull(focusedRowIndex)?.items?.take(LIBRARY_SECTION_PREVIEW_LIMIT)?.getOrNull(focusedItemIndex)
+                                    ?.let { onPosterClick?.invoke(it) }
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+            } else {
+                Modifier
+            },
+        ),
         horizontalPadding = 0.dp,
         topPadding = if (topChromePadding != null) 0.dp else null,
         listState = listState,
@@ -305,6 +386,12 @@ fun LibraryScreen(
                         sections = uiState.sections,
                         watchedKeys = watchedUiState.watchedKeys,
                         showHeaderAccent = !homeCatalogSettingsUiState.hideCatalogUnderline,
+                        focusedRowIndex = focusedRowIndex,
+                        focusedItemIndex = focusedItemIndex,
+                        onHoverItem = if (isDesktop) { rowIdx, itemIdx ->
+                            focusedRowIndex = rowIdx
+                            focusedItemIndex = itemIdx
+                        } else null,
                         onPosterClick = onPosterClick,
                         onSectionViewAllClick = onSectionViewAllClick,
                         onPosterLongClick = onPosterLongClick,
@@ -992,14 +1079,17 @@ private fun LazyListScope.librarySections(
     sections: List<LibrarySection>,
     watchedKeys: Set<String>,
     showHeaderAccent: Boolean,
+    focusedRowIndex: Int,
+    focusedItemIndex: Int,
+    onHoverItem: ((rowIndex: Int, itemIndex: Int) -> Unit)?,
     onPosterClick: ((LibraryItem) -> Unit)?,
     onSectionViewAllClick: ((LibrarySection) -> Unit)?,
     onPosterLongClick: ((LibraryItem, LibrarySection) -> Unit)?,
 ) {
-    items(
+    itemsIndexed(
         items = sections,
-        key = { section -> section.type },
-    ) { section ->
+        key = { _, section -> section.type },
+    ) { index, section ->
         val previewItems = section.items.take(LIBRARY_SECTION_PREVIEW_LIMIT)
         NuvioShelfSection(
             title = section.displayTitle,
@@ -1014,6 +1104,8 @@ private fun LazyListScope.librarySections(
             },
             viewAllPillSize = NuvioViewAllPillSize.Compact,
             key = { item -> "${item.type}:${item.id}" },
+            focusedItemIndex = if (focusedRowIndex == index) focusedItemIndex else null,
+            onHoverItem = onHoverItem?.let { callback -> { itemIdx -> callback(index, itemIdx) } },
         ) { item ->
             val posterItem = item.toMetaPreview()
             HomePosterCard(

@@ -22,16 +22,26 @@ internal object DesktopStorage {
         stores.getOrPut(name) { Store(rootDir.resolve("$name.properties")) }
     }
 
-    fun wipe() {
+    fun wipe(preservedStoreNames: Set<String> = emptySet()) {
         synchronized(stores) {
-            stores.values.forEach(Store::clearInMemory)
-            stores.clear()
+            val iterator = stores.iterator()
+            while (iterator.hasNext()) {
+                val (name, store) = iterator.next()
+                if (name !in preservedStoreNames) {
+                    store.clearInMemory()
+                    iterator.remove()
+                }
+            }
         }
         if (!rootDir.exists()) return
+        val preservedFiles = preservedStoreNames
+            .map { name -> rootDir.resolve("$name.properties").normalize() }
+            .toSet()
         Files.walk(rootDir).use { stream ->
             stream
                 .sorted(Comparator.reverseOrder())
                 .filter { it != rootDir }
+                .filter { it.normalize() !in preservedFiles }
                 .forEach { path -> runCatching { Files.deleteIfExists(path) } }
         }
     }

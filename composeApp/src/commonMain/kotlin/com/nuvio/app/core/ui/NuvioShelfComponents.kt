@@ -19,6 +19,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -90,12 +95,12 @@ fun <T> NuvioShelfSection(
         val target = focusedItemIndex
         if (target == null || target !in entries.indices) return@LaunchedEffect
         val layoutInfo = rowState.layoutInfo
-        val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
-            item.index == target &&
-                item.offset >= layoutInfo.viewportStartOffset &&
-                item.offset + item.size <= layoutInfo.viewportEndOffset
-        }
-        if (!isFullyVisible) {
+        // Only scroll when the item is completely off-screen. Partially-visible items
+        // do not trigger a scroll — this prevents a cascade where hovering near the
+        // right edge causes the list to scroll, moving a new item under the cursor,
+        // which triggers another hover, which scrolls again.
+        val isAnyPartVisible = layoutInfo.visibleItemsInfo.any { item -> item.index == target }
+        if (!isAnyPartVisible) {
             rowState.animateScrollToItem(target)
         }
     }
@@ -114,7 +119,9 @@ fun <T> NuvioShelfSection(
         }
         LazyRow(
             state = rowState,
-            modifier = Modifier.desktopShelfDragScroll(rowState),
+            modifier = Modifier
+                .desktopShelfDragScroll(rowState)
+                .desktopShelfEdgeScroll(rowState),
             contentPadding = rowContentPadding,
             horizontalArrangement = Arrangement.spacedBy(itemSpacing),
         ) {
@@ -208,6 +215,55 @@ private fun Modifier.desktopShelfDragScroll(
 
                 state.dispatchRawDelta(-delta.x)
                 change.consume()
+            }
+        }
+    }
+}
+
+private fun Modifier.desktopShelfEdgeScroll(state: LazyListState): Modifier {
+    if (!isDesktop) return this
+    return this.pointerInput(state) {
+        // PointerInputScope (Compose 1.7+) no longer extends CoroutineScope, so we
+        // need coroutineScope { } to get a scope for launching child coroutines.
+        val pointerScope = this
+        val positionChannel = Channel<Float?>(Channel.CONFLATED)
+        coroutineScope {
+            val scope = this
+            scope.launch {
+                var scrollJob: Job? = null
+                var currentDir = 0
+                for (x in positionChannel) {
+                    val width = pointerScope.size.width.toFloat()
+                    val edgeZone = width * 0.10f
+                    val newDir = when {
+                        x == null -> 0
+                        x < edgeZone -> -1
+                        x > width - edgeZone -> 1
+                        else -> 0
+                    }
+                    if (newDir != currentDir) {
+                        currentDir = newDir
+                        scrollJob?.cancel()
+                        scrollJob = if (newDir != 0) {
+                            scope.launch {
+                                val delta = newDir * 6f
+                                while (true) {
+                                    state.dispatchRawDelta(delta)
+                                    delay(16)
+                                }
+                            }
+                        } else null
+                    }
+                }
+            }
+            pointerScope.awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    when (event.type) {
+                        PointerEventType.Exit -> positionChannel.trySend(null)
+                        else -> positionChannel.trySend(event.changes.firstOrNull()?.position?.x)
+                    }
+                }
             }
         }
     }

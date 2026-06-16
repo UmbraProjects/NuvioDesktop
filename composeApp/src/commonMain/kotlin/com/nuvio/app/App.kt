@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -141,6 +142,7 @@ import com.nuvio.app.features.details.MetaPerson
 import com.nuvio.app.features.details.PersonDetailScreen
 import com.nuvio.app.features.details.TmdbEntityBrowseScreen
 import com.nuvio.app.features.tmdb.TmdbEntityKind
+import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.MetaPreview
@@ -325,7 +327,7 @@ data class StreamRoute(
 data class CatalogRoute(
     val title: String,
     val subtitle: String,
-    val targetKind: CatalogTargetKind,
+    val targetKind: String,
     val contentType: String,
     val supportsPagination: Boolean = false,
     val manifestUrl: String? = null,
@@ -347,7 +349,7 @@ data class CatalogRoute(
             is CatalogTarget.Addon -> CatalogTargetKind.ADDON
             is CatalogTarget.Library -> CatalogTargetKind.LIBRARY
             is CatalogTarget.CollectionSource -> CatalogTargetKind.COLLECTION_SOURCE
-        },
+        }.name,
         contentType = target.contentType,
         supportsPagination = target.supportsPagination,
         manifestUrl = (target as? CatalogTarget.Addon)?.manifestUrl,
@@ -360,7 +362,7 @@ data class CatalogRoute(
     )
 
     fun toCatalogTarget(): CatalogTarget =
-        when (targetKind) {
+        when (CatalogTargetKind.valueOf(targetKind)) {
             CatalogTargetKind.ADDON -> CatalogTarget.Addon(
                 manifestUrl = requireNotNull(manifestUrl),
                 contentType = contentType,
@@ -830,6 +832,7 @@ private fun MainAppContent(
     fun handleRootTabClick(tab: AppScreenTab) {
         if (selectedTab != tab) {
             selectedTab = tab
+            if (tab == AppScreenTab.Search) searchFocusRequestCount++
             return
         }
 
@@ -1334,6 +1337,18 @@ private fun MainAppContent(
                 ),
             )
         }
+        val onHeroCastClick: (HeroCastMember) -> Unit = { person ->
+            val tmdbId = person.tmdbId
+            if (tmdbId != null && tmdbId > 0) {
+                navController.navigateIfResumed(
+                    PersonDetailRoute(
+                        personId = tmdbId,
+                        personName = person.name,
+                        personPhoto = person.photo,
+                    ),
+                )
+            }
+        }
 
         val librarySectionSubtitle = if (libraryUiState.sourceMode == LibrarySourceMode.TRAKT) {
             stringResource(Res.string.compose_catalog_subtitle_trakt_library)
@@ -1551,6 +1566,7 @@ private fun MainAppContent(
                                         settingsRootActionRequests = settingsRootActionRequests,
                                         animateHomeCollectionGifs = tabsRouteActive,
                                         onCatalogClick = onCatalogClick,
+                                        onCastClick = onHeroCastClick,
                                         onPosterClick = { meta ->
                                             navController.navigateIfResumed(DetailRoute(type = meta.type, id = meta.id))
                                         },
@@ -1635,6 +1651,9 @@ private fun MainAppContent(
                                             requestedSettingsPageName = null
                                         },
                                         onInitialHomeContentRendered = { initialHomeReady = true },
+                                        onNavigateToSearch = { handleRootTabClick(AppScreenTab.Search) },
+                                        onNavigateToLibrary = { handleRootTabClick(AppScreenTab.Library) },
+                                        onNavigateToHome = { handleRootTabClick(AppScreenTab.Home) },
                                     )
                                 }
 
@@ -1651,6 +1670,7 @@ private fun MainAppContent(
                                         onTabSelected = ::handleRootTabClick,
                                         onProfileSelected = onProfileSelected,
                                         onAddProfileRequested = onSwitchProfile,
+                                        dimUntilHovered = selectedTab == AppScreenTab.Home,
                                     )
                                 }
 
@@ -2743,6 +2763,7 @@ private fun MainAppContent(
                             navController.popBackStack()
                         },
                         onCatalogClick = onCatalogClick,
+                        onCastClick = onHeroCastClick,
                         onPosterClick = { meta ->
                             navController.navigateIfResumed(DetailRoute(type = meta.type, id = meta.id))
                         },
@@ -2994,6 +3015,7 @@ private fun AppTabHost(
     settingsRootActionRequests: Flow<Unit>,
     animateHomeCollectionGifs: Boolean = true,
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
+    onCastClick: ((HeroCastMember) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     onLibraryPosterClick: ((LibraryItem) -> Unit)? = null,
@@ -3019,6 +3041,9 @@ private fun AppTabHost(
     requestedSettingsPageName: String? = null,
     onRequestedSettingsPageConsumed: () -> Unit = {},
     onInitialHomeContentRendered: () -> Unit = {},
+    onNavigateToSearch: (() -> Unit)? = null,
+    onNavigateToLibrary: (() -> Unit)? = null,
+    onNavigateToHome: (() -> Unit)? = null,
 ) {
     val tabStateHolder = rememberSaveableStateHolder()
 
@@ -3031,12 +3056,15 @@ private fun AppTabHost(
                         animateCollectionGifs = animateHomeCollectionGifs,
                         scrollToTopRequests = homeScrollToTopRequests,
                         onCatalogClick = onCatalogClick,
+                        onCastClick = onCastClick,
                         onPosterClick = onPosterClick,
                         onPosterLongClick = onPosterLongClick,
                         onContinueWatchingClick = onContinueWatchingClick,
                         onContinueWatchingLongPress = onContinueWatchingLongPress,
                         onFolderClick = onFolderClick,
                         onFirstCatalogRendered = onInitialHomeContentRendered,
+                        onNavigateToSearch = onNavigateToSearch,
+                        onNavigateToLibrary = onNavigateToLibrary,
                     )
                 }
 
@@ -3048,6 +3076,7 @@ private fun AppTabHost(
                         onPosterLongClick = onPosterLongClick,
                         searchFocusRequestCount = searchFocusRequestCount,
                         scrollToTopRequests = searchScrollToTopRequests,
+                        onNavigateToHome = onNavigateToHome,
                     )
                 }
 
@@ -3061,6 +3090,7 @@ private fun AppTabHost(
                         onSectionViewAllClick = onLibrarySectionViewAllClick,
                         onCloudFilePlay = onCloudFilePlay,
                         onConnectCloudClick = onConnectCloudClick,
+                        onNavigateToHome = onNavigateToHome,
                     )
                 }
 
@@ -3351,14 +3381,23 @@ private fun TabletFloatingTopBar(
     onProfileSelected: (NuvioProfile) -> Unit,
     onAddProfileRequested: () -> Unit,
     modifier: Modifier = Modifier,
+    dimUntilHovered: Boolean = false,
 ) {
     val tokens = MaterialTheme.nuvio
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val hoverSource = remember { MutableInteractionSource() }
+    val hovered by hoverSource.collectIsHoveredAsState()
+    val barAlpha by animateFloatAsState(
+        targetValue = if (dimUntilHovered && !hovered) 0f else 1f,
+        animationSpec = tween(durationMillis = 200),
+    )
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = statusBarPadding + NuvioTokens.Space.s10, bottom = tokens.spacing.controlGap),
+            .padding(top = statusBarPadding + NuvioTokens.Space.s10, bottom = tokens.spacing.controlGap)
+            .hoverable(hoverSource)
+            .alpha(barAlpha),
         contentAlignment = Alignment.TopCenter,
     ) {
         Surface(

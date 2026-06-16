@@ -45,6 +45,10 @@ import nuvio.composeapp.generated.resources.settings_homescreen_empty_message
 import nuvio.composeapp.generated.resources.settings_homescreen_empty_title
 import nuvio.composeapp.generated.resources.settings_homescreen_hide_catalog_underline
 import nuvio.composeapp.generated.resources.settings_homescreen_hide_catalog_underline_description
+import nuvio.composeapp.generated.resources.settings_homescreen_hero_ambient_background
+import nuvio.composeapp.generated.resources.settings_homescreen_hero_ambient_background_description
+import nuvio.composeapp.generated.resources.settings_homescreen_immersive_catalog_mode
+import nuvio.composeapp.generated.resources.settings_homescreen_immersive_catalog_mode_description
 import nuvio.composeapp.generated.resources.settings_homescreen_keep_home_focused
 import nuvio.composeapp.generated.resources.settings_homescreen_limit_reached
 import nuvio.composeapp.generated.resources.settings_homescreen_no_sources_selected
@@ -72,6 +76,8 @@ internal fun LazyListScope.homescreenSettingsContent(
     hideUnreleasedContent: Boolean,
     hideCatalogUnderline: Boolean,
     tvModeEnabled: Boolean = false,
+    heroAmbientBackgroundEnabled: Boolean = false,
+    immersiveCatalogModeEnabled: Boolean = false,
     items: List<HomeCatalogSettingsItem>,
 ) {
     val selectedHeroSourceCount = items.count { it.heroSourceEnabled }
@@ -121,6 +127,24 @@ internal fun LazyListScope.homescreenSettingsContent(
                         checked = tvModeEnabled,
                         isTablet = isTablet,
                         onCheckedChange = HomeCatalogSettingsRepository::setTvModeEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_homescreen_hero_ambient_background),
+                        description = stringResource(Res.string.settings_homescreen_hero_ambient_background_description),
+                        checked = heroAmbientBackgroundEnabled,
+                        enabled = heroEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = HomeCatalogSettingsRepository::setHeroAmbientBackgroundEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_homescreen_immersive_catalog_mode),
+                        description = stringResource(Res.string.settings_homescreen_immersive_catalog_mode_description),
+                        checked = immersiveCatalogModeEnabled,
+                        enabled = heroEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = HomeCatalogSettingsRepository::setImmersiveCatalogModeEnabled,
                     )
                 }
             }

@@ -79,16 +79,18 @@ fun NuvioScreen(
     modifier: Modifier = Modifier,
     horizontalPadding: Dp = MaterialTheme.nuvio.spacing.screenHorizontal,
     topPadding: Dp? = null,
+    backgroundColor: Color? = null,
     listState: LazyListState = rememberLazyListState(),
     content: LazyListScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val resolvedBackgroundColor = backgroundColor ?: tokens.colors.background
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     LazyColumn(
         state = listState,
         modifier = modifier
             .fillMaxSize()
-            .background(tokens.colors.background),
+            .background(resolvedBackgroundColor),
         contentPadding = PaddingValues(
             start = horizontalPadding,
             top = topPadding ?: tokens.spacing.screenTop + statusBarTop + nuvioPlatformExtraTopPadding,
@@ -323,6 +325,7 @@ fun NuvioInputField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
+    readOnly: Boolean = false,
     trailingContent: (@Composable (() -> Unit))? = null,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -331,6 +334,7 @@ fun NuvioInputField(
         onValueChange = onValueChange,
         modifier = modifier.fillMaxWidth(),
         singleLine = true,
+        readOnly = readOnly,
         shape = RoundedCornerShape(NuvioTokens.Radius.lg),
         placeholder = {
             Text(

@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,9 +32,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -58,9 +63,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,6 +100,7 @@ import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
+import com.nuvio.app.isDesktop
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import nuvio.composeapp.generated.resources.*
@@ -150,6 +163,10 @@ fun StreamsScreen(
     var streamActionsTarget by remember(videoId) { mutableStateOf<StreamItem?>(null) }
     var preferredFilterApplied by remember(videoId) { mutableStateOf(false) }
     var autoPlayOverlayLogoLoadError by remember(logo) { mutableStateOf(false) }
+    val keyboardFocusRequester = remember { FocusRequester() }
+    val providerListState = rememberLazyListState()
+    val streamListState = rememberLazyListState()
+    var focusedStreamIndex by remember(videoId) { mutableIntStateOf(0) }
     val autoPlayOverlayLogoUrl = logo?.takeIf { it.isNotBlank() }
     val storedProgress = if (startFromBeginning) {
         null
@@ -178,6 +195,16 @@ fun StreamsScreen(
             (resumePositionMs ?: storedProgress?.takeIf { it.isResumable }?.lastPositionMs)?.takeIf { it > 0L }
         }
     }
+    val providerIds = remember(uiState.groups) {
+        listOf<String?>(null) + uiState.groups
+            .filter { it.streams.isNotEmpty() || it.isLoading }
+            .map { it.addonId }
+    }
+    val selectableStreams = remember(uiState.filteredGroups, debridSettings.canResolvePlayableLinks) {
+        orderedStreams(uiState.filteredGroups)
+            .filter { it.isSelectableForPlayback(debridSettings.canResolvePlayableLinks) }
+    }
+    val focusedStream = selectableStreams.getOrNull(focusedStreamIndex)
 
     LaunchedEffect(type, videoId, seasonNumber, episodeNumber, manualSelection) {
         StreamsRepository.load(
@@ -199,6 +226,46 @@ fun StreamsScreen(
         }
     }
 
+    LaunchedEffect(isDesktop, videoId) {
+        if (isDesktop) {
+            keyboardFocusRequester.requestFocus()
+        }
+    }
+
+    LaunchedEffect(selectableStreams.size) {
+        focusedStreamIndex = focusedStreamIndex.coerceIn(
+            minimumValue = 0,
+            maximumValue = (selectableStreams.size - 1).coerceAtLeast(0),
+        )
+    }
+
+    LaunchedEffect(uiState.selectedFilter, providerIds) {
+        val filterIndex = providerIds.indexOf(uiState.selectedFilter).coerceAtLeast(0)
+        if (filterIndex < providerIds.size) {
+            providerListState.animateScrollToItem(filterIndex)
+        }
+    }
+
+    LaunchedEffect(focusedStream, uiState.filteredGroups) {
+        val target = focusedStream ?: return@LaunchedEffect
+        val lazyIndex = streamLazyListIndex(
+            groups = uiState.filteredGroups,
+            showGroupHeaders = uiState.selectedFilter == null,
+            target = target,
+        )
+        if (lazyIndex >= 0) {
+            val layoutInfo = streamListState.layoutInfo
+            val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
+                item.index == lazyIndex &&
+                    item.offset >= layoutInfo.viewportStartOffset &&
+                    item.offset + item.size <= layoutInfo.viewportEndOffset
+            }
+            if (!isFullyVisible) {
+                streamListState.animateScrollToItem(lazyIndex)
+            }
+        }
+    }
+
     val heroArtwork = if (isEpisode) {
         episodeThumbnail ?: background ?: poster
     } else {
@@ -208,7 +275,60 @@ fun StreamsScreen(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(MaterialTheme.colorScheme.background)
+            .then(
+                if (isDesktop) {
+                    Modifier
+                        .focusRequester(keyboardFocusRequester)
+                        .focusable()
+                        .onPreviewKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            if (streamActionsTarget != null || uiState.showDirectAutoPlayOverlay) {
+                                return@onPreviewKeyEvent false
+                            }
+                            when (event.key) {
+                                Key.Backspace -> {
+                                    onBack()
+                                    true
+                                }
+                                Key.DirectionUp -> {
+                                    focusedStreamIndex = (focusedStreamIndex - 1).coerceAtLeast(0)
+                                    true
+                                }
+                                Key.DirectionDown -> {
+                                    focusedStreamIndex = (focusedStreamIndex + 1)
+                                        .coerceAtMost((selectableStreams.size - 1).coerceAtLeast(0))
+                                    true
+                                }
+                                Key.DirectionLeft, Key.DirectionRight -> {
+                                    val currentFilterIndex = providerIds.indexOf(uiState.selectedFilter)
+                                        .coerceAtLeast(0)
+                                    val delta = if (event.key == Key.DirectionRight) 1 else -1
+                                    val nextFilterIndex = (currentFilterIndex + delta)
+                                        .coerceIn(0, (providerIds.size - 1).coerceAtLeast(0))
+                                    if (nextFilterIndex != currentFilterIndex) {
+                                        StreamsRepository.selectFilter(providerIds[nextFilterIndex])
+                                        focusedStreamIndex = 0
+                                    }
+                                    true
+                                }
+                                Key.Enter, Key.NumPadEnter -> {
+                                    focusedStream?.let {
+                                        onStreamSelected(
+                                            it,
+                                            effectiveResumePositionMs,
+                                            effectiveResumeProgressFraction,
+                                        )
+                                    }
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         val isTabletLayout = maxWidth >= 768.dp
 
@@ -228,6 +348,9 @@ fun StreamsScreen(
                 appendInstantServiceToDefaultName = debridSettings.canResolvePlayableLinks && !debridSettings.hasCustomStreamFormatting,
                 resumePositionMs = effectiveResumePositionMs,
                 resumeProgressFraction = effectiveResumeProgressFraction,
+                providerListState = providerListState,
+                streamListState = streamListState,
+                focusedStream = focusedStream,
                 onStreamSelected = { stream, positionMs, progressFraction ->
                     onStreamSelected(stream, positionMs, progressFraction)
                 },
@@ -247,6 +370,9 @@ fun StreamsScreen(
                 appendInstantServiceToDefaultName = debridSettings.canResolvePlayableLinks && !debridSettings.hasCustomStreamFormatting,
                 resumePositionMs = effectiveResumePositionMs,
                 resumeProgressFraction = effectiveResumeProgressFraction,
+                providerListState = providerListState,
+                streamListState = streamListState,
+                focusedStream = focusedStream,
                 onStreamSelected = { stream, positionMs, progressFraction ->
                     onStreamSelected(stream, positionMs, progressFraction)
                 },
@@ -408,6 +534,9 @@ private fun MobileStreamsLayout(
     appendInstantServiceToDefaultName: Boolean,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
+    providerListState: LazyListState,
+    streamListState: LazyListState,
+    focusedStream: StreamItem?,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
     onStreamLongPress: (StreamItem) -> Unit,
     modifier: Modifier = Modifier,
@@ -481,6 +610,7 @@ private fun MobileStreamsLayout(
                     ProviderFilterRow(
                         groups = uiState.groups,
                         selectedFilter = uiState.selectedFilter,
+                        listState = providerListState,
                         onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
                     )
 
@@ -492,6 +622,8 @@ private fun MobileStreamsLayout(
                         onStreamLongPress = onStreamLongPress,
                         resumePositionMs = resumePositionMs,
                         resumeProgressFraction = resumeProgressFraction,
+                        listState = streamListState,
+                        focusedStream = focusedStream,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -690,26 +822,31 @@ private fun EpisodeHeroBlock(
 internal fun ProviderFilterRow(
     groups: List<AddonStreamGroup>,
     selectedFilter: String?,
+    listState: LazyListState = rememberLazyListState(),
     onFilterSelected: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val addonGroups = groups.filter { it.streams.isNotEmpty() || it.isLoading }
     if (addonGroups.isEmpty()) return
 
-    Row(
+    LazyRow(
+        state = listState,
         modifier = modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        // "All" chip
-        FilterChip(
-            label = stringResource(Res.string.collections_tab_all),
-            isSelected = selectedFilter == null,
-            onClick = { onFilterSelected(null) },
-        )
-        addonGroups.forEach { group ->
+        item(key = "all") {
+            FilterChip(
+                label = stringResource(Res.string.collections_tab_all),
+                isSelected = selectedFilter == null,
+                onClick = { onFilterSelected(null) },
+            )
+        }
+        items(
+            items = addonGroups,
+            key = { it.addonId },
+        ) { group ->
             FilterChip(
                 label = group.addonName,
                 isSelected = selectedFilter == group.addonId,
@@ -791,6 +928,8 @@ internal fun StreamList(
     onStreamLongPress: (StreamItem) -> Unit,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
+    listState: LazyListState = rememberLazyListState(),
+    focusedStream: StreamItem? = null,
     modifier: Modifier = Modifier,
 ) {
     val filteredGroups = uiState.filteredGroups
@@ -803,6 +942,7 @@ internal fun StreamList(
     }.collectAsStateWithLifecycle()
 
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(
             horizontal = 12.dp,
@@ -838,6 +978,7 @@ internal fun StreamList(
                         onStreamLongPress = onStreamLongPress,
                         resumePositionMs = resumePositionMs,
                         resumeProgressFraction = resumeProgressFraction,
+                        focusedStream = focusedStream,
                     )
                 }
                 if (anyLoading) {
@@ -866,6 +1007,7 @@ private fun LazyListScope.streamSection(
     onStreamLongPress: (StreamItem) -> Unit,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
+    focusedStream: StreamItem?,
 ) {
     if (group.streams.isEmpty() && !group.isLoading) return
 
@@ -910,6 +1052,7 @@ private fun LazyListScope.streamSection(
                 showFileSizeBadges = showFileSizeBadges,
                 showAddonLogo = showAddonLogo,
                 badgePlacement = badgePlacement,
+                focused = stream === focusedStream,
                 onClick = {
                     if (stream.isSelectableForPlayback(debridEnabled)) {
                         onStreamSelected(stream, resumePositionMs, resumeProgressFraction)
@@ -924,6 +1067,41 @@ private fun LazyListScope.streamSection(
             Spacer(modifier = Modifier.height(10.dp))
         }
     }
+}
+
+private fun orderedStreams(groups: List<AddonStreamGroup>): List<StreamItem> =
+    groups.flatMap { group ->
+        group.streams
+            .groupBy { stream -> stream.sourceName?.takeIf { it.isNotBlank() } ?: stream.addonName }
+            .toSortedMap(compareBy(String::lowercase))
+            .values
+            .flatten()
+    }
+
+private fun streamLazyListIndex(
+    groups: List<AddonStreamGroup>,
+    showGroupHeaders: Boolean,
+    target: StreamItem,
+): Int {
+    var lazyIndex = 0
+    groups.forEach { group ->
+        if (group.streams.isEmpty() && !group.isLoading) return@forEach
+        if (showGroupHeaders) lazyIndex++
+
+        val streamsBySource = group.streams.groupBy { stream ->
+            stream.sourceName?.takeIf { it.isNotBlank() } ?: stream.addonName
+        }
+        val sortedSources = streamsBySource.keys.sortedBy { it.lowercase() }
+        val showSourceHeaders = sortedSources.size > 1
+        sortedSources.forEach { sourceName ->
+            if (showSourceHeaders) lazyIndex++
+            streamsBySource[sourceName].orEmpty().forEach { stream ->
+                if (stream === target) return lazyIndex
+                lazyIndex++
+            }
+        }
+    }
+    return -1
 }
 
 internal fun streamSectionRenderKey(

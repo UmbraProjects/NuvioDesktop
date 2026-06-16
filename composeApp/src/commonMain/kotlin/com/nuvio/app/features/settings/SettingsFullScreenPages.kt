@@ -82,6 +82,8 @@ fun HomescreenSettingsScreen(
             hideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
             hideCatalogUnderline = homescreenSettingsUiState.hideCatalogUnderline,
             tvModeEnabled = homescreenSettingsUiState.tvModeEnabled,
+            heroAmbientBackgroundEnabled = homescreenSettingsUiState.heroAmbientBackgroundEnabled,
+            immersiveCatalogModeEnabled = homescreenSettingsUiState.immersiveCatalogModeEnabled,
             items = homescreenSettingsUiState.items,
         )
     }

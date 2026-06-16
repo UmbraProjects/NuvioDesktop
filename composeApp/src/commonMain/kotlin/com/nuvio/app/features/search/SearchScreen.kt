@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -23,18 +25,27 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +61,7 @@ import com.nuvio.app.core.ui.nuvioConsumePointerEvents
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
+import com.nuvio.app.isDesktop
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
@@ -59,6 +71,7 @@ import com.nuvio.app.features.home.components.HomeSkeletonRow
 import com.nuvio.app.features.watched.WatchedRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
@@ -80,6 +93,7 @@ import nuvio.composeapp.generated.resources.compose_search_recent_searches
 import nuvio.composeapp.generated.resources.compose_search_remove_recent_search
 import org.jetbrains.compose.resources.stringResource
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SearchScreen(
     modifier: Modifier = Modifier,
@@ -88,12 +102,33 @@ fun SearchScreen(
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     searchFocusRequestCount: Int = 0,
     scrollToTopRequests: Flow<Unit> = emptyFlow(),
+    onNavigateToHome: (() -> Unit)? = null,
 ) {
-    val focusRequester = remember { FocusRequester() }
+    val searchBarFocusRequester = remember { FocusRequester() }
+    val screenFocusRequester = remember { FocusRequester() }
+    var isInRowNav by remember { mutableStateOf(false) }
+    var focusedRowIndex by remember { mutableIntStateOf(0) }
+    var focusedItemIndex by remember { mutableIntStateOf(0) }
+    var suppressSearchActivationKey by remember(searchFocusRequestCount) {
+        mutableStateOf(searchFocusRequestCount > 0)
+    }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Focus the outer box immediately so keyboard nav works as soon as the screen appears.
+    LaunchedEffect(Unit) {
+        if (isDesktop) try { screenFocusRequester.requestFocus() } catch (_: Exception) {}
+    }
 
     LaunchedEffect(searchFocusRequestCount) {
         if (searchFocusRequestCount > 0) {
-            focusRequester.requestFocus()
+            suppressSearchActivationKey = true
+            isInRowNav = false
+            // Outer box first (immediate), then hand off to text field once layout settles.
+            try { screenFocusRequester.requestFocus() } catch (_: Exception) {}
+            delay(500)
+            try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
+            delay(150)
+            suppressSearchActivationKey = false
         }
     }
 
@@ -117,6 +152,15 @@ fun SearchScreen(
     var lastRequestedQuery by rememberSaveable { mutableStateOf<String?>(null) }
     var observedOfflineState by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+
+    DisposableEffect(Unit) {
+        onDispose {
+            query = ""
+            lastRequestedQuery = null
+            SearchRepository.clear()
+        }
+    }
+
     val discoverInFocus by remember(query, listState) {
         derivedStateOf {
             query.isBlank() && listState.firstVisibleItemIndex > 0
@@ -223,7 +267,74 @@ fun SearchScreen(
     }
 
     BoxWithConstraints(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .then(
+                if (isDesktop) {
+                    Modifier
+                        .focusRequester(screenFocusRequester)
+                        .focusable()
+                        .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        val sections = uiState.sections
+                        when {
+                            !isInRowNav && event.key == Key.DirectionDown && sections.isNotEmpty() -> {
+                                isInRowNav = true
+                                focusedRowIndex = 0
+                                focusedItemIndex = 0
+                                true
+                            }
+                            isInRowNav -> when (event.key) {
+                                Key.DirectionUp -> {
+                                    if (focusedRowIndex > 0) {
+                                        focusedRowIndex--
+                                        focusedItemIndex = 0
+                                        coroutineScope.launch {
+                                            listState.animateScrollToItem(
+                                                if (focusedRowIndex == 0) 0 else focusedRowIndex + 1
+                                            )
+                                        }
+                                    } else {
+                                        isInRowNav = false
+                                    }
+                                    true
+                                }
+                                Key.DirectionDown -> {
+                                    val maxRow = (sections.size - 1).coerceAtLeast(0)
+                                    focusedRowIndex = (focusedRowIndex + 1).coerceAtMost(maxRow)
+                                    focusedItemIndex = 0
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(focusedRowIndex + 1)
+                                    }
+                                    true
+                                }
+                                Key.DirectionRight -> {
+                                    val maxItem = (sections.getOrNull(focusedRowIndex)?.items?.size?.minus(1) ?: 0).coerceAtLeast(0)
+                                    focusedItemIndex = (focusedItemIndex + 1).coerceAtMost(maxItem)
+                                    true
+                                }
+                                Key.DirectionLeft -> {
+                                    focusedItemIndex = (focusedItemIndex - 1).coerceAtLeast(0)
+                                    true
+                                }
+                                Key.Enter, Key.NumPadEnter -> {
+                                    sections.getOrNull(focusedRowIndex)?.items?.getOrNull(focusedItemIndex)
+                                        ?.let { onPosterClick?.invoke(it) }
+                                    true
+                                }
+                                Key.S -> {
+                                    onNavigateToHome?.invoke()
+                                    true
+                                }
+                                else -> false
+                            }
+                            else -> false
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         val discoverColumns = remember(maxWidth) {
             discoverColumnCountForWidth(maxWidth)
@@ -263,9 +374,28 @@ fun SearchScreen(
                     androidx.compose.foundation.layout.Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         NuvioInputField(
                             value = query,
-                            onValueChange = { query = it },
+                            onValueChange = { value ->
+                                if (suppressSearchActivationKey && isSearchActivationInsertion(query, value)) {
+                                    suppressSearchActivationKey = false
+                                } else {
+                                    isInRowNav = false
+                                    query = value
+                                }
+                            },
                             placeholder = stringResource(Res.string.compose_search_placeholder),
-                            modifier = Modifier.focusRequester(focusRequester),
+                            readOnly = suppressSearchActivationKey,
+                            modifier = Modifier
+                                .focusRequester(searchBarFocusRequester)
+                                .onPreviewKeyEvent { event ->
+                                    if (suppressSearchActivationKey && event.key == Key.S) {
+                                        if (event.type == KeyEventType.KeyUp) {
+                                            suppressSearchActivationKey = false
+                                        }
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                },
                             trailingContent = if (query.isNotBlank()) {
                                 {
                                     IconButton(onClick = { query = "" }) {
@@ -354,10 +484,10 @@ fun SearchScreen(
                     }
 
                     else -> {
-                        items(
+                        itemsIndexed(
                             items = uiState.sections.withDuplicateSafeLazyKeys { section -> section.key },
-                            key = { section -> section.lazyKey },
-                        ) { keyedSection ->
+                            key = { _, keyedSection -> keyedSection.lazyKey },
+                        ) { index, keyedSection ->
                             val section = keyedSection.value
                             HomeCatalogRowSection(
                                 section = section,
@@ -365,6 +495,8 @@ fun SearchScreen(
                                 watchedKeys = watchedUiState.watchedKeys,
                                 onPosterClick = onPosterClick,
                                 onPosterLongClick = onPosterLongClick,
+                                focusedItemIndex = if (isInRowNav && focusedRowIndex == index) focusedItemIndex else null,
+                                onHoverItem = if (isInRowNav && focusedRowIndex == index) { i -> focusedItemIndex = i } else null,
                             )
                         }
                         if (uiState.isLoading) {
@@ -390,6 +522,15 @@ private fun discoverColumnCountForWidth(screenWidth: Dp): Int =
         screenWidth >= 840.dp -> 4
         else -> 3
     }
+
+private fun isSearchActivationInsertion(previous: String, next: String): Boolean {
+    if (previous.isBlank() && next.equals("s", ignoreCase = true)) return true
+    if (next.length != previous.length + 1) return false
+    return next.indices.any { index ->
+        next[index].equals('s', ignoreCase = true) &&
+            next.removeRange(index, index + 1) == previous
+    }
+}
 
 @Composable
 private fun SearchEmptyStateCard(

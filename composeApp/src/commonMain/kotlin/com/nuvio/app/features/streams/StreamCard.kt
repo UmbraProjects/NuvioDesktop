@@ -55,6 +55,7 @@ internal fun StreamCard(
     modifier: Modifier = Modifier,
     isCurrent: Boolean = false,
     currentLabel: String? = null,
+    focused: Boolean = false,
 ) {
     val cardShape = RoundedCornerShape(12.dp)
     val badgeImages = stream.badges.filter { it.imageURL.isNotBlank() }
@@ -82,6 +83,17 @@ internal fun StreamCard(
                     Modifier.border(
                         width = 1.dp,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.52f),
+                        shape = cardShape,
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .then(
+                if (focused) {
+                    Modifier.border(
+                        width = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
                         shape = cardShape,
                     )
                 } else {

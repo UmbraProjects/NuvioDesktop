@@ -140,7 +140,7 @@ fun DetailMetaInfo(
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically(),
         ) {
-            DetailRatingsRow(
+            RatingsRow(
                 ratings = meta.externalRatings,
             )
         }
@@ -197,7 +197,7 @@ fun DetailMetaInfo(
 }
 
 @Composable
-private fun DetailRatingsRow(
+internal fun RatingsRow(
     ratings: List<MetaExternalRating>,
 ) {
     val orderedRatings = remember(ratings) {

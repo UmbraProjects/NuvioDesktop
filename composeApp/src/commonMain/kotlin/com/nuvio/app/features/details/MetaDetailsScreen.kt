@@ -733,6 +733,7 @@ fun MetaDetailsScreen(
                 val listState = rememberLazyListState()
 
                 val tvModeEnabled = homeSettingsUiState.tvModeEnabled && isDesktop && !metaScreenSettingsUiState.tabLayout
+                val detailsKeyboardNavigationEnabled = isDesktop && !metaScreenSettingsUiState.tabLayout
                 val tvFocus = rememberMetaDetailsTvFocusState()
                 val tvFocusRequester = remember { FocusRequester() }
                 val tvCoroutineScope = rememberCoroutineScope()
@@ -904,13 +905,13 @@ fun MetaDetailsScreen(
                     }
                 }
 
-                LaunchedEffect(tvModeEnabled) {
-                    if (tvModeEnabled) {
+                LaunchedEffect(detailsKeyboardNavigationEnabled) {
+                    if (detailsKeyboardNavigationEnabled) {
                         tvFocusRequester.requestFocus()
                     }
                 }
 
-                val tvFocusedSection = if (tvModeEnabled) tvSections.getOrNull(tvFocus.sectionIndex) else null
+                val tvFocusedSection = if (detailsKeyboardNavigationEnabled) tvSections.getOrNull(tvFocus.sectionIndex) else null
                 val tvFocusInfo = MetaTvFocusInfo(
                     actionsFocused = tvFocusedSection?.kind == MetaTvSectionKind.ACTIONS,
                     focusedCommentsIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.COMMENTS },
@@ -966,7 +967,7 @@ fun MetaDetailsScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .then(
-                            if (tvModeEnabled) {
+                            if (detailsKeyboardNavigationEnabled) {
                                 Modifier
                                     .focusRequester(tvFocusRequester)
                                     .focusable()
@@ -1571,6 +1572,8 @@ private fun MetaDetails.toMetaPreview(): MetaPreview =
         description = description,
         releaseInfo = releaseInfo,
         imdbRating = imdbRating,
+        ageRating = ageRating,
+        runtime = runtime,
         genres = genres,
     )
 

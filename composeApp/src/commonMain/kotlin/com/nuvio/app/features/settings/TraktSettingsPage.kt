@@ -22,9 +22,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -43,6 +46,7 @@ import com.nuvio.app.features.trakt.TraktBrandAsset
 import com.nuvio.app.features.trakt.TraktAuthUiState
 import com.nuvio.app.features.trakt.TraktConnectionMode
 import com.nuvio.app.features.trakt.TraktContinueWatchingDaysOptions
+import com.nuvio.app.features.trakt.TRAKT_DEFAULT_REDIRECT_URI
 import com.nuvio.app.features.trakt.MoreLikeThisSourcePreference
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trakt.TraktSettingsUiState
@@ -59,6 +63,14 @@ import nuvio.composeapp.generated.resources.settings_trakt_comments
 import nuvio.composeapp.generated.resources.settings_trakt_comments_description
 import nuvio.composeapp.generated.resources.settings_trakt_connect
 import nuvio.composeapp.generated.resources.settings_trakt_connected_as
+import nuvio.composeapp.generated.resources.settings_trakt_credentials_clear
+import nuvio.composeapp.generated.resources.settings_trakt_credentials_cleared
+import nuvio.composeapp.generated.resources.settings_trakt_credentials_description
+import nuvio.composeapp.generated.resources.settings_trakt_credentials_save
+import nuvio.composeapp.generated.resources.settings_trakt_credentials_saved
+import nuvio.composeapp.generated.resources.settings_trakt_credentials_title
+import nuvio.composeapp.generated.resources.settings_trakt_client_id
+import nuvio.composeapp.generated.resources.settings_trakt_client_secret
 import nuvio.composeapp.generated.resources.settings_trakt_default_user
 import nuvio.composeapp.generated.resources.settings_trakt_disconnect
 import nuvio.composeapp.generated.resources.settings_trakt_failed_open_browser
@@ -67,6 +79,7 @@ import nuvio.composeapp.generated.resources.settings_trakt_finish_sign_in
 import nuvio.composeapp.generated.resources.settings_trakt_intro_description
 import nuvio.composeapp.generated.resources.settings_trakt_missing_credentials
 import nuvio.composeapp.generated.resources.settings_trakt_open_login
+import nuvio.composeapp.generated.resources.settings_trakt_redirect_uri
 import nuvio.composeapp.generated.resources.settings_trakt_save_actions_description
 import nuvio.composeapp.generated.resources.settings_trakt_sign_in_description
 import nuvio.composeapp.generated.resources.trakt_all_history
@@ -121,6 +134,11 @@ internal fun LazyListScope.traktSettingsContent(
                 TraktConnectionCard(
                     isTablet = isTablet,
                     uiState = uiState,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                TraktCredentialsCard(
+                    isTablet = isTablet,
+                    settingsUiState = settingsUiState,
                 )
             }
         }
@@ -661,6 +679,130 @@ private fun TraktBrandIntro(
             )
         }
     }
+}
+
+@Composable
+private fun TraktCredentialsCard(
+    isTablet: Boolean,
+    settingsUiState: TraktSettingsUiState,
+) {
+    val horizontalPadding = if (isTablet) 20.dp else 16.dp
+    val verticalPadding = if (isTablet) 18.dp else 16.dp
+    var clientId by rememberSaveable { mutableStateOf(settingsUiState.traktClientId) }
+    var clientSecret by rememberSaveable { mutableStateOf(settingsUiState.traktClientSecret) }
+    var redirectUri by rememberSaveable { mutableStateOf(settingsUiState.traktRedirectUri.ifBlank { TRAKT_DEFAULT_REDIRECT_URI }) }
+    var statusMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val savedMessage = stringResource(Res.string.settings_trakt_credentials_saved)
+    val clearedMessage = stringResource(Res.string.settings_trakt_credentials_cleared)
+
+    LaunchedEffect(
+        settingsUiState.traktClientId,
+        settingsUiState.traktClientSecret,
+        settingsUiState.traktRedirectUri,
+    ) {
+        clientId = settingsUiState.traktClientId
+        clientSecret = settingsUiState.traktClientSecret
+        redirectUri = settingsUiState.traktRedirectUri.ifBlank { TRAKT_DEFAULT_REDIRECT_URI }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = stringResource(Res.string.settings_trakt_credentials_title),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            text = stringResource(Res.string.settings_trakt_credentials_description),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TraktCredentialTextField(
+            value = clientId,
+            onValueChange = { clientId = it },
+            label = stringResource(Res.string.settings_trakt_client_id),
+        )
+        SettingsSecretTextField(
+            value = clientSecret,
+            onValueChange = { clientSecret = it },
+            label = stringResource(Res.string.settings_trakt_client_secret),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        TraktCredentialTextField(
+            value = redirectUri,
+            onValueChange = { redirectUri = it },
+            label = stringResource(Res.string.settings_trakt_redirect_uri),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(
+                onClick = {
+                    TraktSettingsRepository.setCredentials(
+                        clientId = clientId,
+                        clientSecret = clientSecret,
+                        redirectUri = redirectUri,
+                    )
+                    TraktAuthRepository.onCredentialsChanged()
+                    statusMessage = savedMessage
+                },
+            ) {
+                Text(stringResource(Res.string.settings_trakt_credentials_save))
+            }
+            Button(
+                onClick = {
+                    clientId = ""
+                    clientSecret = ""
+                    redirectUri = TRAKT_DEFAULT_REDIRECT_URI
+                    TraktSettingsRepository.clearCredentials()
+                    TraktAuthRepository.onCredentialsChanged()
+                    statusMessage = clearedMessage
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+            ) {
+                Text(stringResource(Res.string.settings_trakt_credentials_clear))
+            }
+        }
+        statusMessage?.takeIf { it.isNotBlank() }?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TraktCredentialTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text(label) },
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+            focusedContainerColor = MaterialTheme.colorScheme.surface,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+            disabledContainerColor = MaterialTheme.colorScheme.surface,
+        ),
+    )
 }
 
 @Composable

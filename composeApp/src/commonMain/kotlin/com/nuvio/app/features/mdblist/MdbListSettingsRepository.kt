@@ -54,7 +54,6 @@ object MdbListSettingsRepository {
         }
         publish()
         MdbListSettingsStorage.saveApiKey(normalized)
-        MdbListMetadataService.clearCache()
     }
 
     fun setProviderEnabled(providerId: String, value: Boolean) {
@@ -91,7 +90,6 @@ object MdbListSettingsRepository {
             else -> return
         }
         publish()
-        MdbListMetadataService.clearCache()
     }
 
     private fun loadFromDisk() {

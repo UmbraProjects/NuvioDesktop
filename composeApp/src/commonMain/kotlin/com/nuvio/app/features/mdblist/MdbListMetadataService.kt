@@ -1,15 +1,14 @@
 package com.nuvio.app.features.mdblist
 
 import co.touchlab.kermit.Logger
-import com.nuvio.app.features.addons.httpPostJson
+import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaExternalRating
+import com.nuvio.app.features.library.LibraryClock
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -36,8 +35,25 @@ object MdbListMetadataService {
 
     private val log = Logger.withTag("MdbListMetadata")
     private val json = Json { ignoreUnknownKeys = true }
-    private val ratingsCache = mutableMapOf<String, List<MetaExternalRating>>()
     private val imdbRegex = Regex("tt\\d+")
+
+    private val sourceToProvider = mapOf(
+        "imdb" to PROVIDER_IMDB,
+        "tmdb" to PROVIDER_TMDB,
+        "tomatoes" to PROVIDER_TOMATOES,
+        "metacritic" to PROVIDER_METACRITIC,
+        "trakt" to PROVIDER_TRAKT,
+        "letterboxd" to PROVIDER_LETTERBOXD,
+        "popcorn" to PROVIDER_AUDIENCE,
+    )
+
+    private const val FOUND_TTL_MS = 7L * 24L * 60L * 60L * 1000L
+    private const val RATE_LIMIT_BACKOFF_MS = 30L * 60L * 1000L
+
+    private var cache: MutableMap<String, CachedRatings>? = null
+    private var rateLimitedUntilMs: Long = 0L
+    private val cacheMutex = Mutex()
+    private val inFlightRequests = mutableMapOf<String, CompletableDeferred<List<MetaExternalRating>>>()
 
     fun shouldFetchForMeta(
         meta: MetaDetails,
@@ -64,71 +80,136 @@ object MdbListMetadataService {
             ?: extractImdbId(fallbackItemId)
             ?: return meta.copy(externalRatings = emptyList())
         val mediaType = toMdbListMediaType(meta.type)
-        val enabledProviders = settings.enabledProvidersInPriorityOrder()
+        val enabledProviders = settings.enabledProvidersInPriorityOrder().toSet()
 
         val ratings = fetchRatings(
             imdbId = imdbId,
             mediaType = mediaType,
             apiKey = apiKey,
-            providers = enabledProviders,
-        )
+        ).filter { it.source in enabledProviders }
 
         return meta.copy(externalRatings = ratings)
     }
 
-    fun clearCache() {
-        ratingsCache.clear()
+    suspend fun clearCache() {
+        cacheMutex.withLock {
+            cache = mutableMapOf()
+            inFlightRequests.clear()
+        }
+        runCatching { MdbListRatingsCacheStorage.save("{}") }
+            .onFailure { error -> log.w { "Failed to clear MDBList ratings cache: ${error.message}" } }
     }
 
     private suspend fun fetchRatings(
         imdbId: String,
         mediaType: String,
         apiKey: String,
-        providers: List<String>,
-    ): List<MetaExternalRating> = withContext(Dispatchers.Default) {
-        val cacheKey = "$mediaType:$imdbId:$apiKey:${providers.joinToString(",")}"
-        ratingsCache[cacheKey]?.let { return@withContext it }
+    ): List<MetaExternalRating> {
+        val cacheKey = "$mediaType:$imdbId"
+        val now = LibraryClock.nowEpochMs()
+        var ownsRequest = false
+        val pending = cacheMutex.withLock {
+            if (rateLimitedUntilMs > now) return emptyList()
+            val loaded = ensureCacheLoaded()
+            loaded[cacheKey]?.let { entry ->
+                if (entry.expiresAtMs > now) return entry.ratings
+            }
+            inFlightRequests[cacheKey] ?: CompletableDeferred<List<MetaExternalRating>>().also {
+                inFlightRequests[cacheKey] = it
+                ownsRequest = true
+            }
+        }
+        if (!ownsRequest) return pending.await()
 
-        val ratings = coroutineScope {
-            providers.map { providerId ->
-                async {
-                    fetchProviderRating(
-                        imdbId = imdbId,
-                        mediaType = mediaType,
-                        providerId = providerId,
-                        apiKey = apiKey,
-                    )
-                }
-            }.awaitAll().filterNotNull()
+        val ratings = try {
+            fetchFromApi(imdbId = imdbId, mediaType = mediaType, apiKey = apiKey)
+        } catch (error: CancellationException) {
+            cacheMutex.withLock {
+                inFlightRequests.remove(cacheKey)?.completeExceptionally(error)
+            }
+            throw error
+        } catch (error: MdbListRateLimitedException) {
+            log.w { "MDBList rate limit hit; backing off for 30 minutes" }
+            cacheMutex.withLock {
+                rateLimitedUntilMs = LibraryClock.nowEpochMs() + RATE_LIMIT_BACKOFF_MS
+                inFlightRequests.remove(cacheKey)?.complete(emptyList())
+            }
+            return emptyList()
+        } catch (error: Throwable) {
+            log.w { "MDBList request failed for $mediaType/$imdbId: ${error.message}" }
+            cacheMutex.withLock {
+                inFlightRequests.remove(cacheKey)?.complete(emptyList())
+            }
+            return emptyList()
         }
 
-        ratingsCache[cacheKey] = ratings
-        ratings
+        cacheMutex.withLock {
+            if (ratings.isNotEmpty()) {
+                val loaded = ensureCacheLoaded()
+                loaded[cacheKey] = CachedRatings(ratings = ratings, expiresAtMs = now + FOUND_TTL_MS)
+                persistCache(loaded)
+            }
+            inFlightRequests.remove(cacheKey)?.complete(ratings)
+        }
+
+        return ratings
     }
 
-    private suspend fun fetchProviderRating(
+    private suspend fun fetchFromApi(
         imdbId: String,
         mediaType: String,
-        providerId: String,
         apiKey: String,
-    ): MetaExternalRating? {
-        val url = "https://api.mdblist.com/rating/$mediaType/$providerId?apikey=$apiKey"
-        val requestBody = json.encodeToString(
-            RatingRequest(
-                ids = listOf(imdbId),
-                provider = PROVIDER_IMDB,
-            ),
+    ): List<MetaExternalRating> {
+        val url = "https://api.mdblist.com/imdb/$mediaType/$imdbId?apikey=$apiKey"
+        val response = httpRequestRaw(
+            method = "GET",
+            url = url,
+            headers = mapOf("Accept" to "application/json"),
+            body = "",
         )
+        if (response.status == 429) {
+            throw MdbListRateLimitedException()
+        }
+        if (response.status !in 200..299) {
+            error("HTTP ${response.status}")
+        }
+        val payload = response.body.takeIf { it.isNotBlank() } ?: error("Empty response body")
+        val parsed = json.decodeFromString<MdbListRatingsResponse>(payload)
+        return parsed.ratings.mapNotNull { item ->
+            val providerId = sourceToProvider[item.source?.lowercase()] ?: return@mapNotNull null
+            val value = item.value ?: return@mapNotNull null
+            MetaExternalRating(source = providerId, value = value)
+        }
+    }
 
-        return runCatching {
-            val payload = httpPostJson(url = url, body = requestBody)
-            val parsed = json.decodeFromString<RatingResponse>(payload)
-            val rating = parsed.ratings.firstOrNull()?.rating ?: return@runCatching null
-            MetaExternalRating(source = providerId, value = rating)
+    private fun ensureCacheLoaded(): MutableMap<String, CachedRatings> {
+        cache?.let { return it }
+        val loaded = mutableMapOf<String, CachedRatings>()
+        runCatching {
+            MdbListRatingsCacheStorage.load()?.let { raw ->
+                json.decodeFromString<Map<String, CachedRatingsDto>>(raw).forEach { (key, dto) ->
+                    loaded[key] = CachedRatings(
+                        ratings = dto.ratings.map { MetaExternalRating(source = it.source, value = it.value) },
+                        expiresAtMs = dto.expiresAtMs,
+                    )
+                }
+            }
         }.onFailure { error ->
-            if (error is CancellationException) throw error
-            log.w { "MDBList request failed for $providerId/$imdbId: ${error.message}" }
-        }.getOrNull()
+            log.w { "Failed to load MDBList ratings cache: ${error.message}" }
+        }
+        cache = loaded
+        return loaded
+    }
+
+    private fun persistCache(entries: Map<String, CachedRatings>) {
+        val dto = entries.mapValues { (_, entry) ->
+            CachedRatingsDto(
+                ratings = entry.ratings.map { MetaExternalRatingDto(source = it.source, value = it.value) },
+                expiresAtMs = entry.expiresAtMs,
+            )
+        }
+        runCatching { MdbListRatingsCacheStorage.save(json.encodeToString(dto)) }
+            .onFailure { error -> log.w { "Failed to save MDBList ratings cache: ${error.message}" } }
     }
 
     private fun extractImdbId(value: String?): String? {
@@ -142,18 +223,32 @@ object MdbListMetadataService {
     }
 }
 
-@Serializable
-private data class RatingRequest(
-    val ids: List<String>,
-    val provider: String,
+private class MdbListRateLimitedException : RuntimeException()
+
+private data class CachedRatings(
+    val ratings: List<MetaExternalRating>,
+    val expiresAtMs: Long,
 )
 
 @Serializable
-private data class RatingResponse(
-    val ratings: List<RatingItem> = emptyList(),
+private data class CachedRatingsDto(
+    val ratings: List<MetaExternalRatingDto>,
+    val expiresAtMs: Long,
 )
 
 @Serializable
-private data class RatingItem(
-    val rating: Double? = null,
+private data class MetaExternalRatingDto(
+    val source: String,
+    val value: Double,
+)
+
+@Serializable
+private data class MdbListRatingsResponse(
+    val ratings: List<MdbListRatingItem> = emptyList(),
+)
+
+@Serializable
+private data class MdbListRatingItem(
+    val source: String? = null,
+    val value: Double? = null,
 )

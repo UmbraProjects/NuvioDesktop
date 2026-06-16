@@ -260,7 +260,6 @@ object ProfileSettingsSync {
         TmdbSettingsRepository.onProfileChanged()
 
         MdbListSettingsStorage.replaceFromSyncPayload(blob.features.mdbListSettings)
-        MdbListMetadataService.clearCache()
         MdbListSettingsRepository.onProfileChanged()
 
         MetaScreenSettingsStorage.savePayload(blob.features.metaScreenSettingsPayload)

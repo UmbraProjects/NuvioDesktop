@@ -45,6 +45,7 @@ internal object MetaDetailsParser {
             genres = meta.stringList("genres"),
             director = meta.directors(links),
             writer = meta.writers(links),
+            creator = meta.creators(links),
             cast = meta.cast(links),
             country = meta.string("country"),
             awards = meta.string("awards"),
@@ -144,6 +145,29 @@ internal object MetaDetailsParser {
         }
 
         return mergePeople(appExtraCast, topLevelCast, linkedCast)
+    }
+
+    private fun JsonObject.creators(links: List<MetaLink>): List<String> {
+        val appExtras = this["app_extras"] as? JsonObject
+        val topLevel = stringListOrCsv("creator") +
+            stringListOrCsv("creators") +
+            stringListOrCsv("created_by") +
+            stringListOrCsv("createdBy")
+        val extraCreators = appExtras.personNameList("creator") +
+            appExtras.personNameList("creators") +
+            appExtras.personNameList("created_by") +
+            appExtras.personNameList("createdBy")
+        val linkCreators = links.filter { link ->
+            link.category.equals("creator", ignoreCase = true) ||
+                link.category.equals("creators", ignoreCase = true) ||
+                link.category.equals("created_by", ignoreCase = true) ||
+                link.category.equals("createdBy", ignoreCase = true)
+        }.map(MetaLink::name)
+
+        return (topLevel + extraCreators + linkCreators)
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
     }
 
     private fun JsonObject.writers(links: List<MetaLink>): List<String> {

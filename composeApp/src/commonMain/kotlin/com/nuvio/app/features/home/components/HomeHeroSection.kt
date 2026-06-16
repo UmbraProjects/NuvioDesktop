@@ -1,9 +1,12 @@
 package com.nuvio.app.features.home.components
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,16 +33,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -55,7 +64,15 @@ import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.NuvioDesktopImageScaling
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
+import com.nuvio.app.features.details.MetaDetails
+import com.nuvio.app.features.details.MetaExternalRating
+import com.nuvio.app.features.details.components.RatingsRow
+import com.nuvio.app.features.details.formatRuntimeForDisplay
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.HeroCastMember
+import com.nuvio.app.features.mdblist.HeroCastMetadataService
+import com.nuvio.app.features.mdblist.MdbListMetadataService
+import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
@@ -73,6 +90,19 @@ private const val HERO_SWIPE_VELOCITY_THRESHOLD = 300f
 private const val MOBILE_HERO_VIEWPORT_RATIO = 0.82f
 private const val MOBILE_HERO_MIN_HEIGHT_DP = 360f
 private const val MOBILE_HERO_MAX_HEIGHT_DP = 760f
+private val DesktopHeroBackdropAlignment = BiasAlignment(
+    horizontalBias = 0f,
+    verticalBias = -0.65f,
+)
+private val ImmersiveHeroBackdropAlignment = BiasAlignment(
+    horizontalBias = 1f,
+    verticalBias = -0.6f,
+)
+private const val HERO_BACKDROP_WIDTH_FRACTION = 0.85f
+private const val HERO_BACKDROP_FADE_FRACTION = 0.35f
+private val IMMERSIVE_HERO_CONTENT_HEIGHT = 420.dp
+private val IMMERSIVE_HERO_CONTENT_BOTTOM_PADDING = 44.dp
+private val IMMERSIVE_HERO_CONTENT_OFFSET_Y = 42.dp
 
 internal data class HomeHeroLayout(
     val isTablet: Boolean,
@@ -94,6 +124,14 @@ fun HomeHeroSection(
     sectionPadding: Dp? = null,
     listState: LazyListState? = null,
     focusedItem: MetaPreview? = null,
+    metadataPrefetchItems: List<MetaPreview> = emptyList(),
+    heightOverride: Dp? = null,
+    roundedBottomCorners: Boolean = true,
+    immersiveMode: Boolean = false,
+    tvMode: Boolean = false,
+    immersiveContentBottomPadding: Dp = IMMERSIVE_HERO_CONTENT_BOTTOM_PADDING,
+    onActiveItemChanged: ((MetaPreview) -> Unit)? = null,
+    onCastClick: ((HeroCastMember) -> Unit)? = null,
     onItemClick: ((MetaPreview) -> Unit)? = null,
 ) {
     if (items.isEmpty()) return
@@ -109,14 +147,21 @@ fun HomeHeroSection(
                 itemCount = items.size,
                 coroutineScope = coroutineScope,
             )
-            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
+            .then(
+                if (roundedBottomCorners) {
+                    Modifier.clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+                } else {
+                    Modifier
+                },
+            ),
     ) {
-        val layout = homeHeroLayout(
+        val baseLayout = homeHeroLayout(
             maxWidthDp = maxWidth.value,
             viewportHeightDp = viewportHeight?.value,
             mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
             preferDesktopLayout = isDesktop,
         )
+        val layout = heightOverride?.let { baseLayout.copy(heroHeight = it) } ?: baseLayout
         val heroWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
         val heroHeightPx = with(LocalDensity.current) { layout.heroHeight.toPx() }
         val scrollOffsetPx by remember(listState, heroHeightPx) {
@@ -169,12 +214,67 @@ fun HomeHeroSection(
             visiblePages
         }
         val displayCurrentItem = focusedItem ?: currentItem
+        val castCache = remember { mutableStateMapOf<String, List<HeroCastMember>>() }
+        val displayItemsWithCast = displayItems.map { item ->
+            val cachedCast = castCache["${item.type}:${item.id}"]
+                ?: HeroCastMetadataService.peek(type = item.type, id = item.id)
+            item.copy(cast = cachedCast?.takeIf { it.isNotEmpty() } ?: item.cast)
+        }
+        val displayCurrentItemWithCast = displayItemsWithCast.firstOrNull { item ->
+            item.type == displayCurrentItem.type && item.id == displayCurrentItem.id
+        } ?: displayCurrentItem
+
+        LaunchedEffect(displayCurrentItem.type, displayCurrentItem.id) {
+            onActiveItemChanged?.invoke(displayCurrentItem)
+        }
+
+        val ratingsCache = remember { mutableStateMapOf<String, List<MetaExternalRating>>() }
+        val metadataTargets = (displayItemsWithCast + metadataPrefetchItems).distinctBy { item ->
+            "${item.type}:${item.id}"
+        }
+        LaunchedEffect(metadataTargets) {
+            val settings = MdbListSettingsRepository.snapshot()
+            for (target in metadataTargets) {
+                val key = "${target.type}:${target.id}"
+                if (!castCache.containsKey(key) && target.type != "collection") {
+                    launch {
+                        castCache[key] = HeroCastMetadataService.fetch(
+                            type = target.type,
+                            id = target.id,
+                        )
+                    }
+                }
+                if (ratingsCache.containsKey(key)) continue
+                if (target.type == "collection") {
+                    ratingsCache[key] = emptyList()
+                    continue
+                }
+                val baseMeta = MetaDetails(id = target.id, type = target.type, name = target.name)
+                if (!MdbListMetadataService.shouldFetchForMeta(baseMeta, target.id, settings)) {
+                    ratingsCache[key] = emptyList()
+                    continue
+                }
+                launch {
+                    val ratings = MdbListMetadataService.enrichMeta(
+                        meta = baseMeta,
+                        fallbackItemId = target.id,
+                        settings = settings,
+                    ).externalRatings
+                    ratingsCache[key] = ratings
+                }
+            }
+        }
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(layout.heroHeight),
         ) {
+            HeroCastPortraitPreloader(
+                cast = (castCache.values.flatten() + displayItemsWithCast.flatMap(MetaPreview::cast))
+                    .filter { person -> !person.photo.isNullOrBlank() },
+            )
+
             HorizontalPager(
                 state = pagerState,
                 userScrollEnabled = false,
@@ -187,7 +287,7 @@ fun HomeHeroSection(
 
             if (isDesktop) {
                 DesktopHomeHeroFrame(
-                    items = displayItems,
+                    items = displayItemsWithCast,
                     visiblePages = displayVisiblePages,
                     layout = layout,
                     heroWidthPx = heroWidthPx,
@@ -197,13 +297,18 @@ fun HomeHeroSection(
                     pagerState = pagerState,
                     pageIndicatorCount = items.size,
                     coroutineScope = coroutineScope,
+                    immersiveMode = immersiveMode,
+                    tvMode = tvMode,
+                    immersiveContentBottomPadding = immersiveContentBottomPadding,
+                    ratingsCache = ratingsCache,
+                    onCastClick = onCastClick,
                     onItemClick = onItemClick,
                 )
             } else {
                 DefaultHomeHeroFrame(
-                    items = displayItems,
+                    items = displayItemsWithCast,
                     visiblePages = displayVisiblePages,
-                    currentItem = displayCurrentItem,
+                    currentItem = displayCurrentItemWithCast,
                     layout = layout,
                     heroWidthPx = heroWidthPx,
                     heroScrollScale = heroScrollScale,
@@ -367,79 +472,143 @@ private fun DesktopHomeHeroFrame(
     pagerState: PagerState,
     pageIndicatorCount: Int = items.size,
     coroutineScope: CoroutineScope,
+    immersiveMode: Boolean,
+    tvMode: Boolean = false,
+    immersiveContentBottomPadding: Dp,
+    ratingsCache: Map<String, List<MetaExternalRating>>,
+    onCastClick: ((HeroCastMember) -> Unit)?,
     onItemClick: ((MetaPreview) -> Unit)?,
 ) {
-    val backgroundColor = MaterialTheme.colorScheme.background
+    val backgroundColor = if (immersiveMode) Color.Black else MaterialTheme.colorScheme.background
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(backgroundColor),
     ) {
-        visiblePages.forEach { layer ->
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .fillMaxWidth(0.64f)
-                    .graphicsLayer {
-                        alpha = layer.visibility
-                        translationX = -layer.offset * heroWidthPx * HERO_BACKGROUND_PARALLAX
-                        translationY = heroScrollTranslationY
-                        scaleX = heroScrollScale
-                        scaleY = heroScrollScale
-                        transformOrigin = TransformOrigin(0.5f, 0f)
+        Box(
+            modifier = Modifier
+                .align(if (immersiveMode) Alignment.TopEnd else Alignment.CenterEnd)
+                .then(
+                    if (immersiveMode) {
+                        Modifier.height(layout.heroHeight * 0.64f)
+                    } else {
+                        Modifier.fillMaxHeight()
                     },
-            ) {
-                AsyncImage(
-                    model = items[layer.page].banner ?: items[layer.page].poster,
-                    contentDescription = items[layer.page].name,
-                    modifier = Modifier.fillMaxSize(),
-                    alignment = Alignment.TopCenter,
-                    contentScale = ContentScale.Crop,
-                    desktopImageScaling = NuvioDesktopImageScaling.Disabled,
                 )
+                .fillMaxWidth(HERO_BACKDROP_WIDTH_FRACTION)
+                .heroBackdropFadeMask(backgroundColor)
+                .then(if (immersiveMode) Modifier.immersiveHeroExtraMask(backgroundColor) else Modifier),
+        ) {
+            visiblePages.forEach { layer ->
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .graphicsLayer {
+                            alpha = layer.visibility
+                            translationX = -layer.offset * heroWidthPx * HERO_BACKGROUND_PARALLAX
+                            translationY = heroScrollTranslationY
+                            scaleX = heroScrollScale
+                            scaleY = heroScrollScale
+                            transformOrigin = TransformOrigin(0.5f, 0f)
+                        },
+                ) {
+                    AsyncImage(
+                        model = items[layer.page].banner ?: items[layer.page].poster,
+                        contentDescription = items[layer.page].name,
+                        modifier = Modifier.fillMaxSize(),
+                        alignment = if (immersiveMode) {
+                            ImmersiveHeroBackdropAlignment
+                        } else {
+                            DesktopHeroBackdropAlignment
+                        },
+                        contentScale = ContentScale.Crop,
+                        desktopImageScaling = NuvioDesktopImageScaling.Disabled,
+                    )
+                }
             }
         }
 
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
-                        colorStops = arrayOf(
-                            0f to backgroundColor,
-                            0.34f to backgroundColor,
-                            0.58f to backgroundColor.copy(alpha = 0.78f),
-                            0.78f to backgroundColor.copy(alpha = 0.18f),
-                            1f to backgroundColor.copy(alpha = 0f),
-                        ),
-                    ),
-                ),
-        )
-
-        Box(
-            modifier = Modifier
                 .fillMaxWidth()
-                .height(layout.bottomFadeHeight)
+                .height(if (immersiveMode) layout.heroHeight * 0.52f else layout.bottomFadeHeight)
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(
-                            backgroundColor.copy(alpha = 0f),
-                            backgroundColor,
-                        ),
+                        colorStops = if (immersiveMode) {
+                            arrayOf(
+                                0f to backgroundColor.copy(alpha = 0f),
+                                0.38f to backgroundColor.copy(alpha = 0.18f),
+                                0.68f to backgroundColor.copy(alpha = 0.72f),
+                                1f to backgroundColor,
+                            )
+                        } else {
+                            arrayOf(
+                                0f to backgroundColor.copy(alpha = 0f),
+                                1f to backgroundColor,
+                            )
+                        },
                     ),
                 ),
         )
 
+        if (immersiveMode) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = contentHorizontalPadding, top = 30.dp, end = contentHorizontalPadding)
+                    .fillMaxWidth(0.32f)
+                    .widthIn(max = 600.dp),
+                contentAlignment = Alignment.TopStart,
+            ) {
+                visiblePages.forEach { layer ->
+                    val cast = heroDisplayCast(items[layer.page], maxCount = 4)
+                    if (cast.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer {
+                                    alpha = layer.visibility
+                                    translationX = -layer.offset * heroWidthPx * HERO_CONTENT_PARALLAX
+                                },
+                        ) {
+                            HeroStarringBlock(cast, onCastClick = onCastClick)
+                        }
+                    }
+                }
+            }
+        }
+
         Box(
             modifier = Modifier
-                .align(Alignment.CenterStart)
+                .align(if (immersiveMode) Alignment.BottomStart else Alignment.CenterStart)
                 .padding(start = contentHorizontalPadding, end = contentHorizontalPadding)
-                .fillMaxWidth(layout.contentWidthFraction)
-                .widthIn(max = layout.contentMaxWidth),
-            contentAlignment = Alignment.CenterStart,
+                .then(
+                    if (immersiveMode) {
+                        Modifier
+                            .padding(bottom = immersiveContentBottomPadding)
+                            .height(IMMERSIVE_HERO_CONTENT_HEIGHT)
+                            .offset(y = IMMERSIVE_HERO_CONTENT_OFFSET_Y)
+                    } else {
+                        Modifier
+                    },
+                )
+                .fillMaxWidth(
+                    when {
+                        immersiveMode -> 0.32f
+                        tvMode -> 0.38f
+                        else -> layout.contentWidthFraction
+                    },
+                )
+                .widthIn(
+                    max = when {
+                        immersiveMode -> 600.dp
+                        tvMode -> 480.dp
+                        else -> layout.contentMaxWidth
+                    },
+                ),
+            contentAlignment = if (immersiveMode) Alignment.TopStart else Alignment.CenterStart,
         ) {
             visiblePages.forEach { layer ->
                 Box(
@@ -453,25 +622,71 @@ private fun DesktopHomeHeroFrame(
                     DesktopHeroContentBlock(
                         item = items[layer.page],
                         layout = layout,
+                        interactive = !immersiveMode,
+                        showExtendedMetadata = immersiveMode,
+                        showReleaseMetadata = immersiveMode || tvMode,
+                        ratingsCache = ratingsCache,
+                        onCastClick = onCastClick,
                         onItemClick = onItemClick,
                     )
                 }
             }
         }
 
-        HeroPageIndicatorRow(
-            itemCount = pageIndicatorCount,
-            pagerState = pagerState,
-            coroutineScope = coroutineScope,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(
-                    start = contentHorizontalPadding,
-                    bottom = layout.contentVerticalPadding,
-                ),
-        )
+        if (!tvMode) {
+            HeroPageIndicatorRow(
+                itemCount = pageIndicatorCount,
+                pagerState = pagerState,
+                coroutineScope = coroutineScope,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(
+                        start = contentHorizontalPadding,
+                        bottom = layout.contentVerticalPadding,
+                    ),
+            )
+        }
     }
 }
+
+private fun Modifier.heroBackdropFadeMask(backgroundColor: Color): Modifier =
+    drawWithContent {
+        drawContent()
+        drawRect(
+            brush = Brush.horizontalGradient(
+                colorStops = arrayOf(
+                    0f to backgroundColor,
+                    HERO_BACKDROP_FADE_FRACTION to Color.Transparent,
+                    1f to Color.Transparent,
+                ),
+            ),
+        )
+    }
+
+private fun Modifier.immersiveHeroExtraMask(backgroundColor: Color): Modifier =
+    drawWithContent {
+        drawContent()
+        drawRect(
+            brush = Brush.verticalGradient(
+                colorStops = arrayOf(
+                    0f to Color.Transparent,
+                    0.82f to Color.Transparent,
+                    1f to backgroundColor,
+                ),
+            ),
+        )
+        drawRect(
+            brush = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0f to Color.Transparent,
+                    0.68f to Color.Transparent,
+                    1f to backgroundColor,
+                ),
+                center = center.copy(x = size.width * 0.78f, y = size.height * 0.35f),
+                radius = size.maxDimension * 0.82f,
+            ),
+        )
+    }
 
 @Composable
 private fun HeroPageIndicatorRow(
@@ -525,18 +740,27 @@ fun HomeHeroReservedSpace(
     modifier: Modifier = Modifier,
     viewportHeight: Dp? = null,
     mobileBelowSectionHeightHint: Dp? = null,
+    heightOverride: Dp? = null,
+    roundedBottomCorners: Boolean = true,
 ) {
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
+            .then(
+                if (roundedBottomCorners) {
+                    Modifier.clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+                } else {
+                    Modifier
+                },
+            ),
     ) {
-        val layout = homeHeroLayout(
+        val baseLayout = homeHeroLayout(
             maxWidthDp = maxWidth.value,
             viewportHeightDp = viewportHeight?.value,
             mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
             preferDesktopLayout = isDesktop,
         )
+        val layout = heightOverride?.let { baseLayout.copy(heroHeight = it) } ?: baseLayout
 
         Spacer(
             modifier = Modifier
@@ -623,22 +847,40 @@ private fun HeroContentBlock(
 private fun DesktopHeroContentBlock(
     item: MetaPreview,
     layout: HomeHeroLayout,
+    interactive: Boolean,
+    showExtendedMetadata: Boolean,
+    showReleaseMetadata: Boolean = showExtendedMetadata,
+    ratingsCache: Map<String, List<MetaExternalRating>>,
+    onCastClick: ((HeroCastMember) -> Unit)?,
     onItemClick: ((MetaPreview) -> Unit)?,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = onItemClick != null) {
-                onItemClick?.invoke(item)
-            },
+            .then(
+                if (interactive && onItemClick != null) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                    ) { onItemClick(item) }
+                } else {
+                    Modifier
+                },
+            ),
         horizontalAlignment = Alignment.Start,
     ) {
+        val cast = heroDisplayCast(
+            item = item,
+            maxCount = 3,
+        )
+
         if (item.logo != null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(desktopHeroLogoSlotHeight(layout)),
-                contentAlignment = Alignment.CenterStart,
+                contentAlignment = if (showExtendedMetadata) Alignment.BottomStart else Alignment.CenterStart,
             ) {
                 AsyncImage(
                     model = item.logo,
@@ -646,9 +888,27 @@ private fun DesktopHeroContentBlock(
                     modifier = Modifier
                         .fillMaxWidth(desktopHeroLogoWidthFraction(layout))
                         .fillMaxHeight(),
-                    alignment = Alignment.CenterStart,
+                    alignment = if (showExtendedMetadata) Alignment.BottomStart else Alignment.CenterStart,
                     contentScale = ContentScale.Fit,
                     clipToBounds = false,
+                )
+            }
+        } else if (showExtendedMetadata) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(desktopHeroLogoSlotHeight(layout)),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text(
+                    text = item.name,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.displayMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Start,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         } else {
@@ -664,7 +924,13 @@ private fun DesktopHeroContentBlock(
             )
         }
 
-        val genreText = desktopHeroGenreText(item)
+        if (!showExtendedMetadata && cast.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(14.dp))
+            HeroCastRow(cast, onCastClick = onCastClick)
+            Spacer(modifier = Modifier.height(2.dp))
+        }
+
+        val genreText = desktopHeroGenreText(item, showExtendedMetadata, showReleaseMetadata)
         if (genreText.isNotBlank()) {
             Spacer(modifier = Modifier.height(14.dp))
             Text(
@@ -677,16 +943,243 @@ private fun DesktopHeroContentBlock(
             )
         }
 
-        item.description?.takeIf { it.isNotBlank() }?.let { description ->
+        HomeHeroRatingsRow(item = item, ratingsCache = ratingsCache)
+
+        item.description
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { description ->
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.82f),
-                maxLines = 4,
+                maxLines = 5,
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+@Composable
+private fun HeroStarringBlock(
+    cast: List<HeroCastMember>,
+    onCastClick: ((HeroCastMember) -> Unit)?,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start,
+    ) {
+        Text(
+            text = "Starring",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .width(92.dp)
+                .height(4.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.primary),
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+        HeroCastGrid(cast, onCastClick = onCastClick)
+    }
+}
+
+@Composable
+private fun HeroCastGrid(
+    cast: List<HeroCastMember>,
+    onCastClick: ((HeroCastMember) -> Unit)?,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        cast.chunked(2).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                row.forEach { person ->
+                    HeroCastChip(
+                        person = person,
+                        modifier = Modifier.weight(1f),
+                        imageSize = 52.dp,
+                        onCastClick = onCastClick,
+                    )
+                }
+                if (row.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeroCastPortraitPreloader(cast: List<HeroCastMember>) {
+    val photoUrls = cast
+        .mapNotNull { person -> person.photo?.takeIf(String::isNotBlank) }
+        .distinct()
+        .take(24)
+    if (photoUrls.isEmpty()) return
+
+    Row(
+        modifier = Modifier
+            .size(1.dp)
+            .graphicsLayer { alpha = 0f },
+    ) {
+        photoUrls.forEach { photoUrl ->
+            AsyncImage(
+                model = photoUrl,
+                contentDescription = null,
+                modifier = Modifier.size(1.dp),
+                contentScale = ContentScale.Crop,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeroCastRow(
+    cast: List<HeroCastMember>,
+    onCastClick: ((HeroCastMember) -> Unit)?,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        cast.forEach { person ->
+            HeroCastChip(
+                person = person,
+                modifier = Modifier.weight(1f, fill = false),
+                imageSize = 34.dp,
+                onCastClick = onCastClick,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeroCastChip(
+    person: HeroCastMember,
+    modifier: Modifier = Modifier,
+    imageSize: Dp,
+    onCastClick: ((HeroCastMember) -> Unit)?,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val portraitHighlightAlpha by animateFloatAsState(
+        targetValue = if (isHovered && onCastClick != null && person.tmdbId != null && person.tmdbId > 0) 0.12f else 0f,
+        label = "hero_cast_portrait_highlight",
+    )
+    val clickModifier = onCastClick
+        ?.takeIf { person.tmdbId != null && person.tmdbId > 0 }
+        ?.let { handler ->
+            Modifier.clickable(
+                interactionSource = interactionSource,
+                indication = null,
+            ) {
+                handler(person)
+            }
+        }
+        ?: Modifier
+    Row(
+        modifier = modifier.then(clickModifier),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(imageSize)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (!person.photo.isNullOrBlank()) {
+                AsyncImage(
+                    model = person.photo,
+                    contentDescription = person.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White.copy(alpha = portraitHighlightAlpha)),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White.copy(alpha = portraitHighlightAlpha)),
+                )
+                Text(
+                    text = person.name.heroInitials(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        Text(
+            text = person.name,
+            style = if (imageSize >= 48.dp) {
+                MaterialTheme.typography.bodyLarge
+            } else {
+                MaterialTheme.typography.bodyMedium
+            },
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private fun heroDisplayCast(item: MetaPreview, maxCount: Int): List<HeroCastMember> =
+    item.cast
+        .asSequence()
+        .filter { person -> person.name.isNotBlank() }
+        .filterNot { person -> person.role?.isHeroCrewRole() == true }
+        .distinctBy { person -> person.name }
+        .take(maxCount)
+        .toList()
+
+private fun String.heroInitials(): String =
+    trim()
+        .split(Regex("\\s+"))
+        .filter(String::isNotBlank)
+        .take(2)
+        .mapNotNull { part -> part.firstOrNull()?.uppercaseChar() }
+        .joinToString("")
+
+private fun String.isHeroCrewRole(): Boolean {
+    val normalized = lowercase()
+    return listOf(
+        "director",
+        "writer",
+        "creator",
+        "created by",
+        "screenplay",
+        "showrunner",
+        "producer",
+    ).any(normalized::contains)
+}
+
+@Composable
+private fun HomeHeroRatingsRow(item: MetaPreview, ratingsCache: Map<String, List<MetaExternalRating>>) {
+    val ratings = ratingsCache["${item.type}:${item.id}"].orEmpty()
+
+    if (ratings.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(14.dp))
+        RatingsRow(ratings = ratings)
     }
 }
 
@@ -704,11 +1197,30 @@ private fun desktopHeroLogoSlotHeight(layout: HomeHeroLayout): Dp =
         else -> 104.dp
     }
 
-private fun desktopHeroGenreText(item: MetaPreview): String =
-    item.genres
-        .take(3)
-        .joinToString(" • ")
-        .ifBlank { item.type.replaceFirstChar(Char::uppercase) }
+private fun desktopHeroGenreText(
+    item: MetaPreview,
+    showExtendedMetadata: Boolean,
+    showReleaseMetadata: Boolean = showExtendedMetadata,
+): String {
+    val values = buildList {
+        addAll(item.genres.take(3))
+        if (showReleaseMetadata) {
+            item.releaseInfo
+                ?.takeIf(String::isNotBlank)
+                ?.let(::formatReleaseDateForDisplay)
+                ?.takeIf(String::isNotBlank)
+                ?.let(::add)
+            formatRuntimeForDisplay(item.runtime)
+                ?.takeIf(String::isNotBlank)
+                ?.let(::add)
+            item.ageRating
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?.let(::add)
+        }
+    }
+    return values.joinToString(" • ").ifBlank { item.type.replaceFirstChar(Char::uppercase) }
+}
 
 @Composable
 private fun HeroMetaText(text: String) {

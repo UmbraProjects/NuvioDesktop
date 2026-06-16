@@ -22,6 +22,7 @@ data class MetaDetails(
     val genres: List<String> = emptyList(),
     val director: List<String> = emptyList(),
     val writer: List<String> = emptyList(),
+    val creator: List<String> = emptyList(),
     val cast: List<MetaPerson> = emptyList(),
     val productionCompanies: List<MetaCompany> = emptyList(),
     val networks: List<MetaCompany> = emptyList(),

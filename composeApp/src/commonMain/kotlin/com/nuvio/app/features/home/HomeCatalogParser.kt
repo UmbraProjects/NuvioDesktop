@@ -3,6 +3,7 @@ package com.nuvio.app.features.home
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -54,9 +55,14 @@ internal object HomeCatalogParser {
                     releaseInfo = meta.string("releaseInfo"),
                     rawReleaseDate = meta.string("released"),
                     imdbRating = meta.string("imdbRating"),
+                    ageRating = meta.string("ageRating") ?: meta.string("certification"),
+                    runtime = meta.string("runtime"),
                     genres = meta.array("genres").mapNotNull { genre ->
                         genre.jsonPrimitive.contentOrNull?.takeIf { it.isNotBlank() }
                     },
+                    cast = meta.stringListOrCsv("cast").ifEmpty {
+                        meta.stringListOrCsv("actors")
+                    }.map { name -> HeroCastMember(name = name) },
                 )
                 if (seenKeys.add(item.stableKey())) {
                     add(item)
@@ -74,6 +80,20 @@ internal object HomeCatalogParser {
 
     private fun JsonObject.array(name: String): JsonArray =
         this[name] as? JsonArray ?: JsonArray(emptyList())
+
+    private fun JsonObject.stringListOrCsv(name: String): List<String> {
+        val values = array(name).mapNotNull { value ->
+            (value as? JsonPrimitive)?.contentOrNull
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+        }
+        if (values.isNotEmpty()) return values
+        return string(name)
+            ?.split(',')
+            .orEmpty()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+    }
 
     private fun String?.toPosterShape(): PosterShape =
         when (this?.lowercase()) {

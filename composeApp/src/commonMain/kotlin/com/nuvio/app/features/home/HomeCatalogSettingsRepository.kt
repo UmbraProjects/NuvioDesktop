@@ -35,6 +35,8 @@ data class HomeCatalogSettingsUiState(
     val hideUnreleasedContent: Boolean = false,
     val hideCatalogUnderline: Boolean = false,
     val tvModeEnabled: Boolean = false,
+    val heroAmbientBackgroundEnabled: Boolean = false,
+    val immersiveCatalogModeEnabled: Boolean = false,
     val items: List<HomeCatalogSettingsItem> = emptyList(),
 ) {
     val signature: String
@@ -46,6 +48,10 @@ data class HomeCatalogSettingsUiState(
             append(hideCatalogUnderline)
             append('|')
             append(tvModeEnabled)
+            append('|')
+            append(heroAmbientBackgroundEnabled)
+            append('|')
+            append(immersiveCatalogModeEnabled)
             append('|')
             append(
                 items.joinToString(separator = "|") { item ->
@@ -67,6 +73,8 @@ internal data class HomeCatalogSettingsSnapshot(
     val hideUnreleasedContent: Boolean,
     val hideCatalogUnderline: Boolean,
     val tvModeEnabled: Boolean,
+    val heroAmbientBackgroundEnabled: Boolean,
+    val immersiveCatalogModeEnabled: Boolean,
     val preferences: Map<String, HomeCatalogPreference>,
 )
 
@@ -85,6 +93,8 @@ private data class StoredHomeCatalogSettingsPayload(
     val hideUnreleasedContent: Boolean = false,
     val hideCatalogUnderline: Boolean = false,
     val tvModeEnabled: Boolean = false,
+    val heroAmbientBackgroundEnabled: Boolean = false,
+    val immersiveCatalogModeEnabled: Boolean = false,
     val items: List<StoredHomeCatalogPreference> = emptyList(),
 )
 
@@ -107,6 +117,8 @@ object HomeCatalogSettingsRepository {
     private var hideUnreleasedContent = false
     private var hideCatalogUnderline = false
     private var tvModeEnabled = false
+    private var heroAmbientBackgroundEnabled = false
+    private var immersiveCatalogModeEnabled = false
 
     fun onProfileChanged() {
         hasLoaded = false
@@ -115,6 +127,8 @@ object HomeCatalogSettingsRepository {
         hideUnreleasedContent = false
         hideCatalogUnderline = false
         tvModeEnabled = false
+        heroAmbientBackgroundEnabled = false
+        immersiveCatalogModeEnabled = false
         definitions = emptyList()
         collectionDefinitions = emptyList()
         _uiState.value = HomeCatalogSettingsUiState()
@@ -129,6 +143,8 @@ object HomeCatalogSettingsRepository {
         hideUnreleasedContent = false
         hideCatalogUnderline = false
         tvModeEnabled = false
+        heroAmbientBackgroundEnabled = false
+        immersiveCatalogModeEnabled = false
         _uiState.value = HomeCatalogSettingsUiState()
     }
 
@@ -163,6 +179,8 @@ object HomeCatalogSettingsRepository {
             hideUnreleasedContent = hideUnreleasedContent,
             hideCatalogUnderline = hideCatalogUnderline,
             tvModeEnabled = tvModeEnabled,
+            heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
+            immersiveCatalogModeEnabled = immersiveCatalogModeEnabled,
             preferences = preferences.mapValues { (_, value) ->
                 HomeCatalogPreference(
                     customTitle = value.customTitle,
@@ -208,6 +226,22 @@ object HomeCatalogSettingsRepository {
         HomeRepository.applyCurrentSettings()
     }
 
+    fun setHeroAmbientBackgroundEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (heroAmbientBackgroundEnabled == enabled) return
+        heroAmbientBackgroundEnabled = enabled
+        publish()
+        persist()
+    }
+
+    fun setImmersiveCatalogModeEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (immersiveCatalogModeEnabled == enabled) return
+        immersiveCatalogModeEnabled = enabled
+        publish()
+        persist()
+    }
+
     fun setHeroSourceEnabled(key: String, enabled: Boolean) {
         updatePreference(key) { preference ->
             if (!enabled) {
@@ -238,6 +272,8 @@ object HomeCatalogSettingsRepository {
         hideUnreleasedContent = false
         hideCatalogUnderline = false
         tvModeEnabled = false
+        heroAmbientBackgroundEnabled = false
+        immersiveCatalogModeEnabled = false
         preferences.clear()
         normalizePreferences()
         publish()
@@ -286,6 +322,8 @@ object HomeCatalogSettingsRepository {
             hideUnreleasedContent = parsedPayload.hideUnreleasedContent
             hideCatalogUnderline = parsedPayload.hideCatalogUnderline
             tvModeEnabled = parsedPayload.tvModeEnabled
+            heroAmbientBackgroundEnabled = parsedPayload.heroAmbientBackgroundEnabled
+            immersiveCatalogModeEnabled = parsedPayload.immersiveCatalogModeEnabled
             preferences = parsedPayload.items.associateBy { it.key }.toMutableMap()
             publish()
             return
@@ -387,6 +425,8 @@ object HomeCatalogSettingsRepository {
             hideUnreleasedContent = hideUnreleasedContent,
             hideCatalogUnderline = hideCatalogUnderline,
             tvModeEnabled = tvModeEnabled,
+            heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
+            immersiveCatalogModeEnabled = immersiveCatalogModeEnabled,
             items = items,
         )
     }
@@ -399,6 +439,8 @@ object HomeCatalogSettingsRepository {
                     hideUnreleasedContent = hideUnreleasedContent,
                     hideCatalogUnderline = hideCatalogUnderline,
                     tvModeEnabled = tvModeEnabled,
+                    heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
+                    immersiveCatalogModeEnabled = immersiveCatalogModeEnabled,
                     items = preferences.values.sortedBy { it.order },
                 ),
             ),

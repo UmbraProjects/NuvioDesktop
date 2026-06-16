@@ -14,7 +14,8 @@ internal actual object TraktAuthCallbackServer {
     actual fun ensureStarted() {
         if (server != null) return
 
-        val redirectUri = runCatching { Url(TraktConfig.REDIRECT_URI) }.getOrNull() ?: return
+        val configuredRedirectUri = TraktSettingsRepository.effectiveCredentials().redirectUri
+        val redirectUri = runCatching { Url(configuredRedirectUri) }.getOrNull() ?: return
         if (redirectUri.host != "localhost" && redirectUri.host != "127.0.0.1") return
 
         runCatching {
@@ -24,9 +25,9 @@ internal actual object TraktAuthCallbackServer {
                 runCatching {
                     val query = exchange.requestURI.rawQuery.orEmpty()
                     val callbackUrl = if (query.isBlank()) {
-                        TraktConfig.REDIRECT_URI
+                        configuredRedirectUri
                     } else {
-                        "${TraktConfig.REDIRECT_URI}?$query"
+                        "$configuredRedirectUri?$query"
                     }
 
                     val responseBody = TRAKT_CALLBACK_HTML.toByteArray(Charsets.UTF_8)

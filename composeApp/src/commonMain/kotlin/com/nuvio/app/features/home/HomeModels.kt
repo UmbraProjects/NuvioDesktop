@@ -17,7 +17,17 @@ data class MetaPreview(
     val popularity: Double? = null,
     val voteCount: Int? = null,
     val imdbRating: String? = null,
+    val ageRating: String? = null,
+    val runtime: String? = null,
     val genres: List<String> = emptyList(),
+    val cast: List<HeroCastMember> = emptyList(),
+)
+
+data class HeroCastMember(
+    val name: String,
+    val photo: String? = null,
+    val role: String? = null,
+    val tmdbId: Int? = null,
 )
 
 fun MetaPreview.stableKey(): String = "$type:$id"
