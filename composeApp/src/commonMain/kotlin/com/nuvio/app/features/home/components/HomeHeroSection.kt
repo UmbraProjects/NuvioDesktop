@@ -100,9 +100,11 @@ private val ImmersiveHeroBackdropAlignment = BiasAlignment(
 )
 private const val HERO_BACKDROP_WIDTH_FRACTION = 0.85f
 private const val HERO_BACKDROP_FADE_FRACTION = 0.35f
-private val IMMERSIVE_HERO_CONTENT_HEIGHT = 420.dp
+private val IMMERSIVE_HERO_CONTENT_MIN_HEIGHT = 300.dp
+private val IMMERSIVE_HERO_CONTENT_MAX_HEIGHT = 420.dp
 private val IMMERSIVE_HERO_CONTENT_BOTTOM_PADDING = 44.dp
-private val IMMERSIVE_HERO_CONTENT_OFFSET_Y = 42.dp
+private val IMMERSIVE_HERO_CONTENT_MIN_OFFSET_Y = 16.dp
+private val IMMERSIVE_HERO_CONTENT_MAX_OFFSET_Y = 42.dp
 
 internal data class HomeHeroLayout(
     val isTablet: Boolean,
@@ -588,8 +590,8 @@ private fun DesktopHomeHeroFrame(
                     if (immersiveMode) {
                         Modifier
                             .padding(bottom = immersiveContentBottomPadding)
-                            .height(IMMERSIVE_HERO_CONTENT_HEIGHT)
-                            .offset(y = IMMERSIVE_HERO_CONTENT_OFFSET_Y)
+                            .height(immersiveHeroContentHeight(layout.heroHeight))
+                            .offset(y = immersiveHeroContentOffsetY(layout.heroHeight))
                     } else {
                         Modifier
                     },
@@ -687,6 +689,18 @@ private fun Modifier.immersiveHeroExtraMask(backgroundColor: Color): Modifier =
             ),
         )
     }
+
+private fun immersiveHeroContentHeight(heroHeight: Dp): Dp =
+    (heroHeight * 0.38f).coerceIn(
+        IMMERSIVE_HERO_CONTENT_MIN_HEIGHT,
+        IMMERSIVE_HERO_CONTENT_MAX_HEIGHT,
+    )
+
+private fun immersiveHeroContentOffsetY(heroHeight: Dp): Dp =
+    (heroHeight * 0.04f).coerceIn(
+        IMMERSIVE_HERO_CONTENT_MIN_OFFSET_Y,
+        IMMERSIVE_HERO_CONTENT_MAX_OFFSET_Y,
+    )
 
 @Composable
 private fun HeroPageIndicatorRow(
