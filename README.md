@@ -14,6 +14,22 @@
 
 </div>
 
+## Fork Changes
+
+This fork is unaffiliated with the Nuvio team, here are the changes:
+
+1. Adapative Hero, with option to tint the background based on backdrop. Designed for full screen only.
+2. Full TV Mode UI, use full screen and extra large posters or it won't work properly.
+3. Keyboard controls for most of the application.
+4. Improved mouse support, hold your mouse at the edge of a catalog to auto scroll, hold and drag to scroll fast, hold shift and use the mouse wheel.
+5. Larger posters option
+6. Playback speed defaults
+7. Hotkeys for search and library
+8. Renderer swapped from D3D to OpenGL as I was getting irritating lighting issues with the adapative hero. This doesn't effect playback at all.
+9. Probably other stuff I've forgotten about, generally just improvements to PC.
+
+It may be discontinued when/if the official Nuvio PC version gets a TV mode/adaptive hero.
+
 ## About
 
 Nuvio Desktop brings the Nuvio media experience to desktop. It keeps the playback-focused browsing, collection, watch progress, downloads, and Stremio addon ecosystem integration from Nuvio while adapting the app for desktop input, desktop storage, and native desktop playback.
