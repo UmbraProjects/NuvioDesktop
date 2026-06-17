@@ -32,6 +32,8 @@ This fork is unaffiliated with the Nuvio team, here are the changes:
 
 It may be discontinued when/if the official Nuvio PC version gets a TV mode/adaptive hero.
 
+The design is partly inspired by Nuvio TV and Stremio Kai by allecsc.
+
 ## About
 
 Nuvio Desktop brings the Nuvio media experience to desktop. It keeps the playback-focused browsing, collection, watch progress, downloads, and Stremio addon ecosystem integration from Nuvio while adapting the app for desktop input, desktop storage, and native desktop playback.
