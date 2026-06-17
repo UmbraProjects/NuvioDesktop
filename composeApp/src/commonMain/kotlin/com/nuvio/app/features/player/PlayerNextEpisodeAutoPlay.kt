@@ -35,6 +35,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     onSourceNameChanged: (String?) -> Unit,
     onCountdownChanged: (Int?) -> Unit,
     onNextEpisodeCardVisibleChanged: (Boolean) -> Unit,
+    skipSourceCountdown: Boolean = false,
 ): Job? {
     val nextVideoId = nextEpisodeInfo?.videoId ?: return null
     val nextVideo = allEpisodes.firstOrNull { video -> video.id == nextVideoId } ?: return null
@@ -57,17 +58,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     onCountdownChanged(null)
 
     val type = contentType ?: parentMetaType
-    val shouldAutoSelectInManualMode =
-        settings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL &&
-            (
-                settings.streamAutoPlayNextEpisodeEnabled ||
-                    settings.streamAutoPlayPreferBingeGroup
-                )
-
-    val bingeGroupOnlyManualMode =
-        shouldAutoSelectInManualMode &&
-            !settings.streamAutoPlayNextEpisodeEnabled &&
-            settings.streamAutoPlayPreferBingeGroup
+    val shouldAutoSelectInManualMode = settings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL
 
     val effectiveMode = if (shouldAutoSelectInManualMode) {
         StreamAutoPlayMode.FIRST_STREAM
@@ -137,8 +128,8 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
             settleAutoSelect()
         }
 
-        fun trySelectStream(streams: List<StreamItem>): StreamItem? =
-            StreamAutoPlaySelector.selectAutoPlayStream(
+        fun trySelectStream(streams: List<StreamItem>): StreamItem? {
+            val configuredSelection = StreamAutoPlaySelector.selectAutoPlayStream(
                 streams = streams,
                 mode = effectiveMode,
                 regexPattern = effectiveRegex,
@@ -148,10 +139,27 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 selectedPlugins = effectiveSelectedPlugins,
                 preferredBingeGroup = preferredBingeGroup,
                 preferBingeGroupInSelection = settings.streamAutoPlayPreferBingeGroup,
-                bingeGroupOnly = bingeGroupOnlyManualMode,
+                bingeGroupOnly = false,
                 debridEnabled = debridSettings.canResolvePlayableLinks,
                 activeResolverProviderId = debridSettings.activeResolverProviderId,
             )
+            if (configuredSelection != null) return configuredSelection
+
+            return StreamAutoPlaySelector.selectAutoPlayStream(
+                streams = streams,
+                mode = StreamAutoPlayMode.FIRST_STREAM,
+                regexPattern = "",
+                source = effectiveSource,
+                installedAddonNames = installedAddonNames,
+                selectedAddons = effectiveSelectedAddons,
+                selectedPlugins = effectiveSelectedPlugins,
+                preferredBingeGroup = preferredBingeGroup,
+                preferBingeGroupInSelection = settings.streamAutoPlayPreferBingeGroup,
+                bingeGroupOnly = false,
+                debridEnabled = debridSettings.canResolvePlayableLinks,
+                activeResolverProviderId = debridSettings.activeResolverProviderId,
+            )
+        }
 
         fun tryBingeGroupOnly(streams: List<StreamItem>): StreamItem? {
             if (preferredBingeGroup == null || !settings.streamAutoPlayPreferBingeGroup) return null
@@ -264,9 +272,13 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
         val selected = selectedStream
         if (selected != null) {
             onSourceNameChanged(selected.addonName)
-            for (i in 3 downTo 1) {
-                onCountdownChanged(i)
-                delay(1000)
+            if (skipSourceCountdown) {
+                onCountdownChanged(null)
+            } else {
+                for (i in 3 downTo 1) {
+                    onCountdownChanged(i)
+                    delay(1000)
+                }
             }
             onEpisodeStreamSelected(selected, nextVideo)
             onNextEpisodeCardVisibleChanged(false)

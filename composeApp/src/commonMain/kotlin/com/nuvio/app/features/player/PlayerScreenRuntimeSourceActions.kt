@@ -375,6 +375,7 @@ internal fun PlayerScreenRuntime.playNextEpisode() {
         onSourceNameChanged = { nextEpisodeAutoPlaySourceName = it },
         onCountdownChanged = { nextEpisodeAutoPlayCountdown = it },
         onNextEpisodeCardVisibleChanged = { showNextEpisodeCard = it },
+        skipSourceCountdown = playerSettingsUiState.streamAutoPlayNextEpisodeEnabled,
     )?.let { job ->
         nextEpisodeAutoPlayJob = job
     }

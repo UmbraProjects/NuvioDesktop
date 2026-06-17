@@ -824,8 +824,8 @@
     <string name="settings_playback_introdb_api_key">IntroDB API Key</string>
     <string name="settings_playback_introdb_api_key_description">Enter your IntroDB API key to submit timestamps. Required for submission.</string>
     <string name="settings_playback_anime_skip_description">Also search AnimeSkip for skip timestamps (requires client ID).</string>
-    <string name="settings_playback_auto_play_next_episode">Auto-play Next Episode</string>
-    <string name="settings_playback_auto_play_next_episode_description">Start next episode automatically when prompt appears.</string>
+    <string name="settings_playback_auto_play_next_episode">Binge Mode</string>
+    <string name="settings_playback_auto_play_next_episode_description">Accept the next-episode prompt as soon as it appears and start the selected source without a countdown. When off, the next episode starts only after playback reaches the end.</string>
     <string name="settings_playback_decoder_device_only">Device decoders only</string>
     <string name="settings_playback_decoder_prefer_app">Prefer app decoders (FFmpeg)</string>
     <string name="settings_playback_decoder_prefer_device">Prefer device decoders</string>

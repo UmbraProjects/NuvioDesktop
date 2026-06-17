@@ -467,9 +467,9 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
     }
 
     LaunchedEffect(playbackSnapshot.isEnded, nextEpisodeInfo) {
-        if (playbackSnapshot.isEnded && nextEpisodeInfo != null && !showNextEpisodeCard) {
+        if (playbackSnapshot.isEnded && nextEpisodeInfo != null) {
             showNextEpisodeCard = true
-            if (playerSettingsUiState.streamAutoPlayNextEpisodeEnabled && nextEpisodeInfo?.hasAired == true) {
+            if (nextEpisodeInfo?.hasAired == true && nextEpisodeAutoPlayJob?.isActive != true) {
                 playNextEpisode()
             }
         }
