@@ -128,6 +128,7 @@ import com.nuvio.app.features.home.components.rememberContinueWatchingLayout
 import kotlinx.coroutines.CancellationException
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -1019,6 +1020,19 @@ fun HomeScreen(
             )
         }
         val immersiveShelfHeight = (maxHeight * 0.43f).coerceIn(300.dp, 440.dp)
+        val immersivePosterBaseWidthDp = remember(
+            maxWidth.value,
+            immersiveShelfHeight,
+            homeSectionPadding,
+            posterCardStyle.hideLabelsEnabled,
+        ) {
+            immersiveCatalogPosterBaseWidthDp(
+                maxWidthDp = maxWidth.value,
+                shelfHeightDp = immersiveShelfHeight.value,
+                sectionPaddingDp = homeSectionPadding.value,
+                hideLabels = posterCardStyle.hideLabelsEnabled,
+            )
+        }
 
         val renderHero: @Composable (LazyListState?) -> Unit = { heroListState ->
             when {
@@ -1258,7 +1272,10 @@ fun HomeScreen(
                                 ),
                             ),
                         )
-                        .padding(top = 68.dp, bottom = 12.dp),
+                        .padding(
+                            top = IMMERSIVE_SHELF_TOP_PADDING_DP.dp,
+                            bottom = IMMERSIVE_SHELF_BOTTOM_PADDING_DP.dp,
+                        ),
                 ) {
                     when {
                         activeSettingsItem == null -> HomeContinueWatchingSection(
@@ -1279,6 +1296,7 @@ fun HomeScreen(
                                 HomeCollectionRowSection(
                                     collection = collection,
                                     sectionPadding = homeSectionPadding,
+                                    basePosterWidthDpOverride = immersivePosterBaseWidthDp,
                                     animateGifs = animateCollectionGifs,
                                     focusedItemIndex = tvFocus.itemIndex,
                                     onHoverItem = { itemIndex -> tvFocus.itemIndex = itemIndex },
@@ -1293,6 +1311,7 @@ fun HomeScreen(
                                     section = section,
                                     entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
                                     sectionPadding = homeSectionPadding,
+                                    basePosterWidthDpOverride = immersivePosterBaseWidthDp,
                                     focusedItemIndex = tvFocus.itemIndex,
                                     onHoverItem = { itemIndex -> tvFocus.itemIndex = itemIndex },
                                     onViewAllClick = if (section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {
@@ -1354,12 +1373,56 @@ fun HomeScreen(
 
 private const val HOME_CATALOG_PREVIEW_LIMIT = 18
 private const val COLLECTION_HERO_TYPE = "collection"
+private const val IMMERSIVE_SHELF_TOP_PADDING_DP = 68f
+private const val IMMERSIVE_SHELF_BOTTOM_PADDING_DP = 12f
+private const val IMMERSIVE_SHELF_HEADER_ESTIMATE_DP = 54f
+private const val IMMERSIVE_POSTER_LABEL_RESERVE_DP = 42f
+private const val IMMERSIVE_POSTER_ASPECT_RATIO = 0.675f
+private const val IMMERSIVE_POSTER_MIN_BASE_WIDTH_DP = 104
+private const val IMMERSIVE_POSTER_MAX_BASE_WIDTH_DP = 210
+private const val IMMERSIVE_POSTER_ITEM_SPACING_DP = 10f
+private const val IMMERSIVE_POSTER_MIN_VISIBLE_WIDE = 8
+private const val IMMERSIVE_POSTER_MIN_VISIBLE_NARROW = 7
 internal const val HomeContinueWatchingMaxRecentProgressItems = 300
 internal const val HomeNextUpInitialResolutionLimit = 32
 private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L
 private const val OPTIMISTIC_NEXT_UP_SEED_WINDOW_MS = 3L * 60L * 1000L
 private const val NEXT_UP_RESOLUTION_CONCURRENCY = 4
 private const val NEXT_UP_RESOLUTION_BATCH_SIZE = NEXT_UP_RESOLUTION_CONCURRENCY
+
+private fun immersiveCatalogPosterBaseWidthDp(
+    maxWidthDp: Float,
+    shelfHeightDp: Float,
+    sectionPaddingDp: Float,
+    hideLabels: Boolean,
+): Int {
+    val labelReserve = if (hideLabels) 0f else IMMERSIVE_POSTER_LABEL_RESERVE_DP
+    val availablePosterHeight = shelfHeightDp -
+        IMMERSIVE_SHELF_TOP_PADDING_DP -
+        IMMERSIVE_SHELF_BOTTOM_PADDING_DP -
+        IMMERSIVE_SHELF_HEADER_ESTIMATE_DP -
+        labelReserve
+    val heightDrivenWidth = (availablePosterHeight * IMMERSIVE_POSTER_ASPECT_RATIO).roundToInt()
+
+    val rowWidth = maxWidthDp - (sectionPaddingDp * 2f)
+    val minVisibleItems = if (maxWidthDp >= 1800f) {
+        IMMERSIVE_POSTER_MIN_VISIBLE_WIDE
+    } else {
+        IMMERSIVE_POSTER_MIN_VISIBLE_NARROW
+    }
+    val widthDrivenMax = (
+        (rowWidth - IMMERSIVE_POSTER_ITEM_SPACING_DP * (minVisibleItems - 1)) / minVisibleItems
+        ).roundToInt()
+
+    val maxBaseWidth = maxOf(
+        IMMERSIVE_POSTER_MIN_BASE_WIDTH_DP,
+        minOf(IMMERSIVE_POSTER_MAX_BASE_WIDTH_DP, widthDrivenMax),
+    )
+    return heightDrivenWidth.coerceIn(
+        minimumValue = IMMERSIVE_POSTER_MIN_BASE_WIDTH_DP,
+        maximumValue = maxBaseWidth,
+    )
+}
 
 private fun com.nuvio.app.features.collection.Collection.homeHeroPreview(): MetaPreview? {
     val backdrop = backdropImageUrl?.trim()?.takeIf(String::isNotBlank) ?: return null

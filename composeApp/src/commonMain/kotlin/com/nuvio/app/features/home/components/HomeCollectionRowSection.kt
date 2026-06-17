@@ -41,6 +41,7 @@ fun HomeCollectionRowSection(
     collection: Collection,
     modifier: Modifier = Modifier,
     sectionPadding: Dp? = null,
+    basePosterWidthDpOverride: Int? = null,
     animateGifs: Boolean = true,
     focusedItemIndex: Int? = null,
     onHoverItem: ((Int) -> Unit)? = null,
@@ -53,6 +54,7 @@ fun HomeCollectionRowSection(
             collection = collection,
             modifier = modifier.fillMaxWidth(),
             sectionPadding = sectionPadding,
+            basePosterWidthDpOverride = basePosterWidthDpOverride,
             animateGifs = animateGifs,
             focusedItemIndex = focusedItemIndex,
             onHoverItem = onHoverItem,
@@ -64,6 +66,7 @@ fun HomeCollectionRowSection(
                 collection = collection,
                 modifier = Modifier.fillMaxWidth(),
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
+                basePosterWidthDpOverride = basePosterWidthDpOverride,
                 animateGifs = animateGifs,
                 focusedItemIndex = focusedItemIndex,
                 onHoverItem = onHoverItem,
@@ -78,6 +81,7 @@ private fun HomeCollectionRowSectionContent(
     collection: Collection,
     modifier: Modifier,
     sectionPadding: Dp,
+    basePosterWidthDpOverride: Int?,
     animateGifs: Boolean,
     focusedItemIndex: Int?,
     onHoverItem: ((Int) -> Unit)?,
@@ -101,6 +105,7 @@ private fun HomeCollectionRowSectionContent(
     ) { folder ->
         CollectionFolderCard(
             folder = folder,
+            basePosterWidthDpOverride = basePosterWidthDpOverride,
             animateGifs = animateGifs,
             onClick = onFolderClick?.let { { it(collection.id, folder.id) } },
         )
@@ -111,10 +116,12 @@ private fun HomeCollectionRowSectionContent(
 private fun CollectionFolderCard(
     folder: CollectionFolder,
     modifier: Modifier = Modifier,
+    basePosterWidthDpOverride: Int? = null,
     animateGifs: Boolean = true,
     onClick: (() -> Unit)? = null,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
+    val basePosterWidthDp = basePosterWidthDpOverride ?: posterCardStyle.widthDp
     val isLandscapeMode = posterCardStyle.catalogLandscapeModeEnabled
     val shape = if (isLandscapeMode) PosterShape.Landscape else folder.posterShape
     val cardWidth: Dp
@@ -122,15 +129,15 @@ private fun CollectionFolderCard(
 
     when (shape) {
         PosterShape.Poster -> {
-            cardWidth = posterCardStyle.widthDp.dp
+            cardWidth = basePosterWidthDp.dp
             aspectRatio = 0.675f
         }
         PosterShape.Landscape -> {
-            cardWidth = landscapePosterWidth(posterCardStyle.widthDp)
+            cardWidth = landscapePosterWidth(basePosterWidthDp)
             aspectRatio = PosterLandscapeAspectRatio
         }
         PosterShape.Square -> {
-            cardWidth = posterCardStyle.widthDp.dp
+            cardWidth = basePosterWidthDp.dp
             aspectRatio = 1f
         }
     }
