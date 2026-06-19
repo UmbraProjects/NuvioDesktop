@@ -59,6 +59,9 @@ data class SubtitleStyleState(
     val bold: Boolean = false,
     val fontSizeSp: Int = 18,
     val bottomOffset: Int = 20,
+    // Subtitle font family. Empty = player default. Values are resolved by the platform's
+    // font system (mpv/libass on desktop), so only widely-available families are offered.
+    val fontFamily: String = "",
     val useForcedSubtitles: Boolean = false,
     val showOnlyPreferredLanguages: Boolean = false,
 ) {
@@ -66,6 +69,38 @@ data class SubtitleStyleState(
         val DEFAULT = SubtitleStyleState()
     }
 }
+
+/**
+ * Curated subtitle font families, kept to ones that ship by default on essentially every
+ * desktop so they resolve reliably. The empty entry is the player's built-in default.
+ */
+val SubtitleFontFamilies: List<String> = listOf(
+    "",
+    "Arial",
+    "Verdana",
+    "Tahoma",
+    "Trebuchet MS",
+    "Georgia",
+    "Times New Roman",
+    "Courier New",
+)
+
+fun subtitleFontDisplayName(fontFamily: String): String = fontFamily.ifBlank { "Default" }
+
+/** Cycles to the next/previous curated font family, wrapping around. */
+fun cycleSubtitleFontFamily(current: String, delta: Int): String {
+    val index = SubtitleFontFamilies.indexOf(current).let { if (it < 0) 0 else it }
+    val size = SubtitleFontFamilies.size
+    val next = ((index + delta) % size + size) % size
+    return SubtitleFontFamilies[next]
+}
+
+/**
+ * The selectable subtitle font families for this platform. The first entry is always ""
+ * (the player default). On desktop this is the user's installed system fonts, so people can
+ * use any font they install (e.g. Netflix Sans) without it being shipped with the app.
+ */
+expect fun availableSubtitleFontFamilies(): List<String>
 
 data class SubtitleSyncCue(
     val startTimeMs: Long,

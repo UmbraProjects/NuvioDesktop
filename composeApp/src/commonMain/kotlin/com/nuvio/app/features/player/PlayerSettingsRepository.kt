@@ -87,6 +87,8 @@ data class PlayerSettingsUiState(
     val iosContrast: Int = 0,
     val iosSaturation: Int = 0,
     val iosGamma: Int = 0,
+    val desktopHdrMode: DesktopHdrMode = DesktopHdrMode.Auto,
+    val desktopColorProfile: DesktopColorProfile = DesktopColorProfile.Neutral,
 )
 
 object PlayerSettingsRepository {
@@ -149,6 +151,8 @@ object PlayerSettingsRepository {
     private var iosContrast = 0
     private var iosSaturation = 0
     private var iosGamma = 0
+    private var desktopHdrMode = DesktopHdrMode.Auto
+    private var desktopColorProfile = DesktopColorProfile.Neutral
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -216,6 +220,8 @@ object PlayerSettingsRepository {
         iosContrast = 0
         iosSaturation = 0
         iosGamma = 0
+        desktopHdrMode = DesktopHdrMode.Auto
+        desktopColorProfile = DesktopColorProfile.Neutral
         publish()
     }
 
@@ -261,6 +267,8 @@ object PlayerSettingsRepository {
                 ?: SubtitleStyleState.DEFAULT.fontSizeSp,
             bottomOffset = PlayerSettingsStorage.loadSubtitleBottomOffset()
                 ?: SubtitleStyleState.DEFAULT.bottomOffset,
+            fontFamily = PlayerSettingsStorage.loadSubtitleFontFamily()
+                ?: SubtitleStyleState.DEFAULT.fontFamily,
             useForcedSubtitles = PlayerSettingsStorage.loadSubtitleUseForcedSubtitles()
                 ?: SubtitleStyleState.DEFAULT.useForcedSubtitles,
             showOnlyPreferredLanguages = PlayerSettingsStorage.loadSubtitleShowOnlyPreferredLanguages()
@@ -345,6 +353,12 @@ object PlayerSettingsRepository {
         iosContrast = PlayerSettingsStorage.loadIosContrast() ?: 0
         iosSaturation = PlayerSettingsStorage.loadIosSaturation() ?: 0
         iosGamma = PlayerSettingsStorage.loadIosGamma() ?: 0
+        desktopHdrMode = PlayerSettingsStorage.loadDesktopHdrMode()
+            ?.let { runCatching { DesktopHdrMode.valueOf(it) }.getOrNull() }
+            ?: DesktopHdrMode.Auto
+        desktopColorProfile = PlayerSettingsStorage.loadDesktopColorProfile()
+            ?.let { runCatching { DesktopColorProfile.valueOf(it) }.getOrNull() }
+            ?: DesktopColorProfile.Neutral
         publish()
     }
 
@@ -488,6 +502,7 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveSubtitleBold(style.bold)
         PlayerSettingsStorage.saveSubtitleFontSizeSp(style.fontSizeSp)
         PlayerSettingsStorage.saveSubtitleBottomOffset(style.bottomOffset)
+        PlayerSettingsStorage.saveSubtitleFontFamily(style.fontFamily)
         PlayerSettingsStorage.saveSubtitleUseForcedSubtitles(style.useForcedSubtitles)
         PlayerSettingsStorage.saveSubtitleShowOnlyPreferredLanguages(style.showOnlyPreferredLanguages)
     }
@@ -916,7 +931,25 @@ object PlayerSettingsRepository {
             iosContrast = iosContrast,
             iosSaturation = iosSaturation,
             iosGamma = iosGamma,
+            desktopHdrMode = desktopHdrMode,
+            desktopColorProfile = desktopColorProfile,
         )
+    }
+
+    fun setDesktopHdrMode(mode: DesktopHdrMode) {
+        ensureLoaded()
+        if (desktopHdrMode == mode) return
+        desktopHdrMode = mode
+        publish()
+        PlayerSettingsStorage.saveDesktopHdrMode(mode.name)
+    }
+
+    fun setDesktopColorProfile(profile: DesktopColorProfile) {
+        ensureLoaded()
+        if (desktopColorProfile == profile) return
+        desktopColorProfile = profile
+        publish()
+        PlayerSettingsStorage.saveDesktopColorProfile(profile.name)
     }
 
     private fun normalizeStreamAutoPlaySource(source: StreamAutoPlaySource): StreamAutoPlaySource {

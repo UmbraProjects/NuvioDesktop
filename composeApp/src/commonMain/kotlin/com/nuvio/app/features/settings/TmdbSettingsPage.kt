@@ -231,6 +231,38 @@ internal fun LazyListScope.tmdbSettingsContent(
             }
         }
     }
+
+    item {
+        SettingsSection(
+            title = "LIBRARY POSTERS",
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Custom poster service",
+                    description = "Route Library posters through a custom poster service " +
+                        "(PostersPlus, RPDB, etc.) instead of plain TMDB images.",
+                    checked = settings.libraryPosterEnabled,
+                    enabled = settings.libraryPosterUrlTemplate.isNotBlank(),
+                    isTablet = isTablet,
+                    onCheckedChange = TmdbSettingsRepository::setLibraryPosterEnabled,
+                )
+                if (settings.libraryPosterUrlTemplate.isBlank()) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    TmdbInfoRow(
+                        isTablet = isTablet,
+                        text = "Add a poster URL template below first.",
+                    )
+                }
+                SettingsGroupDivider(isTablet = isTablet)
+                TmdbLibraryPosterRow(
+                    isTablet = isTablet,
+                    value = settings.libraryPosterUrlTemplate,
+                    onTemplateCommitted = TmdbSettingsRepository::setLibraryPosterUrlTemplate,
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -279,6 +311,68 @@ private fun TmdbApiKeyRow(
                 onClick = {
                     draft = normalizedDraft
                     onApiKeyCommitted(normalizedDraft)
+                },
+                enabled = normalizedDraft != value,
+            ) {
+                Text(stringResource(Res.string.action_save))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TmdbLibraryPosterRow(
+    isTablet: Boolean,
+    value: String,
+    onTemplateCommitted: (String) -> Unit,
+) {
+    val horizontalPadding = if (isTablet) 20.dp else 16.dp
+    val verticalPadding = if (isTablet) 16.dp else 14.dp
+    var draft by rememberSaveable(value) { mutableStateOf(value) }
+    val normalizedDraft = draft.trim()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "Poster URL template",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = "Paste your full poster URL using placeholders {imdb_id}, {tmdb_id} and " +
+                    "{type}. The matching value is filled in for each item.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+            maxLines = 6,
+            label = { Text("URL template") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                disabledContainerColor = MaterialTheme.colorScheme.surface,
+            ),
+        )
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = {
+                    draft = normalizedDraft
+                    onTemplateCommitted(normalizedDraft)
                 },
                 enabled = normalizedDraft != value,
             ) {

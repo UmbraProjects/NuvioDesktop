@@ -47,6 +47,8 @@ internal expect object PlayerSettingsStorage {
     fun saveSubtitleFontSizeSp(fontSizeSp: Int)
     fun loadSubtitleBottomOffset(): Int?
     fun saveSubtitleBottomOffset(bottomOffset: Int)
+    fun loadSubtitleFontFamily(): String?
+    fun saveSubtitleFontFamily(fontFamily: String)
     fun loadSubtitleUseForcedSubtitles(): Boolean?
     fun saveSubtitleUseForcedSubtitles(enabled: Boolean)
     fun loadSubtitleShowOnlyPreferredLanguages(): Boolean?
@@ -132,6 +134,10 @@ internal expect object PlayerSettingsStorage {
     fun saveIosSaturation(value: Int)
     fun loadIosGamma(): Int?
     fun saveIosGamma(value: Int)
+    fun loadDesktopHdrMode(): String?
+    fun saveDesktopHdrMode(mode: String)
+    fun loadDesktopColorProfile(): String?
+    fun saveDesktopColorProfile(profile: String)
     fun exportToSyncPayload(): JsonObject
     fun replaceFromSyncPayload(payload: JsonObject)
 }

@@ -148,6 +148,11 @@
         <span class="gesture-pill-label" id="volumePillLabel">100%</span>
       </div>
 
+      <div class="gesture-pill preset-pill" id="presetPill" aria-hidden="true">
+        <span class="preset-pill-title" id="presetPillTitle"></span>
+        <span class="preset-pill-value" id="presetPillValue"></span>
+      </div>
+
       <button class="skip-prompt" id="skipPrompt" type="button" aria-label="Skip" aria-hidden="true">
         <span class="skip-prompt-row">
           <svg><use href="#icon-skip-next"></use></svg>
@@ -252,6 +257,10 @@
                   <span class="stepper-value" id="fontSizeValue">18sp</span>
                   <button class="round-step" id="fontSizePlus" type="button">+</button>
                 </div>
+              </div>
+              <div class="style-row">
+                <span class="style-label" id="fontFamilyLabel">Font</span>
+                <select class="style-select" id="fontFamilySelect"></select>
               </div>
               <div class="style-row">
                 <span class="style-label" id="outlineLabel">Outline</span>

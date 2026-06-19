@@ -142,24 +142,14 @@ object SkipIntroRepository {
 
     private suspend fun fetchFromIntroDb(imdbId: String, season: Int, episode: Int): List<SkipInterval> {
         return try {
-            val data = SkipIntroApi.getIntroDbSegments(imdbId, season, episode)
-            if (data == null) return emptyList()
-            listOfNotNull(
-                data.intro.toSkipIntervalOrNull("intro"),
-                data.recap.toSkipIntervalOrNull("recap"),
-                data.outro.toSkipIntervalOrNull("outro"),
-            )
+            val data = SkipIntroApi.getIntroDbSegments(imdbId, season, episode) ?: return emptyList()
+            val start = data.startSec ?: data.startMs?.let { it / 1000.0 }
+            val end = data.endSec ?: data.endMs?.let { it / 1000.0 }
+            if (start == null || end == null || end <= start) return emptyList()
+            listOf(SkipInterval(startTime = start, endTime = end, type = "intro", provider = "introdb"))
         } catch (_: Exception) {
             emptyList()
         }
-    }
-
-    private fun IntroDbSegment?.toSkipIntervalOrNull(type: String): SkipInterval? {
-        if (this == null) return null
-        val start = startSec ?: startMs?.let { it / 1000.0 }
-        val end = endSec ?: endMs?.let { it / 1000.0 }
-        if (start == null || end == null || end <= start) return null
-        return SkipInterval(startTime = start, endTime = end, type = type, provider = "introdb")
     }
 
     private suspend fun fetchFromAniSkip(malId: String, episode: Int): List<SkipInterval> {

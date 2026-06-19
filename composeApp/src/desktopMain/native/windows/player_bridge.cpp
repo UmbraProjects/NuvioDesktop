@@ -44,7 +44,15 @@ typedef enum mpv_format {
 typedef enum mpv_event_id {
     MPV_EVENT_NONE = 0,
     MPV_EVENT_SHUTDOWN = 1,
+    MPV_EVENT_FILE_LOADED = 8,
+    MPV_EVENT_PROPERTY_CHANGE = 22,
 } mpv_event_id;
+
+typedef struct mpv_event_property {
+    const char *name;
+    mpv_format format;
+    void *data;
+} mpv_event_property;
 
 typedef struct mpv_event {
     mpv_event_id event_id;
@@ -305,6 +313,7 @@ struct MpvApi {
     using mpv_free_fn = void (*)(void *);
     using mpv_wait_event_fn = mpv_event *(*)(mpv_handle *, double);
     using mpv_wakeup_fn = void (*)(mpv_handle *);
+    using mpv_observe_property_fn = int (*)(mpv_handle *, uint64_t, const char *, mpv_format);
 
     HMODULE library = nullptr;
     std::once_flag loadOnce;
@@ -323,6 +332,7 @@ struct MpvApi {
     mpv_free_fn freeValue = nullptr;
     mpv_wait_event_fn waitEvent = nullptr;
     mpv_wakeup_fn wakeup = nullptr;
+    mpv_observe_property_fn observeProperty = nullptr;
 
     void ensureLoaded() {
         std::call_once(loadOnce, [this]() { load(); });
@@ -382,6 +392,7 @@ struct MpvApi {
         freeValue = loadSymbol<mpv_free_fn>("mpv_free");
         waitEvent = loadSymbol<mpv_wait_event_fn>("mpv_wait_event");
         wakeup = loadSymbol<mpv_wakeup_fn>("mpv_wakeup");
+        observeProperty = loadSymbol<mpv_observe_property_fn>("mpv_observe_property");
     }
 
     template <typename T>
@@ -650,6 +661,7 @@ public:
     void initialize(
         HWND host,
         const std::string &sourceUrl,
+        const std::string &audioUrl,
         const std::vector<std::string> &headerLines,
         bool playWhenReady,
         long long initialPositionMs,
@@ -666,6 +678,10 @@ public:
         eventSink = sink;
         eventMethod = method;
         hostHwnd = host;
+        // Set before spawning the UI/mpv thread so it is visible there. When present
+        // (e.g. a YouTube trailer with separate hi-res video + audio tracks) it is
+        // attached via the audio-add command once the main file has loaded.
+        externalAudioUrl = audioUrl;
 
         auto initState = std::make_shared<InitializationState>();
         auto self = shared_from_this();
@@ -787,10 +803,45 @@ public:
         return flagProperty("pause", true);
     }
 
+    // Keep seeks at least this far from the end. With keep-open=yes, landing
+    // on (or past) EOF parks mpv on the last frame with eof-reached=true, which
+    // the app reads as "ended" — so a scrub/seek that resolves near the end
+    // would otherwise cut straight to the end of the file.
+    static constexpr double seekEndGuardSeconds = 1.0;
+
+    // Baseline streaming buffer (content-seconds) at 1x playback. The demuxer cache is
+    // measured in content time, so at >1x it drains faster in wall-clock terms; setSpeed
+    // scales these with the playback rate to keep the wall-clock headroom roughly constant
+    // and avoid rebuffering at higher default speeds.
+    static constexpr double baseReadaheadSecs = 180.0;
+    static constexpr double baseCacheSecs = 600.0;
+
+    double durationSecondsLocked() {
+        double value = 0.0;
+        if (mpvApi().getProperty(mpv, "duration", MPV_FORMAT_DOUBLE, &value) < 0) return 0.0;
+        return std::isfinite(value) ? value : 0.0;
+    }
+
+    double timePosSecondsLocked() {
+        double value = 0.0;
+        if (mpvApi().getProperty(mpv, "time-pos", MPV_FORMAT_DOUBLE, &value) < 0) return 0.0;
+        return std::isfinite(value) ? value : 0.0;
+    }
+
+    double clampSeekSecondsLocked(double seconds) {
+        double clamped = std::max(0.0, seconds);
+        double duration = durationSecondsLocked();
+        if (duration > seekEndGuardSeconds) {
+            clamped = std::min(clamped, duration - seekEndGuardSeconds);
+        }
+        return clamped;
+    }
+
     void seekToMilliseconds(long long positionMs) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
-        std::string seconds = std::to_string((double)positionMs / 1000.0);
+        double target = clampSeekSecondsLocked((double)positionMs / 1000.0);
+        std::string seconds = std::to_string(target);
         const char *command[] = {"seek", seconds.c_str(), "absolute+keyframes", nullptr};
         mpvApi().command(mpv, command);
     }
@@ -798,8 +849,9 @@ public:
     void seekByMilliseconds(long long offsetMs) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
-        std::string seconds = std::to_string((double)offsetMs / 1000.0);
-        const char *command[] = {"seek", seconds.c_str(), "relative+keyframes", nullptr};
+        double target = clampSeekSecondsLocked(timePosSecondsLocked() + (double)offsetMs / 1000.0);
+        std::string seconds = std::to_string(target);
+        const char *command[] = {"seek", seconds.c_str(), "absolute+keyframes", nullptr};
         mpvApi().command(mpv, command);
     }
 
@@ -808,6 +860,16 @@ public:
         if (!mpv) return;
         double clamped = std::max(0.25, std::min(4.0, speed));
         mpvApi().setProperty(mpv, "speed", MPV_FORMAT_DOUBLE, &clamped);
+
+        // Grow the demuxer cache in proportion to the playback rate so faster-than-real-time
+        // playback keeps the same wall-clock buffer headroom and does not rebuffer.
+        double bufferFactor = std::max(1.0, clamped);
+        std::string readahead = std::to_string(baseReadaheadSecs * bufferFactor);
+        std::string cacheSecs = std::to_string(baseCacheSecs * bufferFactor);
+        std::string pauseWait = std::to_string(clamped > 1.0 ? 15.0 : 5.0);
+        mpvApi().setPropertyString(mpv, "demuxer-readahead-secs", readahead.c_str());
+        mpvApi().setPropertyString(mpv, "cache-secs", cacheSecs.c_str());
+        mpvApi().setPropertyString(mpv, "cache-pause-wait", pauseWait.c_str());
     }
 
     double speed() {
@@ -937,9 +999,12 @@ public:
         double outlineSize,
         bool bold,
         double fontSize,
-        int subPos
+        int subPos,
+        const std::string &fontName
     ) {
         setStringProperty("sub-ass-override", "force");
+        // Empty font name reverts to mpv's built-in default ("sans-serif").
+        setStringProperty("sub-font", fontName.empty() ? "sans-serif" : fontName);
         setStringProperty("sub-color", textColor.empty() ? "#FFFFFFFF" : textColor);
         setStringProperty("sub-back-color", backgroundColor.empty() ? "#00000000" : backgroundColor);
         setStringProperty("sub-outline-color", outlineColor.empty() ? "#FF000000" : outlineColor);
@@ -959,6 +1024,73 @@ public:
             mpvApi().setProperty(mpv, "sub-font-size", MPV_FORMAT_DOUBLE, &size);
             mpvApi().setProperty(mpv, "sub-pos", MPV_FORMAT_INT64, &position);
         }
+
+        // mpv doesn't repaint the embedded surface while paused/idle, so a style change
+        // made while paused wouldn't show until the next frame. Force a redraw.
+        forceVideoRedraw();
+    }
+
+    void setMpvPropertyString(const std::string &key, const std::string &value) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        mpvApi().setPropertyString(mpv, key.c_str(), value.c_str());
+    }
+
+    // mpv only repaints the wid-embedded video surface on a size change while otherwise
+    // idle, so equalizer / colorspace property changes (HDR + colour presets) don't show
+    // until the window is resized — which is why minimize/restore "fixes" it. Nudge the
+    // container window size by 1px and back on the UI thread to force a VO reconfigure and
+    // redraw immediately.
+    void forceVideoRedraw() {
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            if (mpv) {
+                // Rebuild mpv's video filter/output chain so dynamic equalizer and
+                // colorspace changes become visible without a real window restore.
+                const char *reconfigCommand[] = {"video-reconfig", nullptr};
+                mpvApi().command(mpv, reconfigCommand);
+            }
+        }
+        auto self = shared_from_this();
+        postUiTask([self]() {
+            if (!self->containerHwnd || !IsWindow(self->containerHwnd)) return;
+            RECT rect{};
+            GetClientRect(self->containerHwnd, &rect);
+            LONG width = rect.right - rect.left;
+            LONG height = rect.bottom - rect.top;
+            if (width <= 1 || height <= 1) return;
+            // A visibility transition forces D3D11/gpu-next to rebuild the embedded
+            // swapchain, matching the part of minimize/restore that makes profile changes
+            // appear. Keep the transition on the native UI thread and redraw all children
+            // so the WebView controls remain synchronized with the video surface.
+            ShowWindow(self->containerHwnd, SW_HIDE);
+            SetWindowPos(self->containerHwnd, nullptr, 0, 0, width - 1, height - 1,
+                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+            ShowWindow(self->containerHwnd, SW_SHOWNA);
+            SetWindowPos(self->containerHwnd, HWND_TOP, 0, 0, width, height,
+                         SWP_NOMOVE | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+            SendMessageW(self->containerHwnd, WM_SIZE, SIZE_RESTORED, MAKELPARAM(width, height));
+            RedrawWindow(
+                self->hostHwnd,
+                nullptr,
+                nullptr,
+                RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN | RDW_FRAME
+            );
+
+            // Trailer playback's D3D11 swapchain only commits dynamic colour changes on
+            // a top-level activation transition (the same reason alt-tab makes them show).
+            // Reproduce those notifications without moving focus to another application.
+            HWND topLevel = GetAncestor(self->hostHwnd, GA_ROOT);
+            if (topLevel && IsWindow(topLevel)) {
+                DWORD currentThreadId = GetCurrentThreadId();
+                SendMessageW(topLevel, WM_NCACTIVATE, FALSE, 0);
+                SendMessageW(topLevel, WM_ACTIVATEAPP, FALSE, currentThreadId);
+                SendMessageW(topLevel, WM_ACTIVATE, WA_INACTIVE, 0);
+                SendMessageW(topLevel, WM_ACTIVATEAPP, TRUE, currentThreadId);
+                SendMessageW(topLevel, WM_NCACTIVATE, TRUE, 0);
+                SendMessageW(topLevel, WM_ACTIVATE, WA_ACTIVE, 0);
+            }
+        });
     }
 
 private:
@@ -992,6 +1124,13 @@ private:
     std::mutex controlsMutex;
     std::string pendingControlsJson;
     double initialStartSeconds = 0.0;
+
+    std::string videoParamsPrimaries;
+    std::string videoParamsGamma;
+    bool videoParamsPrimariesReceived = false;
+    bool videoParamsGammaReceived = false;
+
+    std::string externalAudioUrl;
 
     friend LRESULT CALLBACK messageWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
     friend LRESULT CALLBACK containerWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -1260,22 +1399,68 @@ private:
             setMpvOptionStringLocked("input-default-bindings", "yes");
             setMpvOptionStringLocked("input-vo-keyboard", "no");
             setMpvOptionStringLocked("keep-open", "yes");
+
+            // Renderer
             setMpvOptionStringLocked("vo", "gpu-next");
             setMpvOptionStringLocked("gpu-api", "d3d11");
             setMpvOptionStringLocked("hwdec", "d3d11va");
             setMpvOptionStringLocked("hwdec-codecs", "all");
             setMpvOptionStringLocked("vd-lavc-software-fallback", "no");
             setMpvOptionStringLocked("vd-lavc-threads", "4");
-            setMpvOptionStringLocked("target-colorspace-hint", "yes");
-            setMpvOptionStringLocked("tone-mapping", "auto");
-            setMpvOptionStringLocked("dither-depth", "auto");
-            setMpvOptionStringLocked("deband", "yes");
+
+            // HDR / tonemapping
+            // target-colorspace-hint lets the OS signal the display for passthrough on HDR screens;
+            // on SDR screens mpv falls back to the tone-mapping path set below.
+            setMpvOptionStringLocked("target-colorspace-hint", "auto");
+            setMpvOptionStringLocked("target-colorspace-hint-mode", "target");
+            setMpvOptionStringLocked("target-contrast", "auto");
+            setMpvOptionStringLocked("tone-mapping", "bt.2446a");
+            setMpvOptionStringLocked("tone-mapping-param", "0.5");
+            setMpvOptionStringLocked("tone-mapping-mode", "hybrid");
+            setMpvOptionStringLocked("gamut-mapping-mode", "perceptual");
+            setMpvOptionStringLocked("hdr-compute-peak", "yes");
+            setMpvOptionStringLocked("hdr-peak-percentile", "99.8");
+            setMpvOptionStringLocked("hdr-peak-decay-rate", "20");
+            setMpvOptionStringLocked("hdr-contrast-recovery", "0.3");
+
+            // Scaling
             setMpvOptionStringLocked("scale", "spline36");
-            setMpvOptionStringLocked("cscale", "spline36");
-            setMpvOptionStringLocked("demuxer-max-bytes", "64MiB");
-            setMpvOptionStringLocked("demuxer-max-back-bytes", "16MiB");
-            setMpvOptionStringLocked("demuxer-seekable-cache", "no");
-            setMpvOptionStringLocked("cache-secs", "30");
+            setMpvOptionStringLocked("cscale", "lanczos");
+            setMpvOptionStringLocked("dscale", "mitchell");
+            setMpvOptionStringLocked("scale-antiring", "0.7");
+            setMpvOptionStringLocked("cscale-antiring", "0.7");
+            setMpvOptionStringLocked("dscale-antiring", "0.7");
+            setMpvOptionStringLocked("sigmoid-upscaling", "yes");
+            setMpvOptionStringLocked("correct-downscaling", "yes");
+            setMpvOptionStringLocked("linear-downscaling", "no");
+
+            // Dithering
+            setMpvOptionStringLocked("dither", "fruit");
+            setMpvOptionStringLocked("dither-depth", "10");
+            setMpvOptionStringLocked("temporal-dither", "yes");
+            setMpvOptionStringLocked("temporal-dither-period", "1");
+
+            // Debanding
+            setMpvOptionStringLocked("deband", "yes");
+            setMpvOptionStringLocked("deband-iterations", "2");
+            setMpvOptionStringLocked("deband-threshold", "35");
+            setMpvOptionStringLocked("deband-range", "16");
+            setMpvOptionStringLocked("deband-grain", "0");
+
+            // Streaming cache (1x baseline; setSpeed scales these with playback rate)
+            setMpvOptionStringLocked("cache", "yes");
+            setMpvOptionStringLocked("cache-pause", "yes");
+            setMpvOptionStringLocked("cache-pause-initial", "yes");
+            setMpvOptionStringLocked("cache-pause-wait", "5");
+            setMpvOptionStringLocked("cache-secs", std::to_string((long long)baseCacheSecs).c_str());
+            setMpvOptionStringLocked("demuxer-readahead-secs", std::to_string((long long)baseReadaheadSecs).c_str());
+            // Separate YouTube video/audio streams can exhaust the byte ceiling well before
+            // the requested time-based readahead at 2x, especially for high-bitrate trailers.
+            setMpvOptionStringLocked("demuxer-max-bytes", "1GiB");
+            setMpvOptionStringLocked("demuxer-max-back-bytes", "128MiB");
+            setMpvOptionStringLocked("stream-buffer-size", "256MiB");
+            setMpvOptionStringLocked("stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5");
+
             setMpvOptionStringLocked("hr-seek", "no");
 
             int64_t wid = (int64_t)(intptr_t)containerHwnd;
@@ -1298,6 +1483,9 @@ private:
                 throw std::runtime_error(std::string("mpv_initialize failed: ") + api.errorText(initResult));
             }
 
+            api.observeProperty(mpv, 0, "video-params/primaries", MPV_FORMAT_STRING);
+            api.observeProperty(mpv, 0, "video-params/gamma", MPV_FORMAT_STRING);
+
             // Up/Down are reserved for app-level volume control; explicitly
             // disable mpv's built-in seek bindings for them so they can't
             // intercept the keypress (e.g. if input-vo-keyboard is briefly
@@ -1309,7 +1497,17 @@ private:
                 api.command(mpv, unbindDown);
             }
 
-            std::vector<const char *> loadCommand = {"loadfile", sourceUrl.c_str()};
+            // mpv's EDL demuxer can expose independent URLs as tracks of one input. This
+            // is the same shape used by mpv's own YouTube integration and avoids the
+            // runtime audio-add operation that can wedge the embedded Windows surface.
+            std::string playbackSource = sourceUrl;
+            if (!externalAudioUrl.empty()) {
+                playbackSource =
+                    "edl://%" + std::to_string(sourceUrl.size()) + "%" + sourceUrl +
+                    ";!new_stream;%" + std::to_string(externalAudioUrl.size()) + "%" + externalAudioUrl;
+            }
+
+            std::vector<const char *> loadCommand = {"loadfile", playbackSource.c_str()};
             std::string loadOptions;
             if (initialPositionMs > 0) {
                 char startBuffer[64];
@@ -1325,6 +1523,7 @@ private:
             if (commandResult < 0) {
                 throw std::runtime_error(std::string("mpv loadfile failed: ") + api.errorText(commandResult));
             }
+
         }
 
         setPaused(!playWhenReady);
@@ -1475,6 +1674,12 @@ private:
         }
     }
 
+    static bool isHdrContent(const std::string &primaries, const std::string &gamma) {
+        if (gamma == "st2084" || gamma == "hlg" || gamma == "arib-std-b67") return true;
+        if (primaries == "bt.2020" || primaries == "bt.2020-cl") return true;
+        return false;
+    }
+
     void drainMpvEvents() {
         while (!stopping.load()) {
             mpv_handle *current = nullptr;
@@ -1490,6 +1695,31 @@ private:
             if (!event) continue;
             if (event->event_id == MPV_EVENT_SHUTDOWN) {
                 return;
+            }
+            if (event->event_id == MPV_EVENT_FILE_LOADED) {
+                sendPlayerEvent("fileLoaded", 1.0);
+            }
+            if (event->event_id == MPV_EVENT_PROPERTY_CHANGE && event->data) {
+                auto *prop = static_cast<mpv_event_property *>(event->data);
+                if (!prop || !prop->name) continue;
+                std::string propName(prop->name);
+                bool hasValue = prop->format == MPV_FORMAT_STRING && prop->data;
+                std::string propValue = hasValue ? std::string(*static_cast<char **>(prop->data)) : "";
+
+                if (propName == "video-params/primaries") {
+                    videoParamsPrimaries = hasValue ? propValue : "";
+                    videoParamsPrimariesReceived = true;
+                } else if (propName == "video-params/gamma") {
+                    videoParamsGamma = hasValue ? propValue : "";
+                    videoParamsGammaReceived = true;
+                }
+
+                if (videoParamsPrimariesReceived && videoParamsGammaReceived) {
+                    bool hdr = isHdrContent(videoParamsPrimaries, videoParamsGamma);
+                    videoParamsPrimariesReceived = false;
+                    videoParamsGammaReceived = false;
+                    sendPlayerEvent("videoParams", hdr ? 1.0 : 0.0);
+                }
             }
         }
     }
@@ -1832,6 +2062,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jobject,
     jlong hostViewPtr,
     jstring sourceUrl,
+    jstring sourceAudioUrl,
     jobjectArray headerLines,
     jboolean playWhenReady,
     jlong initialPositionMs,
@@ -1840,6 +2071,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
 ) {
     HWND hostHwnd = (HWND)(intptr_t)hostViewPtr;
     std::string sourceUrlText = jstringToUtf8(env, sourceUrl);
+    std::string sourceAudioUrlText = sourceAudioUrl ? jstringToUtf8(env, sourceAudioUrl) : std::string();
     std::vector<std::string> headerLineValues = jstringArrayToVector(env, headerLines);
     std::string controlsPageUrlText = jstringToUtf8(env, controlsPageUrl);
     JavaVM *javaVm = nullptr;
@@ -1864,6 +2096,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
         player->initialize(
             hostHwnd,
             sourceUrlText,
+            sourceAudioUrlText,
             headerLineValues,
             playWhenReady == JNI_TRUE,
             initialPositionMs,
@@ -2102,7 +2335,8 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_applySubtitleStyle
     jfloat outlineSize,
     jboolean bold,
     jfloat fontSize,
-    jint subPos
+    jint subPos,
+    jstring fontName
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
@@ -2113,6 +2347,31 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_applySubtitleStyle
         outlineSize,
         bold == JNI_TRUE,
         fontSize,
-        subPos
+        subPos,
+        fontName ? jstringToUtf8(env, fontName) : std::string()
     );
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setMpvProperty(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring key,
+    jstring value
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->setMpvPropertyString(jstringToUtf8(env, key), jstringToUtf8(env, value));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_forceVideoRedraw(
+    JNIEnv *,
+    jobject,
+    jlong handle
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->forceVideoRedraw();
 }

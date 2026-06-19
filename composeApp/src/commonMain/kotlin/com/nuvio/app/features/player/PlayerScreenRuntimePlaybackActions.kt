@@ -116,6 +116,7 @@ internal suspend fun PlayerScreenRuntime.currentTraktScrobbleItem() =
     snapshotTraktScrobbleItemInputs().buildItem()
 
 internal fun PlayerScreenRuntime.emitTraktScrobbleStart() {
+    if (disableProgressTracking) return
     if (hasRequestedScrobbleStartForCurrentItem) return
     hasRequestedScrobbleStartForCurrentItem = true
     val requestGeneration = scrobbleStartRequestGeneration + 1L
@@ -139,6 +140,7 @@ internal fun PlayerScreenRuntime.emitTraktScrobbleStart() {
 }
 
 internal fun PlayerScreenRuntime.emitTraktScrobbleStop(progressPercent: Float? = null) {
+    if (disableProgressTracking) return
     val provided = progressPercent
     if (!hasRequestedScrobbleStartForCurrentItem && (provided ?: 0f) < 80f) return
 
@@ -190,6 +192,7 @@ internal suspend fun PlayerScreenRuntime.resolveParentalGuideImdbId(): String? {
 }
 
 internal fun PlayerScreenRuntime.flushWatchProgress() {
+    if (disableProgressTracking) return
     emitStopScrobbleForCurrentProgress()
     WatchProgressRepository.flushPlaybackProgress(
         session = playbackSession,
@@ -198,6 +201,7 @@ internal fun PlayerScreenRuntime.flushWatchProgress() {
 }
 
 internal fun PlayerScreenRuntime.scheduleProgressSyncAfterSeek() {
+    if (disableProgressTracking) return
     val shouldRestartScrobbleAfterSeek = shouldPlay || playbackSnapshot.isPlaying
     seekProgressSyncJob?.cancel()
     seekProgressSyncJob = scope.launch {
@@ -222,6 +226,7 @@ internal fun PlayerScreenRuntime.scheduleProgressSyncAfterSeek() {
 }
 
 internal fun PlayerScreenRuntime.persistPlaybackProgressTick() {
+    if (disableProgressTracking) return
     val now = WatchProgressClock.nowEpochMs()
     if (now - lastProgressPersistEpochMs < PlaybackProgressPersistIntervalMs) return
     lastProgressPersistEpochMs = now

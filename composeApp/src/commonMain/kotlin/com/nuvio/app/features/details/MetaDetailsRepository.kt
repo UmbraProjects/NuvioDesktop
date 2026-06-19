@@ -137,14 +137,19 @@ object MetaDetailsRepository {
                 return@launch
             }
 
+            var supplementalMeta: MetaDetails? = null
             for (manifest in manifests) {
                 val result = withContext(Dispatchers.Default) {
                     tryFetchMeta(manifest, type, metaLookupId, includeMdbList = false)
                 }
                 if (result != null) {
+                    if (type.isSeriesMetaType() && result.videos.isEmpty()) {
+                        supplementalMeta = supplementalMeta?.mergeSupplementalMeta(result) ?: result
+                        continue
+                    }
                     publishLoadedMeta(
                         requestKey = requestKey,
-                        meta = result,
+                        meta = result.mergeSupplementalMeta(supplementalMeta),
                         fallbackItemId = metaLookupId,
                         fallbackItemType = type,
                         mdbListSettings = mdbListSettings,
@@ -158,7 +163,7 @@ object MetaDetailsRepository {
             if (tmdbMeta != null) {
                 publishLoadedMeta(
                     requestKey = requestKey,
-                    meta = tmdbMeta,
+                    meta = tmdbMeta.mergeSupplementalMeta(supplementalMeta),
                     fallbackItemId = id,
                     fallbackItemType = type,
                     mdbListSettings = mdbListSettings,
@@ -199,19 +204,27 @@ object MetaDetailsRepository {
         val metaLookupId = resolveMetaLookupId(itemId = id, itemType = type)
         val manifests = findMetaManifests(type = type, id = metaLookupId)
 
+        var supplementalMeta: MetaDetails? = null
         for (manifest in manifests) {
             val result = withTimeoutOrNull(FETCH_TIMEOUT_MS) {
                 tryFetchMeta(manifest, type, metaLookupId, includeMdbList = false)
             }
             if (result != null) {
-                cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = result)
-                return result
+                if (type.isSeriesMetaType() && result.videos.isEmpty()) {
+                    supplementalMeta = supplementalMeta?.mergeSupplementalMeta(result) ?: result
+                    continue
+                }
+                val merged = result.mergeSupplementalMeta(supplementalMeta)
+                cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = merged)
+                return merged
             }
         }
 
         return tryFetchTmdbFallbackMeta(type = type, id = id)?.also { result ->
-            cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = result)
-        }
+            cachedMetaByRequestKey[requestKey] = CachedMetaEntry(
+                baseMeta = result.mergeSupplementalMeta(supplementalMeta),
+            )
+        }?.mergeSupplementalMeta(supplementalMeta)
     }
 
     private const val FETCH_TIMEOUT_MS = 5_000L
@@ -481,6 +494,19 @@ object MetaDetailsRepository {
             "series", "show", "tv", "tvshow" -> "series"
             else -> null
         }
+
+    private fun String.isSeriesMetaType(): Boolean =
+        trim().lowercase() in setOf("series", "show", "tv", "tvshow")
+
+    private fun MetaDetails.mergeSupplementalMeta(supplemental: MetaDetails?): MetaDetails {
+        if (supplemental == null) return this
+        val mergedTrailers = (trailers + supplemental.trailers)
+            .distinctBy { trailer -> trailer.key.ifBlank { trailer.id } }
+        return copy(
+            trailers = mergedTrailers,
+            links = (links + supplemental.links).distinctBy { link -> link.url },
+        )
+    }
 
     private fun MetaDetails.withUnreleasedFilter(): MetaDetails {
         if (!HomeCatalogSettingsRepository.snapshot().hideUnreleasedContent) return this

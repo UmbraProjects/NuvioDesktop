@@ -25,6 +25,8 @@ internal actual object TmdbSettingsStorage {
     private const val useSeasonPostersKey = "tmdb_use_season_posters"
     private const val useMoreLikeThisKey = "tmdb_use_more_like_this"
     private const val useCollectionsKey = "tmdb_use_collections"
+    private const val libraryPosterEnabledKey = "tmdb_library_poster_enabled"
+    private const val libraryPosterUrlTemplateKey = "tmdb_library_poster_url"
     private val syncKeys = listOf(
         enabledKey,
         apiKeyKey,
@@ -40,6 +42,8 @@ internal actual object TmdbSettingsStorage {
         useSeasonPostersKey,
         useMoreLikeThisKey,
         useCollectionsKey,
+        libraryPosterEnabledKey,
+        libraryPosterUrlTemplateKey,
     )
     private val store = DesktopStorage.store("nuvio_tmdb_settings")
 
@@ -71,6 +75,10 @@ internal actual object TmdbSettingsStorage {
     actual fun saveUseMoreLikeThis(enabled: Boolean) = saveBoolean(useMoreLikeThisKey, enabled)
     actual fun loadUseCollections(): Boolean? = loadBoolean(useCollectionsKey)
     actual fun saveUseCollections(enabled: Boolean) = saveBoolean(useCollectionsKey, enabled)
+    actual fun loadLibraryPosterEnabled(): Boolean? = loadBoolean(libraryPosterEnabledKey)
+    actual fun saveLibraryPosterEnabled(enabled: Boolean) = saveBoolean(libraryPosterEnabledKey, enabled)
+    actual fun loadLibraryPosterUrlTemplate(): String? = loadString(libraryPosterUrlTemplateKey)
+    actual fun saveLibraryPosterUrlTemplate(template: String) = saveString(libraryPosterUrlTemplateKey, template)
 
     private fun loadString(key: String): String? = store.getString(ProfileScopedKey.of(key))
     private fun saveString(key: String, value: String) = store.putString(ProfileScopedKey.of(key), value)
@@ -92,6 +100,8 @@ internal actual object TmdbSettingsStorage {
         loadUseSeasonPosters()?.let { put(useSeasonPostersKey, encodeSyncBoolean(it)) }
         loadUseMoreLikeThis()?.let { put(useMoreLikeThisKey, encodeSyncBoolean(it)) }
         loadUseCollections()?.let { put(useCollectionsKey, encodeSyncBoolean(it)) }
+        loadLibraryPosterEnabled()?.let { put(libraryPosterEnabledKey, encodeSyncBoolean(it)) }
+        loadLibraryPosterUrlTemplate()?.let { put(libraryPosterUrlTemplateKey, encodeSyncString(it)) }
     }
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
@@ -110,5 +120,7 @@ internal actual object TmdbSettingsStorage {
         payload.decodeSyncBoolean(useSeasonPostersKey)?.let(::saveUseSeasonPosters)
         payload.decodeSyncBoolean(useMoreLikeThisKey)?.let(::saveUseMoreLikeThis)
         payload.decodeSyncBoolean(useCollectionsKey)?.let(::saveUseCollections)
+        payload.decodeSyncBoolean(libraryPosterEnabledKey)?.let(::saveLibraryPosterEnabled)
+        payload.decodeSyncString(libraryPosterUrlTemplateKey)?.let(::saveLibraryPosterUrlTemplate)
     }
 }

@@ -746,6 +746,10 @@ kotlin {
         }
         val desktopMain by getting {
             kotlin.srcDir(fullPluginSourceDir)
+            // In-app YouTube trailer extraction is shared with the "full" mobile
+            // variants. Desktop pulls in the extractor and the resolver actual and
+            // provides its own TrailerExtractionPlatform (java.net.http based).
+            kotlin.srcDir(fullCommonSourceDir.resolve("com/nuvio/app/features/trailer"))
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)

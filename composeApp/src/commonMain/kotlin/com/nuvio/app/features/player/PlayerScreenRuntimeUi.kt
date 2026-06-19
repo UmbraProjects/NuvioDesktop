@@ -293,6 +293,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         selectedAddonSubtitleId = selectedAddonSubtitleId.orEmpty(),
         useCustomSubtitles = useCustomSubtitles,
         subtitleStyle = subtitleStyle,
+        subtitleFontFamilies = availableSubtitleFontFamilies(),
         subtitleDelayMs = subtitleDelayMs,
         hasSelectedAddonSubtitle = selectedAddonSubtitle != null,
         subtitleAutoSyncCapturedPositionMs = subtitleAutoSyncState.capturedPositionMs ?: -1L,
@@ -777,6 +778,16 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             PlayerSettingsRepository.setSubtitleStyle(
                 subtitleStyle.copy(fontSizeSp = (subtitleStyle.fontSizeSp + value.toInt()).coerceIn(12, 40)),
             )
+        }
+        "subtitleFontDelta" -> {
+            PlayerSettingsRepository.setSubtitleStyle(
+                subtitleStyle.copy(fontFamily = cycleSubtitleFontFamily(subtitleStyle.fontFamily, value.toInt())),
+            )
+        }
+        "subtitleFontIndex" -> {
+            availableSubtitleFontFamilies().getOrNull(value.toInt())?.let { family ->
+                PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(fontFamily = family))
+            }
         }
         "subtitleOutlineToggle" -> {
             PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineEnabled = !subtitleStyle.outlineEnabled))

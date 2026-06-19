@@ -24,6 +24,8 @@ object TmdbSettingsRepository {
     private var useSeasonPosters = true
     private var useMoreLikeThis = true
     private var useCollections = true
+    private var libraryPosterEnabled = false
+    private var libraryPosterUrlTemplate = ""
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -147,6 +149,23 @@ object TmdbSettingsRepository {
         persist = TmdbSettingsStorage::saveUseCollections,
     )
 
+    fun setLibraryPosterEnabled(value: Boolean) {
+        ensureLoaded()
+        if (libraryPosterEnabled == value) return
+        libraryPosterEnabled = value
+        publish()
+        TmdbSettingsStorage.saveLibraryPosterEnabled(value)
+    }
+
+    fun setLibraryPosterUrlTemplate(value: String) {
+        ensureLoaded()
+        val normalized = value.trim()
+        if (libraryPosterUrlTemplate == normalized) return
+        libraryPosterUrlTemplate = normalized
+        publish()
+        TmdbSettingsStorage.saveLibraryPosterUrlTemplate(normalized)
+    }
+
     private fun setBoolean(
         current: Boolean,
         next: Boolean,
@@ -177,6 +196,9 @@ object TmdbSettingsRepository {
         useSeasonPosters = TmdbSettingsStorage.loadUseSeasonPosters() ?: true
         useMoreLikeThis = TmdbSettingsStorage.loadUseMoreLikeThis() ?: true
         useCollections = TmdbSettingsStorage.loadUseCollections() ?: true
+        libraryPosterUrlTemplate = TmdbSettingsStorage.loadLibraryPosterUrlTemplate()?.trim().orEmpty()
+        libraryPosterEnabled = (TmdbSettingsStorage.loadLibraryPosterEnabled() ?: false) &&
+            libraryPosterUrlTemplate.isNotBlank()
         publish()
     }
 
@@ -196,6 +218,8 @@ object TmdbSettingsRepository {
             useSeasonPosters = useSeasonPosters,
             useMoreLikeThis = useMoreLikeThis,
             useCollections = useCollections,
+            libraryPosterEnabled = libraryPosterEnabled,
+            libraryPosterUrlTemplate = libraryPosterUrlTemplate,
         )
     }
 }

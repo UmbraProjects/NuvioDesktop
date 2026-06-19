@@ -57,6 +57,8 @@ import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.player.AddonSubtitleStartupMode
 import com.nuvio.app.features.player.AudioLanguageOption
 import com.nuvio.app.features.player.AvailableLanguageOptions
+import com.nuvio.app.features.player.DesktopColorProfile
+import com.nuvio.app.features.player.DesktopHdrMode
 import com.nuvio.app.features.player.ExternalPlayerApp
 import com.nuvio.app.features.player.ExternalPlayerPlatform
 import com.nuvio.app.features.player.IosAudioOutputMode
@@ -281,6 +283,8 @@ private fun PlaybackSettingsSection(
     var showIosTargetPrimariesDialog by remember { mutableStateOf(false) }
     var showIosTargetTransferDialog by remember { mutableStateOf(false) }
     var showLibassRenderTypeDialog by remember { mutableStateOf(false) }
+    var showDesktopHdrModeDialog by remember { mutableStateOf(false) }
+    var showDesktopColorProfileDialog by remember { mutableStateOf(false) }
     var showAutoPlayModeDialog by remember { mutableStateOf(false) }
     var showAutoPlaySourceDialog by remember { mutableStateOf(false) }
     var showAutoPlayAddonSelectionDialog by remember { mutableStateOf(false) }
@@ -400,6 +404,20 @@ private fun PlaybackSettingsSection(
                         checked = autoPlayPlayerSettings.mouseMoveRevealsControlsEnabled,
                         isTablet = isTablet,
                         onCheckedChange = PlayerSettingsRepository::setMouseMoveRevealsControlsEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_playback_desktop_hdr_mode),
+                        description = autoPlayPlayerSettings.desktopHdrMode.label,
+                        isTablet = isTablet,
+                        onClick = { showDesktopHdrModeDialog = true },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_playback_desktop_color_profile),
+                        description = autoPlayPlayerSettings.desktopColorProfile.label,
+                        isTablet = isTablet,
+                        onClick = { showDesktopColorProfileDialog = true },
                     )
                 }
             }
@@ -1381,6 +1399,36 @@ private fun PlaybackSettingsSection(
                 showLibassRenderTypeDialog = false
             },
             onDismiss = { showLibassRenderTypeDialog = false },
+        )
+    }
+
+    if (showDesktopHdrModeDialog) {
+        IosEnumSelectionDialog(
+            title = stringResource(Res.string.settings_playback_desktop_hdr_mode_dialog),
+            options = DesktopHdrMode.entries,
+            selected = autoPlayPlayerSettings.desktopHdrMode,
+            label = { it.label },
+            description = { it.description },
+            onSelect = {
+                PlayerSettingsRepository.setDesktopHdrMode(it)
+                showDesktopHdrModeDialog = false
+            },
+            onDismiss = { showDesktopHdrModeDialog = false },
+        )
+    }
+
+    if (showDesktopColorProfileDialog) {
+        IosEnumSelectionDialog(
+            title = stringResource(Res.string.settings_playback_desktop_color_profile_dialog),
+            options = DesktopColorProfile.entries,
+            selected = autoPlayPlayerSettings.desktopColorProfile,
+            label = { it.label },
+            description = { it.description },
+            onSelect = {
+                PlayerSettingsRepository.setDesktopColorProfile(it)
+                showDesktopColorProfileDialog = false
+            },
+            onDismiss = { showDesktopColorProfileDialog = false },
         )
     }
 

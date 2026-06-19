@@ -39,6 +39,7 @@ internal actual object PlayerSettingsStorage {
     private const val subtitleBoldKey = "subtitle_bold"
     private const val subtitleFontSizeSpKey = "subtitle_font_size_sp"
     private const val subtitleBottomOffsetKey = "subtitle_bottom_offset"
+    private const val subtitleFontFamilyKey = "subtitle_font_family"
     private const val subtitleUseForcedSubtitlesKey = "subtitle_use_forced_subtitles"
     private const val subtitleShowOnlyPreferredLanguagesKey = "subtitle_show_only_preferred_languages"
     private const val addonSubtitleStartupModeKey = "addon_subtitle_startup_mode"
@@ -81,6 +82,8 @@ internal actual object PlayerSettingsStorage {
     private const val iosContrastKey = "ios_contrast"
     private const val iosSaturationKey = "ios_saturation"
     private const val iosGammaKey = "ios_gamma"
+    private const val desktopHdrModeKey = "desktop_hdr_mode"
+    private const val desktopColorProfileKey = "desktop_color_profile"
     private val syncKeys = listOf(
         showLoadingOverlayKey,
         resizeModeKey,
@@ -103,6 +106,7 @@ internal actual object PlayerSettingsStorage {
         subtitleBoldKey,
         subtitleFontSizeSpKey,
         subtitleBottomOffsetKey,
+        subtitleFontFamilyKey,
         subtitleUseForcedSubtitlesKey,
         subtitleShowOnlyPreferredLanguagesKey,
         addonSubtitleStartupModeKey,
@@ -192,6 +196,8 @@ internal actual object PlayerSettingsStorage {
     actual fun saveSubtitleFontSizeSp(fontSizeSp: Int) = saveInt(subtitleFontSizeSpKey, fontSizeSp)
     actual fun loadSubtitleBottomOffset(): Int? = loadInt(subtitleBottomOffsetKey)
     actual fun saveSubtitleBottomOffset(bottomOffset: Int) = saveInt(subtitleBottomOffsetKey, bottomOffset)
+    actual fun loadSubtitleFontFamily(): String? = loadString(subtitleFontFamilyKey)
+    actual fun saveSubtitleFontFamily(fontFamily: String) = saveString(subtitleFontFamilyKey, fontFamily)
     actual fun loadSubtitleUseForcedSubtitles(): Boolean? = loadBoolean(subtitleUseForcedSubtitlesKey)
     actual fun saveSubtitleUseForcedSubtitles(enabled: Boolean) = saveBoolean(subtitleUseForcedSubtitlesKey, enabled)
     actual fun loadSubtitleShowOnlyPreferredLanguages(): Boolean? = loadBoolean(subtitleShowOnlyPreferredLanguagesKey)
@@ -276,6 +282,10 @@ internal actual object PlayerSettingsStorage {
     actual fun saveIosSaturation(value: Int) = saveInt(iosSaturationKey, value)
     actual fun loadIosGamma(): Int? = loadInt(iosGammaKey)
     actual fun saveIosGamma(value: Int) = saveInt(iosGammaKey, value)
+    actual fun loadDesktopHdrMode(): String? = loadString(desktopHdrModeKey)
+    actual fun saveDesktopHdrMode(mode: String) = saveString(desktopHdrModeKey, mode)
+    actual fun loadDesktopColorProfile(): String? = loadString(desktopColorProfileKey)
+    actual fun saveDesktopColorProfile(profile: String) = saveString(desktopColorProfileKey, profile)
 
     private fun scoped(key: String): String = ProfileScopedKey.of(key)
     private fun loadString(key: String): String? = store.getString(scoped(key))
@@ -313,6 +323,7 @@ internal actual object PlayerSettingsStorage {
         loadSubtitleBold()?.let { put(subtitleBoldKey, encodeSyncBoolean(it)) }
         loadSubtitleFontSizeSp()?.let { put(subtitleFontSizeSpKey, encodeSyncInt(it)) }
         loadSubtitleBottomOffset()?.let { put(subtitleBottomOffsetKey, encodeSyncInt(it)) }
+        loadSubtitleFontFamily()?.let { put(subtitleFontFamilyKey, encodeSyncString(it)) }
         loadSubtitleUseForcedSubtitles()?.let { put(subtitleUseForcedSubtitlesKey, encodeSyncBoolean(it)) }
         loadSubtitleShowOnlyPreferredLanguages()?.let { put(subtitleShowOnlyPreferredLanguagesKey, encodeSyncBoolean(it)) }
         loadAddonSubtitleStartupMode()?.let { put(addonSubtitleStartupModeKey, encodeSyncString(it)) }
@@ -379,6 +390,7 @@ internal actual object PlayerSettingsStorage {
         payload.decodeSyncBoolean(subtitleBoldKey)?.let(::saveSubtitleBold)
         payload.decodeSyncInt(subtitleFontSizeSpKey)?.let(::saveSubtitleFontSizeSp)
         payload.decodeSyncInt(subtitleBottomOffsetKey)?.let(::saveSubtitleBottomOffset)
+        payload.decodeSyncString(subtitleFontFamilyKey)?.let(::saveSubtitleFontFamily)
         payload.decodeSyncBoolean(subtitleUseForcedSubtitlesKey)?.let(::saveSubtitleUseForcedSubtitles)
         payload.decodeSyncBoolean(subtitleShowOnlyPreferredLanguagesKey)?.let(::saveSubtitleShowOnlyPreferredLanguages)
         payload.decodeSyncString(addonSubtitleStartupModeKey)?.let(::saveAddonSubtitleStartupMode)

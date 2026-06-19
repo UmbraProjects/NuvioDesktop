@@ -21,7 +21,7 @@ internal object SkipIntroApi {
     ): IntroDbSegmentsResponse? {
         val baseUrl = IntroDbConfig.URL.trimEnd('/')
         if (baseUrl.isBlank()) return null
-        val url = "$baseUrl/segments?imdb_id=$imdbId&season=$season&episode=$episode"
+        val url = "$baseUrl/intro?imdb_id=$imdbId&season=$season&episode=$episode"
         return try {
             val text = httpGetText(url)
             json.decodeFromString<IntroDbSegmentsResponse>(text)

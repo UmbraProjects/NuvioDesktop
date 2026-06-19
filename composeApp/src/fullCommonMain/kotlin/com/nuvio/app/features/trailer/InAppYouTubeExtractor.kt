@@ -15,6 +15,7 @@ internal const val TRAILER_REQUEST_TIMEOUT_MS = 20_000L
 
 private const val EXTRACTOR_TIMEOUT_MS = 30_000L
 private const val PREFERRED_SEPARATE_CLIENT = "android_vr"
+private const val PREFERRED_SEPARATE_VIDEO_HEIGHT = 1080
 
 private val VIDEO_ID_REGEX = Regex("^[a-zA-Z0-9_-]{11}$")
 private val API_KEY_REGEX = Regex("\"INNERTUBE_API_KEY\":\"([^\"]+)\"")
@@ -285,7 +286,11 @@ class InAppYouTubeExtractor {
         }
 
         val bestProgressive = sortCandidates(progressive).firstOrNull()
-        val bestVideo = pickBestForClient(adaptiveVideo, PREFERRED_SEPARATE_CLIENT)
+        val bestVideo = pickBestVideoForClient(
+            items = adaptiveVideo,
+            clientKey = PREFERRED_SEPARATE_CLIENT,
+            preferredMaxHeight = PREFERRED_SEPARATE_VIDEO_HEIGHT,
+        )
         val bestAudio = pickBestForClient(adaptiveAudio, PREFERRED_SEPARATE_CLIENT)
 
         return TrailerExtractionPlatform.buildPlaybackSource(
@@ -506,19 +511,43 @@ class InAppYouTubeExtractor {
 
     private fun sortCandidates(items: List<StreamCandidate>): List<StreamCandidate> {
         return items.sortedWith(
-            compareByDescending<StreamCandidate> { it.score }
-                .thenBy { if (it.hasN) 1 else 0 }
+            compareBy<StreamCandidate> { if (it.hasN) 1 else 0 }
+                .thenByDescending { it.score }
                 .thenBy { containerPreference(it.ext) }
                 .thenBy { it.priority },
         )
     }
 
     private fun pickBestForClient(items: List<StreamCandidate>, clientKey: String): StreamCandidate? {
-        val sameClient = items.filter { it.client == clientKey }
+        // An unresolved YouTube `n` parameter rate-limits direct media URLs. Prefer an
+        // unthrottled response from any client before applying the client preference.
+        val unthrottled = items.filterNot { it.hasN }
+        val pool = unthrottled.ifEmpty { items }
+        val sameClient = pool.filter { it.client == clientKey }
         if (sameClient.isNotEmpty()) {
             return sortCandidates(sameClient).firstOrNull()
         }
-        return sortCandidates(items).firstOrNull()
+        return sortCandidates(pool).firstOrNull()
+    }
+
+    private fun pickBestVideoForClient(
+        items: List<StreamCandidate>,
+        clientKey: String,
+        preferredMaxHeight: Int,
+    ): StreamCandidate? {
+        val withinPreferredResolution = items.filter { it.height in 1..preferredMaxHeight }
+        val targetHeight = withinPreferredResolution.maxOfOrNull { it.height }
+            ?: items.map { it.height }.filter { it > preferredMaxHeight }.minOrNull()
+            ?: return null
+        val resolutionPool = items.filter { it.height == targetHeight }
+        // At accelerated playback, 60 fps content makes the decoder/render path process
+        // 120 frames per wall-clock second. Prefer the best <=30 fps encode at the same
+        // resolution; retain 60 fps only when it is the sole option.
+        val frameRatePool = resolutionPool.filter { it.fps in 1..30 }.ifEmpty { resolutionPool }
+        val unthrottled = frameRatePool.filterNot { it.hasN }
+        val networkPool = unthrottled.ifEmpty { frameRatePool }
+        val preferredClient = networkPool.filter { it.client == clientKey }
+        return sortCandidates(preferredClient.ifEmpty { networkPool }).firstOrNull()
     }
 
     private fun containerPreference(ext: String): Int {

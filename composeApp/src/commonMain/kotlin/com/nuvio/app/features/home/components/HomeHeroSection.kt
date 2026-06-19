@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home.components
 
+import co.touchlab.kermit.Logger
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -75,6 +76,8 @@ import com.nuvio.app.features.mdblist.MdbListMetadataService
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
@@ -100,6 +103,8 @@ private val ImmersiveHeroBackdropAlignment = BiasAlignment(
 )
 private const val HERO_BACKDROP_WIDTH_FRACTION = 0.85f
 private const val HERO_BACKDROP_FADE_FRACTION = 0.35f
+private const val HERO_METADATA_PREFETCH_CONCURRENCY = 4
+private val heroImageLog = Logger.withTag("HomeHeroImages")
 private val IMMERSIVE_HERO_CONTENT_MIN_HEIGHT = 300.dp
 private val IMMERSIVE_HERO_CONTENT_MAX_HEIGHT = 420.dp
 private val IMMERSIVE_HERO_CONTENT_BOTTOM_PADDING = 44.dp
@@ -231,19 +236,25 @@ fun HomeHeroSection(
         }
 
         val ratingsCache = remember { mutableStateMapOf<String, List<MetaExternalRating>>() }
-        val metadataTargets = (displayItemsWithCast + metadataPrefetchItems).distinctBy { item ->
-            "${item.type}:${item.id}"
-        }
+        // Keep warming all nearby metadata, but put what the user can see first and avoid
+        // flooding the add-on/TMDB/image hosts with dozens of simultaneous cold requests.
+        val metadataTargets = (listOf(displayCurrentItemWithCast) + metadataPrefetchItems + displayItemsWithCast)
+            .distinctBy { item ->
+                "${item.type}:${item.id}"
+            }
         LaunchedEffect(metadataTargets) {
             val settings = MdbListSettingsRepository.snapshot()
+            val prefetchSlots = Semaphore(HERO_METADATA_PREFETCH_CONCURRENCY)
             for (target in metadataTargets) {
                 val key = "${target.type}:${target.id}"
                 if (!castCache.containsKey(key) && target.type != "collection") {
                     launch {
-                        castCache[key] = HeroCastMetadataService.fetch(
-                            type = target.type,
-                            id = target.id,
-                        )
+                        prefetchSlots.withPermit {
+                            castCache[key] = HeroCastMetadataService.fetch(
+                                type = target.type,
+                                id = target.id,
+                            )
+                        }
                     }
                 }
                 if (ratingsCache.containsKey(key)) continue
@@ -257,12 +268,14 @@ fun HomeHeroSection(
                     continue
                 }
                 launch {
-                    val ratings = MdbListMetadataService.enrichMeta(
-                        meta = baseMeta,
-                        fallbackItemId = target.id,
-                        settings = settings,
-                    ).externalRatings
-                    ratingsCache[key] = ratings
+                    prefetchSlots.withPermit {
+                        val ratings = MdbListMetadataService.enrichMeta(
+                            meta = baseMeta,
+                            fallbackItemId = target.id,
+                            settings = settings,
+                        ).externalRatings
+                        ratingsCache[key] = ratings
+                    }
                 }
             }
         }
@@ -291,6 +304,7 @@ fun HomeHeroSection(
                 DesktopHomeHeroFrame(
                     items = displayItemsWithCast,
                     visiblePages = displayVisiblePages,
+                    currentItem = displayCurrentItemWithCast,
                     layout = layout,
                     heroWidthPx = heroWidthPx,
                     heroScrollScale = heroScrollScale,
@@ -426,7 +440,9 @@ private fun DefaultHomeHeroFrame(
                         HeroContentBlock(
                             item = items[layer.page],
                             layout = layout,
-                            onItemClick = onItemClick,
+                            onItemClick = onItemClick?.let { handler ->
+                                { _ -> handler(currentItem) }
+                            },
                         )
                     }
                 }
@@ -463,9 +479,41 @@ private fun DefaultHomeHeroFrame(
 }
 
 @Composable
+private fun HeroBackdropImage(
+    item: MetaPreview,
+    contentDescription: String?,
+    modifier: Modifier,
+    alignment: Alignment,
+    contentScale: ContentScale,
+) {
+    val banner = item.banner?.takeIf(String::isNotBlank)
+    val poster = item.poster?.takeIf(String::isNotBlank)
+    var bannerLoadFailed by remember(item.type, item.id, banner, poster) { mutableStateOf(false) }
+    val model = if (bannerLoadFailed) poster else banner ?: poster
+
+    AsyncImage(
+        model = model,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        alignment = alignment,
+        contentScale = contentScale,
+        desktopImageScaling = NuvioDesktopImageScaling.Disabled,
+        onError = {
+            if (!bannerLoadFailed && banner != null && poster != null && banner != poster) {
+                heroImageLog.w { "Hero banner failed; trying poster: ${banner.safeImageUrlForLog()}" }
+                bannerLoadFailed = true
+            } else if (model != null) {
+                heroImageLog.w { "Hero artwork failed: ${model.safeImageUrlForLog()}" }
+            }
+        },
+    )
+}
+
+@Composable
 private fun DesktopHomeHeroFrame(
     items: List<MetaPreview>,
     visiblePages: List<HeroPageLayer>,
+    currentItem: MetaPreview,
     layout: HomeHeroLayout,
     heroWidthPx: Float,
     heroScrollScale: Float,
@@ -500,7 +548,10 @@ private fun DesktopHomeHeroFrame(
                 )
                 .fillMaxWidth(HERO_BACKDROP_WIDTH_FRACTION)
                 .heroBackdropFadeMask(backgroundColor)
-                .then(if (immersiveMode) Modifier.immersiveHeroExtraMask(backgroundColor) else Modifier),
+                .then(if (immersiveMode) Modifier.immersiveHeroExtraMask(backgroundColor) else Modifier)
+                .clickable(enabled = onItemClick != null) {
+                    onItemClick?.invoke(currentItem)
+                },
         ) {
             visiblePages.forEach { layer ->
                 Box(
@@ -515,8 +566,8 @@ private fun DesktopHomeHeroFrame(
                             transformOrigin = TransformOrigin(0.5f, 0f)
                         },
                 ) {
-                    AsyncImage(
-                        model = items[layer.page].banner ?: items[layer.page].poster,
+                    HeroBackdropImage(
+                        item = items[layer.page],
                         contentDescription = items[layer.page].name,
                         modifier = Modifier.fillMaxSize(),
                         alignment = if (immersiveMode) {
@@ -525,7 +576,6 @@ private fun DesktopHomeHeroFrame(
                             DesktopHeroBackdropAlignment
                         },
                         contentScale = ContentScale.Crop,
-                        desktopImageScaling = NuvioDesktopImageScaling.Disabled,
                     )
                 }
             }
@@ -624,12 +674,14 @@ private fun DesktopHomeHeroFrame(
                     DesktopHeroContentBlock(
                         item = items[layer.page],
                         layout = layout,
-                        interactive = !immersiveMode,
+                        interactive = true,
                         showExtendedMetadata = immersiveMode,
                         showReleaseMetadata = immersiveMode || tvMode,
                         ratingsCache = ratingsCache,
                         onCastClick = onCastClick,
-                        onItemClick = onItemClick,
+                        onItemClick = onItemClick?.let { handler ->
+                            { _ -> handler(currentItem) }
+                        },
                     )
                 }
             }
@@ -869,6 +921,8 @@ private fun DesktopHeroContentBlock(
     onItemClick: ((MetaPreview) -> Unit)?,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    var logoLoadError by remember(item.type, item.id, item.logo) { mutableStateOf(false) }
+    val logoUrl = item.logo?.takeIf { it.isNotBlank() && !logoLoadError }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -889,7 +943,7 @@ private fun DesktopHeroContentBlock(
             maxCount = 3,
         )
 
-        if (item.logo != null) {
+        if (logoUrl != null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -897,7 +951,7 @@ private fun DesktopHeroContentBlock(
                 contentAlignment = if (showExtendedMetadata) Alignment.BottomStart else Alignment.CenterStart,
             ) {
                 AsyncImage(
-                    model = item.logo,
+                    model = logoUrl,
                     contentDescription = item.name,
                     modifier = Modifier
                         .fillMaxWidth(desktopHeroLogoWidthFraction(layout))
@@ -905,6 +959,12 @@ private fun DesktopHeroContentBlock(
                     alignment = if (showExtendedMetadata) Alignment.BottomStart else Alignment.CenterStart,
                     contentScale = ContentScale.Fit,
                     clipToBounds = false,
+                    onError = { state ->
+                        heroImageLog.w(state.result.throwable) {
+                            "Hero logo failed; showing title: ${logoUrl.safeImageUrlForLog()}"
+                        }
+                        logoLoadError = true
+                    },
                 )
             }
         } else if (showExtendedMetadata) {
@@ -975,6 +1035,8 @@ private fun DesktopHeroContentBlock(
         }
     }
 }
+
+private fun String.safeImageUrlForLog(): String = substringBefore('?').take(500)
 
 @Composable
 private fun HeroStarringBlock(

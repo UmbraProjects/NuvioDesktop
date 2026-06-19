@@ -1714,6 +1714,14 @@ private fun MainAppContent(
                         onBack = onBackFromDetail,
                         onPlay = onPlay,
                         onPlayManually = onPlayManually,
+                        onPlayTrailer = { trailerLaunch ->
+                            if (playerSettingsUiState.externalPlayerEnabled) {
+                                coroutineScope.launch { openExternalPlayback(trailerLaunch) }
+                            } else {
+                                val launchId = PlayerLaunchStore.put(trailerLaunch)
+                                navController.navigate(PlayerRoute(launchId = launchId))
+                            }
+                        },
                         onOpenMeta = { preview ->
                             coroutineScope.launch {
                                 val resolvedId = if (preview.id.startsWith("tmdb:")) {
@@ -2527,6 +2535,7 @@ private fun MainAppContent(
                         torrentTrackers = launch.torrentTrackers,
                         initialPositionMs = launch.initialPositionMs,
                         initialProgressFraction = launch.initialProgressFraction,
+                        disableProgressTracking = launch.disableProgressTracking,
                         onBack = {
                             ResumePromptRepository.markPlayerExitedNormally()
                             PlayerLaunchStore.remove(route.launchId)

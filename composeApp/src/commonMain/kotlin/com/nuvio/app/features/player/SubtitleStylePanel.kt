@@ -182,6 +182,29 @@ private fun StyleControlsCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
+                text = "Font",
+                color = colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            StepperControl(
+                value = subtitleFontDisplayName(style.fontFamily),
+                onMinus = { onStyleChanged(style.copy(fontFamily = cycleSubtitleFontFamily(style.fontFamily, -1))) },
+                onPlus = { onStyleChanged(style.copy(fontFamily = cycleSubtitleFontFamily(style.fontFamily, 1))) },
+                buttonSize = btnSize,
+                buttonRadius = btnRadius,
+                minWidth = 110.dp,
+                minusIcon = Icons.Rounded.KeyboardArrowDown,
+                plusIcon = Icons.Rounded.KeyboardArrowUp,
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
                 text = stringResource(Res.string.compose_player_outline),
                 color = colorScheme.onSurfaceVariant,
                 fontSize = 14.sp,

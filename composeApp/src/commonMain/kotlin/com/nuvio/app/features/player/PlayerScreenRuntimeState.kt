@@ -56,6 +56,7 @@ internal class PlayerScreenRuntime(
     val torrentTrackers: List<String> get() = args.torrentTrackers
     val initialPositionMs: Long get() = args.initialPositionMs
     val initialProgressFraction: Float? get() = args.initialProgressFraction
+    val disableProgressTracking: Boolean get() = args.disableProgressTracking
     val isSeries: Boolean get() = parentMetaType == "series"
 
     lateinit var scope: CoroutineScope

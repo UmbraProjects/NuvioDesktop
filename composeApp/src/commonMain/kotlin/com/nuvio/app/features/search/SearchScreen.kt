@@ -123,9 +123,9 @@ fun SearchScreen(
         if (searchFocusRequestCount > 0) {
             suppressSearchActivationKey = true
             isInRowNav = false
-            // Outer box first (immediate), then hand off to text field once layout settles.
+            // Request the field immediately. The activation-key guard below prevents the
+            // shortcut's S key from becoming query text while focus changes hands.
             try { screenFocusRequester.requestFocus() } catch (_: Exception) {}
-            delay(500)
             try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
             delay(150)
             suppressSearchActivationKey = false

@@ -54,10 +54,10 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-private const val gitHubOwner = "NuvioMedia"
-private const val gitHubRepo = "NuvioMobile"
+private const val gitHubOwner = "UmbraProjects"
+private const val gitHubRepo = "NuvioDesktop"
 private const val gitHubApiBase = "https://api.github.com"
-private const val releaseChannelBranch = "cmp-rewrite"
+private const val releaseChannelBranch = "windows-tv-adaptive"
 
 data class AppUpdate(
     val tag: String,
@@ -94,7 +94,7 @@ private data class GitHubReleaseDto(
 )
 
 @Serializable
-private data class GitHubAssetDto(
+internal data class GitHubAssetDto(
     val name: String,
     @SerialName("browser_download_url") val browserDownloadUrl: String,
     val size: Long? = null,
@@ -170,8 +170,8 @@ private object AppUpdaterRepository {
             ?: release.name?.takeIf { it.isNotBlank() }
             ?: error(getString(Res.string.updates_release_missing_title))
 
-        val asset = chooseBestApkAsset(release.assets)
-            ?: error(getString(Res.string.updates_apk_asset_missing))
+        val asset = selectBestPortableUpdateAsset(release.assets)
+            ?: error(getString(Res.string.updates_update_asset_missing))
 
         AppUpdate(
             tag = tag,
@@ -195,27 +195,27 @@ private object AppUpdaterRepository {
             .any { value -> value.contains(channel, ignoreCase = true) }
     }
 
-    private fun chooseBestApkAsset(assets: List<GitHubAssetDto>): GitHubAssetDto? {
-        val apkAssets = assets.filter { asset ->
-            asset.name.endsWith(".apk", ignoreCase = true) ||
-                asset.contentType == "application/vnd.android.package-archive"
-        }
-        if (apkAssets.isEmpty()) return null
-        if (apkAssets.size == 1) return apkAssets.first()
+}
 
-        val supportedAbis = AppUpdaterPlatform.getSupportedAbis()
-        for (abi in supportedAbis) {
-            val candidate = apkAssets.firstOrNull { asset ->
-                asset.name.contains(abi, ignoreCase = true)
-            }
-            if (candidate != null) return candidate
-        }
-
-        return apkAssets.firstOrNull { asset ->
-            val name = asset.name.lowercase()
-            name.contains("universal") || name.contains("all")
-        } ?: apkAssets.first()
+internal fun selectBestPortableUpdateAsset(assets: List<GitHubAssetDto>): GitHubAssetDto? {
+    val updateAssets = assets.filter { asset ->
+        asset.name.endsWith(".zip", ignoreCase = true) ||
+            asset.contentType.equals("application/zip", ignoreCase = true) ||
+            asset.contentType.equals("application/x-zip-compressed", ignoreCase = true)
     }
+    if (updateAssets.isEmpty()) return null
+    if (updateAssets.size == 1) return updateAssets.first()
+
+    for (fragment in AppUpdaterPlatform.getSupportedAbis()) {
+        updateAssets.firstOrNull { asset ->
+            asset.name.contains(fragment, ignoreCase = true)
+        }?.let { return it }
+    }
+
+    return updateAssets.firstOrNull { asset ->
+        val name = asset.name.lowercase()
+        name.contains("universal") || name.contains("all")
+    } ?: updateAssets.first()
 }
 
 class AppUpdaterController internal constructor(
@@ -257,7 +257,7 @@ class AppUpdaterController internal constructor(
             val result = AppUpdaterRepository.getLatestChannelUpdate()
 
             result.onSuccess { update ->
-                val remoteNewer = VersionUtils.isRemoteNewer(update.tag, AppVersionConfig.VERSION_NAME)
+                val remoteNewer = VersionUtils.isRemoteNewer(update.tag, AppVersionConfig.DESKTOP_VERSION_NAME)
                 val ignored = ignoredTag != null && ignoredTag == update.tag
                 val shouldShowDialog = force || (remoteNewer && !ignored)
 
@@ -461,6 +461,9 @@ fun AppUpdaterHost(
                         text = when {
                             state.showUnknownSourcesDialog -> stringResource(Res.string.updates_message_allow_installs)
                             state.isDownloading -> stringResource(Res.string.updates_message_downloading)
+                            state.downloadedApkPath != null &&
+                                state.update?.assetName?.endsWith(".zip", ignoreCase = true) == true ->
+                                stringResource(Res.string.updates_message_portable_ready)
                             state.isUpdateAvailable -> stringResource(Res.string.updates_message_ready)
                             else -> stringResource(Res.string.updates_message_no_updates)
                         },
@@ -581,6 +584,9 @@ fun AppUpdaterHost(
                             Text(
                                 when {
                                     state.showUnknownSourcesDialog -> stringResource(Res.string.action_continue)
+                                    state.downloadedApkPath != null &&
+                                        state.update?.assetName?.endsWith(".zip", ignoreCase = true) == true ->
+                                        stringResource(Res.string.updates_open_download)
                                     state.downloadedApkPath != null -> stringResource(Res.string.action_install)
                                     state.isDownloading -> stringResource(Res.string.updates_message_downloading)
                                     else -> stringResource(Res.string.action_update)

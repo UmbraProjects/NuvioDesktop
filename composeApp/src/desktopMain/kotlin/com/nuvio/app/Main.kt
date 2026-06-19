@@ -45,8 +45,10 @@ private const val NuvioDesktopIconPath = "icons/nuvio-app-icon.png"
 private const val MacosDarkAquaAppearance = "NSAppearanceNameDarkAqua"
 
 fun main() {
+    configureDesktopFileLogging()
     configureDesktopChrome()
     preloadNativePlayerBridgeAsync()
+    com.nuvio.app.features.player.warmSubtitleFontCache()
 
     application {
         val smokePlayerUrl = (
@@ -57,7 +59,6 @@ fun main() {
         val windowState = rememberWindowState(width = 1280.dp, height = 820.dp)
         val restoreWindowPlacement = remember { mutableStateOf(WindowPlacement.Floating) }
         val isBorderlessFullscreen = remember { mutableStateOf(false) }
-        var reloadKey by remember { mutableStateOf(0) }
 
         Window(
             onCloseRequest = ::exitApplication,
@@ -94,18 +95,6 @@ fun main() {
                     }
                 }
                 val uninstallFullscreenShortcuts = installDesktopAppFullscreenShortcuts(window)
-                val reloadDispatcher = KeyEventDispatcher { event ->
-                    if (event.id != KeyEvent.KEY_PRESSED || event.keyCode != KeyEvent.VK_R) {
-                        return@KeyEventDispatcher false
-                    }
-                    val modifiers = event.modifiersEx
-                    val hasReloadModifier =
-                        modifiers and KeyEvent.CTRL_DOWN_MASK != 0 ||
-                            modifiers and KeyEvent.META_DOWN_MASK != 0
-                    if (!hasReloadModifier) return@KeyEventDispatcher false
-                    reloadKey++
-                    true
-                }
                 val backNavigationDispatcher = KeyEventDispatcher { event ->
                     if (event.id != KeyEvent.KEY_PRESSED) {
                         return@KeyEventDispatcher false
@@ -124,11 +113,9 @@ fun main() {
                         DesktopNavigationGestureBridge.requestBack()
                     }
                 }
-                KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(reloadDispatcher)
                 KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(backNavigationDispatcher)
                 Toolkit.getDefaultToolkit().addAWTEventListener(mouseBackButtonListener, AWTEvent.MOUSE_EVENT_MASK)
                 onDispose {
-                    KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(reloadDispatcher)
                     KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(backNavigationDispatcher)
                     Toolkit.getDefaultToolkit().removeAWTEventListener(mouseBackButtonListener)
                     uninstallFullscreenShortcuts()
@@ -147,9 +134,7 @@ fun main() {
             }
 
             if (smokePlayerUrl == null) {
-                key(reloadKey) {
-                    App()
-                }
+                App()
             } else {
                 PlatformPlayerSurface(
                     sourceUrl = smokePlayerUrl,

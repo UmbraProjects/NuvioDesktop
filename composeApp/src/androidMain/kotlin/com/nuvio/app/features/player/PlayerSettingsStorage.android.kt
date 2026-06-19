@@ -1009,6 +1009,11 @@ actual object PlayerSettingsStorage {
         saveIosInt(iosGammaKey, value)
     }
 
+    actual fun loadDesktopHdrMode(): String? = null
+    actual fun saveDesktopHdrMode(mode: String) = Unit
+    actual fun loadDesktopColorProfile(): String? = null
+    actual fun saveDesktopColorProfile(profile: String) = Unit
+
     actual fun exportToSyncPayload(): JsonObject = buildJsonObject {
         loadShowLoadingOverlay()?.let { put(showLoadingOverlayKey, encodeSyncBoolean(it)) }
         loadResizeMode()?.let { put(resizeModeKey, encodeSyncString(it)) }

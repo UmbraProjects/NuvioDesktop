@@ -18,6 +18,7 @@ internal object NativePlayerBridge {
     external fun create(
         hostViewPtr: Long,
         sourceUrl: String,
+        sourceAudioUrl: String?,
         headerLines: Array<String>,
         playWhenReady: Boolean,
         initialPositionMs: Long,
@@ -72,7 +73,10 @@ internal object NativePlayerBridge {
         bold: Boolean,
         fontSize: Float,
         subPos: Int,
+        fontName: String,
     )
+    external fun setMpvProperty(handle: Long, key: String, value: String)
+    external fun forceVideoRedraw(handle: Long)
     external fun warmupWebView2(controlsPageUrl: String): Boolean
     external fun shutdownWebView2Warmup()
 

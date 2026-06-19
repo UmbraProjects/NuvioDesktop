@@ -104,6 +104,7 @@ import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.isDesktop
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.toLibraryItem
+import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.streams.StreamAutoPlayPolicy
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
@@ -143,6 +144,7 @@ fun MetaDetailsScreen(
     onPlay: ((type: String, videoId: String, parentMetaId: String, parentMetaType: String, title: String, logo: String?, poster: String?, background: String?, seasonNumber: Int?, episodeNumber: Int?, episodeTitle: String?, episodeThumbnail: String?, pauseDescription: String?, resumePositionMs: Long?) -> Unit)? = null,
     onPlayManually: ((type: String, videoId: String, parentMetaId: String, parentMetaType: String, title: String, logo: String?, poster: String?, background: String?, seasonNumber: Int?, episodeNumber: Int?, episodeTitle: String?, episodeThumbnail: String?, pauseDescription: String?, resumePositionMs: Long?) -> Unit)? = null,
     onOpenMeta: ((MetaPreview) -> Unit)? = null,
+    onPlayTrailer: ((PlayerLaunch) -> Unit)? = null,
     onCastClick: ((MetaPerson, String?) -> Unit)? = null,
     onCompanyClick: ((MetaCompany, String) -> Unit)? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
@@ -562,13 +564,42 @@ fun MetaDetailsScreen(
                                 if (currentRequestToken != trailerRequestToken) {
                                     return@launch
                                 }
-                                trailerPlaybackSource = resolvedSource
-                                trailerErrorMessage = if (resolvedSource == null) {
-                                    getString(Res.string.trailer_no_playable_stream)
+                                if (resolvedSource != null && isDesktop && onPlayTrailer != null) {
+                                    // Desktop: hand the resolved trailer to the full-screen
+                                    // player instead of the embedded popup (which can't be
+                                    // resized and is capped to a small surface). Closing the
+                                    // player pops back to this details screen.
+                                    val trailerLabel = trailer.displayName ?: trailer.name
+                                    onPlayTrailer.invoke(
+                                        PlayerLaunch(
+                                            title = trailerLabel,
+                                            sourceUrl = resolvedSource.videoUrl,
+                                            sourceAudioUrl = resolvedSource.audioUrl,
+                                            streamTitle = trailerLabel,
+                                            streamSubtitle = meta.name,
+                                            providerName = "YouTube",
+                                            logo = meta.logo,
+                                            poster = meta.poster,
+                                            background = meta.background,
+                                            contentType = meta.type,
+                                            parentMetaId = meta.id,
+                                            parentMetaType = meta.type,
+                                            disableProgressTracking = true,
+                                        ),
+                                    )
+                                    trailerLoading = false
+                                    trailerPlaybackSource = null
+                                    trailerErrorMessage = null
+                                    selectedTrailer = null
                                 } else {
-                                    null
+                                    trailerPlaybackSource = resolvedSource
+                                    trailerErrorMessage = if (resolvedSource == null) {
+                                        getString(Res.string.trailer_no_playable_stream)
+                                    } else {
+                                        null
+                                    }
+                                    trailerLoading = false
                                 }
-                                trailerLoading = false
                             }
                         }
                     }
@@ -766,6 +797,12 @@ fun MetaDetailsScreen(
                     ?.takeIf { it in groupedEpisodesForTv }
                     ?: defaultSeasonForTv
 
+                LaunchedEffect(meta.id) {
+                    listState.scrollToItem(0)
+                    tvFocus.sectionIndex = 0
+                    tvFocus.itemIndex = 0
+                }
+
                 val visibleSectionKeys = remember(
                     metaScreenSettingsUiState.items,
                     meta,
@@ -922,6 +959,12 @@ fun MetaDetailsScreen(
                     focusedMoreLikeThisIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.MORE_LIKE_THIS },
                 )
 
+                LaunchedEffect(tvFocusInfo.focusedSeasonIndex, seasonsForTv) {
+                    tvFocusInfo.focusedSeasonIndex
+                        ?.let(seasonsForTv::getOrNull)
+                        ?.let { focusedSeason -> selectedSeasonForTv = focusedSeason }
+                }
+
                 val density = LocalDensity.current
                 val safeAreaTopPx = with(density) {
                     WindowInsets.statusBars
@@ -993,7 +1036,10 @@ fun MetaDetailsScreen(
                                                 } else {
                                                     tvFocus.moveSection(1, tvSections.size)
                                                     val next = tvSections[tvFocus.sectionIndex]
-                                                    if (isVerticalEpisodes) {
+                                                    val crossesSeasonEpisodeBoundary =
+                                                        current.kind == MetaTvSectionKind.SEASONS && next.kind == MetaTvSectionKind.EPISODES ||
+                                                            current.kind == MetaTvSectionKind.EPISODES && next.kind == MetaTvSectionKind.SEASONS
+                                                    if (isVerticalEpisodes || crossesSeasonEpisodeBoundary) {
                                                         tvFocus.itemIndex = 0
                                                     } else {
                                                         tvFocus.coerceItemIndex(next.itemCount)
@@ -1004,7 +1050,10 @@ fun MetaDetailsScreen(
                                                         } else {
                                                             next.lazyItemIndex
                                                         }
-                                                        listState.animateScrollToItem(targetIndex)
+                                                        listState.animateScrollToItem(
+                                                            index = targetIndex,
+                                                            scrollOffset = -with(density) { 96.dp.roundToPx() },
+                                                        )
                                                     }
                                                 }
                                                 true
@@ -1016,7 +1065,16 @@ fun MetaDetailsScreen(
                                                 } else {
                                                     tvFocus.moveSection(-1, tvSections.size)
                                                     val next = tvSections[tvFocus.sectionIndex]
-                                                    if (isVerticalEpisodes) {
+                                                    val crossesSeasonEpisodeBoundary =
+                                                        current.kind == MetaTvSectionKind.SEASONS && next.kind == MetaTvSectionKind.EPISODES ||
+                                                            current.kind == MetaTvSectionKind.EPISODES && next.kind == MetaTvSectionKind.SEASONS
+                                                    if (crossesSeasonEpisodeBoundary) {
+                                                        tvFocus.itemIndex = if (next.kind == MetaTvSectionKind.SEASONS) {
+                                                            seasonsForTv.indexOf(currentSeasonForTv).coerceAtLeast(0)
+                                                        } else {
+                                                            0
+                                                        }
+                                                    } else if (isVerticalEpisodes) {
                                                         tvFocus.itemIndex = (next.itemCount - 1).coerceAtLeast(0)
                                                     } else {
                                                         tvFocus.coerceItemIndex(next.itemCount)
@@ -1027,7 +1085,10 @@ fun MetaDetailsScreen(
                                                         } else {
                                                             next.lazyItemIndex
                                                         }
-                                                        listState.animateScrollToItem(targetIndex)
+                                                        listState.animateScrollToItem(
+                                                            index = targetIndex,
+                                                            scrollOffset = -with(density) { 96.dp.roundToPx() },
+                                                        )
                                                     }
                                                 }
                                                 true
@@ -1382,7 +1443,11 @@ fun MetaDetailsScreen(
 
                         if (inAppTrailerPlaybackEnabled) {
                             TrailerPlayerPopup(
-                                visible = selectedTrailer != null,
+                                // On desktop the trailer plays in the full-screen player, so
+                                // the embedded popup is only used to surface a resolution
+                                // error — never the loading spinner or an embedded surface.
+                                visible = selectedTrailer != null &&
+                                    (!isDesktop || trailerErrorMessage != null),
                                 trailerTitle = selectedTrailer?.displayName ?: selectedTrailer?.name.orEmpty(),
                                 trailerType = selectedTrailer?.type.orEmpty(),
                                 contentTitle = meta.name,

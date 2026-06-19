@@ -38,6 +38,12 @@ internal class NativePlayerController(
     @Volatile
     private var handle: Long = 0L
     private var pendingSource: PendingSource? = null
+    private val pendingMpvProperties = linkedMapOf<String, String>()
+    private var pendingVideoRedraw = false
+    @Volatile
+    private var pendingSubtitleStyle: SubtitleStyleState? = null
+    @Volatile
+    private var pendingSubtitleDelayMs: Int? = null
     private var controlsState = PlayerControlsState()
     private var lastSentControlsStructureKey: PlayerControlsState? = null
     private var onAction: (PlayerControlsAction) -> Boolean = { false }
@@ -52,6 +58,7 @@ internal class NativePlayerController(
 
     fun attach(
         sourceUrl: String,
+        sourceAudioUrl: String?,
         sourceHeaders: Map<String, String>,
         playWhenReady: Boolean,
         initialPositionMs: Long,
@@ -59,6 +66,7 @@ internal class NativePlayerController(
     ) {
         val pending = PendingSource(
             sourceUrl = sourceUrl,
+            sourceAudioUrl = sourceAudioUrl?.takeIf { it.isNotBlank() },
             headerLines = sourceHeaders.toHeaderLines(),
             playWhenReady = playWhenReady,
             initialPositionMs = initialPositionMs.coerceAtLeast(0L),
@@ -83,6 +91,7 @@ internal class NativePlayerController(
                 handle = NativePlayerBridge.create(
                     hostViewPtr = hostViewPtr,
                     sourceUrl = pending.sourceUrl,
+                    sourceAudioUrl = pending.sourceAudioUrl,
                     headerLines = pending.headerLines.toTypedArray(),
                     playWhenReady = pending.playWhenReady,
                     initialPositionMs = pending.initialPositionMs,
@@ -90,6 +99,16 @@ internal class NativePlayerController(
                     eventSink = eventSink,
                 )
                 if (handle == 0L) error("Native player did not return a handle.")
+                synchronized(pendingMpvProperties) {
+                    pendingMpvProperties.forEach { (key, value) ->
+                        NativePlayerBridge.setMpvProperty(handle, key, value)
+                    }
+                }
+                applyPendingSubtitleConfiguration(handle)
+                if (pendingVideoRedraw) {
+                    pendingVideoRedraw = false
+                    NativePlayerBridge.forceVideoRedraw(handle)
+                }
                 updateControls(controlsState)
             }.onFailure { error ->
                 pending.onError(error.message)
@@ -132,6 +151,32 @@ internal class NativePlayerController(
         }
     }
 
+    fun setMpvProperty(key: String, value: String) {
+        synchronized(pendingMpvProperties) {
+            pendingMpvProperties[key] = value
+        }
+        handle.takeIf { it != 0L }?.let { NativePlayerBridge.setMpvProperty(it, key, value) }
+    }
+
+    /** Forces mpv to repaint the embedded video surface (see native forceVideoRedraw). */
+    fun forceVideoRedraw() {
+        val current = handle
+        if (current == 0L) {
+            pendingVideoRedraw = true
+        } else {
+            NativePlayerBridge.forceVideoRedraw(current)
+        }
+    }
+
+    /** Shows a transient pill in the controls overlay, e.g. when cycling a video preset. */
+    fun showPresetPill(title: String, value: String) {
+        val current = handle.takeIf { it != 0L } ?: return
+        NativePlayerBridge.runJavaScript(
+            current,
+            "window.nuvioShowPresetPill && window.nuvioShowPresetPill('${title.jsEscape()}', '${value.jsEscape()}')",
+        )
+    }
+
     fun dispatchKeyboardShortcut(type: String, value: Double = 0.0) {
         handlePlayerEvent(type, value)
         if (type == "volumeUp" || type == "volumeDown") {
@@ -164,6 +209,9 @@ internal class NativePlayerController(
                 NativePlayerBridge.setCursorHidden(current, value == 0.0)
             }
             else -> {
+                if (type == "fileLoaded") {
+                    handle.takeIf { it != 0L }?.let(::applyPendingSubtitleConfiguration)
+                }
                 val eventHandled = onEvent(type, value)
                 if (eventHandled) return
                 val action = type.toPlayerControlsAction()
@@ -272,6 +320,7 @@ internal class NativePlayerController(
         val pending = pendingSource ?: return
         attach(
             sourceUrl = pending.sourceUrl,
+            sourceAudioUrl = pending.sourceAudioUrl,
             sourceHeaders = pending.headerLines.toHeaderMap(),
             playWhenReady = pending.playWhenReady,
             initialPositionMs = pending.initialPositionMs,
@@ -344,10 +393,14 @@ internal class NativePlayerController(
         }
         val trackId = resolveTrackId(index, decodeTracks { NativePlayerBridge.subtitleTracksJson(it) }) ?: return
         NativePlayerBridge.selectSubtitleTrack(current, trackId)
+        applyPendingSubtitleConfiguration(current)
     }
 
     override fun setSubtitleUri(url: String) {
-        handle.takeIf { it != 0L }?.let { NativePlayerBridge.addSubtitleUrl(it, url) }
+        handle.takeIf { it != 0L }?.let { current ->
+            NativePlayerBridge.addSubtitleUrl(current, url)
+            applyPendingSubtitleConfiguration(current)
+        }
     }
 
     override fun clearExternalSubtitle() {
@@ -362,30 +415,37 @@ internal class NativePlayerController(
             resolveTrackId(trackIndex, decodeTracks { NativePlayerBridge.subtitleTracksJson(it) }) ?: return
         }
         NativePlayerBridge.clearExternalSubtitlesAndSelect(current, trackId)
+        applyPendingSubtitleConfiguration(current)
     }
 
     override fun setSubtitleDelayMs(delayMs: Int) {
-        handle.takeIf { it != 0L }?.let { current ->
-            NativePlayerBridge.setSubtitleDelayMs(
-                current,
-                delayMs.coerceIn(SUBTITLE_DELAY_MIN_MS, SUBTITLE_DELAY_MAX_MS),
-            )
-        }
+        val clamped = delayMs.coerceIn(SUBTITLE_DELAY_MIN_MS, SUBTITLE_DELAY_MAX_MS)
+        pendingSubtitleDelayMs = clamped
+        handle.takeIf { it != 0L }?.let { current -> NativePlayerBridge.setSubtitleDelayMs(current, clamped) }
     }
 
     override fun applySubtitleStyle(style: SubtitleStyleState) {
-        handle.takeIf { it != 0L }?.let { current ->
-            NativePlayerBridge.applySubtitleStyle(
-                handle = current,
-                textColor = style.textColor.toMpvColorString(),
-                backgroundColor = style.backgroundColor.toMpvColorString(),
-                outlineColor = style.outlineColor.toMpvColorString(),
-                outlineSize = if (style.outlineEnabled) style.outlineWidth.toFloat() else 0f,
-                bold = style.bold,
-                fontSize = style.toMpvSubtitleFontSize(),
-                subPos = style.toMpvSubtitlePosition(),
-            )
-        }
+        pendingSubtitleStyle = style
+        handle.takeIf { it != 0L }?.let { current -> applySubtitleStyle(current, style) }
+    }
+
+    private fun applyPendingSubtitleConfiguration(current: Long) {
+        pendingSubtitleDelayMs?.let { delayMs -> NativePlayerBridge.setSubtitleDelayMs(current, delayMs) }
+        pendingSubtitleStyle?.let { style -> applySubtitleStyle(current, style) }
+    }
+
+    private fun applySubtitleStyle(current: Long, style: SubtitleStyleState) {
+        NativePlayerBridge.applySubtitleStyle(
+            handle = current,
+            textColor = style.textColor.toMpvColorString(),
+            backgroundColor = style.backgroundColor.toMpvColorString(),
+            outlineColor = style.outlineColor.toMpvColorString(),
+            outlineSize = if (style.outlineEnabled) style.outlineWidth.toFloat() else 0f,
+            bold = style.bold,
+            fontSize = style.toMpvSubtitleFontSize(),
+            subPos = style.toMpvSubtitlePosition(),
+            fontName = style.fontFamily,
+        )
     }
 
     private fun decodeTracks(readJson: (Long) -> String): List<NativeMpvTrack> {
@@ -444,8 +504,15 @@ private fun Int.toHexByte(): String {
     }
 }
 
+private fun String.jsEscape(): String =
+    replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace("\n", "\\n")
+        .replace("\r", "")
+
 private data class PendingSource(
     val sourceUrl: String,
+    val sourceAudioUrl: String?,
     val headerLines: List<String>,
     val playWhenReady: Boolean,
     val initialPositionMs: Long,
@@ -791,6 +858,8 @@ private fun PlayerControlsState.toControlsJson(): String =
         append(',')
         appendJsonField("subtitleStyle", subtitleStyle)
         append(',')
+        appendJsonArrayField("subtitleFontFamilies", subtitleFontFamilies) { append(it.toJsonString()) }
+        append(',')
         appendJsonArrayField("subtitleColorSwatches", SubtitleColorSwatches.map { it.toStorageHexString() }) { append(it.toJsonString()) }
         append(',')
         appendJsonField("closeModalsToken", closeModalsToken)
@@ -964,6 +1033,8 @@ private fun StringBuilder.appendSubtitleStyleJson(style: SubtitleStyleState) {
     appendJsonField("fontSizeSp", style.fontSizeSp)
     append(',')
     appendJsonField("bottomOffset", style.bottomOffset)
+    append(',')
+    appendJsonField("fontFamily", style.fontFamily)
     append('}')
 }
 

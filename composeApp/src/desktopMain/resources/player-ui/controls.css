@@ -538,6 +538,26 @@ button:disabled {
   text-align: left;
 }
 
+.preset-pill {
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 26px;
+  text-align: center;
+}
+
+.preset-pill-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .6);
+}
+
+.preset-pill-value {
+  font-size: 18px;
+  font-weight: 700;
+}
+
 .skip-prompt {
   position: absolute;
   left: var(--hp);
@@ -1677,6 +1697,30 @@ button:disabled {
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
+}
+
+.style-select {
+  flex: 0 1 auto;
+  max-width: 200px;
+  color: rgba(255, 255, 255, .92);
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.style-select:hover {
+  background: rgba(255, 255, 255, .12);
+}
+
+.style-select option {
+  color: #fff;
+  background: #1c1c1e;
 }
 
 .stepper-value {

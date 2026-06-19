@@ -306,7 +306,10 @@ fun DetailSeriesContent(
                             progressByVideoId = progressByVideoId,
                             episodeRatings = episodeRatings,
                             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
-                            preferredEpisodeNumber = preferredEpisodeNumber,
+                            // Only resume-scroll to the preferred episode on the season the
+                            // user is actually up to; other seasons should start at episode 1.
+                            preferredEpisodeNumber = preferredEpisodeNumber
+                                ?.takeIf { seasonForContent == preferredSeasonNumber },
                             focusedEpisodeIndex = focusedEpisodeIndex,
                             onEpisodeClick = onEpisodeClick,
                             onEpisodeLongPress = onEpisodeLongPress,

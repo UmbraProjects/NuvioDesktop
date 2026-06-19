@@ -29,18 +29,15 @@ enum class NextEpisodeThresholdMode {
 
 // --- IntroDb API response models ---
 
+// IntroDb's /intro endpoint returns a single flat intro segment, e.g.:
+// {"imdb_id":"tt..","season":2,"episode":1,"start_sec":0,"end_sec":31,
+//  "start_ms":0,"end_ms":31000,"confidence":1,"submission_count":1,"updated_at":".."}
+// (a missing entry returns {"error":"Not found."}, which parses to all-null timings.)
 @Serializable
 data class IntroDbSegmentsResponse(
     @SerialName("imdb_id") val imdbId: String? = null,
     @SerialName("season") val season: Int? = null,
     @SerialName("episode") val episode: Int? = null,
-    @SerialName("intro") val intro: IntroDbSegment? = null,
-    @SerialName("recap") val recap: IntroDbSegment? = null,
-    @SerialName("outro") val outro: IntroDbSegment? = null,
-)
-
-@Serializable
-data class IntroDbSegment(
     @SerialName("start_sec") val startSec: Double? = null,
     @SerialName("end_sec") val endSec: Double? = null,
     @SerialName("start_ms") val startMs: Long? = null,

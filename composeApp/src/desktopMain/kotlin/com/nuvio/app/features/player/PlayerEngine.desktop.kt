@@ -10,8 +10,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,6 +24,7 @@ import com.nuvio.app.features.player.desktop.DesktopPlayerLaunchShield
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import java.awt.KeyEventDispatcher
 import java.awt.KeyboardFocusManager
 import java.awt.event.KeyEvent
@@ -52,6 +55,7 @@ actual fun PlatformPlayerSurface(
     if (DesktopHostOs.current == DesktopHostOs.MACOS || DesktopHostOs.current == DesktopHostOs.WINDOWS) {
         NativePlayerSurface(
             sourceUrl = sourceUrl,
+            sourceAudioUrl = sourceAudioUrl,
             sourceHeaders = sourceHeaders,
             modifier = modifier,
             playWhenReady = playWhenReady,
@@ -79,6 +83,7 @@ actual fun PlatformPlayerSurface(
 @Composable
 private fun NativePlayerSurface(
     sourceUrl: String,
+    sourceAudioUrl: String?,
     sourceHeaders: Map<String, String>,
     modifier: Modifier,
     playWhenReady: Boolean,
@@ -97,6 +102,8 @@ private fun NativePlayerSurface(
     val controller = remember(host) { NativePlayerController(host) }
     val hostFirstPaintComplete = remember { mutableStateOf(false) }
     val hostFirstFullSizePaintComplete = remember { mutableStateOf(false) }
+    val videoIsHdr = remember { mutableStateOf<Boolean?>(null) }
+    val videoProfileRefreshToken = remember { mutableIntStateOf(0) }
     LaunchedEffect(sourceUrl) {
         DesktopPlayerLaunchShield.showForActiveWindow()
     }
@@ -136,7 +143,17 @@ private fun NativePlayerSurface(
     LaunchedEffect(controller) {
         controller.setControlCallbacks(
             onAction = { action -> latestOnPlayerControlsAction.value(action) },
-            onEvent = { type, value -> latestOnPlayerControlsEvent.value(type, value) },
+            onEvent = { type, value ->
+                if (type == "videoParams") {
+                    videoIsHdr.value = value != 0.0
+                    true
+                } else if (type == "fileLoaded") {
+                    videoProfileRefreshToken.intValue += 1
+                    true
+                } else {
+                    latestOnPlayerControlsEvent.value(type, value)
+                }
+            },
             onScrubChange = { positionMs -> latestOnPlayerControlsScrubChange.value(positionMs) },
             onScrubFinished = { positionMs -> latestOnPlayerControlsScrubFinished.value(positionMs) },
         )
@@ -148,15 +165,31 @@ private fun NativePlayerSurface(
             if (event.isMetaDown || event.isControlDown || event.isAltDown) return@KeyEventDispatcher false
             val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
             if (focusOwner is JTextComponent) return@KeyEventDispatcher false
-            val type = when (event.keyCode) {
-                KeyEvent.VK_LEFT, KeyEvent.VK_J -> "keyboardSeekBack"
-                KeyEvent.VK_RIGHT, KeyEvent.VK_L -> "keyboardSeekForward"
-                KeyEvent.VK_UP -> "volumeUp"
-                KeyEvent.VK_DOWN -> "volumeDown"
-                KeyEvent.VK_SPACE, KeyEvent.VK_K -> "keyboardToggle"
-                else -> return@KeyEventDispatcher false
+            when (event.keyCode) {
+                KeyEvent.VK_F8 -> {
+                    val modes = DesktopHdrMode.entries
+                    val next = modes[(modes.indexOf(PlayerSettingsRepository.uiState.value.desktopHdrMode) + 1) % modes.size]
+                    PlayerSettingsRepository.setDesktopHdrMode(next)
+                    controller.showPresetPill("HDR Mode", next.label)
+                }
+                KeyEvent.VK_F9 -> {
+                    val profiles = DesktopColorProfile.entries
+                    val next = profiles[(profiles.indexOf(PlayerSettingsRepository.uiState.value.desktopColorProfile) + 1) % profiles.size]
+                    PlayerSettingsRepository.setDesktopColorProfile(next)
+                    controller.showPresetPill("Color Profile", next.label)
+                }
+                else -> {
+                    val type = when (event.keyCode) {
+                        KeyEvent.VK_LEFT, KeyEvent.VK_J -> "keyboardSeekBack"
+                        KeyEvent.VK_RIGHT, KeyEvent.VK_L -> "keyboardSeekForward"
+                        KeyEvent.VK_UP -> "volumeUp"
+                        KeyEvent.VK_DOWN -> "volumeDown"
+                        KeyEvent.VK_SPACE, KeyEvent.VK_K -> "keyboardToggle"
+                        else -> return@KeyEventDispatcher false
+                    }
+                    controller.dispatchKeyboardShortcut(type)
+                }
             }
-            controller.dispatchKeyboardShortcut(type)
             event.consume()
             true
         }
@@ -177,6 +210,7 @@ private fun NativePlayerSurface(
         delay(16L)
         controller.attach(
             sourceUrl = sourceUrl,
+            sourceAudioUrl = sourceAudioUrl,
             sourceHeaders = playbackHeaders,
             playWhenReady = playWhenReady,
             initialPositionMs = initialPositionMs,
@@ -198,6 +232,32 @@ private fun NativePlayerSurface(
 
     LaunchedEffect(controller, playerControlsState) {
         controller.updateControls(playerControlsState)
+    }
+
+    LaunchedEffect(sourceUrl) {
+        videoIsHdr.value = null
+    }
+
+    LaunchedEffect(controller, sourceUrl) {
+        // Apply the saved colour/HDR presets whenever they change or the file's HDR
+        // state is (re)detected. Deliberately NOT gated on HDR detection: the colour
+        // profile (and F8/F9 changes) must take effect even if the video-params event
+        // never arrives, otherwise nothing would visibly change.
+        combine(
+            snapshotFlow { videoIsHdr.value to videoProfileRefreshToken.intValue },
+            PlayerSettingsRepository.uiState,
+        ) { videoState, settings -> videoState.first to settings }
+            .collect { (isHdr, settings) ->
+                System.out.println(
+                    "Desktop video profile: detectedHdr=${isHdr ?: "unknown"}, " +
+                        "hdrMode=${settings.desktopHdrMode.name}, colorProfile=${settings.desktopColorProfile.name}",
+                )
+                applyDesktopVideoProfile(
+                    controller = controller,
+                    hdrMode = settings.desktopHdrMode,
+                    colorProfile = settings.desktopColorProfile,
+                )
+            }
     }
 
     LaunchedEffect(controller) {
@@ -226,6 +286,57 @@ private fun NativePlayerSurface(
             background = Color.Black,
         )
     }
+}
+
+private fun applyDesktopVideoProfile(
+    controller: NativePlayerController,
+    hdrMode: DesktopHdrMode,
+    colorProfile: DesktopColorProfile,
+) {
+    when (hdrMode) {
+        DesktopHdrMode.Auto -> {
+            controller.setMpvProperty("target-colorspace-hint", "auto")
+            controller.setMpvProperty("target-colorspace-hint-mode", "target")
+            controller.setMpvProperty("target-prim", "auto")
+            controller.setMpvProperty("target-trc", "auto")
+            controller.setMpvProperty("target-peak", "auto")
+            controller.setMpvProperty("target-contrast", "auto")
+        }
+        DesktopHdrMode.AlwaysTonemap -> {
+            // Force an SDR BT.709/BT.1886 target. Merely disabling the colorspace hint does
+            // not request HDR-to-SDR conversion and was effectively a no-op on HDR desktops.
+            controller.setMpvProperty("target-colorspace-hint", "yes")
+            controller.setMpvProperty("target-colorspace-hint-mode", "target")
+            controller.setMpvProperty("target-prim", "bt.709")
+            controller.setMpvProperty("target-trc", "bt.1886")
+            controller.setMpvProperty("target-peak", "203")
+            controller.setMpvProperty("target-contrast", "1000")
+        }
+        DesktopHdrMode.AlwaysPassthrough -> {
+            // Source mode signals the source metadata to the compositor/display and is mpv's
+            // traditional HDR passthrough path.
+            controller.setMpvProperty("target-colorspace-hint", "yes")
+            controller.setMpvProperty("target-colorspace-hint-mode", "source")
+            controller.setMpvProperty("target-prim", "auto")
+            controller.setMpvProperty("target-trc", "auto")
+            controller.setMpvProperty("target-peak", "auto")
+            controller.setMpvProperty("target-contrast", "auto")
+        }
+    }
+    // mpv's video equalizer properties run from -100 to 100, so the previous single-digit
+    // values were imperceptible. These are tuned to be clearly visible while still tasteful.
+    val (contrast, brightness, saturation, gamma) = when (colorProfile) {
+        DesktopColorProfile.Neutral -> listOf(0, 0, 0, 0)
+        DesktopColorProfile.Cinematic -> listOf(12, -4, 14, -6)
+        DesktopColorProfile.Vivid -> listOf(18, 0, 32, 0)
+    }
+    controller.setMpvProperty("contrast", contrast.toString())
+    controller.setMpvProperty("brightness", brightness.toString())
+    controller.setMpvProperty("saturation", saturation.toString())
+    controller.setMpvProperty("gamma", gamma.toString())
+    // mpv won't repaint the embedded surface for these property changes while idle/paused,
+    // so force a redraw — otherwise the change only appears after a window resize.
+    controller.forceVideoRedraw()
 }
 
 @Composable

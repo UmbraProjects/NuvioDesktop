@@ -58,6 +58,7 @@
 @interface MpvWebPlayer : NSObject
 - (instancetype)initWithHostView:(NSView *)hostView
                        sourceUrl:(NSString *)sourceUrl
+                   audioSourceUrl:(NSString *)audioSourceUrl
                     headerLines:(NSArray<NSString *> *)headerLines
                    playWhenReady:(BOOL)playWhenReady
                 initialPositionMs:(long long)initialPositionMs
@@ -1024,6 +1025,7 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
 
 - (instancetype)initWithHostView:(NSView *)hostView
                        sourceUrl:(NSString *)sourceUrl
+                   audioSourceUrl:(NSString *)audioSourceUrl
                     headerLines:(NSArray<NSString *> *)headerLines
                    playWhenReady:(BOOL)playWhenReady
                 initialPositionMs:(long long)initialPositionMs
@@ -1110,6 +1112,7 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     });
 
     [self startMpvWithSource:sourceUrl
+              audioSourceUrl:audioSourceUrl
                  headerLines:headerLines
                 playWhenReady:playWhenReady
              initialPositionMs:initialPositionMs];
@@ -1348,6 +1351,7 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
 }
 
 - (void)startMpvWithSource:(NSString *)sourceUrl
+            audioSourceUrl:(NSString *)audioSourceUrl
                headerLines:(NSArray<NSString *> *)headerLines
               playWhenReady:(BOOL)playWhenReady
            initialPositionMs:(long long)initialPositionMs {
@@ -1388,6 +1392,13 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     if (headerLines.count > 0) {
         NSString *headers = [headerLines componentsJoinedByString:@","];
         setMpvOptionString(_mpv, "http-header-fields", headers.UTF8String);
+    }
+
+    // External audio track (e.g. a YouTube trailer with separate hi-res video + audio).
+    // The "-append" action takes the value as a single entry, so a URL containing commas
+    // is not split into multiple bogus paths.
+    if (audioSourceUrl.length > 0) {
+        setMpvOptionString(_mpv, "audio-files-append", audioSourceUrl.UTF8String);
     }
 
     int initResult = mpv_initialize(_mpv);
@@ -1754,6 +1765,13 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     double clamped = fmax(0.25, fmin(4.0, speed));
     mpv_set_property(_mpv, "speed", MPV_FORMAT_DOUBLE, &clamped);
     _cachedSpeed.store(clamped);
+
+    // The demuxer cache is measured in content time, so faster-than-real-time playback
+    // drains it faster in wall-clock terms. Scale it with the rate to avoid rebuffering.
+    double factor = fmax(1.0, clamped);
+    std::string cacheSecs = std::to_string(30.0 * factor);
+    mpv_set_property_string(_mpv, "cache-secs", cacheSecs.c_str());
+    mpv_set_property_string(_mpv, "demuxer-readahead-secs", cacheSecs.c_str());
 }
 
 - (double)speed {
@@ -2287,6 +2305,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jobject /* bridge */,
     jlong hostViewPtr,
     jstring sourceUrl,
+    jstring sourceAudioUrl,
     jobjectArray headerLines,
     jboolean playWhenReady,
     jlong initialPositionMs,
@@ -2318,6 +2337,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     }
 
     std::string source = jstringToString(env, sourceUrl);
+    std::string audioSource = sourceAudioUrl ? jstringToString(env, sourceAudioUrl) : std::string();
     std::string controls = jstringToString(env, controlsPageUrl);
     NSArray<NSString *> *headers = jstringArrayToNSArray(env, headerLines);
     __block MpvWebPlayer *player = nil;
@@ -2327,6 +2347,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
             player = [[MpvWebPlayer alloc]
                 initWithHostView:hostView
                     sourceUrl:[NSString stringWithUTF8String:source.c_str()]
+                   audioSourceUrl:(audioSource.empty() ? nil : [NSString stringWithUTF8String:audioSource.c_str()])
                     headerLines:headers
                    playWhenReady:playWhenReady == JNI_TRUE
                 initialPositionMs:initialPositionMs

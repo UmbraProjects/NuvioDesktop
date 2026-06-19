@@ -87,6 +87,7 @@ const fontSizeLabel = document.getElementById("fontSizeLabel");
 const fontSizeMinus = document.getElementById("fontSizeMinus");
 const fontSizeValue = document.getElementById("fontSizeValue");
 const fontSizePlus = document.getElementById("fontSizePlus");
+const fontFamilySelect = document.getElementById("fontFamilySelect");
 const outlineLabel = document.getElementById("outlineLabel");
 const outlineToggle = document.getElementById("outlineToggle");
 const boldLabel = document.getElementById("boldLabel");
@@ -302,7 +303,9 @@ let state = {
     bold: false,
     fontSizeSp: 18,
     bottomOffset: 20,
+    fontFamily: "",
   },
+  subtitleFontFamilies: [],
   subtitleColorSwatches: [],
   closeModalsToken: 0,
 };
@@ -960,6 +963,24 @@ const renderSubtitleStylePanel = () => {
   autoSyncCapture.textContent = state.captureLineLabel || "Capture";
   fontSizeLabel.textContent = state.fontSizeLabel || "Font Size";
   fontSizeValue.textContent = `${Number(style.fontSizeSp) || 18}sp`;
+  if (fontFamilySelect) {
+    const fonts = Array.isArray(state.subtitleFontFamilies) ? state.subtitleFontFamilies : [];
+    // Rebuild the option list only when it actually changes, so the dropdown isn't clobbered
+    // (or closed) on every unrelated controls update.
+    if (fontFamilySelect.dataset.count !== String(fonts.length)) {
+      fontFamilySelect.innerHTML = "";
+      fonts.forEach((family, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = family === "" ? "Default" : family;
+        fontFamilySelect.appendChild(option);
+      });
+      fontFamilySelect.dataset.count = String(fonts.length);
+    }
+    const current = style.fontFamily || "";
+    const selectedIndex = fonts.indexOf(current);
+    fontFamilySelect.value = String(selectedIndex >= 0 ? selectedIndex : 0);
+  }
   outlineLabel.textContent = state.outlineLabel || "Outline";
   outlineToggle.textContent = style.outlineEnabled ? (state.onLabel || "On") : (state.offLabel || "Off");
   outlineToggle.classList.toggle("primary", Boolean(style.outlineEnabled));
@@ -1784,6 +1805,22 @@ window.nuvioShowVolumePill = percentage => {
   showVolumePill();
 };
 
+const presetPill = document.getElementById("presetPill");
+const presetPillTitle = document.getElementById("presetPillTitle");
+const presetPillValue = document.getElementById("presetPillValue");
+let presetPillHideTimer = null;
+
+window.nuvioShowPresetPill = (title, value) => {
+  if (!presetPill) return;
+  if (presetPillTitle) presetPillTitle.textContent = String(title == null ? "" : title);
+  if (presetPillValue) presetPillValue.textContent = String(value == null ? "" : value);
+  presetPill.classList.add("visible");
+  window.clearTimeout(presetPillHideTimer);
+  presetPillHideTimer = window.setTimeout(() => {
+    presetPill.classList.remove("visible");
+  }, 1400);
+};
+
 const toggleChrome = () => {
   if (playbackErrorText()) return;
   if (state.isLocked) {
@@ -1963,6 +2000,14 @@ fontSizePlus.addEventListener("click", event => {
   event.stopPropagation();
   send("subtitleFontSizeDelta", 2);
 });
+if (fontFamilySelect) {
+  fontFamilySelect.addEventListener("change", event => {
+    event.stopPropagation();
+    send("subtitleFontIndex", Number(fontFamilySelect.value) || 0);
+  });
+  // Keep clicks from bubbling up to the overlay (which would dismiss the panel).
+  fontFamilySelect.addEventListener("click", event => event.stopPropagation());
+}
 outlineToggle.addEventListener("click", event => {
   event.stopPropagation();
   send("subtitleOutlineToggle", 0);

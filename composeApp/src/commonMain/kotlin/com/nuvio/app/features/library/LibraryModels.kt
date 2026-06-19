@@ -3,6 +3,7 @@ package com.nuvio.app.features.library
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
+import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -86,7 +87,7 @@ fun LibraryItem.toMetaPreview(): MetaPreview =
         id = id,
         type = type,
         name = name,
-        poster = poster,
+        poster = resolveLibraryPosterUrl(id = id, type = type, fallback = poster),
         banner = banner,
         logo = logo,
         posterShape = posterShape,
@@ -95,3 +96,28 @@ fun LibraryItem.toMetaPreview(): MetaPreview =
         imdbRating = imdbRating,
         genres = genres,
     )
+
+/**
+ * Routes a library item's poster through the user's custom poster service when configured.
+ *
+ * The library isn't catalog-backed, so its posters are plain TMDB images. When a poster
+ * template is set (e.g. PostersPlus / RPDB / a self-hosted service), this substitutes the
+ * item's ids and type into the template. Placeholders: {imdb_id}, {tmdb_id}, {type}.
+ * Whichever id the item lacks is substituted as empty (the service template decides what it
+ * needs); if the item has no usable IMDb/TMDB id at all, the original poster is kept.
+ */
+private fun resolveLibraryPosterUrl(id: String, type: String, fallback: String?): String? {
+    val settings = TmdbSettingsRepository.snapshot()
+    if (!settings.libraryPosterEnabled) return fallback
+    val template = settings.libraryPosterUrlTemplate
+    if (template.isBlank()) return fallback
+
+    val imdbId = id.takeIf { it.startsWith("tt") }.orEmpty()
+    val tmdbId = if (id.startsWith("tmdb:")) id.removePrefix("tmdb:").substringBefore(":") else ""
+    if (imdbId.isBlank() && tmdbId.isBlank()) return fallback
+
+    return template
+        .replace("{imdb_id}", imdbId)
+        .replace("{tmdb_id}", tmdbId)
+        .replace("{type}", type)
+}

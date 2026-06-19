@@ -49,6 +49,7 @@ data class PlayerLaunch(
     val torrentTrackers: List<String> = emptyList(),
     val initialPositionMs: Long = 0L,
     val initialProgressFraction: Float? = null,
+    val disableProgressTracking: Boolean = false,
 )
 
 object PlayerLaunchStore {
@@ -153,6 +154,18 @@ enum class IosAudioOutputMode(
     Auto("avfoundation,audiounit,", "Auto"),
     AvFoundation("avfoundation", "AVFoundation"),
     AudioUnit("audiounit", "AudioUnit"),
+}
+
+enum class DesktopHdrMode(val label: String, val description: String) {
+    Auto("Auto", "Let the OS decide between passthrough and tonemapping based on your display."),
+    AlwaysTonemap("Always Tonemap", "Force HDR content to be tonemapped to SDR, even on HDR displays."),
+    AlwaysPassthrough("Always Passthrough", "Always attempt HDR passthrough, even on SDR displays."),
+}
+
+enum class DesktopColorProfile(val label: String, val description: String) {
+    Neutral("Neutral", "No color adjustments applied. Accurate to the source."),
+    Cinematic("Cinematic", "Slightly deeper contrast with richer colors for a cinematic look."),
+    Vivid("Vivid", "Boosted contrast and saturation for a punchier image."),
 }
 
 @Composable
