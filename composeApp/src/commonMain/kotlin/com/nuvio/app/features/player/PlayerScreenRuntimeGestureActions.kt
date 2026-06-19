@@ -277,6 +277,17 @@ internal fun PlayerScreenRuntime.cyclePlaybackSpeed() {
     controlsVisible = true
 }
 
+internal fun PlayerScreenRuntime.adjustPlaybackSpeedStep(direction: Int) {
+    val speeds = listOf(1f, 1.25f, 1.5f, 2f)
+    val current = playbackSnapshot.playbackSpeed
+    val currentIndex = speeds.indices.minByOrNull { index -> abs(speeds[index] - current) } ?: 0
+    val nextIndex = (currentIndex + direction.coerceIn(-1, 1)).coerceIn(speeds.indices)
+    val next = speeds[nextIndex]
+    playerController?.setPlaybackSpeed(next)
+    playbackSnapshot = playbackSnapshot.copy(playbackSpeed = next)
+    showGestureMessage(formatPlaybackSpeedLabel(next))
+}
+
 internal fun PlayerScreenRuntime.activateHoldToSpeed() {
     if (!playerSettingsUiState.holdToSpeedEnabled) return
     val controller = playerController ?: return

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.3 - 2026-06-19
+
+### Added
+
+- Added direct desktop player shortcuts: `C` cycles Fit/Fill/Zoom, `[` and `]` adjust playback speed, `S` cycles subtitle tracks, and `A` cycles audio tracks.
+- Added keyboard-first Sources (`O`) and Episodes (`E`) panels with focused list navigation and selection.
+
+### Improved
+
+- Player shortcuts now work consistently whether keyboard focus belongs to the desktop window or the embedded player controls, including the `F8` HDR and `F9` color-profile shortcuts.
+- The Episodes panel now opens on the currently playing season and supports season changes with Left/Right.
+
+### Fixed
+
+- Fixed episode thumbnails being recreated and visibly reloaded during routine player-state updates.
+- Fixed keyboard panel state becoming stale after closing a panel with the mouse.
+
 ## 1.0.2 - 2026-06-19
 
 ### Added

@@ -215,3 +215,63 @@ internal fun PlayerScreenRuntime.refreshTracks() {
         }
     }
 }
+
+internal fun PlayerScreenRuntime.cycleAudioTrackFromKeyboard() {
+    refreshTracks()
+    if (audioTracks.isEmpty()) return
+    val currentIndex = audioTracks.indexOfFirst { it.index == selectedAudioIndex || it.isSelected }
+    val next = audioTracks[(currentIndex + 1).mod(audioTracks.size)]
+    selectedAudioIndex = next.index
+    persistAudioPreference(next)
+    playerController?.selectAudioTrack(next.index)
+    showGestureMessage("Audio: ${next.label.ifBlank { next.language ?: "Track ${next.index + 1}" }}")
+}
+
+internal fun PlayerScreenRuntime.cycleSubtitleTrackFromKeyboard() {
+    refreshTracks()
+    val addons = visibleAddonSubtitles
+    if (subtitleTracks.isEmpty() && addons.isEmpty()) {
+        fetchAddonSubtitlesForActiveItem()
+        return
+    }
+
+    val builtInPosition = if (!useCustomSubtitles) {
+        subtitleTracks.indexOfFirst { it.index == selectedSubtitleIndex || it.isSelected }
+    } else {
+        -1
+    }
+    val addonPosition = if (useCustomSubtitles) {
+        addons.indexOfFirst { it.id == selectedAddonSubtitleId || it.url == selectedAddonSubtitleId }
+    } else {
+        -1
+    }
+    val currentPosition = when {
+        builtInPosition >= 0 -> builtInPosition
+        addonPosition >= 0 -> subtitleTracks.size + addonPosition
+        else -> -1
+    }
+    val nextPosition = (currentPosition + 1).mod(subtitleTracks.size + addons.size)
+
+    if (nextPosition < subtitleTracks.size) {
+        val track = subtitleTracks[nextPosition]
+        val wasCustom = useCustomSubtitles
+        selectedSubtitleIndex = track.index
+        selectedAddonSubtitleId = null
+        useCustomSubtitles = false
+        persistInternalSubtitlePreference(track)
+        if (wasCustom) {
+            playerController?.clearExternalSubtitleAndSelect(track.index)
+        } else {
+            playerController?.selectSubtitleTrack(track.index)
+        }
+        showGestureMessage("Subtitles: ${track.label.ifBlank { track.language ?: "Track ${track.index + 1}" }}")
+    } else {
+        val subtitle = addons[nextPosition - subtitleTracks.size]
+        selectedAddonSubtitleId = subtitle.id
+        selectedSubtitleIndex = -1
+        useCustomSubtitles = true
+        persistAddonSubtitlePreference(subtitle)
+        playerController?.setSubtitleUri(subtitle.url)
+        showGestureMessage("Subtitles: ${subtitle.display.ifBlank { subtitle.language }}")
+    }
+}

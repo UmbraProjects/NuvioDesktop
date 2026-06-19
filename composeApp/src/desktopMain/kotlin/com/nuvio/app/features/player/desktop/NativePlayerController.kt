@@ -8,6 +8,8 @@ import com.nuvio.app.features.player.PlayerControlSeasonItem
 import com.nuvio.app.features.player.PlayerControlSourceItem
 import com.nuvio.app.features.player.PlayerControlSubtitleCueItem
 import com.nuvio.app.features.player.AudioTrack
+import com.nuvio.app.features.player.DesktopColorProfile
+import com.nuvio.app.features.player.DesktopHdrMode
 import com.nuvio.app.features.player.ParentalWarning
 import com.nuvio.app.features.player.PlayerAudioLevel
 import com.nuvio.app.features.player.PlayerControlsAction
@@ -15,6 +17,7 @@ import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.PlayerEngineController
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.player.PlayerResizeMode
+import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.player.SUBTITLE_DELAY_MAX_MS
 import com.nuvio.app.features.player.SUBTITLE_DELAY_MIN_MS
 import com.nuvio.app.features.player.SubtitleColorSwatches
@@ -44,6 +47,8 @@ internal class NativePlayerController(
     private var pendingSubtitleStyle: SubtitleStyleState? = null
     @Volatile
     private var pendingSubtitleDelayMs: Int? = null
+    @Volatile
+    private var keyboardPanelOpen = false
     private var controlsState = PlayerControlsState()
     private var lastSentControlsStructureKey: PlayerControlsState? = null
     private var onAction: (PlayerControlsAction) -> Boolean = { false }
@@ -184,6 +189,42 @@ internal class NativePlayerController(
         }
     }
 
+    fun cycleDesktopHdrMode() {
+        val modes = DesktopHdrMode.entries
+        val current = PlayerSettingsRepository.uiState.value.desktopHdrMode
+        val next = modes[(modes.indexOf(current) + 1) % modes.size]
+        PlayerSettingsRepository.setDesktopHdrMode(next)
+        showPresetPill("HDR Mode", next.label)
+    }
+
+    fun cycleDesktopColorProfile() {
+        val profiles = DesktopColorProfile.entries
+        val current = PlayerSettingsRepository.uiState.value.desktopColorProfile
+        val next = profiles[(profiles.indexOf(current) + 1) % profiles.size]
+        PlayerSettingsRepository.setDesktopColorProfile(next)
+        showPresetPill("Color Profile", next.label)
+    }
+
+    fun openKeyboardPanel(panel: String) {
+        if (panel != "sources" && panel != "episodes") return
+        val current = handle.takeIf { it != 0L } ?: return
+        keyboardPanelOpen = true
+        NativePlayerBridge.runJavaScript(
+            current,
+            "window.nuvioOpenKeyboardPanel && window.nuvioOpenKeyboardPanel(${panel.toJsonString()})",
+        )
+    }
+
+    fun dispatchKeyboardPanelKey(code: String): Boolean {
+        if (!keyboardPanelOpen) return false
+        val current = handle.takeIf { it != 0L } ?: return false
+        NativePlayerBridge.runJavaScript(
+            current,
+            "window.nuvioHandleKeyboardPanelKey && window.nuvioHandleKeyboardPanelKey(${code.toJsonString()})",
+        )
+        return true
+    }
+
     private fun showVolumePillFromNative() {
         val current = handle.takeIf { it != 0L } ?: return
         val percentage = NativePlayerBridge.volume(current).toInt().coerceIn(0, 100)
@@ -191,6 +232,22 @@ internal class NativePlayerController(
     }
 
     private fun handlePlayerEvent(type: String, value: Double) {
+        if (type == "keyboardCycleHdrMode") {
+            cycleDesktopHdrMode()
+            return
+        }
+        if (type == "keyboardCycleColorProfile") {
+            cycleDesktopColorProfile()
+            return
+        }
+        if (type == "keyboardPanelOpened") {
+            keyboardPanelOpen = true
+            return
+        }
+        if (type == "keyboardPanelClosed") {
+            keyboardPanelOpen = false
+            return
+        }
         when (type) {
             "scrubChange" -> {
                 if (!onScrubChange(value.toLong())) {
@@ -294,6 +351,7 @@ internal class NativePlayerController(
     private fun disposePlayerHandle() {
         val current = handle
         handle = 0L
+        keyboardPanelOpen = false
         lastSentControlsStructureKey = null
         if (current != 0L) {
             runCatching { NativePlayerBridge.dispose(current) }

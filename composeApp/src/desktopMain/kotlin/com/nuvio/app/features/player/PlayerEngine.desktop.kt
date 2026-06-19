@@ -165,18 +165,25 @@ private fun NativePlayerSurface(
             if (event.isMetaDown || event.isControlDown || event.isAltDown) return@KeyEventDispatcher false
             val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
             if (focusOwner is JTextComponent) return@KeyEventDispatcher false
+            val panelKey = when (event.keyCode) {
+                KeyEvent.VK_UP -> "ArrowUp"
+                KeyEvent.VK_DOWN -> "ArrowDown"
+                KeyEvent.VK_LEFT -> "ArrowLeft"
+                KeyEvent.VK_RIGHT -> "ArrowRight"
+                KeyEvent.VK_ENTER -> "Enter"
+                KeyEvent.VK_ESCAPE -> "Escape"
+                else -> null
+            }
+            if (panelKey != null && controller.dispatchKeyboardPanelKey(panelKey)) {
+                event.consume()
+                return@KeyEventDispatcher true
+            }
             when (event.keyCode) {
                 KeyEvent.VK_F8 -> {
-                    val modes = DesktopHdrMode.entries
-                    val next = modes[(modes.indexOf(PlayerSettingsRepository.uiState.value.desktopHdrMode) + 1) % modes.size]
-                    PlayerSettingsRepository.setDesktopHdrMode(next)
-                    controller.showPresetPill("HDR Mode", next.label)
+                    controller.cycleDesktopHdrMode()
                 }
                 KeyEvent.VK_F9 -> {
-                    val profiles = DesktopColorProfile.entries
-                    val next = profiles[(profiles.indexOf(PlayerSettingsRepository.uiState.value.desktopColorProfile) + 1) % profiles.size]
-                    PlayerSettingsRepository.setDesktopColorProfile(next)
-                    controller.showPresetPill("Color Profile", next.label)
+                    controller.cycleDesktopColorProfile()
                 }
                 else -> {
                     val type = when (event.keyCode) {
@@ -185,9 +192,25 @@ private fun NativePlayerSurface(
                         KeyEvent.VK_UP -> "volumeUp"
                         KeyEvent.VK_DOWN -> "volumeDown"
                         KeyEvent.VK_SPACE, KeyEvent.VK_K -> "keyboardToggle"
+                        KeyEvent.VK_C -> "resize"
+                        KeyEvent.VK_OPEN_BRACKET -> "keyboardSpeedStep"
+                        KeyEvent.VK_CLOSE_BRACKET -> "keyboardSpeedStep"
+                        KeyEvent.VK_S -> "keyboardNextSubtitle"
+                        KeyEvent.VK_A -> "keyboardNextAudio"
+                        KeyEvent.VK_O -> {
+                            controller.openKeyboardPanel("sources")
+                            event.consume()
+                            return@KeyEventDispatcher true
+                        }
+                        KeyEvent.VK_E -> {
+                            controller.openKeyboardPanel("episodes")
+                            event.consume()
+                            return@KeyEventDispatcher true
+                        }
                         else -> return@KeyEventDispatcher false
                     }
-                    controller.dispatchKeyboardShortcut(type)
+                    val value = if (event.keyCode == KeyEvent.VK_OPEN_BRACKET) -1.0 else 1.0
+                    controller.dispatchKeyboardShortcut(type, value)
                 }
             }
             event.consume()

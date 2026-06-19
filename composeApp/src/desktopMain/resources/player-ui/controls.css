@@ -2054,6 +2054,16 @@ button:disabled {
   opacity: 1;
 }
 
+.track-row.keyboard-focused {
+  outline: none;
+  background: rgba(158, 202, 255, .14);
+  box-shadow: inset 0 0 0 2px var(--theme-focus);
+}
+
+.track-row.keyboard-focused.selected {
+  background: var(--theme-selected-surface);
+}
+
 button:focus-visible,
 .scrub:focus-visible {
   outline: 2px solid rgba(158, 202, 255, .95);

@@ -324,6 +324,12 @@ let sourceVirtualSpacer = null;
 let sourceVirtualRenderRaf = 0;
 let selectedEpisodeSeason = null;
 let episodeStreamFilterId = "";
+let keyboardPanelMode = "";
+let keyboardSourceIndex = 0;
+let keyboardEpisodeIndex = 0;
+let keyboardEpisodeStreamIndex = 0;
+let keyboardEpisodeShowingStreams = false;
+let episodeListRenderKey = "";
 let submitIntroDraft = {
   segmentType: "intro",
   startTime: "00:00",
@@ -724,6 +730,10 @@ const closePlayerModal = (notifyDismiss = false, animated = true) => {
   if (notifyDismiss && closingModal === "p2pConsent") {
     send("cancelP2pForPlayerControls", 0);
   }
+  if (keyboardPanelMode && closingModal === keyboardPanelMode) {
+    keyboardPanelMode = "";
+    send("keyboardPanelClosed", 0);
+  }
   renderChrome();
 };
 
@@ -732,6 +742,10 @@ const openPlayerModal = modal => {
   if (!targetModal) {
     closePlayerModal(false);
     return;
+  }
+  if (keyboardPanelMode && modal !== keyboardPanelMode) {
+    keyboardPanelMode = "";
+    send("keyboardPanelClosed", 0);
   }
   activeModal = modal;
   if (modal === "submitIntro") {
@@ -1176,11 +1190,16 @@ const renderSourceVirtualRows = () => {
       send("selectSource", Number(selected.index) || 0);
       window.setTimeout(closePlayerModal, 120);
     });
+    row.dataset.keyboardSourceIndex = String(index);
+    row.classList.toggle("keyboard-focused", keyboardPanelMode === "sources" && index === keyboardSourceIndex);
     wrapper.appendChild(row);
     fragment.appendChild(wrapper);
     rendered.push({ index, wrapper });
   }
   sourceVirtualSpacer.appendChild(fragment);
+  if (keyboardPanelMode === "sources") {
+    window.requestAnimationFrame(() => focusKeyboardSourceRow());
+  }
 
   window.requestAnimationFrame(() => {
     let changed = false;
@@ -1250,10 +1269,27 @@ const renderSourceModal = () => {
   renderSourceVirtualRows();
 };
 
-const appendEpisodeRow = (container, item) => {
+const focusKeyboardSourceRow = () => {
+  const row = sourceList.querySelector(`[data-keyboard-source-index="${keyboardSourceIndex}"]`);
+  if (!row) return;
+  row.focus({ preventScroll: true });
+};
+
+const moveKeyboardSource = delta => {
+  if (sourceVirtualItems.length === 0) return;
+  keyboardSourceIndex = Math.max(0, Math.min(sourceVirtualItems.length - 1, keyboardSourceIndex + delta));
+  const offset = sourceVirtualOffsets[keyboardSourceIndex] || 0;
+  const height = sourceVirtualHeights[keyboardSourceIndex] || SourceRowEstimatedHeight;
+  sourceList.scrollTop = Math.max(0, offset - Math.max(0, sourceList.clientHeight - height) / 2);
+  renderSourceVirtualRows();
+};
+
+const appendEpisodeRow = (container, item, keyboardIndex) => {
   const row = document.createElement("button");
   row.type = "button";
   row.className = `track-row episode-row${item.isCurrent ? " selected" : ""}`;
+  row.dataset.keyboardEpisodeIndex = String(keyboardIndex);
+  row.classList.toggle("keyboard-focused", keyboardPanelMode === "episodes" && !keyboardEpisodeShowingStreams && keyboardIndex === keyboardEpisodeIndex);
   row.addEventListener("click", event => {
     event.stopPropagation();
     send("selectEpisode", Number(item.index) || 0);
@@ -1330,16 +1366,40 @@ const renderEpisodeList = () => {
     },
   );
 
-  episodeList.textContent = "";
   let items = normalizeItems(state.episodeItems);
   if (selectedSeason != null) {
     items = items.filter(item => Number(item.season) === Number(selectedSeason));
   }
-  if (items.length === 0) {
-    appendEmptyTrackState(episodeList, state.noEpisodesLabel || "No episodes available");
-    return;
+  const nextRenderKey = JSON.stringify([
+    selectedSeason,
+    state.noEpisodesLabel || "",
+    items.map(item => [
+      item.index,
+      item.id,
+      item.title,
+      item.code,
+      item.overview,
+      item.thumbnail,
+      Boolean(item.isCurrent),
+      Boolean(item.isWatched),
+    ]),
+  ]);
+  if (nextRenderKey !== episodeListRenderKey) {
+    episodeListRenderKey = nextRenderKey;
+    episodeList.textContent = "";
+    if (items.length === 0) {
+      appendEmptyTrackState(episodeList, state.noEpisodesLabel || "No episodes available");
+    } else {
+      items.forEach((item, index) => appendEpisodeRow(episodeList, item, index));
+    }
   }
-  items.forEach(item => appendEpisodeRow(episodeList, item));
+  keyboardEpisodeIndex = Math.max(0, Math.min(Math.max(0, items.length - 1), keyboardEpisodeIndex));
+  episodeList.querySelectorAll("[data-keyboard-episode-index]").forEach((row, index) => {
+    row.classList.toggle("keyboard-focused", keyboardPanelMode === "episodes" && index === keyboardEpisodeIndex);
+  });
+  if (keyboardPanelMode === "episodes") {
+    window.requestAnimationFrame(() => focusKeyboardEpisodeRow());
+  }
 };
 
 const renderEpisodeStreams = () => {
@@ -1369,14 +1429,26 @@ const renderEpisodeStreams = () => {
     );
     return;
   }
-  items.forEach(item => appendSourceRow(episodeStreamList, item, selected => {
-    send("selectEpisodeStream", Number(selected.index) || 0);
-    window.setTimeout(closePlayerModal, 120);
-  }));
+  items.forEach((item, index) => {
+    const row = buildSourceRow(item, selected => {
+      send("selectEpisodeStream", Number(selected.index) || 0);
+      window.setTimeout(closePlayerModal, 120);
+    });
+    row.dataset.keyboardEpisodeStreamIndex = String(index);
+    row.classList.toggle("keyboard-focused", keyboardPanelMode === "episodes" && keyboardEpisodeShowingStreams && index === keyboardEpisodeStreamIndex);
+    episodeStreamList.appendChild(row);
+  });
+  if (keyboardPanelMode === "episodes") {
+    window.requestAnimationFrame(() => focusKeyboardEpisodeStreamRow());
+  }
 };
 
 const renderEpisodesModal = () => {
   const showStreams = Boolean(state.episodeStreamsVisible);
+  if (keyboardPanelMode === "episodes" && showStreams !== keyboardEpisodeShowingStreams) {
+    keyboardEpisodeStreamIndex = 0;
+  }
+  keyboardEpisodeShowingStreams = showStreams;
   episodeListView.hidden = showStreams;
   episodeStreamsView.hidden = !showStreams;
   if (showStreams) {
@@ -1384,6 +1456,64 @@ const renderEpisodesModal = () => {
   } else {
     renderEpisodeList();
   }
+};
+
+const visibleKeyboardEpisodes = () => {
+  const selectedSeason = ensureEpisodeSeason();
+  const items = normalizeItems(state.episodeItems);
+  return selectedSeason == null
+    ? items
+    : items.filter(item => Number(item.season) === Number(selectedSeason));
+};
+
+const visibleKeyboardEpisodeStreams = () => {
+  const items = normalizeItems(state.episodeStreamItems);
+  return episodeStreamFilterId
+    ? items.filter(item => String(item.filterId || "") === episodeStreamFilterId)
+    : items;
+};
+
+const focusKeyboardEpisodeRow = () => {
+  episodeList.querySelectorAll("[data-keyboard-episode-index]").forEach((candidate, index) => {
+    candidate.classList.toggle("keyboard-focused", index === keyboardEpisodeIndex);
+  });
+  const row = episodeList.querySelector(`[data-keyboard-episode-index="${keyboardEpisodeIndex}"]`);
+  if (!row) return;
+  row.focus({ preventScroll: true });
+  row.scrollIntoView({ block: "center", inline: "nearest" });
+};
+
+const focusKeyboardEpisodeStreamRow = () => {
+  const row = episodeStreamList.querySelector(`[data-keyboard-episode-stream-index="${keyboardEpisodeStreamIndex}"]`);
+  if (!row) return;
+  row.focus({ preventScroll: true });
+  row.scrollIntoView({ block: "center", inline: "nearest" });
+};
+
+const moveKeyboardEpisode = delta => {
+  const items = visibleKeyboardEpisodes();
+  if (items.length === 0) return;
+  keyboardEpisodeIndex = Math.max(0, Math.min(items.length - 1, keyboardEpisodeIndex + delta));
+  focusKeyboardEpisodeRow();
+};
+
+const moveKeyboardEpisodeStream = delta => {
+  const items = visibleKeyboardEpisodeStreams();
+  if (items.length === 0) return;
+  keyboardEpisodeStreamIndex = Math.max(0, Math.min(items.length - 1, keyboardEpisodeStreamIndex + delta));
+  renderEpisodeStreams();
+};
+
+const moveKeyboardSeason = delta => {
+  const seasons = normalizeItems(state.episodeSeasons);
+  if (seasons.length === 0) return;
+  const currentSeason = ensureEpisodeSeason();
+  const currentIndex = Math.max(0, seasons.findIndex(season => Number(season.season) === Number(currentSeason)));
+  const nextIndex = Math.max(0, Math.min(seasons.length - 1, currentIndex + delta));
+  if (nextIndex === currentIndex) return;
+  selectedEpisodeSeason = Number(seasons[nextIndex].season) || 0;
+  keyboardEpisodeIndex = 0;
+  renderEpisodeList();
 };
 
 const setInputValue = (input, value) => {
@@ -2072,6 +2202,72 @@ episodeReloadButton.addEventListener("click", event => {
   send("reloadEpisodeStreams", 0);
 });
 
+window.nuvioOpenKeyboardPanel = panel => {
+  if (panel === "sources") {
+    keyboardPanelMode = "sources";
+    send("keyboardPanelOpened", 0);
+    keyboardSourceIndex = 0;
+    sourceFilterId = "";
+    openPlayerModal("sources");
+    send("sources", 0);
+    return;
+  }
+  if (panel === "episodes") {
+    keyboardPanelMode = "episodes";
+    send("keyboardPanelOpened", 0);
+    keyboardEpisodeShowingStreams = false;
+    keyboardEpisodeStreamIndex = 0;
+    episodeStreamFilterId = "";
+    const currentEpisode = normalizeItems(state.episodeItems).find(item => Boolean(item.isCurrent));
+    const currentSeason = normalizeItems(state.episodeSeasons).find(season => Boolean(season.isSelected));
+    selectedEpisodeSeason = currentEpisode
+      ? Number(currentEpisode.season)
+      : (currentSeason ? Number(currentSeason.season) : null);
+    const items = visibleKeyboardEpisodes();
+    const currentIndex = items.findIndex(item => Boolean(item.isCurrent));
+    keyboardEpisodeIndex = currentIndex >= 0 ? currentIndex : 0;
+    openPlayerModal("episodes");
+    send("episodes", 0);
+  }
+};
+
+window.nuvioHandleKeyboardPanelKey = code => {
+  if (!keyboardPanelMode) return;
+  if (code === "Escape") {
+    closePlayerModal(true);
+    return;
+  }
+  if (keyboardPanelMode === "sources") {
+    if (code === "ArrowUp") moveKeyboardSource(-1);
+    if (code === "ArrowDown") moveKeyboardSource(1);
+    if (code === "Enter") {
+      const item = sourceVirtualItems[keyboardSourceIndex];
+      if (item) send("selectSource", Number(item.index) || 0);
+    }
+    return;
+  }
+  if (keyboardPanelMode === "episodes") {
+    if (keyboardEpisodeShowingStreams) {
+      if (code === "ArrowUp") moveKeyboardEpisodeStream(-1);
+      if (code === "ArrowDown") moveKeyboardEpisodeStream(1);
+      if (code === "ArrowLeft") send("backToEpisodes", 0);
+      if (code === "Enter") {
+        const item = visibleKeyboardEpisodeStreams()[keyboardEpisodeStreamIndex];
+        if (item) send("selectEpisodeStream", Number(item.index) || 0);
+      }
+      return;
+    }
+    if (code === "ArrowUp") moveKeyboardEpisode(-1);
+    if (code === "ArrowDown") moveKeyboardEpisode(1);
+    if (code === "ArrowLeft") moveKeyboardSeason(-1);
+    if (code === "ArrowRight") moveKeyboardSeason(1);
+    if (code === "Enter") {
+      const item = visibleKeyboardEpisodes()[keyboardEpisodeIndex];
+      if (item) send("selectEpisode", Number(item.index) || 0);
+    }
+  }
+};
+
 const updateSubmitSegment = segment => {
   submitIntroDraft.segmentType = segment;
   submitIntroDraft.status = "";
@@ -2287,8 +2483,32 @@ document.addEventListener("keydown", event => {
     send("toggleFullscreen", 0);
     return;
   }
+  if (keyboardPanelMode && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "NumpadEnter"].includes(event.code)) {
+    event.preventDefault();
+    window.nuvioHandleKeyboardPanelKey(event.code === "NumpadEnter" ? "Enter" : event.code);
+    return;
+  }
   if (activeModal || isTextEntryTarget(event.target)) {
     return;
+  }
+  if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+    const directKeybind = {
+      KeyC: () => send("resize", 0),
+      BracketLeft: () => send("keyboardSpeedStep", -1),
+      BracketRight: () => send("keyboardSpeedStep", 1),
+      KeyS: () => send("keyboardNextSubtitle", 0),
+      KeyA: () => send("keyboardNextAudio", 0),
+      KeyO: () => window.nuvioOpenKeyboardPanel("sources"),
+      KeyE: () => window.nuvioOpenKeyboardPanel("episodes"),
+      F8: () => send("keyboardCycleHdrMode", 0),
+      F9: () => send("keyboardCycleColorProfile", 0),
+    }[event.code];
+    if (directKeybind) {
+      event.preventDefault();
+      noteChromeActivity();
+      directKeybind();
+      return;
+    }
   }
   const command = shortcutCommandForEvent(event);
   if (!command) {

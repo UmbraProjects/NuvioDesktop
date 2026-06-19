@@ -821,6 +821,9 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         "volumeUp" -> adjustVolume(PlayerVolumeStepFraction)
         "volumeDown" -> adjustVolume(-PlayerVolumeStepFraction)
         "volumeDelta" -> adjustVolume(value.toFloat())
+        "keyboardSpeedStep" -> adjustPlaybackSpeedStep(if (value < 0.0) -1 else 1)
+        "keyboardNextSubtitle" -> cycleSubtitleTrackFromKeyboard()
+        "keyboardNextAudio" -> cycleAudioTrackFromKeyboard()
         else -> return false
     }
     return true
