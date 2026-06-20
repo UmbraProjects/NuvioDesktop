@@ -183,6 +183,43 @@ object TraktSettingsRepository {
         )
     }
 
+    /**
+     * Exports only portable Trakt preferences for profile settings sync.
+     *
+     * OAuth client credentials are device-local secrets. Including them in the general
+     * profile blob also allowed an older/default empty blob to erase working credentials.
+     */
+    fun exportToSyncPayload(): String {
+        ensureLoaded()
+        return json.encodeToString(
+            StoredTraktSettings(
+                watchProgressSource = _uiState.value.watchProgressSource.name,
+                continueWatchingDaysCap = _uiState.value.continueWatchingDaysCap,
+                librarySourceMode = _uiState.value.librarySourceMode.name,
+                moreLikeThisSource = _uiState.value.moreLikeThisSource.name,
+            ),
+        )
+    }
+
+    /** Applies remote preferences without ever replacing this device's credentials. */
+    fun replaceFromSyncPayload(payload: String) {
+        ensureLoaded()
+        val normalized = payload.trim()
+        if (normalized.isEmpty()) return
+
+        val stored = runCatching {
+            json.decodeFromString<StoredTraktSettings>(normalized)
+        }.getOrNull() ?: return
+
+        _uiState.value = _uiState.value.copy(
+            watchProgressSource = WatchProgressSource.fromStorage(stored.watchProgressSource),
+            continueWatchingDaysCap = normalizeTraktContinueWatchingDaysCap(stored.continueWatchingDaysCap),
+            librarySourceMode = librarySourceModeFromStorage(stored.librarySourceMode),
+            moreLikeThisSource = MoreLikeThisSourcePreference.fromStorage(stored.moreLikeThisSource),
+        )
+        persist()
+    }
+
     private fun loadFromDisk() {
         hasLoaded = true
 

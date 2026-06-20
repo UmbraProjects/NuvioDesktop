@@ -21,6 +21,9 @@ import platform.Foundation.NSURLComponents
 import platform.Foundation.NSURLQueryItem
 
 internal object TrailerExtractionPlatform {
+    val preferredSeparateVideoHeights: List<Int> = listOf(1080)
+    val preferSeparateVideoClient: Boolean = true
+
     val defaultHeaders: Map<String, String> = mapOf(
         "accept-language" to "en-US,en;q=0.9",
         "user-agent" to

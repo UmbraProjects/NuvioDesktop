@@ -16,6 +16,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 internal object TrailerExtractionPlatform {
+    val preferredSeparateVideoHeights: List<Int> = listOf(1080)
+    val preferSeparateVideoClient: Boolean = true
+
     val defaultHeaders: Map<String, String> = mapOf(
         "accept-language" to "en-US,en;q=0.9",
         "user-agent" to

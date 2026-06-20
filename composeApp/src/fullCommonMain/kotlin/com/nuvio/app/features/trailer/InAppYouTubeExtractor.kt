@@ -15,7 +15,6 @@ internal const val TRAILER_REQUEST_TIMEOUT_MS = 20_000L
 
 private const val EXTRACTOR_TIMEOUT_MS = 30_000L
 private const val PREFERRED_SEPARATE_CLIENT = "android_vr"
-private const val PREFERRED_SEPARATE_VIDEO_HEIGHT = 1080
 
 private val VIDEO_ID_REGEX = Regex("^[a-zA-Z0-9_-]{11}$")
 private val API_KEY_REGEX = Regex("\"INNERTUBE_API_KEY\":\"([^\"]+)\"")
@@ -44,6 +43,7 @@ internal data class StreamCandidate(
     val hasN: Boolean,
     val height: Int,
     val fps: Int,
+    val bitrate: Double,
     val ext: String,
 )
 
@@ -207,6 +207,7 @@ class InAppYouTubeExtractor {
                         hasN = hasNParam(url),
                         height = height,
                         fps = fps,
+                        bitrate = bitrate,
                         ext = if (mimeType.contains("webm")) "webm" else "mp4",
                     )
                 }
@@ -236,6 +237,7 @@ class InAppYouTubeExtractor {
                             hasN = hasNParam(url),
                             height = height,
                             fps = fps,
+                            bitrate = bitrate,
                             ext = if (mimeType.contains("webm")) "webm" else "mp4",
                         )
                     } else if (hasAudio) {
@@ -252,6 +254,7 @@ class InAppYouTubeExtractor {
                             hasN = hasNParam(url),
                             height = 0,
                             fps = 0,
+                            bitrate = bitrate,
                             ext = if (mimeType.contains("webm")) "webm" else "m4a",
                         )
                     }
@@ -289,7 +292,8 @@ class InAppYouTubeExtractor {
         val bestVideo = pickBestVideoForClient(
             items = adaptiveVideo,
             clientKey = PREFERRED_SEPARATE_CLIENT,
-            preferredMaxHeight = PREFERRED_SEPARATE_VIDEO_HEIGHT,
+            preferredHeights = TrailerExtractionPlatform.preferredSeparateVideoHeights,
+            preferClient = TrailerExtractionPlatform.preferSeparateVideoClient,
         )
         val bestAudio = pickBestForClient(adaptiveAudio, PREFERRED_SEPARATE_CLIENT)
 
@@ -539,11 +543,13 @@ class InAppYouTubeExtractor {
     private fun pickBestVideoForClient(
         items: List<StreamCandidate>,
         clientKey: String,
-        preferredMaxHeight: Int,
+        preferredHeights: List<Int>,
+        preferClient: Boolean,
     ): StreamCandidate? {
-        val withinPreferredResolution = items.filter { it.height in 1..preferredMaxHeight }
-        val targetHeight = withinPreferredResolution.maxOfOrNull { it.height }
-            ?: items.map { it.height }.filter { it > preferredMaxHeight }.minOrNull()
+        val availableHeights = items.map { it.height }.filter { it > 0 }.distinct()
+        val targetHeight = preferredHeights.firstOrNull { it in availableHeights }
+            ?: availableHeights.filter { it < (preferredHeights.lastOrNull() ?: 1080) }.maxOrNull()
+            ?: availableHeights.maxOrNull()
             ?: return null
         val resolutionPool = items.filter { it.height == targetHeight }
         // At accelerated playback, 60 fps content makes the decoder/render path process
@@ -552,8 +558,18 @@ class InAppYouTubeExtractor {
         val frameRatePool = resolutionPool.filter { it.fps in 1..30 }.ifEmpty { resolutionPool }
         val unthrottled = frameRatePool.filterNot { it.hasN }
         val networkPool = unthrottled.ifEmpty { frameRatePool }
-        val preferredClient = networkPool.filter { it.client == clientKey }
-        return sortCandidates(preferredClient.ifEmpty { networkPool }).firstOrNull()
+        val clientPool = if (preferClient) {
+            networkPool.filter { it.client == clientKey }.ifEmpty { networkPool }
+        } else {
+            networkPool
+        }
+        // At a fixed resolution/frame-rate class, bitrate is the best useful proxy for
+        // visual quality. This deliberately beats client and container preferences.
+        return clientPool.sortedWith(
+            compareByDescending<StreamCandidate> { it.bitrate }
+                .thenBy { containerPreference(it.ext) }
+                .thenBy { it.priority },
+        ).firstOrNull()
     }
 
     private fun containerPreference(ext: String): Int {

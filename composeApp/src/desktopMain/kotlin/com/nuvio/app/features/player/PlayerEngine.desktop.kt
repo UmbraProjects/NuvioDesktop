@@ -222,7 +222,10 @@ private fun NativePlayerSurface(
         }
     }
 
-    DisposableEffect(controller, sourceUrl, playbackHeaders) {
+    // Source changes are handled by controller.attach(), which replaces the current native
+    // handle. Disposing here on every URL/header change permanently marks the remembered
+    // controller as unusable and can synchronously block the UI while mpv/WebView2 shut down.
+    DisposableEffect(controller) {
         onDispose { controller.dispose() }
     }
 

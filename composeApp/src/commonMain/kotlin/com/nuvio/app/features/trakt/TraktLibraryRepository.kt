@@ -144,7 +144,14 @@ object TraktLibraryRepository {
 
             val headers = TraktAuthRepository.authorizedHeaders()
             if (headers == null) {
-                _uiState.value = TraktLibraryUiState()
+                // Authentication state and credential availability can briefly disagree during
+                // profile sync/startup. Keep a loaded disk snapshot visible instead of resetting
+                // the repository to its initial state and stranding Library on skeleton rows.
+                _uiState.value = current.copy(
+                    isLoading = false,
+                    hasLoaded = true,
+                    errorMessage = getString(Res.string.trakt_missing_credentials),
+                )
                 lastRefreshAtMs = 0L
                 lastListTabsRefreshAtMs = 0L
                 return

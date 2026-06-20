@@ -28,7 +28,6 @@ import com.nuvio.app.features.tmdb.TmdbSettingsStorage
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.trakt.TraktCommentsStorage
 import com.nuvio.app.features.trakt.TraktCommentsSettings
-import com.nuvio.app.features.trakt.TraktSettingsStorage
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesStorage
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
@@ -232,7 +231,7 @@ object ProfileSettingsSync {
                 metaScreenSettingsPayload = MetaScreenSettingsStorage.loadPayload().orEmpty().trim(),
                 collectionMobileSettingsPayload = CollectionMobileSettingsStorage.loadPayload().orEmpty().trim(),
                 continueWatchingSettingsPayload = ContinueWatchingPreferencesStorage.loadPayload().orEmpty().trim(),
-                traktSettingsPayload = TraktSettingsStorage.loadPayload().orEmpty().trim(),
+                traktSettingsPayload = TraktSettingsRepository.exportToSyncPayload(),
                 traktCommentsSettings = TraktCommentsStorage.exportToSyncPayload(),
                 notificationsSettings = NotificationsSettingsPayload(
                     episodeReleaseAlertsEnabled = EpisodeReleaseNotificationsRepository.uiState.value.isEnabled,
@@ -278,8 +277,7 @@ object ProfileSettingsSync {
         ContinueWatchingPreferencesStorage.savePayload(blob.features.continueWatchingSettingsPayload)
         ContinueWatchingPreferencesRepository.onProfileChanged()
 
-        TraktSettingsStorage.savePayload(blob.features.traktSettingsPayload)
-        TraktSettingsRepository.onProfileChanged()
+        TraktSettingsRepository.replaceFromSyncPayload(blob.features.traktSettingsPayload)
 
         TraktCommentsStorage.replaceFromSyncPayload(blob.features.traktCommentsSettings)
         TraktCommentsSettings.onProfileChanged()

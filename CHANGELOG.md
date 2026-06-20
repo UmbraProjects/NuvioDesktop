@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.1 - 2026-06-20
+
+### Improved
+
+- Improved Windows trailer quality for high-resolution displays by preferring high-bitrate unthrottled 1440p streams, then 2160p, 1080p, and the best available lower-quality fallback.
+
+### Fixed
+
+- Fixed profile settings sync being able to erase device-local Trakt client credentials, which could leave the Trakt library stuck on loading placeholders. Trakt credentials are no longer included in synced profile settings, and cached library content remains available during temporary credential failures.
+- Fixed switching sources from the desktop player's Sources panel freezing playback or leaving the native player permanently disposed.
+
 ## 1.1.0 - 2026-06-20
 
 ### Added

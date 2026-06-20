@@ -17,6 +17,14 @@ import java.time.Duration
  * mpv as one multi-stream EDL input; macOS attaches the audio track during initialization.
  */
 internal object TrailerExtractionPlatform {
+    private val isWindows = System.getProperty("os.name").orEmpty().contains("windows", ignoreCase = true)
+
+    // Windows is primarily used on 4K TVs and desktop monitors. Prefer 1440p as the
+    // quality/performance sweet spot, then use 4K before falling back to 1080p.
+    val preferredSeparateVideoHeights: List<Int> =
+        if (isWindows) listOf(1440, 2160, 1080) else listOf(1080)
+    val preferSeparateVideoClient: Boolean = !isWindows
+
     val defaultHeaders: Map<String, String> = mapOf(
         "accept-language" to "en-US,en;q=0.9",
         "user-agent" to
