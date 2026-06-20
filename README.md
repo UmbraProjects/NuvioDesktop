@@ -14,25 +14,50 @@
 
 </div>
 
-## Fork Changes
+## HTPC Fork Changes
 
 [![Nuvio TV Mode Demo](https://img.youtube.com/vi/bic_VKPs6Uo/maxresdefault.jpg)](https://www.youtube.com/watch?v=bic_VKPs6Uo)
 
 This fork is unaffiliated with the Nuvio team, here are the changes:
 
-1. Adapative Hero, with option to tint the background based on backdrop. Designed for full screen only.
-2. Full TV Mode UI, use full screen and extra large posters or it won't work properly.
-3. Keyboard controls for most of the application.
-4. Improved mouse support, hold your mouse at the edge of a catalog to auto scroll, hold and drag to scroll fast, hold shift and use the mouse wheel.
-5. Larger posters option
-6. Playback speed defaults
-7. Hotkeys for search and library
-8. Renderer swapped from D3D to OpenGL as I was getting irritating lighting issues with the adapative hero. This doesn't effect playback at all.
-9. Probably other stuff I've forgotten about, generally just improvements to PC.
+1. Adaptative Hero, with option to tint the background based on backdrop.
+2. Full TV Mode UI for full screen mode.
+3. Trailers on the home screen in either the hero or full screen, they also play in MPV if opened in the media info screen.
+4. Keyboard controls for most of the application.
+5. Improved mouse support, hold your mouse at the edge of a catalog to auto scroll, hold and drag to scroll fast, hold shift and use the mouse wheel.
+6. Larger posters option.
+7. Playback speed defaults.
+8. Hotkeys for search and library.
+9. Renderer swapped from D3D to OpenGL as I was getting irritating lighting issues with the adaptative hero. This doesn't effect playback at all.
+10. Tuned MPV config with three color profiles, thanks to Allecsc the developer of [Stremio Kai](https://github.com/allecsc/Stremio-Kai) who gave permission for them to be used here.
+11. Binge mode to automatically trigger the next episode ASAP without manual input.
+12. Probably other stuff I've forgotten about, generally just improvements to PC.
 
-It may be discontinued when/if the official Nuvio PC version gets a TV mode/adaptive hero.
+The design is partly inspired by Nuvio TV and Stremio Kai. The fork may be discontinued when/if the official Nuvio PC version implements a TV mode.
 
-The design is partly inspired by Nuvio TV and Stremio Kai by allecsc.
+## Fork Hotkeys
+
+Assume arrow keys for navigation, enter to confirm, backspace/escape to go backwards (escape is an official hotkey.)
+
+Homepage:
+
+- S to open the search panel (back to home if already in search)
+- L to open the library panel (back to home if already in library)
+- T to play the trailer (adaptive hero/TV mode only)
+
+Player:
+
+- F8 toggles HDR mode
+- F9 toggles color profile
+- A to toggle audio track
+- S to toggle subtitles
+- O for sources
+- E for episodes
+- Up/down to change volume
+- [] to change playback speed
+- C to cycle aspect ratio
+
+This concludes the forks readme, anything beyond this point is from the official upstream Nuvio Desktop.
 
 ## About
 
