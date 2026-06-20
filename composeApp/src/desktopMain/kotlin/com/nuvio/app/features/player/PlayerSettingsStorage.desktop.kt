@@ -84,6 +84,10 @@ internal actual object PlayerSettingsStorage {
     private const val iosGammaKey = "ios_gamma"
     private const val desktopHdrModeKey = "desktop_hdr_mode"
     private const val desktopColorProfileKey = "desktop_color_profile"
+    private const val heroTvTrailerEnabledKey = "hero_tv_trailer_enabled"
+    private const val heroTvTrailerDelaySecondsKey = "hero_tv_trailer_delay_seconds"
+    private const val heroTvTrailerSoundEnabledKey = "hero_tv_trailer_sound_enabled"
+    private const val heroTvTrailerFullscreenKey = "hero_tv_trailer_fullscreen"
     private val syncKeys = listOf(
         showLoadingOverlayKey,
         resizeModeKey,
@@ -147,6 +151,10 @@ internal actual object PlayerSettingsStorage {
         iosContrastKey,
         iosSaturationKey,
         iosGammaKey,
+        heroTvTrailerEnabledKey,
+        heroTvTrailerDelaySecondsKey,
+        heroTvTrailerSoundEnabledKey,
+        heroTvTrailerFullscreenKey,
     )
     private val store = DesktopStorage.store("nuvio_player_settings")
 
@@ -286,6 +294,14 @@ internal actual object PlayerSettingsStorage {
     actual fun saveDesktopHdrMode(mode: String) = saveString(desktopHdrModeKey, mode)
     actual fun loadDesktopColorProfile(): String? = loadString(desktopColorProfileKey)
     actual fun saveDesktopColorProfile(profile: String) = saveString(desktopColorProfileKey, profile)
+    actual fun loadHeroTvTrailerEnabled(): Boolean? = loadBoolean(heroTvTrailerEnabledKey)
+    actual fun saveHeroTvTrailerEnabled(enabled: Boolean) = saveBoolean(heroTvTrailerEnabledKey, enabled)
+    actual fun loadHeroTvTrailerDelaySeconds(): Int? = loadInt(heroTvTrailerDelaySecondsKey)
+    actual fun saveHeroTvTrailerDelaySeconds(seconds: Int) = saveInt(heroTvTrailerDelaySecondsKey, seconds)
+    actual fun loadHeroTvTrailerSoundEnabled(): Boolean? = loadBoolean(heroTvTrailerSoundEnabledKey)
+    actual fun saveHeroTvTrailerSoundEnabled(enabled: Boolean) = saveBoolean(heroTvTrailerSoundEnabledKey, enabled)
+    actual fun loadHeroTvTrailerFullscreen(): Boolean? = loadBoolean(heroTvTrailerFullscreenKey)
+    actual fun saveHeroTvTrailerFullscreen(enabled: Boolean) = saveBoolean(heroTvTrailerFullscreenKey, enabled)
 
     private fun scoped(key: String): String = ProfileScopedKey.of(key)
     private fun loadString(key: String): String? = store.getString(scoped(key))
@@ -364,6 +380,10 @@ internal actual object PlayerSettingsStorage {
         loadIosContrast()?.let { put(iosContrastKey, encodeSyncInt(it)) }
         loadIosSaturation()?.let { put(iosSaturationKey, encodeSyncInt(it)) }
         loadIosGamma()?.let { put(iosGammaKey, encodeSyncInt(it)) }
+        loadHeroTvTrailerEnabled()?.let { put(heroTvTrailerEnabledKey, encodeSyncBoolean(it)) }
+        loadHeroTvTrailerDelaySeconds()?.let { put(heroTvTrailerDelaySecondsKey, encodeSyncInt(it)) }
+        loadHeroTvTrailerSoundEnabled()?.let { put(heroTvTrailerSoundEnabledKey, encodeSyncBoolean(it)) }
+        loadHeroTvTrailerFullscreen()?.let { put(heroTvTrailerFullscreenKey, encodeSyncBoolean(it)) }
     }
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
@@ -433,5 +453,9 @@ internal actual object PlayerSettingsStorage {
         payload.decodeSyncInt(iosContrastKey)?.let(::saveIosContrast)
         payload.decodeSyncInt(iosSaturationKey)?.let(::saveIosSaturation)
         payload.decodeSyncInt(iosGammaKey)?.let(::saveIosGamma)
+        payload.decodeSyncBoolean(heroTvTrailerEnabledKey)?.let(::saveHeroTvTrailerEnabled)
+        payload.decodeSyncInt(heroTvTrailerDelaySecondsKey)?.let(::saveHeroTvTrailerDelaySeconds)
+        payload.decodeSyncBoolean(heroTvTrailerSoundEnabledKey)?.let(::saveHeroTvTrailerSoundEnabled)
+        payload.decodeSyncBoolean(heroTvTrailerFullscreenKey)?.let(::saveHeroTvTrailerFullscreen)
     }
 }

@@ -90,6 +90,11 @@ object ProfileSettingsSync {
     private val syncPlayerSettings: Boolean
         get() = !isDesktop
 
+    // The desktop fork extends poster sizing (e.g. Extra Large Posters); keep it local so the
+    // fork value doesn't overwrite the official apps' poster size in the shared cloud profile.
+    private val syncPosterCardStyle: Boolean
+        get() = !isDesktop
+
     fun startObserving() {
         if (observeJob?.isActive == true) return
         ensureRepositoriesLoaded()
@@ -203,7 +208,7 @@ object ProfileSettingsSync {
     }
 
     private suspend fun pushToRemoteLocked(profileId: Int, blob: MobileProfileSettingsBlob) {
-        val blobToPush = withPreservedDesktopPlayerSettings(profileId, blob)
+        val blobToPush = withPreservedDesktopOnlySettings(profileId, blob)
         val params = buildJsonObject {
             put("p_profile_id", profileId)
             put("p_platform", MOBILE_SYNC_PLATFORM)
@@ -240,8 +245,10 @@ object ProfileSettingsSync {
         ThemeSettingsStorage.replaceFromSyncPayload(blob.features.themeSettings)
         ThemeSettingsRepository.onProfileChanged()
 
-        PosterCardStyleStorage.savePayload(blob.features.posterCardStyleSettingsPayload)
-        PosterCardStyleRepository.onProfileChanged()
+        if (syncPosterCardStyle) {
+            PosterCardStyleStorage.savePayload(blob.features.posterCardStyleSettingsPayload)
+            PosterCardStyleRepository.onProfileChanged()
+        }
 
         if (syncPlayerSettings) {
             PlayerSettingsStorage.replaceFromSyncPayload(blob.features.playerSettings)
@@ -308,7 +315,9 @@ object ProfileSettingsSync {
         add("theme=${ThemeSettingsRepository.selectedTheme.value.name}")
         add("amoled=${ThemeSettingsRepository.amoledEnabled.value}")
         add("liquid_glass_tab_bar=${ThemeSettingsRepository.liquidGlassNativeTabBarEnabled.value}")
-        add("poster_card_style=${PosterCardStyleRepository.uiState.value}")
+        if (syncPosterCardStyle) {
+            add("poster_card_style=${PosterCardStyleRepository.uiState.value}")
+        }
         if (syncPlayerSettings) {
             add("player=${PlayerSettingsRepository.uiState.value}")
         }
@@ -349,11 +358,11 @@ object ProfileSettingsSync {
         preservedRemotePlayerSettings
             ?.takeIf { preservedRemotePlayerSettingsProfileId == profileId }
 
-    private suspend fun withPreservedDesktopPlayerSettings(
+    private suspend fun withPreservedDesktopOnlySettings(
         profileId: Int,
         blob: MobileProfileSettingsBlob,
     ): MobileProfileSettingsBlob {
-        if (syncPlayerSettings) return blob
+        if (syncPlayerSettings && syncPosterCardStyle) return blob
 
         val remoteBlobResult = runCatching {
             fetchRemoteSettingsJson(profileId)
@@ -361,21 +370,33 @@ object ProfileSettingsSync {
                     json.decodeFromJsonElement(MobileProfileSettingsBlob.serializer(), remoteJson)
                 }
         }
+        val remoteBlob = remoteBlobResult.getOrNull()
         val remotePlayerSettings = if (remoteBlobResult.isSuccess) {
-            remoteBlobResult.getOrNull()?.features?.playerSettings ?: JsonObject(emptyMap())
+            remoteBlob?.features?.playerSettings ?: JsonObject(emptyMap())
         } else {
             val error = remoteBlobResult.exceptionOrNull()
             if (error != null) {
-                log.e(error) { "pushToRemoteLocked(profileId=$profileId) — failed to preserve remote player settings" }
+                log.e(error) { "pushToRemoteLocked(profileId=$profileId) — failed to preserve remote desktop-only settings" }
             }
             preservedRemotePlayerSettingsFor(profileId) ?: throw (error ?: IllegalStateException("Missing remote player settings"))
+        }
+        // On a transient fetch failure keep the local poster payload rather than risk wiping it.
+        val remotePosterCardStyle = if (remoteBlobResult.isSuccess) {
+            remoteBlob?.features?.posterCardStyleSettingsPayload.orEmpty()
+        } else {
+            blob.features.posterCardStyleSettingsPayload
         }
 
         preservedRemotePlayerSettingsProfileId = profileId
         preservedRemotePlayerSettings = remotePlayerSettings
         return blob.copy(
             features = blob.features.copy(
-                playerSettings = remotePlayerSettings,
+                playerSettings = if (syncPlayerSettings) blob.features.playerSettings else remotePlayerSettings,
+                posterCardStyleSettingsPayload = if (syncPosterCardStyle) {
+                    blob.features.posterCardStyleSettingsPayload
+                } else {
+                    remotePosterCardStyle
+                },
             ),
         )
     }

@@ -126,6 +126,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                         description = stringResource(Res.string.settings_homescreen_tv_mode_description),
                         checked = tvModeEnabled,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHero),
                         onCheckedChange = HomeCatalogSettingsRepository::setTvModeEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
@@ -135,6 +136,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                         checked = heroAmbientBackgroundEnabled,
                         enabled = heroEnabled,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HeroAmbient),
                         onCheckedChange = HomeCatalogSettingsRepository::setHeroAmbientBackgroundEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
@@ -144,6 +146,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                         checked = immersiveCatalogModeEnabled,
                         enabled = heroEnabled,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TvMode),
                         onCheckedChange = HomeCatalogSettingsRepository::setImmersiveCatalogModeEnabled,
                     )
                 }

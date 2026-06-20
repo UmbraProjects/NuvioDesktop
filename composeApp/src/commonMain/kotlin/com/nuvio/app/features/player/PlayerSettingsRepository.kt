@@ -14,6 +14,16 @@ val STREAM_AUTO_PLAY_TIMEOUT_VALUES: List<Int> = listOf(
 )
 
 /**
+ * Allowed wait durations (seconds) before the TV-mode home hero swaps to the focused
+ * item's trailer.
+ */
+val HERO_TV_TRAILER_DELAY_VALUES: List<Int> = listOf(1, 2, 3, 5, 8, 10, 15)
+
+/** Snaps [value] to the nearest allowed delay in [HERO_TV_TRAILER_DELAY_VALUES]. */
+fun snapToHeroTvTrailerDelay(value: Int): Int =
+    HERO_TV_TRAILER_DELAY_VALUES.minByOrNull { abs(it - value) } ?: 5
+
+/**
  * Snaps [value] to the nearest allowed timeout value in [STREAM_AUTO_PLAY_TIMEOUT_VALUES].
  * Ties break to the lower value. Negative values snap to 0.
  */
@@ -89,6 +99,10 @@ data class PlayerSettingsUiState(
     val iosGamma: Int = 0,
     val desktopHdrMode: DesktopHdrMode = DesktopHdrMode.Auto,
     val desktopColorProfile: DesktopColorProfile = DesktopColorProfile.Neutral,
+    val heroTvTrailerEnabled: Boolean = false,
+    val heroTvTrailerDelaySeconds: Int = 5,
+    val heroTvTrailerSoundEnabled: Boolean = false,
+    val heroTvTrailerFullscreen: Boolean = false,
 )
 
 object PlayerSettingsRepository {
@@ -153,6 +167,10 @@ object PlayerSettingsRepository {
     private var iosGamma = 0
     private var desktopHdrMode = DesktopHdrMode.Auto
     private var desktopColorProfile = DesktopColorProfile.Neutral
+    private var heroTvTrailerEnabled = false
+    private var heroTvTrailerDelaySeconds = 5
+    private var heroTvTrailerSoundEnabled = false
+    private var heroTvTrailerFullscreen = false
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -222,6 +240,10 @@ object PlayerSettingsRepository {
         iosGamma = 0
         desktopHdrMode = DesktopHdrMode.Auto
         desktopColorProfile = DesktopColorProfile.Neutral
+        heroTvTrailerEnabled = false
+        heroTvTrailerDelaySeconds = 5
+        heroTvTrailerSoundEnabled = false
+        heroTvTrailerFullscreen = false
         publish()
     }
 
@@ -359,6 +381,11 @@ object PlayerSettingsRepository {
         desktopColorProfile = PlayerSettingsStorage.loadDesktopColorProfile()
             ?.let { runCatching { DesktopColorProfile.valueOf(it) }.getOrNull() }
             ?: DesktopColorProfile.Neutral
+        heroTvTrailerEnabled = PlayerSettingsStorage.loadHeroTvTrailerEnabled() ?: false
+        heroTvTrailerDelaySeconds = PlayerSettingsStorage.loadHeroTvTrailerDelaySeconds()
+            ?.let(::snapToHeroTvTrailerDelay) ?: 5
+        heroTvTrailerSoundEnabled = PlayerSettingsStorage.loadHeroTvTrailerSoundEnabled() ?: false
+        heroTvTrailerFullscreen = PlayerSettingsStorage.loadHeroTvTrailerFullscreen() ?: false
         publish()
     }
 
@@ -933,6 +960,10 @@ object PlayerSettingsRepository {
             iosGamma = iosGamma,
             desktopHdrMode = desktopHdrMode,
             desktopColorProfile = desktopColorProfile,
+            heroTvTrailerEnabled = heroTvTrailerEnabled,
+            heroTvTrailerDelaySeconds = heroTvTrailerDelaySeconds,
+            heroTvTrailerSoundEnabled = heroTvTrailerSoundEnabled,
+            heroTvTrailerFullscreen = heroTvTrailerFullscreen,
         )
     }
 
@@ -950,6 +981,39 @@ object PlayerSettingsRepository {
         desktopColorProfile = profile
         publish()
         PlayerSettingsStorage.saveDesktopColorProfile(profile.name)
+    }
+
+    fun setHeroTvTrailerEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (heroTvTrailerEnabled == enabled) return
+        heroTvTrailerEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveHeroTvTrailerEnabled(enabled)
+    }
+
+    fun setHeroTvTrailerDelaySeconds(seconds: Int) {
+        ensureLoaded()
+        val normalized = snapToHeroTvTrailerDelay(seconds)
+        if (heroTvTrailerDelaySeconds == normalized) return
+        heroTvTrailerDelaySeconds = normalized
+        publish()
+        PlayerSettingsStorage.saveHeroTvTrailerDelaySeconds(normalized)
+    }
+
+    fun setHeroTvTrailerSoundEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (heroTvTrailerSoundEnabled == enabled) return
+        heroTvTrailerSoundEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveHeroTvTrailerSoundEnabled(enabled)
+    }
+
+    fun setHeroTvTrailerFullscreen(enabled: Boolean) {
+        ensureLoaded()
+        if (heroTvTrailerFullscreen == enabled) return
+        heroTvTrailerFullscreen = enabled
+        publish()
+        PlayerSettingsStorage.saveHeroTvTrailerFullscreen(enabled)
     }
 
     private fun normalizeStreamAutoPlaySource(source: StreamAutoPlaySource): StreamAutoPlaySource {

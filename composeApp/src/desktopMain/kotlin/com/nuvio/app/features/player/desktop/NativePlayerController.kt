@@ -40,6 +40,10 @@ internal class NativePlayerController(
 
     @Volatile
     private var handle: Long = 0L
+    private val handleLock = Any()
+    @Volatile
+    private var disposed = false
+    @Volatile
     private var pendingSource: PendingSource? = null
     private val pendingMpvProperties = linkedMapOf<String, String>()
     private var pendingVideoRedraw = false
@@ -68,7 +72,9 @@ internal class NativePlayerController(
         playWhenReady: Boolean,
         initialPositionMs: Long,
         onError: (String?) -> Unit,
+        controlsPageUrlSuffix: String = "",
     ) {
+        if (disposed) return
         val pending = PendingSource(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl?.takeIf { it.isNotBlank() },
@@ -76,6 +82,7 @@ internal class NativePlayerController(
             playWhenReady = playWhenReady,
             initialPositionMs = initialPositionMs.coerceAtLeast(0L),
             onError = onError,
+            controlsPageUrl = NativePlayerBridge.controlsPageUrl + controlsPageUrlSuffix,
         )
         pendingSource = pending
         host.onPeerReady = { attachPending() }
@@ -85,25 +92,40 @@ internal class NativePlayerController(
     }
 
     private fun attachPending() {
+        if (disposed) return
         val pending = pendingSource ?: return
         SwingUtilities.invokeLater {
-            if (!host.isDisplayable) {
+            if (disposed || !host.isDisplayable) {
                 return@invokeLater
             }
             disposePlayerHandle()
             runCatching {
                 val hostViewPtr = AwtNativeViewResolver.resolveNativeViewPointer(host)
-                handle = NativePlayerBridge.create(
+                val newHandle = NativePlayerBridge.create(
                     hostViewPtr = hostViewPtr,
                     sourceUrl = pending.sourceUrl,
                     sourceAudioUrl = pending.sourceAudioUrl,
                     headerLines = pending.headerLines.toTypedArray(),
                     playWhenReady = pending.playWhenReady,
                     initialPositionMs = pending.initialPositionMs,
-                    controlsPageUrl = NativePlayerBridge.controlsPageUrl,
+                    controlsPageUrl = pending.controlsPageUrl,
                     eventSink = eventSink,
                 )
-                if (handle == 0L) error("Native player did not return a handle.")
+                if (newHandle == 0L) error("Native player did not return a handle.")
+                val keepHandle = synchronized(handleLock) {
+                    if (disposed) {
+                        false
+                    } else {
+                        handle = newHandle
+                        true
+                    }
+                }
+                if (!keepHandle) {
+                    // dispose() may run after this attach was queued but before native
+                    // creation completed. Never let that late player become ownerless.
+                    NativePlayerBridge.dispose(newHandle)
+                    return@runCatching
+                }
                 synchronized(pendingMpvProperties) {
                     pendingMpvProperties.forEach { (key, value) ->
                         NativePlayerBridge.setMpvProperty(handle, key, value)
@@ -115,9 +137,9 @@ internal class NativePlayerController(
                     NativePlayerBridge.forceVideoRedraw(handle)
                 }
                 updateControls(controlsState)
-            }.onFailure { error ->
+            }.onFailure { error -> if (!disposed) {
                 pending.onError(error.message)
-            }
+            } }
         }
     }
 
@@ -345,12 +367,18 @@ internal class NativePlayerController(
     }
 
     fun dispose() {
+        disposed = true
+        pendingSource = null
+        host.onPeerReady = null
         disposePlayerHandle()
     }
 
     private fun disposePlayerHandle() {
-        val current = handle
-        handle = 0L
+        val current = synchronized(handleLock) {
+            val value = handle
+            handle = 0L
+            value
+        }
         keyboardPanelOpen = false
         lastSentControlsStructureKey = null
         if (current != 0L) {
@@ -575,6 +603,7 @@ private data class PendingSource(
     val playWhenReady: Boolean,
     val initialPositionMs: Long,
     val onError: (String?) -> Unit,
+    val controlsPageUrl: String,
 )
 
 private fun Map<String, String>.toHeaderLines(): List<String> =
@@ -921,6 +950,18 @@ private fun PlayerControlsState.toControlsJson(): String =
         appendJsonArrayField("subtitleColorSwatches", SubtitleColorSwatches.map { it.toStorageHexString() }) { append(it.toJsonString()) }
         append(',')
         appendJsonField("closeModalsToken", closeModalsToken)
+        append(',')
+        appendJsonField("heroTrailerMode", heroTrailerMode)
+        append(',')
+        appendJsonField("heroTrailerBackgroundColor", heroTrailerBackgroundColor)
+        append(',')
+        appendJsonField("heroTrailerLogoUrl", heroTrailerLogoUrl)
+        append(',')
+        appendJsonField("heroTrailerTitle", heroTrailerTitle)
+        append(',')
+        appendJsonField("heroTrailerMeta", heroTrailerMeta)
+        append(',')
+        appendJsonField("heroTrailerDescription", heroTrailerDescription)
         append('}')
     }
 

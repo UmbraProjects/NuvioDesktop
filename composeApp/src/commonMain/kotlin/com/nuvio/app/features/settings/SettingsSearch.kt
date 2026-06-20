@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.isDesktop
 import com.nuvio.app.isIos
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -536,6 +537,11 @@ internal fun settingsSearchEntries(
                 stringResource(Res.string.settings_playback_touch_gestures_description),
             ),
             PlaybackSearchRow("hold-speed", stringResource(Res.string.settings_playback_hold_speed)),
+            if (isDesktop) PlaybackSearchRow(
+                "hero-tv-trailer",
+                stringResource(Res.string.settings_playback_hero_tv_trailer),
+                stringResource(Res.string.settings_playback_hero_tv_trailer_description),
+            ) else null,
         ),
     )
     addPlaybackRows(
@@ -686,6 +692,9 @@ internal fun settingsSearchEntries(
         PlaybackSearchRow("home-hero", stringResource(Res.string.settings_homescreen_show_hero), stringResource(Res.string.settings_homescreen_show_hero_description)),
         PlaybackSearchRow("home-hide-unreleased", stringResource(Res.string.layout_hide_unreleased), stringResource(Res.string.layout_hide_unreleased_sub)),
         PlaybackSearchRow("home-hide-catalog-underline", stringResource(Res.string.settings_homescreen_hide_catalog_underline), stringResource(Res.string.settings_homescreen_hide_catalog_underline_description)),
+        PlaybackSearchRow("home-adaptive-hero", stringResource(Res.string.settings_homescreen_tv_mode), stringResource(Res.string.settings_homescreen_tv_mode_description)),
+        PlaybackSearchRow("home-hero-ambient", stringResource(Res.string.settings_homescreen_hero_ambient_background), stringResource(Res.string.settings_homescreen_hero_ambient_background_description)),
+        PlaybackSearchRow("home-tv-mode", stringResource(Res.string.settings_homescreen_immersive_catalog_mode), stringResource(Res.string.settings_homescreen_immersive_catalog_mode_description)),
         PlaybackSearchRow("home-hero-sources", stringResource(Res.string.settings_homescreen_section_hero_sources)),
         PlaybackSearchRow("home-catalogs", stringResource(Res.string.settings_homescreen_section_catalogs)),
     ).forEach { row ->
@@ -934,9 +943,11 @@ internal fun LazyListScope.settingsSearchRootContent(
     onQueryChange: (String) -> Unit,
     onTargetClick: (SettingsSearchTarget) -> Unit,
 ) {
-    if (showSearchField || query.isNotBlank()) {
+    // On desktop the search field is always present (no pull-to-reveal gesture, which is a
+    // touch idiom that's nearly impossible to trigger with a mouse wheel).
+    if (isDesktop || showSearchField || query.isNotBlank()) {
         item(key = "settings-search-field") {
-            SettingsSearchRevealItem(animate = animateSearchField) {
+            SettingsSearchRevealItem(animate = animateSearchField && !isDesktop) {
                 SettingsSearchField(
                     query = query,
                     onQueryChange = onQueryChange,

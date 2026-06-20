@@ -849,6 +849,14 @@ actual object PlayerSettingsStorage {
     actual fun saveDesktopHdrMode(mode: String) = Unit
     actual fun loadDesktopColorProfile(): String? = null
     actual fun saveDesktopColorProfile(profile: String) = Unit
+    actual fun loadHeroTvTrailerEnabled(): Boolean? = null
+    actual fun saveHeroTvTrailerEnabled(enabled: Boolean) = Unit
+    actual fun loadHeroTvTrailerDelaySeconds(): Int? = null
+    actual fun saveHeroTvTrailerDelaySeconds(seconds: Int) = Unit
+    actual fun loadHeroTvTrailerSoundEnabled(): Boolean? = null
+    actual fun saveHeroTvTrailerSoundEnabled(enabled: Boolean) = Unit
+    actual fun loadHeroTvTrailerFullscreen(): Boolean? = null
+    actual fun saveHeroTvTrailerFullscreen(enabled: Boolean) = Unit
 
     actual fun exportToSyncPayload(): JsonObject = buildJsonObject {
         loadShowLoadingOverlay()?.let { put(showLoadingOverlayKey, encodeSyncBoolean(it)) }

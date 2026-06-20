@@ -5,9 +5,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Notifications
@@ -26,10 +30,16 @@ import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_about_based_on_version_format
 import nuvio.composeapp.generated.resources.compose_about_made_with
 import nuvio.composeapp.generated.resources.compose_about_version_format
+import nuvio.composeapp.generated.resources.collections_header
 import nuvio.composeapp.generated.resources.compose_settings_page_account
+import nuvio.composeapp.generated.resources.compose_settings_page_addons
 import nuvio.composeapp.generated.resources.compose_settings_page_advanced
 import nuvio.composeapp.generated.resources.compose_settings_page_appearance
+import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
+import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
+import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
+import nuvio.composeapp.generated.resources.compose_settings_page_plugins
 import nuvio.composeapp.generated.resources.compose_settings_page_licenses_attributions
 import nuvio.composeapp.generated.resources.compose_settings_page_notifications
 import nuvio.composeapp.generated.resources.compose_settings_page_playback
@@ -39,7 +49,6 @@ import nuvio.composeapp.generated.resources.compose_settings_root_account_descri
 import nuvio.composeapp.generated.resources.compose_settings_root_appearance_description
 import nuvio.composeapp.generated.resources.compose_settings_root_check_updates_description
 import nuvio.composeapp.generated.resources.compose_settings_root_check_updates_title
-import nuvio.composeapp.generated.resources.compose_settings_root_content_discovery_description
 import nuvio.composeapp.generated.resources.compose_settings_root_downloads_description
 import nuvio.composeapp.generated.resources.compose_settings_root_downloads_title
 import nuvio.composeapp.generated.resources.compose_settings_root_general_section
@@ -53,8 +62,15 @@ import nuvio.composeapp.generated.resources.compose_settings_root_about_section
 import nuvio.composeapp.generated.resources.compose_settings_root_account_section
 import nuvio.composeapp.generated.resources.compose_settings_root_advanced_description
 import nuvio.composeapp.generated.resources.compose_settings_root_advanced_section
-import nuvio.composeapp.generated.resources.compose_settings_page_content_discovery
+import nuvio.composeapp.generated.resources.compose_settings_page_fork_enhancements
 import nuvio.composeapp.generated.resources.compose_settings_page_trakt
+import nuvio.composeapp.generated.resources.settings_appearance_continue_watching_description
+import nuvio.composeapp.generated.resources.settings_content_discovery_addons_description
+import nuvio.composeapp.generated.resources.settings_content_discovery_collections_description
+import nuvio.composeapp.generated.resources.settings_content_discovery_homescreen_description
+import nuvio.composeapp.generated.resources.settings_content_discovery_meta_screen_description
+import nuvio.composeapp.generated.resources.settings_content_discovery_plugins_description
+import nuvio.composeapp.generated.resources.settings_fork_enhancements_root_description
 import nuvio.composeapp.generated.resources.settings_playback_subtitle
 import nuvio.composeapp.generated.resources.about_supporters_contributors_subtitle
 import nuvio.composeapp.generated.resources.about_licenses_attributions_subtitle
@@ -63,11 +79,17 @@ import org.jetbrains.compose.resources.stringResource
 internal fun LazyListScope.settingsRootContent(
     isTablet: Boolean,
     onPlaybackClick: () -> Unit,
+    onForkEnhancementsClick: () -> Unit,
     onStreamsClick: () -> Unit,
     onAppearanceClick: () -> Unit,
     onAdvancedClick: () -> Unit,
     onNotificationsClick: () -> Unit,
-    onContentDiscoveryClick: () -> Unit,
+    onContinueWatchingClick: () -> Unit,
+    onAddonsClick: () -> Unit,
+    onPluginsClick: () -> Unit,
+    onHomescreenClick: () -> Unit,
+    onMetaScreenClick: () -> Unit,
+    onCollectionsClick: () -> Unit,
     onIntegrationsClick: () -> Unit,
     onTraktClick: () -> Unit,
     onSupportersContributorsClick: () -> Unit,
@@ -78,6 +100,7 @@ internal fun LazyListScope.settingsRootContent(
     onSwitchProfileClick: (() -> Unit)? = null,
     showDownloadsEntry: Boolean = true,
     showNotificationsEntry: Boolean = true,
+    showPluginsEntry: Boolean = true,
     showAccountSection: Boolean = true,
     showGeneralSection: Boolean = true,
     showAboutSection: Boolean = true,
@@ -127,19 +150,35 @@ internal fun LazyListScope.settingsRootContent(
             ) {
                 SettingsGroup(isTablet = isTablet) {
                     SettingsNavigationRow(
-                        title = stringResource(Res.string.compose_settings_page_appearance),
-                        description = stringResource(Res.string.compose_settings_root_appearance_description),
-                        icon = Icons.Rounded.Palette,
+                        title = stringResource(Res.string.compose_settings_page_addons),
+                        description = stringResource(Res.string.settings_content_discovery_addons_description),
+                        icon = Icons.Rounded.Extension,
                         isTablet = isTablet,
-                        onClick = onAppearanceClick,
+                        onClick = onAddonsClick,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
-                        title = stringResource(Res.string.compose_settings_page_content_discovery),
-                        description = stringResource(Res.string.compose_settings_root_content_discovery_description),
-                        icon = Icons.Rounded.Extension,
+                        title = stringResource(Res.string.collections_header),
+                        description = stringResource(Res.string.settings_content_discovery_collections_description),
+                        icon = Icons.Rounded.CollectionsBookmark,
                         isTablet = isTablet,
-                        onClick = onContentDiscoveryClick,
+                        onClick = onCollectionsClick,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_continue_watching),
+                        description = stringResource(Res.string.settings_appearance_continue_watching_description),
+                        icon = Icons.Rounded.Style,
+                        isTablet = isTablet,
+                        onClick = onContinueWatchingClick,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_meta_screen),
+                        description = stringResource(Res.string.settings_content_discovery_meta_screen_description),
+                        icon = Icons.Rounded.Tune,
+                        isTablet = isTablet,
+                        onClick = onMetaScreenClick,
                     )
                     if (showDownloadsEntry) {
                         SettingsGroupDivider(isTablet = isTablet)
@@ -153,19 +192,19 @@ internal fun LazyListScope.settingsRootContent(
                     }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
-                        title = stringResource(Res.string.compose_settings_page_playback),
-                        description = stringResource(Res.string.settings_playback_subtitle),
-                        icon = Icons.Rounded.PlayArrow,
+                        title = stringResource(Res.string.compose_settings_page_fork_enhancements),
+                        description = stringResource(Res.string.settings_fork_enhancements_root_description),
+                        icon = Icons.Rounded.AutoAwesome,
                         isTablet = isTablet,
-                        onClick = onPlaybackClick,
+                        onClick = onForkEnhancementsClick,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
-                        title = stringResource(Res.string.compose_settings_page_streams),
-                        description = stringResource(Res.string.compose_settings_root_streams_description),
-                        icon = Icons.Rounded.Style,
+                        title = stringResource(Res.string.compose_settings_page_homescreen),
+                        description = stringResource(Res.string.settings_content_discovery_homescreen_description),
+                        icon = Icons.Rounded.Home,
                         isTablet = isTablet,
-                        onClick = onStreamsClick,
+                        onClick = onHomescreenClick,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
@@ -174,6 +213,14 @@ internal fun LazyListScope.settingsRootContent(
                         icon = Icons.Rounded.Link,
                         isTablet = isTablet,
                         onClick = onIntegrationsClick,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_appearance),
+                        description = stringResource(Res.string.compose_settings_root_appearance_description),
+                        icon = Icons.Rounded.Palette,
+                        isTablet = isTablet,
+                        onClick = onAppearanceClick,
                     )
                     if (showNotificationsEntry) {
                         SettingsGroupDivider(isTablet = isTablet)
@@ -185,6 +232,32 @@ internal fun LazyListScope.settingsRootContent(
                             onClick = onNotificationsClick,
                         )
                     }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_playback),
+                        description = stringResource(Res.string.settings_playback_subtitle),
+                        icon = Icons.Rounded.PlayArrow,
+                        isTablet = isTablet,
+                        onClick = onPlaybackClick,
+                    )
+                    if (showPluginsEntry) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.compose_settings_page_plugins),
+                            description = stringResource(Res.string.settings_content_discovery_plugins_description),
+                            icon = Icons.Rounded.Hub,
+                            isTablet = isTablet,
+                            onClick = onPluginsClick,
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_streams),
+                        description = stringResource(Res.string.compose_settings_root_streams_description),
+                        icon = Icons.Rounded.Style,
+                        isTablet = isTablet,
+                        onClick = onStreamsClick,
+                    )
                 }
             }
         }

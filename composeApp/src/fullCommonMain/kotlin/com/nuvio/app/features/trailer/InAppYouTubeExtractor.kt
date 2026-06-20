@@ -293,6 +293,12 @@ class InAppYouTubeExtractor {
         )
         val bestAudio = pickBestForClient(adaptiveAudio, PREFERRED_SEPARATE_CLIENT)
 
+        log.i {
+            "Selected trailer streams adaptive=${bestVideo?.height ?: 0}p/${bestVideo?.fps ?: 0}fps " +
+                "progressive=${bestProgressive?.height ?: 0}p manifest=${bestManifest?.height ?: 0}p " +
+                "separateAudio=${bestAudio != null}"
+        }
+
         return TrailerExtractionPlatform.buildPlaybackSource(
             bestManifest = bestManifest,
             bestProgressive = bestProgressive,

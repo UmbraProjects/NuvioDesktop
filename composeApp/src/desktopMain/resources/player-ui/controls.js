@@ -1,3 +1,13 @@
+// Known at first script run (from the page URL): this controls page is a passive hero
+// trailer surface, so it must never take keyboard focus or hide the cursor.
+const isHeroTrailerSurface = (() => {
+  try {
+    return new URLSearchParams(location.search).get("heroTrailer") === "1";
+  } catch (_err) {
+    return false;
+  }
+})();
+
 const root = document.getElementById("playerRoot");
 const seek = document.getElementById("seek");
 const positionLabel = document.getElementById("position");
@@ -1815,7 +1825,9 @@ const renderChrome = () => {
   root.classList.toggle("locked-visible", Boolean(state.isLocked && state.lockedOverlayVisible));
   const isChromeHidden = Boolean(showError || (!state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible)));
   root.classList.toggle("chrome-hidden", isChromeHidden);
-  if (isChromeHidden !== lastCursorHidden) {
+  // Never hide the cursor in hero-trailer mode — it's a background surface, not the
+  // focused player, so the OS/app cursor must behave normally.
+  if (!isHeroTrailerSurface && !state.heroTrailerMode && isChromeHidden !== lastCursorHidden) {
     lastCursorHidden = isChromeHidden;
     send("cursorVisibility", isChromeHidden ? 0 : 1);
   }
@@ -1869,13 +1881,102 @@ const renderChrome = () => {
   syncChromeAutoHideTimer(showOpening);
 };
 
+const heroTrailerFade = document.createElement("div");
+heroTrailerFade.id = "heroTrailerFade";
+heroTrailerFade.style.display = "none";
+root.appendChild(heroTrailerFade);
+
+const heroTrailerContent = document.createElement("div");
+heroTrailerContent.id = "heroTrailerContent";
+heroTrailerContent.innerHTML =
+  '<img id="heroTrailerLogo" alt="">' +
+  '<div id="heroTrailerTitle"></div>' +
+  '<div id="heroTrailerMeta"></div>' +
+  '<div id="heroTrailerDescription"></div>';
+heroTrailerContent.style.display = "none";
+root.appendChild(heroTrailerContent);
+
+const heroTrailerLogo = heroTrailerContent.querySelector("#heroTrailerLogo");
+const heroTrailerTitle = heroTrailerContent.querySelector("#heroTrailerTitle");
+const heroTrailerMeta = heroTrailerContent.querySelector("#heroTrailerMeta");
+const heroTrailerDescription = heroTrailerContent.querySelector("#heroTrailerDescription");
+let heroTrailerLogoFailed = false;
+heroTrailerLogo.addEventListener("error", () => {
+  heroTrailerLogoFailed = true;
+  applyHeroTrailerContent();
+});
+
+const parseHeroTrailerRgb = value => {
+  const raw = String(value || "").trim();
+  const match = /^#?([0-9a-fA-F]{6})$/.exec(raw);
+  if (!match) return { r: 0, g: 0, b: 0 };
+  const int = parseInt(match[1], 16);
+  return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+};
+
+const setHeroTrailerLine = (element, text) => {
+  const value = String(text || "").trim();
+  element.textContent = value;
+  element.style.display = value ? "" : "none";
+};
+
+function applyHeroTrailerContent() {
+  const logoUrl = String(state.heroTrailerLogoUrl || "").trim();
+  const title = String(state.heroTrailerTitle || "").trim();
+  if (heroTrailerLogo.getAttribute("src") !== logoUrl) {
+    heroTrailerLogoFailed = false;
+    if (logoUrl) {
+      heroTrailerLogo.setAttribute("src", logoUrl);
+    } else {
+      heroTrailerLogo.removeAttribute("src");
+    }
+  }
+  const useLogo = Boolean(logoUrl) && !heroTrailerLogoFailed;
+  heroTrailerLogo.style.display = useLogo ? "block" : "none";
+  setHeroTrailerLine(heroTrailerTitle, useLogo ? "" : title);
+  setHeroTrailerLine(heroTrailerMeta, state.heroTrailerMeta);
+  setHeroTrailerLine(heroTrailerDescription, state.heroTrailerDescription);
+}
+
+const applyHeroTrailer = () => {
+  const active = Boolean(state.heroTrailerMode);
+  root.classList.toggle("hero-trailer-active", active);
+  if (!active) {
+    heroTrailerFade.style.display = "none";
+    heroTrailerContent.style.display = "none";
+    return;
+  }
+  // Make sure the cursor is restored if it had been hidden before entering hero mode.
+  if (lastCursorHidden) {
+    lastCursorHidden = false;
+    send("cursorVisibility", 1);
+  }
+  const { r, g, b } = parseHeroTrailerRgb(state.heroTrailerBackgroundColor);
+  const opaque = `rgb(${r}, ${g}, ${b})`;
+  const soft = `rgba(${r}, ${g}, ${b}, 0.55)`;
+  const clear = `rgba(${r}, ${g}, ${b}, 0)`;
+  // Netflix-style scrim: a tall bottom gradient for text legibility, a left-edge fade so
+  // the title column reads cleanly, and a light top fade — all blending to the hero bg.
+  heroTrailerFade.style.backgroundImage =
+    `linear-gradient(to top, ${opaque} 0%, ${soft} 26%, ${clear} 58%), ` +
+    `linear-gradient(to right, ${opaque} 0%, ${soft} 18%, ${clear} 46%), ` +
+    `linear-gradient(to bottom, ${soft} 0%, ${clear} 22%)`;
+  heroTrailerFade.style.display = "block";
+  applyHeroTrailerContent();
+  heroTrailerContent.style.display = "flex";
+};
+
 const render = () => {
   applyTheme();
+  applyHeroTrailer();
   renderChrome();
   renderActiveModal();
 };
 
 const focusShortcutRoot = () => {
+  // Hero-trailer mode is a passive background surface; never steal keyboard focus from
+  // the host app (otherwise home navigation breaks).
+  if (isHeroTrailerSurface || state.heroTrailerMode) return;
   if (document.activeElement !== root) {
     root.focus({ preventScroll: true });
   }
@@ -2459,6 +2560,28 @@ root.addEventListener("dblclick", event => {
 });
 
 document.addEventListener("keydown", event => {
+  // WebView is a native child HWND, so keys do not always reach AWT while it owns OS focus.
+  // Forward home navigation through the native event bridge instead of swallowing it.
+  if (isHeroTrailerSurface || state.heroTrailerMode) {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const homeCommand = {
+      ArrowUp: "homeKeyUp",
+      ArrowDown: "homeKeyDown",
+      ArrowLeft: "homeKeyLeft",
+      ArrowRight: "homeKeyRight",
+      Enter: "homeKeySelect",
+      NumpadEnter: "homeKeySelect",
+      KeyT: "homeKeyToggleTrailer",
+      Escape: "homeKeyDismiss",
+      KeyS: "homeKeySearch",
+      KeyL: "homeKeyLibrary",
+    }[event.code];
+    if (homeCommand) {
+      event.preventDefault();
+      send(homeCommand, 0);
+    }
+    return;
+  }
   if (event.key === "Escape" && playbackErrorText()) {
     event.preventDefault();
     send("back", 0);

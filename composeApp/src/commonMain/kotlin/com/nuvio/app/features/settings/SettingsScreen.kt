@@ -79,6 +79,7 @@ import com.nuvio.app.features.tmdb.TmdbSettings
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesUiState
+import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_settings_page_root
 import kotlinx.coroutines.delay
@@ -435,7 +436,7 @@ private fun MobileSettingsScreen(
     val saveableStateHolder = rememberSaveableStateHolder()
     saveableStateHolder.SaveableStateProvider(page.name) {
         var settingsSearchQuery by rememberSaveable { mutableStateOf("") }
-        var rootSearchVisible by rememberSaveable { mutableStateOf(false) }
+        var rootSearchVisible by rememberSaveable { mutableStateOf(isDesktop) }
         var rootSearchRevealAnimating by rememberSaveable { mutableStateOf(false) }
         val listState = rememberLazyListState()
         val hapticFeedback = LocalHapticFeedback.current
@@ -530,11 +531,17 @@ private fun MobileSettingsScreen(
                         settingsRootContent(
                             isTablet = false,
                             onPlaybackClick = { onPageChange(SettingsPage.Playback) },
+                            onForkEnhancementsClick = { onPageChange(SettingsPage.ForkEnhancements) },
                             onStreamsClick = { onPageChange(SettingsPage.Streams) },
                             onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                             onAdvancedClick = { onPageChange(SettingsPage.Advanced) },
                             onNotificationsClick = { onPageChange(SettingsPage.Notifications) },
-                            onContentDiscoveryClick = { onPageChange(SettingsPage.ContentDiscovery) },
+                            onContinueWatchingClick = { onPageChange(SettingsPage.ContinueWatching) },
+                            onAddonsClick = { onPageChange(SettingsPage.Addons) },
+                            onPluginsClick = { onPageChange(SettingsPage.Plugins) },
+                            onHomescreenClick = { onPageChange(SettingsPage.Homescreen) },
+                            onMetaScreenClick = { onPageChange(SettingsPage.MetaScreen) },
+                            onCollectionsClick = onCollectionsClick,
                             onIntegrationsClick = { onPageChange(SettingsPage.Integrations) },
                             onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
                             onSupportersContributorsClick = onSupportersContributorsClick,
@@ -545,11 +552,24 @@ private fun MobileSettingsScreen(
                             onSwitchProfileClick = onSwitchProfile,
                             showDownloadsEntry = AppFeaturePolicy.downloadsEnabled,
                             showNotificationsEntry = AppFeaturePolicy.notificationsEnabled,
+                            showPluginsEntry = AppFeaturePolicy.pluginsEnabled,
                         )
                     }
                 }
                 SettingsPage.Account -> accountSettingsContent(
                     isTablet = false,
+                )
+                SettingsPage.ForkEnhancements -> forkEnhancementsContent(
+                    isTablet = false,
+                    onOpenHomescreen = { anchor ->
+                        SettingsScrollAnchor.request(anchor)
+                        onPageChange(SettingsPage.Homescreen)
+                    },
+                    onOpenPlayback = { anchor ->
+                        SettingsScrollAnchor.request(anchor)
+                        onPageChange(SettingsPage.Playback)
+                    },
+                    onOpenPosterCustomization = { onPageChange(SettingsPage.PosterCustomization) },
                 )
                 SettingsPage.SupportersContributors -> supportersContributorsContent(
                     isTablet = false,
@@ -940,11 +960,17 @@ private fun TabletSettingsScreen(
                             settingsRootContent(
                                 isTablet = true,
                                 onPlaybackClick = { openInlinePage(SettingsPage.Playback) },
+                                onForkEnhancementsClick = { openInlinePage(SettingsPage.ForkEnhancements) },
                                 onStreamsClick = { openInlinePage(SettingsPage.Streams) },
                                 onAppearanceClick = { openInlinePage(SettingsPage.Appearance) },
                                 onAdvancedClick = { openInlinePage(SettingsPage.Advanced) },
                                 onNotificationsClick = { openInlinePage(SettingsPage.Notifications) },
-                                onContentDiscoveryClick = { openInlinePage(SettingsPage.ContentDiscovery) },
+                                onContinueWatchingClick = { openInlinePage(SettingsPage.ContinueWatching) },
+                                onAddonsClick = { openInlinePage(SettingsPage.Addons) },
+                                onPluginsClick = { openInlinePage(SettingsPage.Plugins) },
+                                onHomescreenClick = { openInlinePage(SettingsPage.Homescreen) },
+                                onMetaScreenClick = { openInlinePage(SettingsPage.MetaScreen) },
+                                onCollectionsClick = onCollectionsClick,
                                 onIntegrationsClick = { openInlinePage(SettingsPage.Integrations) },
                                 onTraktClick = { openInlinePage(SettingsPage.TraktAuthentication) },
                                 onSupportersContributorsClick = { openInlinePage(SettingsPage.SupportersContributors) },
@@ -955,6 +981,7 @@ private fun TabletSettingsScreen(
                                 onSwitchProfileClick = onSwitchProfile,
                                 showDownloadsEntry = AppFeaturePolicy.downloadsEnabled,
                                 showNotificationsEntry = AppFeaturePolicy.notificationsEnabled,
+                                showPluginsEntry = AppFeaturePolicy.pluginsEnabled,
                                 showAccountSection = activeCategory == SettingsCategory.Account,
                                 showGeneralSection = activeCategory == SettingsCategory.General,
                                 showAboutSection = activeCategory == SettingsCategory.About,
@@ -964,6 +991,18 @@ private fun TabletSettingsScreen(
                     }
                     SettingsPage.Account -> accountSettingsContent(
                         isTablet = true,
+                    )
+                    SettingsPage.ForkEnhancements -> forkEnhancementsContent(
+                        isTablet = true,
+                        onOpenHomescreen = { anchor ->
+                            SettingsScrollAnchor.request(anchor)
+                            openInlinePage(SettingsPage.Homescreen)
+                        },
+                        onOpenPlayback = { anchor ->
+                            SettingsScrollAnchor.request(anchor)
+                            openInlinePage(SettingsPage.Playback)
+                        },
+                        onOpenPosterCustomization = { openInlinePage(SettingsPage.PosterCustomization) },
                     )
                     SettingsPage.SupportersContributors -> supportersContributorsContent(
                         isTablet = true,

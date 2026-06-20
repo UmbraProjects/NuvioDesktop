@@ -2243,3 +2243,73 @@ svg {
   fill: currentColor;
   stroke: none;
 }
+
+/* Hero-trailer mode: hide all player chrome and show only the fade scrim plus the hero
+   metadata, so the full-bleed TV-mode trailer reads like the hero itself. */
+#heroTrailerFade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+#heroTrailerContent {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.4vh;
+  max-width: 46%;
+  padding: 0 0 8vh 4.2vw;
+  pointer-events: none;
+  z-index: 6;
+  font-family: "Nuvio JetBrains Sans", system-ui, sans-serif;
+}
+
+#heroTrailerLogo {
+  display: none;
+  max-width: 62%;
+  max-height: 17vh;
+  object-fit: contain;
+  object-position: left bottom;
+}
+
+#heroTrailerTitle {
+  font-weight: 800;
+  font-size: clamp(28px, 3.2vw, 60px);
+  line-height: 1.04;
+  color: #fff;
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.55);
+}
+
+#heroTrailerMeta {
+  font-weight: 600;
+  font-size: clamp(13px, 1.05vw, 20px);
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+#heroTrailerDescription {
+  font-weight: 400;
+  font-size: clamp(13px, 1.05vw, 19px);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.88);
+  max-width: 92%;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
+}
+
+.player.hero-trailer-active {
+  background: transparent !important;
+  cursor: default !important;
+  pointer-events: none !important;
+}
+
+.player.hero-trailer-active > *:not(#heroTrailerFade):not(#heroTrailerContent) {
+  display: none !important;
+}

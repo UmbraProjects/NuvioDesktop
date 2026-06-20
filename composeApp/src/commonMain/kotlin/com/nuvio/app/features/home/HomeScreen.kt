@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,6 +71,11 @@ import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroReservedSpace
 import com.nuvio.app.features.home.components.HomeHeroSection
+import com.nuvio.app.features.home.components.HomeHeroTrailerGate
+import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.home.components.HomeHeroTrailerManualTrigger
+import com.nuvio.app.features.home.components.HomeTvKey
+import com.nuvio.app.features.home.components.HomeTvKeyboardBridge
 import com.nuvio.app.features.home.components.HomeSkeletonHero
 import com.nuvio.app.features.home.components.HomeSkeletonRow
 import com.nuvio.app.features.trakt.TraktAuthRepository
@@ -661,17 +667,27 @@ fun HomeScreen(
     }
 
     val tvModeEnabled = homeSettingsUiState.tvModeEnabled && isDesktop
+    val heroTrailerShowing by HomeHeroTrailerManualTrigger.active.collectAsStateWithLifecycle()
+    val playerTrailerSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
+    // In Adaptive Hero mode the hero is only a strip, so a full-screen trailer needs its
+    // container expanded to the whole screen (TV Mode's hero already fills the viewport).
+    val heroTrailerFullscreenActive = heroTrailerShowing && playerTrailerSettings.heroTvTrailerFullscreen
     val heroAmbientBackgroundEnabled =
         homeSettingsUiState.heroAmbientBackgroundEnabled && isDesktop && showHeroSlot
     val immersiveCatalogModeEnabled =
         homeSettingsUiState.immersiveCatalogModeEnabled && isDesktop && showHeroSlot
     val heroFocusable = showHeroSlot
     val tvFocus = remember { HomeTvFocusState() }
+    // Restart the hero-trailer dwell timer whenever TV focus moves (any input method).
+    LaunchedEffect(tvFocus.sectionIndex, tvFocus.itemIndex) {
+        HomeHeroTrailerGate.notifyFocusChanged()
+    }
     val tvFocusRequester = remember { FocusRequester() }
     val tvCoroutineScope = rememberCoroutineScope()
     val mouseActivity = rememberMouseActivityState()
     var immersiveRowIndex by remember { mutableStateOf(0) }
     var immersiveWheelLocked by remember { mutableStateOf(false) }
+    var heroTrailerNavigationAnchor by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     val tvRows = remember(
         continueWatchingPreferences.isVisible,
@@ -749,6 +765,138 @@ fun HomeScreen(
     fun tvItemCountForSection(sectionIndex: Int): Int {
         if (heroFocusable && sectionIndex == 0) return homeUiState.heroItems.size
         return tvRows.getOrNull(tvRowIndexForSection(sectionIndex))?.itemCount ?: 0
+    }
+
+    fun syncImmersiveTvFocusSection() {
+        if (!immersiveCatalogModeEnabled) return
+        val expectedSection = immersiveRowIndex + if (heroFocusable) 1 else 0
+        if (tvFocus.sectionIndex == expectedSection) return
+
+        // Immersive rendering follows immersiveRowIndex even if sectionIndex still points at
+        // the hero. Preserve the visibly highlighted poster while moving focus bookkeeping to
+        // the row that is actually on screen.
+        val visibleItemIndex = tvFocus.itemIndex
+        tvFocus.sectionIndex = expectedSection
+        tvFocus.itemIndex = visibleItemIndex.coerceIn(
+            0,
+            ((tvRows.getOrNull(immersiveRowIndex)?.itemCount ?: 0) - 1).coerceAtLeast(0),
+        )
+    }
+
+    fun captureHeroTrailerNavigationAnchor() {
+        if (!immersiveCatalogModeEnabled) return
+        syncImmersiveTvFocusSection()
+        heroTrailerNavigationAnchor = immersiveRowIndex to tvFocus.itemIndex
+    }
+
+    fun restoreHeroTrailerNavigationAnchorIfNeeded() {
+        if (!immersiveCatalogModeEnabled || !heroTrailerShowing) return
+        val (rowIndex, itemIndex) = heroTrailerNavigationAnchor ?: return
+        heroTrailerNavigationAnchor = null
+        immersiveRowIndex = rowIndex.coerceIn(0, (tvRows.size - 1).coerceAtLeast(0))
+        tvFocus.sectionIndex = immersiveRowIndex + if (heroFocusable) 1 else 0
+        tvFocus.itemIndex = itemIndex.coerceIn(
+            0,
+            ((tvRows.getOrNull(immersiveRowIndex)?.itemCount ?: 0) - 1).coerceAtLeast(0),
+        )
+    }
+
+    fun handleHomeTvKey(key: HomeTvKey): Boolean {
+        val leavingNativeTrailer = heroTrailerShowing
+        restoreHeroTrailerNavigationAnchorIfNeeded()
+        syncImmersiveTvFocusSection()
+        return when (key) {
+        HomeTvKey.Down -> {
+            mouseActivity.onKeyboardNavigation(ignoreNextMouseMove = leavingNativeTrailer)
+            if (immersiveCatalogModeEnabled) {
+                immersiveRowIndex = (immersiveRowIndex + 1)
+                    .coerceAtMost((tvRows.size - 1).coerceAtLeast(0))
+                tvFocus.sectionIndex = immersiveRowIndex + if (heroFocusable) 1 else 0
+            } else {
+                tvFocus.moveSection(1, tvSectionCount)
+            }
+            tvFocus.itemIndex = tvFocus.itemIndex
+                .coerceIn(0, (tvItemCountForSection(tvFocus.sectionIndex) - 1).coerceAtLeast(0))
+            if (!immersiveCatalogModeEnabled) tvCoroutineScope.launch {
+                homeListState.animateScrollToItem(tvLazyItemIndexForSection(tvFocus.sectionIndex))
+            }
+            true
+        }
+        HomeTvKey.Up -> {
+            mouseActivity.onKeyboardNavigation(ignoreNextMouseMove = leavingNativeTrailer)
+            if (immersiveCatalogModeEnabled) {
+                immersiveRowIndex = (immersiveRowIndex - 1).coerceAtLeast(0)
+                tvFocus.sectionIndex = immersiveRowIndex + if (heroFocusable) 1 else 0
+            } else {
+                tvFocus.moveSection(-1, tvSectionCount)
+            }
+            tvFocus.itemIndex = tvFocus.itemIndex
+                .coerceIn(0, (tvItemCountForSection(tvFocus.sectionIndex) - 1).coerceAtLeast(0))
+            if (!immersiveCatalogModeEnabled) tvCoroutineScope.launch {
+                homeListState.animateScrollToItem(tvLazyItemIndexForSection(tvFocus.sectionIndex))
+            }
+            true
+        }
+        HomeTvKey.Right -> {
+            mouseActivity.onKeyboardNavigation(ignoreNextMouseMove = leavingNativeTrailer)
+            tvFocus.moveItem(1, tvItemCountForSection(tvFocus.sectionIndex))
+            true
+        }
+        HomeTvKey.Left -> {
+            mouseActivity.onKeyboardNavigation(ignoreNextMouseMove = leavingNativeTrailer)
+            tvFocus.moveItem(-1, tvItemCountForSection(tvFocus.sectionIndex))
+            true
+        }
+        HomeTvKey.Select -> {
+            if (heroFocusable && tvFocus.sectionIndex == 0) {
+                homeUiState.heroItems.getOrNull(tvFocus.itemIndex)?.let { onPosterClick?.invoke(it) }
+            } else {
+                tvRows.getOrNull(tvRowIndexForSection(tvFocus.sectionIndex))
+                    ?.onEnter
+                    ?.invoke(tvFocus.itemIndex)
+            }
+            true
+        }
+        HomeTvKey.ToggleTrailer -> {
+            if (tvModeEnabled || immersiveCatalogModeEnabled) {
+                if (!heroTrailerShowing) captureHeroTrailerNavigationAnchor()
+                HomeHeroTrailerManualTrigger.trigger()
+                true
+            } else false
+        }
+        HomeTvKey.Dismiss -> {
+            if (heroTrailerShowing) {
+                HomeHeroTrailerManualTrigger.trigger()
+                true
+            } else false
+        }
+        HomeTvKey.Search -> {
+            onNavigateToSearch?.invoke()
+            true
+        }
+        HomeTvKey.Library -> {
+            onNavigateToLibrary?.invoke()
+            true
+        }
+        }
+    }
+
+    val latestHomeTvKeyHandler = rememberUpdatedState<(HomeTvKey) -> Boolean>(::handleHomeTvKey)
+    LaunchedEffect(Unit) {
+        HomeTvKeyboardBridge.keys.collect { key -> latestHomeTvKeyHandler.value(key) }
+    }
+
+    LaunchedEffect(heroTrailerShowing) {
+        if (heroTrailerShowing) {
+            // Manual T playback already captured the position before the native surface was
+            // mounted. Preserve that clean anchor; this fallback is for autoplay, which has no
+            // initiating key handler from which to capture.
+            if (heroTrailerNavigationAnchor == null) {
+                captureHeroTrailerNavigationAnchor()
+            }
+        } else {
+            heroTrailerNavigationAnchor = null
+        }
     }
 
     LaunchedEffect(tvSectionCount) {
@@ -924,6 +1072,16 @@ fun HomeScreen(
                                     }
                                     true
                                 }
+                                Key.T -> {
+                                    // Play the focused item's trailer on demand, regardless of
+                                    // the auto-play setting (TV-style hero only).
+                                    handleHomeTvKey(HomeTvKey.ToggleTrailer)
+                                }
+                                Key.Escape, Key.Back -> {
+                                    // If a hero trailer is showing, Escape dismisses it first
+                                    // (a clear way out of full-screen playback).
+                                    handleHomeTvKey(HomeTvKey.Dismiss)
+                                }
                                 else -> false
                             }
                         }
@@ -1052,7 +1210,13 @@ fun HomeScreen(
                     listState = heroListState,
                     focusedItem = tvFocusedHeroItem,
                     metadataPrefetchItems = immersiveMetadataPrefetchItems,
-                    heightOverride = if (immersiveCatalogModeEnabled) maxHeight else null,
+                    // Fill the viewport for a full-screen trailer (TV Mode already does this);
+                    // pairs with the expanded hero container in the Adaptive Hero branch.
+                    heightOverride = if (immersiveCatalogModeEnabled || heroTrailerFullscreenActive) {
+                        maxHeight
+                    } else {
+                        null
+                    },
                     roundedBottomCorners =
                         !heroAmbientBackgroundEnabled && !immersiveCatalogModeEnabled,
                     immersiveMode = immersiveCatalogModeEnabled,
@@ -1286,7 +1450,10 @@ fun HomeScreen(
                             sectionPadding = homeSectionPadding,
                             layout = continueWatchingLayout,
                             focusedItemIndex = tvFocus.itemIndex,
-                            onHoverItem = { itemIndex -> tvFocus.itemIndex = itemIndex },
+                            onHoverItem = { itemIndex ->
+                                syncImmersiveTvFocusSection()
+                                tvFocus.itemIndex = itemIndex
+                            },
                             onItemClick = onContinueWatchingClick,
                             onItemLongPress = onContinueWatchingLongPress,
                         )
@@ -1299,7 +1466,10 @@ fun HomeScreen(
                                     basePosterWidthDpOverride = immersivePosterBaseWidthDp,
                                     animateGifs = animateCollectionGifs,
                                     focusedItemIndex = tvFocus.itemIndex,
-                                    onHoverItem = { itemIndex -> tvFocus.itemIndex = itemIndex },
+                                    onHoverItem = { itemIndex ->
+                                        syncImmersiveTvFocusSection()
+                                        tvFocus.itemIndex = itemIndex
+                                    },
                                     onFolderClick = onFolderClick,
                                 )
                             }
@@ -1313,7 +1483,10 @@ fun HomeScreen(
                                     sectionPadding = homeSectionPadding,
                                     basePosterWidthDpOverride = immersivePosterBaseWidthDp,
                                     focusedItemIndex = tvFocus.itemIndex,
-                                    onHoverItem = { itemIndex -> tvFocus.itemIndex = itemIndex },
+                                    onHoverItem = { itemIndex ->
+                                        syncImmersiveTvFocusSection()
+                                        tvFocus.itemIndex = itemIndex
+                                    },
                                     onViewAllClick = if (section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {
                                         onCatalogClick?.let { { it(section) } }
                                     } else {
@@ -1346,10 +1519,14 @@ fun HomeScreen(
                     content = rowsContent,
                 )
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(heroLayout.heroHeight)
-                        .align(Alignment.TopStart),
+                    modifier = if (heroTrailerFullscreenActive) {
+                        Modifier.fillMaxSize()
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .height(heroLayout.heroHeight)
+                            .align(Alignment.TopStart)
+                    },
                 ) {
                     renderHero(null)
                 }

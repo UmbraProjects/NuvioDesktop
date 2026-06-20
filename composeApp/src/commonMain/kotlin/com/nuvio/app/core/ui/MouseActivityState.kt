@@ -17,9 +17,11 @@ internal class MouseActivityState {
         private set
 
     private var lastPosition: Offset? = null
+    private var ignoreNextMouseMove = false
 
-    fun onKeyboardNavigation() {
+    fun onKeyboardNavigation(ignoreNextMouseMove: Boolean = false) {
         isMouseActive = false
+        if (ignoreNextMouseMove) this.ignoreNextMouseMove = true
     }
 
     /**
@@ -28,6 +30,14 @@ internal class MouseActivityState {
      * position changed.
      */
     fun onMouseMoved(position: Offset) {
+        if (ignoreNextMouseMove) {
+            // Removing a native Swing/WebView surface emits a synthetic pointer re-entry at
+            // the stationary cursor. Record it, but do not let it steal focus back from the
+            // keyboard selection that caused the surface to disappear.
+            ignoreNextMouseMove = false
+            lastPosition = position
+            return
+        }
         val last = lastPosition
         lastPosition = position
         if (last == null || last != position) {

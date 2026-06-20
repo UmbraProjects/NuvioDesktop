@@ -48,6 +48,21 @@ class HeroTrailerSelectorTest {
     }
 
     @Test
+    fun `prefers standard trailer over ASL accessibility variant`() {
+        val trailers = listOf(
+            trailer(id = "standard", official = true, publishedAt = "2025-06-01"),
+            trailer(
+                id = "asl",
+                name = "Official Trailer - ASL Version",
+                official = true,
+                publishedAt = "2025-07-01",
+            ),
+        )
+
+        assertEquals("standard", selectHeroTrailer(trailers)?.id)
+    }
+
+    @Test
     fun `returns null for empty or unsupported trailer lists`() {
         assertNull(selectHeroTrailer(emptyList()))
         assertNull(selectHeroTrailer(listOf(trailer(id = "blank", key = ""))))
@@ -56,6 +71,7 @@ class HeroTrailerSelectorTest {
 
     private fun trailer(
         id: String,
+        name: String = id,
         key: String = id,
         site: String = "YouTube",
         type: String = "Trailer",
@@ -66,7 +82,7 @@ class HeroTrailerSelectorTest {
         MetaTrailer(
             id = id,
             key = key,
-            name = id,
+            name = name,
             site = site,
             type = type,
             official = official,

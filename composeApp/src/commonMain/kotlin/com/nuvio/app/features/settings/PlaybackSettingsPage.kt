@@ -61,6 +61,7 @@ import com.nuvio.app.features.player.DesktopColorProfile
 import com.nuvio.app.features.player.DesktopHdrMode
 import com.nuvio.app.features.player.ExternalPlayerApp
 import com.nuvio.app.features.player.ExternalPlayerPlatform
+import com.nuvio.app.features.player.HERO_TV_TRAILER_DELAY_VALUES
 import com.nuvio.app.features.player.IosAudioOutputMode
 import com.nuvio.app.features.player.IosHardwareDecoderMode
 import com.nuvio.app.features.player.localizedLabel
@@ -285,6 +286,7 @@ private fun PlaybackSettingsSection(
     var showLibassRenderTypeDialog by remember { mutableStateOf(false) }
     var showDesktopHdrModeDialog by remember { mutableStateOf(false) }
     var showDesktopColorProfileDialog by remember { mutableStateOf(false) }
+    var showHeroTvTrailerDelayDialog by remember { mutableStateOf(false) }
     var showAutoPlayModeDialog by remember { mutableStateOf(false) }
     var showAutoPlaySourceDialog by remember { mutableStateOf(false) }
     var showAutoPlayAddonSelectionDialog by remember { mutableStateOf(false) }
@@ -394,6 +396,7 @@ private fun PlaybackSettingsSection(
                     title = stringResource(Res.string.settings_playback_default_speed),
                     description = formatPlaybackSpeedLabel(defaultPlaybackSpeed),
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.DefaultSpeed),
                     onClick = { showDefaultPlaybackSpeedDialog = true },
                 )
                 if (isDesktop) {
@@ -403,6 +406,7 @@ private fun PlaybackSettingsSection(
                         description = stringResource(Res.string.settings_playback_mouse_move_reveals_controls_description),
                         checked = autoPlayPlayerSettings.mouseMoveRevealsControlsEnabled,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.MouseMove),
                         onCheckedChange = PlayerSettingsRepository::setMouseMoveRevealsControlsEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
@@ -410,6 +414,7 @@ private fun PlaybackSettingsSection(
                         title = stringResource(Res.string.settings_playback_desktop_hdr_mode),
                         description = autoPlayPlayerSettings.desktopHdrMode.label,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HdrMode),
                         onClick = { showDesktopHdrModeDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
@@ -417,7 +422,49 @@ private fun PlaybackSettingsSection(
                         title = stringResource(Res.string.settings_playback_desktop_color_profile),
                         description = autoPlayPlayerSettings.desktopColorProfile.label,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.ColorProfile),
                         onClick = { showDesktopColorProfileDialog = true },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_hero_tv_trailer),
+                        description = stringResource(Res.string.settings_playback_hero_tv_trailer_description),
+                        checked = autoPlayPlayerSettings.heroTvTrailerEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AutoPlayTrailer),
+                        onCheckedChange = PlayerSettingsRepository::setHeroTvTrailerEnabled,
+                    )
+                    // Only the delay is gated behind auto-play; sound and full screen also
+                    // apply to manually triggered (T) trailers, so they stay visible.
+                    if (autoPlayPlayerSettings.heroTvTrailerEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
+                            description = stringResource(
+                                Res.string.settings_playback_hero_tv_trailer_delay_seconds,
+                                autoPlayPlayerSettings.heroTvTrailerDelaySeconds,
+                            ),
+                            isTablet = isTablet,
+                            onClick = { showHeroTvTrailerDelayDialog = true },
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_hero_tv_trailer_sound),
+                        description = stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description),
+                        checked = autoPlayPlayerSettings.heroTvTrailerSoundEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerSound),
+                        onCheckedChange = PlayerSettingsRepository::setHeroTvTrailerSoundEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_hero_tv_trailer_fullscreen),
+                        description = stringResource(Res.string.settings_playback_hero_tv_trailer_fullscreen_description),
+                        checked = autoPlayPlayerSettings.heroTvTrailerFullscreen,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerFullscreen),
+                        onCheckedChange = PlayerSettingsRepository::setHeroTvTrailerFullscreen,
                     )
                 }
             }
@@ -978,6 +1025,7 @@ private fun PlaybackSettingsSection(
                     description = stringResource(Res.string.settings_playback_auto_play_next_episode_description),
                     checked = autoPlayPlayerSettings.streamAutoPlayNextEpisodeEnabled,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BingeMode),
                     onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayNextEpisodeEnabled,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -1429,6 +1477,17 @@ private fun PlaybackSettingsSection(
                 showDesktopColorProfileDialog = false
             },
             onDismiss = { showDesktopColorProfileDialog = false },
+        )
+    }
+
+    if (showHeroTvTrailerDelayDialog) {
+        HeroTvTrailerDelayDialog(
+            selectedSeconds = autoPlayPlayerSettings.heroTvTrailerDelaySeconds,
+            onSecondsSelected = {
+                PlayerSettingsRepository.setHeroTvTrailerDelaySeconds(it)
+                showHeroTvTrailerDelayDialog = false
+            },
+            onDismiss = { showHeroTvTrailerDelayDialog = false },
         )
     }
 
@@ -2086,6 +2145,94 @@ private fun <T> IosEnumSelectionDialog(
                                         )
                                     }
                                 }
+                                Box(
+                                    modifier = Modifier.size(24.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = stringResource(Res.string.settings_playback_dialog_close),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun HeroTvTrailerDelayDialog(
+    selectedSeconds: Int,
+    onSecondsSelected: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    BasicAlertDialog(
+        onDismissRequest = onDismiss,
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.settings_playback_hero_tv_trailer_delay_dialog),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    HERO_TV_TRAILER_DELAY_VALUES.forEach { seconds ->
+                        val isSelected = seconds == selectedSeconds
+                        val containerColor = if (isSelected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSecondsSelected(seconds) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = containerColor,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        Res.string.settings_playback_hero_tv_trailer_delay_seconds,
+                                        seconds,
+                                    ),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f),
+                                )
                                 Box(
                                     modifier = Modifier.size(24.dp),
                                     contentAlignment = Alignment.Center,

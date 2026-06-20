@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.0 - 2026-06-20
+
+### Added
+
+- Added Auto Play Trailer for the Adaptive Hero and TV Mode home layouts: once an item stays focused for a short, configurable delay (selectable from 1 to 15 seconds), its trailer replaces the hero artwork. Trailers can optionally play with sound and full screen, and pressing `T` plays or dismisses the focused item's trailer on demand.
+- Added a Fork Enhancements settings page that gathers this fork's HTPC-focused options — HDR mode, color profile, default playback speed, binge mode, extra-large posters, and home layout — into a single place.
+
+### Improved
+
+- Flattened the General settings list: Addons, Plugins, Home Layout, Detail Page, Continue Watching, and Collections are now top-level entries instead of being nested behind intermediate pages, so each is reachable in a single click.
+- General settings entries are now listed alphabetically.
+
+### Fixed
+
+- Fixed the settings search field being hard to reach on desktop, where it was only revealed by an overscroll/pull gesture that is impractical with a mouse. On desktop it is now shown immediately.
+- Fixed settings search not matching several Home Layout options (TV Mode, Adaptive Hero, Hero Ambient Background) by name; they are now indexed and findable.
+
 ## 1.0.3 - 2026-06-19
 
 ### Added

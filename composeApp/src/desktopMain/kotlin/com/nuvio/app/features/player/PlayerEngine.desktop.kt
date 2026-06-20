@@ -346,12 +346,15 @@ private fun applyDesktopVideoProfile(
             controller.setMpvProperty("target-contrast", "auto")
         }
     }
-    // mpv's video equalizer properties run from -100 to 100, so the previous single-digit
-    // values were imperceptible. These are tuned to be clearly visible while still tasteful.
+    // Color-preset equalizer values adopted from Stremio-Kai by allecsc, used with
+    // permission and attribution. The desktop player already mirrors Stremio-Kai's mpv
+    // rendering pipeline (gpu-next, spline36/lanczos/mitchell scaling, sigmoid upscaling,
+    // fruit dithering, deband, bt.2446a tonemapping), so these match its film-accurate
+    // Original / Kai / Vivid presets instead of the previous heavier-handed values.
     val (contrast, brightness, saturation, gamma) = when (colorProfile) {
         DesktopColorProfile.Neutral -> listOf(0, 0, 0, 0)
-        DesktopColorProfile.Cinematic -> listOf(12, -4, 14, -6)
-        DesktopColorProfile.Vivid -> listOf(18, 0, 32, 0)
+        DesktopColorProfile.Cinematic -> listOf(2, -6, 2, 2)
+        DesktopColorProfile.Vivid -> listOf(5, -4, 15, -2)
     }
     controller.setMpvProperty("contrast", contrast.toString())
     controller.setMpvProperty("brightness", brightness.toString())

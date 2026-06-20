@@ -16,6 +16,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_advanced
 import nuvio.composeapp.generated.resources.compose_settings_page_appearance
 import nuvio.composeapp.generated.resources.compose_settings_page_content_discovery
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
+import nuvio.composeapp.generated.resources.compose_settings_page_fork_enhancements
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
@@ -74,6 +75,11 @@ internal enum class SettingsPage(
         category = SettingsCategory.General,
         parentPage = Root,
     ),
+    ForkEnhancements(
+        titleRes = Res.string.compose_settings_page_fork_enhancements,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
     Streams(
         titleRes = Res.string.compose_settings_page_streams,
         category = SettingsCategory.General,
@@ -97,7 +103,7 @@ internal enum class SettingsPage(
     ContinueWatching(
         titleRes = Res.string.compose_settings_page_continue_watching,
         category = SettingsCategory.General,
-        parentPage = Appearance,
+        parentPage = Root,
     ),
     PosterCustomization(
         titleRes = Res.string.compose_settings_page_poster_customization,
@@ -112,22 +118,22 @@ internal enum class SettingsPage(
     Addons(
         titleRes = Res.string.compose_settings_page_addons,
         category = SettingsCategory.General,
-        parentPage = ContentDiscovery,
+        parentPage = Root,
     ),
     Plugins(
         titleRes = Res.string.compose_settings_page_plugins,
         category = SettingsCategory.General,
-        parentPage = ContentDiscovery,
+        parentPage = Root,
     ),
     Homescreen(
         titleRes = Res.string.compose_settings_page_homescreen,
         category = SettingsCategory.General,
-        parentPage = ContentDiscovery,
+        parentPage = Root,
     ),
     MetaScreen(
         titleRes = Res.string.compose_settings_page_meta_screen,
         category = SettingsCategory.General,
-        parentPage = ContentDiscovery,
+        parentPage = Root,
     ),
     Integrations(
         titleRes = Res.string.compose_settings_page_integrations,

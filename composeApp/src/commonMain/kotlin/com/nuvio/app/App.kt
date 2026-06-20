@@ -145,6 +145,7 @@ import com.nuvio.app.features.tmdb.TmdbEntityKind
 import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
+import com.nuvio.app.features.home.components.HomeHeroTrailerGate
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryRepository
@@ -860,6 +861,14 @@ private fun MainAppContent(
         if (selectedTab != AppScreenTab.Search) {
             searchFocusRequestCount = 0
         }
+    }
+
+    // Pause/reset the TV hero-trailer dwell timer whenever home isn't the foreground screen
+    // (another tab, or a details/player route pushed over the tabs).
+    LaunchedEffect(selectedTab, currentBackStackEntry) {
+        val homeForeground = selectedTab == AppScreenTab.Home &&
+            navController.currentDestination?.hasRoute<TabsRoute>() == true
+        HomeHeroTrailerGate.setHomeActive(homeForeground)
     }
 
     DisposableEffect(

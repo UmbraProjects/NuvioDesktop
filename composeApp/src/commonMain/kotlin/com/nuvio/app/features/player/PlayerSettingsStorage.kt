@@ -138,6 +138,14 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopHdrMode(mode: String)
     fun loadDesktopColorProfile(): String?
     fun saveDesktopColorProfile(profile: String)
+    fun loadHeroTvTrailerEnabled(): Boolean?
+    fun saveHeroTvTrailerEnabled(enabled: Boolean)
+    fun loadHeroTvTrailerDelaySeconds(): Int?
+    fun saveHeroTvTrailerDelaySeconds(seconds: Int)
+    fun loadHeroTvTrailerSoundEnabled(): Boolean?
+    fun saveHeroTvTrailerSoundEnabled(enabled: Boolean)
+    fun loadHeroTvTrailerFullscreen(): Boolean?
+    fun saveHeroTvTrailerFullscreen(enabled: Boolean)
     fun exportToSyncPayload(): JsonObject
     fun replaceFromSyncPayload(payload: JsonObject)
 }

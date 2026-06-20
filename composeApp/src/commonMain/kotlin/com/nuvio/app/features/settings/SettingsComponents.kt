@@ -235,6 +235,7 @@ internal fun SettingsNavigationRow(
     iconPainter: Painter? = null,
     enabled: Boolean = true,
     isTablet: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -243,7 +244,7 @@ internal fun SettingsNavigationRow(
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = horizontalPadding, vertical = verticalPadding)
@@ -313,6 +314,7 @@ internal fun SettingsSwitchRow(
     checked: Boolean,
     enabled: Boolean = true,
     isTablet: Boolean,
+    modifier: Modifier = Modifier,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -320,7 +322,7 @@ internal fun SettingsSwitchRow(
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),

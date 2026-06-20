@@ -23,7 +23,7 @@ private fun MetaTrailer.isPlayableYouTubeTrailerCandidate(): Boolean =
 private fun MetaTrailer.heroTrailerPriority(): Int {
     val isSeriesTrailer = seasonNumber != null
     val isTrailerType = type.equals("Trailer", ignoreCase = true)
-    return when {
+    val basePriority = when {
         !isSeriesTrailer && isTrailerType && official -> 70
         !isSeriesTrailer && isTrailerType -> 60
         !isSeriesTrailer && official -> 50
@@ -33,4 +33,13 @@ private fun MetaTrailer.heroTrailerPriority(): Int {
         official -> 10
         else -> 0
     }
+    // Accessibility-specific uploads are useful in the trailer list, but should not replace
+    // the standard theatrical trailer in an automatically playing hero.
+    return basePriority - if (isAccessibilityVariant()) 100 else 0
+}
+
+private fun MetaTrailer.isAccessibilityVariant(): Boolean {
+    val label = listOf(name, displayName.orEmpty(), type).joinToString(" ").lowercase()
+    return Regex("\\b(asl|american sign language|audio described|audio description|descriptive audio)\\b")
+        .containsMatchIn(label)
 }

@@ -34,7 +34,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -74,7 +76,11 @@ import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.mdblist.HeroCastMetadataService
 import com.nuvio.app.features.mdblist.MdbListMetadataService
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
+import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.trailer.HeroTrailerMetadataService
+import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -105,6 +111,7 @@ private const val HERO_BACKDROP_WIDTH_FRACTION = 0.85f
 private const val HERO_BACKDROP_FADE_FRACTION = 0.35f
 private const val HERO_METADATA_PREFETCH_CONCURRENCY = 4
 private val heroImageLog = Logger.withTag("HomeHeroImages")
+private val heroTrailerLog = Logger.withTag("HomeHeroTrailer")
 private val IMMERSIVE_HERO_CONTENT_MIN_HEIGHT = 300.dp
 private val IMMERSIVE_HERO_CONTENT_MAX_HEIGHT = 420.dp
 private val IMMERSIVE_HERO_CONTENT_BOTTOM_PADDING = 44.dp
@@ -531,6 +538,128 @@ private fun DesktopHomeHeroFrame(
 ) {
     val backgroundColor = if (immersiveMode) Color.Black else MaterialTheme.colorScheme.background
 
+    val playerSettings by PlayerSettingsRepository.uiState.collectAsState()
+    // TV-mode hero trailer (desktop only; mirrors Nuvio TV). The feature applies to the
+    // TV-style heroes; auto-play after a delay is opt-in, while the `T` shortcut plays it
+    // on demand regardless of the auto-play setting.
+    val tvHeroActive = tvMode || immersiveMode
+    val heroTrailerAutoplayEnabled = tvHeroActive && playerSettings.heroTvTrailerEnabled
+    val heroTrailerFocusKey = "${currentItem.type}:${currentItem.id}"
+    // Resets the dwell timer on every focus move; false whenever home isn't the active screen.
+    val heroTrailerFocusNonce by HomeHeroTrailerGate.focusNonce.collectAsState()
+    val heroTrailerHomeActive by HomeHeroTrailerGate.homeActive.collectAsState()
+    val heroTrailerManualToken by HomeHeroTrailerManualTrigger.tokens.collectAsState(initial = 0)
+    var heroTrailerSource by remember { mutableStateOf<TrailerPlaybackSource?>(null) }
+    var heroTrailerSurfaceReady by remember { mutableStateOf(false) }
+    var heroTrailerPlaybackRequested by remember { mutableStateOf(false) }
+    var heroTrailerFinished by remember { mutableStateOf(false) }
+    // Reset all trailer state when focus moves, the feature gate changes, or home is left.
+    LaunchedEffect(
+        heroTrailerFocusKey,
+        heroTrailerAutoplayEnabled,
+        heroTrailerFocusNonce,
+        heroTrailerHomeActive,
+    ) {
+        heroTrailerSource = null
+        heroTrailerSurfaceReady = false
+        heroTrailerPlaybackRequested = false
+        heroTrailerFinished = false
+        heroTrailerLog.i {
+            "gate autoplay=$heroTrailerAutoplayEnabled homeActive=$heroTrailerHomeActive " +
+                "tvMode=$tvMode immersive=$immersiveMode " +
+                "settingEnabled=${playerSettings.heroTvTrailerEnabled} key=$heroTrailerFocusKey " +
+                "delay=${playerSettings.heroTvTrailerDelaySeconds}s"
+        }
+    }
+    // Resolve the trailer stream shortly after focus settles, even when autoplay is disabled,
+    // so a later `T` press can start without YouTube extraction. Do not mount the native player
+    // here: even a hidden WebView can briefly steal OS focus while it initializes.
+    LaunchedEffect(heroTrailerFocusKey, tvHeroActive) {
+        if (!tvHeroActive || currentItem.type == "collection") return@LaunchedEffect
+        delay(250L)
+        heroTrailerLog.i { "caching trailer stream for $heroTrailerFocusKey" }
+        HeroTrailerMetadataService.resolve(currentItem.type, currentItem.id)
+    }
+    // At the configured delay, mount and play using the cached stream. The desktop surface stays
+    // at 1px until its first frame, so the artwork remains visible instead of flashing black.
+    LaunchedEffect(
+        heroTrailerFocusKey,
+        heroTrailerAutoplayEnabled,
+        playerSettings.heroTvTrailerDelaySeconds,
+        heroTrailerFocusNonce,
+        heroTrailerHomeActive,
+    ) {
+        if (!heroTrailerAutoplayEnabled || !heroTrailerHomeActive || currentItem.type == "collection") {
+            return@LaunchedEffect
+        }
+        // Don't count dwell time during the app's startup grace window, while continue-watching
+        // and other home assets are still loading and the hero is focused by default.
+        HomeHeroTrailerGate.startupGraceRemainingMillis().let { grace -> if (grace > 0L) delay(grace) }
+        delay(playerSettings.heroTvTrailerDelaySeconds.coerceAtLeast(0) * 1000L)
+        if (heroTrailerFinished) return@LaunchedEffect
+        if (heroTrailerSource == null) {
+            heroTrailerSource = HeroTrailerMetadataService.resolve(currentItem.type, currentItem.id)
+        }
+        if (heroTrailerSource == null) {
+            heroTrailerFinished = true
+        } else {
+            heroTrailerPlaybackRequested = true
+        }
+    }
+    // Manual `T` shortcut: play the focused item's trailer immediately, even with auto-play off.
+    LaunchedEffect(heroTrailerManualToken) {
+        if (heroTrailerManualToken == 0 || !tvHeroActive || !heroTrailerHomeActive ||
+            currentItem.type == "collection"
+        ) {
+            return@LaunchedEffect
+        }
+        // Toggle: if a trailer is already showing, `T` dismisses it (an explicit way out
+        // in addition to simply moving focus to another item).
+        if (heroTrailerPlaybackRequested && heroTrailerSource != null && !heroTrailerFinished) {
+            heroTrailerSurfaceReady = false
+            heroTrailerPlaybackRequested = false
+            heroTrailerFinished = true
+            heroTrailerSource = null
+            return@LaunchedEffect
+        }
+        heroTrailerFinished = false
+        heroTrailerSurfaceReady = false
+        heroTrailerLog.i { "resolving (manual) trailer for $heroTrailerFocusKey" }
+        val resolved = HeroTrailerMetadataService.resolve(currentItem.type, currentItem.id)
+        if (resolved == null) {
+            heroTrailerFinished = true
+        } else {
+            heroTrailerSource = resolved
+            heroTrailerPlaybackRequested = true
+        }
+    }
+    val heroTrailerMuted = !playerSettings.heroTvTrailerSoundEnabled
+    val heroTrailerMounted = tvHeroActive &&
+        heroTrailerSource != null &&
+        !heroTrailerFinished
+    val heroTrailerVisible = heroTrailerMounted && heroTrailerPlaybackRequested
+    val heroTrailerReady = heroTrailerVisible && heroTrailerSurfaceReady
+    // Hero text rendered over the full-bleed trailer by the web overlay.
+    val heroTrailerMetaLine = remember(currentItem) {
+        buildList {
+            currentItem.genres.firstOrNull()?.takeIf(String::isNotBlank)?.let(::add)
+            currentItem.releaseInfo?.takeIf(String::isNotBlank)
+                ?.let(::formatReleaseDateForDisplay)?.takeIf(String::isNotBlank)?.let(::add)
+            formatRuntimeForDisplay(currentItem.runtime)?.takeIf(String::isNotBlank)?.let(::add)
+        }.joinToString("   •   ")
+    }
+    val heroTrailerDescription = remember(currentItem) {
+        currentItem.description?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
+    }
+    val heroTrailerFullscreen = playerSettings.heroTvTrailerFullscreen
+    // Expose visibility so the home key handler can map Escape to "dismiss trailer".
+    LaunchedEffect(heroTrailerVisible) {
+        HomeHeroTrailerManualTrigger.setActive(heroTrailerVisible)
+    }
+    DisposableEffect(Unit) {
+        onDispose { HomeHeroTrailerManualTrigger.setActive(false) }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -558,7 +687,9 @@ private fun DesktopHomeHeroFrame(
                     modifier = Modifier
                         .matchParentSize()
                         .graphicsLayer {
-                            alpha = layer.visibility
+                            // Hide the static backdrop once the trailer has a frame so the
+                            // video blends into the background instead of seaming against it.
+                            alpha = if (heroTrailerReady) 0f else layer.visibility
                             translationX = -layer.offset * heroWidthPx * HERO_BACKGROUND_PARALLAX
                             translationY = heroScrollTranslationY
                             scaleX = heroScrollScale
@@ -578,6 +709,51 @@ private fun DesktopHomeHeroFrame(
                         contentScale = ContentScale.Crop,
                     )
                 }
+            }
+        }
+
+        if (heroTrailerMounted) {
+            val source = heroTrailerSource
+            if (source != null) {
+                // Full-bleed trailer: the hero logo/title/metadata are rendered into the
+                // player's web overlay (Compose can't draw over the heavyweight video), so
+                // the trailer can fill the whole hero like the source app.
+                HomeHeroTrailerSurface(
+                    sourceUrl = source.videoUrl,
+                    sourceAudioUrl = source.audioUrl,
+                    playWhenReady = heroTrailerPlaybackRequested,
+                    muted = heroTrailerMuted,
+                    backgroundColor = backgroundColor,
+                    logoUrl = currentItem.logo,
+                    title = currentItem.name,
+                    meta = heroTrailerMetaLine,
+                    description = heroTrailerDescription,
+                    // Full screen fills the whole hero slot (the full viewport in immersive
+                    // mode); otherwise full-bleed width but height stays within the hero
+                    // backdrop region so the rows below remain visible and navigable.
+                    modifier = when {
+                        heroTrailerFullscreen -> Modifier.fillMaxSize()
+                        immersiveMode -> Modifier
+                            .align(Alignment.TopEnd)
+                            .height(layout.heroHeight * 0.64f)
+                            .fillMaxWidth()
+                        else -> Modifier
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .fillMaxWidth()
+                    },
+                    onReady = { heroTrailerSurfaceReady = true },
+                    onEnded = {
+                        heroTrailerSurfaceReady = false
+                        heroTrailerPlaybackRequested = false
+                        heroTrailerFinished = true
+                    },
+                    onError = {
+                        heroTrailerSurfaceReady = false
+                        heroTrailerPlaybackRequested = false
+                        heroTrailerFinished = true
+                    },
+                )
             }
         }
 
@@ -605,7 +781,7 @@ private fun DesktopHomeHeroFrame(
                 ),
         )
 
-        if (immersiveMode) {
+        if (immersiveMode && !heroTrailerReady) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -632,57 +808,59 @@ private fun DesktopHomeHeroFrame(
             }
         }
 
-        Box(
-            modifier = Modifier
-                .align(if (immersiveMode) Alignment.BottomStart else Alignment.CenterStart)
-                .padding(start = contentHorizontalPadding, end = contentHorizontalPadding)
-                .then(
-                    if (immersiveMode) {
-                        Modifier
-                            .padding(bottom = immersiveContentBottomPadding)
-                            .height(immersiveHeroContentHeight(layout.heroHeight))
-                            .offset(y = immersiveHeroContentOffsetY(layout.heroHeight))
-                    } else {
-                        Modifier
-                    },
-                )
-                .fillMaxWidth(
-                    when {
-                        immersiveMode -> 0.32f
-                        tvMode -> 0.38f
-                        else -> layout.contentWidthFraction
-                    },
-                )
-                .widthIn(
-                    max = when {
-                        immersiveMode -> 600.dp
-                        tvMode -> 480.dp
-                        else -> layout.contentMaxWidth
-                    },
-                ),
-            contentAlignment = if (immersiveMode) Alignment.TopStart else Alignment.CenterStart,
-        ) {
-            visiblePages.forEach { layer ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer {
-                            alpha = layer.visibility
-                            translationX = -layer.offset * heroWidthPx * HERO_CONTENT_PARALLAX
-                        },
-                ) {
-                    DesktopHeroContentBlock(
-                        item = items[layer.page],
-                        layout = layout,
-                        interactive = true,
-                        showExtendedMetadata = immersiveMode,
-                        showReleaseMetadata = immersiveMode || tvMode,
-                        ratingsCache = ratingsCache,
-                        onCastClick = onCastClick,
-                        onItemClick = onItemClick?.let { handler ->
-                            { _ -> handler(currentItem) }
+        if (!heroTrailerReady) {
+            Box(
+                modifier = Modifier
+                    .align(if (immersiveMode) Alignment.BottomStart else Alignment.CenterStart)
+                    .padding(start = contentHorizontalPadding, end = contentHorizontalPadding)
+                    .then(
+                        if (immersiveMode) {
+                            Modifier
+                                .padding(bottom = immersiveContentBottomPadding)
+                                .height(immersiveHeroContentHeight(layout.heroHeight))
+                                .offset(y = immersiveHeroContentOffsetY(layout.heroHeight))
+                        } else {
+                            Modifier
                         },
                     )
+                    .fillMaxWidth(
+                        when {
+                            immersiveMode -> 0.32f
+                            tvMode -> 0.38f
+                            else -> layout.contentWidthFraction
+                        },
+                    )
+                    .widthIn(
+                        max = when {
+                            immersiveMode -> 600.dp
+                            tvMode -> 480.dp
+                            else -> layout.contentMaxWidth
+                        },
+                    ),
+                contentAlignment = if (immersiveMode) Alignment.TopStart else Alignment.CenterStart,
+            ) {
+                visiblePages.forEach { layer ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                alpha = layer.visibility
+                                translationX = -layer.offset * heroWidthPx * HERO_CONTENT_PARALLAX
+                            },
+                    ) {
+                        DesktopHeroContentBlock(
+                            item = items[layer.page],
+                            layout = layout,
+                            interactive = true,
+                            showExtendedMetadata = immersiveMode,
+                            showReleaseMetadata = immersiveMode || tvMode,
+                            ratingsCache = ratingsCache,
+                            onCastClick = onCastClick,
+                            onItemClick = onItemClick?.let { handler ->
+                                { _ -> handler(currentItem) }
+                            },
+                        )
+                    }
                 }
             }
         }

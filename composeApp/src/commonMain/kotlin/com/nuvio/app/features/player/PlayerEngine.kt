@@ -199,6 +199,18 @@ data class PlayerControlsState(
     val subtitleAutoSyncIsLoading: Boolean = false,
     val subtitleAutoSyncErrorMessage: String = "",
     val closeModalsToken: Long = 0L,
+    /**
+     * Desktop only: when true the native controls overlay hides all chrome and renders just
+     * the hero-trailer fade gradients (used by the TV-mode home hero trailer surface).
+     */
+    val heroTrailerMode: Boolean = false,
+    /** Desktop only: background color (e.g. "#121212") the hero-trailer fade blends toward. */
+    val heroTrailerBackgroundColor: String = "",
+    /** Desktop only: hero metadata rendered over the full-bleed trailer (logo/title/meta/desc). */
+    val heroTrailerLogoUrl: String = "",
+    val heroTrailerTitle: String = "",
+    val heroTrailerMeta: String = "",
+    val heroTrailerDescription: String = "",
 )
 
 data class PlayerControlFilterItem(
