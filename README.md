@@ -16,7 +16,7 @@
 
 ## HTPC Fork Changes
 
-[![Nuvio TV Mode Demo](https://img.youtube.com/vi/bic_VKPs6Uo/maxresdefault.jpg)](https://www.youtube.com/watch?v=bic_VKPs6Uo)
+[![Nuvio TV Mode Demo](https://img.youtube.com/vi/N3eKjF7sm_o/maxresdefault.jpg)](https://www.youtube.com/watch?v=N3eKjF7sm_o)
 
 Quick note: player_bridge.dll was detected by Windows Defender as a trojan by machine learning. It's currently 0 detections on VirusTotal and is perfectly safe (you can view the code or have Claude review it.) I've submitted it to Microsoft's false positives and hopefully that'll disappear quickly.
 
