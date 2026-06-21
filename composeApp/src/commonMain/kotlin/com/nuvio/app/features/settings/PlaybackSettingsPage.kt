@@ -57,6 +57,8 @@ import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.player.AddonSubtitleStartupMode
 import com.nuvio.app.features.player.AudioLanguageOption
 import com.nuvio.app.features.player.AvailableLanguageOptions
+import com.nuvio.app.features.player.DesktopAnimeMode
+import com.nuvio.app.features.player.DesktopBufferPreset
 import com.nuvio.app.features.player.DesktopColorProfile
 import com.nuvio.app.features.player.DesktopHdrMode
 import com.nuvio.app.features.player.ExternalPlayerApp
@@ -286,6 +288,8 @@ private fun PlaybackSettingsSection(
     var showLibassRenderTypeDialog by remember { mutableStateOf(false) }
     var showDesktopHdrModeDialog by remember { mutableStateOf(false) }
     var showDesktopColorProfileDialog by remember { mutableStateOf(false) }
+    var showDesktopBufferPresetDialog by remember { mutableStateOf(false) }
+    var showDesktopAnimeModeDialog by remember { mutableStateOf(false) }
     var showHeroTvTrailerDelayDialog by remember { mutableStateOf(false) }
     var showAutoPlayModeDialog by remember { mutableStateOf(false) }
     var showAutoPlaySourceDialog by remember { mutableStateOf(false) }
@@ -424,6 +428,20 @@ private fun PlaybackSettingsSection(
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.ColorProfile),
                         onClick = { showDesktopColorProfileDialog = true },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_playback_desktop_buffer_preset),
+                        description = autoPlayPlayerSettings.desktopBufferPreset.label,
+                        isTablet = isTablet,
+                        onClick = { showDesktopBufferPresetDialog = true },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_playback_desktop_anime_mode),
+                        description = autoPlayPlayerSettings.desktopAnimeMode.label,
+                        isTablet = isTablet,
+                        onClick = { showDesktopAnimeModeDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
@@ -1477,6 +1495,36 @@ private fun PlaybackSettingsSection(
                 showDesktopColorProfileDialog = false
             },
             onDismiss = { showDesktopColorProfileDialog = false },
+        )
+    }
+
+    if (showDesktopBufferPresetDialog) {
+        IosEnumSelectionDialog(
+            title = stringResource(Res.string.settings_playback_desktop_buffer_preset_dialog),
+            options = DesktopBufferPreset.entries,
+            selected = autoPlayPlayerSettings.desktopBufferPreset,
+            label = { it.label },
+            description = { it.description },
+            onSelect = {
+                PlayerSettingsRepository.setDesktopBufferPreset(it)
+                showDesktopBufferPresetDialog = false
+            },
+            onDismiss = { showDesktopBufferPresetDialog = false },
+        )
+    }
+
+    if (showDesktopAnimeModeDialog) {
+        IosEnumSelectionDialog(
+            title = stringResource(Res.string.settings_playback_desktop_anime_mode_dialog),
+            options = DesktopAnimeMode.entries,
+            selected = autoPlayPlayerSettings.desktopAnimeMode,
+            label = { it.label },
+            description = { it.description },
+            onSelect = {
+                PlayerSettingsRepository.setDesktopAnimeMode(it)
+                showDesktopAnimeModeDialog = false
+            },
+            onDismiss = { showDesktopAnimeModeDialog = false },
         )
     }
 

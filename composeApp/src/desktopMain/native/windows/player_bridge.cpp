@@ -879,7 +879,9 @@ public:
     void setVolume(double volume) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
-        double clamped = std::max(0.0, std::min(100.0, volume));
+        // Allow boosting above 100% for quiet content (mirrors the volume-max option set
+        // at startup). The shared volume model caps the desktop fraction at 2.0 (200%).
+        double clamped = std::max(0.0, std::min(200.0, volume));
         mpvApi().setProperty(mpv, "volume", MPV_FORMAT_DOUBLE, &clamped);
     }
 
@@ -1463,6 +1465,10 @@ private:
 
             setMpvOptionStringLocked("hr-seek", "no");
 
+            // Permit software amplification above 100% so quiet content can be boosted.
+            // setVolume() clamps to this ceiling; the shared volume model caps at 200%.
+            setMpvOptionStringLocked("volume-max", "200");
+
             int64_t wid = (int64_t)(intptr_t)containerHwnd;
             int widResult = api.setOption(mpv, "wid", MPV_FORMAT_INT64, &wid);
             if (widResult < 0) {
@@ -1571,6 +1577,9 @@ private:
         if (!webView) return;
         double duration = doubleProperty("duration", 0.0);
         double position = doubleProperty("time-pos", 0.0);
+        // Absolute time (seconds) up to which media is demuxer-cached ahead, so the controls can
+        // draw a lighter "buffered" region on the seek bar.
+        double buffered = (double)bufferedPositionMs() / 1000.0;
         bool paused = isPaused();
         bool loading = isLoading();
         std::string audioTracks = audioTracksJson();
@@ -1579,6 +1588,7 @@ private:
         std::ostringstream script;
         script << "window.playerUpdate({duration:" << duration
                << ",position:" << position
+               << ",buffered:" << buffered
                << ",paused:" << (paused ? "true" : "false")
                << ",loading:" << (loading ? "true" : "false")
                << ",audioTracks:" << audioTracks

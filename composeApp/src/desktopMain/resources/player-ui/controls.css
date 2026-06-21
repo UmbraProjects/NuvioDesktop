@@ -1385,8 +1385,13 @@ button:disabled {
 .scrub::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 999px;
+  /* Played fill -> lighter "buffered" (demuxer-cached ahead) band -> dark track. */
   background:
-    linear-gradient(to right, var(--theme-timeline-fill) 0 var(--progress, 0%), var(--theme-timeline-track) var(--progress, 0%) 100%);
+    linear-gradient(
+      to right,
+      var(--theme-timeline-fill) 0 var(--progress, 0%),
+      var(--theme-timeline-buffered, rgba(255, 255, 255, .45)) var(--progress, 0%) var(--buffered, 0%),
+      var(--theme-timeline-track) var(--buffered, 0%) 100%);
 }
 
 .scrub::-webkit-slider-thumb {

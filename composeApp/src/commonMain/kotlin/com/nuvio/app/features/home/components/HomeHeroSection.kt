@@ -678,7 +678,11 @@ private fun DesktopHomeHeroFrame(
                 .fillMaxWidth(HERO_BACKDROP_WIDTH_FRACTION)
                 .heroBackdropFadeMask(backgroundColor)
                 .then(if (immersiveMode) Modifier.immersiveHeroExtraMask(backgroundColor) else Modifier)
-                .clickable(enabled = onItemClick != null) {
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    enabled = onItemClick != null,
+                ) {
                     onItemClick?.invoke(currentItem)
                 },
         ) {
@@ -1036,7 +1040,11 @@ private fun HeroContentBlock(
                 modifier = Modifier
                     .fillMaxWidth(layout.logoWidthFraction)
                     .aspectRatio(2.6f)
-                    .clickable(enabled = onItemClick != null) {
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        enabled = onItemClick != null,
+                    ) {
                         onItemClick?.invoke(item)
                     },
                 alignment = if (layout.isTablet) Alignment.CenterStart else Alignment.Center,
@@ -1048,7 +1056,11 @@ private fun HeroContentBlock(
                 text = item.name,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = onItemClick != null) {
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        enabled = onItemClick != null,
+                    ) {
                         onItemClick?.invoke(item)
                     },
                 style = if (layout.isTablet) {

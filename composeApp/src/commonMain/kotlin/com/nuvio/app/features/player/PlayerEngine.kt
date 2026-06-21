@@ -13,6 +13,12 @@ interface PlayerEngineController {
     fun setMuted(muted: Boolean) {}
     fun setVolume(fraction: Float): PlayerAudioLevel? = null
     fun getVolume(): PlayerAudioLevel? = null
+
+    /**
+     * Upper bound for the volume fraction passed to [setVolume]. 1.0 == 100%. Platforms that
+     * support software amplification above 100% (desktop/mpv) override this; mobile keeps 1.0.
+     */
+    val maxVolumeFraction: Float get() = 1f
     fun getAudioTracks(): List<AudioTrack>
     fun getSubtitleTracks(): List<SubtitleTrack>
     fun selectAudioTrack(index: Int)
@@ -303,6 +309,7 @@ expect fun PlatformPlayerSurface(
     sourceResponseHeaders: Map<String, String> = emptyMap(),
     streamType: String? = null,
     useYoutubeChunkedPlayback: Boolean = false,
+    isAnimeContent: Boolean = false,
     modifier: Modifier = Modifier,
     playWhenReady: Boolean = true,
     resizeMode: PlayerResizeMode = PlayerResizeMode.Fit,

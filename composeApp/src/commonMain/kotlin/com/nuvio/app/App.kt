@@ -2403,6 +2403,14 @@ private fun MainAppContent(
                         }
                     }
 
+                    // Guard the back action so spam-clicking the back button during the exit fade
+                    // can't fire popBackStack repeatedly and pop past the NavHost root (which leaves
+                    // an empty host = whole-app black screen). Matches the detail screen's guard.
+                    val streamsOnBack = rememberGuardedPopBackStack(
+                        navController = navController,
+                        backStackEntry = backStackEntry,
+                        beforePop = { StreamsRepository.clear() },
+                    )
                     Box(modifier = Modifier.fillMaxSize()) {
                         StreamsScreen(
                             type = launch.type,
@@ -2439,10 +2447,7 @@ private fun MainAppContent(
                                     forceInternal = !openExternally,
                                 )
                             },
-                            onBack = {
-                                StreamsRepository.clear()
-                                navController.popBackStack()
-                            },
+                            onBack = streamsOnBack,
                             modifier = Modifier.fillMaxSize(),
                         )
                         pendingP2pStreamOpen?.let { pending ->

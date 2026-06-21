@@ -8,6 +8,8 @@ import com.nuvio.app.features.player.PlayerControlSeasonItem
 import com.nuvio.app.features.player.PlayerControlSourceItem
 import com.nuvio.app.features.player.PlayerControlSubtitleCueItem
 import com.nuvio.app.features.player.AudioTrack
+import com.nuvio.app.features.player.DesktopAnimeMode
+import com.nuvio.app.features.player.DesktopBufferPreset
 import com.nuvio.app.features.player.DesktopColorProfile
 import com.nuvio.app.features.player.DesktopHdrMode
 import com.nuvio.app.features.player.ParentalWarning
@@ -227,6 +229,25 @@ internal class NativePlayerController(
         showPresetPill("Color Profile", next.label)
     }
 
+    fun cycleDesktopAnimeMode() {
+        val modes = DesktopAnimeMode.entries
+        val current = PlayerSettingsRepository.uiState.value.desktopAnimeMode
+        val next = modes[(modes.indexOf(current) + 1) % modes.size]
+        PlayerSettingsRepository.setDesktopAnimeMode(next)
+        showPresetPill("Anime", next.label)
+    }
+
+    /**
+     * Triggers the skip-intro/outro action if the skip prompt is currently on screen (Tab hotkey,
+     * matching the official client). Returns true if a skip was dispatched so the caller can consume
+     * the key; false when no skip is available (so Tab keeps its normal behavior).
+     */
+    fun triggerSkipIntervalIfAvailable(): Boolean {
+        if (!controlsState.skipPromptVisible) return false
+        dispatchKeyboardShortcut("skipInterval", 0.0)
+        return true
+    }
+
     fun openKeyboardPanel(panel: String) {
         if (panel != "sources" && panel != "episodes") return
         val current = handle.takeIf { it != 0L } ?: return
@@ -249,7 +270,7 @@ internal class NativePlayerController(
 
     private fun showVolumePillFromNative() {
         val current = handle.takeIf { it != 0L } ?: return
-        val percentage = NativePlayerBridge.volume(current).toInt().coerceIn(0, 100)
+        val percentage = NativePlayerBridge.volume(current).toInt().coerceIn(0, 200)
         NativePlayerBridge.runJavaScript(current, "window.nuvioShowVolumePill && window.nuvioShowVolumePill($percentage)")
     }
 
@@ -260,6 +281,10 @@ internal class NativePlayerController(
         }
         if (type == "keyboardCycleColorProfile") {
             cycleDesktopColorProfile()
+            return
+        }
+        if (type == "keyboardCycleAnimeMode") {
+            cycleDesktopAnimeMode()
             return
         }
         if (type == "keyboardPanelOpened") {
@@ -373,6 +398,34 @@ internal class NativePlayerController(
         disposePlayerHandle()
     }
 
+    fun applyDesktopBufferPreset(preset: DesktopBufferPreset, playbackSpeed: Float? = null) {
+        val current = handle.takeIf { it != 0L }
+        val speed = playbackSpeed
+            ?: current?.let { runCatching { NativePlayerBridge.speed(it) }.getOrNull() }
+            ?: 1f
+        val factor = speed.coerceAtLeast(1f)
+        val limits = when (DesktopHostOs.current) {
+            DesktopHostOs.WINDOWS -> when (preset) {
+                DesktopBufferPreset.LowData -> BufferLimits(15, 30, "64MiB", "16MiB", "32MiB")
+                DesktopBufferPreset.Balanced -> BufferLimits(60, 120, "256MiB", "64MiB", "64MiB")
+                DesktopBufferPreset.Resilient -> BufferLimits(180, 600, "1GiB", "128MiB", "256MiB")
+            }
+            DesktopHostOs.MACOS -> when (preset) {
+                DesktopBufferPreset.LowData -> BufferLimits(10, 10, "32MiB", "8MiB", "16MiB")
+                DesktopBufferPreset.Balanced -> BufferLimits(20, 20, "48MiB", "12MiB", "32MiB")
+                // Preserve the previous macOS defaults for existing installations.
+                DesktopBufferPreset.Resilient -> BufferLimits(30, 30, "64MiB", "16MiB", "64MiB")
+            }
+            else -> return
+        }
+        setMpvProperty("demuxer-readahead-secs", (limits.readaheadSeconds * factor).toString())
+        setMpvProperty("cache-secs", (limits.cacheSeconds * factor).toString())
+        setMpvProperty("demuxer-max-bytes", limits.maxBytes)
+        setMpvProperty("demuxer-max-back-bytes", limits.maxBackBytes)
+        setMpvProperty("stream-buffer-size", limits.streamBufferSize)
+        setMpvProperty("cache-pause-wait", if (speed > 1f) "15" else "5")
+    }
+
     private fun disposePlayerHandle() {
         val current = synchronized(handleLock) {
             val value = handle
@@ -416,15 +469,20 @@ internal class NativePlayerController(
 
     override fun setPlaybackSpeed(speed: Float) {
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.setSpeed(it, speed) }
+        applyDesktopBufferPreset(PlayerSettingsRepository.uiState.value.desktopBufferPreset, speed)
     }
 
     override fun setMuted(muted: Boolean) {
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.setMute(it, muted) }
     }
 
+    // Desktop/mpv supports software amplification above 100% (volume-max=200 in the native
+    // bridge) so quiet content can be boosted. 2.0 == 200%.
+    override val maxVolumeFraction: Float get() = 2f
+
     override fun setVolume(fraction: Float): PlayerAudioLevel? {
         val current = handle.takeIf { it != 0L } ?: return null
-        val clamped = fraction.coerceIn(0f, 1f)
+        val clamped = fraction.coerceIn(0f, maxVolumeFraction)
         NativePlayerBridge.setVolume(current, clamped * 100f)
         if (clamped > 0f && NativePlayerBridge.isMuted(current)) {
             NativePlayerBridge.setMute(current, false)
@@ -434,9 +492,17 @@ internal class NativePlayerController(
 
     override fun getVolume(): PlayerAudioLevel? {
         val current = handle.takeIf { it != 0L } ?: return null
-        val fraction = (NativePlayerBridge.volume(current) / 100f).coerceIn(0f, 1f)
+        val fraction = (NativePlayerBridge.volume(current) / 100f).coerceIn(0f, maxVolumeFraction)
         return PlayerAudioLevel(fraction = fraction, isMuted = fraction <= 0f || NativePlayerBridge.isMuted(current))
     }
+
+    private data class BufferLimits(
+        val readaheadSeconds: Int,
+        val cacheSeconds: Int,
+        val maxBytes: String,
+        val maxBackBytes: String,
+        val streamBufferSize: String,
+    )
 
     override fun getAudioTracks(): List<AudioTrack> =
         decodeTracks { NativePlayerBridge.audioTracksJson(it) }.map { track ->

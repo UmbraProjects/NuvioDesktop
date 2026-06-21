@@ -31,6 +31,7 @@ actual fun PlatformPlayerSurface(
     sourceResponseHeaders: Map<String, String>,
     streamType: String?,
     useYoutubeChunkedPlayback: Boolean,
+    @Suppress("UNUSED_PARAMETER") isAnimeContent: Boolean,
     modifier: Modifier,
     playWhenReady: Boolean,
     resizeMode: PlayerResizeMode,

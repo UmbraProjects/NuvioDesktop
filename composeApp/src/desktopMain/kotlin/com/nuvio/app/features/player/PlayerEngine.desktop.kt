@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.features.player.desktop.DesktopAnimeShaders
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.DesktopPlayerLaunchShield
 import com.nuvio.app.features.player.desktop.NativePlayerController
@@ -38,6 +39,7 @@ actual fun PlatformPlayerSurface(
     sourceResponseHeaders: Map<String, String>,
     streamType: String?,
     useYoutubeChunkedPlayback: Boolean,
+    isAnimeContent: Boolean,
     modifier: Modifier,
     playWhenReady: Boolean,
     resizeMode: PlayerResizeMode,
@@ -57,6 +59,7 @@ actual fun PlatformPlayerSurface(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl,
             sourceHeaders = sourceHeaders,
+            isAnimeContent = isAnimeContent,
             modifier = modifier,
             playWhenReady = playWhenReady,
             resizeMode = resizeMode,
@@ -85,6 +88,7 @@ private fun NativePlayerSurface(
     sourceUrl: String,
     sourceAudioUrl: String?,
     sourceHeaders: Map<String, String>,
+    isAnimeContent: Boolean,
     modifier: Modifier,
     playWhenReady: Boolean,
     resizeMode: PlayerResizeMode,
@@ -185,6 +189,16 @@ private fun NativePlayerSurface(
                 KeyEvent.VK_F9 -> {
                     controller.cycleDesktopColorProfile()
                 }
+                KeyEvent.VK_F10 -> {
+                    controller.cycleDesktopAnimeMode()
+                }
+                KeyEvent.VK_TAB -> {
+                    // Tab skips the intro/outro, but only while the skip prompt is on screen;
+                    // otherwise let Tab keep its normal behavior.
+                    if (!controller.triggerSkipIntervalIfAvailable()) {
+                        return@KeyEventDispatcher false
+                    }
+                }
                 else -> {
                     val type = when (event.keyCode) {
                         KeyEvent.VK_LEFT, KeyEvent.VK_J -> "keyboardSeekBack"
@@ -276,12 +290,21 @@ private fun NativePlayerSurface(
             .collect { (isHdr, settings) ->
                 System.out.println(
                     "Desktop video profile: detectedHdr=${isHdr ?: "unknown"}, " +
-                        "hdrMode=${settings.desktopHdrMode.name}, colorProfile=${settings.desktopColorProfile.name}",
+                        "hdrMode=${settings.desktopHdrMode.name}, colorProfile=${settings.desktopColorProfile.name}, " +
+                        "bufferPreset=${settings.desktopBufferPreset.name}, " +
+                        "animeMode=${settings.desktopAnimeMode.name}, isAnime=$isAnimeContent",
                 )
                 applyDesktopVideoProfile(
                     controller = controller,
                     hdrMode = settings.desktopHdrMode,
                     colorProfile = settings.desktopColorProfile,
+                )
+                controller.applyDesktopBufferPreset(settings.desktopBufferPreset)
+                applyDesktopAnimeProfile(
+                    controller = controller,
+                    mode = settings.desktopAnimeMode,
+                    isAnime = isAnimeContent,
+                    isHdr = isHdr == true,
                 )
             }
     }
@@ -365,6 +388,63 @@ private fun applyDesktopVideoProfile(
     controller.setMpvProperty("gamma", gamma.toString())
     // mpv won't repaint the embedded surface for these property changes while idle/paused,
     // so force a redraw — otherwise the change only appears after a window resize.
+    controller.forceVideoRedraw()
+}
+
+/**
+ * Applies (or clears) the Stremio-Kai anime enhancement layer: Anime4K GLSL shaders plus anime-tuned
+ * scaling/deband and an hqdn3d denoise pass. Resolves the effective preset from [mode]:
+ * `Off` -> none, `Auto` -> Optimized only when [isAnime], otherwise the explicitly chosen preset.
+ *
+ * SVP / motion interpolation from Kai is intentionally not ported (it needs a paid external runtime).
+ */
+private fun applyDesktopAnimeProfile(
+    controller: NativePlayerController,
+    mode: DesktopAnimeMode,
+    isAnime: Boolean,
+    isHdr: Boolean,
+) {
+    val effectivePreset = when (mode) {
+        DesktopAnimeMode.Off -> null
+        DesktopAnimeMode.Auto -> if (isAnime) DesktopAnimeMode.Optimized else null
+        DesktopAnimeMode.Optimized -> DesktopAnimeMode.Optimized
+        DesktopAnimeMode.Fast -> DesktopAnimeMode.Fast
+        DesktopAnimeMode.Hq -> DesktopAnimeMode.Hq
+    }
+
+    if (effectivePreset == null) {
+        // Restore the bridge's baseline live-action rendering (see startMpv in player_bridge.cpp).
+        controller.setMpvProperty("glsl-shaders", "")
+        controller.setMpvProperty("vf", "")
+        controller.setMpvProperty("scale", "spline36")
+        controller.setMpvProperty("cscale", "lanczos")
+        controller.setMpvProperty("scale-blur", "0.0")
+        controller.setMpvProperty("deband-threshold", "35")
+        controller.setMpvProperty("deband-grain", "0")
+        controller.forceVideoRedraw()
+        return
+    }
+
+    // Anime-tuned scaling + deband (Stremio-Kai's anime-sdr base profile).
+    controller.setMpvProperty("scale", "ewa_lanczos")
+    controller.setMpvProperty("cscale", "ewa_lanczos")
+    controller.setMpvProperty("scale-blur", "1.05")
+    controller.setMpvProperty("deband-threshold", "45")
+    controller.setMpvProperty("deband-grain", "20")
+
+    val shaderChain = DesktopAnimeShaders.shaderChain(effectivePreset)
+    controller.setMpvProperty("glsl-shaders", shaderChain)
+
+    // hqdn3d temporal/spatial denoise (Kai's standard anime VF). Skipped on HDR to avoid the heavier
+    // filter chain fighting the tonemap path, matching Kai's denoise removal for HDR anime.
+    if (isHdr) {
+        controller.setMpvProperty("vf", "")
+    } else {
+        controller.setMpvProperty(
+            "vf",
+            "@HQDN3D:lavfi=[hqdn3d=luma_spatial=5:chroma_spatial=5:luma_tmp=6:chroma_tmp=6]",
+        )
+    }
     controller.forceVideoRedraw()
 }
 

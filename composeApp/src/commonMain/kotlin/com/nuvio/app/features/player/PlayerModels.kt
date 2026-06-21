@@ -168,6 +168,36 @@ enum class DesktopColorProfile(val label: String, val description: String) {
     Vivid("Vivid", "Boosted contrast and saturation for a punchier image."),
 }
 
+enum class DesktopBufferPreset(val label: String, val description: String) {
+    LowData("Low Data", "Minimizes network and memory use with a short playback buffer."),
+    Balanced("Balanced", "Keeps a moderate buffer for reliable playback without excessive read-ahead."),
+    Resilient("Resilient", "Uses a large buffer for unstable or high-latency connections."),
+}
+
+/**
+ * Desktop anime enhancement mode. Ports Stremio-Kai's Anime4K shader pipeline plus anime-tuned
+ * scaling/deband. `Auto` applies the Optimized preset only when the title is detected as anime;
+ * the named presets force that preset regardless of detection. Cycled in-player with F10.
+ */
+enum class DesktopAnimeMode(val label: String, val description: String) {
+    Auto("Auto", "Apply anime enhancements automatically when the title is detected as anime."),
+    Off("Off", "Never apply anime enhancements."),
+    Optimized("Optimized", "Anime4K Optimized — razor-sharp edges with the lightest GPU load."),
+    Fast("Fast", "Anime4K Eye-Candy (Fast) — stronger restore and line-thinning."),
+    Hq("HQ", "Anime4K Eye-Candy (HQ) — maximum quality, heaviest GPU load."),
+}
+
+/**
+ * Heuristic anime detection from metadata genres. Nuvio Desktop has no online anime database
+ * (unlike Stremio-Kai), so this matches the "Anime" / "Animation" genre tags exposed by addons
+ * and TMDB. It over-matches Western animation; the in-player F10 toggle overrides per session.
+ */
+fun isAnimeFromGenres(genres: List<String>): Boolean =
+    genres.any { genre ->
+        val normalized = genre.trim().lowercase()
+        normalized == "anime" || normalized == "animation"
+    }
+
 @Composable
 fun IosVideoOutputPreset.localizedLabel(): String = when (this) {
     IosVideoOutputPreset.NativeEdr -> stringResource(Res.string.player_ios_preset_native_edr_label)

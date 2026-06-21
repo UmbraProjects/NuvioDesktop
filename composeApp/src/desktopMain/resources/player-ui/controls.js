@@ -561,6 +561,12 @@ const setProgress = (positionMs, durationMs) => {
   const percent = durationMs > 0 ? Math.max(0, Math.min(100, positionMs / durationMs * 100)) : 0;
   seek.value = Math.round(percent * 10);
   seek.style.setProperty("--progress", `${percent}%`);
+  // Buffered (demuxer-cached ahead) end, never drawn behind the played fill.
+  const bufferedMs = Math.max(0, Number(state.bufferedMs) || 0);
+  const bufferedPercent = durationMs > 0
+    ? Math.max(percent, Math.min(100, bufferedMs / durationMs * 100))
+    : 0;
+  seek.style.setProperty("--buffered", `${bufferedPercent}%`);
   positionLabel.textContent = formatTime(positionMs);
   durationLabel.textContent = formatTime(durationMs);
 };
@@ -2027,12 +2033,12 @@ const showVolumePill = () => {
 };
 
 const adjustLocalVolume = deltaPercent => {
-  localVolume = Math.max(0, Math.min(100, localVolume + deltaPercent));
+  localVolume = Math.max(0, Math.min(200, localVolume + deltaPercent));
   showVolumePill();
 };
 
 window.nuvioShowVolumePill = percentage => {
-  localVolume = Math.max(0, Math.min(100, Number(percentage) || 0));
+  localVolume = Math.max(0, Math.min(200, Number(percentage) || 0));
   showVolumePill();
 };
 
@@ -2491,6 +2497,7 @@ seek.addEventListener("change", () => {
 window.playerUpdate = update => {
   const durationMs = Math.round((Number(update.duration) || 0) * 1000);
   const positionMs = Math.round((Number(update.position) || 0) * 1000);
+  const bufferedMs = Math.round((Number(update.buffered) || 0) * 1000);
   const audioTracks = normalizeTracks(update.audioTracks);
   const subtitleTracks = normalizeTracks(update.subtitleTracks);
   const audioTracksChanged = trackListSignature(audioTracks) !== trackListSignature(state.audioTracks);
@@ -2499,6 +2506,7 @@ window.playerUpdate = update => {
     ...state,
     durationMs,
     positionMs,
+    bufferedMs,
     isPlaying: !Boolean(update.paused),
     isLoading: Boolean(update.loading || update.isLoading),
     audioTracks,
@@ -2614,6 +2622,15 @@ document.addEventListener("keydown", event => {
   if (activeModal || isTextEntryTarget(event.target)) {
     return;
   }
+  if (event.code === "Tab") {
+    // Tab skips the intro/outro while the skip prompt is showing (matches the official client).
+    if (skipPrompt.classList.contains("visible")) {
+      event.preventDefault();
+      noteChromeActivity();
+      send("skipInterval", 0);
+    }
+    return;
+  }
   if (!event.metaKey && !event.ctrlKey && !event.altKey) {
     const directKeybind = {
       KeyC: () => send("resize", 0),
@@ -2625,6 +2642,7 @@ document.addEventListener("keydown", event => {
       KeyE: () => window.nuvioOpenKeyboardPanel("episodes"),
       F8: () => send("keyboardCycleHdrMode", 0),
       F9: () => send("keyboardCycleColorProfile", 0),
+      F10: () => send("keyboardCycleAnimeMode", 0),
     }[event.code];
     if (directKeybind) {
       event.preventDefault();

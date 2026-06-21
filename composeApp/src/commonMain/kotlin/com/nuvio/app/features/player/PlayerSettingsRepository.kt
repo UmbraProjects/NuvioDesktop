@@ -99,6 +99,8 @@ data class PlayerSettingsUiState(
     val iosGamma: Int = 0,
     val desktopHdrMode: DesktopHdrMode = DesktopHdrMode.Auto,
     val desktopColorProfile: DesktopColorProfile = DesktopColorProfile.Neutral,
+    val desktopBufferPreset: DesktopBufferPreset = DesktopBufferPreset.Balanced,
+    val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Auto,
     val heroTvTrailerEnabled: Boolean = false,
     val heroTvTrailerDelaySeconds: Int = 5,
     val heroTvTrailerSoundEnabled: Boolean = false,
@@ -167,6 +169,8 @@ object PlayerSettingsRepository {
     private var iosGamma = 0
     private var desktopHdrMode = DesktopHdrMode.Auto
     private var desktopColorProfile = DesktopColorProfile.Neutral
+    private var desktopBufferPreset = DesktopBufferPreset.Balanced
+    private var desktopAnimeMode = DesktopAnimeMode.Auto
     private var heroTvTrailerEnabled = false
     private var heroTvTrailerDelaySeconds = 5
     private var heroTvTrailerSoundEnabled = false
@@ -240,6 +244,8 @@ object PlayerSettingsRepository {
         iosGamma = 0
         desktopHdrMode = DesktopHdrMode.Auto
         desktopColorProfile = DesktopColorProfile.Neutral
+        desktopBufferPreset = DesktopBufferPreset.Balanced
+        desktopAnimeMode = DesktopAnimeMode.Auto
         heroTvTrailerEnabled = false
         heroTvTrailerDelaySeconds = 5
         heroTvTrailerSoundEnabled = false
@@ -381,6 +387,13 @@ object PlayerSettingsRepository {
         desktopColorProfile = PlayerSettingsStorage.loadDesktopColorProfile()
             ?.let { runCatching { DesktopColorProfile.valueOf(it) }.getOrNull() }
             ?: DesktopColorProfile.Neutral
+        desktopBufferPreset = PlayerSettingsStorage.loadDesktopBufferPreset()
+            ?.let { runCatching { DesktopBufferPreset.valueOf(it) }.getOrNull() }
+            ?: DesktopBufferPreset.Balanced
+        PlayerSettingsStorage.saveDesktopBufferPreset(desktopBufferPreset.name)
+        desktopAnimeMode = PlayerSettingsStorage.loadDesktopAnimeMode()
+            ?.let { runCatching { DesktopAnimeMode.valueOf(it) }.getOrNull() }
+            ?: DesktopAnimeMode.Auto
         heroTvTrailerEnabled = PlayerSettingsStorage.loadHeroTvTrailerEnabled() ?: false
         heroTvTrailerDelaySeconds = PlayerSettingsStorage.loadHeroTvTrailerDelaySeconds()
             ?.let(::snapToHeroTvTrailerDelay) ?: 5
@@ -960,6 +973,8 @@ object PlayerSettingsRepository {
             iosGamma = iosGamma,
             desktopHdrMode = desktopHdrMode,
             desktopColorProfile = desktopColorProfile,
+            desktopBufferPreset = desktopBufferPreset,
+            desktopAnimeMode = desktopAnimeMode,
             heroTvTrailerEnabled = heroTvTrailerEnabled,
             heroTvTrailerDelaySeconds = heroTvTrailerDelaySeconds,
             heroTvTrailerSoundEnabled = heroTvTrailerSoundEnabled,
@@ -981,6 +996,22 @@ object PlayerSettingsRepository {
         desktopColorProfile = profile
         publish()
         PlayerSettingsStorage.saveDesktopColorProfile(profile.name)
+    }
+
+    fun setDesktopBufferPreset(preset: DesktopBufferPreset) {
+        ensureLoaded()
+        if (desktopBufferPreset == preset) return
+        desktopBufferPreset = preset
+        publish()
+        PlayerSettingsStorage.saveDesktopBufferPreset(preset.name)
+    }
+
+    fun setDesktopAnimeMode(mode: DesktopAnimeMode) {
+        ensureLoaded()
+        if (desktopAnimeMode == mode) return
+        desktopAnimeMode = mode
+        publish()
+        PlayerSettingsStorage.saveDesktopAnimeMode(mode.name)
     }
 
     fun setHeroTvTrailerEnabled(enabled: Boolean) {

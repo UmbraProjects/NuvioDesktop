@@ -104,6 +104,7 @@ import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.isDesktop
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.toLibraryItem
+import com.nuvio.app.features.player.AnimeContentCache
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.streams.StreamAutoPlayPolicy
@@ -427,6 +428,11 @@ fun MetaDetailsScreen(
                     if (meta.type.lowercase() in setOf("series", "show", "tv", "tvshow")) {
                         WatchProgressRepository.refreshEpisodeProgress(meta.id)
                     }
+                }
+                // Record genre-based anime detection so the desktop player can auto-apply the
+                // anime enhancement preset for this title (see AnimeContentCache).
+                LaunchedEffect(meta.id, meta.genres) {
+                    AnimeContentCache.record(meta.id, meta.genres)
                 }
                 LaunchedEffect(
                     meta.id,

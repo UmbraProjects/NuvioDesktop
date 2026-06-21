@@ -15,6 +15,7 @@ import com.nuvio.app.core.sync.encodeSyncStringSet
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.nio.file.Files
 
 internal actual object PlayerSettingsStorage {
     private const val showLoadingOverlayKey = "show_loading_overlay"
@@ -84,6 +85,8 @@ internal actual object PlayerSettingsStorage {
     private const val iosGammaKey = "ios_gamma"
     private const val desktopHdrModeKey = "desktop_hdr_mode"
     private const val desktopColorProfileKey = "desktop_color_profile"
+    private const val desktopBufferPresetKey = "desktop_buffer_preset"
+    private const val desktopAnimeModeKey = "desktop_anime_mode"
     private const val heroTvTrailerEnabledKey = "hero_tv_trailer_enabled"
     private const val heroTvTrailerDelaySecondsKey = "hero_tv_trailer_delay_seconds"
     private const val heroTvTrailerSoundEnabledKey = "hero_tv_trailer_sound_enabled"
@@ -157,6 +160,9 @@ internal actual object PlayerSettingsStorage {
         heroTvTrailerFullscreenKey,
     )
     private val store = DesktopStorage.store("nuvio_player_settings")
+    private val hadExistingDesktopPreferences = Files.list(DesktopStorage.rootDir).use { files ->
+        files.findAny().isPresent
+    }
 
     actual fun loadShowLoadingOverlay(): Boolean? = loadBoolean(showLoadingOverlayKey)
     actual fun saveShowLoadingOverlay(enabled: Boolean) = saveBoolean(showLoadingOverlayKey, enabled)
@@ -294,6 +300,11 @@ internal actual object PlayerSettingsStorage {
     actual fun saveDesktopHdrMode(mode: String) = saveString(desktopHdrModeKey, mode)
     actual fun loadDesktopColorProfile(): String? = loadString(desktopColorProfileKey)
     actual fun saveDesktopColorProfile(profile: String) = saveString(desktopColorProfileKey, profile)
+    actual fun loadDesktopBufferPreset(): String? =
+        loadString(desktopBufferPresetKey) ?: if (hadExistingDesktopPreferences) DesktopBufferPreset.Resilient.name else null
+    actual fun saveDesktopBufferPreset(preset: String) = saveString(desktopBufferPresetKey, preset)
+    actual fun loadDesktopAnimeMode(): String? = loadString(desktopAnimeModeKey)
+    actual fun saveDesktopAnimeMode(mode: String) = saveString(desktopAnimeModeKey, mode)
     actual fun loadHeroTvTrailerEnabled(): Boolean? = loadBoolean(heroTvTrailerEnabledKey)
     actual fun saveHeroTvTrailerEnabled(enabled: Boolean) = saveBoolean(heroTvTrailerEnabledKey, enabled)
     actual fun loadHeroTvTrailerDelaySeconds(): Int? = loadInt(heroTvTrailerDelaySecondsKey)

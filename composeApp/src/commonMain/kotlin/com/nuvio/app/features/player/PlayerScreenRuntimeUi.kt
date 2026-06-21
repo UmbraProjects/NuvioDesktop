@@ -383,6 +383,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 sourceHeaders = activeSourceHeaders,
                 sourceResponseHeaders = activeSourceResponseHeaders,
                 streamType = activeStreamType,
+                isAnimeContent = AnimeContentCache.isAnime(args.parentMetaId),
                 modifier = Modifier.fillMaxSize(),
                 playWhenReady = shouldPlay,
                 resizeMode = resizeMode,

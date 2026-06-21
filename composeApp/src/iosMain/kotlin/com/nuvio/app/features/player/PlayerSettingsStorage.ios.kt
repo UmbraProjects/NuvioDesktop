@@ -849,6 +849,10 @@ actual object PlayerSettingsStorage {
     actual fun saveDesktopHdrMode(mode: String) = Unit
     actual fun loadDesktopColorProfile(): String? = null
     actual fun saveDesktopColorProfile(profile: String) = Unit
+    actual fun loadDesktopBufferPreset(): String? = null
+    actual fun saveDesktopBufferPreset(preset: String) = Unit
+    actual fun loadDesktopAnimeMode(): String? = null
+    actual fun saveDesktopAnimeMode(mode: String) = Unit
     actual fun loadHeroTvTrailerEnabled(): Boolean? = null
     actual fun saveHeroTvTrailerEnabled(enabled: Boolean) = Unit
     actual fun loadHeroTvTrailerDelaySeconds(): Int? = null

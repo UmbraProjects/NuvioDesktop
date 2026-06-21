@@ -33,7 +33,10 @@ This fork is unaffiliated with the Nuvio team, here are the changes:
 9. Renderer swapped from D3D to OpenGL as I was getting irritating lighting issues with the adaptative hero. This doesn't effect playback at all.
 10. Tuned MPV config with three color profiles, thanks to Allecsc the developer of [Stremio Kai](https://github.com/allecsc/Stremio-Kai) who gave permission for them to be used here.
 11. Binge mode to automatically trigger the next episode ASAP without manual input.
-12. Probably other stuff I've forgotten about, generally just improvements to PC.
+12. Volume boost up to 200% for quiet content (Up/Down past 100%).
+13. Anime enhancements ported from Stremio Kai: Anime4K shaders ([bloc97/Anime4K](https://github.com/bloc97/Anime4K), MIT) plus anime-tuned scaling/deband, auto-applied for anime titles and toggleable with F10 (Auto/Off/Optimized/Fast/HQ). SVP motion interpolation from Kai is not ported as it needs a paid external runtime.
+14. Buffer presets (Low Data / Balanced / Resilient) to tune playback caching for your connection, with a seek-bar indicator showing how far ahead is cached.
+15. Probably other stuff I've forgotten about, generally just improvements to PC.
 
 The design is partly inspired by Nuvio TV and Stremio Kai. The fork may be discontinued when/if the official Nuvio PC version implements a TV mode.
 
@@ -51,11 +54,13 @@ Player:
 
 - F8 toggles HDR mode
 - F9 toggles color profile
+- F10 cycles anime enhancements (Auto/Off/Optimized/Fast/HQ)
+- Tab to skip the intro/outro (only while the skip prompt is showing)
 - A to toggle audio track
 - S to toggle subtitles
 - O for sources
 - E for episodes
-- Up/down to change volume
+- Up/down to change volume (boosts up to 200% for quiet content)
 - [] to change playback speed
 - C to cycle aspect ratio
 

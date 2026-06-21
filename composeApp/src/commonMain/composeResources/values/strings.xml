@@ -861,6 +861,11 @@
     <string name="settings_playback_desktop_color_profile">Color Profile</string>
     <string name="settings_playback_desktop_color_profile_description">Applies a visual color adjustment to the playback image.</string>
     <string name="settings_playback_desktop_color_profile_dialog">Color Profile</string>
+    <string name="settings_playback_desktop_buffer_preset">Playback Buffer</string>
+    <string name="settings_playback_desktop_buffer_preset_dialog">Playback Buffer</string>
+    <string name="settings_playback_desktop_anime_mode">Anime Enhancements</string>
+    <string name="settings_playback_desktop_anime_mode_description">Applies Anime4K shaders and anime-tuned scaling for sharper animation. Toggle in the player with F10.</string>
+    <string name="settings_playback_desktop_anime_mode_dialog">Anime Enhancements</string>
     <string name="compose_settings_page_fork_enhancements">Fork Enhancements</string>
     <string name="settings_fork_enhancements_root_description">Extra features added by this desktop fork.</string>
     <string name="settings_fork_enhancements_intro">Extra features this fork adds on top of upstream Nuvio Desktop, aimed at couch/HTPC use. Select one to open its settings.</string>

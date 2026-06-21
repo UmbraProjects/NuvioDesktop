@@ -134,7 +134,9 @@ internal fun PlayerScreenRuntime.showBrightnessFeedback(level: Float) {
 }
 
 internal fun PlayerScreenRuntime.showVolumeFeedback(level: PlayerAudioLevel) {
-    val percentage = (level.fraction.coerceIn(0f, 1f) * 100f).roundToInt()
+    // Ceiling is 2.0 so desktop volume boost (up to 200%) is shown correctly. Mobile fractions
+    // never exceed 1.0, so this is a no-op there.
+    val percentage = (level.fraction.coerceIn(0f, 2f) * 100f).roundToInt()
     showGestureFeedback(
         GestureFeedbackState(
             messageRes = if (level.isMuted) {
@@ -152,7 +154,7 @@ internal fun PlayerScreenRuntime.showVolumeFeedback(level: PlayerAudioLevel) {
 internal fun PlayerScreenRuntime.adjustVolume(deltaFraction: Float) {
     val controller = playerController ?: return
     val current = controller.getVolume() ?: PlayerAudioLevel(fraction = 1f, isMuted = false)
-    val next = (current.fraction + deltaFraction).coerceIn(0f, 1f)
+    val next = (current.fraction + deltaFraction).coerceIn(0f, controller.maxVolumeFraction)
     val level = controller.setVolume(next) ?: PlayerAudioLevel(fraction = next, isMuted = next <= 0f)
     showVolumeFeedback(level)
     controlsVisible = true
