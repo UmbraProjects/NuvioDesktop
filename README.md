@@ -34,7 +34,7 @@ This fork is unaffiliated with the Nuvio team, here are the changes:
 10. Tuned MPV config with three color profiles, thanks to Allecsc the developer of [Stremio Kai](https://github.com/allecsc/Stremio-Kai) who gave permission for them to be used here.
 11. Binge mode to automatically trigger the next episode ASAP without manual input.
 12. Volume boost up to 200% for quiet content (Up/Down past 100%).
-13. Anime enhancements ported from Stremio Kai: Anime4K shaders ([bloc97/Anime4K](https://github.com/bloc97/Anime4K), MIT) plus anime-tuned scaling/deband, auto-applied for anime titles and toggleable with F10 (Auto/Off/Optimized/Fast/HQ). SVP motion interpolation from Kai is not ported as it needs a paid external runtime.
+13. Anime enhancements ported from Stremio Kai: Anime4K shaders ([bloc97/Anime4K](https://github.com/bloc97/Anime4K), MIT) plus anime-tuned scaling/deband, auto-applied for anime titles and toggleable with F10 (Auto/Off/Optimized/Fast/HQ).
 14. Buffer presets (Low Data / Balanced / Resilient) to tune playback caching for your connection, with a seek-bar indicator showing how far ahead is cached.
 15. Probably other stuff I've forgotten about, generally just improvements to PC.
 
