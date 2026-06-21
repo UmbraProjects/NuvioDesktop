@@ -17,6 +17,12 @@ internal class HomeTvRow(
     val itemCount: Int,
     val metaItems: List<MetaPreview>?,
     val onEnter: (index: Int) -> Unit,
+    // For horizontally infinite-scrolling catalog rows: request the next page (called as focus nears
+    // the end). Null for non-paginating rows.
+    val onLoadMore: (() -> Unit)? = null,
+    // For non-paginating catalog rows: pressing Right on the last item opens the full grid. Null when
+    // the row paginates (it just keeps loading more) or can't be opened.
+    val onRightAtEnd: (() -> Unit)? = null,
 )
 
 /**

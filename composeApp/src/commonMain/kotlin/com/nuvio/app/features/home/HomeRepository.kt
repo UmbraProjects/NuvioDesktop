@@ -5,6 +5,8 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.catalog.CatalogTarget
 import com.nuvio.app.features.catalog.fetchCatalogPage
+import com.nuvio.app.features.catalog.mergeCatalogItems
+import com.nuvio.app.features.catalog.nextCatalogPaginationState
 import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.collection.CollectionSource
@@ -37,6 +39,9 @@ object HomeRepository {
     private var lastRequestKey: String? = null
     private var currentDefinitions: List<HomeCatalogDefinition> = emptyList()
     private var cachedSections: Map<String, HomeCatalogSection> = emptyMap()
+    // Per-row infinite-scroll bookkeeping (keyed by section key).
+    private val loadMoreJobs = mutableMapOf<String, Job>()
+    private val sectionDuplicatePageCounts = mutableMapOf<String, Int>()
     private var cachedCollectionHeroItems: List<MetaPreview> = emptyList()
     private var collectionHeroJob: Job? = null
     private var collectionHeroRequestKey: String? = null
@@ -49,6 +54,12 @@ object HomeRepository {
         currentDefinitions = requests
         val requestKeys = requests.mapTo(mutableSetOf(), HomeCatalogDefinition::key)
         cachedSections = cachedSections.filterKeys(requestKeys::contains)
+        // Drop infinite-scroll state for catalogs that are no longer present.
+        (loadMoreJobs.keys - requestKeys).toList().forEach { key ->
+            loadMoreJobs.remove(key)?.cancel()
+            sectionDuplicatePageCounts.remove(key)
+        }
+        if (force) sectionDuplicatePageCounts.clear()
         val requestKey = requests.joinToString(separator = "|") { request ->
             "${request.manifestUrl}:${request.type}:${request.catalogId}"
         }
@@ -231,9 +242,12 @@ object HomeRepository {
             manifestUrl = manifestUrl,
             type = type,
             catalogId = catalogId,
-            maxItems = HOME_CATALOG_PREVIEW_FETCH_LIMIT,
+            // Paginating rows are horizontal infinite-scroll, so fetch the full first page (skip stays
+            // page-aligned for subsequent loads). Non-paginating rows only need the preview + pill.
+            maxItems = if (supportsPagination) null else HOME_CATALOG_PREVIEW_FETCH_LIMIT,
         )
         val items = page.items
+        val nextSkip = if (supportsPagination) page.nextSkip else null
         if (items.isEmpty()) {
             return HomeCatalogSection(
                 key = key,
@@ -265,8 +279,70 @@ object HomeRepository {
             ),
             items = items,
             availableItemCount = page.rawItemCount,
-            hasMore = supportsPagination && page.nextSkip != null,
+            hasMore = nextSkip != null,
+            paginates = supportsPagination,
+            nextSkip = nextSkip,
         )
+    }
+
+    /**
+     * Appends the next page to a horizontally infinite-scrolling catalog row. No-op for non-paginating
+     * rows, exhausted rows, or while a page is already loading. New items carry their own metadata from
+     * the addon response, so nothing extra needs enriching here.
+     */
+    fun loadMoreCatalogRow(sectionKey: String) {
+        val section = _uiState.value.sections.firstOrNull { it.key == sectionKey } ?: return
+        val target = section.target as? CatalogTarget.Addon ?: return
+        val skip = section.nextSkip ?: return
+        if (section.isLoadingMore || loadMoreJobs[sectionKey]?.isActive == true) return
+
+        setSection(section.copy(isLoadingMore = true))
+        loadMoreJobs[sectionKey] = scope.launch {
+            runCatching {
+                fetchCatalogPage(
+                    manifestUrl = target.manifestUrl,
+                    type = target.contentType,
+                    catalogId = target.catalogId,
+                    skip = skip,
+                )
+            }.fold(
+                onSuccess = { page ->
+                    val current = _uiState.value.sections.firstOrNull { it.key == sectionKey }
+                        ?: return@launch
+                    val merged = mergeCatalogItems(current.items, page.items)
+                    val pagination = nextCatalogPaginationState(
+                        supportsPagination = true,
+                        requestedSkip = skip,
+                        page = page,
+                        loadedNewItems = merged.size > current.items.size,
+                        consecutiveDuplicatePages = sectionDuplicatePageCounts[sectionKey] ?: 0,
+                    )
+                    sectionDuplicatePageCounts[sectionKey] = pagination.consecutiveDuplicatePages
+                    setSection(
+                        current.copy(
+                            items = merged,
+                            availableItemCount = maxOf(current.availableItemCount, merged.size),
+                            nextSkip = pagination.nextSkip,
+                            hasMore = pagination.nextSkip != null,
+                            isLoadingMore = false,
+                        ),
+                    )
+                },
+                onFailure = {
+                    _uiState.value.sections.firstOrNull { it.key == sectionKey }
+                        ?.let { setSection(it.copy(isLoadingMore = false)) }
+                },
+            )
+        }
+    }
+
+    private fun setSection(section: HomeCatalogSection) {
+        _uiState.update { state ->
+            state.copy(sections = state.sections.map { if (it.key == section.key) section else it })
+        }
+        if (cachedSections.containsKey(section.key)) {
+            cachedSections = cachedSections + (section.key to section)
+        }
     }
 
     private fun ensureCollectionHeroFallback(

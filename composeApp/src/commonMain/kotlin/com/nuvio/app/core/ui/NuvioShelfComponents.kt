@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -33,11 +34,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,11 +90,26 @@ fun <T> NuvioShelfSection(
     viewAllPillSize: NuvioViewAllPillSize = NuvioViewAllPillSize.Default,
     focusedItemIndex: Int? = null,
     onHoverItem: ((Int) -> Unit)? = null,
+    onLoadMore: (() -> Unit)? = null,
+    isLoadingMore: Boolean = false,
     key: ((T) -> Any)? = null,
     itemContent: @Composable (T) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
     val rowState = rememberLazyListState()
+    // Horizontal infinite scroll: request the next page when the row is scrolled within a few items
+    // of the end. onLoadMore is idempotent, so repeated triggers while a page loads are harmless.
+    if (onLoadMore != null) {
+        val latestOnLoadMore by rememberUpdatedState(onLoadMore)
+        LaunchedEffect(rowState, entries.size) {
+            snapshotFlow { rowState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+                .collect { lastVisibleIndex ->
+                    if (entries.isNotEmpty() && lastVisibleIndex >= entries.size - ShelfLoadMoreThreshold) {
+                        latestOnLoadMore()
+                    }
+                }
+        }
+    }
     LaunchedEffect(focusedItemIndex) {
         val target = focusedItemIndex
         if (target == null || target !in entries.indices) return@LaunchedEffect
@@ -148,9 +167,25 @@ fun <T> NuvioShelfSection(
                     }
                 }
             }
+            if (isLoadingMore) {
+                item(key = "nuvio-shelf-load-more") {
+                    Box(
+                        modifier = Modifier.fillMaxHeight().padding(horizontal = 20.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(26.dp),
+                            strokeWidth = 2.5.dp,
+                            color = tokens.colors.textMuted,
+                        )
+                    }
+                }
+            }
         }
     }
 }
+
+private const val ShelfLoadMoreThreshold = 6
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable

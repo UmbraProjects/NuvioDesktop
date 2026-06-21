@@ -29,6 +29,8 @@ fun HomeCatalogRowSection(
     focusedItemIndex: Int? = null,
     onHoverItem: ((Int) -> Unit)? = null,
     onViewAllClick: (() -> Unit)? = null,
+    onLoadMore: (() -> Unit)? = null,
+    isLoadingMore: Boolean = false,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
@@ -43,6 +45,8 @@ fun HomeCatalogRowSection(
             focusedItemIndex = focusedItemIndex,
             onHoverItem = onHoverItem,
             onViewAllClick = onViewAllClick,
+            onLoadMore = onLoadMore,
+            isLoadingMore = isLoadingMore,
             onPosterClick = onPosterClick,
             onPosterLongClick = onPosterLongClick,
         )
@@ -58,6 +62,8 @@ fun HomeCatalogRowSection(
                 focusedItemIndex = focusedItemIndex,
                 onHoverItem = onHoverItem,
                 onViewAllClick = onViewAllClick,
+                onLoadMore = onLoadMore,
+                isLoadingMore = isLoadingMore,
                 onPosterClick = onPosterClick,
                 onPosterLongClick = onPosterLongClick,
             )
@@ -76,6 +82,8 @@ private fun HomeCatalogRowSectionContent(
     focusedItemIndex: Int?,
     onHoverItem: ((Int) -> Unit)?,
     onViewAllClick: (() -> Unit)?,
+    onLoadMore: (() -> Unit)?,
+    isLoadingMore: Boolean,
     onPosterClick: ((MetaPreview) -> Unit)?,
     onPosterLongClick: ((MetaPreview) -> Unit)?,
 ) {
@@ -95,6 +103,8 @@ private fun HomeCatalogRowSectionContent(
         focusedItemIndex = focusedItemIndex,
         onHoverItem = onHoverItem,
         onViewAllClick = onViewAllClick,
+        onLoadMore = onLoadMore,
+        isLoadingMore = isLoadingMore,
         viewAllPillSize = NuvioViewAllPillSize.Compact,
         key = { item -> item.stableKey() },
     ) { item ->

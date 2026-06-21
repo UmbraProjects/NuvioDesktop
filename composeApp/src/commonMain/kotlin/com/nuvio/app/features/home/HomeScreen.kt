@@ -733,13 +733,30 @@ fun HomeScreen(
                 } else {
                     val section = sectionsMap[settingsItem.key]
                     if (section != null && section.items.isNotEmpty()) {
-                        val entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT)
+                        val entries = if (section.paginates) {
+                            section.items
+                        } else {
+                            section.items.take(HOME_CATALOG_PREVIEW_LIMIT)
+                        }
                         add(
                             HomeTvRow(
                                 itemCount = entries.size,
                                 metaItems = entries,
                                 onEnter = { index ->
                                     entries.getOrNull(index)?.let { onPosterClick?.invoke(it) }
+                                },
+                                onLoadMore = if (section.paginates) {
+                                    { HomeRepository.loadMoreCatalogRow(section.key) }
+                                } else {
+                                    null
+                                },
+                                onRightAtEnd = if (
+                                    !section.paginates &&
+                                    section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)
+                                ) {
+                                    onCatalogClick?.let { { it(section) } }
+                                } else {
+                                    null
                                 },
                             ),
                         )
@@ -839,7 +856,18 @@ fun HomeScreen(
         }
         HomeTvKey.Right -> {
             mouseActivity.onKeyboardNavigation(ignoreNextMouseMove = leavingNativeTrailer)
-            tvFocus.moveItem(1, tvItemCountForSection(tvFocus.sectionIndex))
+            val itemCount = tvItemCountForSection(tvFocus.sectionIndex)
+            val row = tvRows.getOrNull(tvRowIndexForSection(tvFocus.sectionIndex))
+            if (tvFocus.itemIndex >= itemCount - 1) {
+                // At the end of the row: paginating rows load the next page; non-paginating rows
+                // open the full grid (the View-all destination). Otherwise focus simply stays put.
+                when {
+                    row?.onLoadMore != null -> row.onLoadMore.invoke()
+                    row?.onRightAtEnd != null -> row.onRightAtEnd.invoke()
+                }
+            } else {
+                tvFocus.moveItem(1, itemCount)
+            }
             true
         }
         HomeTvKey.Left -> {
@@ -1052,11 +1080,7 @@ fun HomeScreen(
                                     }
                                     true
                                 }
-                                Key.DirectionRight -> {
-                                    mouseActivity.onKeyboardNavigation()
-                                    tvFocus.moveItem(1, tvItemCountForSection(tvFocus.sectionIndex))
-                                    true
-                                }
+                                Key.DirectionRight -> handleHomeTvKey(HomeTvKey.Right)
                                 Key.DirectionLeft -> {
                                     mouseActivity.onKeyboardNavigation()
                                     tvFocus.moveItem(-1, tvItemCountForSection(tvFocus.sectionIndex))
@@ -1386,7 +1410,11 @@ fun HomeScreen(
                                 item(key = settingsItem.key) {
                                     HomeCatalogRowSection(
                                         section = section,
-                                        entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
+                                        entries = if (section.paginates) {
+                                            section.items
+                                        } else {
+                                            section.items.take(HOME_CATALOG_PREVIEW_LIMIT)
+                                        },
                                         modifier = Modifier.padding(bottom = 12.dp),
                                         sectionPadding = homeSectionPadding,
                                         focusedItemIndex = if (tvFocusedRowIndex == rowIndex) tvFocus.itemIndex else null,
@@ -1405,6 +1433,12 @@ fun HomeScreen(
                                         } else {
                                             null
                                         },
+                                        onLoadMore = if (section.paginates) {
+                                            { HomeRepository.loadMoreCatalogRow(section.key) }
+                                        } else {
+                                            null
+                                        },
+                                        isLoadingMore = section.isLoadingMore,
                                         watchedKeys = watchedUiState.watchedKeys,
                                         onPosterClick = onPosterClick,
                                         onPosterLongClick = onPosterLongClick,
@@ -1479,7 +1513,11 @@ fun HomeScreen(
                             sectionsMap[activeSettingsItem.key]?.let { section ->
                                 HomeCatalogRowSection(
                                     section = section,
-                                    entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
+                                    entries = if (section.paginates) {
+                                        section.items
+                                    } else {
+                                        section.items.take(HOME_CATALOG_PREVIEW_LIMIT)
+                                    },
                                     sectionPadding = homeSectionPadding,
                                     basePosterWidthDpOverride = immersivePosterBaseWidthDp,
                                     focusedItemIndex = tvFocus.itemIndex,
@@ -1492,6 +1530,12 @@ fun HomeScreen(
                                     } else {
                                         null
                                     },
+                                    onLoadMore = if (section.paginates) {
+                                        { HomeRepository.loadMoreCatalogRow(section.key) }
+                                    } else {
+                                        null
+                                    },
+                                    isLoadingMore = section.isLoadingMore,
                                     watchedKeys = watchedUiState.watchedKeys,
                                     onPosterClick = onPosterClick,
                                     onPosterLongClick = onPosterLongClick,

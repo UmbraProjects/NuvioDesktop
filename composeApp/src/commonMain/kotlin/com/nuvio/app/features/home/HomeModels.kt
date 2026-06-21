@@ -47,6 +47,14 @@ data class HomeCatalogSection(
     val items: List<MetaPreview>,
     val availableItemCount: Int = items.size,
     val hasMore: Boolean = false,
+    // Stable: whether this catalog is a horizontal infinite-scroll row (the addon supports skip-based
+    // paging). Decides whether the row renders all loaded items + paginates vs. a capped preview + pill.
+    // Does NOT change when the catalog is exhausted, so a fully-loaded row never collapses back.
+    val paginates: Boolean = false,
+    // Skip offset for the next page; null once the catalog is exhausted or for non-paginating catalogs.
+    val nextSkip: Int? = null,
+    // True while the next page is being fetched (drives the trailing spinner).
+    val isLoadingMore: Boolean = false,
 )
 
 fun HomeCatalogSection.canOpenCatalog(previewLimit: Int): Boolean =

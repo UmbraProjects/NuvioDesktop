@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 - 2026-06-21
+
+### Added
+
+- Added pagination to home catalog rows. Scrolling toward the end now loads the next page automatically, allowing mouse, trackpad, and TV/D-pad users to browse the full depth of supported catalogs instead of stopping at 18 items.
+
 ## 1.2.0 - 2026-06-21
 
 ### Added
