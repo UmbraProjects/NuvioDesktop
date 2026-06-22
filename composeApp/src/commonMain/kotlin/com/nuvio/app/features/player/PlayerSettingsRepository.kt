@@ -61,6 +61,7 @@ data class PlayerSettingsUiState(
     val streamReuseLastLinkEnabled: Boolean = false,
     val streamReuseLastLinkCacheHours: Int = 24,
     val decoderPriority: Int = 1,
+    val nvidiaRtxSuperResolutionEnabled: Boolean = false,
     val mapDV7ToHevc: Boolean = false,
     val tunnelingEnabled: Boolean = false,
     val streamAutoPlayMode: StreamAutoPlayMode = StreamAutoPlayMode.MANUAL,
@@ -131,6 +132,7 @@ object PlayerSettingsRepository {
     private var streamReuseLastLinkEnabled = false
     private var streamReuseLastLinkCacheHours = 24
     private var decoderPriority = 1
+    private var nvidiaRtxSuperResolutionEnabled = false
     private var mapDV7ToHevc = false
     private var tunnelingEnabled = false
     private var streamAutoPlayMode = StreamAutoPlayMode.MANUAL
@@ -206,6 +208,7 @@ object PlayerSettingsRepository {
         streamReuseLastLinkEnabled = false
         streamReuseLastLinkCacheHours = 24
         decoderPriority = 1
+        nvidiaRtxSuperResolutionEnabled = false
         mapDV7ToHevc = false
         tunnelingEnabled = false
         streamAutoPlayMode = StreamAutoPlayMode.MANUAL
@@ -308,6 +311,7 @@ object PlayerSettingsRepository {
         streamReuseLastLinkEnabled = PlayerSettingsStorage.loadStreamReuseLastLinkEnabled() ?: false
         streamReuseLastLinkCacheHours = PlayerSettingsStorage.loadStreamReuseLastLinkCacheHours() ?: 24
         decoderPriority = PlayerSettingsStorage.loadDecoderPriority() ?: 1
+        nvidiaRtxSuperResolutionEnabled = PlayerSettingsStorage.loadNvidiaRtxSuperResolutionEnabled() ?: false
         mapDV7ToHevc = PlayerSettingsStorage.loadMapDV7ToHevc() ?: false
         tunnelingEnabled = PlayerSettingsStorage.loadTunnelingEnabled() ?: false
         streamAutoPlayMode = PlayerSettingsStorage.loadStreamAutoPlayMode()
@@ -577,6 +581,14 @@ object PlayerSettingsRepository {
         decoderPriority = priority
         publish()
         PlayerSettingsStorage.saveDecoderPriority(priority)
+    }
+
+    fun setNvidiaRtxSuperResolutionEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (nvidiaRtxSuperResolutionEnabled == enabled) return
+        nvidiaRtxSuperResolutionEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveNvidiaRtxSuperResolutionEnabled(enabled)
     }
 
     fun setMapDV7ToHevc(enabled: Boolean) {
@@ -935,6 +947,7 @@ object PlayerSettingsRepository {
             streamReuseLastLinkEnabled = streamReuseLastLinkEnabled,
             streamReuseLastLinkCacheHours = streamReuseLastLinkCacheHours,
             decoderPriority = decoderPriority,
+            nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
             mapDV7ToHevc = mapDV7ToHevc,
             tunnelingEnabled = tunnelingEnabled,
             streamAutoPlayMode = streamAutoPlayMode,

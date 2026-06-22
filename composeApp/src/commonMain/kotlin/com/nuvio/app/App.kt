@@ -119,6 +119,7 @@ import com.nuvio.app.core.ui.localizedContinueWatchingSubtitle
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.auth.AuthScreen
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.calendar.CalendarScreen
 import com.nuvio.app.features.catalog.CatalogRepository
 import com.nuvio.app.features.catalog.CatalogScreen
 import com.nuvio.app.features.catalog.CatalogTarget
@@ -309,6 +310,9 @@ object SupportersContributorsSettingsRoute
 
 @Serializable
 object LicensesAttributionsSettingsRoute
+
+@Serializable
+object CalendarRoute
 
 @Serializable
 object CollectionsRoute
@@ -1663,6 +1667,7 @@ private fun MainAppContent(
                                         onNavigateToSearch = { handleRootTabClick(AppScreenTab.Search) },
                                         onNavigateToLibrary = { handleRootTabClick(AppScreenTab.Library) },
                                         onNavigateToHome = { handleRootTabClick(AppScreenTab.Home) },
+                                        onNavigateToCalendar = { navController.navigateIfResumed(CalendarRoute) },
                                     )
                                 }
 
@@ -2631,6 +2636,25 @@ private fun MainAppContent(
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
+                composable<CalendarRoute> { backStackEntry ->
+                    val onBack = rememberGuardedPopBackStack(
+                        navController = navController,
+                        backStackEntry = backStackEntry,
+                    )
+                    CalendarScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        onBack = onBack,
+                        onNavigateHome = {
+                            handleRootTabClick(AppScreenTab.Home)
+                            onBack()
+                        },
+                        onItemClick = { entry ->
+                            navController.navigateIfResumed(
+                                DetailRoute(type = entry.type, id = entry.contentId),
+                            )
+                        },
+                    )
+                }
                 composable<HomescreenSettingsRoute> {
                     val onBack = rememberGuardedPopBackStack(
                         navController = navController,
@@ -3067,6 +3091,7 @@ private fun AppTabHost(
     onNavigateToSearch: (() -> Unit)? = null,
     onNavigateToLibrary: (() -> Unit)? = null,
     onNavigateToHome: (() -> Unit)? = null,
+    onNavigateToCalendar: (() -> Unit)? = null,
 ) {
     val tabStateHolder = rememberSaveableStateHolder()
 
@@ -3088,6 +3113,7 @@ private fun AppTabHost(
                         onFirstCatalogRendered = onInitialHomeContentRendered,
                         onNavigateToSearch = onNavigateToSearch,
                         onNavigateToLibrary = onNavigateToLibrary,
+                        onNavigateToCalendar = onNavigateToCalendar,
                     )
                 }
 
@@ -3114,6 +3140,7 @@ private fun AppTabHost(
                         onCloudFilePlay = onCloudFilePlay,
                         onConnectCloudClick = onConnectCloudClick,
                         onNavigateToHome = onNavigateToHome,
+                        onCalendarClick = onNavigateToCalendar,
                     )
                 }
 
@@ -3136,6 +3163,7 @@ private fun AppTabHost(
                         onLicensesAttributionsClick = onLicensesAttributionsSettingsClick,
                         onCheckForUpdatesClick = onCheckForUpdatesClick,
                         onCollectionsClick = onCollectionsSettingsClick,
+                        onNavigateToHome = onNavigateToHome,
                     )
                 }
             }

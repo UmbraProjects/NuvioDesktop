@@ -322,7 +322,7 @@ fun SearchScreen(
                                         ?.let { onPosterClick?.invoke(it) }
                                     true
                                 }
-                                Key.S -> {
+                                Key.S, Key.H -> {
                                     onNavigateToHome?.invoke()
                                     true
                                 }

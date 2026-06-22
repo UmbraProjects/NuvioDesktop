@@ -182,6 +182,8 @@ actual fun HomeHeroTrailerSurface(
             sourceHeaders = emptyMap(),
             playWhenReady = playWhenReady,
             initialPositionMs = 0L,
+            // Hero trailers are passive background video; never spend RTX VSR on them.
+            nvidiaRtxSuperResolutionEnabled = false,
             onError = { message ->
                 trailerSurfaceLog.w { "playback error: $message" }
                 latestOnError.value()

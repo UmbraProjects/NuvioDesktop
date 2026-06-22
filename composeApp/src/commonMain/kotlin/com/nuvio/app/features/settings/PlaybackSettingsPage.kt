@@ -85,6 +85,7 @@ import com.nuvio.app.features.streams.StreamAutoPlayMode
 import com.nuvio.app.features.streams.StreamAutoPlaySource
 import com.nuvio.app.isDesktop
 import com.nuvio.app.isIos
+import com.nuvio.app.isWindows
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.StringResource
@@ -320,6 +321,22 @@ private fun PlaybackSettingsSection(
     Column(
         verticalArrangement = Arrangement.spacedBy(sectionSpacing),
     ) {
+        if (isWindows) {
+            SettingsSection(
+                title = stringResource(Res.string.settings_playback_nvidia_rtx_video_section),
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_nvidia_rtx_super_resolution),
+                        description = stringResource(Res.string.settings_playback_nvidia_rtx_super_resolution_desc),
+                        checked = autoPlayPlayerSettings.nvidiaRtxSuperResolutionEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setNvidiaRtxSuperResolutionEnabled,
+                    )
+                }
+            }
+        }
         SettingsSection(
             title = stringResource(Res.string.settings_playback_section_player),
             isTablet = isTablet,

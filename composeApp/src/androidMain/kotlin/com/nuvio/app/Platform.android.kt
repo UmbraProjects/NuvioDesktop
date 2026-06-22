@@ -11,6 +11,7 @@ actual fun getPlatform(): Platform = AndroidPlatform()
 
 internal actual val isIos: Boolean = false
 internal actual val isDesktop: Boolean = false
+internal actual val isWindows: Boolean = false
 
 @Composable
 internal actual fun isAppFullscreen(): Boolean = false

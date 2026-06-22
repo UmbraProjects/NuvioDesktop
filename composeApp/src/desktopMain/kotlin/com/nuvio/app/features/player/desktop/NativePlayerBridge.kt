@@ -23,6 +23,7 @@ internal object NativePlayerBridge {
         playWhenReady: Boolean,
         initialPositionMs: Long,
         controlsPageUrl: String,
+        nvidiaRtxSuperResolutionEnabled: Boolean,
         eventSink: NativePlayerEventSink,
     ): Long
 

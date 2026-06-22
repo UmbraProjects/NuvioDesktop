@@ -9,6 +9,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -107,11 +109,17 @@ private fun NativePlayerSurface(
     val hostFirstPaintComplete = remember { mutableStateOf(false) }
     val hostFirstFullSizePaintComplete = remember { mutableStateOf(false) }
     val videoIsHdr = remember { mutableStateOf<Boolean?>(null) }
+    val videoVsrScale = remember { mutableStateOf<Double?>(null) }
     val videoProfileRefreshToken = remember { mutableIntStateOf(0) }
     LaunchedEffect(sourceUrl) {
         DesktopPlayerLaunchShield.showForActiveWindow()
     }
     val playbackHeaders = remember(sourceHeaders) { sanitizePlaybackHeaders(sourceHeaders) }
+    val playerSettings by PlayerSettingsRepository.uiState.collectAsState()
+    // The native side pins the D3D11 device to the NVIDIA GPU (and captures the diagnostic mpv
+    // log) when VSR is on — the d3d11vpp video processor needs the NVIDIA adapter, which matters
+    // on hybrid-GPU machines.
+    val nvidiaRtxSuperResolutionEnabled = playerSettings.nvidiaRtxSuperResolutionEnabled
     val latestOnPlayerControlsAction = rememberUpdatedState(onPlayerControlsAction)
     val latestOnPlayerControlsEvent = rememberUpdatedState(onPlayerControlsEvent)
     val latestOnPlayerControlsScrubChange = rememberUpdatedState(onPlayerControlsScrubChange)
@@ -150,6 +158,9 @@ private fun NativePlayerSurface(
             onEvent = { type, value ->
                 if (type == "videoParams") {
                     videoIsHdr.value = value != 0.0
+                    true
+                } else if (type == "videoVsrScale") {
+                    videoVsrScale.value = value
                     true
                 } else if (type == "fileLoaded") {
                     videoProfileRefreshToken.intValue += 1
@@ -243,7 +254,7 @@ private fun NativePlayerSurface(
         onDispose { controller.dispose() }
     }
 
-    LaunchedEffect(controller, sourceUrl, playbackHeaders, hostFirstFullSizePaintComplete.value) {
+    LaunchedEffect(controller, sourceUrl, playbackHeaders, nvidiaRtxSuperResolutionEnabled, hostFirstFullSizePaintComplete.value) {
         if (!hostFirstFullSizePaintComplete.value) {
             return@LaunchedEffect
         }
@@ -254,6 +265,7 @@ private fun NativePlayerSurface(
             sourceHeaders = playbackHeaders,
             playWhenReady = playWhenReady,
             initialPositionMs = initialPositionMs,
+            nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
             onError = { message -> latestOnError.value(message) },
         )
     }
@@ -276,6 +288,7 @@ private fun NativePlayerSurface(
 
     LaunchedEffect(sourceUrl) {
         videoIsHdr.value = null
+        videoVsrScale.value = null
     }
 
     LaunchedEffect(controller, sourceUrl) {
@@ -284,10 +297,12 @@ private fun NativePlayerSurface(
         // profile (and F8/F9 changes) must take effect even if the video-params event
         // never arrives, otherwise nothing would visibly change.
         combine(
-            snapshotFlow { videoIsHdr.value to videoProfileRefreshToken.intValue },
+            snapshotFlow {
+                Triple(videoIsHdr.value, videoVsrScale.value, videoProfileRefreshToken.intValue)
+            },
             PlayerSettingsRepository.uiState,
-        ) { videoState, settings -> videoState.first to settings }
-            .collect { (isHdr, settings) ->
+        ) { videoState, settings -> Triple(videoState.first, videoState.second, settings) }
+            .collect { (isHdr, vsrScale, settings) ->
                 System.out.println(
                     "Desktop video profile: detectedHdr=${isHdr ?: "unknown"}, " +
                         "hdrMode=${settings.desktopHdrMode.name}, colorProfile=${settings.desktopColorProfile.name}, " +
@@ -305,6 +320,8 @@ private fun NativePlayerSurface(
                     mode = settings.desktopAnimeMode,
                     isAnime = isAnimeContent,
                     isHdr = isHdr == true,
+                    nvidiaRtxSuperResolutionEnabled = settings.nvidiaRtxSuperResolutionEnabled,
+                    nvidiaRtxSuperResolutionScale = vsrScale,
                 )
             }
     }
@@ -403,6 +420,8 @@ private fun applyDesktopAnimeProfile(
     mode: DesktopAnimeMode,
     isAnime: Boolean,
     isHdr: Boolean,
+    nvidiaRtxSuperResolutionEnabled: Boolean = false,
+    nvidiaRtxSuperResolutionScale: Double? = null,
 ) {
     val effectivePreset = when (mode) {
         DesktopAnimeMode.Off -> null
@@ -412,10 +431,23 @@ private fun applyDesktopAnimeProfile(
         DesktopAnimeMode.Hq -> DesktopAnimeMode.Hq
     }
 
+    // This function is the single owner of the mpv `vf` chain. NVIDIA RTX VSR is a `vf`
+    // (d3d11vpp), so it lives here too — otherwise the "Anime4K off" reset below would wipe it.
+    // Anime4K (when active) takes the vf; VSR applies only when no anime preset is in effect.
+    val baselineVf = if (
+        nvidiaRtxSuperResolutionEnabled &&
+        nvidiaRtxSuperResolutionScale != null &&
+        nvidiaRtxSuperResolutionScale > 1.01
+    ) {
+        "d3d11vpp=scale=${nvidiaRtxSuperResolutionScale.coerceIn(1.0, 4.0)}:scaling-mode=nvidia"
+    } else {
+        ""
+    }
+
     if (effectivePreset == null) {
         // Restore the bridge's baseline live-action rendering (see startMpv in player_bridge.cpp).
         controller.setMpvProperty("glsl-shaders", "")
-        controller.setMpvProperty("vf", "")
+        controller.setMpvProperty("vf", baselineVf)
         controller.setMpvProperty("scale", "spline36")
         controller.setMpvProperty("cscale", "lanczos")
         controller.setMpvProperty("scale-blur", "0.0")

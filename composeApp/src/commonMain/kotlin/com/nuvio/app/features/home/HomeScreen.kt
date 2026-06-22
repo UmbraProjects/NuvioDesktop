@@ -152,6 +152,7 @@ fun HomeScreen(
     onFirstCatalogRendered: (() -> Unit)? = null,
     onNavigateToSearch: (() -> Unit)? = null,
     onNavigateToLibrary: (() -> Unit)? = null,
+    onNavigateToCalendar: (() -> Unit)? = null,
 ) {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.Default) {
@@ -1001,6 +1002,12 @@ fun HomeScreen(
                     Key.L -> {
                         if (event.type == KeyEventType.KeyUp) {
                             onNavigateToLibrary?.invoke()
+                        }
+                        true
+                    }
+                    Key.C -> {
+                        if (event.type == KeyEventType.KeyUp) {
+                            onNavigateToCalendar?.invoke()
                         }
                         true
                     }

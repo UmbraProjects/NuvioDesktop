@@ -44,6 +44,7 @@ typedef enum mpv_format {
 typedef enum mpv_event_id {
     MPV_EVENT_NONE = 0,
     MPV_EVENT_SHUTDOWN = 1,
+    MPV_EVENT_LOG_MESSAGE = 2,
     MPV_EVENT_FILE_LOADED = 8,
     MPV_EVENT_PROPERTY_CHANGE = 22,
 } mpv_event_id;
@@ -53,6 +54,13 @@ typedef struct mpv_event_property {
     mpv_format format;
     void *data;
 } mpv_event_property;
+
+typedef struct mpv_event_log_message {
+    const char *prefix;
+    const char *level;
+    const char *text;
+    int log_level;
+} mpv_event_log_message;
 
 typedef struct mpv_event {
     mpv_event_id event_id;
@@ -67,6 +75,32 @@ namespace {
 HMODULE gModule = nullptr;
 constexpr UINT WM_NUVIO_TASK = WM_APP + 0x4E50;
 constexpr UINT_PTR NUVIO_TIMER_ID = 0x4E50;
+
+// Diagnostic mpv log -> %TEMP%\nuvio-mpv.log. Only written while a feature that requests mpv
+// log messages is active (currently RTX VSR), so normal playback never touches the file.
+std::string nuvioMpvLogPath() {
+    char tempPath[MAX_PATH];
+    DWORD len = GetTempPathA(MAX_PATH, tempPath);
+    if (len == 0 || len > MAX_PATH) return std::string();
+    return std::string(tempPath) + "nuvio-mpv.log";
+}
+
+void nuvioMpvLogReset() {
+    const std::string path = nuvioMpvLogPath();
+    if (path.empty()) return;
+    FILE *f = nullptr;
+    if (fopen_s(&f, path.c_str(), "w") == 0 && f) fclose(f);
+}
+
+void nuvioMpvLogAppend(const std::string &line) {
+    const std::string path = nuvioMpvLogPath();
+    if (path.empty()) return;
+    FILE *f = nullptr;
+    if (fopen_s(&f, path.c_str(), "a") == 0 && f) {
+        fwrite(line.data(), 1, line.size(), f);
+        fclose(f);
+    }
+}
 const wchar_t *kMessageWindowClass = L"NuvioPlayerBridgeMessageWindow";
 const wchar_t *kContainerWindowClass = L"NuvioPlayerBridgeContainerWindow";
 constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
@@ -314,6 +348,7 @@ struct MpvApi {
     using mpv_wait_event_fn = mpv_event *(*)(mpv_handle *, double);
     using mpv_wakeup_fn = void (*)(mpv_handle *);
     using mpv_observe_property_fn = int (*)(mpv_handle *, uint64_t, const char *, mpv_format);
+    using mpv_request_log_messages_fn = int (*)(mpv_handle *, const char *);
 
     HMODULE library = nullptr;
     std::once_flag loadOnce;
@@ -333,6 +368,7 @@ struct MpvApi {
     mpv_wait_event_fn waitEvent = nullptr;
     mpv_wakeup_fn wakeup = nullptr;
     mpv_observe_property_fn observeProperty = nullptr;
+    mpv_request_log_messages_fn requestLogMessages = nullptr;
 
     void ensureLoaded() {
         std::call_once(loadOnce, [this]() { load(); });
@@ -393,6 +429,7 @@ struct MpvApi {
         waitEvent = loadSymbol<mpv_wait_event_fn>("mpv_wait_event");
         wakeup = loadSymbol<mpv_wakeup_fn>("mpv_wakeup");
         observeProperty = loadSymbol<mpv_observe_property_fn>("mpv_observe_property");
+        requestLogMessages = loadSymbol<mpv_request_log_messages_fn>("mpv_request_log_messages");
     }
 
     template <typename T>
@@ -667,6 +704,7 @@ public:
         long long initialPositionMs,
         const std::string &controlsUrl,
         JavaVM *vm,
+        bool nvidiaRtxSuperResolutionEnabled,
         jobject sink,
         jmethodID method
     ) {
@@ -686,8 +724,8 @@ public:
         auto initState = std::make_shared<InitializationState>();
         auto self = shared_from_this();
         uiThread = std::thread(
-            [self, sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, initState]() {
-                self->runNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, initState);
+            [self, sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, initState]() {
+                self->runNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, initState);
             }
         );
 
@@ -1133,6 +1171,7 @@ private:
     bool videoParamsGammaReceived = false;
 
     std::string externalAudioUrl;
+    bool vsrLogActive = false;
 
     friend LRESULT CALLBACK messageWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
     friend LRESULT CALLBACK containerWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -1143,11 +1182,12 @@ private:
         bool playWhenReady,
         long long initialPositionMs,
         std::string controlsUrl,
+        bool nvidiaRtxSuperResolutionEnabled,
         std::shared_ptr<InitializationState> initState
     ) {
         std::string failure;
         try {
-            initializeOnNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl);
+            initializeOnNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled);
         } catch (const std::exception &error) {
             failure = error.what();
             cleanupUiResources();
@@ -1176,7 +1216,8 @@ private:
         const std::vector<std::string> &headerLines,
         bool playWhenReady,
         long long initialPositionMs,
-        const std::string &controlsUrl
+        const std::string &controlsUrl,
+        bool nvidiaRtxSuperResolutionEnabled
     ) {
         registerWindowClasses();
         uiThreadId = GetCurrentThreadId();
@@ -1227,7 +1268,7 @@ private:
         }
 
         startWebView(controlsUrl);
-        startMpv(sourceUrl, headerLines, playWhenReady, initialPositionMs);
+        startMpv(sourceUrl, headerLines, playWhenReady, initialPositionMs, nvidiaRtxSuperResolutionEnabled);
         layoutNativeSubviews();
         if (!SetTimer(messageHwnd, NUVIO_TIMER_ID, 500, nullptr)) {
             throw std::runtime_error("Unable to start native player timer.");
@@ -1385,7 +1426,8 @@ private:
         const std::string &sourceUrl,
         const std::vector<std::string> &headerLines,
         bool playWhenReady,
-        long long initialPositionMs
+        long long initialPositionMs,
+        bool nvidiaRtxSuperResolutionEnabled
     ) {
         MpvApi &api = mpvApi();
         {
@@ -1395,6 +1437,15 @@ private:
                 throw std::runtime_error("mpv_create failed.");
             }
             initialStartSeconds = initialPositionMs > 0 ? (double)initialPositionMs / 1000.0 : 0.0;
+
+            // When RTX VSR is enabled, capture mpv's own log so filter/hwdec issues are visible
+            // (file: %TEMP%\nuvio-mpv.log). Off by default, so normal playback writes nothing.
+            if (nvidiaRtxSuperResolutionEnabled && mpvApi().requestLogMessages) {
+                vsrLogActive = true;
+                nuvioMpvLogReset();
+                nuvioMpvLogAppend("[nuvio] RTX VSR enabled - dynamic scale requested\n");
+                mpvApi().requestLogMessages(mpv, "v");
+            }
 
             setMpvOptionStringLocked("config", "no");
             setMpvOptionStringLocked("osc", "no");
@@ -1409,6 +1460,17 @@ private:
             setMpvOptionStringLocked("hwdec-codecs", "all");
             setMpvOptionStringLocked("vd-lavc-software-fallback", "no");
             setMpvOptionStringLocked("vd-lavc-threads", "4");
+
+            // NVIDIA RTX Video Super Resolution (opt-in). Pin the D3D11 device to the NVIDIA GPU
+            // and run the d3d11 video processor with NVIDIA's super-resolution scaler. Default-off
+            // so the standard pipeline above is untouched unless the user enables it.
+            if (nvidiaRtxSuperResolutionEnabled) {
+                // Pin the D3D11 device to the NVIDIA GPU (matters on hybrid-GPU machines).
+                // The actual RTX VSR filter and its source/display-aware scale are applied from the
+                // Kotlin runtime profile path (applyDesktopAnimeProfile), which is the single owner
+                // of `vf` — setting it here too would just get overwritten when that path runs.
+                setMpvOptionStringLocked("d3d11-adapter", "NVIDIA");
+            }
 
             // HDR / tonemapping
             // target-colorspace-hint lets the OS signal the display for passthrough on HDR screens;
@@ -1706,8 +1768,42 @@ private:
             if (event->event_id == MPV_EVENT_SHUTDOWN) {
                 return;
             }
+            if (event->event_id == MPV_EVENT_LOG_MESSAGE && vsrLogActive && event->data) {
+                auto *msg = static_cast<mpv_event_log_message *>(event->data);
+                if (msg && msg->prefix && msg->level && msg->text) {
+                    nuvioMpvLogAppend(std::string("[") + msg->level + "] " + msg->prefix + ": " + msg->text);
+                }
+            }
             if (event->event_id == MPV_EVENT_FILE_LOADED) {
                 sendPlayerEvent("fileLoaded", 1.0);
+                // Ask VPP to scale directly to the embedded surface instead of always using 2x.
+                // This lets 720p reach 4K in one NVIDIA VSR pass while avoiding needless work
+                // when the source already matches or exceeds the surface dimensions.
+                int64_t videoWidth = int64Property("video-params/w", 0);
+                int64_t videoHeight = int64Property("video-params/h", 0);
+                RECT surfaceBounds{};
+                if (videoWidth > 0 && videoHeight > 0 && containerHwnd &&
+                    GetClientRect(containerHwnd, &surfaceBounds)) {
+                    double surfaceWidth = (double)(surfaceBounds.right - surfaceBounds.left);
+                    double surfaceHeight = (double)(surfaceBounds.bottom - surfaceBounds.top);
+                    double widthScale = surfaceWidth / (double)videoWidth;
+                    double heightScale = surfaceHeight / (double)videoHeight;
+                    double vsrScale = std::max(1.0, std::min(4.0, std::min(widthScale, heightScale)));
+                    sendPlayerEvent("videoVsrScale", vsrScale);
+                    if (vsrLogActive) {
+                        nuvioMpvLogAppend("[nuvio] dynamic VSR scale=" + std::to_string(vsrScale) +
+                            " source=" + std::to_string(videoWidth) + "x" + std::to_string(videoHeight) +
+                            " surface=" + std::to_string((long long)surfaceWidth) + "x" +
+                            std::to_string((long long)surfaceHeight) + "\n");
+                    }
+                }
+                if (vsrLogActive) {
+                    // Record what actually took effect so we can confirm hwdec + the VSR filter.
+                    nuvioMpvLogAppend(std::string("[nuvio] hwdec-current=") + stringProperty("hwdec-current") +
+                        " vf=" + stringProperty("vf") +
+                        " video-params/w=" + stringProperty("video-params/w") +
+                        " dwidth=" + stringProperty("dwidth") + "\n");
+                }
             }
             if (event->event_id == MPV_EVENT_PROPERTY_CHANGE && event->data) {
                 auto *prop = static_cast<mpv_event_property *>(event->data);
@@ -1768,7 +1864,12 @@ private:
     }
 
     void setMpvOptionStringLocked(const char *name, const char *value) {
-        (void)mpvApi().setOptionString(mpv, name, value);
+        int result = mpvApi().setOptionString(mpv, name, value);
+        if (result < 0) {
+            std::string message = std::string("[nuvio] mpv option rejected: ") + name + "=" + value +
+                " (" + mpvApi().errorText(result) + ")\n";
+            OutputDebugStringA(message.c_str());
+        }
     }
 
     double doubleProperty(const char *name, double fallback) {
@@ -1780,6 +1881,17 @@ private:
             return fallback;
         }
         return value;
+    }
+
+    std::string stringProperty(const char *name) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return std::string();
+        char *value = nullptr;
+        int result = mpvApi().getProperty(mpv, name, MPV_FORMAT_STRING, &value);
+        if (result < 0 || !value) return std::string();
+        std::string out(value);
+        if (mpvApi().freeValue) mpvApi().freeValue(value);
+        return out;
     }
 
     long long int64Property(const char *name, long long fallback) {
@@ -2077,6 +2189,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jboolean playWhenReady,
     jlong initialPositionMs,
     jstring controlsPageUrl,
+    jboolean nvidiaRtxSuperResolutionEnabled,
     jobject eventSink
 ) {
     HWND hostHwnd = (HWND)(intptr_t)hostViewPtr;
@@ -2112,6 +2225,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
             initialPositionMs,
             controlsPageUrlText,
             javaVm,
+            nvidiaRtxSuperResolutionEnabled == JNI_TRUE,
             eventSinkRef,
             eventMethod
         );

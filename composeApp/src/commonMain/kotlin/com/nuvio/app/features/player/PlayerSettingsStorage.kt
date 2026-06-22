@@ -61,6 +61,8 @@ internal expect object PlayerSettingsStorage {
     fun saveStreamReuseLastLinkCacheHours(hours: Int)
     fun loadDecoderPriority(): Int?
     fun saveDecoderPriority(priority: Int)
+    fun loadNvidiaRtxSuperResolutionEnabled(): Boolean?
+    fun saveNvidiaRtxSuperResolutionEnabled(enabled: Boolean)
     fun loadMapDV7ToHevc(): Boolean?
     fun saveMapDV7ToHevc(enabled: Boolean)
     fun loadTunnelingEnabled(): Boolean?

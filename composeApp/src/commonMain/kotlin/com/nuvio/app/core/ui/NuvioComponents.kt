@@ -141,6 +141,7 @@ fun NuvioScreenHeader(
     includeStatusBarPadding: Boolean = true,
     topPadding: Dp? = null,
     onBack: (() -> Unit)? = null,
+    titleTrailing: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
@@ -186,6 +187,7 @@ fun NuvioScreenHeader(
                         color = tokens.colors.textPrimary,
                     )
                 }
+                titleTrailing?.invoke()
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s2),

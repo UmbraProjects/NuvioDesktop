@@ -942,6 +942,9 @@
     <string name="settings_playback_section_decoder">DECODER</string>
     <string name="settings_playback_section_next_episode">NEXT EPISODE</string>
     <string name="settings_playback_section_player">PLAYER</string>
+    <string name="settings_playback_nvidia_rtx_video_section">NVIDIA RTX VIDEO</string>
+    <string name="settings_playback_nvidia_rtx_super_resolution">RTX Video Super Resolution</string>
+    <string name="settings_playback_nvidia_rtx_super_resolution_desc">Upscale low-resolution video using NVIDIA RTX AI Super Resolution. Requires an RTX GPU.</string>
     <string name="settings_playback_section_skip_segments">SKIP SEGMENTS</string>
     <string name="settings_playback_section_stream_auto_play">STREAM AUTO-PLAY</string>
     <string name="settings_playback_section_stream_selection">STREAM SELECTION</string>
@@ -1541,6 +1544,11 @@
     <string name="library_empty_message">Saved titles will appear here after you tap Save on a details screen.</string>
     <string name="library_empty_title">Your library is empty</string>
     <string name="library_load_failed">Couldn't load library</string>
+    <string name="calendar_title">Calendar</string>
+    <string name="calendar_connect_trakt">Connect your Trakt account to see your calendar.</string>
+    <string name="calendar_load_failed">Failed to load calendar.</string>
+    <string name="calendar_previous_month">Previous month</string>
+    <string name="calendar_next_month">Next month</string>
     <string name="library_other">Other</string>
     <string name="library_source_cloud">Cloud</string>
     <string name="library_source_saved">Saved</string>

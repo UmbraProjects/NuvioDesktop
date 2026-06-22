@@ -47,6 +47,7 @@ internal actual object PlayerSettingsStorage {
     private const val streamReuseLastLinkEnabledKey = "stream_reuse_last_link_enabled"
     private const val streamReuseLastLinkCacheHoursKey = "stream_reuse_last_link_cache_hours"
     private const val decoderPriorityKey = "decoder_priority"
+    private const val nvidiaRtxSuperResolutionEnabledKey = "nvidia_rtx_super_resolution_enabled"
     private const val mapDV7ToHevcKey = "map_dv7_to_hevc"
     private const val tunnelingEnabledKey = "tunneling_enabled"
     private const val streamAutoPlayModeKey = "stream_auto_play_mode"
@@ -120,6 +121,7 @@ internal actual object PlayerSettingsStorage {
         streamReuseLastLinkEnabledKey,
         streamReuseLastLinkCacheHoursKey,
         decoderPriorityKey,
+        nvidiaRtxSuperResolutionEnabledKey,
         mapDV7ToHevcKey,
         tunnelingEnabledKey,
         streamAutoPlayModeKey,
@@ -224,6 +226,9 @@ internal actual object PlayerSettingsStorage {
     actual fun saveStreamReuseLastLinkCacheHours(hours: Int) = saveInt(streamReuseLastLinkCacheHoursKey, hours)
     actual fun loadDecoderPriority(): Int? = loadInt(decoderPriorityKey)
     actual fun saveDecoderPriority(priority: Int) = saveInt(decoderPriorityKey, priority)
+
+    actual fun loadNvidiaRtxSuperResolutionEnabled(): Boolean? = loadBoolean(nvidiaRtxSuperResolutionEnabledKey)
+    actual fun saveNvidiaRtxSuperResolutionEnabled(enabled: Boolean) = saveBoolean(nvidiaRtxSuperResolutionEnabledKey, enabled)
     actual fun loadMapDV7ToHevc(): Boolean? = loadBoolean(mapDV7ToHevcKey)
     actual fun saveMapDV7ToHevc(enabled: Boolean) = saveBoolean(mapDV7ToHevcKey, enabled)
     actual fun loadTunnelingEnabled(): Boolean? = loadBoolean(tunnelingEnabledKey)
@@ -357,6 +362,7 @@ internal actual object PlayerSettingsStorage {
         loadStreamReuseLastLinkEnabled()?.let { put(streamReuseLastLinkEnabledKey, encodeSyncBoolean(it)) }
         loadStreamReuseLastLinkCacheHours()?.let { put(streamReuseLastLinkCacheHoursKey, encodeSyncInt(it)) }
         loadDecoderPriority()?.let { put(decoderPriorityKey, encodeSyncInt(it)) }
+        loadNvidiaRtxSuperResolutionEnabled()?.let { put(nvidiaRtxSuperResolutionEnabledKey, encodeSyncBoolean(it)) }
         loadMapDV7ToHevc()?.let { put(mapDV7ToHevcKey, encodeSyncBoolean(it)) }
         loadTunnelingEnabled()?.let { put(tunnelingEnabledKey, encodeSyncBoolean(it)) }
         loadStreamAutoPlayMode()?.let { put(streamAutoPlayModeKey, encodeSyncString(it)) }
@@ -428,6 +434,7 @@ internal actual object PlayerSettingsStorage {
         payload.decodeSyncBoolean(streamReuseLastLinkEnabledKey)?.let(::saveStreamReuseLastLinkEnabled)
         payload.decodeSyncInt(streamReuseLastLinkCacheHoursKey)?.let(::saveStreamReuseLastLinkCacheHours)
         payload.decodeSyncInt(decoderPriorityKey)?.let(::saveDecoderPriority)
+        payload.decodeSyncBoolean(nvidiaRtxSuperResolutionEnabledKey)?.let(::saveNvidiaRtxSuperResolutionEnabled)
         payload.decodeSyncBoolean(mapDV7ToHevcKey)?.let(::saveMapDV7ToHevc)
         payload.decodeSyncBoolean(tunnelingEnabledKey)?.let(::saveTunnelingEnabled)
         payload.decodeSyncString(streamAutoPlayModeKey)?.let(::saveStreamAutoPlayMode)

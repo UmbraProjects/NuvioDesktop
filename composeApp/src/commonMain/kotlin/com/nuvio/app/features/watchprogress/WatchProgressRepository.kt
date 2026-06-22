@@ -12,6 +12,7 @@ import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
+import com.nuvio.app.features.trakt.TraktCalendarRepository
 import com.nuvio.app.features.trakt.TraktProgressRepository
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trakt.isTraktCompatibleId
@@ -159,6 +160,7 @@ object WatchProgressRepository {
         TraktSettingsRepository.onProfileChanged()
         loadFromDisk(profileId)
         TraktProgressRepository.onProfileChanged()
+        TraktCalendarRepository.onProfileChanged()
         if (shouldUseTraktProgress()) {
             TraktProgressRepository.refreshAsync()
         }
@@ -174,6 +176,7 @@ object WatchProgressRepository {
         deltaCursorEventId = 0L
         deltaInitialized = false
         TraktProgressRepository.clearLocalState()
+        TraktCalendarRepository.clearLocalState()
         TraktSettingsRepository.clearLocalState()
         _uiState.value = WatchProgressUiState()
     }

@@ -35,9 +35,17 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -112,9 +120,31 @@ fun SettingsScreen(
     onLicensesAttributionsClick: () -> Unit = {},
     onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsClick: () -> Unit = {},
+    onNavigateToHome: (() -> Unit)? = null,
 ) {
+    val homeKeyFocusRequester = remember { FocusRequester() }
+    // H returns to the home tab. onKeyEvent (bubble phase) so settings text fields,
+    // which consume their own keystrokes, are never disrupted.
+    val homeKeyModifier = if (isDesktop && onNavigateToHome != null) {
+        Modifier
+            .focusRequester(homeKeyFocusRequester)
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.H) {
+                    onNavigateToHome(); true
+                } else {
+                    false
+                }
+            }
+    } else {
+        Modifier
+    }
+    LaunchedEffect(Unit) {
+        if (isDesktop && onNavigateToHome != null) runCatching { homeKeyFocusRequester.requestFocus() }
+    }
+
     BoxWithConstraints(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.then(homeKeyModifier).fillMaxSize(),
     ) {
         val playerSettingsUiState by remember {
             PlayerSettingsRepository.ensureLoaded()

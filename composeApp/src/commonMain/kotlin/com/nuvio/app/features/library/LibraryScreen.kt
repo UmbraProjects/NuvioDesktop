@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
@@ -113,6 +114,7 @@ fun LibraryScreen(
     onCloudFilePlay: ((CloudLibraryItem, CloudLibraryFile) -> Unit)? = null,
     onConnectCloudClick: (() -> Unit)? = null,
     onNavigateToHome: (() -> Unit)? = null,
+    onCalendarClick: (() -> Unit)? = null,
 ) {
     val uiState by remember {
         LibraryRepository.ensureLoaded()
@@ -216,7 +218,7 @@ fun LibraryScreen(
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         val sections = uiState.sections
                         when (event.key) {
-                            Key.L -> { onNavigateToHome?.invoke(); true }
+                            Key.L, Key.H -> { onNavigateToHome?.invoke(); true }
                             Key.DirectionDown -> {
                                 val maxRow = (sections.size - 1).coerceAtLeast(0)
                                 focusedRowIndex = (focusedRowIndex + 1).coerceAtMost(maxRow)
@@ -280,6 +282,23 @@ fun LibraryScreen(
                         },
                         modifier = Modifier.padding(horizontal = 16.dp),
                         topPadding = topChromePadding,
+                        titleTrailing = {
+                            // Trakt calendar pairs with the (Trakt) library title — sits just to its
+                            // right, vertically centered on the text line (a plain clickable Icon
+                            // rather than a 48dp IconButton, which would sit off-line).
+                            if (onCalendarClick != null) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DateRange,
+                                    contentDescription = stringResource(Res.string.calendar_title),
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable(onClick = onCalendarClick)
+                                        .padding(6.dp)
+                                        .size(28.dp),
+                                )
+                            }
+                        },
                     )
                     LibrarySourceSwitch(
                         selectedMode = sourceMode,
@@ -541,6 +560,7 @@ private fun LibrarySourceSwitch(
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         LibraryChip(
             label = stringResource(Res.string.library_source_saved),

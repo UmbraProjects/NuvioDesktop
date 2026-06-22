@@ -275,6 +275,7 @@ internal fun PlayerScreenRuntime.cyclePlaybackSpeed() {
     val current = playbackSnapshot.playbackSpeed
     val next = speeds.firstOrNull { it > current + 0.01f } ?: speeds.first()
     playerController?.setPlaybackSpeed(next)
+    playbackSnapshot = playbackSnapshot.copy(playbackSpeed = next)
     showGestureMessage(formatPlaybackSpeedLabel(next))
     controlsVisible = true
 }
