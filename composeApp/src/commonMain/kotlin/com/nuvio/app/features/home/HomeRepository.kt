@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
@@ -30,6 +31,7 @@ import kotlin.math.absoluteValue
 import kotlin.random.Random
 
 object HomeRepository {
+    private val log = Logger.withTag("HomeRepository")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -126,6 +128,11 @@ object HomeRepository {
 
                 results.mapNotNull { it.getOrNull() }.forEach { section ->
                     loadedSections[section.key] = section
+                }
+                results.forEachIndexed { i, result ->
+                    result.exceptionOrNull()?.let { error ->
+                        log.w(error) { "Catalog fetch failed: ${batch.getOrNull(i)?.let { "${it.addonName} / ${it.catalogId}" } ?: "unknown"}" }
+                    }
                 }
                 if (firstErrorMessage == null) {
                     firstErrorMessage = results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
@@ -228,6 +235,15 @@ object HomeRepository {
         } else {
             emptyList()
         }
+        log.d {
+            val heroSource = when {
+                !snapshot.heroEnabled -> "disabled"
+                heroItems.isEmpty() -> "empty — no catalog or collection items"
+                catalogHeroItems.isNotEmpty() -> "catalogs (${heroItems.size} items)"
+                else -> "collection fallback (${heroItems.size} items)"
+            }
+            "Home state: ${sections.size} sections visible, hero=$heroSource"
+        }
 
         _uiState.value = HomeUiState(
             isLoading = isLoading,
@@ -248,6 +264,7 @@ object HomeRepository {
         )
         val items = page.items
         val nextSkip = if (supportsPagination) page.nextSkip else null
+        log.d { "Catalog fetch: $addonName / $catalogId ($type) — ${if (items.isEmpty()) "empty" else "${items.size} items"}" }
         if (items.isEmpty()) {
             return HomeCatalogSection(
                 key = key,

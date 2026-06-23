@@ -11,6 +11,12 @@ import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.profiles.ProfileRepository
+import com.nuvio.app.features.simkl.SIMKL_CW_DAYS_CAP_ALL
+import com.nuvio.app.features.simkl.SimklAuthRepository
+import com.nuvio.app.features.simkl.SimklCalendarRepository
+import com.nuvio.app.features.simkl.SimklProgressRepository
+import com.nuvio.app.features.simkl.SimklSettingsRepository
+import com.nuvio.app.features.simkl.WatchProgressSourceSimkl
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktCalendarRepository
 import com.nuvio.app.features.trakt.TraktProgressRepository
@@ -137,6 +143,47 @@ object WatchProgressRepository {
         }
 
         syncScope.launch {
+            SimklAuthRepository.isAuthenticated.collectLatest { authenticated ->
+                if (authenticated && shouldUseSimklProgress()) {
+                    runCatching { SimklProgressRepository.refreshNow() }
+                        .onFailure { e ->
+                            if (e is CancellationException) throw e
+                            log.w { "Failed to refresh SIMKL progress after auth: ${e.message}" }
+                        }
+                }
+                publish()
+            }
+        }
+
+        syncScope.launch {
+            SimklProgressRepository.uiState.collectLatest { state ->
+                if (shouldUseSimklProgress()) {
+                    publish()
+                    // When SIMKL entries load with missing images, reset the addon fingerprint
+                    // so resolveRemoteMetadata() runs again once addons are ready.
+                    if (state.hasLoaded && state.entries.any { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }) {
+                        lastAddonMetadataReadyFingerprint = null
+                        retryMetadataResolutionWhenAddonMetaProvidersReady(AddonRepository.uiState.value)
+                    }
+                }
+            }
+        }
+
+        syncScope.launch {
+            SimklSettingsRepository.uiState.collectLatest {
+                val useSimkl = shouldUseSimklProgress()
+                if (useSimkl) {
+                    runCatching { SimklProgressRepository.refreshNow() }
+                        .onFailure { e ->
+                            if (e is CancellationException) throw e
+                            log.w { "Failed to refresh SIMKL progress after source change: ${e.message}" }
+                        }
+                }
+                publish()
+            }
+        }
+
+        syncScope.launch {
             AddonRepository.uiState.collectLatest { state ->
                 retryMetadataResolutionWhenAddonMetaProvidersReady(state)
             }
@@ -148,9 +195,14 @@ object WatchProgressRepository {
         TraktAuthRepository.ensureLoaded()
         TraktSettingsRepository.ensureLoaded()
         TraktProgressRepository.ensureLoaded()
+        SimklSettingsRepository.ensureLoaded()
+        SimklAuthRepository.ensureLoaded()
+        SimklProgressRepository.ensureLoaded()
         if (hasLoaded) return
         loadFromDisk(ProfileRepository.activeProfileId)
-        if (shouldUseTraktProgress()) {
+        if (shouldUseSimklProgress()) {
+            SimklProgressRepository.refreshAsync()
+        } else if (shouldUseTraktProgress()) {
             TraktProgressRepository.refreshAsync()
         }
     }
@@ -161,7 +213,11 @@ object WatchProgressRepository {
         loadFromDisk(profileId)
         TraktProgressRepository.onProfileChanged()
         TraktCalendarRepository.onProfileChanged()
-        if (shouldUseTraktProgress()) {
+        SimklCalendarRepository.onProfileChanged()
+        SimklProgressRepository.onProfileChanged()
+        if (shouldUseSimklProgress()) {
+            SimklProgressRepository.refreshAsync()
+        } else if (shouldUseTraktProgress()) {
             TraktProgressRepository.refreshAsync()
         }
     }
@@ -556,6 +612,7 @@ object WatchProgressRepository {
     }
 
     private fun retryMetadataResolutionWhenAddonMetaProvidersReady(state: AddonsUiState) {
+        // Skip when Trakt is active (it supplies its own images) but run for local and SIMKL sources.
         if (!hasLoaded || shouldUseTraktProgress()) return
 
         val readiness = state.metadataProviderReadiness()
@@ -570,8 +627,13 @@ object WatchProgressRepository {
     }
 
     private fun resolveRemoteMetadata() {
-        val missingMetadataEntries = entriesByVideoId.values
+        val localMissing = entriesByVideoId.values
             .filter { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }
+        val simklMissing = if (shouldUseSimklProgress()) {
+            SimklProgressRepository.uiState.value.entries
+                .filter { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }
+        } else emptyList()
+        val missingMetadataEntries = localMissing + simklMissing
         val entriesToResolve = missingMetadataEntries.continueWatchingEntries(
             limit = WATCH_PROGRESS_METADATA_RESOLUTION_LIMIT,
         )
@@ -614,13 +676,25 @@ object WatchProgressRepository {
 
                 var appliedEntries = 0
                 for (entry in result.entries) {
-                    val current = entriesByVideoId[entry.videoId] ?: continue
-                    val episodeVideo = if (current.seasonNumber != null && current.episodeNumber != null) {
+                    val episodeVideo = if (entry.seasonNumber != null && entry.episodeNumber != null) {
                         meta.videos.find { v ->
-                            v.season == current.seasonNumber && v.episode == current.episodeNumber
+                            v.season == entry.seasonNumber && v.episode == entry.episodeNumber
                         }
                     } else null
 
+                    if (entry.source == WatchProgressSourceSimkl) {
+                        SimklProgressRepository.enrichEntry(
+                            videoId = entry.videoId,
+                            poster = meta.poster,
+                            background = meta.background,
+                            episodeTitle = episodeVideo?.title ?: entry.episodeTitle,
+                            episodeThumbnail = episodeVideo?.thumbnail ?: entry.episodeThumbnail,
+                        )
+                        appliedEntries += 1
+                        continue
+                    }
+
+                    val current = entriesByVideoId[entry.videoId] ?: continue
                     entriesByVideoId[current.videoId] = current.copy(
                         title = meta.name,
                         poster = meta.poster,
@@ -696,6 +770,14 @@ object WatchProgressRepository {
     ) {
         ensureLoaded()
         upsert(session = session, snapshot = snapshot, persist = true, syncRemote = syncRemote)
+        // After playback ends, refresh SIMKL so the newly saved session appears in CW.
+        // Small delay lets SIMKL's server process the scrobble stop before we re-fetch.
+        if (shouldUseSimklProgress()) {
+            syncScope.launch {
+                kotlinx.coroutines.delay(2_500)
+                SimklProgressRepository.refreshAsync()
+            }
+        }
     }
 
     fun clearProgress(videoId: String) {
@@ -705,6 +787,21 @@ object WatchProgressRepository {
     fun clearProgress(videoIds: Collection<String>) {
         ensureLoaded()
         if (videoIds.isEmpty()) return
+
+        if (shouldUseSimklProgress()) {
+            videoIds.forEach(SimklProgressRepository::applyOptimisticRemoval)
+            publish()
+            syncScope.launch {
+                videoIds.forEach { videoId ->
+                    runCatching { SimklProgressRepository.deleteSession(videoId) }
+                        .onFailure { error ->
+                            if (error is CancellationException) throw error
+                            log.e(error) { "Failed to delete SIMKL playback session for $videoId" }
+                        }
+                }
+            }
+            return
+        }
 
         if (shouldUseTraktProgress()) {
             val entriesToRemove = currentEntries().filter { entry -> entry.videoId in videoIds }
@@ -758,6 +855,21 @@ object WatchProgressRepository {
             }
         }
         if (entriesToRemove.isEmpty()) return
+
+        if (shouldUseSimklProgress()) {
+            entriesToRemove.forEach { SimklProgressRepository.applyOptimisticRemoval(it.videoId) }
+            publish()
+            syncScope.launch {
+                entriesToRemove.forEach { entry ->
+                    runCatching { SimklProgressRepository.deleteSession(entry.videoId) }
+                        .onFailure { error ->
+                            if (error is CancellationException) throw error
+                            log.e(error) { "Failed to delete SIMKL playback session for ${entry.videoId}" }
+                        }
+                }
+            }
+            return
+        }
 
         if (shouldUseTraktProgress()) {
             TraktProgressRepository.applyOptimisticRemoval(
@@ -960,22 +1072,50 @@ object WatchProgressRepository {
         persist()
     }
 
+    private fun shouldUseSimklProgress(): Boolean =
+        SimklAuthRepository.isAuthenticated.value && SimklSettingsRepository.isSimklCwSource()
+
     private fun shouldUseTraktProgress(): Boolean =
-        shouldUseTraktProgressSource(
-            isAuthenticated = TraktAuthRepository.isAuthenticated.value,
-            source = TraktSettingsRepository.uiState.value.watchProgressSource,
-        )
+        !shouldUseSimklProgress() &&
+            shouldUseTraktProgressSource(
+                isAuthenticated = TraktAuthRepository.isAuthenticated.value,
+                source = TraktSettingsRepository.uiState.value.watchProgressSource,
+            )
 
     private fun currentEntries(): List<WatchProgressEntry> {
-        return if (shouldUseTraktProgress()) {
+        if (shouldUseSimklProgress()) {
+            // Apply the user's day cap and sort most-recently-watched first.
+            val daysCap = SimklSettingsRepository.simklContinueWatchingDaysCap()
+            val cutoffMs = if (daysCap > SIMKL_CW_DAYS_CAP_ALL) {
+                System.currentTimeMillis() - daysCap.toLong() * 24L * 60L * 60L * 1000L
+            } else 0L
+
+            val rawSimkl = SimklProgressRepository.uiState.value.entries
+            val simklItems = rawSimkl
+                .filter { cutoffMs == 0L || it.lastUpdatedEpochMs >= cutoffMs }
+                .sortedByDescending { it.lastUpdatedEpochMs }
+
+            val localNonSimklItems = entriesByVideoId.values.filter {
+                !isTraktCompatibleId(it.parentMetaId)
+            }
+            return if (localNonSimklItems.isEmpty()) {
+                simklItems
+            } else {
+                val simklKeys = simklItems.map { it.videoId }.toSet()
+                val merged = simklItems.toMutableList()
+                localNonSimklItems.forEach { if (it.videoId !in simklKeys) merged.add(it) }
+                merged
+            }
+        }
+
+        if (shouldUseTraktProgress()) {
             // Merge Trakt remote progress with local-only entries that use
             // non-Trakt-compatible IDs (kitsu:, mal:, anilist:, etc.).
-            // Trakt will never return these IDs, so they must come from local storage.
             val traktItems = TraktProgressRepository.uiState.value.entries
             val localNonTraktItems = entriesByVideoId.values.filter {
                 !isTraktCompatibleId(it.parentMetaId)
             }
-            if (localNonTraktItems.isEmpty()) {
+            return if (localNonTraktItems.isEmpty()) {
                 traktItems
             } else {
                 val traktKeys = traktItems.map { it.videoId }.toSet()
@@ -987,9 +1127,9 @@ object WatchProgressRepository {
                 }
                 merged
             }
-        } else {
-            entriesByVideoId.values.toList()
         }
+
+        return entriesByVideoId.values.toList()
     }
 
     fun isDroppedShow(contentId: String): Boolean {

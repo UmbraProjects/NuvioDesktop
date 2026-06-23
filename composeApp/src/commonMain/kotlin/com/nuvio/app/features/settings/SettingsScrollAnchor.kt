@@ -47,6 +47,9 @@ internal object SettingsScrollAnchor {
     const val DefaultSpeed = "default_speed"
     const val BingeMode = "binge_mode"
     const val ExtraLargePosters = "extra_large_posters"
+    const val BufferPreset = "buffer_preset"
+    const val AnimeEnhancements = "anime_enhancements"
+    const val RtxHdr = "rtx_hdr"
 
     private val _requested = MutableStateFlow<String?>(null)
     val requested: StateFlow<String?> = _requested.asStateFlow()
@@ -57,6 +60,21 @@ internal object SettingsScrollAnchor {
 
     fun consume(anchor: String) {
         if (_requested.value == anchor) _requested.value = null
+    }
+
+    // Back-destination override — set by Fork Enhancements so back from a deep-linked page
+    // returns to Fork Enhancements rather than Root. Consumed once on the first back press.
+    private val _backToPage = MutableStateFlow<String?>(null)
+    val backToPage: StateFlow<String?> = _backToPage.asStateFlow()
+
+    fun setBackTo(page: SettingsPage) {
+        _backToPage.value = page.name
+    }
+
+    fun consumeBackTo(): SettingsPage? {
+        val raw = _backToPage.value ?: return null
+        _backToPage.value = null
+        return runCatching { SettingsPage.valueOf(raw) }.getOrNull()
     }
 }
 

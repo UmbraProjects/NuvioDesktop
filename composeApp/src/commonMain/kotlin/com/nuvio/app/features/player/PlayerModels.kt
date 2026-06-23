@@ -180,11 +180,16 @@ enum class DesktopBufferPreset(val label: String, val description: String) {
  * the named presets force that preset regardless of detection. Cycled in-player with F10.
  */
 enum class DesktopAnimeMode(val label: String, val description: String) {
-    Auto("Auto", "Apply anime enhancements automatically when the title is detected as anime."),
     Off("Off", "Never apply anime enhancements."),
     Optimized("Optimized", "Anime4K Optimized — razor-sharp edges with the lightest GPU load."),
     Fast("Fast", "Anime4K Eye-Candy (Fast) — stronger restore and line-thinning."),
     Hq("HQ", "Anime4K Eye-Candy (HQ) — maximum quality, heaviest GPU load."),
+    ModeAFast("Mode A (Fast)", "Anime4K Mode A — best for blurry/compressed sources. Balanced speed and quality."),
+    ModeAHq("Mode A (HQ)", "Anime4K Mode A — best for blurry/compressed sources. Highest quality, heavier GPU load."),
+    ModeBFast("Mode B (Fast)", "Anime4K Mode B — best for already-clean or soft sources. Balanced speed and quality."),
+    ModeBHq("Mode B (HQ)", "Anime4K Mode B — best for already-clean or soft sources. Highest quality, heavier GPU load."),
+    ModeCFast("Mode C (Fast)", "Anime4K Mode C — best for noisy or heavily compressed sources. Balanced speed and quality."),
+    ModeCHq("Mode C (HQ)", "Anime4K Mode C — best for noisy or heavily compressed sources. Highest quality, heavier GPU load."),
 }
 
 /**

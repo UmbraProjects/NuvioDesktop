@@ -62,6 +62,7 @@ data class PlayerSettingsUiState(
     val streamReuseLastLinkCacheHours: Int = 24,
     val decoderPriority: Int = 1,
     val nvidiaRtxSuperResolutionEnabled: Boolean = false,
+    val nvidiaRtxHdrEnabled: Boolean = false,
     val mapDV7ToHevc: Boolean = false,
     val tunnelingEnabled: Boolean = false,
     val streamAutoPlayMode: StreamAutoPlayMode = StreamAutoPlayMode.MANUAL,
@@ -101,7 +102,8 @@ data class PlayerSettingsUiState(
     val desktopHdrMode: DesktopHdrMode = DesktopHdrMode.Auto,
     val desktopColorProfile: DesktopColorProfile = DesktopColorProfile.Neutral,
     val desktopBufferPreset: DesktopBufferPreset = DesktopBufferPreset.Balanced,
-    val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Auto,
+    val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Off,
+    val desktopAnimeModeAutoEnabled: Boolean = false,
     val heroTvTrailerEnabled: Boolean = false,
     val heroTvTrailerDelaySeconds: Int = 5,
     val heroTvTrailerSoundEnabled: Boolean = false,
@@ -133,6 +135,7 @@ object PlayerSettingsRepository {
     private var streamReuseLastLinkCacheHours = 24
     private var decoderPriority = 1
     private var nvidiaRtxSuperResolutionEnabled = false
+    private var nvidiaRtxHdrEnabled = false
     private var mapDV7ToHevc = false
     private var tunnelingEnabled = false
     private var streamAutoPlayMode = StreamAutoPlayMode.MANUAL
@@ -172,7 +175,8 @@ object PlayerSettingsRepository {
     private var desktopHdrMode = DesktopHdrMode.Auto
     private var desktopColorProfile = DesktopColorProfile.Neutral
     private var desktopBufferPreset = DesktopBufferPreset.Balanced
-    private var desktopAnimeMode = DesktopAnimeMode.Auto
+    private var desktopAnimeMode = DesktopAnimeMode.Off
+    private var desktopAnimeModeAutoEnabled = false
     private var heroTvTrailerEnabled = false
     private var heroTvTrailerDelaySeconds = 5
     private var heroTvTrailerSoundEnabled = false
@@ -209,6 +213,7 @@ object PlayerSettingsRepository {
         streamReuseLastLinkCacheHours = 24
         decoderPriority = 1
         nvidiaRtxSuperResolutionEnabled = false
+        nvidiaRtxHdrEnabled = false
         mapDV7ToHevc = false
         tunnelingEnabled = false
         streamAutoPlayMode = StreamAutoPlayMode.MANUAL
@@ -248,7 +253,8 @@ object PlayerSettingsRepository {
         desktopHdrMode = DesktopHdrMode.Auto
         desktopColorProfile = DesktopColorProfile.Neutral
         desktopBufferPreset = DesktopBufferPreset.Balanced
-        desktopAnimeMode = DesktopAnimeMode.Auto
+        desktopAnimeMode = DesktopAnimeMode.Off
+        desktopAnimeModeAutoEnabled = false
         heroTvTrailerEnabled = false
         heroTvTrailerDelaySeconds = 5
         heroTvTrailerSoundEnabled = false
@@ -312,6 +318,8 @@ object PlayerSettingsRepository {
         streamReuseLastLinkCacheHours = PlayerSettingsStorage.loadStreamReuseLastLinkCacheHours() ?: 24
         decoderPriority = PlayerSettingsStorage.loadDecoderPriority() ?: 1
         nvidiaRtxSuperResolutionEnabled = PlayerSettingsStorage.loadNvidiaRtxSuperResolutionEnabled() ?: false
+        nvidiaRtxHdrEnabled = PlayerSettingsStorage.loadNvidiaRtxHdrEnabled() ?: false
+        nvidiaRtxHdrEnabled = PlayerSettingsStorage.loadNvidiaRtxHdrEnabled() ?: false
         mapDV7ToHevc = PlayerSettingsStorage.loadMapDV7ToHevc() ?: false
         tunnelingEnabled = PlayerSettingsStorage.loadTunnelingEnabled() ?: false
         streamAutoPlayMode = PlayerSettingsStorage.loadStreamAutoPlayMode()
@@ -395,9 +403,19 @@ object PlayerSettingsRepository {
             ?.let { runCatching { DesktopBufferPreset.valueOf(it) }.getOrNull() }
             ?: DesktopBufferPreset.Balanced
         PlayerSettingsStorage.saveDesktopBufferPreset(desktopBufferPreset.name)
-        desktopAnimeMode = PlayerSettingsStorage.loadDesktopAnimeMode()
-            ?.let { runCatching { DesktopAnimeMode.valueOf(it) }.getOrNull() }
-            ?: DesktopAnimeMode.Auto
+        val storedAnimeMode = PlayerSettingsStorage.loadDesktopAnimeMode()
+        if (storedAnimeMode == "Auto") {
+            // Migrate: old "Auto" = Optimized preset + auto-detect on.
+            desktopAnimeMode = DesktopAnimeMode.Optimized
+            desktopAnimeModeAutoEnabled = true
+            PlayerSettingsStorage.saveDesktopAnimeMode(DesktopAnimeMode.Optimized.name)
+            PlayerSettingsStorage.saveDesktopAnimeModeAutoEnabled(true)
+        } else {
+            desktopAnimeMode = storedAnimeMode
+                ?.let { runCatching { DesktopAnimeMode.valueOf(it) }.getOrNull() }
+                ?: DesktopAnimeMode.Off
+            desktopAnimeModeAutoEnabled = PlayerSettingsStorage.loadDesktopAnimeModeAutoEnabled() ?: false
+        }
         heroTvTrailerEnabled = PlayerSettingsStorage.loadHeroTvTrailerEnabled() ?: false
         heroTvTrailerDelaySeconds = PlayerSettingsStorage.loadHeroTvTrailerDelaySeconds()
             ?.let(::snapToHeroTvTrailerDelay) ?: 5
@@ -589,6 +607,14 @@ object PlayerSettingsRepository {
         nvidiaRtxSuperResolutionEnabled = enabled
         publish()
         PlayerSettingsStorage.saveNvidiaRtxSuperResolutionEnabled(enabled)
+    }
+
+    fun setNvidiaRtxHdrEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (nvidiaRtxHdrEnabled == enabled) return
+        nvidiaRtxHdrEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveNvidiaRtxHdrEnabled(enabled)
     }
 
     fun setMapDV7ToHevc(enabled: Boolean) {
@@ -948,6 +974,7 @@ object PlayerSettingsRepository {
             streamReuseLastLinkCacheHours = streamReuseLastLinkCacheHours,
             decoderPriority = decoderPriority,
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
+            nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
             mapDV7ToHevc = mapDV7ToHevc,
             tunnelingEnabled = tunnelingEnabled,
             streamAutoPlayMode = streamAutoPlayMode,
@@ -988,6 +1015,7 @@ object PlayerSettingsRepository {
             desktopColorProfile = desktopColorProfile,
             desktopBufferPreset = desktopBufferPreset,
             desktopAnimeMode = desktopAnimeMode,
+            desktopAnimeModeAutoEnabled = desktopAnimeModeAutoEnabled,
             heroTvTrailerEnabled = heroTvTrailerEnabled,
             heroTvTrailerDelaySeconds = heroTvTrailerDelaySeconds,
             heroTvTrailerSoundEnabled = heroTvTrailerSoundEnabled,
@@ -1025,6 +1053,14 @@ object PlayerSettingsRepository {
         desktopAnimeMode = mode
         publish()
         PlayerSettingsStorage.saveDesktopAnimeMode(mode.name)
+    }
+
+    fun setDesktopAnimeModeAutoEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopAnimeModeAutoEnabled == enabled) return
+        desktopAnimeModeAutoEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopAnimeModeAutoEnabled(enabled)
     }
 
     fun setHeroTvTrailerEnabled(enabled: Boolean) {

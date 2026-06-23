@@ -514,6 +514,9 @@ actual object PlayerSettingsStorage {
         NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = ProfileScopedKey.of(nvidiaRtxSuperResolutionEnabledKey))
     }
 
+    actual fun loadNvidiaRtxHdrEnabled(): Boolean? = null
+    actual fun saveNvidiaRtxHdrEnabled(enabled: Boolean) = Unit
+
     actual fun loadMapDV7ToHevc(): Boolean? {
         val defaults = NSUserDefaults.standardUserDefaults
         val key = ProfileScopedKey.of(mapDV7ToHevcKey)
@@ -869,6 +872,8 @@ actual object PlayerSettingsStorage {
     actual fun saveDesktopBufferPreset(preset: String) = Unit
     actual fun loadDesktopAnimeMode(): String? = null
     actual fun saveDesktopAnimeMode(mode: String) = Unit
+    actual fun loadDesktopAnimeModeAutoEnabled(): Boolean? = null
+    actual fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean) = Unit
     actual fun loadHeroTvTrailerEnabled(): Boolean? = null
     actual fun saveHeroTvTrailerEnabled(enabled: Boolean) = Unit
     actual fun loadHeroTvTrailerDelaySeconds(): Int? = null

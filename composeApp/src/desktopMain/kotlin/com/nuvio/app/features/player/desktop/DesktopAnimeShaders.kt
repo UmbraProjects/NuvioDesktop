@@ -52,6 +52,53 @@ internal object DesktopAnimeShaders {
             "Anime4K_Thin_Fast",
             "Anime4K_Thin_VeryFast",
         ),
+        // Standard Anime4K presets (bloc97/Anime4K v4.0.1 GLSL_Instructions chains).
+        DesktopAnimeMode.ModeAFast to listOf(
+            "Anime4K_Clamp_Highlights",
+            "Anime4K_Restore_CNN_M",
+            "Anime4K_Upscale_CNN_x2_M",
+            "Anime4K_AutoDownscalePre_x2",
+            "Anime4K_AutoDownscalePre_x4",
+            "Anime4K_Upscale_CNN_x2_S",
+        ),
+        DesktopAnimeMode.ModeAHq to listOf(
+            "Anime4K_Clamp_Highlights",
+            "Anime4K_Restore_CNN_VL",
+            "Anime4K_Upscale_CNN_x2_VL",
+            "Anime4K_AutoDownscalePre_x2",
+            "Anime4K_AutoDownscalePre_x4",
+            "Anime4K_Upscale_CNN_x2_M",
+        ),
+        DesktopAnimeMode.ModeBFast to listOf(
+            "Anime4K_Clamp_Highlights",
+            "Anime4K_Restore_CNN_Soft_M",
+            "Anime4K_Upscale_CNN_x2_M",
+            "Anime4K_AutoDownscalePre_x2",
+            "Anime4K_AutoDownscalePre_x4",
+            "Anime4K_Upscale_CNN_x2_S",
+        ),
+        DesktopAnimeMode.ModeBHq to listOf(
+            "Anime4K_Clamp_Highlights",
+            "Anime4K_Restore_CNN_Soft_VL",
+            "Anime4K_Upscale_CNN_x2_VL",
+            "Anime4K_AutoDownscalePre_x2",
+            "Anime4K_AutoDownscalePre_x4",
+            "Anime4K_Upscale_CNN_x2_M",
+        ),
+        DesktopAnimeMode.ModeCFast to listOf(
+            "Anime4K_Clamp_Highlights",
+            "Anime4K_Upscale_Denoise_CNN_x2_M",
+            "Anime4K_AutoDownscalePre_x2",
+            "Anime4K_AutoDownscalePre_x4",
+            "Anime4K_Upscale_CNN_x2_S",
+        ),
+        DesktopAnimeMode.ModeCHq to listOf(
+            "Anime4K_Clamp_Highlights",
+            "Anime4K_Upscale_Denoise_CNN_x2_VL",
+            "Anime4K_AutoDownscalePre_x2",
+            "Anime4K_AutoDownscalePre_x4",
+            "Anime4K_Upscale_CNN_x2_M",
+        ),
     )
 
     private val exportRoot: File by lazy {

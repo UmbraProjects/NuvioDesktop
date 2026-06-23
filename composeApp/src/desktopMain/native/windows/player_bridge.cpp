@@ -705,6 +705,7 @@ public:
         const std::string &controlsUrl,
         JavaVM *vm,
         bool nvidiaRtxSuperResolutionEnabled,
+        bool nvidiaRtxHdrEnabled,
         jobject sink,
         jmethodID method
     ) {
@@ -724,8 +725,8 @@ public:
         auto initState = std::make_shared<InitializationState>();
         auto self = shared_from_this();
         uiThread = std::thread(
-            [self, sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, initState]() {
-                self->runNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, initState);
+            [self, sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, initState]() {
+                self->runNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, initState);
             }
         );
 
@@ -1183,11 +1184,12 @@ private:
         long long initialPositionMs,
         std::string controlsUrl,
         bool nvidiaRtxSuperResolutionEnabled,
+        bool nvidiaRtxHdrEnabled,
         std::shared_ptr<InitializationState> initState
     ) {
         std::string failure;
         try {
-            initializeOnNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled);
+            initializeOnNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled);
         } catch (const std::exception &error) {
             failure = error.what();
             cleanupUiResources();
@@ -1217,7 +1219,8 @@ private:
         bool playWhenReady,
         long long initialPositionMs,
         const std::string &controlsUrl,
-        bool nvidiaRtxSuperResolutionEnabled
+        bool nvidiaRtxSuperResolutionEnabled,
+        bool nvidiaRtxHdrEnabled
     ) {
         registerWindowClasses();
         uiThreadId = GetCurrentThreadId();
@@ -1268,7 +1271,7 @@ private:
         }
 
         startWebView(controlsUrl);
-        startMpv(sourceUrl, headerLines, playWhenReady, initialPositionMs, nvidiaRtxSuperResolutionEnabled);
+        startMpv(sourceUrl, headerLines, playWhenReady, initialPositionMs, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled);
         layoutNativeSubviews();
         if (!SetTimer(messageHwnd, NUVIO_TIMER_ID, 500, nullptr)) {
             throw std::runtime_error("Unable to start native player timer.");
@@ -1427,7 +1430,8 @@ private:
         const std::vector<std::string> &headerLines,
         bool playWhenReady,
         long long initialPositionMs,
-        bool nvidiaRtxSuperResolutionEnabled
+        bool nvidiaRtxSuperResolutionEnabled,
+        bool nvidiaRtxHdrEnabled
     ) {
         MpvApi &api = mpvApi();
         {
@@ -1457,8 +1461,16 @@ private:
             setMpvOptionStringLocked("vo", "gpu-next");
             setMpvOptionStringLocked("gpu-api", "d3d11");
             setMpvOptionStringLocked("hwdec", "d3d11va");
-            setMpvOptionStringLocked("hwdec-codecs", "all");
-            setMpvOptionStringLocked("vd-lavc-software-fallback", "no");
+            // Restrict D3D11VA to codecs it actually supports. "all" combined with
+            // vd-lavc-software-fallback=no breaks older codecs (MPEG-4 Visual / DivX,
+            // MPEG-2, Theora, etc.) found in AVI and other containers: D3D11VA rejects them,
+            // and with no software fallback mpv silently fails to decode the video.
+            // Restrict hardware decoding to codecs D3D11VA actually supports, so containers
+            // like AVI with older codecs (DivX/Xvid, MPEG-4 Visual) go straight to software
+            // without any hardware attempt. Software fallback is always allowed — disabling
+            // it for a general media player silently kills video when D3D11VA fails on edge
+            // cases (e.g. H.264-in-AVI with non-standard container extradata).
+            setMpvOptionStringLocked("hwdec-codecs", "h264,hevc,vp9,vp8,av1,vc1,mpeg2video");
             setMpvOptionStringLocked("vd-lavc-threads", "4");
 
             // NVIDIA RTX Video Super Resolution (opt-in). Pin the D3D11 device to the NVIDIA GPU
@@ -1470,6 +1482,22 @@ private:
                 // Kotlin runtime profile path (applyDesktopAnimeProfile), which is the single owner
                 // of `vf` — setting it here too would just get overwritten when that path runs.
                 setMpvOptionStringLocked("d3d11-adapter", "NVIDIA");
+            }
+
+            // NVIDIA RTX Video True HDR (opt-in, requires RTX GPU + Windows HDR enabled).
+            // When enabled, d3d11vpp (the NVIDIA video processor) converts SDR → HDR using the
+            // driver's AI-based tone mapping. This requires mpv master ≥ Feb 19 2026 which:
+            //   (1) automatically sets IMGFMT_X2BGR10 output on the VP (10-bit BT.2020+PQ RGB),
+            //   (2) uses ID3D11VideoContext1 for proper DXGI_COLOR_SPACE HDR signalling.
+            // The `nvidia-true-hdr` option is set via the `vf` string in Kotlin
+            // (applyDesktopAnimeProfile), since that function owns the vf chain. We only set
+            // the display-output properties here at init time.
+            if (nvidiaRtxHdrEnabled) {
+                setMpvOptionStringLocked("d3d11-adapter", "NVIDIA");
+                // Let mpv auto-negotiate color space with the OS HDR pipeline.
+                // On SDR displays these resolve to SDR; on HDR displays they signal PQ/BT.2020.
+                setMpvOptionStringLocked("d3d11-output-csp", "auto");
+                setMpvOptionStringLocked("target-colorspace-hint", "auto");
             }
 
             // HDR / tonemapping
@@ -1523,7 +1551,12 @@ private:
             setMpvOptionStringLocked("demuxer-max-bytes", "1GiB");
             setMpvOptionStringLocked("demuxer-max-back-bytes", "128MiB");
             setMpvOptionStringLocked("stream-buffer-size", "256MiB");
-            setMpvOptionStringLocked("stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5");
+            // HTTP reconnect options — skip for local file paths (no scheme = local file).
+            bool isLocalFile = sourceUrl.find("://") == std::string::npos ||
+                               sourceUrl.rfind("file://", 0) == 0;
+            if (!isLocalFile) {
+                setMpvOptionStringLocked("stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5");
+            }
 
             setMpvOptionStringLocked("hr-seek", "no");
 
@@ -2190,6 +2223,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jlong initialPositionMs,
     jstring controlsPageUrl,
     jboolean nvidiaRtxSuperResolutionEnabled,
+    jboolean nvidiaRtxHdrEnabled,
     jobject eventSink
 ) {
     HWND hostHwnd = (HWND)(intptr_t)hostViewPtr;
@@ -2226,6 +2260,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
             controlsPageUrlText,
             javaVm,
             nvidiaRtxSuperResolutionEnabled == JNI_TRUE,
+            nvidiaRtxHdrEnabled == JNI_TRUE,
             eventSinkRef,
             eventMethod
         );

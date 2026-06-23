@@ -7,6 +7,9 @@ import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.network.SupabaseProvider
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.profiles.ProfileRepository
+import com.nuvio.app.features.simkl.SimklAuthRepository
+import com.nuvio.app.features.simkl.SimklLibraryRepository
+import com.nuvio.app.features.simkl.SimklSettingsRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktLibraryRepository
 import com.nuvio.app.features.trakt.TraktListTab
@@ -120,15 +123,42 @@ object LibraryRepository {
                 }
             }
         }
+
+        syncScope.launch {
+            SimklAuthRepository.isAuthenticated.collectLatest { authenticated ->
+                if (authenticated && isSimklLibrarySourceActive()) {
+                    SimklLibraryRepository.refreshAsync()
+                }
+                publish()
+            }
+        }
+
+        syncScope.launch {
+            SimklLibraryRepository.uiState.collectLatest {
+                if (isSimklLibrarySourceActive()) publish()
+            }
+        }
+
+        syncScope.launch {
+            SimklSettingsRepository.uiState.collectLatest {
+                if (isSimklLibrarySourceActive()) SimklLibraryRepository.refreshAsync()
+                publish()
+            }
+        }
     }
 
     fun ensureLoaded() {
         TraktAuthRepository.ensureLoaded()
         TraktSettingsRepository.ensureLoaded()
         TraktLibraryRepository.ensureLoaded()
+        SimklSettingsRepository.ensureLoaded()
+        SimklAuthRepository.ensureLoaded()
+        SimklLibraryRepository.ensureLoaded()
         if (hasLoaded) return
         loadFromDisk(ProfileRepository.activeProfileId)
-        if (TraktAuthRepository.isAuthenticated.value) {
+        if (isSimklLibrarySourceActive()) {
+            SimklLibraryRepository.refreshAsync()
+        } else if (TraktAuthRepository.isAuthenticated.value) {
             TraktLibraryRepository.preloadListTabsAsync()
             if (isTraktLibrarySourceActive()) {
                 refreshTraktLibraryAsync()
@@ -145,7 +175,10 @@ object LibraryRepository {
         loadFromDisk(profileId)
         TraktAuthRepository.onProfileChanged()
         TraktLibraryRepository.onProfileChanged()
-        if (TraktAuthRepository.isAuthenticated.value) {
+        SimklLibraryRepository.clearLocalState()
+        if (isSimklLibrarySourceActive()) {
+            SimklLibraryRepository.refreshAsync()
+        } else if (TraktAuthRepository.isAuthenticated.value) {
             TraktLibraryRepository.preloadListTabsAsync()
             if (isTraktLibrarySourceActive()) {
                 refreshTraktLibraryAsync()
@@ -183,6 +216,14 @@ object LibraryRepository {
 
     suspend fun pullFromServer(profileId: Int) {
         currentProfileId = profileId
+
+        if (isSimklLibrarySourceActive()) {
+            runCatching { SimklLibraryRepository.refreshNow() }
+                .onFailure { e -> log.e(e) { "Failed to pull SIMKL library" } }
+            hasCompletedInitialNuvioSyncPull = true
+            publish()
+            return
+        }
 
         if (isTraktLibrarySourceActive()) {
             runCatching { TraktLibraryRepository.refreshNow() }
@@ -401,6 +442,24 @@ object LibraryRepository {
     }
 
     private fun publish() {
+        if (isSimklLibrarySourceActive()) {
+            val s = SimklLibraryRepository.uiState.value
+            val sections = buildList {
+                if (s.shows.isNotEmpty()) add(LibrarySection("simkl_shows", "My Shows", s.shows))
+                if (s.movies.isNotEmpty()) add(LibrarySection("simkl_movies", "My Movies", s.movies))
+                if (s.anime.isNotEmpty()) add(LibrarySection("simkl_anime", "My Anime", s.anime))
+            }
+            _uiState.value = LibraryUiState(
+                sourceMode = LibrarySourceMode.SIMKL,
+                items = s.allItems,
+                sections = sections,
+                isLoaded = s.hasLoaded,
+                isLoading = s.isLoading,
+                errorMessage = s.errorMessage,
+            )
+            return
+        }
+
         if (isTraktLibrarySourceActive()) {
             val traktState = TraktLibraryRepository.uiState.value
             val sections = traktState.listTabs.mapNotNull { tab ->
@@ -481,7 +540,10 @@ object LibraryRepository {
         )
 
     private fun isTraktLibrarySourceActive(): Boolean =
-        effectiveLibrarySourceMode() == LibrarySourceMode.TRAKT
+        !isSimklLibrarySourceActive() && effectiveLibrarySourceMode() == LibrarySourceMode.TRAKT
+
+    private fun isSimklLibrarySourceActive(): Boolean =
+        SimklAuthRepository.isAuthenticated.value && SimklSettingsRepository.isSimklLibrarySource()
 }
 
 internal const val LOCAL_LIBRARY_LIST_KEY = "local"

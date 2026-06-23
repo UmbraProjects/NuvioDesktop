@@ -78,6 +78,8 @@ import com.nuvio.app.features.home.components.HomeTvKey
 import com.nuvio.app.features.home.components.HomeTvKeyboardBridge
 import com.nuvio.app.features.home.components.HomeSkeletonHero
 import com.nuvio.app.features.home.components.HomeSkeletonRow
+import com.nuvio.app.features.simkl.SimklAuthRepository
+import com.nuvio.app.features.simkl.SimklSettingsRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TRAKT_CONTINUE_WATCHING_DAYS_CAP_ALL
 import com.nuvio.app.features.trakt.TraktSettingsRepository
@@ -208,11 +210,20 @@ fun HomeScreen(
         }
     }
 
+    val simklIsAuthenticated by SimklAuthRepository.isAuthenticated.collectAsStateWithLifecycle()
+    val simklSettingsUiState by SimklSettingsRepository.uiState.collectAsStateWithLifecycle()
+
+    // SIMKL takes priority over Trakt when both are active. Suppress all Trakt-specific CW
+    // behaviours (day-cap window, dropped-show exclusion, entry remapping) when SIMKL is the
+    // effective source — otherwise the Trakt day-cap silently hides SIMKL history seeds.
     val isTraktProgressActive = remember(
         isTraktAuthenticated,
         traktSettingsUiState.watchProgressSource,
+        simklIsAuthenticated,
+        simklSettingsUiState.simklAsCwSource,
     ) {
-        shouldUseTraktProgress(
+        val simklCwActive = simklIsAuthenticated && simklSettingsUiState.simklAsCwSource
+        !simklCwActive && shouldUseTraktProgress(
             isAuthenticated = isTraktAuthenticated,
             source = traktSettingsUiState.watchProgressSource,
         )
@@ -265,13 +276,26 @@ fun HomeScreen(
         allNextUpSeedCandidates,
         isTraktProgressActive,
         traktSettingsUiState.continueWatchingDaysCap,
+        simklIsAuthenticated,
+        simklSettingsUiState.simklAsCwSource,
+        simklSettingsUiState.simklContinueWatchingDaysCap,
     ) {
-        filterHomeNextUpCandidatesForTraktContinueWatchingWindow(
+        val simklCwActive = simklIsAuthenticated && simklSettingsUiState.simklAsCwSource
+        val now = WatchProgressClock.nowEpochMs()
+        var candidates = filterHomeNextUpCandidatesForTraktContinueWatchingWindow(
             candidates = allNextUpSeedCandidates,
             isTraktProgressActive = isTraktProgressActive,
             daysCap = traktSettingsUiState.continueWatchingDaysCap,
-            nowEpochMs = WatchProgressClock.nowEpochMs(),
+            nowEpochMs = now,
         )
+        if (simklCwActive) {
+            val daysCap = simklSettingsUiState.simklContinueWatchingDaysCap
+            if (daysCap > com.nuvio.app.features.simkl.SIMKL_CW_DAYS_CAP_ALL) {
+                val cutoffMs = now - daysCap.toLong() * 24L * 60L * 60L * 1000L
+                candidates = candidates.filter { it.markedAtEpochMs >= cutoffMs }
+            }
+        }
+        candidates
     }
 
     val activeNextUpSeedContentIds = remember(allNextUpSeedCandidates) {

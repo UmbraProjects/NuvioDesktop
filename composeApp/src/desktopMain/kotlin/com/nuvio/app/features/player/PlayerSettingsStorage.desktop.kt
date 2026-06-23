@@ -88,6 +88,7 @@ internal actual object PlayerSettingsStorage {
     private const val desktopColorProfileKey = "desktop_color_profile"
     private const val desktopBufferPresetKey = "desktop_buffer_preset"
     private const val desktopAnimeModeKey = "desktop_anime_mode"
+    private const val desktopAnimeModeAutoEnabledKey = "desktop_anime_mode_auto_enabled"
     private const val heroTvTrailerEnabledKey = "hero_tv_trailer_enabled"
     private const val heroTvTrailerDelaySecondsKey = "hero_tv_trailer_delay_seconds"
     private const val heroTvTrailerSoundEnabledKey = "hero_tv_trailer_sound_enabled"
@@ -229,6 +230,8 @@ internal actual object PlayerSettingsStorage {
 
     actual fun loadNvidiaRtxSuperResolutionEnabled(): Boolean? = loadBoolean(nvidiaRtxSuperResolutionEnabledKey)
     actual fun saveNvidiaRtxSuperResolutionEnabled(enabled: Boolean) = saveBoolean(nvidiaRtxSuperResolutionEnabledKey, enabled)
+    actual fun loadNvidiaRtxHdrEnabled(): Boolean? = loadBoolean("nvidia_rtx_hdr_enabled")
+    actual fun saveNvidiaRtxHdrEnabled(enabled: Boolean) = saveBoolean("nvidia_rtx_hdr_enabled", enabled)
     actual fun loadMapDV7ToHevc(): Boolean? = loadBoolean(mapDV7ToHevcKey)
     actual fun saveMapDV7ToHevc(enabled: Boolean) = saveBoolean(mapDV7ToHevcKey, enabled)
     actual fun loadTunnelingEnabled(): Boolean? = loadBoolean(tunnelingEnabledKey)
@@ -310,6 +313,8 @@ internal actual object PlayerSettingsStorage {
     actual fun saveDesktopBufferPreset(preset: String) = saveString(desktopBufferPresetKey, preset)
     actual fun loadDesktopAnimeMode(): String? = loadString(desktopAnimeModeKey)
     actual fun saveDesktopAnimeMode(mode: String) = saveString(desktopAnimeModeKey, mode)
+    actual fun loadDesktopAnimeModeAutoEnabled(): Boolean? = loadBoolean(desktopAnimeModeAutoEnabledKey)
+    actual fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean) = saveBoolean(desktopAnimeModeAutoEnabledKey, enabled)
     actual fun loadHeroTvTrailerEnabled(): Boolean? = loadBoolean(heroTvTrailerEnabledKey)
     actual fun saveHeroTvTrailerEnabled(enabled: Boolean) = saveBoolean(heroTvTrailerEnabledKey, enabled)
     actual fun loadHeroTvTrailerDelaySeconds(): Int? = loadInt(heroTvTrailerDelaySecondsKey)

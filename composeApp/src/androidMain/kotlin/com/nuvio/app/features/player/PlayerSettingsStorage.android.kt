@@ -582,6 +582,8 @@ actual object PlayerSettingsStorage {
             ?.apply()
     }
 
+    actual fun loadNvidiaRtxHdrEnabled(): Boolean? = null
+    actual fun saveNvidiaRtxHdrEnabled(enabled: Boolean) = Unit
     actual fun loadNvidiaRtxSuperResolutionEnabled(): Boolean? =
         preferences?.let { sharedPreferences ->
             val key = ProfileScopedKey.of(nvidiaRtxSuperResolutionEnabledKey)
@@ -1036,6 +1038,8 @@ actual object PlayerSettingsStorage {
     actual fun saveDesktopBufferPreset(preset: String) = Unit
     actual fun loadDesktopAnimeMode(): String? = null
     actual fun saveDesktopAnimeMode(mode: String) = Unit
+    actual fun loadDesktopAnimeModeAutoEnabled(): Boolean? = null
+    actual fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean) = Unit
     actual fun loadHeroTvTrailerEnabled(): Boolean? = null
     actual fun saveHeroTvTrailerEnabled(enabled: Boolean) = Unit
     actual fun loadHeroTvTrailerDelaySeconds(): Int? = null

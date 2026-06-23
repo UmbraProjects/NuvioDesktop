@@ -334,6 +334,15 @@ private fun PlaybackSettingsSection(
                         isTablet = isTablet,
                         onCheckedChange = PlayerSettingsRepository::setNvidiaRtxSuperResolutionEnabled,
                     )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_nvidia_rtx_hdr),
+                        description = stringResource(Res.string.settings_playback_nvidia_rtx_hdr_desc),
+                        checked = autoPlayPlayerSettings.nvidiaRtxHdrEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setNvidiaRtxHdrEnabled,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.RtxHdr),
+                    )
                 }
             }
         }
@@ -452,6 +461,7 @@ private fun PlaybackSettingsSection(
                         description = autoPlayPlayerSettings.desktopBufferPreset.label,
                         isTablet = isTablet,
                         onClick = { showDesktopBufferPresetDialog = true },
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BufferPreset),
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
@@ -459,7 +469,18 @@ private fun PlaybackSettingsSection(
                         description = autoPlayPlayerSettings.desktopAnimeMode.label,
                         isTablet = isTablet,
                         onClick = { showDesktopAnimeModeDialog = true },
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeEnhancements),
                     )
+                    if (autoPlayPlayerSettings.desktopAnimeMode != DesktopAnimeMode.Off) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_desktop_anime_auto),
+                            description = stringResource(Res.string.settings_playback_desktop_anime_auto_desc),
+                            checked = autoPlayPlayerSettings.desktopAnimeModeAutoEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setDesktopAnimeModeAutoEnabled,
+                        )
+                    }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_hero_tv_trailer),

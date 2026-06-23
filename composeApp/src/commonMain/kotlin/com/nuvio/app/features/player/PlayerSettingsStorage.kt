@@ -63,6 +63,10 @@ internal expect object PlayerSettingsStorage {
     fun saveDecoderPriority(priority: Int)
     fun loadNvidiaRtxSuperResolutionEnabled(): Boolean?
     fun saveNvidiaRtxSuperResolutionEnabled(enabled: Boolean)
+    fun loadNvidiaRtxHdrEnabled(): Boolean?
+    fun saveNvidiaRtxHdrEnabled(enabled: Boolean)
+    fun loadDesktopAnimeModeAutoEnabled(): Boolean?
+    fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean)
     fun loadMapDV7ToHevc(): Boolean?
     fun saveMapDV7ToHevc(enabled: Boolean)
     fun loadTunnelingEnabled(): Boolean?

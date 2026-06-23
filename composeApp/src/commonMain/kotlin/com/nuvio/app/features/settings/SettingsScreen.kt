@@ -78,6 +78,10 @@ import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepositor
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsUiState
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.profiles.ProfileRepository
+import com.nuvio.app.features.simkl.SimklAuthRepository
+import com.nuvio.app.features.simkl.SimklAuthUiState
+import com.nuvio.app.features.simkl.SimklSettingsRepository
+import com.nuvio.app.features.simkl.SimklSettingsUiState
 import com.nuvio.app.features.trakt.TraktAuthUiState
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktCommentsSettings
@@ -176,6 +180,14 @@ fun SettingsScreen(
         val traktAuthUiState by remember {
             TraktAuthRepository.ensureLoaded()
             TraktAuthRepository.uiState
+        }.collectAsStateWithLifecycle()
+        val simklAuthUiState by remember {
+            SimklAuthRepository.ensureLoaded()
+            SimklAuthRepository.uiState
+        }.collectAsStateWithLifecycle()
+        val simklSettingsUiState by remember {
+            SimklSettingsRepository.ensureLoaded()
+            SimklSettingsRepository.uiState
         }.collectAsStateWithLifecycle()
         val traktCommentsEnabled by remember {
             TraktCommentsSettings.ensureLoaded()
@@ -279,7 +291,10 @@ fun SettingsScreen(
 
         PlatformBackHandler(
             enabled = rootActionsEnabled && previousPage != null,
-            onBack = { previousPage?.let { currentPage = it.name } },
+            onBack = {
+                val dest = SettingsScrollAnchor.consumeBackTo() ?: previousPage
+                dest?.let { currentPage = it.name }
+            },
         )
 
         if (maxWidth >= 768.dp) {
@@ -320,6 +335,8 @@ fun SettingsScreen(
                 traktAuthUiState = traktAuthUiState,
                 traktCommentsEnabled = traktCommentsEnabled,
                 traktSettingsUiState = traktSettingsUiState,
+                simklAuthUiState = simklAuthUiState,
+                simklSettingsUiState = simklSettingsUiState,
                 homescreenHeroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                 homescreenHideCatalogUnderline = homescreenSettingsUiState.hideCatalogUnderline,
@@ -375,6 +392,8 @@ fun SettingsScreen(
                 traktAuthUiState = traktAuthUiState,
                 traktCommentsEnabled = traktCommentsEnabled,
                 traktSettingsUiState = traktSettingsUiState,
+                simklAuthUiState = simklAuthUiState,
+                simklSettingsUiState = simklSettingsUiState,
                 homescreenHeroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                 homescreenHideCatalogUnderline = homescreenSettingsUiState.hideCatalogUnderline,
@@ -440,6 +459,8 @@ private fun MobileSettingsScreen(
     traktAuthUiState: TraktAuthUiState,
     traktCommentsEnabled: Boolean,
     traktSettingsUiState: TraktSettingsUiState,
+    simklAuthUiState: SimklAuthUiState,
+    simklSettingsUiState: SimklSettingsUiState,
     homescreenHeroEnabled: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenHideCatalogUnderline: Boolean,
@@ -542,7 +563,12 @@ private fun MobileSettingsScreen(
                 val previousPage = page.previousPage()
                 NuvioScreenHeader(
                     title = stringResource(page.titleRes),
-                    onBack = previousPage?.let { { onPageChange(it) } },
+                    onBack = previousPage?.let { default ->
+                        {
+                            val dest = SettingsScrollAnchor.consumeBackTo() ?: default
+                            onPageChange(dest)
+                        }
+                    },
                 )
             }
 
@@ -574,6 +600,7 @@ private fun MobileSettingsScreen(
                             onCollectionsClick = onCollectionsClick,
                             onIntegrationsClick = { onPageChange(SettingsPage.Integrations) },
                             onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
+                            onSimklClick = { onPageChange(SettingsPage.SimklAuthentication) },
                             onSupportersContributorsClick = onSupportersContributorsClick,
                             onLicensesAttributionsClick = onLicensesAttributionsClick,
                             onCheckForUpdatesClick = onCheckForUpdatesClick,
@@ -593,13 +620,22 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                     onOpenHomescreen = { anchor ->
                         SettingsScrollAnchor.request(anchor)
+                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                         onPageChange(SettingsPage.Homescreen)
                     },
                     onOpenPlayback = { anchor ->
                         SettingsScrollAnchor.request(anchor)
+                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                         onPageChange(SettingsPage.Playback)
                     },
-                    onOpenPosterCustomization = { onPageChange(SettingsPage.PosterCustomization) },
+                    onOpenPosterCustomization = {
+                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
+                        onPageChange(SettingsPage.PosterCustomization)
+                    },
+                    onOpenSimkl = {
+                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
+                        onPageChange(SettingsPage.SimklAuthentication)
+                    },
                 )
                 SettingsPage.SupportersContributors -> supportersContributorsContent(
                     isTablet = false,
@@ -718,6 +754,7 @@ private fun MobileSettingsScreen(
                     commentsEnabled = traktCommentsEnabled,
                     onCommentsEnabledChange = TraktCommentsSettings::setEnabled,
                 )
+                SettingsPage.SimklAuthentication -> simklSettingsContent(isTablet = false, uiState = simklAuthUiState, settingsUiState = simklSettingsUiState)
             }
         }
     }
@@ -810,6 +847,8 @@ private fun TabletSettingsScreen(
     traktAuthUiState: TraktAuthUiState,
     traktCommentsEnabled: Boolean,
     traktSettingsUiState: TraktSettingsUiState,
+    simklAuthUiState: SimklAuthUiState,
+    simklSettingsUiState: SimklSettingsUiState,
     homescreenHeroEnabled: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenHideCatalogUnderline: Boolean,
@@ -972,7 +1011,10 @@ private fun TabletSettingsScreen(
                             stringResource(page.titleRes)
                         },
                         showBack = previousPage != null,
-                        onBack = { previousPage?.let(onPageChange) },
+                        onBack = {
+                            val dest = SettingsScrollAnchor.consumeBackTo() ?: previousPage
+                            dest?.let(onPageChange)
+                        },
                     )
                 }
                 when (page) {
@@ -1003,6 +1045,7 @@ private fun TabletSettingsScreen(
                                 onCollectionsClick = onCollectionsClick,
                                 onIntegrationsClick = { openInlinePage(SettingsPage.Integrations) },
                                 onTraktClick = { openInlinePage(SettingsPage.TraktAuthentication) },
+                                onSimklClick = { openInlinePage(SettingsPage.SimklAuthentication) },
                                 onSupportersContributorsClick = { openInlinePage(SettingsPage.SupportersContributors) },
                                 onLicensesAttributionsClick = { openInlinePage(SettingsPage.LicensesAttributions) },
                                 onCheckForUpdatesClick = onCheckForUpdatesClick,
@@ -1026,13 +1069,22 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         onOpenHomescreen = { anchor ->
                             SettingsScrollAnchor.request(anchor)
+                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                             openInlinePage(SettingsPage.Homescreen)
                         },
                         onOpenPlayback = { anchor ->
                             SettingsScrollAnchor.request(anchor)
+                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                             openInlinePage(SettingsPage.Playback)
                         },
-                        onOpenPosterCustomization = { openInlinePage(SettingsPage.PosterCustomization) },
+                        onOpenPosterCustomization = {
+                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
+                            openInlinePage(SettingsPage.PosterCustomization)
+                        },
+                        onOpenSimkl = {
+                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
+                            openInlinePage(SettingsPage.SimklAuthentication)
+                        },
                     )
                     SettingsPage.SupportersContributors -> supportersContributorsContent(
                         isTablet = true,
@@ -1151,6 +1203,7 @@ private fun TabletSettingsScreen(
                         commentsEnabled = traktCommentsEnabled,
                         onCommentsEnabledChange = TraktCommentsSettings::setEnabled,
                     )
+                    SettingsPage.SimklAuthentication -> simklSettingsContent(isTablet = true, uiState = simklAuthUiState, settingsUiState = simklSettingsUiState)
                 }
             }
         }

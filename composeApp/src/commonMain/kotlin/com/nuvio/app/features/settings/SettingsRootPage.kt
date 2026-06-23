@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Favorite
@@ -64,6 +65,8 @@ import nuvio.composeapp.generated.resources.compose_settings_root_advanced_descr
 import nuvio.composeapp.generated.resources.compose_settings_root_advanced_section
 import nuvio.composeapp.generated.resources.compose_settings_page_fork_enhancements
 import nuvio.composeapp.generated.resources.compose_settings_page_trakt
+import nuvio.composeapp.generated.resources.compose_settings_page_simkl
+import nuvio.composeapp.generated.resources.settings_simkl_description
 import nuvio.composeapp.generated.resources.settings_appearance_continue_watching_description
 import nuvio.composeapp.generated.resources.settings_content_discovery_addons_description
 import nuvio.composeapp.generated.resources.settings_content_discovery_collections_description
@@ -92,6 +95,7 @@ internal fun LazyListScope.settingsRootContent(
     onCollectionsClick: () -> Unit,
     onIntegrationsClick: () -> Unit,
     onTraktClick: () -> Unit,
+    onSimklClick: () -> Unit,
     onSupportersContributorsClick: () -> Unit,
     onLicensesAttributionsClick: () -> Unit,
     onCheckForUpdatesClick: (() -> Unit)? = null,
@@ -137,6 +141,14 @@ internal fun LazyListScope.settingsRootContent(
                         iconPainter = integrationLogoPainter(IntegrationLogo.Trakt),
                         isTablet = isTablet,
                         onClick = onTraktClick,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_simkl),
+                        description = stringResource(Res.string.settings_simkl_description),
+                        icon = Icons.Rounded.Bookmarks,
+                        isTablet = isTablet,
+                        onClick = onSimklClick,
                     )
                 }
             }

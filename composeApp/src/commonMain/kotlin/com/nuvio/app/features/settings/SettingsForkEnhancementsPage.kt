@@ -11,13 +11,20 @@ import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_playback
 import nuvio.composeapp.generated.resources.compose_settings_page_poster_customization
+import nuvio.composeapp.generated.resources.compose_settings_page_simkl
+import nuvio.composeapp.generated.resources.settings_fork_anime_enhancements_description
 import nuvio.composeapp.generated.resources.settings_fork_binge_mode_description
+import nuvio.composeapp.generated.resources.settings_fork_buffer_preset_description
 import nuvio.composeapp.generated.resources.settings_fork_color_profile_description
 import nuvio.composeapp.generated.resources.settings_fork_default_speed_description
 import nuvio.composeapp.generated.resources.settings_fork_enhancements_intro
 import nuvio.composeapp.generated.resources.settings_fork_extra_large_posters
 import nuvio.composeapp.generated.resources.settings_fork_extra_large_posters_description
 import nuvio.composeapp.generated.resources.settings_fork_hdr_mode_description
+import nuvio.composeapp.generated.resources.settings_fork_other_features
+import nuvio.composeapp.generated.resources.settings_fork_other_features_note
+import nuvio.composeapp.generated.resources.settings_fork_rtx_hdr_description
+import nuvio.composeapp.generated.resources.settings_fork_simkl_description
 import nuvio.composeapp.generated.resources.settings_homescreen_hero_ambient_background
 import nuvio.composeapp.generated.resources.settings_homescreen_hero_ambient_background_description
 import nuvio.composeapp.generated.resources.settings_homescreen_immersive_catalog_mode
@@ -26,6 +33,8 @@ import nuvio.composeapp.generated.resources.settings_homescreen_tv_mode
 import nuvio.composeapp.generated.resources.settings_homescreen_tv_mode_description
 import nuvio.composeapp.generated.resources.settings_playback_auto_play_next_episode
 import nuvio.composeapp.generated.resources.settings_playback_default_speed
+import nuvio.composeapp.generated.resources.settings_playback_desktop_anime_mode
+import nuvio.composeapp.generated.resources.settings_playback_desktop_buffer_preset
 import nuvio.composeapp.generated.resources.settings_playback_desktop_color_profile
 import nuvio.composeapp.generated.resources.settings_playback_desktop_hdr_mode
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer
@@ -36,6 +45,7 @@ import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_so
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_sound_description
 import nuvio.composeapp.generated.resources.settings_playback_mouse_move_reveals_controls
 import nuvio.composeapp.generated.resources.settings_playback_mouse_move_reveals_controls_description
+import nuvio.composeapp.generated.resources.settings_playback_nvidia_rtx_hdr
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -48,6 +58,7 @@ internal fun LazyListScope.forkEnhancementsContent(
     onOpenHomescreen: (anchor: String) -> Unit,
     onOpenPlayback: (anchor: String) -> Unit,
     onOpenPosterCustomization: () -> Unit,
+    onOpenSimkl: () -> Unit,
 ) {
     item {
         Text(
@@ -130,6 +141,27 @@ internal fun LazyListScope.forkEnhancementsContent(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_desktop_buffer_preset),
+                    description = stringResource(Res.string.settings_fork_buffer_preset_description),
+                    isTablet = isTablet,
+                    onClick = { onOpenPlayback(SettingsScrollAnchor.BufferPreset) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_desktop_anime_mode),
+                    description = stringResource(Res.string.settings_fork_anime_enhancements_description),
+                    isTablet = isTablet,
+                    onClick = { onOpenPlayback(SettingsScrollAnchor.AnimeEnhancements) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_nvidia_rtx_hdr),
+                    description = stringResource(Res.string.settings_fork_rtx_hdr_description),
+                    isTablet = isTablet,
+                    onClick = { onOpenPlayback(SettingsScrollAnchor.RtxHdr) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
                     title = stringResource(Res.string.settings_playback_mouse_move_reveals_controls),
                     description = stringResource(Res.string.settings_playback_mouse_move_reveals_controls_description),
                     isTablet = isTablet,
@@ -163,6 +195,38 @@ internal fun LazyListScope.forkEnhancementsContent(
                     description = stringResource(Res.string.settings_fork_extra_large_posters_description),
                     isTablet = isTablet,
                     onClick = onOpenPosterCustomization,
+                )
+            }
+        }
+    }
+    item {
+        SettingsSection(
+            title = stringResource(Res.string.compose_settings_page_simkl),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.compose_settings_page_simkl),
+                    description = stringResource(Res.string.settings_fork_simkl_description),
+                    isTablet = isTablet,
+                    onClick = onOpenSimkl,
+                )
+            }
+        }
+    }
+    item {
+        SettingsSection(
+            title = stringResource(Res.string.settings_fork_other_features),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                Text(
+                    text = stringResource(Res.string.settings_fork_other_features_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = if (isTablet) 20.dp else 16.dp, vertical = 14.dp),
                 )
             }
         }

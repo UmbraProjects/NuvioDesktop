@@ -37,6 +37,7 @@ data class LibrarySection(
 enum class LibrarySourceMode {
     LOCAL,
     TRAKT,
+    SIMKL,
 }
 
 data class LibraryUiState(

@@ -159,6 +159,7 @@ import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepositor
 import com.nuvio.app.features.p2p.P2pConsentDialog
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerLaunch
+import com.nuvio.app.features.player.LocalFileDrop
 import com.nuvio.app.features.player.PlayerLaunchStore
 import com.nuvio.app.features.player.PlayerRoute
 import com.nuvio.app.features.player.PlayerScreen
@@ -213,6 +214,8 @@ import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
 import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.simkl.SimklAuthRepository
+import com.nuvio.app.features.simkl.SimklSettingsRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktListTab
 import com.nuvio.app.features.trakt.TraktScrobbleRepository
@@ -462,6 +465,8 @@ private suspend fun warmProfileBoundRepositories() {
         PlayerSettingsRepository.ensureLoaded()
         TraktAuthRepository.ensureLoaded()
         TraktSettingsRepository.ensureLoaded()
+        SimklSettingsRepository.ensureLoaded()
+        SimklAuthRepository.ensureLoaded()
         WatchedRepository.ensureLoaded()
         WatchProgressRepository.ensureLoaded()
         CollectionSyncService.startObserving()
@@ -1105,6 +1110,33 @@ private fun MainAppContent(
                     }
 
                     null -> Unit
+                }
+            }
+        }
+
+        // Local file drag-and-drop: play any video file dropped onto the window.
+        if (isDesktop) {
+            LaunchedEffect(navController) {
+                LocalFileDrop.events.collect { fileUri ->
+                    // fileUri is an absolute OS path (e.g. C:\Videos\film.mkv).
+                    val filename = fileUri
+                        .substringAfterLast('\\')
+                        .substringAfterLast('/')
+                        .substringBeforeLast('.')
+                        .ifBlank { "Local File" }
+                    val playerLaunch = PlayerLaunch(
+                        title = filename,
+                        sourceUrl = fileUri,
+                        streamTitle = filename,
+                        providerName = "Local File",
+                        parentMetaId = "",
+                        parentMetaType = "movie",
+                        disableProgressTracking = true,
+                    )
+                    val launchId = PlayerLaunchStore.put(playerLaunch)
+                    navController.navigate(PlayerRoute(launchId = launchId)) {
+                        launchSingleTop = true
+                    }
                 }
             }
         }

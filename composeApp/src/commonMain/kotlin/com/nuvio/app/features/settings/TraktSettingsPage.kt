@@ -359,6 +359,7 @@ private fun librarySourceModeLabel(source: LibrarySourceMode): String =
     when (source) {
         LibrarySourceMode.TRAKT -> stringResource(Res.string.trakt_library_source_trakt)
         LibrarySourceMode.LOCAL -> stringResource(Res.string.trakt_library_source_nuvio)
+        LibrarySourceMode.SIMKL -> "SIMKL"
     }
 
 @Composable

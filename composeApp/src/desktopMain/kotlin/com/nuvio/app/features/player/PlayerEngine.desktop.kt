@@ -120,6 +120,7 @@ private fun NativePlayerSurface(
     // log) when VSR is on — the d3d11vpp video processor needs the NVIDIA adapter, which matters
     // on hybrid-GPU machines.
     val nvidiaRtxSuperResolutionEnabled = playerSettings.nvidiaRtxSuperResolutionEnabled
+    val nvidiaRtxHdrEnabled = playerSettings.nvidiaRtxHdrEnabled
     val latestOnPlayerControlsAction = rememberUpdatedState(onPlayerControlsAction)
     val latestOnPlayerControlsEvent = rememberUpdatedState(onPlayerControlsEvent)
     val latestOnPlayerControlsScrubChange = rememberUpdatedState(onPlayerControlsScrubChange)
@@ -254,7 +255,7 @@ private fun NativePlayerSurface(
         onDispose { controller.dispose() }
     }
 
-    LaunchedEffect(controller, sourceUrl, playbackHeaders, nvidiaRtxSuperResolutionEnabled, hostFirstFullSizePaintComplete.value) {
+    LaunchedEffect(controller, sourceUrl, playbackHeaders, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, hostFirstFullSizePaintComplete.value) {
         if (!hostFirstFullSizePaintComplete.value) {
             return@LaunchedEffect
         }
@@ -266,6 +267,7 @@ private fun NativePlayerSurface(
             playWhenReady = playWhenReady,
             initialPositionMs = initialPositionMs,
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
+            nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
             onError = { message -> latestOnError.value(message) },
         )
     }
@@ -318,10 +320,12 @@ private fun NativePlayerSurface(
                 applyDesktopAnimeProfile(
                     controller = controller,
                     mode = settings.desktopAnimeMode,
+                    autoEnabled = settings.desktopAnimeModeAutoEnabled,
                     isAnime = isAnimeContent,
                     isHdr = isHdr == true,
                     nvidiaRtxSuperResolutionEnabled = settings.nvidiaRtxSuperResolutionEnabled,
                     nvidiaRtxSuperResolutionScale = vsrScale,
+                    nvidiaRtxHdrEnabled = settings.nvidiaRtxHdrEnabled,
                 )
             }
     }
@@ -418,30 +422,39 @@ private fun applyDesktopVideoProfile(
 private fun applyDesktopAnimeProfile(
     controller: NativePlayerController,
     mode: DesktopAnimeMode,
+    autoEnabled: Boolean,
     isAnime: Boolean,
     isHdr: Boolean,
     nvidiaRtxSuperResolutionEnabled: Boolean = false,
     nvidiaRtxSuperResolutionScale: Double? = null,
+    nvidiaRtxHdrEnabled: Boolean = false,
 ) {
-    val effectivePreset = when (mode) {
-        DesktopAnimeMode.Off -> null
-        DesktopAnimeMode.Auto -> if (isAnime) DesktopAnimeMode.Optimized else null
-        DesktopAnimeMode.Optimized -> DesktopAnimeMode.Optimized
-        DesktopAnimeMode.Fast -> DesktopAnimeMode.Fast
-        DesktopAnimeMode.Hq -> DesktopAnimeMode.Hq
+    val effectivePreset = when {
+        mode == DesktopAnimeMode.Off -> null
+        autoEnabled && !isAnime -> null
+        else -> mode
     }
 
-    // This function is the single owner of the mpv `vf` chain. NVIDIA RTX VSR is a `vf`
-    // (d3d11vpp), so it lives here too — otherwise the "Anime4K off" reset below would wipe it.
-    // Anime4K (when active) takes the vf; VSR applies only when no anime preset is in effect.
-    val baselineVf = if (
-        nvidiaRtxSuperResolutionEnabled &&
-        nvidiaRtxSuperResolutionScale != null &&
-        nvidiaRtxSuperResolutionScale > 1.01
-    ) {
-        "d3d11vpp=scale=${nvidiaRtxSuperResolutionScale.coerceIn(1.0, 4.0)}:scaling-mode=nvidia"
-    } else {
-        ""
+    // This function is the single owner of the mpv `vf` chain. NVIDIA RTX VSR and RTX True HDR
+    // are both d3d11vpp sub-options; they must be set here so a profile rebuild doesn't wipe them.
+    // Anime4K (when active) takes the vf entirely — RTX features are suppressed while Anime4K runs.
+    val baselineVf = buildString {
+        val vsrActive = nvidiaRtxSuperResolutionEnabled &&
+            nvidiaRtxSuperResolutionScale != null &&
+            nvidiaRtxSuperResolutionScale > 1.01
+        // RTX True HDR requires mpv master ≥ Feb 19 2026: mpv sets IMGFMT_X2BGR10 output
+        // automatically when nvidia-true-hdr is present, and uses ID3D11VideoContext1 for
+        // proper DXGI HDR colour-space signalling. Init-time d3d11-output-csp=auto and
+        // target-colorspace-hint=auto are set in player_bridge.cpp when HDR is enabled.
+        val hdrActive = nvidiaRtxHdrEnabled
+        if (vsrActive || hdrActive) {
+            append("d3d11vpp=")
+            if (vsrActive) {
+                append("scale=${nvidiaRtxSuperResolutionScale!!.coerceIn(1.0, 4.0)}:scaling-mode=nvidia")
+                if (hdrActive) append(":")
+            }
+            if (hdrActive) append("nvidia-true-hdr=yes")
+        }
     }
 
     if (effectivePreset == null) {

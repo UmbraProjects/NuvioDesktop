@@ -678,6 +678,10 @@ kotlin {
     jvm("desktop") {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
+            freeCompilerArgs.addAll(
+                "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+                "-opt-in=androidx.compose.ui.ExperimentalComposeUiApi",
+            )
         }
     }
     

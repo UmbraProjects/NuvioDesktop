@@ -73,6 +73,9 @@ import com.nuvio.app.core.ui.NuvioBottomSheetDivider
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.trakt.TraktCalendarEntry
+import com.nuvio.app.features.simkl.SimklAuthRepository
+import com.nuvio.app.features.simkl.SimklCalendarRepository
+import com.nuvio.app.features.simkl.SimklSettingsRepository
 import com.nuvio.app.features.trakt.TraktCalendarRepository
 import com.nuvio.app.features.trakt.TraktPlatformClock
 import com.nuvio.app.features.trakt.addMonth
@@ -114,9 +117,17 @@ fun CalendarScreen(
     onNavigateHome: (() -> Unit)? = null,
     onItemClick: ((TraktCalendarEntry) -> Unit)? = null,
 ) {
-    val uiState by remember {
-        TraktCalendarRepository.ensureLoaded()
-        TraktCalendarRepository.uiState
+    val useSimkl = remember {
+        SimklAuthRepository.isAuthenticated.value && SimklSettingsRepository.isSimklCalendarSource()
+    }
+    val uiState by remember(useSimkl) {
+        if (useSimkl) {
+            SimklCalendarRepository.ensureLoaded()
+            SimklCalendarRepository.uiState
+        } else {
+            TraktCalendarRepository.ensureLoaded()
+            TraktCalendarRepository.uiState
+        }
     }.collectAsStateWithLifecycle()
 
     val screenFocusRequester = remember { FocusRequester() }
@@ -164,8 +175,9 @@ fun CalendarScreen(
     }
 
     // Page months in on demand so the user can go arbitrarily far forward/back.
-    LaunchedEffect(displayYear, displayMonth) {
-        TraktCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
+    LaunchedEffect(displayYear, displayMonth, useSimkl) {
+        if (useSimkl) SimklCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
+        else TraktCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
     }
 
     // Keyboard-focus keeper. On fast back-navigation the focus node may not be attached yet, or
@@ -246,7 +258,10 @@ fun CalendarScreen(
         Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.TopCenter) {
             when {
                 !uiState.isAuthenticated && uiState.hasLoaded -> {
-                    CalendarMessage(stringResource(Res.string.calendar_connect_trakt))
+                    CalendarMessage(
+                        if (useSimkl) "Connect your SIMKL account to see your calendar."
+                        else stringResource(Res.string.calendar_connect_trakt)
+                    )
                 }
 
                 uiState.isLoading && uiState.entriesByDate.isEmpty() -> {
