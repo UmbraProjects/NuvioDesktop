@@ -101,6 +101,28 @@ void nuvioMpvLogAppend(const std::string &line) {
         fclose(f);
     }
 }
+
+void nuvioBridgeLog(const std::string &line) {
+    nuvioMpvLogAppend("[nuvio-bridge] " + line + "\n");
+}
+
+std::string redactedSourceSummary(const std::string &sourceUrl) {
+    if (sourceUrl.empty()) return "(empty)";
+    const size_t idPos = sourceUrl.find("tt");
+    if (idPos != std::string::npos) {
+        size_t end = idPos;
+        while (end < sourceUrl.size() && (std::isalnum((unsigned char)sourceUrl[end]) || sourceUrl[end] == ':' || sourceUrl[end] == '-')) {
+            ++end;
+        }
+        return sourceUrl.substr(idPos, end - idPos);
+    }
+    const size_t lastSlash = sourceUrl.find_last_of("/\\");
+    std::string tail = lastSlash == std::string::npos ? sourceUrl : sourceUrl.substr(lastSlash + 1);
+    const size_t query = tail.find('?');
+    if (query != std::string::npos) tail.resize(query);
+    if (tail.size() > 96) tail.resize(96);
+    return tail.empty() ? "(unknown)" : tail;
+}
 const wchar_t *kMessageWindowClass = L"NuvioPlayerBridgeMessageWindow";
 const wchar_t *kContainerWindowClass = L"NuvioPlayerBridgeContainerWindow";
 constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
@@ -706,6 +728,7 @@ public:
         JavaVM *vm,
         bool nvidiaRtxSuperResolutionEnabled,
         bool nvidiaRtxHdrEnabled,
+        const std::string &animeSvpFilter,
         jobject sink,
         jmethodID method
     ) {
@@ -722,11 +745,23 @@ public:
         // attached via the audio-add command once the main file has loaded.
         externalAudioUrl = audioUrl;
 
+        nuvioMpvLogReset();
+        nuvioBridgeLog(
+            "initialize requested source=" + redactedSourceSummary(sourceUrl) +
+            " audio=" + (audioUrl.empty() ? "no" : "yes") +
+            " playWhenReady=" + (playWhenReady ? "yes" : "no") +
+            " initialMs=" + std::to_string(initialPositionMs) +
+            " rtxVsr=" + (nvidiaRtxSuperResolutionEnabled ? "yes" : "no") +
+            " rtxHdr=" + (nvidiaRtxHdrEnabled ? "yes" : "no") +
+            " animeSvp=" + (animeSvpFilter.empty() ? "no" : "yes")
+        );
+
         auto initState = std::make_shared<InitializationState>();
         auto self = shared_from_this();
+        nuvioBridgeLog("native ui thread starting");
         uiThread = std::thread(
-            [self, sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, initState]() {
-                self->runNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, initState);
+            [self, sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, animeSvpFilter, initState]() {
+                self->runNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, animeSvpFilter, initState);
             }
         );
 
@@ -734,11 +769,13 @@ public:
         initState->cv.wait(lock, [&]() { return initState->complete; });
         if (!initState->failure.empty()) {
             lock.unlock();
+            nuvioBridgeLog("initialize failed: " + initState->failure);
             if (uiThread.joinable()) {
                 uiThread.join();
             }
             throw std::runtime_error(initState->failure);
         }
+        nuvioBridgeLog("initialize complete");
     }
 
     void shutdown() {
@@ -746,30 +783,47 @@ public:
             return;
         }
 
-        sendUiTask([self = shared_from_this()]() {
-            self->cleanupUiResources();
-            PostQuitMessage(0);
-        });
-
+        nuvioBridgeLog("shutdown begin");
         stopping.store(true);
         {
             std::lock_guard<std::mutex> lock(mpvMutex);
             if (mpv && mpvApi().wakeup) {
+                nuvioBridgeLog("shutdown wake mpv");
                 mpvApi().wakeup(mpv);
             }
         }
+
+        nuvioBridgeLog("shutdown send ui cleanup");
+        bool uiCleanupCompleted = sendUiTask([self = shared_from_this()]() {
+            self->cleanupUiResources();
+            PostQuitMessage(0);
+        });
+        nuvioBridgeLog(uiCleanupCompleted ? "shutdown ui cleanup returned" : "shutdown ui cleanup timed out");
+
         if (eventThread.joinable()) {
+            nuvioBridgeLog("shutdown joining event thread");
             eventThread.join();
+            nuvioBridgeLog("shutdown event thread joined");
         }
         {
             std::lock_guard<std::mutex> lock(mpvMutex);
             if (mpv) {
+                nuvioBridgeLog("shutdown terminate mpv");
                 mpvApi().terminateDestroy(mpv);
                 mpv = nullptr;
+                nuvioBridgeLog("shutdown mpv terminated");
             }
         }
-        if (uiThread.joinable() && GetCurrentThreadId() != uiThreadId) {
+        if (uiThread.joinable() && GetCurrentThreadId() != uiThreadId && uiCleanupCompleted) {
+            nuvioBridgeLog("shutdown joining ui thread");
             uiThread.join();
+            nuvioBridgeLog("shutdown ui thread joined");
+        } else if (uiThread.joinable() && GetCurrentThreadId() != uiThreadId) {
+            // If the native UI thread is wedged inside WebView/Win32 teardown, keep this
+            // object alive and leak it rather than destroying state still owned by the thread.
+            detachedLifetimeHold = shared_from_this();
+            nuvioBridgeLog("shutdown detaching stuck ui thread");
+            uiThread.detach();
         }
 
         if (eventSink) {
@@ -785,6 +839,7 @@ public:
         }
         eventMethod = nullptr;
         javaVm = nullptr;
+        nuvioBridgeLog("shutdown complete");
     }
 
     void processUiTasks() {
@@ -1083,15 +1138,6 @@ public:
     // container window size by 1px and back on the UI thread to force a VO reconfigure and
     // redraw immediately.
     void forceVideoRedraw() {
-        {
-            std::lock_guard<std::mutex> lock(mpvMutex);
-            if (mpv) {
-                // Rebuild mpv's video filter/output chain so dynamic equalizer and
-                // colorspace changes become visible without a real window restore.
-                const char *reconfigCommand[] = {"video-reconfig", nullptr};
-                mpvApi().command(mpv, reconfigCommand);
-            }
-        }
         auto self = shared_from_this();
         postUiTask([self]() {
             if (!self->containerHwnd || !IsWindow(self->containerHwnd)) return;
@@ -1134,6 +1180,16 @@ public:
         });
     }
 
+    void logBridge(const std::string &line) {
+        nuvioBridgeLog(line);
+    }
+
+    void logHresult(const std::string &operation, HRESULT result) {
+        std::ostringstream stream;
+        stream << operation << " hr=0x" << std::hex << (unsigned long)result;
+        nuvioBridgeLog(stream.str());
+    }
+
 private:
     HWND hostHwnd = nullptr;
     HWND containerHwnd = nullptr;
@@ -1150,6 +1206,7 @@ private:
 
     std::mutex uiTaskMutex;
     std::deque<std::function<void()>> uiTasks;
+    std::shared_ptr<WindowsMpvWebPlayer> detachedLifetimeHold;
 
     std::mutex mpvMutex;
     mpv_handle *mpv = nullptr;
@@ -1185,13 +1242,16 @@ private:
         std::string controlsUrl,
         bool nvidiaRtxSuperResolutionEnabled,
         bool nvidiaRtxHdrEnabled,
+        std::string animeSvpFilter,
         std::shared_ptr<InitializationState> initState
     ) {
         std::string failure;
         try {
-            initializeOnNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled);
+            nuvioBridgeLog("native ui thread entered");
+            initializeOnNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, animeSvpFilter);
         } catch (const std::exception &error) {
             failure = error.what();
+            nuvioBridgeLog("native ui thread init exception: " + failure);
             cleanupUiResources();
         }
 
@@ -1206,11 +1266,13 @@ private:
             return;
         }
 
+        nuvioBridgeLog("native ui message loop begin");
         MSG msg = {};
         while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        nuvioBridgeLog("native ui message loop end");
     }
 
     void initializeOnNativeUiThread(
@@ -1220,16 +1282,20 @@ private:
         long long initialPositionMs,
         const std::string &controlsUrl,
         bool nvidiaRtxSuperResolutionEnabled,
-        bool nvidiaRtxHdrEnabled
+        bool nvidiaRtxHdrEnabled,
+        const std::string &animeSvpFilter
     ) {
+        nuvioBridgeLog("init register window classes");
         registerWindowClasses();
         uiThreadId = GetCurrentThreadId();
+        nuvioBridgeLog("init ole");
         HRESULT oleResult = OleInitialize(nullptr);
         didOleInitialize = SUCCEEDED(oleResult);
         if (FAILED(oleResult)) {
             throw std::runtime_error(hresultMessage("OleInitialize", oleResult));
         }
 
+        nuvioBridgeLog("init create message hwnd");
         messageHwnd = CreateWindowExW(
             0,
             kMessageWindowClass,
@@ -1248,6 +1314,7 @@ private:
             throw std::runtime_error("Unable to create Windows player message window.");
         }
 
+        nuvioBridgeLog("init create container hwnd");
         RECT bounds = {};
         GetClientRect(hostHwnd, &bounds);
         LONG width = std::max<LONG>(1, bounds.right - bounds.left);
@@ -1270,45 +1337,61 @@ private:
             throw std::runtime_error("Unable to create native player container window.");
         }
 
+        nuvioBridgeLog("init start webview");
         startWebView(controlsUrl);
-        startMpv(sourceUrl, headerLines, playWhenReady, initialPositionMs, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled);
+        nuvioBridgeLog("init start mpv");
+        startMpv(sourceUrl, headerLines, playWhenReady, initialPositionMs, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, animeSvpFilter);
+        nuvioBridgeLog("init layout");
         layoutNativeSubviews();
         if (!SetTimer(messageHwnd, NUVIO_TIMER_ID, 500, nullptr)) {
             throw std::runtime_error("Unable to start native player timer.");
         }
+        nuvioBridgeLog("init timer started");
     }
 
     void cleanupUiResources() {
+        nuvioBridgeLog("cleanup begin");
         if (cursorHidden) {
+            nuvioBridgeLog("cleanup show cursor");
             cursorHidden = false;
             ShowCursor(TRUE);
         }
         if (messageHwnd) {
+            nuvioBridgeLog("cleanup kill timer");
             KillTimer(messageHwnd, NUVIO_TIMER_ID);
         }
         if (webView && messageToken.value != 0) {
+            nuvioBridgeLog("cleanup remove web message handler");
             webView->remove_WebMessageReceived(messageToken);
             messageToken.value = 0;
         }
         if (controller) {
+            nuvioBridgeLog("cleanup close webview controller");
             controller->Close();
+            nuvioBridgeLog("cleanup reset webview controller");
             controller.Reset();
         }
+        nuvioBridgeLog("cleanup reset webview");
         webView.Reset();
+        nuvioBridgeLog("cleanup reset environment");
         environment.Reset();
         if (containerHwnd) {
+            nuvioBridgeLog("cleanup destroy container");
             DestroyWindow(containerHwnd);
             containerHwnd = nullptr;
         }
         if (messageHwnd) {
+            nuvioBridgeLog("cleanup destroy message window");
             HWND hwnd = messageHwnd;
             messageHwnd = nullptr;
             DestroyWindow(hwnd);
         }
         if (didOleInitialize) {
+            nuvioBridgeLog("cleanup ole uninitialize");
             OleUninitialize();
             didOleInitialize = false;
         }
+        nuvioBridgeLog("cleanup end");
     }
 
     void postUiTask(std::function<void()> task) {
@@ -1323,10 +1406,10 @@ private:
         }
     }
 
-    void sendUiTask(std::function<void()> task) {
+    bool sendUiTask(std::function<void()> task) {
         if (GetCurrentThreadId() == uiThreadId || !messageHwnd) {
             task();
-            return;
+            return true;
         }
 
         auto done = std::make_shared<bool>(false);
@@ -1343,13 +1426,21 @@ private:
                 doneCv->notify_one();
             });
         }
-        SendMessageW(messageHwnd, WM_NUVIO_TASK, 0, 0);
+        HWND target = messageHwnd;
+        if (target) {
+            PostMessageW(target, WM_NUVIO_TASK, 0, 0);
+        }
 
         std::unique_lock<std::mutex> waitLock(*doneMutex);
-        doneCv->wait(waitLock, [&]() { return *done; });
+        bool completed = doneCv->wait_for(waitLock, std::chrono::seconds(5), [&]() { return *done; });
+        if (!completed) {
+            nuvioBridgeLog("sendUiTask timed out waiting for native ui thread");
+        }
+        return completed;
     }
 
     void startWebView(const std::string &controlsUrl) {
+        nuvioBridgeLog("webview create environment");
         std::wstring userDataDir = tempUserDataDirectory();
         auto weakSelf = weak_from_this();
         HRESULT result = CreateCoreWebView2EnvironmentWithOptions(
@@ -1361,8 +1452,10 @@ private:
                     auto self = weakSelf.lock();
                     if (!self || self->shuttingDown.load()) return S_OK;
                     if (FAILED(envResult) || !createdEnvironment) {
+                        if (self) self->logHresult("webview environment failed", envResult);
                         return S_OK;
                     }
+                    self->logBridge("webview environment created");
                     self->environment = createdEnvironment;
                     auto controllerWeakSelf = weakSelf;
                     HRESULT controllerResult = createdEnvironment->CreateCoreWebView2Controller(
@@ -1372,8 +1465,10 @@ private:
                                 auto controllerSelf = controllerWeakSelf.lock();
                                 if (!controllerSelf || controllerSelf->shuttingDown.load()) return S_OK;
                                 if (FAILED(controllerResult) || !createdController) {
+                                    if (controllerSelf) controllerSelf->logHresult("webview controller failed", controllerResult);
                                     return S_OK;
                                 }
+                                controllerSelf->logBridge("webview controller created");
                                 controllerSelf->controller = createdController;
                                 createdController->get_CoreWebView2(&controllerSelf->webView);
 
@@ -1408,6 +1503,7 @@ private:
                                     );
                                     controllerSelf->layoutNativeSubviews();
                                     std::wstring url = toWide(controlsUrl);
+                                    controllerSelf->logBridge("webview navigate controls");
                                     controllerSelf->webView->Navigate(url.c_str());
                                     createdController->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
                                 }
@@ -1423,6 +1519,7 @@ private:
         if (FAILED(result)) {
             throw std::runtime_error(hresultMessage("CreateCoreWebView2EnvironmentWithOptions", result));
         }
+        nuvioBridgeLog("webview environment request posted");
     }
 
     void startMpv(
@@ -1431,8 +1528,10 @@ private:
         bool playWhenReady,
         long long initialPositionMs,
         bool nvidiaRtxSuperResolutionEnabled,
-        bool nvidiaRtxHdrEnabled
+        bool nvidiaRtxHdrEnabled,
+        const std::string &animeSvpFilter
     ) {
+        nuvioBridgeLog("mpv create");
         MpvApi &api = mpvApi();
         {
             std::lock_guard<std::mutex> lock(mpvMutex);
@@ -1443,14 +1542,14 @@ private:
             initialStartSeconds = initialPositionMs > 0 ? (double)initialPositionMs / 1000.0 : 0.0;
 
             // When RTX VSR is enabled, capture mpv's own log so filter/hwdec issues are visible
-            // (file: %TEMP%\nuvio-mpv.log). Off by default, so normal playback writes nothing.
-            if (nvidiaRtxSuperResolutionEnabled && mpvApi().requestLogMessages) {
+            // (file: %TEMP%\nuvio-mpv.log). Enabled unconditionally for debugging.
+            if (mpvApi().requestLogMessages) {
                 vsrLogActive = true;
-                nuvioMpvLogReset();
-                nuvioMpvLogAppend("[nuvio] RTX VSR enabled - dynamic scale requested\n");
+                nuvioMpvLogAppend("[nuvio] Logging enabled\n");
                 mpvApi().requestLogMessages(mpv, "v");
             }
 
+            nuvioBridgeLog("mpv set options");
             setMpvOptionStringLocked("config", "no");
             setMpvOptionStringLocked("osc", "no");
             setMpvOptionStringLocked("input-default-bindings", "yes");
@@ -1539,6 +1638,10 @@ private:
             setMpvOptionStringLocked("deband-range", "16");
             setMpvOptionStringLocked("deband-grain", "0");
 
+            if (!animeSvpFilter.empty()) {
+                setMpvOptionStringLocked("vf", animeSvpFilter.c_str());
+            }
+
             // Streaming cache (1x baseline; setSpeed scales these with playback rate)
             setMpvOptionStringLocked("cache", "yes");
             setMpvOptionStringLocked("cache-pause", "yes");
@@ -1574,15 +1677,20 @@ private:
                 std::string headers;
                 for (size_t index = 0; index < headerLines.size(); index++) {
                     if (index > 0) headers.push_back(',');
-                    headers += headerLines[index];
+                    for (char c : headerLines[index]) {
+                        if (c == '\\' || c == ',') headers.push_back('\\');
+                        headers.push_back(c);
+                    }
                 }
                 setMpvOptionStringLocked("http-header-fields", headers.c_str());
             }
 
+            nuvioBridgeLog("mpv initialize");
             int initResult = api.initialize(mpv);
             if (initResult < 0) {
                 throw std::runtime_error(std::string("mpv_initialize failed: ") + api.errorText(initResult));
             }
+            nuvioBridgeLog("mpv initialized");
 
             api.observeProperty(mpv, 0, "video-params/primaries", MPV_FORMAT_STRING);
             api.observeProperty(mpv, 0, "video-params/gamma", MPV_FORMAT_STRING);
@@ -1620,16 +1728,20 @@ private:
             }
             loadCommand.push_back(nullptr);
 
+            nuvioBridgeLog("mpv loadfile");
             int commandResult = api.command(mpv, loadCommand.data());
             if (commandResult < 0) {
                 throw std::runtime_error(std::string("mpv loadfile failed: ") + api.errorText(commandResult));
             }
+            nuvioBridgeLog("mpv loadfile accepted");
 
         }
 
         setPaused(!playWhenReady);
         auto self = shared_from_this();
+        nuvioBridgeLog("mpv event thread starting");
         eventThread = std::thread([self]() { self->drainMpvEvents(); });
+        nuvioBridgeLog("mpv start complete");
     }
 
     void layoutNativeSubviews() {
@@ -2224,6 +2336,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jstring controlsPageUrl,
     jboolean nvidiaRtxSuperResolutionEnabled,
     jboolean nvidiaRtxHdrEnabled,
+    jstring animeSvpFilter,
     jobject eventSink
 ) {
     HWND hostHwnd = (HWND)(intptr_t)hostViewPtr;
@@ -2231,6 +2344,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     std::string sourceAudioUrlText = sourceAudioUrl ? jstringToUtf8(env, sourceAudioUrl) : std::string();
     std::vector<std::string> headerLineValues = jstringArrayToVector(env, headerLines);
     std::string controlsPageUrlText = jstringToUtf8(env, controlsPageUrl);
+    std::string animeSvpFilterText = animeSvpFilter ? jstringToUtf8(env, animeSvpFilter) : std::string();
     JavaVM *javaVm = nullptr;
     env->GetJavaVM(&javaVm);
 
@@ -2261,6 +2375,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
             javaVm,
             nvidiaRtxSuperResolutionEnabled == JNI_TRUE,
             nvidiaRtxHdrEnabled == JNI_TRUE,
+            animeSvpFilterText,
             eventSinkRef,
             eventMethod
         );

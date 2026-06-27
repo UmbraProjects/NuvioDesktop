@@ -11,6 +11,7 @@ enum class SearchEmptyStateReason {
 }
 
 data class SearchUiState(
+    val query: String = "",
     val isLoading: Boolean = false,
     val sections: List<HomeCatalogSection> = emptyList(),
     val emptyStateReason: SearchEmptyStateReason? = null,

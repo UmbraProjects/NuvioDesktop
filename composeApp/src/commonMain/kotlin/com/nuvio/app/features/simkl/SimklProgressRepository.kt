@@ -38,6 +38,7 @@ internal object SimklProgressRepository {
 
     private var refreshJob: Job? = null
     private var loaded = false
+    private var cachedWatchingSeeds: List<WatchProgressEntry> = emptyList()
 
     fun ensureLoaded() {
         if (loaded) return
@@ -114,6 +115,7 @@ internal object SimklProgressRepository {
     fun clearLocalState() {
         refreshJob?.cancel()
         loaded = false
+        cachedWatchingSeeds = emptyList()
         sessionIdByVideoId.clear()
         _uiState.value = SimklProgressUiState()
     }
@@ -143,7 +145,7 @@ internal object SimklProgressRepository {
         val savedCwTs = SimklSettingsRepository.lastCwActivitiesAt()
         if (latestCwTs != null && latestCwTs == savedCwTs && playbackEntries.isNotEmpty()) {
             log.d { "SIMKL CW: watching-list activities unchanged, skipping re-fetch" }
-            return playbackEntries
+            return playbackEntries + cachedWatchingSeeds
         }
 
         val watchingUrl = SimklAuthRepository.appendParams("$BASE_URL/sync/all-items/all/watching")
@@ -157,6 +159,7 @@ internal object SimklProgressRepository {
             }
         }.getOrDefault(emptyList())
 
+        cachedWatchingSeeds = watchingSeeds
         if (latestCwTs != null) SimklSettingsRepository.setLastCwActivitiesAt(latestCwTs)
         return playbackEntries + watchingSeeds
     }
@@ -167,14 +170,17 @@ internal object SimklProgressRepository {
         val marker = lastWatched?.takeIf { it.isNotBlank() } ?: return null
         val (season, episode) = parseSimklEpisodeMarker(marker) ?: return null
         if (season == 0) return null // specials
+        val isAnime = anime != null
         val s = show ?: anime ?: return null
-        val showId = s.ids.toBestContentId() ?: return null
+        val showId = (if (isAnime) s.ids.toBestAnimeContentId() else s.ids.toBestContentId()) ?: return null
         val videoId = "$showId:$season:$episode"
         // Skip if this exact episode is already an active playback session — the in-progress
         // card is more useful, and it already serves as an implicit up-next seed.
         if (videoId in playbackVideoIds) return null
         val watchedMs = lastWatchedAt?.let { parseSimklTimestamp(it) } ?: System.currentTimeMillis()
         val cachedMeta = MetaDetailsRepository.peek("series", showId)
+        val posterUrl = cachedMeta?.poster
+            ?: s.poster?.takeIf { it.isNotBlank() }?.simklPosterUrl()
 
         return WatchProgressEntry(
             contentType = "series",
@@ -182,8 +188,8 @@ internal object SimklProgressRepository {
             parentMetaType = "series",
             videoId = videoId,
             title = s.title.orEmpty(),
-            poster = cachedMeta?.poster ?: s.ids.simkl?.let { simklCdnPosterUrl(it) },
-            background = cachedMeta?.background,
+            poster = posterUrl,
+            background = cachedMeta?.background ?: posterUrl,
             seasonNumber = season,
             episodeNumber = episode,
             lastPositionMs = 0L,
@@ -206,14 +212,16 @@ internal object SimklProgressRepository {
                 val m = movie ?: return null
                 val id = m.ids.toBestContentId() ?: return null
                 val cachedMeta = MetaDetailsRepository.peek("movie", id)
+                val posterUrl = cachedMeta?.poster
+                    ?: m.poster?.takeIf { it.isNotBlank() }?.simklPosterUrl()
                 WatchProgressEntry(
                     contentType = "movie",
                     parentMetaId = id,
                     parentMetaType = "movie",
                     videoId = id,
                     title = m.title.orEmpty(),
-                    poster = cachedMeta?.poster ?: m.ids.simkl?.let { simklCdnPosterUrl(it) },
-                    background = cachedMeta?.background,
+                    poster = posterUrl,
+                    background = cachedMeta?.background ?: posterUrl,
                     lastPositionMs = 0L,
                     durationMs = 0L,
                     progressPercent = progress,
@@ -222,21 +230,24 @@ internal object SimklProgressRepository {
                 )
             }
             "episode" -> {
+                val isAnime = anime != null
                 val s = show ?: anime ?: return null
                 val ep = episode ?: return null
                 val season = ep.season ?: return null
                 val number = ep.number ?: return null
-                val showId = s.ids.toBestContentId() ?: return null
+                val showId = (if (isAnime) s.ids.toBestAnimeContentId() else s.ids.toBestContentId()) ?: return null
                 val videoId = "$showId:$season:$number"
                 val cachedMeta = MetaDetailsRepository.peek("series", showId)
+                val posterUrl = cachedMeta?.poster
+                    ?: s.poster?.takeIf { it.isNotBlank() }?.simklPosterUrl()
                 WatchProgressEntry(
                     contentType = "series",
                     parentMetaId = showId,
                     parentMetaType = "series",
                     videoId = videoId,
                     title = s.title.orEmpty(),
-                    poster = cachedMeta?.poster ?: s.ids.simkl?.let { simklCdnPosterUrl(it) },
-                    background = cachedMeta?.background,
+                    poster = posterUrl,
+                    background = cachedMeta?.background ?: posterUrl,
                     seasonNumber = season,
                     episodeNumber = number,
                     episodeTitle = ep.title?.takeIf { it.isNotBlank() },

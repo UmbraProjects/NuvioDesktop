@@ -647,7 +647,8 @@ object TmdbMetadataService {
             updated = updated.copy(
                 name = enrichment.localizedTitle ?: updated.name,
                 description = enrichment.description ?: updated.description,
-                imdbRating = enrichment.rating?.formatRating() ?: updated.imdbRating,
+                imdbRating = updated.imdbRating?.takeIf { it.isNotBlank() }
+                    ?: enrichment.rating?.formatRating(),
                 genres = enrichment.genres.ifEmpty { updated.genres },
             )
         }
@@ -668,7 +669,10 @@ object TmdbMetadataService {
             updated = updated.copy(
                 director = enrichment.director.ifEmpty { updated.director },
                 writer = enrichment.writer.ifEmpty { updated.writer },
-                cast = enrichment.people.ifEmpty { updated.cast },
+                cast = mergeCastPreservingBaseOrder(
+                    base = updated.cast,
+                    enrichment = enrichment.people,
+                ),
             )
         }
 
@@ -746,6 +750,34 @@ object TmdbMetadataService {
         }
 
         return updated
+    }
+
+    private fun mergeCastPreservingBaseOrder(
+        base: List<MetaPerson>,
+        enrichment: List<MetaPerson>,
+    ): List<MetaPerson> {
+        if (enrichment.isEmpty()) return base
+        if (base.isEmpty()) return enrichment
+
+        val enrichedByName = enrichment.associateBy { it.name.normalizedPersonName() }
+        val seen = mutableSetOf<String>()
+        val merged = base.mapNotNull { basePerson ->
+            val key = basePerson.name.normalizedPersonName()
+            if (key.isBlank()) return@mapNotNull null
+            seen += key
+            val enriched = enrichedByName[key]
+            if (enriched == null) {
+                basePerson
+            } else {
+                basePerson.copy(
+                    name = basePerson.name.trim().takeIf(String::isNotBlank) ?: enriched.name,
+                    role = basePerson.role ?: enriched.role,
+                    photo = enriched.photo ?: basePerson.photo,
+                    tmdbId = enriched.tmdbId ?: basePerson.tmdbId,
+                )
+            }
+        }
+        return merged + enrichment.filter { it.name.normalizedPersonName() !in seen }
     }
 
     private suspend fun fetchEnrichment(
@@ -846,7 +878,7 @@ object TmdbMetadataService {
             localizedTitle = localizedTitle,
             description = description,
             genres = genres,
-            backdrop = buildImageUrl(details.backdropPath, "w1280"),
+            backdrop = buildImageUrl(details.backdropPath, "original"),
             logo = buildImageUrl(images?.logos.orEmpty().selectBestLocalizedImagePath(normalizedLanguage), "w500"),
             poster = buildImageUrl(details.posterPath, "w500"),
             people = people,
@@ -1332,7 +1364,7 @@ private fun buildWriters(
 private fun List<MetaPerson>.dedupePeople(): List<MetaPerson> {
     val merged = linkedMapOf<String, MetaPerson>()
     forEach { person ->
-        val key = person.name.lowercase() + "|" + person.role.orEmpty().lowercase()
+        val key = person.name.normalizedPersonName() + "|" + person.role.orEmpty().lowercase()
         val existing = merged[key]
         merged[key] = if (existing == null) {
             person
@@ -1343,6 +1375,9 @@ private fun List<MetaPerson>.dedupePeople(): List<MetaPerson> {
     return merged.values.toList()
 }
 
+private fun String.normalizedPersonName(): String =
+    trim().lowercase()
+
 private fun buildImageUrl(path: String?, size: String): String? {
     val clean = path?.trim()?.takeIf(String::isNotBlank) ?: return null
     return "https://image.tmdb.org/t/p/$size$clean"
@@ -1350,16 +1385,26 @@ private fun buildImageUrl(path: String?, size: String): String? {
 
 private fun List<TmdbImage>.selectBestLocalizedImagePath(normalizedLanguage: String): String? {
     if (isEmpty()) return null
-    val languageCode = normalizedLanguage.substringBefore("-")
-    val regionCode = normalizedLanguage.substringAfter("-", "").uppercase().takeIf { it.length == 2 }
-        ?: defaultLanguageRegions[languageCode]
-    return sortedWith(
-        compareByDescending<TmdbImage> { it.iso6391 == languageCode && it.iso31661 == regionCode }
-            .thenByDescending { it.iso6391 == languageCode && it.iso31661 == null }
-            .thenByDescending { it.iso6391 == languageCode }
-            .thenByDescending { it.iso6391 == "en" }
-            .thenByDescending { it.iso6391 == null },
-    ).firstOrNull()?.filePath
+    val langCode = normalizedLanguage.substringBefore("-")
+
+    // AIOMetadata algorithm: single O(N) pass across language tiers, vote_average tiebreaker.
+    // Tier order: target lang → English → null/xx (language-neutral) → any other lang
+    var bestTarget: TmdbImage? = null
+    var bestEn: TmdbImage? = null
+    var bestNull: TmdbImage? = null
+    var bestAny: TmdbImage? = null
+
+    for (img in this) {
+        val lang = img.iso6391
+        val score = img.voteAverage ?: 0.0
+        when {
+            lang == langCode -> if (bestTarget == null || score > (bestTarget!!.voteAverage ?: 0.0)) bestTarget = img
+            lang == "en" -> if (bestEn == null || score > (bestEn!!.voteAverage ?: 0.0)) bestEn = img
+            lang == null || lang == "xx" -> if (bestNull == null || score > (bestNull!!.voteAverage ?: 0.0)) bestNull = img
+            else -> if (bestAny == null || score > (bestAny!!.voteAverage ?: 0.0)) bestAny = img
+        }
+    }
+    return (bestTarget ?: bestEn ?: bestNull ?: bestAny)?.filePath
 }
 
 private val defaultLanguageRegions = mapOf(
@@ -1540,6 +1585,7 @@ private data class TmdbImage(
     @SerialName("file_path") val filePath: String? = null,
     @SerialName("iso_639_1") val iso6391: String? = null,
     @SerialName("iso_3166_1") val iso31661: String? = null,
+    @SerialName("vote_average") val voteAverage: Double? = null,
 )
 
 @Serializable

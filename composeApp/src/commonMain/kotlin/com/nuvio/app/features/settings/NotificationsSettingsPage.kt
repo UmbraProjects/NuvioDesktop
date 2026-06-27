@@ -47,6 +47,7 @@ internal fun LazyListScope.notificationsSettingsContent(
                     checked = uiState.isEnabled,
                     enabled = !uiState.isLoading,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("episode-release-alerts")),
                     onCheckedChange = EpisodeReleaseNotificationsRepository::setEnabled,
                 )
             }
@@ -61,6 +62,7 @@ internal fun LazyListScope.notificationsSettingsContent(
             NotificationTestCard(
                 isTablet = isTablet,
                 uiState = uiState,
+                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("notification-test")),
             )
         }
     }
@@ -70,12 +72,13 @@ internal fun LazyListScope.notificationsSettingsContent(
 private fun NotificationTestCard(
     isTablet: Boolean,
     uiState: EpisodeReleaseNotificationsUiState,
+    modifier: Modifier = Modifier,
 ) {
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
     val verticalPadding = if (isTablet) 18.dp else 16.dp
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

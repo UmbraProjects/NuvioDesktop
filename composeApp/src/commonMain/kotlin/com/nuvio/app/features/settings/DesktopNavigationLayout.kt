@@ -13,7 +13,7 @@ enum class DesktopNavigationLayout(
     ;
 
     companion object {
-        val Default = Sidebar
+        val Default = TopBar
 
         fun fromName(name: String?): DesktopNavigationLayout =
             entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: Default

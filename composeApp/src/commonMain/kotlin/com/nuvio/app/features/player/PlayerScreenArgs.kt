@@ -28,6 +28,7 @@ internal data class PlayerScreenArgs(
     val videoId: String?,
     val parentMetaId: String,
     val parentMetaType: String,
+    val watchProgressSource: String?,
     val providerAddonId: String?,
     val torrentInfoHash: String?,
     val torrentFileIdx: Int?,

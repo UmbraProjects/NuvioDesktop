@@ -1,3 +1,0 @@
-language = C
-headers = commoncrypto_shim.h
-package = com.nuvio.app.features.plugins.cryptointerop

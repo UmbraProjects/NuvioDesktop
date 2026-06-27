@@ -82,6 +82,7 @@ internal object TraktScrobbleRepository {
     ): TraktScrobbleItem? {
         val normalizedType = contentType.trim().lowercase()
         var ids = parseTraktContentIds(parentMetaId)
+        val isEpisodeType = normalizedType in listOf("series", "tv", "show", "tvshow", "anime")
 
         // Fallback: if parentMetaId doesn't resolve to valid Trakt IDs, try videoId.
         // Some addons use non-standard contentId (e.g. "tun_tt7821582") but set a
@@ -90,31 +91,46 @@ internal object TraktScrobbleRepository {
             ids = parseTraktContentIds(videoId)
         }
 
+        // Ensure we have a Trakt-supported ID (IMDB, TMDB, Trakt, Slug). If we only have
+        // TVDB, Kitsu, MAL, etc., Trakt's scrobble endpoint may reject it. Nuvio's
+        // TmdbService can resolve these to a canonical TMDB ID.
+        if (
+            ids.imdb == null &&
+            ids.tmdb == null &&
+            ids.trakt == null &&
+            ids.tvdb == null &&
+            ids.slug == null &&
+            !isAnimeExternalOnlyId(parentMetaId)
+        ) {
+            val fallbackId = parentMetaId.takeIf { it.isNotBlank() } ?: videoId
+            if (fallbackId != null) {
+                val tmdbId = com.nuvio.app.features.tmdb.TmdbService.ensureTmdbId(
+                    videoId = fallbackId,
+                    mediaType = if (normalizedType in listOf("series", "tv", "show", "tvshow", "anime")) "series" else "movie"
+                )
+                if (tmdbId != null) {
+                    ids = ids.copy(tmdb = tmdbId.toIntOrNull())
+                }
+            }
+        }
+
         // Don't send scrobble if we still have no valid Trakt IDs — would cause
         // title-based fuzzy match on Trakt API resulting in wrong show matched.
-        if (!ids.hasAnyId()) return null
+        if (!ids.hasScrobbleRequestId()) return null
 
         val parsedYear = extractTraktYear(releaseInfo)
 
         return if (
-            normalizedType in listOf("series", "tv", "show", "tvshow") &&
+            isEpisodeType &&
             seasonNumber != null &&
             episodeNumber != null
         ) {
-            val mappedEpisode = TraktEpisodeMappingService.resolveEpisodeMapping(
-                contentId = parentMetaId,
-                contentType = contentType,
-                videoId = videoId,
-                season = seasonNumber,
-                episode = episodeNumber,
-                episodeTitle = episodeTitle,
-            )
             TraktScrobbleItem.Episode(
                 showTitle = title,
                 showYear = parsedYear,
                 showIds = ids,
-                season = mappedEpisode?.season ?: seasonNumber,
-                number = mappedEpisode?.episode ?: episodeNumber,
+                season = seasonNumber,
+                number = episodeNumber,
                 episodeTitle = episodeTitle,
             )
         } else {
@@ -134,6 +150,10 @@ internal object TraktScrobbleRepository {
         val headers = TraktAuthRepository.authorizedHeaders() ?: return
         val activeProfileId = ProfileRepository.activeProfileId
         val clampedProgress = progressPercent.coerceIn(0f, 100f)
+        if (action == "stop" && clampedProgress < 1f) {
+            log.d { "Skipping Trakt scrobble stop below 1%: ${"%.2f".format(clampedProgress)}%" }
+            return
+        }
         if (shouldSkip(activeProfileId, action, item.itemKey, clampedProgress)) return
 
         val url = "$BASE_URL/scrobble/$action"
@@ -314,13 +334,37 @@ internal object TraktScrobbleRepository {
     }
 
     private fun TraktExternalIds.toRequestBodyOrNull(): TraktIdsBody? {
-        if (trakt == null && imdb.isNullOrBlank() && tmdb == null) return null
+        if (trakt == null && imdb.isNullOrBlank() && tmdb == null && tvdb == null) return null
         return TraktIdsBody(
             trakt = trakt,
             imdb = imdb,
             tmdb = tmdb,
+            tvdb = tvdb,
         )
     }
+
+    private fun TraktExternalIds.hasScrobbleRequestId(): Boolean =
+        trakt != null || !imdb.isNullOrBlank() || tmdb != null || tvdb != null
+
+    private fun isAnimeExternalOnlyId(contentId: String): Boolean {
+        val raw = contentId.trim()
+        return raw.startsWith("kitsu:", ignoreCase = true) ||
+            raw.startsWith("mal:", ignoreCase = true) ||
+            raw.startsWith("al:", ignoreCase = true) ||
+            raw.startsWith("anilist:", ignoreCase = true) ||
+            raw.startsWith("simkl:", ignoreCase = true)
+    }
+
+    private fun TraktExternalIds.withFallbacks(fallback: TraktExternalIds): TraktExternalIds = copy(
+        trakt = trakt ?: fallback.trakt,
+        imdb = imdb ?: fallback.imdb,
+        tmdb = tmdb ?: fallback.tmdb,
+        tvdb = tvdb ?: fallback.tvdb,
+        mal = mal ?: fallback.mal,
+        kitsu = kitsu ?: fallback.kitsu,
+        anilist = anilist ?: fallback.anilist,
+        slug = slug ?: fallback.slug,
+    )
 }
 
 @Serializable
@@ -358,4 +402,5 @@ private data class TraktIdsBody(
     @SerialName("trakt") val trakt: Int? = null,
     @SerialName("imdb") val imdb: String? = null,
     @SerialName("tmdb") val tmdb: Int? = null,
+    @SerialName("tvdb") val tvdb: Int? = null,
 )

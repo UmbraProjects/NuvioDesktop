@@ -142,7 +142,7 @@ fun HomeHeroSection(
     heightOverride: Dp? = null,
     roundedBottomCorners: Boolean = true,
     immersiveMode: Boolean = false,
-    tvMode: Boolean = false,
+    adaptiveHeroMode: Boolean = false,
     immersiveContentBottomPadding: Dp = IMMERSIVE_HERO_CONTENT_BOTTOM_PADDING,
     onActiveItemChanged: ((MetaPreview) -> Unit)? = null,
     onCastClick: ((HeroCastMember) -> Unit)? = null,
@@ -321,7 +321,7 @@ fun HomeHeroSection(
                     pageIndicatorCount = items.size,
                     coroutineScope = coroutineScope,
                     immersiveMode = immersiveMode,
-                    tvMode = tvMode,
+                    adaptiveHeroMode = adaptiveHeroMode,
                     immersiveContentBottomPadding = immersiveContentBottomPadding,
                     ratingsCache = ratingsCache,
                     onCastClick = onCastClick,
@@ -493,10 +493,7 @@ private fun HeroBackdropImage(
     alignment: Alignment,
     contentScale: ContentScale,
 ) {
-    val banner = item.banner?.takeIf(String::isNotBlank)
-    val poster = item.poster?.takeIf(String::isNotBlank)
-    var bannerLoadFailed by remember(item.type, item.id, banner, poster) { mutableStateOf(false) }
-    val model = if (bannerLoadFailed) poster else banner ?: poster
+    val model = item.banner?.takeIf(String::isNotBlank)
 
     AsyncImage(
         model = model,
@@ -506,10 +503,7 @@ private fun HeroBackdropImage(
         contentScale = contentScale,
         desktopImageScaling = NuvioDesktopImageScaling.Disabled,
         onError = {
-            if (!bannerLoadFailed && banner != null && poster != null && banner != poster) {
-                heroImageLog.w { "Hero banner failed; trying poster: ${banner.safeImageUrlForLog()}" }
-                bannerLoadFailed = true
-            } else if (model != null) {
+            if (model != null) {
                 heroImageLog.w { "Hero artwork failed: ${model.safeImageUrlForLog()}" }
             }
         },
@@ -530,7 +524,7 @@ private fun DesktopHomeHeroFrame(
     pageIndicatorCount: Int = items.size,
     coroutineScope: CoroutineScope,
     immersiveMode: Boolean,
-    tvMode: Boolean = false,
+    adaptiveHeroMode: Boolean = false,
     immersiveContentBottomPadding: Dp,
     ratingsCache: Map<String, List<MetaExternalRating>>,
     onCastClick: ((HeroCastMember) -> Unit)?,
@@ -542,7 +536,7 @@ private fun DesktopHomeHeroFrame(
     // TV-mode hero trailer (desktop only; mirrors Nuvio TV). The feature applies to the
     // TV-style heroes; auto-play after a delay is opt-in, while the `T` shortcut plays it
     // on demand regardless of the auto-play setting.
-    val tvHeroActive = tvMode || immersiveMode
+    val tvHeroActive = adaptiveHeroMode || immersiveMode
     val heroTrailerAutoplayEnabled = tvHeroActive && playerSettings.heroTvTrailerEnabled
     val heroTrailerFocusKey = "${currentItem.type}:${currentItem.id}"
     // Resets the dwell timer on every focus move; false whenever home isn't the active screen.
@@ -566,7 +560,7 @@ private fun DesktopHomeHeroFrame(
         heroTrailerFinished = false
         heroTrailerLog.i {
             "gate autoplay=$heroTrailerAutoplayEnabled homeActive=$heroTrailerHomeActive " +
-                "tvMode=$tvMode immersive=$immersiveMode " +
+                "adaptiveHeroMode=$adaptiveHeroMode immersive=$immersiveMode " +
                 "settingEnabled=${playerSettings.heroTvTrailerEnabled} key=$heroTrailerFocusKey " +
                 "delay=${playerSettings.heroTvTrailerDelaySeconds}s"
         }
@@ -830,14 +824,14 @@ private fun DesktopHomeHeroFrame(
                     .fillMaxWidth(
                         when {
                             immersiveMode -> 0.32f
-                            tvMode -> 0.38f
+                            adaptiveHeroMode -> 0.38f
                             else -> layout.contentWidthFraction
                         },
                     )
                     .widthIn(
                         max = when {
                             immersiveMode -> 600.dp
-                            tvMode -> 480.dp
+                            adaptiveHeroMode -> 480.dp
                             else -> layout.contentMaxWidth
                         },
                     ),
@@ -857,7 +851,7 @@ private fun DesktopHomeHeroFrame(
                             layout = layout,
                             interactive = true,
                             showExtendedMetadata = immersiveMode,
-                            showReleaseMetadata = immersiveMode || tvMode,
+                            showReleaseMetadata = immersiveMode || adaptiveHeroMode,
                             ratingsCache = ratingsCache,
                             onCastClick = onCastClick,
                             onItemClick = onItemClick?.let { handler ->
@@ -869,7 +863,7 @@ private fun DesktopHomeHeroFrame(
             }
         }
 
-        if (!tvMode) {
+        if (!adaptiveHeroMode) {
             HeroPageIndicatorRow(
                 itemCount = pageIndicatorCount,
                 pagerState = pagerState,
@@ -1409,7 +1403,7 @@ private fun HeroCastChip(
     }
 }
 
-private fun heroDisplayCast(item: MetaPreview, maxCount: Int): List<HeroCastMember> =
+internal fun heroDisplayCast(item: MetaPreview, maxCount: Int): List<HeroCastMember> =
     item.cast
         .asSequence()
         .filter { person -> person.name.isNotBlank() }
@@ -1426,9 +1420,17 @@ private fun String.heroInitials(): String =
         .mapNotNull { part -> part.firstOrNull()?.uppercaseChar() }
         .joinToString("")
 
-private fun String.isHeroCrewRole(): Boolean {
-    val normalized = lowercase()
-    return listOf(
+internal fun String.isHeroCrewRole(): Boolean {
+    val roleParts = split(Regex("""[,/;|•·]+"""))
+        .map { it.trim().lowercase() }
+        .filter(String::isNotBlank)
+    if (roleParts.isEmpty()) return false
+    return roleParts.all { part ->
+        heroCrewRoleMarkers.any(part::contains)
+    }
+}
+
+private val heroCrewRoleMarkers = listOf(
         "director",
         "writer",
         "creator",
@@ -1436,8 +1438,7 @@ private fun String.isHeroCrewRole(): Boolean {
         "screenplay",
         "showrunner",
         "producer",
-    ).any(normalized::contains)
-}
+)
 
 @Composable
 private fun HomeHeroRatingsRow(item: MetaPreview, ratingsCache: Map<String, List<MetaExternalRating>>) {

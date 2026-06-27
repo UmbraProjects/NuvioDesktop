@@ -122,6 +122,7 @@ internal fun LazyListScope.metaScreenSettingsContent(
                     description = stringResource(Res.string.settings_meta_cinematic_background_description),
                     checked = uiState.cinematicBackground,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-cinematic")),
                     onCheckedChange = { MetaScreenSettingsRepository.setCinematicBackground(it) },
                 )
                 if (showHeroTrailerPlaybackSetting) {
@@ -140,12 +141,14 @@ internal fun LazyListScope.metaScreenSettingsContent(
                     description = stringResource(Res.string.settings_meta_tab_layout_description),
                     checked = uiState.tabLayout,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-tabs")),
                     onCheckedChange = { MetaScreenSettingsRepository.setTabLayout(it) },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 MetaEpisodeCardStyleSelector(
                     isTablet = isTablet,
                     selectedStyle = uiState.episodeCardStyle,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-episode-cards")),
                     onStyleSelected = MetaScreenSettingsRepository::setEpisodeCardStyle,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -154,6 +157,7 @@ internal fun LazyListScope.metaScreenSettingsContent(
                     description = stringResource(Res.string.settings_meta_blur_unwatched_episodes_description),
                     checked = uiState.blurUnwatchedEpisodes,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-blur-episodes")),
                     onCheckedChange = { MetaScreenSettingsRepository.setBlurUnwatchedEpisodes(it) },
                 )
             }
@@ -223,6 +227,7 @@ private fun MetaSectionReorderableList(
                             isTablet = isTablet,
                             tabLayout = tabLayout,
                             groupCounts = groupCounts,
+                            modifier = Modifier.settingsScrollAnchor(item.key.settingsSearchAnchor),
                             onEnabledChange = { MetaScreenSettingsRepository.setEnabled(item.key, it) },
                             onTabGroupChange = { MetaScreenSettingsRepository.setTabGroup(item.key, it) },
                             dragHandleScope = this@ReorderableItem,
@@ -241,6 +246,7 @@ private fun MetaSectionRow(
     isTablet: Boolean,
     tabLayout: Boolean,
     groupCounts: Map<Int, Int>,
+    modifier: Modifier = Modifier,
     onEnabledChange: (Boolean) -> Unit,
     onTabGroupChange: (Int?) -> Unit,
     dragHandleScope: ReorderableCollectionItemScope,
@@ -250,7 +256,7 @@ private fun MetaSectionRow(
     val hapticFeedback = LocalHapticFeedback.current
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
     ) {
@@ -398,10 +404,11 @@ private fun TabGroupChip(
 private fun MetaEpisodeCardStyleSelector(
     isTablet: Boolean,
     selectedStyle: MetaEpisodeCardStyle,
+    modifier: Modifier = Modifier,
     onStyleSelected: (MetaEpisodeCardStyle) -> Unit,
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = if (isTablet) 20.dp else 16.dp, vertical = if (isTablet) 18.dp else 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -516,6 +523,22 @@ private val MetaScreenSectionKey.titleRes: StringResource
         MetaScreenSectionKey.COLLECTION -> Res.string.settings_meta_collection
         MetaScreenSectionKey.MORE_LIKE_THIS -> Res.string.settings_meta_more_like_this
     }
+
+private val MetaScreenSectionKey.settingsSearchAnchor: String
+    get() = SettingsScrollAnchor.searchKey(
+        when (this) {
+            MetaScreenSectionKey.ACTIONS -> "meta-actions"
+            MetaScreenSectionKey.OVERVIEW -> "meta-overview"
+            MetaScreenSectionKey.PRODUCTION -> "meta-production"
+            MetaScreenSectionKey.CAST -> "meta-cast"
+            MetaScreenSectionKey.COMMENTS -> "meta-comments"
+            MetaScreenSectionKey.TRAILERS -> "meta-trailers"
+            MetaScreenSectionKey.EPISODES -> "meta-episodes"
+            MetaScreenSectionKey.DETAILS -> "meta-details"
+            MetaScreenSectionKey.COLLECTION -> "meta-collection"
+            MetaScreenSectionKey.MORE_LIKE_THIS -> "meta-more-like-this"
+        },
+    )
 
 private val MetaScreenSectionKey.descriptionRes: StringResource
     get() = when (this) {

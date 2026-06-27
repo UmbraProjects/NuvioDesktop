@@ -84,6 +84,15 @@ internal object SimklSettingsRepository {
         persist(); publish()
     }
 
+    fun clearLocalState() {
+        state = state.copy(
+            lastLibraryActivitiesAt = null,
+            lastCwActivitiesAt = null,
+            lastCalendarActivitiesAt = null,
+        )
+        persist(); publish()
+    }
+
     fun setAsLibrarySource(enabled: Boolean) {
         state = state.copy(asLibrarySource = enabled)
         persist(); publish()

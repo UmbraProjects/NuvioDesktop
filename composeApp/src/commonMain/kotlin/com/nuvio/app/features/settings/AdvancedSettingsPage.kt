@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
@@ -35,6 +36,7 @@ internal fun LazyListScope.advancedSettingsContent(
                     description = stringResource(Res.string.settings_advanced_remember_last_profile_description),
                     checked = rememberLastProfileEnabled,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("remember-last-profile")),
                     onCheckedChange = ProfileRepository::setRememberLastProfileEnabled,
                 )
             }
@@ -56,6 +58,7 @@ internal fun LazyListScope.advancedSettingsContent(
                         stringResource(Res.string.settings_advanced_clear_cw_cache_subtitle)
                     },
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("clear-cw-cache")),
                     onClick = {
                         if (!cleared) {
                             ContinueWatchingEnrichmentCache.clearAll()

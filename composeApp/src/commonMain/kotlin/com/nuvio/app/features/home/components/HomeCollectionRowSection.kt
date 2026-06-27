@@ -45,6 +45,7 @@ fun HomeCollectionRowSection(
     animateGifs: Boolean = true,
     focusedItemIndex: Int? = null,
     onHoverItem: ((Int) -> Unit)? = null,
+    isKeyboardNavigation: Boolean = false,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
 ) {
     if (collection.folders.isEmpty()) return
@@ -58,6 +59,7 @@ fun HomeCollectionRowSection(
             animateGifs = animateGifs,
             focusedItemIndex = focusedItemIndex,
             onHoverItem = onHoverItem,
+            isKeyboardNavigation = isKeyboardNavigation,
             onFolderClick = onFolderClick,
         )
     } else {
@@ -70,6 +72,7 @@ fun HomeCollectionRowSection(
                 animateGifs = animateGifs,
                 focusedItemIndex = focusedItemIndex,
                 onHoverItem = onHoverItem,
+                isKeyboardNavigation = isKeyboardNavigation,
                 onFolderClick = onFolderClick,
             )
         }
@@ -85,6 +88,7 @@ private fun HomeCollectionRowSectionContent(
     animateGifs: Boolean,
     focusedItemIndex: Int?,
     onHoverItem: ((Int) -> Unit)?,
+    isKeyboardNavigation: Boolean,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)?,
 ) {
     val homeCatalogSettings by remember {
@@ -101,6 +105,7 @@ private fun HomeCollectionRowSectionContent(
         showHeaderAccent = !homeCatalogSettings.hideCatalogUnderline,
         focusedItemIndex = focusedItemIndex,
         onHoverItem = onHoverItem,
+        isKeyboardNavigation = isKeyboardNavigation,
         key = { folder -> "collection_${collection.id}_folder_${folder.id}" },
     ) { folder ->
         CollectionFolderCard(

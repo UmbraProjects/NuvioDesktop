@@ -59,6 +59,7 @@ object SearchRepository {
             activeJob?.cancel()
             lastRequestKey = null
             _uiState.value = SearchUiState(
+                query = normalizedQuery,
                 emptyStateReason = SearchEmptyStateReason.NoActiveAddons,
             )
             return
@@ -72,6 +73,7 @@ object SearchRepository {
             activeJob?.cancel()
             lastRequestKey = null
             _uiState.value = SearchUiState(
+                query = normalizedQuery,
                 emptyStateReason = SearchEmptyStateReason.NoSearchCatalogs,
             )
             return
@@ -88,11 +90,14 @@ object SearchRepository {
                 },
             )
         }
-        if (requestKey == lastRequestKey) return
+        if (lastRequestKey == requestKey) return
         lastRequestKey = requestKey
 
         activeJob?.cancel()
-        _uiState.value = SearchUiState(isLoading = true)
+        _uiState.value = SearchUiState(
+            query = normalizedQuery,
+            isLoading = true,
+        )
 
         activeJob = scope.launch {
             val resultChannel = Channel<IndexedSearchResult>(Channel.UNLIMITED)
@@ -132,6 +137,7 @@ object SearchRepository {
                     val sections = results.orderedSections()
                     if (sections.isNotEmpty()) {
                         _uiState.value = SearchUiState(
+                            query = normalizedQuery,
                             isLoading = true,
                             sections = sections,
                         )
@@ -148,6 +154,7 @@ object SearchRepository {
             val allFailed = completedResults.isNotEmpty() && completedResults.all { it.error != null }
 
             _uiState.value = SearchUiState(
+                query = normalizedQuery,
                 isLoading = false,
                 sections = sections,
                 emptyStateReason = when {

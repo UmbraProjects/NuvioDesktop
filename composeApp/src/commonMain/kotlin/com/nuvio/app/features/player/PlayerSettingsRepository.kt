@@ -104,6 +104,7 @@ data class PlayerSettingsUiState(
     val desktopBufferPreset: DesktopBufferPreset = DesktopBufferPreset.Balanced,
     val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Off,
     val desktopAnimeModeAutoEnabled: Boolean = false,
+    val desktopAnimeSvpEnabled: Boolean = false,
     val heroTvTrailerEnabled: Boolean = false,
     val heroTvTrailerDelaySeconds: Int = 5,
     val heroTvTrailerSoundEnabled: Boolean = false,
@@ -177,6 +178,7 @@ object PlayerSettingsRepository {
     private var desktopBufferPreset = DesktopBufferPreset.Balanced
     private var desktopAnimeMode = DesktopAnimeMode.Off
     private var desktopAnimeModeAutoEnabled = false
+    private var desktopAnimeSvpEnabled = false
     private var heroTvTrailerEnabled = false
     private var heroTvTrailerDelaySeconds = 5
     private var heroTvTrailerSoundEnabled = false
@@ -255,6 +257,7 @@ object PlayerSettingsRepository {
         desktopBufferPreset = DesktopBufferPreset.Balanced
         desktopAnimeMode = DesktopAnimeMode.Off
         desktopAnimeModeAutoEnabled = false
+        desktopAnimeSvpEnabled = false
         heroTvTrailerEnabled = false
         heroTvTrailerDelaySeconds = 5
         heroTvTrailerSoundEnabled = false
@@ -416,6 +419,7 @@ object PlayerSettingsRepository {
                 ?: DesktopAnimeMode.Off
             desktopAnimeModeAutoEnabled = PlayerSettingsStorage.loadDesktopAnimeModeAutoEnabled() ?: false
         }
+        desktopAnimeSvpEnabled = PlayerSettingsStorage.loadDesktopAnimeSvpEnabled() ?: false
         heroTvTrailerEnabled = PlayerSettingsStorage.loadHeroTvTrailerEnabled() ?: false
         heroTvTrailerDelaySeconds = PlayerSettingsStorage.loadHeroTvTrailerDelaySeconds()
             ?.let(::snapToHeroTvTrailerDelay) ?: 5
@@ -1016,6 +1020,7 @@ object PlayerSettingsRepository {
             desktopBufferPreset = desktopBufferPreset,
             desktopAnimeMode = desktopAnimeMode,
             desktopAnimeModeAutoEnabled = desktopAnimeModeAutoEnabled,
+            desktopAnimeSvpEnabled = desktopAnimeSvpEnabled,
             heroTvTrailerEnabled = heroTvTrailerEnabled,
             heroTvTrailerDelaySeconds = heroTvTrailerDelaySeconds,
             heroTvTrailerSoundEnabled = heroTvTrailerSoundEnabled,
@@ -1061,6 +1066,14 @@ object PlayerSettingsRepository {
         desktopAnimeModeAutoEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopAnimeModeAutoEnabled(enabled)
+    }
+
+    fun setDesktopAnimeSvpEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopAnimeSvpEnabled == enabled) return
+        desktopAnimeSvpEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopAnimeSvpEnabled(enabled)
     }
 
     fun setHeroTvTrailerEnabled(enabled: Boolean) {

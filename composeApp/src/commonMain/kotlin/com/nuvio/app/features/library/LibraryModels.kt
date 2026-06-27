@@ -16,6 +16,7 @@ data class LibraryItem(
     val logo: String? = null,
     val description: String? = null,
     val releaseInfo: String? = null,
+    val runtime: String? = null,
     val imdbRating: String? = null,
     val genres: List<String> = emptyList(),
     val posterShape: PosterShape = PosterShape.Poster,
@@ -59,6 +60,7 @@ fun MetaDetails.toLibraryItem(savedAtEpochMs: Long): LibraryItem =
         logo = logo,
         description = description,
         releaseInfo = releaseInfo,
+        runtime = runtime,
         imdbRating = imdbRating,
         genres = genres,
         posterShape = PosterShape.Poster,
@@ -76,6 +78,7 @@ fun MetaPreview.toLibraryItem(savedAtEpochMs: Long): LibraryItem =
         logo = logo,
         description = description,
         releaseInfo = releaseInfo,
+        runtime = runtime,
         imdbRating = imdbRating,
         genres = genres,
         posterShape = posterShape,
@@ -83,20 +86,24 @@ fun MetaPreview.toLibraryItem(savedAtEpochMs: Long): LibraryItem =
         savedAtEpochMs = savedAtEpochMs,
     )
 
-fun LibraryItem.toMetaPreview(): MetaPreview =
-    MetaPreview(
+fun LibraryItem.toMetaPreview(): MetaPreview {
+    val resolvedPoster = resolveLibraryPosterUrl(id = id, type = type, fallback = poster)
+    return MetaPreview(
         id = id,
         type = type,
         name = name,
-        poster = resolveLibraryPosterUrl(id = id, type = type, fallback = poster),
-        banner = banner,
-        logo = logo,
+        poster = resolvedPoster,
+        posterFallback = if (resolvedPoster != poster) poster else null,
+        banner = if (imdbId != null) "https://images.metahub.space/background/medium/$imdbId/img" else banner,
+        logo = if (imdbId != null) "https://images.metahub.space/logo/medium/$imdbId/img" else logo,
         posterShape = posterShape,
         description = description,
         releaseInfo = releaseInfo,
+        runtime = runtime,
         imdbRating = imdbRating,
         genres = genres,
     )
+}
 
 /**
  * Routes a library item's poster through the user's custom poster service when configured.

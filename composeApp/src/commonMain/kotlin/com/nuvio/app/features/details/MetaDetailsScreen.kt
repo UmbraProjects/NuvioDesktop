@@ -769,7 +769,7 @@ fun MetaDetailsScreen(
                 }
                 val listState = rememberLazyListState()
 
-                val tvModeEnabled = homeSettingsUiState.tvModeEnabled && isDesktop && !metaScreenSettingsUiState.tabLayout
+                val adaptiveHeroEnabled = homeSettingsUiState.adaptiveHeroEnabled && isDesktop && !metaScreenSettingsUiState.tabLayout
                 val detailsKeyboardNavigationEnabled = isDesktop && !metaScreenSettingsUiState.tabLayout
                 val tvFocus = rememberMetaDetailsTvFocusState()
                 val tvFocusRequester = remember { FocusRequester() }

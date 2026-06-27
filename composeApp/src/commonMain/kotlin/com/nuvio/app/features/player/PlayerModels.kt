@@ -43,6 +43,7 @@ data class PlayerLaunch(
     val videoId: String? = null,
     val parentMetaId: String,
     val parentMetaType: String,
+    val watchProgressSource: String? = null,
     val torrentInfoHash: String? = null,
     val torrentFileIdx: Int? = null,
     val torrentFilename: String? = null,

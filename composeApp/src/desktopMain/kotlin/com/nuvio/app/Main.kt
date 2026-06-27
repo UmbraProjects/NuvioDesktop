@@ -192,6 +192,11 @@ fun main() {
             }
         }
     }
+
+    // Allow a brief grace period for background coroutines (e.g., scrobble network requests
+    // triggered by UI teardown) to complete before hard-terminating the JVM.
+    Thread.sleep(400)
+    kotlin.system.exitProcess(0)
 }
 
 private fun configureDesktopChrome() {

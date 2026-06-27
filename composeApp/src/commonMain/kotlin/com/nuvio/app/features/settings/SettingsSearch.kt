@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,7 +51,7 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 internal sealed class SettingsSearchTarget {
-    data class Page(val page: SettingsPage) : SettingsSearchTarget()
+    data class Page(val page: SettingsPage, val anchor: String? = null) : SettingsSearchTarget()
     object Downloads : SettingsSearchTarget()
     object Collections : SettingsSearchTarget()
     object SwitchProfile : SettingsSearchTarget()
@@ -100,6 +101,7 @@ internal fun settingsSearchEntries(
     val playbackPage = stringResource(Res.string.compose_settings_page_playback)
     val streamsPage = stringResource(Res.string.compose_settings_page_streams)
     val integrationsPage = stringResource(Res.string.compose_settings_page_integrations)
+    val debridPage = stringResource(Res.string.compose_settings_page_debrid)
     val notificationsPage = stringResource(Res.string.compose_settings_page_notifications)
     val supportersPage = stringResource(Res.string.compose_settings_page_supporters_contributors)
     val licensesPage = stringResource(Res.string.compose_settings_page_licenses_attributions)
@@ -112,6 +114,7 @@ internal fun settingsSearchEntries(
     val collectionsPage = stringResource(Res.string.collections_header)
     val tmdbPage = stringResource(Res.string.compose_settings_page_tmdb_enrichment)
     val mdbListPage = stringResource(Res.string.compose_settings_page_mdblist_ratings)
+    val simklPage = stringResource(Res.string.compose_settings_page_simkl)
 
     val entries = mutableListOf<SettingsSearchEntry>()
 
@@ -165,6 +168,7 @@ internal fun settingsSearchEntries(
         section: String,
         category: String = generalCategory,
         icon: ImageVector,
+        anchor: String? = null,
     ) {
         add(
             key = key,
@@ -174,7 +178,7 @@ internal fun settingsSearchEntries(
             section = section,
             category = category,
             icon = icon,
-            target = SettingsSearchTarget.Page(page),
+            target = SettingsSearchTarget.Page(page, anchor ?: SettingsScrollAnchor.searchKey(key)),
         )
     }
 
@@ -538,9 +542,58 @@ internal fun settingsSearchEntries(
             ),
             PlaybackSearchRow("hold-speed", stringResource(Res.string.settings_playback_hold_speed)),
             if (isDesktop) PlaybackSearchRow(
+                "default-speed",
+                stringResource(Res.string.settings_playback_default_speed),
+                anchor = SettingsScrollAnchor.DefaultSpeed,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "mouse-move",
+                stringResource(Res.string.settings_playback_mouse_move_reveals_controls),
+                stringResource(Res.string.settings_playback_mouse_move_reveals_controls_description),
+                anchor = SettingsScrollAnchor.MouseMove,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "desktop-hdr",
+                stringResource(Res.string.settings_playback_desktop_hdr_mode),
+                anchor = SettingsScrollAnchor.HdrMode,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "desktop-color-profile",
+                stringResource(Res.string.settings_playback_desktop_color_profile),
+                anchor = SettingsScrollAnchor.ColorProfile,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "desktop-buffer-preset",
+                stringResource(Res.string.settings_playback_desktop_buffer_preset),
+                anchor = SettingsScrollAnchor.BufferPreset,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "desktop-anime-mode",
+                stringResource(Res.string.settings_playback_desktop_anime_mode),
+                anchor = SettingsScrollAnchor.AnimeEnhancements,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
                 "hero-tv-trailer",
                 stringResource(Res.string.settings_playback_hero_tv_trailer),
                 stringResource(Res.string.settings_playback_hero_tv_trailer_description),
+                anchor = SettingsScrollAnchor.AutoPlayTrailer,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "hero-tv-trailer-sound",
+                stringResource(Res.string.settings_playback_hero_tv_trailer_sound),
+                stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description),
+                anchor = SettingsScrollAnchor.TrailerSound,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "hero-tv-trailer-fullscreen",
+                stringResource(Res.string.settings_playback_hero_tv_trailer_fullscreen),
+                stringResource(Res.string.settings_playback_hero_tv_trailer_fullscreen_description),
+                anchor = SettingsScrollAnchor.TrailerFullscreen,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "nvidia-rtx-hdr",
+                stringResource(Res.string.settings_playback_nvidia_rtx_hdr),
+                anchor = SettingsScrollAnchor.RtxHdr,
             ) else null,
         ),
     )
@@ -591,9 +644,9 @@ internal fun settingsSearchEntries(
             section = playbackDecoder,
             icon = Icons.Rounded.PlayArrow,
             rows = listOf(
-                PlaybackSearchRow("decoder-priority", stringResource(Res.string.settings_playback_decoder_priority)),
-                PlaybackSearchRow("dv7-hevc", stringResource(Res.string.settings_playback_map_dv7_to_hevc), stringResource(Res.string.settings_playback_map_dv7_to_hevc_description)),
-                PlaybackSearchRow("tunneled-playback", stringResource(Res.string.settings_playback_tunneled_playback), stringResource(Res.string.settings_playback_tunneled_playback_description)),
+            PlaybackSearchRow("decoder-priority", stringResource(Res.string.settings_playback_decoder_priority)),
+            PlaybackSearchRow("dv7-hevc", stringResource(Res.string.settings_playback_map_dv7_to_hevc), stringResource(Res.string.settings_playback_map_dv7_to_hevc_description)),
+            PlaybackSearchRow("tunneled-playback", stringResource(Res.string.settings_playback_tunneled_playback), stringResource(Res.string.settings_playback_tunneled_playback_description)),
             ),
         )
         addPlaybackRows(
@@ -626,7 +679,7 @@ internal fun settingsSearchEntries(
         section = playbackNextEpisode,
         icon = Icons.Rounded.PlayArrow,
         rows = listOf(
-            PlaybackSearchRow("auto-play-next", stringResource(Res.string.settings_playback_auto_play_next_episode), stringResource(Res.string.settings_playback_auto_play_next_episode_description)),
+            PlaybackSearchRow("auto-play-next", stringResource(Res.string.settings_playback_auto_play_next_episode), stringResource(Res.string.settings_playback_auto_play_next_episode_description), anchor = SettingsScrollAnchor.BingeMode),
             PlaybackSearchRow("prefer-binge", stringResource(Res.string.settings_playback_prefer_binge_group), stringResource(Res.string.settings_playback_prefer_binge_group_description)),
             PlaybackSearchRow("threshold-mode", stringResource(Res.string.settings_playback_threshold_mode)),
             PlaybackSearchRow("threshold-percent", stringResource(Res.string.settings_playback_threshold_percentage), stringResource(Res.string.settings_playback_threshold_percentage_description)),
@@ -692,9 +745,9 @@ internal fun settingsSearchEntries(
         PlaybackSearchRow("home-hero", stringResource(Res.string.settings_homescreen_show_hero), stringResource(Res.string.settings_homescreen_show_hero_description)),
         PlaybackSearchRow("home-hide-unreleased", stringResource(Res.string.layout_hide_unreleased), stringResource(Res.string.layout_hide_unreleased_sub)),
         PlaybackSearchRow("home-hide-catalog-underline", stringResource(Res.string.settings_homescreen_hide_catalog_underline), stringResource(Res.string.settings_homescreen_hide_catalog_underline_description)),
-        PlaybackSearchRow("home-adaptive-hero", stringResource(Res.string.settings_homescreen_tv_mode), stringResource(Res.string.settings_homescreen_tv_mode_description)),
-        PlaybackSearchRow("home-hero-ambient", stringResource(Res.string.settings_homescreen_hero_ambient_background), stringResource(Res.string.settings_homescreen_hero_ambient_background_description)),
-        PlaybackSearchRow("home-tv-mode", stringResource(Res.string.settings_homescreen_immersive_catalog_mode), stringResource(Res.string.settings_homescreen_immersive_catalog_mode_description)),
+        PlaybackSearchRow("home-adaptive-hero", stringResource(Res.string.settings_homescreen_adaptive_hero), stringResource(Res.string.settings_homescreen_adaptive_hero_description), anchor = SettingsScrollAnchor.AdaptiveHero),
+        PlaybackSearchRow("home-hero-ambient", stringResource(Res.string.settings_homescreen_hero_ambient_background), stringResource(Res.string.settings_homescreen_hero_ambient_background_description), anchor = SettingsScrollAnchor.HeroAmbient),
+        PlaybackSearchRow("home-tv-mode", stringResource(Res.string.settings_homescreen_tv_mode), stringResource(Res.string.settings_homescreen_tv_mode_description), anchor = SettingsScrollAnchor.TvMode),
         PlaybackSearchRow("home-hero-sources", stringResource(Res.string.settings_homescreen_section_hero_sources)),
         PlaybackSearchRow("home-catalogs", stringResource(Res.string.settings_homescreen_section_catalogs)),
     ).forEach { row ->
@@ -706,6 +759,7 @@ internal fun settingsSearchEntries(
             pageLabel = homeLayoutPage,
             section = homeLayoutSection,
             icon = Icons.Rounded.Home,
+            anchor = row.anchor,
         )
     }
 
@@ -764,10 +818,19 @@ internal fun settingsSearchEntries(
         description = stringResource(Res.string.settings_integrations_mdblist_description),
         icon = Icons.Rounded.Link,
     )
+    addPage(
+        page = SettingsPage.Debrid,
+        key = "debrid",
+        title = debridPage,
+        description = stringResource(Res.string.settings_integrations_debrid_description),
+        icon = Icons.Rounded.CloudDownload,
+    )
     val tmdbModulesSection = stringResource(Res.string.settings_tmdb_section_modules)
     listOf(
         PlaybackSearchRow("tmdb-enable", stringResource(Res.string.settings_tmdb_enable_enrichment), stringResource(Res.string.settings_tmdb_enable_enrichment_description), stringResource(Res.string.settings_tmdb_section_title)),
         PlaybackSearchRow("tmdb-api-key", stringResource(Res.string.settings_tmdb_personal_api_key), "", stringResource(Res.string.settings_tmdb_section_credentials)),
+        PlaybackSearchRow("tvdb-api-key", stringResource(Res.string.settings_licenses_attributions_tvdb_title), stringResource(Res.string.settings_licenses_attributions_tvdb_body), stringResource(Res.string.settings_tmdb_section_credentials), anchor = SettingsScrollAnchor.TvdbApiKey),
+        PlaybackSearchRow("tmdb-hero-images", "Hero backdrop & logo", "Choose addon artwork, TMDB artwork, or TVDB artwork for TV and anime.", "HERO BACKDROP & LOGO", anchor = SettingsScrollAnchor.TmdbHeroImages),
         PlaybackSearchRow("tmdb-language", stringResource(Res.string.settings_tmdb_preferred_language), stringResource(Res.string.settings_tmdb_preferred_language_description), stringResource(Res.string.settings_tmdb_section_localization)),
         PlaybackSearchRow("tmdb-trailers", stringResource(Res.string.settings_tmdb_module_trailers), stringResource(Res.string.settings_tmdb_module_trailers_description), tmdbModulesSection),
         PlaybackSearchRow("tmdb-artwork", stringResource(Res.string.settings_tmdb_module_artwork), stringResource(Res.string.settings_tmdb_module_artwork_description), tmdbModulesSection),
@@ -811,6 +874,29 @@ internal fun settingsSearchEntries(
             pageLabel = mdbListPage,
             section = row.sectionOverride ?: stringResource(Res.string.settings_mdb_section_title),
             icon = Icons.Rounded.Link,
+        )
+    }
+
+    listOf(
+        PlaybackSearchRow("debrid-cloud-library", stringResource(Res.string.settings_debrid_cloud_library), stringResource(Res.string.settings_debrid_cloud_library_description), stringResource(Res.string.settings_debrid_section_title)),
+        PlaybackSearchRow("debrid-enable", stringResource(Res.string.settings_debrid_enable), stringResource(Res.string.settings_debrid_enable_description), stringResource(Res.string.settings_debrid_section_title)),
+        PlaybackSearchRow("debrid-resolve-with", stringResource(Res.string.settings_debrid_resolve_with), stringResource(Res.string.settings_debrid_resolve_with_description), stringResource(Res.string.settings_debrid_section_title)),
+        PlaybackSearchRow("debrid-accounts", stringResource(Res.string.settings_debrid_section_providers), stringResource(Res.string.settings_integrations_debrid_description), stringResource(Res.string.settings_debrid_section_providers)),
+        PlaybackSearchRow("debrid-prepare", stringResource(Res.string.settings_debrid_prepare_instant_playback), stringResource(Res.string.settings_debrid_prepare_instant_playback_description), stringResource(Res.string.settings_debrid_section_instant_playback)),
+        PlaybackSearchRow("debrid-result-limit", stringResource(Res.string.settings_debrid_max_results), stringResource(Res.string.settings_debrid_max_results_desc), stringResource(Res.string.settings_debrid_section_result_management)),
+        PlaybackSearchRow("debrid-sort", stringResource(Res.string.settings_debrid_sort_results), stringResource(Res.string.settings_debrid_sort_results_desc), stringResource(Res.string.settings_debrid_section_result_management)),
+        PlaybackSearchRow("debrid-size", stringResource(Res.string.settings_debrid_size_range), stringResource(Res.string.settings_debrid_size_range_desc), stringResource(Res.string.settings_debrid_section_result_management)),
+        PlaybackSearchRow("debrid-template-name", stringResource(Res.string.settings_debrid_name_template), stringResource(Res.string.settings_debrid_name_template_description), stringResource(Res.string.settings_debrid_section_formatting)),
+        PlaybackSearchRow("debrid-template-description", stringResource(Res.string.settings_debrid_description_template), stringResource(Res.string.settings_debrid_description_template_description), stringResource(Res.string.settings_debrid_section_formatting)),
+    ).forEach { row ->
+        addRow(
+            page = SettingsPage.Debrid,
+            key = row.key,
+            title = row.title,
+            description = row.description,
+            pageLabel = debridPage,
+            section = row.sectionOverride ?: debridPage,
+            icon = Icons.Rounded.CloudDownload,
         )
     }
 
@@ -864,6 +950,34 @@ internal fun settingsSearchEntries(
         )
     }
 
+    addPage(
+        page = SettingsPage.SimklAuthentication,
+        key = "simkl",
+        title = simklPage,
+        description = stringResource(Res.string.settings_simkl_description),
+        category = accountCategory,
+        icon = Icons.Rounded.Link,
+    )
+    listOf(
+        PlaybackSearchRow("simkl-client-id", stringResource(Res.string.settings_simkl_client_id), stringResource(Res.string.settings_simkl_credentials_description), stringResource(Res.string.settings_simkl_section_credentials)),
+        PlaybackSearchRow("simkl-connect", stringResource(Res.string.settings_simkl_connect), stringResource(Res.string.settings_simkl_description), stringResource(Res.string.settings_simkl_section_auth)),
+        PlaybackSearchRow("simkl-library-source", stringResource(Res.string.settings_simkl_library_source), stringResource(Res.string.settings_simkl_library_source_desc), stringResource(Res.string.settings_simkl_section_sources)),
+        PlaybackSearchRow("simkl-continue-watching", stringResource(Res.string.settings_simkl_cw_source), stringResource(Res.string.settings_simkl_cw_source_desc), stringResource(Res.string.settings_simkl_section_sources)),
+        PlaybackSearchRow("simkl-continue-watching-window", stringResource(Res.string.settings_simkl_cw_window), stringResource(Res.string.settings_simkl_cw_window_subtitle), stringResource(Res.string.settings_simkl_section_sources)),
+        PlaybackSearchRow("simkl-calendar", stringResource(Res.string.settings_simkl_calendar_source), stringResource(Res.string.settings_simkl_calendar_source_desc), stringResource(Res.string.settings_simkl_section_sources)),
+    ).forEach { row ->
+        addRow(
+            page = SettingsPage.SimklAuthentication,
+            key = row.key,
+            title = row.title,
+            description = row.description,
+            pageLabel = simklPage,
+            section = row.sectionOverride ?: simklPage,
+            category = accountCategory,
+            icon = Icons.Rounded.Link,
+        )
+    }
+
     return entries
 }
 
@@ -872,6 +986,7 @@ private data class PlaybackSearchRow(
     val title: String,
     val description: String = "",
     val sectionOverride: String? = null,
+    val anchor: String? = null,
 )
 
 private fun addPlaybackRows(
@@ -884,6 +999,7 @@ private fun addPlaybackRows(
         section: String,
         category: String,
         icon: ImageVector,
+        anchor: String?,
     ) -> Unit,
     pageLabel: String,
     section: String,
@@ -900,6 +1016,7 @@ private fun addPlaybackRows(
             section,
             "",
             icon,
+            row.anchor,
         )
     }
 }
@@ -914,6 +1031,7 @@ private fun addContinueWatchingRows(
         section: String,
         category: String,
         icon: ImageVector,
+        anchor: String?,
     ) -> Unit,
     pageLabel: String,
     section: String,
@@ -930,6 +1048,7 @@ private fun addContinueWatchingRows(
             section,
             "",
             icon,
+            row.anchor,
         )
     }
 }
@@ -941,6 +1060,7 @@ internal fun LazyListScope.settingsSearchRootContent(
     showSearchField: Boolean,
     animateSearchField: Boolean,
     onQueryChange: (String) -> Unit,
+    onSearchFocusChange: (Boolean) -> Unit = {},
     onTargetClick: (SettingsSearchTarget) -> Unit,
 ) {
     // On desktop the search field is always present (no pull-to-reveal gesture, which is a
@@ -951,6 +1071,7 @@ internal fun LazyListScope.settingsSearchRootContent(
                 SettingsSearchField(
                     query = query,
                     onQueryChange = onQueryChange,
+                    onFocusChange = onSearchFocusChange,
                 )
             }
         }
@@ -1025,12 +1146,15 @@ private fun SettingsSearchRevealItem(
 private fun SettingsSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
+    onFocusChange: (Boolean) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { onFocusChange(it.isFocused) },
         singleLine = true,
         shape = tokens.shapes.compactCard,
         leadingIcon = {

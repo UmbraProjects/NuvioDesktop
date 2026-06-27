@@ -445,7 +445,7 @@ fun SearchScreen(
                 val normalizedQuery = query.trim()
                 val isWaitingForSearch = normalizedQuery.isNotBlank() && lastRequestedQuery != normalizedQuery
                 when {
-                    isWaitingForSearch -> {
+                    isWaitingForSearch && uiState.sections.isEmpty() -> {
                         items(2) {
                             HomeSkeletonRow(
                                 modifier = Modifier.padding(horizontal = homeSectionPadding),

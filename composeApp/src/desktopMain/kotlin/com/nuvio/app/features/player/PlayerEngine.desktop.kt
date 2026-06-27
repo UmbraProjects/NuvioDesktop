@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.player.desktop.DesktopAnimeShaders
+import com.nuvio.app.features.player.desktop.DesktopAnimeSvp
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.DesktopPlayerLaunchShield
 import com.nuvio.app.features.player.desktop.NativePlayerController
@@ -204,6 +205,9 @@ private fun NativePlayerSurface(
                 KeyEvent.VK_F10 -> {
                     controller.cycleDesktopAnimeMode()
                 }
+                KeyEvent.VK_F7 -> {
+                    controller.cycleDesktopAnimeSvpMode()
+                }
                 KeyEvent.VK_TAB -> {
                     // Tab skips the intro/outro, but only while the skip prompt is on screen;
                     // otherwise let Tab keep its normal behavior.
@@ -321,6 +325,7 @@ private fun NativePlayerSurface(
                     controller = controller,
                     mode = settings.desktopAnimeMode,
                     autoEnabled = settings.desktopAnimeModeAutoEnabled,
+                    animeSvpEnabled = settings.desktopAnimeSvpEnabled,
                     isAnime = isAnimeContent,
                     isHdr = isHdr == true,
                     nvidiaRtxSuperResolutionEnabled = settings.nvidiaRtxSuperResolutionEnabled,
@@ -423,6 +428,7 @@ private fun applyDesktopAnimeProfile(
     controller: NativePlayerController,
     mode: DesktopAnimeMode,
     autoEnabled: Boolean,
+    animeSvpEnabled: Boolean,
     isAnime: Boolean,
     isHdr: Boolean,
     nvidiaRtxSuperResolutionEnabled: Boolean = false,
@@ -457,10 +463,28 @@ private fun applyDesktopAnimeProfile(
         }
     }
 
+    // If Anime4k is forced via F10 (effectivePreset != null) OR if it's auto-detected (isAnime),
+    // we consider this video to be Anime for the purposes of SVP interpolation.
+    val isEffectivelyAnime = isAnime || effectivePreset != null
+
+    val svpFilter = if (isEffectivelyAnime && animeSvpEnabled) {
+        DesktopAnimeSvp.vapoursynthArgument()
+    } else null
+
     if (effectivePreset == null) {
         // Restore the bridge's baseline live-action rendering (see startMpv in player_bridge.cpp).
         controller.setMpvProperty("glsl-shaders", "")
-        controller.setMpvProperty("vf", baselineVf)
+        
+        // Restore the standard D3D11VA hardware decoder so d3d11vpp (RTX features) works.
+        // However, if SVP is active, we MUST use a copy-back decoder for the CPU filter.
+        if (svpFilter != null) {
+            controller.setMpvProperty("hwdec", "d3d11va-copy")
+        } else {
+            controller.setMpvProperty("hwdec", "d3d11va")
+        }
+        
+        val finalVf = listOfNotNull(baselineVf.takeIf { it.isNotEmpty() }, svpFilter).joinToString(",")
+        controller.setMpvProperty("vf", finalVf)
         controller.setMpvProperty("scale", "spline36")
         controller.setMpvProperty("cscale", "lanczos")
         controller.setMpvProperty("scale-blur", "0.0")
@@ -482,14 +506,13 @@ private fun applyDesktopAnimeProfile(
 
     // hqdn3d temporal/spatial denoise (Kai's standard anime VF). Skipped on HDR to avoid the heavier
     // filter chain fighting the tonemap path, matching Kai's denoise removal for HDR anime.
-    if (isHdr) {
-        controller.setMpvProperty("vf", "")
-    } else {
-        controller.setMpvProperty(
-            "vf",
-            "@HQDN3D:lavfi=[hqdn3d=luma_spatial=5:chroma_spatial=5:luma_tmp=6:chroma_tmp=6]",
-        )
-    }
+    val hqdn3d = if (isHdr) "" else "@HQDN3D:lavfi=[hqdn3d=luma_spatial=5:chroma_spatial=5:luma_tmp=6:chroma_tmp=6]"
+    val finalVf = listOfNotNull(hqdn3d.takeIf { it.isNotEmpty() }, svpFilter).joinToString(",")
+
+    // When injecting CPU/software-based lavfi filters (hqdn3d, vapoursynth), we MUST dynamically switch
+    // the hardware decoder to a copy-back mode, otherwise FFmpeg fails to map the d3d11 surface to RAM.
+    controller.setMpvProperty("hwdec", "d3d11va-copy")
+    controller.setMpvProperty("vf", finalVf)
     controller.forceVideoRedraw()
 }
 

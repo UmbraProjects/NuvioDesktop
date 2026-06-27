@@ -26,6 +26,7 @@ object TmdbSettingsRepository {
     private var useCollections = true
     private var libraryPosterEnabled = false
     private var libraryPosterUrlTemplate = ""
+    private var heroImageSource = HeroImageSource.Addon
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -157,6 +158,15 @@ object TmdbSettingsRepository {
         TmdbSettingsStorage.saveLibraryPosterEnabled(value)
     }
 
+    fun setHeroImageSource(source: HeroImageSource) {
+        ensureLoaded()
+        if (heroImageSource == source) return
+        heroImageSource = source
+        publish()
+        TmdbSettingsStorage.saveHeroImageSource(source.name)
+        TmdbHeroImageService.clearCache()
+    }
+
     fun setLibraryPosterUrlTemplate(value: String) {
         ensureLoaded()
         val normalized = value.trim()
@@ -199,6 +209,9 @@ object TmdbSettingsRepository {
         libraryPosterUrlTemplate = TmdbSettingsStorage.loadLibraryPosterUrlTemplate()?.trim().orEmpty()
         libraryPosterEnabled = (TmdbSettingsStorage.loadLibraryPosterEnabled() ?: false) &&
             libraryPosterUrlTemplate.isNotBlank()
+        heroImageSource = TmdbSettingsStorage.loadHeroImageSource()
+            ?.let { name -> HeroImageSource.entries.firstOrNull { it.name == name } }
+            ?: HeroImageSource.Addon
         publish()
     }
 
@@ -220,6 +233,7 @@ object TmdbSettingsRepository {
             useCollections = useCollections,
             libraryPosterEnabled = libraryPosterEnabled,
             libraryPosterUrlTemplate = libraryPosterUrlTemplate,
+            heroImageSource = heroImageSource,
         )
     }
 }

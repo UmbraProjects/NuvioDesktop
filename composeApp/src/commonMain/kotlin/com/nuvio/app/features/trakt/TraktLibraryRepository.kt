@@ -788,8 +788,17 @@ object TraktLibraryRepository {
             logo = logo,
             description = media.overview,
             releaseInfo = media.year?.toString(),
+            runtime = media.runtime?.let { mins ->
+                val h = mins / 60
+                val m = mins % 60
+                if (h > 0) "${h}h ${m}m" else "${m}m"
+            },
             imdbRating = media.rating?.toString(),
-            genres = media.genres.orEmpty(),
+            genres = media.genres.orEmpty().map { genre ->
+                genre.split("-").joinToString(" ") { word ->
+                    word.replaceFirstChar { it.uppercaseChar() }
+                }
+            },
             traktRank = item.rank,
             imdbId = ids?.imdb?.takeIf { it.isNotBlank() },
             tmdbId = ids?.tmdb,
@@ -902,6 +911,7 @@ private data class TraktMediaDto(
     val overview: String? = null,
     val rating: Double? = null,
     val genres: List<String>? = null,
+    val runtime: Int? = null,
     val images: TraktImagesDto? = null,
 )
 

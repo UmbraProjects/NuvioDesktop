@@ -30,8 +30,10 @@ import com.nuvio.app.features.player.toStorageHexString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import java.util.concurrent.atomic.AtomicLong
 import javax.swing.SwingUtilities
 import kotlin.concurrent.Volatile
+import kotlin.concurrent.thread
 
 internal class NativePlayerController(
     private val host: NativePlayerHost,
@@ -43,6 +45,8 @@ internal class NativePlayerController(
     @Volatile
     private var handle: Long = 0L
     private val handleLock = Any()
+    private val nativeLifecycleLock = Any()
+    private val attachGeneration = AtomicLong(0L)
     @Volatile
     private var disposed = false
     @Volatile
@@ -87,6 +91,7 @@ internal class NativePlayerController(
             initialPositionMs = initialPositionMs.coerceAtLeast(0L),
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
             nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
+            animeSvpFilter = if (PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled) DesktopAnimeSvp.vapoursynthArgument() else null,
             onError = onError,
             controlsPageUrl = NativePlayerBridge.controlsPageUrl + controlsPageUrlSuffix,
         )
@@ -100,55 +105,82 @@ internal class NativePlayerController(
     private fun attachPending() {
         if (disposed) return
         val pending = pendingSource ?: return
+        val generation = attachGeneration.incrementAndGet()
         SwingUtilities.invokeLater {
             if (disposed || !host.isDisplayable) {
                 return@invokeLater
             }
-            disposePlayerHandle()
-            runCatching {
-                val hostViewPtr = AwtNativeViewResolver.resolveNativeViewPointer(host)
-                val newHandle = NativePlayerBridge.create(
-                    hostViewPtr = hostViewPtr,
-                    sourceUrl = pending.sourceUrl,
-                    sourceAudioUrl = pending.sourceAudioUrl,
-                    headerLines = pending.headerLines.toTypedArray(),
-                    playWhenReady = pending.playWhenReady,
-                    initialPositionMs = pending.initialPositionMs,
-                    controlsPageUrl = pending.controlsPageUrl,
-                    nvidiaRtxSuperResolutionEnabled = pending.nvidiaRtxSuperResolutionEnabled,
-                    nvidiaRtxHdrEnabled = pending.nvidiaRtxHdrEnabled,
-                    eventSink = eventSink,
-                )
-                if (newHandle == 0L) error("Native player did not return a handle.")
-                val keepHandle = synchronized(handleLock) {
-                    if (disposed) {
-                        false
-                    } else {
-                        handle = newHandle
-                        true
+            val hostViewPtr = AwtNativeViewResolver.resolveNativeViewPointer(host)
+            val previousHandle = takePlayerHandle()
+            keyboardPanelOpen = false
+            lastSentControlsStructureKey = null
+            thread(isDaemon = true, name = "Nuvio-Player-Attach") {
+                synchronized(nativeLifecycleLock) {
+                    if (previousHandle != 0L) {
+                        runCatching { NativePlayerBridge.dispose(previousHandle) }
                     }
-                }
-                if (!keepHandle) {
-                    // dispose() may run after this attach was queued but before native
-                    // creation completed. Never let that late player become ownerless.
-                    NativePlayerBridge.dispose(newHandle)
-                    return@runCatching
-                }
-                synchronized(pendingMpvProperties) {
-                    pendingMpvProperties.forEach { (key, value) ->
-                        NativePlayerBridge.setMpvProperty(handle, key, value)
+                    if (disposed || generation != attachGeneration.get()) {
+                        return@synchronized
                     }
+                    var newHandle = 0L
+                    val result = runCatching {
+                        newHandle = NativePlayerBridge.create(
+                            hostViewPtr = hostViewPtr,
+                            sourceUrl = pending.sourceUrl,
+                            sourceAudioUrl = pending.sourceAudioUrl,
+                            headerLines = pending.headerLines.toTypedArray(),
+                            playWhenReady = pending.playWhenReady,
+                            initialPositionMs = pending.initialPositionMs,
+                            controlsPageUrl = pending.controlsPageUrl,
+                            nvidiaRtxSuperResolutionEnabled = pending.nvidiaRtxSuperResolutionEnabled,
+                            nvidiaRtxHdrEnabled = pending.nvidiaRtxHdrEnabled,
+                            animeSvpFilter = pending.animeSvpFilter,
+                            eventSink = eventSink,
+                        )
+                        if (newHandle == 0L) error("Native player did not return a handle.")
+                    }
+                    result.onFailure { error ->
+                        if (!disposed && generation == attachGeneration.get()) {
+                            SwingUtilities.invokeLater {
+                                if (!disposed && generation == attachGeneration.get()) {
+                                    pending.onError(error.message)
+                                }
+                            }
+                        }
+                        return@synchronized
+                    }
+                    val keepHandle = synchronized(handleLock) {
+                        if (disposed || generation != attachGeneration.get()) {
+                            false
+                        } else {
+                            handle = newHandle
+                            true
+                        }
+                    }
+                    if (!keepHandle) {
+                        NativePlayerBridge.dispose(newHandle)
+                        return@synchronized
+                    }
+                    synchronized(pendingMpvProperties) {
+                        pendingMpvProperties.forEach { (key, value) ->
+                            NativePlayerBridge.setMpvProperty(newHandle, key, value)
+                        }
+                    }
+                    applyPendingSubtitleConfiguration(newHandle)
+                    if (pendingVideoRedraw) {
+                        pendingVideoRedraw = false
+                        NativePlayerBridge.forceVideoRedraw(newHandle)
+                    }
+                    updateControls(controlsState)
                 }
-                applyPendingSubtitleConfiguration(handle)
-                if (pendingVideoRedraw) {
-                    pendingVideoRedraw = false
-                    NativePlayerBridge.forceVideoRedraw(handle)
-                }
-                updateControls(controlsState)
-            }.onFailure { error -> if (!disposed) {
-                pending.onError(error.message)
-            } }
+            }
         }
+    }
+
+    private fun takePlayerHandle(): Long = synchronized(handleLock) {
+        val value = handle
+        handle = 0L
+        value
     }
 
     fun setControlCallbacks(
@@ -241,6 +273,13 @@ internal class NativePlayerController(
         val next = modes[(modes.indexOf(current) + 1) % modes.size]
         PlayerSettingsRepository.setDesktopAnimeMode(next)
         showPresetPill("Anime", next.label)
+    }
+
+    fun cycleDesktopAnimeSvpMode() {
+        val current = PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled
+        val next = !current
+        PlayerSettingsRepository.setDesktopAnimeSvpEnabled(next)
+        showPresetPill("Anime SVP", if (next) "On" else "Off")
     }
 
     /**
@@ -441,7 +480,9 @@ internal class NativePlayerController(
         keyboardPanelOpen = false
         lastSentControlsStructureKey = null
         if (current != 0L) {
-            runCatching { NativePlayerBridge.dispose(current) }
+            kotlin.concurrent.thread(isDaemon = true, name = "Nuvio-Player-Dispose") {
+                runCatching { NativePlayerBridge.dispose(current) }
+            }
         }
     }
 
@@ -678,6 +719,7 @@ private data class PendingSource(
     val initialPositionMs: Long,
     val nvidiaRtxSuperResolutionEnabled: Boolean,
     val nvidiaRtxHdrEnabled: Boolean,
+    val animeSvpFilter: String?,
     val onError: (String?) -> Unit,
     val controlsPageUrl: String,
 )

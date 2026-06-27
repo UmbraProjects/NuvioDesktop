@@ -114,7 +114,7 @@ fun CatalogScreen(
     var headerHeightPx by remember { mutableIntStateOf(0) }
     var observedOfflineState by remember { mutableStateOf(false) }
 
-    val tvModeEnabled = homeCatalogSettingsUiState.tvModeEnabled && isDesktop
+    val adaptiveHeroEnabled = homeCatalogSettingsUiState.adaptiveHeroEnabled && isDesktop
     val tvFocusRequester = remember { FocusRequester() }
     val tvCoroutineScope = rememberCoroutineScope()
     val mouseActivity = rememberMouseActivityState()
@@ -128,8 +128,8 @@ fun CatalogScreen(
         }
     }
 
-    LaunchedEffect(tvModeEnabled) {
-        if (tvModeEnabled) {
+    LaunchedEffect(adaptiveHeroEnabled) {
+        if (adaptiveHeroEnabled) {
             tvFocusRequester.requestFocus()
         }
     }
@@ -212,7 +212,7 @@ fun CatalogScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .then(
-                    if (tvModeEnabled) {
+                    if (adaptiveHeroEnabled) {
                         Modifier
                             .focusRequester(tvFocusRequester)
                             .focusable()
@@ -297,7 +297,7 @@ fun CatalogScreen(
                         key = { _, keyedItem -> keyedItem.lazyKey },
                     ) { index, keyedItem ->
                         val item = keyedItem.value
-                        NuvioShelfItemSlot(focused = tvModeEnabled && index == focusedItemIndex) {
+                        NuvioShelfItemSlot(focused = adaptiveHeroEnabled && index == focusedItemIndex) {
                             CatalogPosterTile(
                                 item = item,
                                 cornerRadiusDp = posterCardStyle.cornerRadiusDp,

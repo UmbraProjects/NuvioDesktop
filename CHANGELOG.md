@@ -1,4 +1,37 @@
+This is an absolutely massive update that integrates search and library into the same UI that your homepage uses, so it should feel like a complete experience. This is the largest update yet in terms of actual work. Hopefully you all enjoy it. I have a really cool idea planned for 1.7, that should enhance the hero even more. 
+
 # Changelog
+
+## 1.6.0 - 2026-06-25
+
+### Added
+
+- **Search as a home-mode screen** - the Search tab now uses the full TV Mode / Adaptive Hero layout instead of the previous flat list. A search field appears in the navigation bar when Search is active; results populate the hero carousel and catalog rows. The home page remains fully visible while the query field is empty - no content changes until a search is submitted. 
+- **Library as a home-mode screen** - the Library tab now uses the same TV Mode / Adaptive Hero layout as the home page.
+- **hero image source setting** (Settings → TMDB → Hero Backdrop & Logo). Three options:
+  - **Addon (default)** - images come from whatever your addons provide.
+  - **TMDB for everything** - backdrops and logos fetched directly from TMDB at original quality for all content. Requires a TMDB API key.
+  - **TMDB (movies) + TheTVDB (TV & anime)** - TMDB for movies, TheTVDB v4 for TV series and anime backdrops and clearlogos. Requires both a TMDB API key and a TheTVDB API key (obtainable free at thetvdb.com/api-information). TheTVDB images are selected using the same algorithm as AIOMetadata: language-neutral (`lang=null`) backdrops are preferred to avoid artwork with overlaid text.
+- **TheTVDB API key field** (Settings → TMDB → TheTVDB API Key) for the TMDB + TheTVDB image mode above.
+- **SVP (SmoothVideo Project) support for anime** - when SVP is active, frame interpolation is now applied to anime content alongside the existing Anime4K shader pipeline.
+
+### Improved
+
+- **Navigation bar** - redesigned as a compact frosted-glass pill with four equal icon-only quadrants (Home, Search, Library, Profile). Every quadrant is fully clickable with a clear active state. Activating Search crossfades the quadrants into an inline search field of the same shape and size, keeping the whole experience cohesive. The design feels more native to a PC/HTPC context than the previous mobile-style tab bar.
+- **Starring section** - actors who are also credited as creator or producer (e.g. Steve Carell in *The Office US*) are no longer incorrectly filtered from the cast list. Only people who appear exclusively in crew roles are hidden.
+- **Misc improvements** - various improvements across the board, I didn't keep a log of everything honestly.
+
+### Fixed
+
+- **Anime scrobbling** - watch progress and completion events for anime titles were not being reliably reported to Trakt and SIMKL. Improvements have been made, however SIMKL expects anime specific IDs while Trakt doesn't support them. You should use the IDs matched with the service that's most important to you until I can find a way to easily convert on the fly from Kitsu back to TVDB for example.
+- **Hotkeys not working in Library mode** - `C` (calendar), `H` (home), and other keyboard shortcuts were silently ignored because the content area never received keyboard focus when Library mode opened.
+- **Switching to Search scrolling the home page to the top** - the visible content and scroll position are now fully preserved when entering Search mode.
+- **Misc fixes** - switching tabs no longer changes any visible content until a search query produces results or the Library data is ready.
+
+### Attribution
+
+- Added **TheTVDB** to Settings → Licenses & Attribution. TheTVDB requires attribution for free-tier API access: *"This product uses the TVDB API but is not endorsed or certified by TVDB."*
+- Added **SIMKL** to Settings → Licenses & Attribution.
 
 ## 1.5.0 - 2026-06-23
 

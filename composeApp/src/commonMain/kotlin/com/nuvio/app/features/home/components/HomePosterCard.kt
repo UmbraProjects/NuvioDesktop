@@ -25,6 +25,7 @@ fun HomePosterCard(
     NuvioPosterCard(
         title = item.name,
         imageUrl = if (isLandscapeMode) (item.banner ?: item.poster) else item.poster,
+        fallbackImageUrl = item.posterFallback,
         modifier = modifier,
         shape = if (isLandscapeMode) NuvioPosterShape.Landscape else item.posterShape.toNuvioPosterShape(),
         basePosterWidthDpOverride = basePosterWidthDpOverride,

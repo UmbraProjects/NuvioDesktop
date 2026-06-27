@@ -16,11 +16,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.features.tmdb.HeroImageSource
 import com.nuvio.app.features.tmdb.TmdbSettings
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import com.nuvio.app.features.tvdb.TvdbSettingsRepository
 import com.nuvio.app.features.tmdb.normalizeLanguage
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_save
@@ -80,6 +83,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     checked = settings.enabled,
                     enabled = settings.hasApiKey,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-enable")),
                     onCheckedChange = TmdbSettingsRepository::setEnabled,
                 )
                 if (!settings.hasApiKey) {
@@ -102,6 +106,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                 TmdbApiKeyRow(
                     isTablet = isTablet,
                     value = settings.apiKey,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-api-key")),
                     onApiKeyCommitted = TmdbSettingsRepository::setApiKey,
                 )
             }
@@ -118,6 +123,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     isTablet = isTablet,
                     value = settings.language,
                     enabled = localizationEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-language")),
                     onLanguageCommitted = TmdbSettingsRepository::setLanguage,
                 )
             }
@@ -136,6 +142,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     description = stringResource(Res.string.settings_tmdb_module_trailers_description),
                     checked = settings.useTrailers,
                     enabled = enrichmentControlsEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-trailers")),
                     onCheckedChange = TmdbSettingsRepository::setUseTrailers,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -145,6 +152,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     description = stringResource(Res.string.settings_tmdb_module_artwork_description),
                     checked = settings.useArtwork,
                     enabled = enrichmentControlsEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-artwork")),
                     onCheckedChange = TmdbSettingsRepository::setUseArtwork,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -154,6 +162,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     description = stringResource(Res.string.settings_tmdb_module_basic_info_description),
                     checked = settings.useBasicInfo,
                     enabled = enrichmentControlsEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-basic-info")),
                     onCheckedChange = TmdbSettingsRepository::setUseBasicInfo,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -163,6 +172,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     description = stringResource(Res.string.settings_tmdb_module_details_description),
                     checked = settings.useDetails,
                     enabled = enrichmentControlsEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-details")),
                     onCheckedChange = TmdbSettingsRepository::setUseDetails,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -172,6 +182,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     description = stringResource(Res.string.settings_tmdb_module_credits_description),
                     checked = settings.useCredits,
                     enabled = enrichmentControlsEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-credits")),
                     onCheckedChange = TmdbSettingsRepository::setUseCredits,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -181,6 +192,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     description = stringResource(Res.string.settings_tmdb_module_production_companies_description),
                     checked = settings.useProductions,
                     enabled = enrichmentControlsEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-companies")),
                     onCheckedChange = TmdbSettingsRepository::setUseProductions,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -190,6 +202,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     description = stringResource(Res.string.settings_tmdb_module_networks_description),
                     checked = settings.useNetworks,
                     enabled = enrichmentControlsEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-networks")),
                     onCheckedChange = TmdbSettingsRepository::setUseNetworks,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -199,6 +212,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     description = stringResource(Res.string.settings_tmdb_module_episodes_description),
                     checked = settings.useEpisodes,
                     enabled = enrichmentControlsEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-episodes")),
                     onCheckedChange = TmdbSettingsRepository::setUseEpisodes,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -208,6 +222,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     description = stringResource(Res.string.settings_tmdb_module_season_posters_description),
                     checked = settings.useSeasonPosters,
                     enabled = enrichmentControlsEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-season-posters")),
                     onCheckedChange = TmdbSettingsRepository::setUseSeasonPosters,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -217,6 +232,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     description = stringResource(Res.string.settings_tmdb_module_more_like_this_description),
                     checked = settings.useMoreLikeThis,
                     enabled = enrichmentControlsEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-more-like-this")),
                     onCheckedChange = TmdbSettingsRepository::setUseMoreLikeThis,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -226,7 +242,71 @@ internal fun LazyListScope.tmdbSettingsContent(
                     description = stringResource(Res.string.settings_tmdb_module_collections_description),
                     checked = settings.useCollections,
                     enabled = enrichmentControlsEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-collections")),
                     onCheckedChange = TmdbSettingsRepository::setUseCollections,
+                )
+            }
+        }
+    }
+
+    item {
+        val tvdbSettingsUiState by TvdbSettingsRepository.uiState.collectAsStateWithLifecycle()
+        SettingsSection(
+            title = "HERO BACKDROP & LOGO",
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TmdbHeroImages),
+            ) {
+                SettingsSwitchRow(
+                    title = "Addon (default)",
+                    description = "Use whatever backdrop and logo your addons provide. " +
+                        "Quality depends on the search provider configured in your addons.",
+                    checked = settings.heroImageSource == HeroImageSource.Addon,
+                    isTablet = isTablet,
+                    onCheckedChange = { if (it) TmdbSettingsRepository.setHeroImageSource(HeroImageSource.Addon) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "TMDB for everything",
+                    description = "Fetch backdrop + logo from TMDB for all content. " +
+                        "Original quality. Requires a TMDB API key below.",
+                    checked = settings.heroImageSource == HeroImageSource.TmdbOnly,
+                    enabled = settings.hasApiKey,
+                    isTablet = isTablet,
+                    onCheckedChange = { if (it) TmdbSettingsRepository.setHeroImageSource(HeroImageSource.TmdbOnly) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "TMDB (movies) + TheTVDB (TV & anime)",
+                    description = "Best quality: TMDB backdrops for movies, TVDB for series " +
+                        "and anime. Requires both a TMDB API key and a TVDB API key below.",
+                    checked = settings.heroImageSource == HeroImageSource.TmdbMoviesTvdbShows,
+                    enabled = settings.hasApiKey && tvdbSettingsUiState.hasApiKey,
+                    isTablet = isTablet,
+                    onCheckedChange = { if (it) TmdbSettingsRepository.setHeroImageSource(HeroImageSource.TmdbMoviesTvdbShows) },
+                )
+                if (!settings.hasApiKey) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    TmdbInfoRow(isTablet = isTablet, text = "Add a TMDB API key below to use TMDB images.")
+                }
+            }
+        }
+    }
+
+    item {
+        val tvdbSettingsUiState by TvdbSettingsRepository.uiState.collectAsStateWithLifecycle()
+        SettingsSection(
+            title = "THETVDB API KEY",
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                TvdbApiKeyRow(
+                    isTablet = isTablet,
+                    value = tvdbSettingsUiState.apiKey,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TvdbApiKey),
+                    onKeyCommitted = TvdbSettingsRepository::setApiKey,
                 )
             }
         }
@@ -269,6 +349,7 @@ internal fun LazyListScope.tmdbSettingsContent(
 private fun TmdbApiKeyRow(
     isTablet: Boolean,
     value: String,
+    modifier: Modifier = Modifier,
     onApiKeyCommitted: (String) -> Unit,
 ) {
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
@@ -276,7 +357,7 @@ private fun TmdbApiKeyRow(
     var draft by rememberSaveable(value) { mutableStateOf(value) }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -315,6 +396,66 @@ private fun TmdbApiKeyRow(
                 enabled = normalizedDraft != value,
             ) {
                 Text(stringResource(Res.string.action_save))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TvdbApiKeyRow(
+    isTablet: Boolean,
+    value: String,
+    modifier: Modifier = Modifier,
+    onKeyCommitted: (String) -> Unit,
+) {
+    val horizontalPadding = if (isTablet) 20.dp else 16.dp
+    val verticalPadding = if (isTablet) 16.dp else 14.dp
+    var draft by rememberSaveable(value) { mutableStateOf(value) }
+    val normalizedDraft = draft.trim()
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "TheTVDB API key",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = "Get a free API key at thetvdb.com/api-information. " +
+                    "Required for the TMDB + TheTVDB backdrop mode.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = {
+                Text(
+                    text = "Paste your TVDB API key",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+            ),
+        )
+        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = { onKeyCommitted(normalizedDraft) },
+                enabled = normalizedDraft != value.trim(),
+            ) {
+                Text("Save")
             }
         }
     }
@@ -387,6 +528,7 @@ private fun TmdbLanguageRow(
     isTablet: Boolean,
     value: String,
     enabled: Boolean,
+    modifier: Modifier = Modifier,
     onLanguageCommitted: (String) -> Unit,
 ) {
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
@@ -395,7 +537,7 @@ private fun TmdbLanguageRow(
     val normalizedDraft = normalizeLanguage(draft)
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -471,6 +613,7 @@ private fun TmdbToggleRow(
     description: String,
     checked: Boolean,
     enabled: Boolean,
+    modifier: Modifier = Modifier,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     SettingsSwitchRow(
@@ -479,6 +622,7 @@ private fun TmdbToggleRow(
         checked = checked,
         enabled = enabled,
         isTablet = isTablet,
+        modifier = modifier,
         onCheckedChange = onCheckedChange,
     )
 }

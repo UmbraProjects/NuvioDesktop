@@ -47,8 +47,8 @@ import nuvio.composeapp.generated.resources.settings_homescreen_hide_catalog_und
 import nuvio.composeapp.generated.resources.settings_homescreen_hide_catalog_underline_description
 import nuvio.composeapp.generated.resources.settings_homescreen_hero_ambient_background
 import nuvio.composeapp.generated.resources.settings_homescreen_hero_ambient_background_description
-import nuvio.composeapp.generated.resources.settings_homescreen_immersive_catalog_mode
-import nuvio.composeapp.generated.resources.settings_homescreen_immersive_catalog_mode_description
+import nuvio.composeapp.generated.resources.settings_homescreen_adaptive_hero
+import nuvio.composeapp.generated.resources.settings_homescreen_adaptive_hero_description
 import nuvio.composeapp.generated.resources.settings_homescreen_keep_home_focused
 import nuvio.composeapp.generated.resources.settings_homescreen_limit_reached
 import nuvio.composeapp.generated.resources.settings_homescreen_no_sources_selected
@@ -75,9 +75,9 @@ internal fun LazyListScope.homescreenSettingsContent(
     heroEnabled: Boolean,
     hideUnreleasedContent: Boolean,
     hideCatalogUnderline: Boolean,
-    tvModeEnabled: Boolean = false,
+    adaptiveHeroEnabled: Boolean = false,
     heroAmbientBackgroundEnabled: Boolean = false,
-    immersiveCatalogModeEnabled: Boolean = false,
+    tvModeEnabled: Boolean = false,
     items: List<HomeCatalogSettingsItem>,
 ) {
     val selectedHeroSourceCount = items.count { it.heroSourceEnabled }
@@ -101,6 +101,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                     description = stringResource(Res.string.settings_homescreen_show_hero_description),
                     checked = heroEnabled,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("home-hero")),
                     onCheckedChange = HomeCatalogSettingsRepository::setHeroEnabled,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -109,6 +110,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                     description = stringResource(Res.string.layout_hide_unreleased_sub),
                     checked = hideUnreleasedContent,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("home-hide-unreleased")),
                     onCheckedChange = HomeCatalogSettingsRepository::setHideUnreleasedContent,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -117,37 +119,39 @@ internal fun LazyListScope.homescreenSettingsContent(
                     description = stringResource(Res.string.settings_homescreen_hide_catalog_underline_description),
                     checked = hideCatalogUnderline,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("home-hide-catalog-underline")),
                     onCheckedChange = HomeCatalogSettingsRepository::setHideCatalogUnderline,
                 )
                 if (isDesktop) {
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_homescreen_tv_mode),
-                        description = stringResource(Res.string.settings_homescreen_tv_mode_description),
-                        checked = tvModeEnabled,
+                        title = stringResource(Res.string.settings_homescreen_adaptive_hero),
+                        description = stringResource(Res.string.settings_homescreen_adaptive_hero_description),
+                        checked = adaptiveHeroEnabled,
+                        enabled = heroEnabled && !tvModeEnabled,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHero),
-                        onCheckedChange = HomeCatalogSettingsRepository::setTvModeEnabled,
+                        onCheckedChange = HomeCatalogSettingsRepository::setAdaptiveHeroEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_homescreen_hero_ambient_background),
                         description = stringResource(Res.string.settings_homescreen_hero_ambient_background_description),
                         checked = heroAmbientBackgroundEnabled,
-                        enabled = heroEnabled,
+                        enabled = heroEnabled && !tvModeEnabled,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HeroAmbient),
                         onCheckedChange = HomeCatalogSettingsRepository::setHeroAmbientBackgroundEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_homescreen_immersive_catalog_mode),
-                        description = stringResource(Res.string.settings_homescreen_immersive_catalog_mode_description),
-                        checked = immersiveCatalogModeEnabled,
+                        title = stringResource(Res.string.settings_homescreen_tv_mode),
+                        description = stringResource(Res.string.settings_homescreen_tv_mode_description),
+                        checked = tvModeEnabled,
                         enabled = heroEnabled,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TvMode),
-                        onCheckedChange = HomeCatalogSettingsRepository::setImmersiveCatalogModeEnabled,
+                        onCheckedChange = HomeCatalogSettingsRepository::setTvModeEnabled,
                     )
                 }
             }

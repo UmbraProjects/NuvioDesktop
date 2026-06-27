@@ -199,7 +199,6 @@ fun jpackageCompatibleVersion(version: String): String {
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinxSerialization)
@@ -209,12 +208,6 @@ val supabaseProps = Properties().apply {
     val propsFile = rootProject.file("local.properties")
     if (propsFile.exists()) propsFile.inputStream().use { load(it) }
 }
-val releaseStoreFile = supabaseProps.getProperty("NUVIO_RELEASE_STORE_FILE")?.takeIf { it.isNotBlank() }
-val releaseStorePassword = supabaseProps.getProperty("NUVIO_RELEASE_STORE_PASSWORD")?.takeIf { it.isNotBlank() }
-val releaseKeyAlias = supabaseProps.getProperty("NUVIO_RELEASE_KEY_ALIAS")?.takeIf { it.isNotBlank() }
-val releaseKeyPassword = supabaseProps.getProperty("NUVIO_RELEASE_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
-val releaseKeystore = releaseStoreFile?.let(rootProject::file)
-
 fun localOrEnvProperty(name: String): String? =
     (
         providers.gradleProperty(name).orNull
@@ -229,12 +222,6 @@ val macosNotaryAppleId = localOrEnvProperty("NUVIO_MACOS_NOTARY_APPLE_ID")
 val macosNotaryTeamId = localOrEnvProperty("NUVIO_MACOS_NOTARY_TEAM_ID")
 val macosNotaryPassword = localOrEnvProperty("NUVIO_MACOS_NOTARY_PASSWORD")
 
-val appVersionConfigFile = rootProject.file("iosApp/Configuration/Version.xcconfig")
-val releaseAppVersionName = readXcconfigValue(appVersionConfigFile, "MARKETING_VERSION")
-    ?: error("MARKETING_VERSION is missing from ${appVersionConfigFile.path}")
-val releaseAppVersionCode = readXcconfigValue(appVersionConfigFile, "CURRENT_PROJECT_VERSION")
-    ?.toIntOrNull()
-    ?: error("CURRENT_PROJECT_VERSION is missing or invalid in ${appVersionConfigFile.path}")
 val desktopVersionConfigFile = rootProject.file("composeApp/Configuration/DesktopVersion.properties")
 val desktopVersionProps = Properties().apply {
     if (desktopVersionConfigFile.exists()) {
@@ -260,22 +247,9 @@ val desktopReleaseVersionCode = (
     ?.takeIf { it.isNotBlank() }
     ?.toIntOrNull()
     ?: 1
+val releaseAppVersionName = desktopReleaseVersionName
+val releaseAppVersionCode = desktopReleaseVersionCode
 val desktopReleasePackageVersion = jpackageCompatibleVersion(desktopReleaseVersionName)
-val iosDistribution = (
-    providers.gradleProperty("nuvio.ios.distribution").orNull
-        ?: System.getenv("NUVIO_IOS_DISTRIBUTION")
-        ?: supabaseProps.getProperty("NUVIO_IOS_DISTRIBUTION")
-        ?: "appstore"
-    ).trim().lowercase()
-require(iosDistribution == "appstore" || iosDistribution == "full") {
-    "NUVIO_IOS_DISTRIBUTION must be 'appstore' or 'full'."
-}
-val iosDistributionSourceDir = if (iosDistribution == "full") {
-    "src/iosFull/kotlin"
-} else {
-    "src/iosAppStore/kotlin"
-}
-val iosFrameworkBundleId = "com.nuvio.media"
 val fullCommonSourceDir = project.file("src/fullCommonMain/kotlin")
 val fullPluginSourceDir = fullCommonSourceDir.resolve("com/nuvio/app/features/plugins")
 val generatedRuntimeConfigDir = layout.buildDirectory.dir("generated/runtime-config/kotlin")
@@ -669,12 +643,6 @@ tasks.withType<KotlinCompilationTask<*>>().configureEach {
 }
 
 kotlin {
-    androidTarget {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_11)
-        }
-    }
-
     jvm("desktop") {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
@@ -684,69 +652,10 @@ kotlin {
             )
         }
     }
-    
-    val iosTargets = listOf(
-        iosArm64(),
-        iosSimulatorArm64()
-    )
 
-    iosTargets.forEach { iosTarget ->
-        iosTarget.compilations.getByName("main") {
-            cinterops {
-                create("commoncrypto") {
-                    defFile(project.file("src/nativeInterop/cinterop/commoncrypto.def"))
-                    compilerOpts("-I${project.projectDir}/src/nativeInterop/cinterop")
-                }
-            }
-
-            if (iosDistribution == "full") {
-                defaultSourceSet.kotlin.srcDir(fullCommonSourceDir)
-            }
-            defaultSourceSet.kotlin.srcDir(project.file(iosDistributionSourceDir))
-            defaultSourceSet.dependencies {
-                implementation(libs.ktor.client.darwin)
-                if (iosDistribution == "full") {
-                    implementation(libs.quickjs.kt)
-                    implementation(libs.ksoup)
-                }
-            }
-        }
-
-        iosTarget.binaries.framework {
-            baseName = "ComposeApp"
-            isStatic = true
-            freeCompilerArgs += listOf("-Xbinary=bundleId=$iosFrameworkBundleId")
-        }
-    }
-    
     sourceSets {
         val commonMain by getting {
             kotlin.srcDir(generatedRuntimeConfigDir)
-        }
-        androidMain.dependencies {
-            implementation(libs.compose.uiToolingPreview)
-            implementation(libs.androidx.appcompat)
-            implementation(libs.androidx.activity.compose)
-            implementation(libs.androidx.core.splashscreen)
-            implementation(libs.androidx.work.runtime)
-            implementation(libs.coil.gif)
-            implementation("androidx.recyclerview:recyclerview:1.4.0")
-            implementation("com.squareup.okhttp3:okhttp:4.12.0")
-            implementation("com.google.code.gson:gson:2.11.0")
-            implementation("io.github.peerless2012:ass-media:0.4.0-beta01")
-            implementation(libs.ktor.client.android)
-            implementation(libs.androidx.media3.exoplayer.hls)
-            implementation(libs.androidx.media3.exoplayer.dash)
-            implementation(libs.androidx.media3.exoplayer.smoothstreaming)
-            implementation(libs.androidx.media3.exoplayer.rtsp)
-            implementation(libs.androidx.media3.datasource)
-            implementation(libs.androidx.media3.datasource.okhttp)
-            implementation(libs.androidx.media3.decoder)
-            implementation(libs.androidx.media3.session)
-            implementation(libs.androidx.media3.common)
-            implementation(libs.androidx.media3.container)
-            implementation(libs.androidx.media3.extractor)
-            implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("lib-*.aar"))))
         }
         val desktopMain by getting {
             kotlin.srcDir(fullPluginSourceDir)
@@ -845,94 +754,4 @@ compose.desktop {
     }
 }
 
-afterEvaluate {
-    dependencies {
-        add("fullImplementation", files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
-        add("fullImplementation", libs.ksoup)
-    }
-}
 
-configurations.matching { it.name == "iosMainImplementation" }.configureEach {
-    project.dependencies.add(name, libs.ktor.client.darwin)
-}
-
-dependencies {
-    coreLibraryDesugaring(libs.desugar.jdk.libs)
-    debugImplementation(libs.compose.uiTooling)
-}
-
-configurations.all {
-    exclude(group = "androidx.media3", module = "media3-exoplayer")
-    exclude(group = "androidx.media3", module = "media3-ui")
-}
-
-android {
-    namespace = "com.nuvio.app"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-
-    signingConfigs {
-        create("release") {
-            if (releaseKeystore != null && releaseStorePassword != null && releaseKeyAlias != null && releaseKeyPassword != null) {
-                storeFile = releaseKeystore
-                storePassword = releaseStorePassword
-                keyAlias = releaseKeyAlias
-                keyPassword = releaseKeyPassword
-            }
-        }
-    }
-
-    defaultConfig {
-        applicationId = "com.nuvio.app"
-        minSdk = libs.versions.android.minSdk.get().toInt()
-        targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = releaseAppVersionCode
-        versionName = releaseAppVersionName
-    }
-    flavorDimensions += "distribution"
-    productFlavors {
-        create("full") {
-            dimension = "distribution"
-        }
-        create("playstore") {
-            dimension = "distribution"
-        }
-    }
-    sourceSets.getByName("full") {
-        manifest.srcFile("src/androidFull/AndroidManifest.xml")
-        java.srcDir(fullCommonSourceDir)
-    }
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-        jniLibs {
-            useLegacyPackaging = true
-            pickFirsts += listOf(
-                "lib/*/libc++_shared.so",
-                "lib/*/libavcodec.so",
-                "lib/*/libavutil.so",
-                "lib/*/libswscale.so",
-                "lib/*/libswresample.so"
-            )
-        }
-    }
-    buildTypes {
-        getByName("release") {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
-            signingConfig = signingConfigs.getByName("release")
-            ndk {
-                debugSymbolLevel = "FULL"
-            }
-        }
-    }
-    compileOptions {
-        isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-}

@@ -2,6 +2,7 @@ package com.nuvio.app.features.simkl
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpRequestRaw
+import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.library.LibraryItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -11,6 +12,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
 
 data class SimklLibraryUiState(
@@ -88,6 +91,11 @@ internal object SimklLibraryRepository {
                 )
                 log.d { "SIMKL library: ${shows.size} shows, ${movies.size} movies, ${anime.size} anime" }
                 if (latestTs != null) SimklSettingsRepository.setLastLibraryActivitiesAt(latestTs)
+                // Enrich items with genres/description/runtime from the addon system in the
+                // background. Results update the uiState so poster row labels and the hero
+                // both reflect real metadata without requiring a detail-page visit first.
+                // Enrichment is NOT launched here — addons may not be loaded yet at this
+                // point. HomeScreen triggers enrichLibraryItems() once addons are ready.
             },
             onFailure = { error ->
                 log.w(error) { "SIMKL library fetch failed" }
@@ -133,14 +141,90 @@ internal object SimklLibraryRepository {
             ?.let { parseSimklTimestamp(it) }
             ?: System.currentTimeMillis()
 
+        val imdbId = ids.imdb?.takeIf { it.isNotBlank() }
+        val year = show?.year ?: movie?.year ?: anime?.year
+        // Baseline backdrop so there is always something to show before enrichment runs.
+        // enrichItems() calls fetchLightweightMeta which upgrades this to a TMDB-quality
+        // URL when AIOMetadata (or the TMDB fallback) responds.
+        val banner = imdbId?.let { "https://images.metahub.space/background/medium/$it/img" }
+
         return LibraryItem(
             id = contentId,
             type = type,
             name = title,
             poster = poster,
-            imdbId = ids.imdb,
+            banner = banner,
+            releaseInfo = year?.toString(),
+            imdbId = imdbId,
             tmdbId = ids.tmdb?.toIntOrNull(),
             savedAtEpochMs = savedAt,
         )
+    }
+
+    // Called from HomeScreen once addons are confirmed loaded, so findMetaManifests has
+    // something to query. Safe to call multiple times — lightweightMetaCache makes
+    // repeat calls for already-fetched items instant.
+    fun triggerEnrichment() {
+        val current = _uiState.value
+        if (current.allItems.isEmpty()) return
+        scope.launch { enrichItems(current.shows, current.movies, current.anime) }
+    }
+
+    // Fetches genres/description/runtime from the addon system for all library items and
+    // writes them back into uiState so poster row labels and the hero show real metadata.
+    // Limited to 3 concurrent requests; items already in the lightweight cache skip the
+    // network entirely so re-runs (e.g. after a restart) are instant.
+    private suspend fun enrichItems(
+        shows: List<LibraryItem>,
+        movies: List<LibraryItem>,
+        anime: List<LibraryItem>,
+    ) {
+        val all = shows + movies + anime
+        val sem = Semaphore(3)
+        val enriched = mutableMapOf<String, LibraryItem>()
+
+        all.map { item ->
+            scope.launch {
+                sem.withPermit {
+                    // preferTmdbImages = true so logos and backdrops come from TMDB/TVDB
+                    // rather than metahub.space (Fanart.tv) which serves lower-quality art.
+                    val meta = runCatching {
+                        MetaDetailsRepository.fetchLightweightMeta(
+                            item.type, item.id, preferTmdbImages = true,
+                        )
+                    }.getOrNull() ?: return@withPermit
+                    if (meta.genres.isEmpty() && meta.description == null && meta.runtime == null) return@withPermit
+                    enriched[item.id] = item.copy(
+                        genres = meta.genres.ifEmpty { item.genres },
+                        description = meta.description ?: item.description,
+                        releaseInfo = item.releaseInfo ?: meta.releaseInfo,
+                        runtime = item.runtime ?: meta.runtime,
+                        banner = run {
+                            val fetched = meta.background
+                            val existing = item.banner
+                            when {
+                                fetched?.contains("image.tmdb.org") == true -> fetched
+                                existing?.contains("image.tmdb.org") == true -> existing
+                                fetched != null && fetched.contains("images.metahub.space") != true -> fetched
+                                existing != null -> existing
+                                else -> fetched?.replace("/background/medium/", "/background/large/")
+                            }
+                        },
+                        // Prefer fetched logo (TMDB clearlogo) over existing (metahub/Fanart.tv).
+                        logo = meta.logo ?: item.logo,
+                    )
+                }
+            }
+        }.forEach { it.join() }
+
+        if (enriched.isEmpty()) return
+
+        fun List<LibraryItem>.applyEnrichment() = map { enriched[it.id] ?: it }
+        _uiState.value = _uiState.value.copy(
+            shows = shows.applyEnrichment(),
+            movies = movies.applyEnrichment(),
+            anime = anime.applyEnrichment(),
+        )
+        log.d { "SIMKL library: enriched ${enriched.size} / ${all.size} items with addon metadata" }
     }
 }

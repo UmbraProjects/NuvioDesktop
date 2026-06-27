@@ -173,4 +173,60 @@ class TmdbMetadataServiceTest {
         assertEquals(base.cast, result.cast)
         assertEquals(base.productionCompanies, result.productionCompanies)
     }
+
+    @Test
+    fun `applyEnrichment preserves addon cast order while adding tmdb cast details`() {
+        val base = MetaDetails(
+            id = "tt0386676",
+            type = "series",
+            name = "The Office",
+            cast = listOf(
+                MetaPerson(name = "Steve Carell"),
+                MetaPerson(name = "Rainn Wilson"),
+                MetaPerson(name = "John Krasinski"),
+                MetaPerson(name = "Jenna Fischer"),
+            ),
+        )
+        val enrichment = TmdbEnrichment(
+            localizedTitle = "The Office",
+            description = null,
+            genres = emptyList(),
+            backdrop = null,
+            logo = null,
+            poster = null,
+            people = listOf(
+                MetaPerson(name = "Rainn Wilson", role = "Dwight Schrute", photo = "rainn.jpg", tmdbId = 1),
+                MetaPerson(name = "John Krasinski", role = "Jim Halpert", photo = "john.jpg", tmdbId = 2),
+                MetaPerson(name = "Jenna Fischer", role = "Pam Beesly", photo = "jenna.jpg", tmdbId = 3),
+                MetaPerson(name = "Ed Helms", role = "Andy Bernard", photo = "ed.jpg", tmdbId = 4),
+                MetaPerson(name = "Steve Carell", role = "Michael Scott", photo = "steve.jpg", tmdbId = 5),
+            ),
+            director = emptyList(),
+            writer = emptyList(),
+            releaseInfo = null,
+            rating = null,
+            runtimeMinutes = null,
+            ageRating = null,
+            status = null,
+            countries = emptyList(),
+            language = null,
+            productionCompanies = emptyList(),
+            networks = emptyList(),
+        )
+
+        val result = TmdbMetadataService.applyEnrichment(
+            meta = base,
+            enrichment = enrichment,
+            episodeMap = emptyMap(),
+            settings = TmdbSettings(enabled = true),
+        )
+
+        assertEquals(
+            listOf("Steve Carell", "Rainn Wilson", "John Krasinski", "Jenna Fischer", "Ed Helms"),
+            result.cast.map { it.name },
+        )
+        assertEquals("Michael Scott", result.cast.first().role)
+        assertEquals("steve.jpg", result.cast.first().photo)
+        assertEquals(5, result.cast.first().tmdbId)
+    }
 }

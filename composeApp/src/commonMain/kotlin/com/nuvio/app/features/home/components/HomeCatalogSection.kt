@@ -28,6 +28,7 @@ fun HomeCatalogRowSection(
     basePosterWidthDpOverride: Int? = null,
     focusedItemIndex: Int? = null,
     onHoverItem: ((Int) -> Unit)? = null,
+    isKeyboardNavigation: Boolean = false,
     onViewAllClick: (() -> Unit)? = null,
     onLoadMore: (() -> Unit)? = null,
     isLoadingMore: Boolean = false,
@@ -44,6 +45,7 @@ fun HomeCatalogRowSection(
             basePosterWidthDpOverride = basePosterWidthDpOverride,
             focusedItemIndex = focusedItemIndex,
             onHoverItem = onHoverItem,
+            isKeyboardNavigation = isKeyboardNavigation,
             onViewAllClick = onViewAllClick,
             onLoadMore = onLoadMore,
             isLoadingMore = isLoadingMore,
@@ -64,6 +66,7 @@ fun HomeCatalogRowSection(
                 onViewAllClick = onViewAllClick,
                 onLoadMore = onLoadMore,
                 isLoadingMore = isLoadingMore,
+                isKeyboardNavigation = isKeyboardNavigation,
                 onPosterClick = onPosterClick,
                 onPosterLongClick = onPosterLongClick,
             )
@@ -84,6 +87,7 @@ private fun HomeCatalogRowSectionContent(
     onViewAllClick: (() -> Unit)?,
     onLoadMore: (() -> Unit)?,
     isLoadingMore: Boolean,
+    isKeyboardNavigation: Boolean,
     onPosterClick: ((MetaPreview) -> Unit)?,
     onPosterLongClick: ((MetaPreview) -> Unit)?,
 ) {
@@ -105,6 +109,7 @@ private fun HomeCatalogRowSectionContent(
         onViewAllClick = onViewAllClick,
         onLoadMore = onLoadMore,
         isLoadingMore = isLoadingMore,
+        isKeyboardNavigation = isKeyboardNavigation,
         viewAllPillSize = NuvioViewAllPillSize.Compact,
         key = { item -> item.stableKey() },
     ) { item ->

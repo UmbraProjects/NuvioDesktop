@@ -127,6 +127,7 @@ fun SettingsScreen(
     onNavigateToHome: (() -> Unit)? = null,
 ) {
     val homeKeyFocusRequester = remember { FocusRequester() }
+    var settingsSearchHasFocus by remember { mutableStateOf(false) }
     // H returns to the home tab. onKeyEvent (bubble phase) so settings text fields,
     // which consume their own keystrokes, are never disrupted.
     val homeKeyModifier = if (isDesktop && onNavigateToHome != null) {
@@ -134,7 +135,7 @@ fun SettingsScreen(
             .focusRequester(homeKeyFocusRequester)
             .focusable()
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.H) {
+                if (event.type == KeyEventType.KeyDown && event.key == Key.H && !settingsSearchHasFocus) {
                     onNavigateToHome(); true
                 } else {
                     false
@@ -340,9 +341,9 @@ fun SettingsScreen(
                 homescreenHeroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                 homescreenHideCatalogUnderline = homescreenSettingsUiState.hideCatalogUnderline,
-                homescreenTvModeEnabled = homescreenSettingsUiState.tvModeEnabled,
+                homescreenAdaptiveHeroEnabled = homescreenSettingsUiState.adaptiveHeroEnabled,
                 homescreenHeroAmbientBackgroundEnabled = homescreenSettingsUiState.heroAmbientBackgroundEnabled,
-                homescreenImmersiveCatalogModeEnabled = homescreenSettingsUiState.immersiveCatalogModeEnabled,
+                homescreenTvModeEnabled = homescreenSettingsUiState.tvModeEnabled,
                 homescreenItems = homescreenSettingsUiState.items,
                 metaScreenSettingsUiState = metaScreenSettingsUiState,
                 continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
@@ -353,6 +354,7 @@ fun SettingsScreen(
                 onLicensesAttributionsClick = onLicensesAttributionsClick,
                 onCheckForUpdatesClick = onCheckForUpdatesClick,
                 onCollectionsClick = onCollectionsClick,
+                onSettingsSearchFocusChange = { settingsSearchHasFocus = it },
             )
         } else {
             MobileSettingsScreen(
@@ -397,9 +399,9 @@ fun SettingsScreen(
                 homescreenHeroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                 homescreenHideCatalogUnderline = homescreenSettingsUiState.hideCatalogUnderline,
-                homescreenTvModeEnabled = homescreenSettingsUiState.tvModeEnabled,
+                homescreenAdaptiveHeroEnabled = homescreenSettingsUiState.adaptiveHeroEnabled,
                 homescreenHeroAmbientBackgroundEnabled = homescreenSettingsUiState.heroAmbientBackgroundEnabled,
-                homescreenImmersiveCatalogModeEnabled = homescreenSettingsUiState.immersiveCatalogModeEnabled,
+                homescreenTvModeEnabled = homescreenSettingsUiState.tvModeEnabled,
                 homescreenItems = homescreenSettingsUiState.items,
                 metaScreenSettingsUiState = metaScreenSettingsUiState,
                 continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
@@ -416,6 +418,7 @@ fun SettingsScreen(
                 onLicensesAttributionsClick = onLicensesAttributionsClick,
                 onCheckForUpdatesClick = onCheckForUpdatesClick,
                 onCollectionsClick = onCollectionsClick,
+                onSettingsSearchFocusChange = { settingsSearchHasFocus = it },
             )
         }
     }
@@ -464,9 +467,9 @@ private fun MobileSettingsScreen(
     homescreenHeroEnabled: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenHideCatalogUnderline: Boolean,
-    homescreenTvModeEnabled: Boolean,
+    homescreenAdaptiveHeroEnabled: Boolean,
     homescreenHeroAmbientBackgroundEnabled: Boolean,
-    homescreenImmersiveCatalogModeEnabled: Boolean,
+    homescreenTvModeEnabled: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
@@ -483,6 +486,7 @@ private fun MobileSettingsScreen(
     onLicensesAttributionsClick: () -> Unit = {},
     onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsClick: () -> Unit = {},
+    onSettingsSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     val saveableStateHolder = rememberSaveableStateHolder()
     saveableStateHolder.SaveableStateProvider(page.name) {
@@ -516,20 +520,23 @@ private fun MobileSettingsScreen(
 
         fun openSearchTarget(target: SettingsSearchTarget) {
             when (target) {
-                is SettingsSearchTarget.Page -> when (target.page) {
-                    SettingsPage.Account -> onAccountClick()
-                    SettingsPage.SupportersContributors -> onSupportersContributorsClick()
-                    SettingsPage.LicensesAttributions -> onLicensesAttributionsClick()
-                    SettingsPage.ContinueWatching -> onContinueWatchingClick()
-                    SettingsPage.Addons -> onAddonsClick()
-                    SettingsPage.Plugins -> {
-                        if (AppFeaturePolicy.pluginsEnabled) {
-                            onPluginsClick()
+                is SettingsSearchTarget.Page -> {
+                    target.anchor?.let(SettingsScrollAnchor::request)
+                    when (target.page) {
+                        SettingsPage.Account -> onAccountClick()
+                        SettingsPage.SupportersContributors -> onSupportersContributorsClick()
+                        SettingsPage.LicensesAttributions -> onLicensesAttributionsClick()
+                        SettingsPage.ContinueWatching -> onContinueWatchingClick()
+                        SettingsPage.Addons -> onAddonsClick()
+                        SettingsPage.Plugins -> {
+                            if (AppFeaturePolicy.pluginsEnabled) {
+                                onPluginsClick()
+                            }
                         }
+                        SettingsPage.Homescreen -> onHomescreenClick()
+                        SettingsPage.MetaScreen -> onMetaScreenClick()
+                        else -> onPageChange(target.page)
                     }
-                    SettingsPage.Homescreen -> onHomescreenClick()
-                    SettingsPage.MetaScreen -> onMetaScreenClick()
-                    else -> onPageChange(target.page)
                 }
                 SettingsSearchTarget.Downloads -> {
                     if (AppFeaturePolicy.downloadsEnabled) {
@@ -581,6 +588,7 @@ private fun MobileSettingsScreen(
                         showSearchField = rootSearchVisible,
                         animateSearchField = rootSearchRevealAnimating,
                         onQueryChange = { settingsSearchQuery = it },
+                        onSearchFocusChange = onSettingsSearchFocusChange,
                         onTargetClick = { openSearchTarget(it) },
                     )
                     if (settingsSearchQuery.isBlank()) {
@@ -627,6 +635,11 @@ private fun MobileSettingsScreen(
                         SettingsScrollAnchor.request(anchor)
                         SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                         onPageChange(SettingsPage.Playback)
+                    },
+                    onOpenTmdb = { anchor ->
+                        SettingsScrollAnchor.request(anchor)
+                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
+                        onPageChange(SettingsPage.TmdbEnrichment)
                     },
                     onOpenPosterCustomization = {
                         SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
@@ -720,9 +733,9 @@ private fun MobileSettingsScreen(
                     heroEnabled = homescreenHeroEnabled,
                     hideUnreleasedContent = homescreenHideUnreleasedContent,
                     hideCatalogUnderline = homescreenHideCatalogUnderline,
-                    tvModeEnabled = homescreenTvModeEnabled,
+                    adaptiveHeroEnabled = homescreenAdaptiveHeroEnabled,
                     heroAmbientBackgroundEnabled = homescreenHeroAmbientBackgroundEnabled,
-                    immersiveCatalogModeEnabled = homescreenImmersiveCatalogModeEnabled,
+                    tvModeEnabled = homescreenTvModeEnabled,
                     items = homescreenItems,
                 )
                 SettingsPage.MetaScreen -> metaScreenSettingsContent(
@@ -852,9 +865,9 @@ private fun TabletSettingsScreen(
     homescreenHeroEnabled: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenHideCatalogUnderline: Boolean,
-    homescreenTvModeEnabled: Boolean,
+    homescreenAdaptiveHeroEnabled: Boolean,
     homescreenHeroAmbientBackgroundEnabled: Boolean,
-    homescreenImmersiveCatalogModeEnabled: Boolean,
+    homescreenTvModeEnabled: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
@@ -865,6 +878,7 @@ private fun TabletSettingsScreen(
     onLicensesAttributionsClick: () -> Unit = {},
     onCheckForUpdatesClick: (() -> Unit)? = null,
     onCollectionsClick: () -> Unit = {},
+    onSettingsSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.General.name) }
     val activeCategory = SettingsCategory.valueOf(selectedCategory)
@@ -945,6 +959,7 @@ private fun TabletSettingsScreen(
                 when (target) {
                     is SettingsSearchTarget.Page -> {
                         if (target.page.isEnabledByFeaturePolicy()) {
+                            target.anchor?.let(SettingsScrollAnchor::request)
                             openInlinePage(target.page)
                         }
                     }
@@ -1026,6 +1041,7 @@ private fun TabletSettingsScreen(
                             showSearchField = rootSearchVisible,
                             animateSearchField = rootSearchRevealAnimating,
                             onQueryChange = { settingsSearchQuery = it },
+                            onSearchFocusChange = onSettingsSearchFocusChange,
                             onTargetClick = { openSearchTarget(it) },
                         )
                         if (settingsSearchQuery.isBlank()) {
@@ -1076,6 +1092,11 @@ private fun TabletSettingsScreen(
                             SettingsScrollAnchor.request(anchor)
                             SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                             openInlinePage(SettingsPage.Playback)
+                        },
+                        onOpenTmdb = { anchor ->
+                            SettingsScrollAnchor.request(anchor)
+                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
+                            openInlinePage(SettingsPage.TmdbEnrichment)
                         },
                         onOpenPosterCustomization = {
                             SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
@@ -1169,9 +1190,9 @@ private fun TabletSettingsScreen(
                         heroEnabled = homescreenHeroEnabled,
                         hideUnreleasedContent = homescreenHideUnreleasedContent,
                         hideCatalogUnderline = homescreenHideCatalogUnderline,
-                        tvModeEnabled = homescreenTvModeEnabled,
+                        adaptiveHeroEnabled = homescreenAdaptiveHeroEnabled,
                         heroAmbientBackgroundEnabled = homescreenHeroAmbientBackgroundEnabled,
-                        immersiveCatalogModeEnabled = homescreenImmersiveCatalogModeEnabled,
+                        tvModeEnabled = homescreenTvModeEnabled,
                         items = homescreenItems,
                     )
                     SettingsPage.MetaScreen -> metaScreenSettingsContent(

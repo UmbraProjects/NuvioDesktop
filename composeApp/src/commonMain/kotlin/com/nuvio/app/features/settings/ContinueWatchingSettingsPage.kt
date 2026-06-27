@@ -90,6 +90,7 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                     description = stringResource(Res.string.settings_continue_watching_show_description),
                     checked = isVisible,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-show-continue-watching")),
                     onCheckedChange = ContinueWatchingPreferencesRepository::setVisible,
                 )
             }
@@ -118,6 +119,7 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                     description = stringResource(Res.string.settings_continue_watching_use_episode_thumbnails_description),
                     checked = useEpisodeThumbnails,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-episode-thumbnails")),
                     onCheckedChange = ContinueWatchingPreferencesRepository::setUseEpisodeThumbnails,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -126,6 +128,7 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                     description = stringResource(Res.string.settings_continue_watching_up_next_description),
                     checked = upNextFromFurthestEpisode,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-up-next")),
                     onCheckedChange = ContinueWatchingPreferencesRepository::setUpNextFromFurthestEpisode,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -134,6 +137,7 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                     description = stringResource(Res.string.settings_continue_watching_show_unaired_next_up_description),
                     checked = showUnairedNextUp,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-unaired-next-up")),
                     onCheckedChange = ContinueWatchingPreferencesRepository::setShowUnairedNextUp,
                 )
                 if (useEpisodeThumbnails) {
@@ -143,6 +147,7 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                         description = stringResource(Res.string.settings_continue_watching_blur_next_up_description),
                         checked = blurNextUp,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-blur-next-up")),
                         onCheckedChange = ContinueWatchingPreferencesRepository::setBlurNextUp,
                     )
                 }
@@ -160,6 +165,7 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                     description = stringResource(Res.string.settings_continue_watching_resume_prompt_description),
                     checked = showResumePromptOnLaunch,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-resume-prompt")),
                     onCheckedChange = ContinueWatchingPreferencesRepository::setShowResumePromptOnLaunch,
                 )
             }

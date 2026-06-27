@@ -7,6 +7,10 @@ internal data class TraktExternalIds(
     val trakt: Int? = null,
     val imdb: String? = null,
     val tmdb: Int? = null,
+    val tvdb: Int? = null,
+    val mal: Int? = null,
+    val kitsu: Int? = null,
+    val anilist: Int? = null,
     val slug: String? = null,
 )
 
@@ -20,6 +24,22 @@ internal fun parseTraktContentIds(contentId: String?): TraktExternalIds {
 
     if (raw.startsWith("tmdb:", ignoreCase = true)) {
         return TraktExternalIds(tmdb = raw.substringAfter(':').toIntOrNull())
+    }
+
+    if (raw.startsWith("tvdb:", ignoreCase = true)) {
+        return TraktExternalIds(tvdb = raw.substringAfter(':').toIntOrNull())
+    }
+
+    if (raw.startsWith("mal:", ignoreCase = true)) {
+        return TraktExternalIds(mal = raw.substringAfter(':').toIntOrNull())
+    }
+
+    if (raw.startsWith("kitsu:", ignoreCase = true)) {
+        return TraktExternalIds(kitsu = raw.substringAfter(':').toIntOrNull())
+    }
+
+    if (raw.startsWith("al:", ignoreCase = true) || raw.startsWith("anilist:", ignoreCase = true)) {
+        return TraktExternalIds(anilist = raw.substringAfter(':').toIntOrNull())
     }
 
     if (raw.startsWith("trakt:", ignoreCase = true)) {
@@ -53,7 +73,7 @@ internal fun extractTraktYear(value: String?): Int? {
 }
 
 internal fun TraktExternalIds.hasAnyId(): Boolean =
-    trakt != null || !imdb.isNullOrBlank() || tmdb != null || !slug.isNullOrBlank()
+    trakt != null || !imdb.isNullOrBlank() || tmdb != null || tvdb != null || mal != null || kitsu != null || anilist != null || !slug.isNullOrBlank()
 
 /**
  * Returns true if the given contentId uses a Trakt-compatible prefix

@@ -77,7 +77,11 @@ internal fun LazyListScope.simklSettingsContent(
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
-                SimklCredentialsCard(isTablet = isTablet, settingsUiState = settingsUiState)
+                SimklCredentialsCard(
+                    isTablet = isTablet,
+                    settingsUiState = settingsUiState,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-client-id")),
+                )
             }
         }
     }
@@ -87,7 +91,10 @@ internal fun LazyListScope.simklSettingsContent(
             title = stringResource(Res.string.settings_simkl_section_auth),
             isTablet = isTablet,
         ) {
-            SettingsGroup(isTablet = isTablet) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-connect")),
+            ) {
                 SimklConnectionCard(isTablet = isTablet, uiState = uiState)
             }
         }
@@ -105,6 +112,7 @@ internal fun LazyListScope.simklSettingsContent(
                         description = stringResource(Res.string.settings_simkl_library_source_desc),
                         checked = settingsUiState.simklAsLibrarySource,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-library-source")),
                         onCheckedChange = SimklSettingsRepository::setAsLibrarySource,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
@@ -113,11 +121,16 @@ internal fun LazyListScope.simklSettingsContent(
                         description = stringResource(Res.string.settings_simkl_cw_source_desc),
                         checked = settingsUiState.simklAsCwSource,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-continue-watching")),
                         onCheckedChange = SimklSettingsRepository::setAsCwSource,
                     )
                     if (settingsUiState.simklAsCwSource) {
                         SettingsGroupDivider(isTablet = isTablet)
-                        SimklCwWindowRow(isTablet = isTablet, daysCap = settingsUiState.simklContinueWatchingDaysCap)
+                        SimklCwWindowRow(
+                            isTablet = isTablet,
+                            daysCap = settingsUiState.simklContinueWatchingDaysCap,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-continue-watching-window")),
+                        )
                     }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
@@ -125,6 +138,7 @@ internal fun LazyListScope.simklSettingsContent(
                         description = stringResource(Res.string.settings_simkl_calendar_source_desc),
                         checked = settingsUiState.simklAsCalendarSource,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-calendar")),
                         onCheckedChange = SimklSettingsRepository::setAsCalendarSource,
                     )
                 }
@@ -137,6 +151,7 @@ internal fun LazyListScope.simklSettingsContent(
 private fun SimklCredentialsCard(
     isTablet: Boolean,
     settingsUiState: SimklSettingsUiState,
+    modifier: Modifier = Modifier,
 ) {
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
     val verticalPadding = if (isTablet) 18.dp else 16.dp
@@ -148,7 +163,7 @@ private fun SimklCredentialsCard(
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -345,13 +360,18 @@ private fun simklCwWindowLabel(days: Int): String =
     else stringResource(Res.string.settings_simkl_cw_window_days, days)
 
 @Composable
-private fun SimklCwWindowRow(isTablet: Boolean, daysCap: Int) {
+private fun SimklCwWindowRow(
+    isTablet: Boolean,
+    daysCap: Int,
+    modifier: Modifier = Modifier,
+) {
     var showDialog by rememberSaveable { mutableStateOf(false) }
     val label = simklCwWindowLabel(daysCap)
     SettingsNavigationRow(
         title = stringResource(Res.string.settings_simkl_cw_window),
         description = "${stringResource(Res.string.settings_simkl_cw_window_subtitle)} $label",
         isTablet = isTablet,
+        modifier = modifier,
         onClick = { showDialog = true },
     )
     if (showDialog) {

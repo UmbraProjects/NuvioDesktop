@@ -113,6 +113,7 @@ internal fun LazyListScope.streamsSettingsContent(isTablet: Boolean) {
                     description = stringResource(Res.string.settings_stream_size_badges_description),
                     checked = currentSettings.showFileSizeBadges,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("stream-size-badges")),
                     onCheckedChange = StreamBadgeSettingsRepository::setShowFileSizeBadges,
                 )
                 SettingsNavigationRow(
@@ -120,6 +121,7 @@ internal fun LazyListScope.streamsSettingsContent(isTablet: Boolean) {
                     description = badgePlacementLabel,
                     icon = Icons.Rounded.Style,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("stream-badge-position")),
                     onClick = { showBadgePositionDialog = true },
                 )
                 SettingsNavigationRow(
@@ -127,6 +129,7 @@ internal fun LazyListScope.streamsSettingsContent(isTablet: Boolean) {
                     description = badgeRulesPreview(currentRules),
                     icon = Icons.Rounded.Style,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("stream-badge-urls")),
                     onClick = { showBadgeImportDialog = true },
                 )
             }
@@ -142,6 +145,7 @@ internal fun LazyListScope.streamsSettingsContent(isTablet: Boolean) {
                     description = stringResource(Res.string.settings_stream_addon_logo_description),
                     checked = currentSettings.showAddonLogo,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("stream-addon-logo")),
                     onCheckedChange = StreamBadgeSettingsRepository::setShowAddonLogo,
                 )
             }

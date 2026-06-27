@@ -18,6 +18,8 @@ data class MetaDetails(
     val imdbRating: String? = null,
     val ageRating: String? = null,
     val runtime: String? = null,
+    /** TVDB series ID provided by AIOMetadata in its meta responses as "_tvdbId". */
+    @kotlinx.serialization.SerialName("_tvdbId") val tvdbId: String? = null,
     val externalRatings: List<MetaExternalRating> = emptyList(),
     val genres: List<String> = emptyList(),
     val director: List<String> = emptyList(),

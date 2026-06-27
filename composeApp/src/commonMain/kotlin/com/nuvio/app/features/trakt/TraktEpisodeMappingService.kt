@@ -107,9 +107,9 @@ object TraktEpisodeMappingService {
                         getAddonEpisodes(contentId, "series")
                     }
                 }
-                val showLookupId = resolveShowLookupId(contentId, null)
-                if (showLookupId != null) {
-                    launch {
+                launch {
+                    val showLookupId = resolveShowLookupId(contentId, null)
+                    if (showLookupId != null) {
                         semaphore.withPermit {
                             getTraktEpisodes(showLookupId)
                         }
@@ -146,7 +146,7 @@ object TraktEpisodeMappingService {
             val resolvedContentId = contentId?.takeIf { it.isNotBlank() } ?: return null
             val resolvedContentType = contentType?.takeIf { it.isNotBlank() } ?: return null
 
-            val addonEpisodes = getAddonEpisodes(resolvedContentId, resolvedContentType)
+            val addonEpisodes = getAddonEpisodes(resolvedContentId, resolvedContentType, videoId)
             if (addonEpisodes.isEmpty()) return null
 
             val showLookupId = resolveShowLookupId(contentId = resolvedContentId, videoId = videoId) ?: return null
@@ -208,7 +208,7 @@ object TraktEpisodeMappingService {
                 reverseMappingCache[reverseKey]?.let { return it }
             }
 
-            val addonEpisodes = getAddonEpisodes(resolvedContentId, resolvedContentType)
+            val addonEpisodes = getAddonEpisodes(resolvedContentId, resolvedContentType, null)
             if (addonEpisodes.isEmpty()) return null
 
             val showLookupId = resolveShowLookupId(contentId = resolvedContentId, videoId = null) ?: return null
@@ -332,9 +332,12 @@ object TraktEpisodeMappingService {
         val orderedTargetEpisodes = targetEpisodes
             .sortedWith(compareBy(EpisodeMappingEntry::season, EpisodeMappingEntry::episode))
 
-        val currentSourceEpisode = requestedVideoId
+        val currentSourceEpisodeFromVideoId = requestedVideoId
             ?.takeIf { it.isNotBlank() }
             ?.let { videoId -> orderedSourceEpisodes.firstOrNull { it.videoId == videoId } }
+            ?.takeIf { it.season == requestedSeason && it.episode == requestedEpisode }
+
+        val currentSourceEpisode = currentSourceEpisodeFromVideoId
             ?: orderedSourceEpisodes.firstOrNull {
                 it.season == requestedSeason && it.episode == requestedEpisode
             }
@@ -364,9 +367,10 @@ object TraktEpisodeMappingService {
     private suspend fun getAddonEpisodes(
         contentId: String,
         contentType: String,
+        videoId: String? = null,
     ): List<EpisodeMappingEntry> {
         getAddonCalls++
-        val cacheKey = addonEpisodesCacheKey(contentId, contentType)
+        val cacheKey = addonEpisodesCacheKey(contentId, contentType, videoId)
 
         // Fast path: cache hit
         cacheMutex.withLock {
@@ -399,7 +403,7 @@ object TraktEpisodeMappingService {
         }
 
         return try {
-            val addonEpisodes = fetchAddonEpisodes(contentId, contentType)
+            val addonEpisodes = fetchAddonEpisodes(contentId, contentType, videoId)
             cacheMutex.withLock { addonEpisodesCache[cacheKey] = addonEpisodes }
             deferred.complete(addonEpisodes)
             addonEpisodes
@@ -416,6 +420,7 @@ object TraktEpisodeMappingService {
     private suspend fun fetchAddonEpisodes(
         contentId: String,
         contentType: String,
+        videoId: String? = null,
     ): List<EpisodeMappingEntry> {
         val typeCandidates = buildList {
             val normalized = contentType.lowercase()
@@ -436,7 +441,7 @@ object TraktEpisodeMappingService {
         for (type in typeCandidates) {
             for (candidateId in idCandidates) {
                 val meta = withTimeoutOrNull(3_500L) {
-                    MetaDetailsRepository.fetch(type = type, id = candidateId)
+                    MetaDetailsRepository.fetch(type = type, id = candidateId, enrichTmdb = false)
                 } ?: continue
                 val episodes = meta.videos.toEpisodeMappingEntries()
                 if (episodes.isNotEmpty()) return episodes
@@ -532,7 +537,7 @@ object TraktEpisodeMappingService {
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    private fun resolveShowLookupId(contentId: String?, videoId: String?): String? {
+    private suspend fun resolveShowLookupId(contentId: String?, videoId: String?): String? {
         val contentIds = parseTraktContentIds(contentId)
         if (contentIds.hasAnyId()) {
             return when {
@@ -544,12 +549,29 @@ object TraktEpisodeMappingService {
         }
 
         val videoIds = parseTraktContentIds(videoId)
-        return when {
-            !videoIds.imdb.isNullOrBlank() -> videoIds.imdb
-            videoIds.trakt != null -> videoIds.trakt.toString()
-            !videoIds.slug.isNullOrBlank() -> videoIds.slug
-            else -> null
+        if (videoIds.hasAnyId()) {
+            return when {
+                !videoIds.imdb.isNullOrBlank() -> videoIds.imdb
+                videoIds.trakt != null -> videoIds.trakt.toString()
+                !videoIds.slug.isNullOrBlank() -> videoIds.slug
+                else -> null
+            }
         }
+
+        // Fallback: Resolve TVDB/TMDB/Kitsu/MAL to TMDB ID via TmdbService
+        val fallbackContentId = contentId?.takeIf { it.isNotBlank() }
+        if (fallbackContentId != null) {
+            val tmdbId = com.nuvio.app.features.tmdb.TmdbService.ensureTmdbId(fallbackContentId, "series")
+            if (tmdbId != null) return "tmdb:$tmdbId"
+        }
+
+        val fallbackVideoId = videoId?.takeIf { it.isNotBlank() }
+        if (fallbackVideoId != null && fallbackVideoId != fallbackContentId) {
+            val tmdbId = com.nuvio.app.features.tmdb.TmdbService.ensureTmdbId(fallbackVideoId, "series")
+            if (tmdbId != null) return "tmdb:$tmdbId"
+        }
+
+        return null
     }
 
     private fun TraktExternalIds.hasAnyId(): Boolean =
@@ -581,8 +603,9 @@ object TraktEpisodeMappingService {
         return "reverse|${contentType.trim().lowercase()}|${contentId.trim()}|$season|$episode|$normalizedTitle"
     }
 
-    private fun addonEpisodesCacheKey(contentId: String, contentType: String): String {
-        return "${contentType.trim().lowercase()}|${contentId.trim()}"
+    private fun addonEpisodesCacheKey(contentId: String, contentType: String, videoId: String?): String {
+        val resolvedVideoId = videoId?.trim().orEmpty()
+        return "${contentType.trim().lowercase()}|${contentId.trim()}|$resolvedVideoId"
     }
 
     private fun List<MetaVideo>.toEpisodeMappingEntries(): List<EpisodeMappingEntry> {

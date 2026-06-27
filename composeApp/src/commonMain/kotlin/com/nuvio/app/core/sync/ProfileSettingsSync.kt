@@ -265,6 +265,8 @@ object ProfileSettingsSync {
         TmdbSettingsStorage.replaceFromSyncPayload(blob.features.tmdbSettings)
         TmdbSettingsRepository.onProfileChanged()
 
+        com.nuvio.app.features.tvdb.TvdbSettingsRepository.onProfileChanged()
+
         MdbListSettingsStorage.replaceFromSyncPayload(blob.features.mdbListSettings)
         MdbListSettingsRepository.onProfileChanged()
 

@@ -1,5 +1,14 @@
 package com.nuvio.app.features.tmdb
 
+enum class HeroImageSource {
+    /** Use addon meta endpoints (current behaviour — may return CDN-resized images). */
+    Addon,
+    /** TMDB for all content types. */
+    TmdbOnly,
+    /** TMDB for movies, TheTVDB for TV series and anime. */
+    TmdbMoviesTvdbShows,
+}
+
 data class TmdbSettings(
     val enabled: Boolean = false,
     val apiKey: String = "",
@@ -20,6 +29,7 @@ data class TmdbSettings(
     // placeholders, e.g. a PostersPlus/RPDB/etc. endpoint. Applied only to the library.
     val libraryPosterEnabled: Boolean = false,
     val libraryPosterUrlTemplate: String = "",
+    val heroImageSource: HeroImageSource = HeroImageSource.Addon,
 ) {
     val hasApiKey: Boolean
         get() = apiKey.isNotBlank()

@@ -67,6 +67,8 @@ internal expect object PlayerSettingsStorage {
     fun saveNvidiaRtxHdrEnabled(enabled: Boolean)
     fun loadDesktopAnimeModeAutoEnabled(): Boolean?
     fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean)
+    fun loadDesktopAnimeSvpEnabled(): Boolean?
+    fun saveDesktopAnimeSvpEnabled(enabled: Boolean)
     fun loadMapDV7ToHevc(): Boolean?
     fun saveMapDV7ToHevc(enabled: Boolean)
     fun loadTunnelingEnabled(): Boolean?

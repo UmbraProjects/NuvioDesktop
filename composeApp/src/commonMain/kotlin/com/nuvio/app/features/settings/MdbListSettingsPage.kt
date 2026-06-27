@@ -52,7 +52,10 @@ internal fun LazyListScope.mdbListSettingsContent(
             title = stringResource(Res.string.settings_mdb_section_title),
             isTablet = isTablet,
         ) {
-            SettingsGroup(isTablet = isTablet) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("mdb-enable")),
+            ) {
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_mdb_enable_ratings),
                     description = stringResource(Res.string.settings_mdb_enable_ratings_description),
@@ -77,7 +80,10 @@ internal fun LazyListScope.mdbListSettingsContent(
             title = stringResource(Res.string.settings_mdb_section_api_key),
             isTablet = isTablet,
         ) {
-            SettingsGroup(isTablet = isTablet) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("mdb-api-key")),
+            ) {
                 MdbListApiKeyRow(
                     isTablet = isTablet,
                     value = settings.apiKey,
@@ -92,7 +98,18 @@ internal fun LazyListScope.mdbListSettingsContent(
             title = stringResource(Res.string.settings_mdb_section_rating_providers),
             isTablet = isTablet,
         ) {
-            SettingsGroup(isTablet = isTablet) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsSearchAnchors(
+                    "mdb-imdb",
+                    "mdb-tmdb",
+                    "mdb-tomatoes",
+                    "mdb-metacritic",
+                    "mdb-trakt",
+                    "mdb-letterboxd",
+                    "mdb-audience",
+                ),
+            ) {
                 ProviderRows(
                     isTablet = isTablet,
                     settings = settings,

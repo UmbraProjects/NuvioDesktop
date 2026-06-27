@@ -66,6 +66,21 @@ Player:
 
 This concludes the forks readme, anything beyond this point is from the official upstream Nuvio Desktop.
 
+## Recommended AIOMetadata Setup (For Trakt Users)
+
+If you use Trakt for scrobbling and tracking your watch progress, you need to be careful with how you configure your Anime settings in AIOMetadata (AIOM). Trakt relies on the TMDB/TVDB standard for organizing seasons and episodes. However, some Anime databases (like Kitsu) treat every season as an entirely separate show (e.g., SAO Season 2 is listed as Season 1, Episode 1 of a new show). Because of this mismatch, **Trakt completely rejects Kitsu IDs and cannot accurately scrobble from Kitsu searches.**
+
+To get the absolute best experience with perfect stream compatibility *and* perfect Trakt scrobbling, here is the recommended setup for AIOMetadata:
+
+* **Regular Search / Series Provider:** Set to **TVDB** (or TMDB).
+* **Anime Stream Compatibility:** Set to **Kitsu** (or MAL).
+* **Anime Search Provider:** Turn this **OFF** (or simply ignore the dedicated Kitsu/MAL search catalogs).
+
+**Why this is the optimal setup:**
+When you search for an Anime using the regular Nuvio search (which uses TVDB/TMDB), Nuvio uses the standard TVDB numbering (e.g., S02E01). Behind the scenes, AIOMetadata's *Stream Compatibility* layer automatically translates that TVDB ID into a Kitsu ID to fetch the highest-quality Anime streams for you. Once you hit play, Nuvio sends the correct TVDB `Season 2, Episode 1` data directly to Trakt, and your scrobble works flawlessly!
+
+**The Pitfall:** If you use the dedicated "Anime Search" (which is powered by Kitsu), Nuvio will attempt to send Kitsu IDs to Trakt. Trakt will reject the scrobble, and your watch progress will not sync. Stick to TVDB for your searches and library!
+
 ## About
 
 Nuvio Desktop brings the Nuvio media experience to desktop. It keeps the playback-focused browsing, collection, watch progress, downloads, and Stremio addon ecosystem integration from Nuvio while adapting the app for desktop input, desktop storage, and native desktop playback.

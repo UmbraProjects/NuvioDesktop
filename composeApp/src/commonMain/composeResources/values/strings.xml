@@ -498,6 +498,10 @@
     <string name="settings_licenses_attributions_mdblist_body">Nuvio uses MDBList for ratings and external score provider data. Nuvio is not affiliated with or endorsed by MDBList.</string>
     <string name="settings_licenses_attributions_introdb_title">IntroDB</string>
     <string name="settings_licenses_attributions_introdb_body">Nuvio uses the IntroDB API for community-provided intro, recap, credits, and preview timestamps used by skip controls. Nuvio is not affiliated with or endorsed by IntroDB.</string>
+    <string name="settings_licenses_attributions_tvdb_title">TheTVDB</string>
+    <string name="settings_licenses_attributions_tvdb_body">Nuvio HTPC uses the TheTVDB API for TV series and anime metadata, episode information, artwork including backdrops and logos, and cast data. This product uses the TVDB API but is not endorsed or certified by TVDB.</string>
+    <string name="settings_licenses_attributions_simkl_title">SIMKL</string>
+    <string name="settings_licenses_attributions_simkl_body">Nuvio HTPC connects to SIMKL for account authentication, scrobbling watch progress, library sync, and calendar data for tracked shows and movies. Nuvio HTPC is not affiliated with or endorsed by SIMKL.</string>
     <string name="settings_licenses_attributions_mpvkit_title">MPVKit</string>
     <string name="settings_licenses_attributions_mpvkit_body">Used for playback on iOS builds.</string>
     <string name="settings_licenses_attributions_mpvkit_license">MPVKit source alone is licensed under LGPL v3.0. MPVKit bundles, including libmpv and FFmpeg libraries, are also licensed under LGPL v3.0.</string>
@@ -594,12 +598,12 @@
     <string name="settings_homescreen_selected_count">%1$d of %2$d selected</string>
     <string name="settings_homescreen_show_hero">Show Hero Section</string>
     <string name="settings_homescreen_show_hero_description">Display hero carousel at top of home.</string>
-    <string name="settings_homescreen_tv_mode">Adaptive Hero</string>
-    <string name="settings_homescreen_tv_mode_description">The hero adapts to whichever catalog item is focused or hovered.</string>
+    <string name="settings_homescreen_adaptive_hero">Adaptive Hero</string>
+    <string name="settings_homescreen_adaptive_hero_description">The hero adapts to whichever catalog item is focused or hovered.</string>
     <string name="settings_homescreen_hero_ambient_background">Hero Ambient Background</string>
     <string name="settings_homescreen_hero_ambient_background_description">Tint the home screen with a subtle blurred wash from the current hero artwork.</string>
-    <string name="settings_homescreen_immersive_catalog_mode">TV Mode</string>
-    <string name="settings_homescreen_immersive_catalog_mode_description">Fill the home screen with the hero and show one catalog shelf at a time. Scroll vertically to switch shelves.</string>
+    <string name="settings_homescreen_tv_mode">TV Mode</string>
+    <string name="settings_homescreen_tv_mode_description">Fill the home screen with the hero and show one catalog shelf at a time. Scroll vertically to switch shelves.</string>
     <string name="layout_hide_unreleased">Hide Unreleased Content</string>
     <string name="layout_hide_unreleased_sub">Hide movies and shows that haven't been released yet.</string>
     <string name="settings_homescreen_hide_catalog_underline">Hide Catalog Underline</string>
@@ -894,6 +898,8 @@
     <string name="settings_playback_desktop_anime_mode_dialog">Anime Enhancements</string>
     <string name="settings_playback_desktop_anime_auto">Auto-apply to Anime</string>
     <string name="settings_playback_desktop_anime_auto_desc">Only apply the selected preset when the title is detected as anime. Disable to always apply.</string>
+    <string name="settings_playback_desktop_anime_svp">Anime SVP (Interpolation)</string>
+    <string name="settings_playback_desktop_anime_svp_desc">Uses VapourSynth to interpolate motion for a smoother experience. Requires SVPCore DLLs installed in your MPV directory.</string>
     <string name="compose_settings_page_fork_enhancements">Fork Enhancements</string>
     <string name="settings_fork_enhancements_root_description">Extra features added by this desktop fork.</string>
     <string name="settings_fork_enhancements_intro">Extra features this fork adds on top of upstream Nuvio Desktop, aimed at couch/HTPC use. Select one to open its settings.</string>
@@ -907,6 +913,8 @@
     <string name="settings_fork_anime_enhancements_description">Anime4K GLSL shaders (ported from Stremio-Kai and the official bloc97/Anime4K preset chains) with auto-detection by genre. Cycle presets in the player with F10.</string>
     <string name="settings_fork_rtx_hdr_description">NVIDIA RTX AI tone-mapping converts SDR content to HDR in real time. Requires an RTX GPU and Windows HDR enabled in Display Settings.</string>
     <string name="settings_fork_simkl_description">Connect SIMKL to scrobble watch history and optionally use it as the source for your library, continue watching, and calendar.</string>
+    <string name="settings_fork_hero_images_description">Choose whether hero backdrops and logos come from addons, TMDB, or TVDB for TV and anime.</string>
+    <string name="settings_fork_tvdb_description">Use your TheTVDB API key for higher quality TV and anime artwork, including backdrops, logos, and episode metadata.</string>
     <string name="settings_fork_other_features">Other Features</string>
     <string name="settings_fork_other_features_note">Volume boost up to 200% — press Up past 100% in the player.\n\nDrag a video file onto the window to play it locally.\n\nKeyboard shortcuts: C opens the calendar · H returns home · [ / ] adjust playback speed · S cycles subtitles · A cycles audio tracks · O opens the Sources panel · E opens the Episodes panel.</string>
     <string name="settings_playback_hero_tv_trailer">Auto Play Trailer</string>

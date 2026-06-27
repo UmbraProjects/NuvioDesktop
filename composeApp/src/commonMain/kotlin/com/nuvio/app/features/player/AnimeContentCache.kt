@@ -21,7 +21,12 @@ object AnimeContentCache {
         animeByMetaId[metaId] = isAnimeFromGenres(genres)
     }
 
-    fun isAnime(metaId: String?): Boolean = metaId?.let { animeByMetaId[it] } ?: false
+    fun isAnime(metaId: String?): Boolean {
+        if (metaId.isNullOrBlank()) return false
+        val prefix = metaId.substringBefore(':', missingDelimiterValue = "").lowercase()
+        if (prefix in listOf("kitsu", "mal", "anilist", "al")) return true
+        return animeByMetaId[metaId] ?: false
+    }
 
     fun clear() {
         animeByMetaId.clear()

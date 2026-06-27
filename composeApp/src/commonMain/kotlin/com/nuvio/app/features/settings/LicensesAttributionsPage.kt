@@ -1,8 +1,11 @@
 package com.nuvio.app.features.settings
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,6 +49,10 @@ private const val PremiumizeUrl = "https://www.premiumize.me"
 private const val TorboxUrl = "https://torbox.app"
 private const val MdbListUrl = "https://mdblist.com"
 private const val IntroDbUrl = "https://introdb.app/"
+private const val TvdbUrl = "https://thetvdb.com"
+private const val TvdbLogoUrl = "https://artworks.thetvdb.com/banners/images/logo.png"
+private const val SimklUrl = "https://simkl.com"
+private const val SimklLogoUrl = "https://simkl.in/img/simkl_logo_100x100.jpg"
 private const val NuvioRepositoryUrl = "https://github.com/NuvioMedia/NuvioMobile"
 private const val MpvKitUrl = "https://github.com/mpvkit/MPVKit"
 private const val ApacheLicenseUrl = "https://www.apache.org/licenses/LICENSE-2.0"
@@ -55,6 +62,7 @@ private data class AttributionItem(
     val bodyRes: StringResource,
     val logo: IntegrationLogo?,
     val logoUrl: String? = null,
+    val logoText: String? = null,
     val link: String,
 )
 
@@ -191,6 +199,15 @@ private fun AttributionRow(
                     )
                 }
             }
+            item.logoText != null -> item.logoText.let { logoText ->
+                {
+                    ProviderLogoTextBadge(
+                        text = logoText,
+                        contentDescription = title,
+                        isTablet = isTablet,
+                    )
+                }
+            }
             else -> null
         },
         onOpen = { uriHandler.openUri(item.link) },
@@ -310,6 +327,32 @@ private fun ProviderLogoImage(
 }
 
 @Composable
+private fun ProviderLogoTextBadge(
+    text: String,
+    contentDescription: String,
+    isTablet: Boolean,
+) {
+    Box(
+        modifier = Modifier
+            .padding(top = 2.dp)
+            .size(if (isTablet) 46.dp else 40.dp)
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
+                shape = RoundedCornerShape(8.dp),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
 private fun PlainStackDivider() {
     HorizontalDivider(
         thickness = 0.5.dp,
@@ -355,6 +398,20 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         bodyRes = Res.string.settings_licenses_attributions_introdb_body,
         logo = IntegrationLogo.IntroDb,
         link = IntroDbUrl,
+    ),
+    AttributionItem(
+        titleRes = Res.string.settings_licenses_attributions_tvdb_title,
+        bodyRes = Res.string.settings_licenses_attributions_tvdb_body,
+        logo = null,
+        logoText = "TVDB",
+        link = TvdbUrl,
+    ),
+    AttributionItem(
+        titleRes = Res.string.settings_licenses_attributions_simkl_title,
+        bodyRes = Res.string.settings_licenses_attributions_simkl_body,
+        logo = null,
+        logoText = "SIMKL",
+        link = SimklUrl,
     ),
     AttributionItem(
         titleRes = Res.string.settings_licenses_attributions_imdb_title,

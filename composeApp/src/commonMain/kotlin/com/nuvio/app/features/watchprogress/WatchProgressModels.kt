@@ -155,6 +155,7 @@ data class ContinueWatchingItem(
     val parentMetaId: String,
     val parentMetaType: String,
     val videoId: String,
+    val source: String = WatchProgressSourceLocal,
     val title: String,
     val subtitle: String,
     val imageUrl: String?,
@@ -213,6 +214,7 @@ internal fun WatchProgressEntry.toContinueWatchingItem(): ContinueWatchingItem {
         parentMetaId = normalizedEntry.parentMetaId,
         parentMetaType = normalizedEntry.parentMetaType,
         videoId = normalizedEntry.videoId,
+        source = normalizedEntry.source,
         title = normalizedEntry.title,
         subtitle = buildContinueWatchingEpisodeSubtitle(
             seasonNumber = normalizedEntry.seasonNumber,
@@ -269,6 +271,7 @@ internal fun WatchProgressEntry.toUpNextContinueWatchingItem(
             episodeNumber = nextEpisode.episode,
             fallbackVideoId = nextEpisode.id,
         ),
+        source = source,
         title = title,
         subtitle = buildContinueWatchingEpisodeSubtitle(
             seasonNumber = nextEpisode.season,

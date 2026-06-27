@@ -16,7 +16,7 @@ import kotlinx.serialization.json.Json
 object HeroCastMetadataService {
     private const val FOUND_TTL_MS = 30L * 24L * 60L * 60L * 1000L
     private const val EMPTY_TTL_MS = 24L * 60L * 60L * 1000L
-    private const val CACHE_VERSION = "v3"
+    private const val CACHE_VERSION = "v5"
 
     private val log = Logger.withTag("HeroCastMetadata")
     private val json = Json { ignoreUnknownKeys = true }
@@ -87,8 +87,16 @@ object HeroCastMetadataService {
 
     private fun List<com.nuvio.app.features.details.MetaPerson>.toHeroCast(
         crewNames: Set<String>,
-    ): List<HeroCastMember> =
-        asSequence()
+    ): List<HeroCastMember> {
+        // People who have at least one non-crew role are actors regardless of also
+        // holding a producer/creator credit. They are exempt from all crew filtering.
+        // Example: Ricky Gervais (creator + David Brent), Steve Carell (exec-producer + Michael Scott).
+        val actingNames: Set<String> = asSequence()
+            .filter { person -> person.role?.isCrewRole() != true }
+            .map { person -> normalizeName(person.name) }
+            .toSet()
+
+        return asSequence()
             .map { person ->
                 HeroCastMember(
                     name = person.name.trim(),
@@ -98,15 +106,33 @@ object HeroCastMetadataService {
                 )
             }
             .filter { person -> person.name.isNotBlank() }
-            .filterNot { person -> normalizeName(person.name) in crewNames }
-            .filterNot { person -> person.role?.isCrewRole() == true }
-            .distinctBy { person -> normalizeName(person.name) }
+            // Crew-only: filter out. Crew + acting credit: keep.
+            .filterNot { person ->
+                val n = normalizeName(person.name)
+                n in crewNames && n !in actingNames
+            }
+            // Crew-role entry: filter out unless the person also has an acting credit.
+            .filterNot { person ->
+                person.role?.isCrewRole() == true && normalizeName(person.name) !in actingNames
+            }
+            // When a person has both credits, surface their acting credit first.
+            .sortedBy { if (it.role?.isCrewRole() == true) 1 else 0 }
+            .distinctBy { normalizeName(it.name) }
             .take(4)
             .toList()
+    }
 
     private fun String.isCrewRole(): Boolean {
-        val normalized = lowercase()
-        return listOf(
+        val roleParts = split(Regex("""[,/;|•·]+"""))
+            .map { it.trim().lowercase() }
+            .filter(String::isNotBlank)
+        if (roleParts.isEmpty()) return false
+        return roleParts.all { part ->
+            crewRoleMarkers.any(part::contains)
+        }
+    }
+
+    private val crewRoleMarkers = listOf(
             "director",
             "writer",
             "creator",
@@ -114,8 +140,7 @@ object HeroCastMetadataService {
             "screenplay",
             "showrunner",
             "producer",
-        ).any(normalized::contains)
-    }
+    )
 
     private fun String.isCrewCategory(): Boolean {
         val normalized = lowercase()

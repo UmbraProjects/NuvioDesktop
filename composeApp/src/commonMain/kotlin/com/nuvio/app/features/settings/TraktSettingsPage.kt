@@ -130,7 +130,10 @@ internal fun LazyListScope.traktSettingsContent(
             title = stringResource(Res.string.settings_trakt_authentication),
             isTablet = isTablet,
         ) {
-            SettingsGroup(isTablet = isTablet) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("trakt-authentication")),
+            ) {
                 TraktConnectionCard(
                     isTablet = isTablet,
                     uiState = uiState,
@@ -190,6 +193,7 @@ private fun TraktFeatureRows(
         description = stringResource(Res.string.trakt_library_source_subtitle),
         value = librarySourceValue,
         isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("trakt-library-source")),
         onClick = { showLibrarySourceDialog = true },
     )
     SettingsGroupDivider(isTablet = isTablet)
@@ -198,6 +202,7 @@ private fun TraktFeatureRows(
         description = stringResource(Res.string.trakt_watch_progress_subtitle),
         value = watchProgressValue,
         isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("trakt-watch-progress")),
         onClick = { showWatchProgressDialog = true },
     )
     SettingsGroupDivider(isTablet = isTablet)
@@ -206,6 +211,7 @@ private fun TraktFeatureRows(
         description = stringResource(Res.string.trakt_continue_watching_subtitle),
         value = continueWatchingWindowValue,
         isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("trakt-continue-watching-window")),
         onClick = { showContinueWatchingWindowDialog = true },
     )
     SettingsGroupDivider(isTablet = isTablet)
@@ -214,6 +220,7 @@ private fun TraktFeatureRows(
         description = stringResource(Res.string.settings_trakt_comments_description),
         checked = commentsEnabled,
         isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("trakt-comments")),
         onCheckedChange = onCommentsEnabledChange,
     )
     SettingsGroupDivider(isTablet = isTablet)
@@ -222,6 +229,7 @@ private fun TraktFeatureRows(
         description = stringResource(Res.string.trakt_more_like_this_source_subtitle),
         value = moreLikeThisSourceValue,
         isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("trakt-more-like-this-source")),
         onClick = { showMoreLikeThisSourceDialog = true },
     )
     statusMessage?.takeIf { it.isNotBlank() }?.let { message ->
@@ -293,13 +301,14 @@ private fun TraktSettingsActionRow(
     description: String,
     value: String,
     isTablet: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val verticalPadding = if (isTablet) 16.dp else 14.dp
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),

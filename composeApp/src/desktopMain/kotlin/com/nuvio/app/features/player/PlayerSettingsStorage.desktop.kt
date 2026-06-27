@@ -89,6 +89,7 @@ internal actual object PlayerSettingsStorage {
     private const val desktopBufferPresetKey = "desktop_buffer_preset"
     private const val desktopAnimeModeKey = "desktop_anime_mode"
     private const val desktopAnimeModeAutoEnabledKey = "desktop_anime_mode_auto_enabled"
+    private const val desktopAnimeSvpEnabledKey = "desktop_anime_svp_enabled"
     private const val heroTvTrailerEnabledKey = "hero_tv_trailer_enabled"
     private const val heroTvTrailerDelaySecondsKey = "hero_tv_trailer_delay_seconds"
     private const val heroTvTrailerSoundEnabledKey = "hero_tv_trailer_sound_enabled"
@@ -315,6 +316,8 @@ internal actual object PlayerSettingsStorage {
     actual fun saveDesktopAnimeMode(mode: String) = saveString(desktopAnimeModeKey, mode)
     actual fun loadDesktopAnimeModeAutoEnabled(): Boolean? = loadBoolean(desktopAnimeModeAutoEnabledKey)
     actual fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean) = saveBoolean(desktopAnimeModeAutoEnabledKey, enabled)
+    actual fun loadDesktopAnimeSvpEnabled(): Boolean? = loadBoolean(desktopAnimeSvpEnabledKey)
+    actual fun saveDesktopAnimeSvpEnabled(enabled: Boolean) = saveBoolean(desktopAnimeSvpEnabledKey, enabled)
     actual fun loadHeroTvTrailerEnabled(): Boolean? = loadBoolean(heroTvTrailerEnabledKey)
     actual fun saveHeroTvTrailerEnabled(enabled: Boolean) = saveBoolean(heroTvTrailerEnabledKey, enabled)
     actual fun loadHeroTvTrailerDelaySeconds(): Int? = loadInt(heroTvTrailerDelaySecondsKey)

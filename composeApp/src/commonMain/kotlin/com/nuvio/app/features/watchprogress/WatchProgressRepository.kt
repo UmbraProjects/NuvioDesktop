@@ -163,6 +163,7 @@ object WatchProgressRepository {
                     // so resolveRemoteMetadata() runs again once addons are ready.
                     if (state.hasLoaded && state.entries.any { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }) {
                         lastAddonMetadataReadyFingerprint = null
+                        resolveRemoteMetadata()
                         retryMetadataResolutionWhenAddonMetaProvidersReady(AddonRepository.uiState.value)
                     }
                 }
@@ -800,7 +801,6 @@ object WatchProgressRepository {
                         }
                 }
             }
-            return
         }
 
         if (shouldUseTraktProgress()) {
@@ -868,7 +868,6 @@ object WatchProgressRepository {
                         }
                 }
             }
-            return
         }
 
         if (shouldUseTraktProgress()) {
@@ -1095,8 +1094,16 @@ object WatchProgressRepository {
                 .filter { cutoffMs == 0L || it.lastUpdatedEpochMs >= cutoffMs }
                 .sortedByDescending { it.lastUpdatedEpochMs }
 
-            val localNonSimklItems = entriesByVideoId.values.filter {
-                !isTraktCompatibleId(it.parentMetaId)
+            val localNonSimklItems = entriesByVideoId.values.filter { entry ->
+                val id = entry.parentMetaId.lowercase()
+                !isTraktCompatibleId(id) &&
+                    !id.startsWith("kitsu:") &&
+                    !id.startsWith("mal:") &&
+                    !id.startsWith("tvdb:") &&
+                    !id.startsWith("anilist:") &&
+                    !id.startsWith("al:") &&
+                    !id.startsWith("anidb:") &&
+                    !id.startsWith("simkl:")
             }
             return if (localNonSimklItems.isEmpty()) {
                 simklItems

@@ -480,6 +480,14 @@ private fun PlaybackSettingsSection(
                             isTablet = isTablet,
                             onCheckedChange = PlayerSettingsRepository::setDesktopAnimeModeAutoEnabled,
                         )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_desktop_anime_svp),
+                            description = stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
+                            checked = autoPlayPlayerSettings.desktopAnimeSvpEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
+                        )
                     }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(

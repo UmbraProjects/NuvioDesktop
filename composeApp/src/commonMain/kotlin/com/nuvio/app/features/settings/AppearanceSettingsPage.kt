@@ -99,6 +99,7 @@ internal fun LazyListScope.appearanceSettingsContent(
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .settingsScrollAnchor(SettingsScrollAnchor.searchKey("theme"))
                         .padding(
                             horizontal = horizontalPadding,
                             vertical = verticalPadding,
@@ -154,6 +155,7 @@ internal fun LazyListScope.appearanceSettingsContent(
                     description = stringResource(Res.string.settings_appearance_amoled_description),
                     checked = amoledEnabled,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("amoled")),
                     onCheckedChange = onAmoledToggle,
                 )
                 if (liquidGlassNativeTabBarSupported) {
@@ -163,6 +165,7 @@ internal fun LazyListScope.appearanceSettingsContent(
                         description = stringResource(Res.string.settings_appearance_liquid_glass_description),
                         checked = liquidGlassNativeTabBarEnabled,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("liquid-glass")),
                         onCheckedChange = onLiquidGlassNativeTabBarToggle,
                     )
                 }
@@ -182,6 +185,7 @@ internal fun LazyListScope.appearanceSettingsContent(
                     description = stringResource(selectedAppLanguage.labelRes),
                     icon = Icons.Rounded.Language,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("app-language")),
                     onClick = { showLanguageSheet = true },
                 )
             }

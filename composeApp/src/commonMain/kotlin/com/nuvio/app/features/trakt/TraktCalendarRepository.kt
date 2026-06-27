@@ -251,7 +251,7 @@ object TraktCalendarRepository {
     }
 
     private fun TraktCalendarIdsDto.toExternalIds(): TraktExternalIds =
-        TraktExternalIds(trakt = trakt, imdb = imdb, tmdb = tmdb)
+        TraktExternalIds(trakt = trakt, imdb = imdb, tmdb = tmdb, tvdb = tvdb)
 
     /**
      * Trakt timestamps for episodes are full ISO datetimes ("2026-06-21T01:00:00.000Z");
@@ -370,4 +370,5 @@ private data class TraktCalendarIdsDto(
     @SerialName("trakt") val trakt: Int? = null,
     @SerialName("imdb") val imdb: String? = null,
     @SerialName("tmdb") val tmdb: Int? = null,
+    @SerialName("tvdb") val tvdb: Int? = null,
 )

@@ -8,6 +8,7 @@ data class MetaPreview(
     val type: String,
     val name: String,
     val poster: String? = null,
+    val posterFallback: String? = null,
     val banner: String? = null,
     val logo: String? = null,
     val posterShape: PosterShape = PosterShape.Poster,

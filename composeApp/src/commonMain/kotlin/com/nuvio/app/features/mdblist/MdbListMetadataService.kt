@@ -48,6 +48,7 @@ object MdbListMetadataService {
     )
 
     private const val FOUND_TTL_MS = 7L * 24L * 60L * 60L * 1000L
+    private const val NOT_FOUND_TTL_MS = 7L * 24L * 60L * 60L * 1000L
     private const val RATE_LIMIT_BACKOFF_MS = 30L * 60L * 1000L
 
     private var cache: MutableMap<String, CachedRatings>? = null
@@ -144,11 +145,10 @@ object MdbListMetadataService {
         }
 
         cacheMutex.withLock {
-            if (ratings.isNotEmpty()) {
-                val loaded = ensureCacheLoaded()
-                loaded[cacheKey] = CachedRatings(ratings = ratings, expiresAtMs = now + FOUND_TTL_MS)
-                persistCache(loaded)
-            }
+            val loaded = ensureCacheLoaded()
+            val ttl = if (ratings.isNotEmpty()) FOUND_TTL_MS else NOT_FOUND_TTL_MS
+            loaded[cacheKey] = CachedRatings(ratings = ratings, expiresAtMs = now + ttl)
+            persistCache(loaded)
             inFlightRequests.remove(cacheKey)?.complete(ratings)
         }
 
@@ -167,6 +167,9 @@ object MdbListMetadataService {
             headers = mapOf("Accept" to "application/json"),
             body = "",
         )
+        if (response.status == 404) {
+            return emptyList()
+        }
         if (response.status == 429) {
             throw MdbListRateLimitedException()
         }

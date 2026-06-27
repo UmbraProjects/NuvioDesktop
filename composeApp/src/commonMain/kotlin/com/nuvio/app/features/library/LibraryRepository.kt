@@ -5,11 +5,17 @@ import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.network.SupabaseProvider
+import com.nuvio.app.features.cloud.CloudLibraryContentType
+import com.nuvio.app.features.cloud.CloudLibraryItem
+import com.nuvio.app.features.cloud.CloudLibraryRepository
+import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.simkl.SimklAuthRepository
 import com.nuvio.app.features.simkl.SimklLibraryRepository
 import com.nuvio.app.features.simkl.SimklSettingsRepository
+import com.nuvio.app.features.tmdb.HeroImageSource
+import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktLibraryRepository
 import com.nuvio.app.features.trakt.TraktListTab
@@ -33,6 +39,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -73,6 +81,7 @@ object LibraryRepository {
     private const val PULL_PAGE_SIZE = 500
 
     private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var prefetchJob: Job? = null
     private val log = Logger.withTag("LibraryRepository")
     private val json = Json {
         ignoreUnknownKeys = true
@@ -145,6 +154,11 @@ object LibraryRepository {
                 publish()
             }
         }
+        syncScope.launch {
+            CloudLibraryRepository.uiState.collectLatest {
+                publish()
+            }
+        }
     }
 
     fun ensureLoaded() {
@@ -154,6 +168,7 @@ object LibraryRepository {
         SimklSettingsRepository.ensureLoaded()
         SimklAuthRepository.ensureLoaded()
         SimklLibraryRepository.ensureLoaded()
+        CloudLibraryRepository.ensureLoaded()
         if (hasLoaded) return
         loadFromDisk(ProfileRepository.activeProfileId)
         if (isSimklLibrarySourceActive()) {
@@ -448,6 +463,7 @@ object LibraryRepository {
                 if (s.shows.isNotEmpty()) add(LibrarySection("simkl_shows", "My Shows", s.shows))
                 if (s.movies.isNotEmpty()) add(LibrarySection("simkl_movies", "My Movies", s.movies))
                 if (s.anime.isNotEmpty()) add(LibrarySection("simkl_anime", "My Anime", s.anime))
+                addAll(cloudLibrarySections())
             }
             _uiState.value = LibraryUiState(
                 sourceMode = LibrarySourceMode.SIMKL,
@@ -457,6 +473,8 @@ object LibraryRepository {
                 isLoading = s.isLoading,
                 errorMessage = s.errorMessage,
             )
+
+            startPrefetch(sections)
             return
         }
 
@@ -475,14 +493,18 @@ object LibraryRepository {
                 }
             }
 
+            val sectionsWithCloud = sections + cloudLibrarySections()
+
             _uiState.value = LibraryUiState(
                 sourceMode = LibrarySourceMode.TRAKT,
                 items = traktState.allItems,
-                sections = sections,
+                sections = sectionsWithCloud,
                 isLoaded = traktState.hasLoaded,
                 isLoading = traktState.isLoading,
                 errorMessage = traktState.errorMessage,
             )
+
+            startPrefetch(sectionsWithCloud)
             return
         }
 
@@ -499,14 +521,56 @@ object LibraryRepository {
             }
             .sortedBy { it.displayTitle }
 
+        val sectionsWithCloud = sections + cloudLibrarySections()
+
         _uiState.value = LibraryUiState(
             sourceMode = LibrarySourceMode.LOCAL,
             items = items,
-            sections = sections,
+            sections = sectionsWithCloud,
             isLoaded = true,
             isLoading = false,
             errorMessage = null,
         )
+
+        startPrefetch(sectionsWithCloud)
+    }
+
+    private fun cloudLibrarySections(): List<LibrarySection> {
+        val cloudState = CloudLibraryRepository.uiState.value
+        if (!cloudState.isEnabled || !cloudState.isLoaded) return emptyList()
+        return cloudState.providers.mapNotNull { provider ->
+            val items = provider.items
+                .filter { it.playableFiles.isNotEmpty() }
+                .map { it.toLibraryItem() }
+            if (items.isEmpty()) {
+                null
+            } else {
+                LibrarySection(
+                    type = "${CloudLibraryContentType}:${provider.providerId}",
+                    displayTitle = provider.providerName,
+                    items = items,
+                )
+            }
+        }
+    }
+
+    private fun startPrefetch(sections: List<LibrarySection>) {
+        prefetchJob?.cancel()
+        prefetchJob = syncScope.launch {
+            val itemsToPrefetch = sections.take(2).flatMap { it.items.take(8) }
+            val sem = Semaphore(4)
+            TmdbSettingsRepository.ensureLoaded()
+            val preferTmdbImages = TmdbSettingsRepository.uiState.value.heroImageSource != HeroImageSource.Addon
+            itemsToPrefetch.forEach { item ->
+                launch {
+                    sem.withPermit {
+                        runCatching {
+                            MetaDetailsRepository.fetchLightweightMeta(item.type, item.id, preferTmdbImages = preferTmdbImages)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun persist() {
@@ -527,6 +591,27 @@ object LibraryRepository {
             publish()
         }
     }
+
+    private fun CloudLibraryItem.toLibraryItem(): LibraryItem =
+        LibraryItem(
+            id = stableKey,
+            type = CloudLibraryContentType,
+            name = name,
+            poster = null,
+            banner = null,
+            description = cloudLibraryDescription(),
+            releaseInfo = providerName,
+            posterShape = PosterShape.Poster,
+            savedAtEpochMs = LibraryClock.nowEpochMs(),
+        )
+
+    private fun CloudLibraryItem.cloudLibraryDescription(): String =
+        listOfNotNull(
+            providerName,
+            type.name,
+            status?.takeIf { it.isNotBlank() },
+            playableFiles.firstOrNull()?.name?.takeIf { it.isNotBlank() },
+        ).joinToString(" • ")
 
     private fun selectedLibrarySourceMode(): LibrarySourceMode {
         TraktSettingsRepository.ensureLoaded()

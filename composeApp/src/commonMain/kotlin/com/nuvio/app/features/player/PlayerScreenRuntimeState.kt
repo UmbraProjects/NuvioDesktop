@@ -49,6 +49,7 @@ internal class PlayerScreenRuntime(
     val videoId: String? get() = args.videoId
     val parentMetaId: String get() = args.parentMetaId
     val parentMetaType: String get() = args.parentMetaType
+    val watchProgressSource: String? get() = args.watchProgressSource
     val providerAddonId: String? get() = args.providerAddonId
     val torrentInfoHash: String? get() = args.torrentInfoHash
     val torrentFileIdx: Int? get() = args.torrentFileIdx
@@ -113,6 +114,7 @@ internal class PlayerScreenRuntime(
     var activeStreamSubtitle by mutableStateOf(streamSubtitle)
     var activeProviderName by mutableStateOf(providerName)
     var activeProviderAddonId by mutableStateOf(providerAddonId)
+    var activeWatchProgressSource by mutableStateOf(watchProgressSource)
     var currentStreamBingeGroup by mutableStateOf(initialBingeGroup)
     var activeSeasonNumber by mutableStateOf(seasonNumber)
     var activeEpisodeNumber by mutableStateOf(episodeNumber)

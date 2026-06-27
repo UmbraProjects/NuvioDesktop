@@ -18,6 +18,26 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,10 +53,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
@@ -237,6 +260,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -467,6 +491,7 @@ private suspend fun warmProfileBoundRepositories() {
         TraktSettingsRepository.ensureLoaded()
         SimklSettingsRepository.ensureLoaded()
         SimklAuthRepository.ensureLoaded()
+        com.nuvio.app.features.tvdb.TvdbSettingsRepository.ensureLoaded()
         WatchedRepository.ensureLoaded()
         WatchProgressRepository.ensureLoaded()
         CollectionSyncService.startObserving()
@@ -781,6 +806,11 @@ private fun MainAppContent(
         val coroutineScope = rememberCoroutineScope()
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
         var searchFocusRequestCount by remember { mutableStateOf(0) }
+        var navigateToContentCount by remember { mutableStateOf(0) }
+        var searchQuery by rememberSaveable { mutableStateOf("") }
+        var submittedSearchQuery by rememberSaveable { mutableStateOf("") }
+        var searchOverlayActive by rememberSaveable { mutableStateOf(false) }
+        val searchSubmitRequests = remember { MutableSharedFlow<String>(extraBufferCapacity = 1) }
         val homeScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
         val searchScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
         val libraryScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
@@ -840,6 +870,9 @@ private fun MainAppContent(
     var lastNetworkToastCondition by rememberSaveable { mutableStateOf(NetworkCondition.Unknown.name) }
 
     fun handleRootTabClick(tab: AppScreenTab) {
+        if (tab != AppScreenTab.Search) {
+            searchOverlayActive = false
+        }
         if (selectedTab != tab) {
             selectedTab = tab
             if (tab == AppScreenTab.Search) searchFocusRequestCount++
@@ -855,6 +888,19 @@ private fun MainAppContent(
             AppScreenTab.Library -> libraryScrollToTopRequests.tryEmit(Unit)
             AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
         }
+    }
+
+    fun openSearchOverlay() {
+        searchOverlayActive = true
+        searchFocusRequestCount++
+    }
+
+    fun dismissSearchOverlay() {
+        searchOverlayActive = false
+        if (selectedTab == AppScreenTab.Search) {
+            selectedTab = AppScreenTab.Home
+        }
+        navigateToContentCount++
     }
 
     LaunchedEffect(liquidGlassNativeTabBarSupported, liquidGlassNativeTabBarEnabled) {
@@ -1254,6 +1300,8 @@ private fun MainAppContent(
             resumeProgressFraction: Float?,
             manualSelection: Boolean,
             startFromBeginning: Boolean,
+            watchProgressSource: String? = null,
+            streamVideoId: String? = null,
         ) {
             val targetResumePositionMs = if (startFromBeginning) 0L else (resumePositionMs ?: 0L)
             val targetResumeProgressFraction = if (startFromBeginning) null else resumeProgressFraction
@@ -1288,6 +1336,7 @@ private fun MainAppContent(
                             videoId = videoId,
                             parentMetaId = parentMetaId,
                             parentMetaType = parentMetaType,
+                            watchProgressSource = watchProgressSource,
                             initialPositionMs = targetResumePositionMs,
                             initialProgressFraction = targetResumeProgressFraction,
                         )
@@ -1305,8 +1354,10 @@ private fun MainAppContent(
                 StreamLaunch(
                     type = type,
                     videoId = videoId,
+                    streamVideoId = streamVideoId,
                     parentMetaId = parentMetaId,
                     parentMetaType = parentMetaType,
+                    watchProgressSource = watchProgressSource,
                     title = title,
                     logo = logo,
                     poster = poster,
@@ -1475,6 +1526,7 @@ private fun MainAppContent(
                     resumeProgressFraction = item.resumeProgressFraction,
                     manualSelection = manualSelection,
                     startFromBeginning = startFromBeginning,
+                    watchProgressSource = item.source,
                 )
             }
         }
@@ -1528,7 +1580,7 @@ private fun MainAppContent(
                             !useNativeBottomTabs &&
                             desktopNavigationLayout == DesktopNavigationLayout.Sidebar
                         val useFloatingTopBar = isTabletLayout && !useNativeBottomTabs && !useDesktopSidebar
-                        val topChromePadding = if (useFloatingTopBar) {
+                        val topChromePadding = if (useFloatingTopBar || selectedTab == AppScreenTab.Search) {
                             val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                             max(statusBarPadding + 24.dp, 48.dp) + 64.dp
                         } else {
@@ -1604,6 +1656,11 @@ private fun MainAppContent(
                                         selectedTab = selectedTab,
                                         topChromePadding = topChromePadding,
                                         searchFocusRequestCount = searchFocusRequestCount,
+                                        navigateToContentCount = navigateToContentCount,
+                                        searchQuery = searchQuery,
+                                        submittedSearchQuery = submittedSearchQuery,
+                                        onSearchQueryChange = { searchQuery = it },
+                                        searchSubmitRequests = searchSubmitRequests,
                                         rootActionsEnabled = tabsRouteActive,
                                         homeScrollToTopRequests = homeScrollToTopRequests,
                                         searchScrollToTopRequests = searchScrollToTopRequests,
@@ -1696,7 +1753,7 @@ private fun MainAppContent(
                                             requestedSettingsPageName = null
                                         },
                                         onInitialHomeContentRendered = { initialHomeReady = true },
-                                        onNavigateToSearch = { handleRootTabClick(AppScreenTab.Search) },
+                                        onNavigateToSearch = { openSearchOverlay() },
                                         onNavigateToLibrary = { handleRootTabClick(AppScreenTab.Library) },
                                         onNavigateToHome = { handleRootTabClick(AppScreenTab.Home) },
                                         onNavigateToCalendar = { navController.navigateIfResumed(CalendarRoute) },
@@ -1710,37 +1767,33 @@ private fun MainAppContent(
                                         onProfileSelected = onProfileSelected,
                                         onAddProfileRequested = onSwitchProfile,
                                     )
-                                } else if (useFloatingTopBar) {
+                                }
+                                if (useFloatingTopBar || selectedTab == AppScreenTab.Search) {
                                     TabletFloatingTopBar(
                                         selectedTab = selectedTab,
                                         onTabSelected = ::handleRootTabClick,
                                         onProfileSelected = onProfileSelected,
                                         onAddProfileRequested = onSwitchProfile,
-                                        dimUntilHovered = selectedTab == AppScreenTab.Home,
+                                        dimUntilHovered = selectedTab == AppScreenTab.Home || selectedTab == AppScreenTab.Library || selectedTab == AppScreenTab.Search,
+                                        searchOverlayActive = searchOverlayActive,
+                                        onSearchOverlayOpen = { openSearchOverlay() },
+                                        onSearchOverlayDismiss = { dismissSearchOverlay() },
+                                        searchQuery = searchQuery,
+                                        onSearchQueryChange = { searchQuery = it },
+                                        searchFocusRequestCount = searchFocusRequestCount,
+                                        onSearchSubmit = { q ->
+                                            val trimmed = q.trim()
+                                            submittedSearchQuery = trimmed
+                                            searchOverlayActive = false
+                                            if (selectedTab != AppScreenTab.Search) {
+                                                selectedTab = AppScreenTab.Search
+                                            }
+                                            navigateToContentCount++
+                                        },
+                                        onNavigateToContent = { navigateToContentCount++ },
                                     )
                                 }
 
-                                if (isDesktop) {
-                                    val tokens = MaterialTheme.nuvio
-                                    val fullscreen = isAppFullscreen()
-                                    Surface(
-                                        onClick = { toggleAppFullscreen() },
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .padding(top = 16.dp, end = 16.dp)
-                                            .size(40.dp),
-                                        shape = tokens.shapes.avatar,
-                                        color = tokens.colors.surface.copy(alpha = tokens.opacity.strong),
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                                                contentDescription = null,
-                                                tint = tokens.colors.textPrimary,
-                                            )
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
@@ -1977,6 +2030,7 @@ private fun MainAppContent(
                     }
 
                     val playerSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
+                    val effectiveStreamVideoId = launch.streamVideoId?.takeIf { it.isNotBlank() } ?: effectiveVideoId
 
                     fun p2pSentinelUrl(infoHash: String, fileIdx: Int?): String =
                         "torrent://$infoHash${fileIdx?.let { "?index=$it" }.orEmpty()}"
@@ -1992,7 +2046,7 @@ private fun MainAppContent(
                         if (playerSettings.streamReuseLastLinkEnabled) {
                             val cacheKey = StreamLinkCacheRepository.contentKey(
                                 type = launch.type,
-                                videoId = effectiveVideoId,
+                                videoId = effectiveStreamVideoId,
                                 parentMetaId = launch.parentMetaId,
                                 season = launch.seasonNumber,
                                 episode = launch.episodeNumber,
@@ -2036,6 +2090,7 @@ private fun MainAppContent(
                             videoId = effectiveVideoId,
                             parentMetaId = launch.parentMetaId ?: effectiveVideoId,
                             parentMetaType = launch.parentMetaType ?: launch.type,
+                            watchProgressSource = launch.watchProgressSource,
                             torrentInfoHash = infoHash,
                             torrentFileIdx = stream.p2pFileIdx,
                             torrentFilename = stream.behaviorHints.filename,
@@ -2099,7 +2154,7 @@ private fun MainAppContent(
                         if (!playerSettings.streamReuseLastLinkEnabled) return@LaunchedEffect
                         val cacheKey = StreamLinkCacheRepository.contentKey(
                             type = launch.type,
-                            videoId = effectiveVideoId,
+                            videoId = effectiveStreamVideoId,
                             parentMetaId = launch.parentMetaId,
                             season = launch.seasonNumber,
                             episode = launch.episodeNumber,
@@ -2156,6 +2211,7 @@ private fun MainAppContent(
                                     videoId = effectiveVideoId,
                                     parentMetaId = launch.parentMetaId ?: effectiveVideoId,
                                     parentMetaType = launch.parentMetaType ?: launch.type,
+                                    watchProgressSource = launch.watchProgressSource,
                                     initialPositionMs = launch.resumePositionMs ?: 0L,
                                     initialProgressFraction = launch.resumeProgressFraction,
                                 )
@@ -2177,7 +2233,7 @@ private fun MainAppContent(
                     val streamsUiState by StreamsRepository.uiState.collectAsStateWithLifecycle()
                     val expectedStreamsRequestToken = StreamsRepository.requestToken(
                         type = launch.type,
-                        videoId = effectiveVideoId,
+                        videoId = effectiveStreamVideoId,
                         season = launch.seasonNumber,
                         episode = launch.episodeNumber,
                         manualSelection = launch.manualSelection,
@@ -2213,7 +2269,7 @@ private fun MainAppContent(
                                     if (!hasNextCandidate && resolved == DirectDebridPlayableResult.Stale) {
                                         StreamsRepository.reload(
                                             type = launch.type,
-                                            videoId = effectiveVideoId,
+                                            videoId = effectiveStreamVideoId,
                                             parentMetaId = launch.parentMetaId,
                                             season = launch.seasonNumber,
                                             episode = launch.episodeNumber,
@@ -2248,7 +2304,7 @@ private fun MainAppContent(
                         if (playerSettings.streamReuseLastLinkEnabled) {
                             val cacheKey = StreamLinkCacheRepository.contentKey(
                                 type = launch.type,
-                                videoId = effectiveVideoId,
+                                videoId = effectiveStreamVideoId,
                                 parentMetaId = launch.parentMetaId,
                                 season = launch.seasonNumber,
                                 episode = launch.episodeNumber,
@@ -2290,6 +2346,7 @@ private fun MainAppContent(
                                 videoId = effectiveVideoId,
                                 parentMetaId = launch.parentMetaId ?: effectiveVideoId,
                                 parentMetaType = launch.parentMetaType ?: launch.type,
+                                watchProgressSource = launch.watchProgressSource,
                                 initialPositionMs = launch.resumePositionMs ?: 0L,
                                 initialProgressFraction = launch.resumeProgressFraction,
                             )
@@ -2347,7 +2404,7 @@ private fun MainAppContent(
                                         if (resolved == DirectDebridPlayableResult.Stale) {
                                             StreamsRepository.reload(
                                                 type = launch.type,
-                                                videoId = effectiveVideoId,
+                                                videoId = effectiveStreamVideoId,
                                                 parentMetaId = launch.parentMetaId,
                                                 season = launch.seasonNumber,
                                                 episode = launch.episodeNumber,
@@ -2374,7 +2431,7 @@ private fun MainAppContent(
                         if (playerSettings.streamReuseLastLinkEnabled) {
                             val cacheKey = StreamLinkCacheRepository.contentKey(
                                 type = launch.type,
-                                videoId = effectiveVideoId,
+                                videoId = effectiveStreamVideoId,
                                 parentMetaId = launch.parentMetaId,
                                 season = launch.seasonNumber,
                                 episode = launch.episodeNumber,
@@ -2416,6 +2473,7 @@ private fun MainAppContent(
                             videoId = effectiveVideoId,
                             parentMetaId = launch.parentMetaId ?: effectiveVideoId,
                             parentMetaType = launch.parentMetaType ?: launch.type,
+                            watchProgressSource = launch.watchProgressSource,
                             initialPositionMs = resolvedResumePositionMs ?: 0L,
                             initialProgressFraction = resolvedResumeProgressFraction,
                         )
@@ -2451,7 +2509,7 @@ private fun MainAppContent(
                     Box(modifier = Modifier.fillMaxSize()) {
                         StreamsScreen(
                             type = launch.type,
-                            videoId = effectiveVideoId,
+                            videoId = effectiveStreamVideoId,
                             parentMetaId = launch.parentMetaId ?: effectiveVideoId,
                             parentMetaType = launch.parentMetaType ?: launch.type,
                             title = launch.title,
@@ -2580,6 +2638,7 @@ private fun MainAppContent(
                         videoId = launch.videoId,
                         parentMetaId = launch.parentMetaId,
                         parentMetaType = launch.parentMetaType,
+                        watchProgressSource = launch.watchProgressSource,
                         torrentInfoHash = launch.torrentInfoHash,
                         torrentFileIdx = launch.torrentFileIdx,
                         torrentFilename = launch.torrentFilename,
@@ -2614,6 +2673,7 @@ private fun MainAppContent(
                                 videoId = launch.videoId,
                                 parentMetaId = launch.parentMetaId,
                                 parentMetaType = launch.parentMetaType,
+                                watchProgressSource = launch.watchProgressSource,
                                 initialPositionMs = request.resumePositionMs,
                             )
                             lastExternalPlayerLaunch = playerLaunch
@@ -3087,6 +3147,11 @@ private fun AppTabHost(
     modifier: Modifier = Modifier,
     topChromePadding: Dp? = null,
     searchFocusRequestCount: Int = 0,
+    navigateToContentCount: Int = 0,
+    searchQuery: String = "",
+    submittedSearchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    searchSubmitRequests: Flow<String> = emptyFlow(),
     rootActionsEnabled: Boolean = true,
     homeScrollToTopRequests: Flow<Unit>,
     searchScrollToTopRequests: Flow<Unit>,
@@ -3128,52 +3193,66 @@ private fun AppTabHost(
     val tabStateHolder = rememberSaveableStateHolder()
 
     Box(modifier = modifier.fillMaxSize()) {
-        tabStateHolder.SaveableStateProvider(selectedTab.name) {
+        val stateKey = when (selectedTab) {
+            AppScreenTab.Home, AppScreenTab.Search, AppScreenTab.Library -> "HomeSearchLibrary"
+            AppScreenTab.Settings -> AppScreenTab.Settings.name
+        }
+        tabStateHolder.SaveableStateProvider(stateKey) {
             when (selectedTab) {
-                AppScreenTab.Home -> {
+                // Home, Search, and Library all share the same composable instance.
+                // This preserves scroll position, hero state, and list state across
+                // all three tabs — switching to Search never changes the visible UI
+                // until results arrive, and switching from Library to Search stays
+                // on the library view until the user types.
+                AppScreenTab.Home, AppScreenTab.Search, AppScreenTab.Library -> {
+                    AnimatedContent(
+                        targetState = selectedTab,
+                        transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(160)) },
+                        label = "home_library_tab_crossfade",
+                    ) { activeTab ->
+                    val isSearch = activeTab == AppScreenTab.Search
+                    val isLib = activeTab == AppScreenTab.Library
                     HomeScreen(
                         modifier = Modifier.fillMaxSize(),
-                        animateCollectionGifs = animateHomeCollectionGifs,
-                        scrollToTopRequests = homeScrollToTopRequests,
-                        onCatalogClick = onCatalogClick,
+                        topChromePadding = topChromePadding,
+                        contentMode = when {
+                            isSearch -> com.nuvio.app.features.home.HomeContentMode.Search(
+                                autoFocusCount = searchFocusRequestCount,
+                            )
+                            isLib -> com.nuvio.app.features.home.HomeContentMode.Library
+                            else -> com.nuvio.app.features.home.HomeContentMode.Normal
+                        },
+                        searchQuery = if (isSearch) submittedSearchQuery else "",
+                        searchSubmitRequests = if (isSearch) searchSubmitRequests else emptyFlow(),
+                        animateCollectionGifs = animateHomeCollectionGifs && !isSearch && !isLib,
+                        scrollToTopRequests = when {
+                            isLib -> libraryScrollToTopRequests
+                            isSearch -> searchScrollToTopRequests
+                            else -> homeScrollToTopRequests
+                        },
+                        onCatalogClick = if (!isSearch && !isLib) onCatalogClick else null,
                         onCastClick = onCastClick,
-                        onPosterClick = onPosterClick,
+                        onPosterClick = { meta ->
+                            if (meta.type.equals(CloudLibraryContentType, ignoreCase = true)) {
+                                meta.findCloudLibraryItemForPreview()?.let { item ->
+                                    item.playableFiles.firstOrNull()?.let { file -> onCloudFilePlay?.invoke(item, file) }
+                                }
+                            } else {
+                                onPosterClick?.invoke(meta)
+                            }
+                        },
                         onPosterLongClick = onPosterLongClick,
-                        onContinueWatchingClick = onContinueWatchingClick,
-                        onContinueWatchingLongPress = onContinueWatchingLongPress,
-                        onFolderClick = onFolderClick,
-                        onFirstCatalogRendered = onInitialHomeContentRendered,
+                        onContinueWatchingClick = if (!isSearch && !isLib) onContinueWatchingClick else null,
+                        onContinueWatchingLongPress = if (!isSearch && !isLib) onContinueWatchingLongPress else null,
+                        onFolderClick = if (!isSearch && !isLib) onFolderClick else null,
+                        onFirstCatalogRendered = if (!isSearch && !isLib) onInitialHomeContentRendered else null,
                         onNavigateToSearch = onNavigateToSearch,
-                        onNavigateToLibrary = onNavigateToLibrary,
+                        onNavigateToLibrary = if (!isLib) onNavigateToLibrary else null,
                         onNavigateToCalendar = onNavigateToCalendar,
+                        onNavigateToHome = if (isSearch || isLib) onNavigateToHome else null,
+                        navigateToContentCount = navigateToContentCount,
                     )
-                }
-
-                AppScreenTab.Search -> {
-                    SearchScreen(
-                        modifier = Modifier.fillMaxSize(),
-                        topChromePadding = topChromePadding,
-                        onPosterClick = onPosterClick,
-                        onPosterLongClick = onPosterLongClick,
-                        searchFocusRequestCount = searchFocusRequestCount,
-                        scrollToTopRequests = searchScrollToTopRequests,
-                        onNavigateToHome = onNavigateToHome,
-                    )
-                }
-
-                AppScreenTab.Library -> {
-                    LibraryScreen(
-                        modifier = Modifier.fillMaxSize(),
-                        topChromePadding = topChromePadding,
-                        scrollToTopRequests = libraryScrollToTopRequests,
-                        onPosterClick = onLibraryPosterClick,
-                        onPosterLongClick = onLibraryPosterLongClick,
-                        onSectionViewAllClick = onLibrarySectionViewAllClick,
-                        onCloudFilePlay = onCloudFilePlay,
-                        onConnectCloudClick = onConnectCloudClick,
-                        onNavigateToHome = onNavigateToHome,
-                        onCalendarClick = onNavigateToCalendar,
-                    )
+                    }
                 }
 
                 AppScreenTab.Settings -> {
@@ -3465,15 +3544,78 @@ private fun TabletFloatingTopBar(
     onAddProfileRequested: () -> Unit,
     modifier: Modifier = Modifier,
     dimUntilHovered: Boolean = false,
+    searchOverlayActive: Boolean = false,
+    onSearchOverlayOpen: () -> Unit = {},
+    onSearchOverlayDismiss: () -> Unit = {},
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    searchFocusRequestCount: Int = 0,
+    onSearchSubmit: (String) -> Unit = {},
+    onNavigateToContent: () -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
+    val focusManager = LocalFocusManager.current
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val hoverSource = remember { MutableInteractionSource() }
     val hovered by hoverSource.collectIsHoveredAsState()
+    val isSearchActive = searchOverlayActive || selectedTab == AppScreenTab.Search
     val barAlpha by animateFloatAsState(
-        targetValue = if (dimUntilHovered && !hovered) 0f else 1f,
+        targetValue = if (dimUntilHovered && !isSearchActive && !hovered) 0f else 1f,
         animationSpec = tween(durationMillis = 200),
     )
+
+    var searchFieldState by remember(isSearchActive) {
+        mutableStateOf(TextFieldValue(searchQuery))
+    }
+    LaunchedEffect(searchQuery) {
+        if (searchFieldState.text != searchQuery) {
+            searchFieldState = searchFieldState.copy(
+                text = searchQuery,
+                selection = TextRange(searchQuery.length),
+            )
+        }
+    }
+
+    val searchBarFocusRequester = remember { FocusRequester() }
+    var suppressSearchActivationKey by remember(searchFocusRequestCount) { mutableStateOf(false) }
+    var searchBarHasFocus by remember { mutableStateOf(false) }
+    val searchHistory by com.nuvio.app.features.search.SearchHistoryRepository.uiState.collectAsState()
+    var historySelectedIndex by remember { mutableStateOf(-1) }
+    val historyVisible = isSearchActive && searchBarHasFocus && searchHistory.isNotEmpty()
+    var historyShapeVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(searchHistory, searchQuery) {
+        historySelectedIndex = -1
+    }
+
+    LaunchedEffect(historyVisible) {
+        if (historyVisible) {
+            historyShapeVisible = true
+        } else {
+            kotlinx.coroutines.delay(180)
+            historyShapeVisible = false
+        }
+    }
+
+    LaunchedEffect(isSearchActive) {
+        if (isSearchActive) {
+            com.nuvio.app.features.search.SearchHistoryRepository.ensureLoaded()
+        }
+    }
+
+    LaunchedEffect(searchFocusRequestCount) {
+        if (searchFocusRequestCount > 0 && isSearchActive) {
+            suppressSearchActivationKey = true
+            try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
+            kotlinx.coroutines.delay(150)
+            suppressSearchActivationKey = false
+        }
+    }
+
+    val dividerColor = Color.White.copy(alpha = 0.13f)
+    val activeQuadColor = Color.White.copy(alpha = 0.18f)
+    val activeIconTint = Color.White
+    val inactiveIconTint = Color.White.copy(alpha = 0.55f)
 
     Box(
         modifier = modifier
@@ -3483,97 +3625,237 @@ private fun TabletFloatingTopBar(
             .alpha(barAlpha),
         contentAlignment = Alignment.TopCenter,
     ) {
-        Surface(
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Surface(
             color = tokens.colors.surface.copy(alpha = tokens.opacity.strong),
-            shape = tokens.shapes.chip,
+            shape = if (historyShapeVisible) androidx.compose.foundation.shape.RoundedCornerShape(topStartPercent = 50, topEndPercent = 50) else tokens.shapes.chip,
             tonalElevation = tokens.elevation.playerControls,
             shadowElevation = tokens.elevation.overlay,
+            border = BorderStroke(0.5.dp, dividerColor),
+            modifier = Modifier.height(44.dp).width(320.dp),
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = NuvioTokens.Space.s10, vertical = tokens.spacing.controlGap),
-                horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TabletTopPillItem(
-                    label = stringResource(Res.string.compose_nav_home),
-                    selected = selectedTab == AppScreenTab.Home,
-                    onClick = { onTabSelected(AppScreenTab.Home) },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Filled.Home,
-                            contentDescription = stringResource(Res.string.compose_nav_home),
-                            modifier = Modifier.size(NuvioTokens.Space.s18),
-                            tint = if (selectedTab == AppScreenTab.Home) {
-                                tokens.colors.textPrimary
-                            } else {
-                                tokens.colors.textMuted
-                            },
-                        )
-                    },
-                )
-                TabletTopPillItem(
-                    label = stringResource(Res.string.compose_nav_search),
-                    selected = selectedTab == AppScreenTab.Search,
-                    onClick = { onTabSelected(AppScreenTab.Search) },
-                    icon = {
+            AnimatedContent(
+                targetState = isSearchActive,
+                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
+                label = "nav_content",
+            ) { searchActive ->
+                if (searchActive) {
+                    Row(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
+                    ) {
                         Icon(
                             painter = painterResource(Res.drawable.sidebar_search),
-                            contentDescription = stringResource(Res.string.compose_nav_search),
+                            contentDescription = null,
                             modifier = Modifier.size(NuvioTokens.Space.s18),
-                            tint = if (selectedTab == AppScreenTab.Search) {
-                                tokens.colors.textPrimary
-                            } else {
-                                tokens.colors.textMuted
+                            tint = inactiveIconTint,
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .onPreviewKeyEvent { event ->
+                                    when (event.key) {
+                                        Key.Enter -> {
+                                            if (event.type == KeyEventType.KeyUp) {
+                                                if (historySelectedIndex in searchHistory.indices) {
+                                                    val q = searchHistory[historySelectedIndex]
+                                                    onSearchQueryChange(q)
+                                                    focusManager.clearFocus()
+                                                    onSearchSubmit(q)
+                                                } else {
+                                                    focusManager.clearFocus()
+                                                    onSearchSubmit(searchQuery)
+                                                }
+                                            }
+                                            true
+                                        }
+                                        Key.Escape -> {
+                                            if (event.type == KeyEventType.KeyUp) {
+                                                onSearchOverlayDismiss()
+                                            }
+                                            true
+                                        }
+                                        Key.DirectionDown -> {
+                                            if (event.type == KeyEventType.KeyDown && isSearchActive && searchHistory.isNotEmpty()) {
+                                                historySelectedIndex = (historySelectedIndex + 1).coerceAtMost(minOf(4, searchHistory.size - 1))
+                                                val q = searchHistory[historySelectedIndex]
+                                                searchFieldState = searchFieldState.copy(text = q, selection = TextRange(q.length))
+                                                return@onPreviewKeyEvent true
+                                            }
+                                            false
+                                        }
+                                        Key.DirectionUp -> {
+                                            if (event.type == KeyEventType.KeyDown && isSearchActive && searchHistory.isNotEmpty()) {
+                                                if (historySelectedIndex > -1) {
+                                                    historySelectedIndex--
+                                                    if (historySelectedIndex > -1) {
+                                                        val q = searchHistory[historySelectedIndex]
+                                                        searchFieldState = searchFieldState.copy(text = q, selection = TextRange(q.length))
+                                                    }
+                                                    return@onPreviewKeyEvent true
+                                                }
+                                            }
+                                            false
+                                        }
+                                        else -> false
+                                    }
+                                },
+                        ) {
+                            BasicTextField(
+                                value = searchFieldState,
+                                onValueChange = { value ->
+                                    if (suppressSearchActivationKey &&
+                                            value.text.length == 1 && value.text.equals("s", ignoreCase = true) &&
+                                            searchQuery.isBlank()) {
+                                        suppressSearchActivationKey = false
+                                    } else {
+                                        searchFieldState = value
+                                        onSearchQueryChange(value.text)
+                                    }
+                                },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(searchBarFocusRequester)
+                                .onFocusChanged { state ->
+                                    searchBarHasFocus = state.isFocused
+                                    if (state.isFocused) {
+                                        searchFieldState = searchFieldState.copy(
+                                            selection = TextRange(0, searchFieldState.text.length)
+                                        )
+                                    }
+                                },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = activeIconTint),
+                            cursorBrush = SolidColor(tokens.colors.accent),
+                            decorationBox = { inner ->
+                                if (searchFieldState.text.isEmpty()) {
+                                    Text(
+                                        text = stringResource(Res.string.compose_search_placeholder),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = inactiveIconTint,
+                                    )
+                                }
+                                inner()
                             },
                         )
-                    },
-                )
-                TabletTopPillItem(
-                    label = stringResource(Res.string.compose_nav_library),
-                    selected = selectedTab == AppScreenTab.Library,
-                    onClick = { onTabSelected(AppScreenTab.Library) },
-                    icon = {
-                        Icon(
-                            painter = painterResource(Res.drawable.sidebar_library),
-                            contentDescription = stringResource(Res.string.compose_nav_library),
-                            modifier = Modifier.size(NuvioTokens.Space.s18),
-                            tint = if (selectedTab == AppScreenTab.Library) {
-                                tokens.colors.textPrimary
-                            } else {
-                                tokens.colors.textMuted
-                            },
-                        )
-                    },
-                )
-                Surface(
-                    color = if (selectedTab == AppScreenTab.Settings) {
-                        tokens.colors.overlaySelected
-                    } else {
-                        tokens.colors.surface
-                    },
-                    shape = tokens.shapes.chip,
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = tokens.spacing.listGap, vertical = NuvioTokens.Space.s4),
-                        horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ProfileSwitcherTab(
+                    }
+                        IconButton(
+                            onClick = onSearchOverlayDismiss,
+                            modifier = Modifier.size(NuvioTokens.Space.s32),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Exit search",
+                                tint = inactiveIconTint,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                } else {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        NavQuadrant(
+                            selected = selectedTab == AppScreenTab.Home,
+                            activeColor = activeQuadColor,
+                            onClick = { onTabSelected(AppScreenTab.Home) },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Home,
+                                contentDescription = stringResource(Res.string.compose_nav_home),
+                                modifier = Modifier.size(NuvioTokens.Space.s18).offset(x = 2.dp),
+                                tint = if (selectedTab == AppScreenTab.Home) activeIconTint else inactiveIconTint,
+                            )
+                        }
+                        Box(Modifier.width(0.5.dp).fillMaxHeight().background(dividerColor))
+                        NavQuadrant(
+                            selected = isSearchActive,
+                            activeColor = activeQuadColor,
+                            onClick = onSearchOverlayOpen,
+                        ) {
+                            Icon(
+                                painter = painterResource(Res.drawable.sidebar_search),
+                                contentDescription = stringResource(Res.string.compose_nav_search),
+                                modifier = Modifier.size(NuvioTokens.Space.s18),
+                                tint = if (isSearchActive) activeIconTint else inactiveIconTint,
+                            )
+                        }
+                        Box(Modifier.width(0.5.dp).fillMaxHeight().background(dividerColor))
+                        NavQuadrant(
+                            selected = selectedTab == AppScreenTab.Library,
+                            activeColor = activeQuadColor,
+                            onClick = { onTabSelected(AppScreenTab.Library) },
+                        ) {
+                            Icon(
+                                painter = painterResource(Res.drawable.sidebar_library),
+                                contentDescription = stringResource(Res.string.compose_nav_library),
+                                modifier = Modifier.size(NuvioTokens.Space.s18),
+                                tint = if (selectedTab == AppScreenTab.Library) activeIconTint else inactiveIconTint,
+                            )
+                        }
+                        Box(Modifier.width(0.5.dp).fillMaxHeight().background(dividerColor))
+                        NavQuadrant(
                             selected = selectedTab == AppScreenTab.Settings,
+                            activeColor = activeQuadColor,
                             onClick = { onTabSelected(AppScreenTab.Settings) },
-                            onProfileSelected = onProfileSelected,
-                            onAddProfileRequested = onAddProfileRequested,
-                        )
-                        Text(
-                            text = stringResource(Res.string.compose_nav_profile),
-                            modifier = Modifier.clickable { onTabSelected(AppScreenTab.Settings) },
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (selectedTab == AppScreenTab.Settings) {
-                                tokens.colors.textPrimary
-                            } else {
-                                tokens.colors.textMuted
-                            },
-                        )
+                        ) {
+                            Box(modifier = Modifier.offset(x = (-2).dp)) {
+                                ProfileSwitcherTab(
+                                    selected = selectedTab == AppScreenTab.Settings,
+                                    onClick = { onTabSelected(AppScreenTab.Settings) },
+                                    onProfileSelected = onProfileSelected,
+                                    onAddProfileRequested = onAddProfileRequested,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } // closes Surface
+        
+        androidx.compose.animation.AnimatedVisibility(
+                visible = historyVisible,
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(expandFrom = Alignment.Top),
+                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(shrinkTowards = Alignment.Top),
+            ) {
+                Surface(
+                    color = tokens.colors.surface.copy(alpha = tokens.opacity.strong),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                    tonalElevation = tokens.elevation.playerControls,
+                    shadowElevation = tokens.elevation.overlay,
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, dividerColor),
+                    modifier = Modifier.width(320.dp).offset(y = (-0.5).dp),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        searchHistory.take(5).forEachIndexed { index, historyQuery ->
+                            val isSelected = index == historySelectedIndex
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(if (isSelected) Color.White.copy(alpha = 0.1f) else Color.Transparent)
+                                    .clickable {
+                                        focusManager.clearFocus()
+                                        onSearchQueryChange(historyQuery)
+                                        onSearchSubmit(historyQuery)
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(Res.drawable.sidebar_search),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(NuvioTokens.Space.s16),
+                                    tint = inactiveIconTint,
+                                )
+                                androidx.compose.material3.Text(
+                                    text = historyQuery,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = activeIconTint,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -3581,8 +3863,36 @@ private fun TabletFloatingTopBar(
     }
 }
 
+@Composable
+private fun RowScope.NavQuadrant(
+    selected: Boolean,
+    activeColor: Color,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .background(if (selected) activeColor else Color.Transparent)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
+
 private fun ContinueWatchingItem.isCloudLibraryContinueWatchingItem(): Boolean =
     parentMetaType.equals(CloudLibraryContentType, ignoreCase = true)
+
+private fun MetaPreview.findCloudLibraryItemForPreview(): CloudLibraryItem? {
+    if (!type.equals(CloudLibraryContentType, ignoreCase = true)) return null
+    return CloudLibraryRepository.uiState.value.items.firstOrNull { item -> item.stableKey == id }
+}
 
 @Composable
 private fun TabletTopPillItem(

@@ -27,6 +27,7 @@ internal actual object TmdbSettingsStorage {
     private const val useCollectionsKey = "tmdb_use_collections"
     private const val libraryPosterEnabledKey = "tmdb_library_poster_enabled"
     private const val libraryPosterUrlTemplateKey = "tmdb_library_poster_url"
+    private const val heroImageSourceKey = "tmdb_hero_image_source"
     private val syncKeys = listOf(
         enabledKey,
         apiKeyKey,
@@ -79,6 +80,8 @@ internal actual object TmdbSettingsStorage {
     actual fun saveLibraryPosterEnabled(enabled: Boolean) = saveBoolean(libraryPosterEnabledKey, enabled)
     actual fun loadLibraryPosterUrlTemplate(): String? = loadString(libraryPosterUrlTemplateKey)
     actual fun saveLibraryPosterUrlTemplate(template: String) = saveString(libraryPosterUrlTemplateKey, template)
+    actual fun loadHeroImageSource(): String? = loadString(heroImageSourceKey)
+    actual fun saveHeroImageSource(source: String) = saveString(heroImageSourceKey, source)
 
     private fun loadString(key: String): String? = store.getString(ProfileScopedKey.of(key))
     private fun saveString(key: String, value: String) = store.putString(ProfileScopedKey.of(key), value)

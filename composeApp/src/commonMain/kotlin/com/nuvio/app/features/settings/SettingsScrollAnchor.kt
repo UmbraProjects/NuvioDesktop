@@ -50,6 +50,10 @@ internal object SettingsScrollAnchor {
     const val BufferPreset = "buffer_preset"
     const val AnimeEnhancements = "anime_enhancements"
     const val RtxHdr = "rtx_hdr"
+    const val TmdbHeroImages = "tmdb_hero_images"
+    const val TvdbApiKey = "tvdb_api_key"
+
+    fun searchKey(key: String): String = "settings_search_$key"
 
     private val _requested = MutableStateFlow<String?>(null)
     val requested: StateFlow<String?> = _requested.asStateFlow()
@@ -127,3 +131,9 @@ internal fun Modifier.settingsScrollAnchor(anchor: String): Modifier {
             )
         }
 }
+
+@Composable
+internal fun Modifier.settingsSearchAnchors(vararg keys: String): Modifier =
+    keys.fold(this) { modifier, key ->
+        modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey(key))
+    }

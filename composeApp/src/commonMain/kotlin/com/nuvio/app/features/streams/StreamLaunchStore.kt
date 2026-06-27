@@ -3,8 +3,10 @@ package com.nuvio.app.features.streams
 data class StreamLaunch(
     val type: String,
     val videoId: String,
+    val streamVideoId: String? = null,
     val parentMetaId: String? = null,
     val parentMetaType: String? = null,
+    val watchProgressSource: String? = null,
     val title: String,
     val logo: String? = null,
     val poster: String? = null,

@@ -18,6 +18,13 @@ object TmdbService {
     suspend fun ensureTmdbId(videoId: String, mediaType: String): String? {
         val apiKey = currentApiKey() ?: return null
 
+        // Handle TVDB IDs (e.g. "tvdb:73244") — AIOMetadata returns these when TVDB is
+        // the configured search/metadata source. Convert via TMDB's /find endpoint.
+        if (videoId.startsWith("tvdb:", ignoreCase = true)) {
+            val tvdbId = videoId.substringAfter(':').trim()
+            return tvdbToTmdb(tvdbId = tvdbId, mediaType = mediaType, apiKey = apiKey)
+        }
+
         val normalized = videoId
             .removePrefix("tmdb:")
             .removePrefix("movie:")
@@ -31,6 +38,31 @@ object TmdbService {
         if (!normalized.startsWith("tt", ignoreCase = true)) return null
 
         return imdbToTmdb(imdbId = normalized, mediaType = mediaType, apiKey = apiKey)
+    }
+
+    private suspend fun tvdbToTmdb(tvdbId: String, mediaType: String, apiKey: String): String? {
+        val normalizedType = normalizeMediaType(mediaType)
+        val cacheKey = "tvdb:$tvdbId:$normalizedType"
+        cacheMutex.withLock {
+            imdbToTmdbCache[cacheKey]?.let { return it }
+        }
+
+        val body = fetch<TmdbFindResponse>(
+            endpoint = "find/$tvdbId",
+            apiKey = apiKey,
+            query = mapOf("external_source" to "tvdb_id"),
+        ) ?: return null
+
+        val resultId = when (normalizedType) {
+            "movie" -> body.movieResults.firstOrNull()?.id
+            "tv" -> body.tvResults.firstOrNull()?.id
+            else -> body.tvResults.firstOrNull()?.id ?: body.movieResults.firstOrNull()?.id
+        }?.takeIf { it > 0 }?.toString()
+
+        if (resultId != null) {
+            cacheMutex.withLock { imdbToTmdbCache[cacheKey] = resultId }
+        }
+        return resultId
     }
 
     suspend fun tmdbToImdb(tmdbId: Int, mediaType: String): String? {
@@ -99,6 +131,20 @@ object TmdbService {
         }.getOrNull()
     }
 
+    // Resolves an IMDB ID to a TVDB numeric ID via TMDB's /external_ids endpoint.
+    // More reliable than TVDB's own /search?remote_id= which often returns null data.
+    suspend fun imdbToTvdbId(imdbId: String, mediaType: String): Int? {
+        val apiKey = currentApiKey() ?: return null
+        val tmdbId = imdbToTmdb(imdbId = imdbId, mediaType = mediaType, apiKey = apiKey)
+            ?.toIntOrNull() ?: return null
+        val normalizedType = normalizeMediaType(mediaType)
+        val endpoint = when (normalizedType) {
+            "tv" -> "tv/$tmdbId/external_ids"
+            else -> "movie/$tmdbId/external_ids"
+        }
+        return fetch<TmdbExternalIdsResponse>(endpoint = endpoint, apiKey = apiKey)?.tvdbId
+    }
+
     private fun currentApiKey(): String? =
         TmdbSettingsRepository.snapshot().apiKey.trim().takeIf(String::isNotBlank)
 
@@ -145,4 +191,5 @@ private data class TmdbExternalResult(
 @Serializable
 private data class TmdbExternalIdsResponse(
     @SerialName("imdb_id") val imdbId: String? = null,
+    @SerialName("tvdb_id") val tvdbId: Int? = null,
 )

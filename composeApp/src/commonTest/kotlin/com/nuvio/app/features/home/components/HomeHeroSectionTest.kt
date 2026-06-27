@@ -1,7 +1,11 @@
 package com.nuvio.app.features.home.components
 
+import com.nuvio.app.features.home.HeroCastMember
+import com.nuvio.app.features.home.MetaPreview
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class HomeHeroSectionTest {
 
@@ -25,5 +29,31 @@ class HomeHeroSectionTest {
 
         assertEquals(true, layout.isTablet)
         assertEquals(386.4f, layout.heroHeight.value, 0.001f)
+    }
+
+    @Test
+    fun `hero cast keeps actors with mixed production credits`() {
+        val item = MetaPreview(
+            id = "tt0386676",
+            type = "series",
+            name = "The Office",
+            cast = listOf(
+                HeroCastMember(name = "Producer Only", role = "Executive Producer"),
+                HeroCastMember(name = "Steve Carell", role = "Executive Producer, Michael Scott"),
+                HeroCastMember(name = "Ricky Gervais", role = "Creator / David Brent"),
+            ),
+        )
+
+        val cast = heroDisplayCast(item, maxCount = 4)
+
+        assertEquals(listOf("Steve Carell", "Ricky Gervais"), cast.map { it.name })
+    }
+
+    @Test
+    fun `hero crew role detector distinguishes pure crew from mixed acting roles`() {
+        assertTrue("Executive Producer".isHeroCrewRole())
+        assertTrue("Creator / Writer".isHeroCrewRole())
+        assertFalse("Executive Producer, Michael Scott".isHeroCrewRole())
+        assertFalse("Creator / David Brent".isHeroCrewRole())
     }
 }

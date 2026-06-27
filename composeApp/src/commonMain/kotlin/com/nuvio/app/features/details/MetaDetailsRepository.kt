@@ -11,8 +11,11 @@ import com.nuvio.app.features.home.filterReleasedItems
 import com.nuvio.app.features.mdblist.MdbListMetadataService
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.tmdb.TmdbMetadataService
+import com.nuvio.app.features.tmdb.HeroImageSource
 import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import com.nuvio.app.features.tvdb.TvdbImageService
+import com.nuvio.app.features.tvdb.TvdbSettingsRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktConnectionMode
 import com.nuvio.app.features.trakt.TraktRelatedRepository
@@ -23,6 +26,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -77,7 +82,6 @@ object MetaDetailsRepository {
             activeRequestKey = requestKey
             _uiState.value = MetaDetailsUiState(
                 isLoading = true,
-                meta = cachedBaseMeta,
             )
 
             scope.launch {
@@ -197,8 +201,8 @@ object MetaDetailsRepository {
         _uiState.value = MetaDetailsUiState()
     }
 
-    suspend fun fetch(type: String, id: String): MetaDetails? {
-        val requestKey = "$type:$id"
+    suspend fun fetch(type: String, id: String, enrichTmdb: Boolean = true): MetaDetails? {
+        val requestKey = "$type:$id:enrich=$enrichTmdb"
         cachedMetaByRequestKey[requestKey]?.let { return it.baseMeta }
 
         val metaLookupId = resolveMetaLookupId(itemId = id, itemType = type)
@@ -207,7 +211,7 @@ object MetaDetailsRepository {
         var supplementalMeta: MetaDetails? = null
         for (manifest in manifests) {
             val result = withTimeoutOrNull(FETCH_TIMEOUT_MS) {
-                tryFetchMeta(manifest, type, metaLookupId, includeMdbList = false)
+                tryFetchMeta(manifest, type, metaLookupId, includeMdbList = false, enrichTmdb = enrichTmdb)
             }
             if (result != null) {
                 if (type.isSeriesMetaType() && result.videos.isEmpty()) {
@@ -227,6 +231,164 @@ object MetaDetailsRepository {
         }?.mergeSupplementalMeta(supplementalMeta)
     }
 
+    // Separate lightweight cache: survives LaunchedEffect restarts without polluting the
+    // main detail-page cache (which the full fetch() path writes to).
+    private val lightweightMetaCache = mutableMapOf<String, MetaDetails>()
+
+    // Lightweight fetch for hero enrichment — returns the first non-null addon result
+    // without requiring a video list for series. Uses its own cache so LaunchedEffect
+    // restarts (triggered by library reloads) return instantly on the second pass.
+    //
+    // When preferTmdbImages = true (TMDB-for-everything mode): collects the first addon
+    // result for text metadata, then ALWAYS also runs the TMDB fallback to get a proper
+    // TMDB backdrop/logo. Merges the two so text comes from the addon and images from TMDB.
+    // This is simpler and more reliable than a separate TMDB image service.
+    suspend fun fetchLightweightMeta(type: String, id: String, preferTmdbImages: Boolean = false): MetaDetails? {
+        val requestKey = "$type:$id:${if (preferTmdbImages) "tmdb" else "addon"}"
+        // When preferTmdbImages is false: use the main detail-page cache (cachedMetaByRequestKey).
+        // When preferTmdbImages is true: skip the main cache — it contains AIOMetadata responses
+        // which have TMDB images baked in and would bypass TVDB completely. The lightweight
+        // cache (lightweightMetaCache, keyed with ":tmdb") serves as our cache instead.
+        if (!preferTmdbImages) {
+            cachedMetaByRequestKey["$type:$id"]?.let { return it.baseMeta }
+        }
+        lightweightMetaCache[requestKey]?.let { return it }
+
+        val heroImageSource = TmdbSettingsRepository.snapshot().heroImageSource
+        val isTvType = type.equals("series", ignoreCase = true) || type.equals("anime", ignoreCase = true)
+        val tvdbApiKeyPresent = TvdbSettingsRepository.snapshot().hasApiKey
+        val tvdbActiveForType = heroImageSource == HeroImageSource.TmdbMoviesTvdbShows &&
+            isTvType && tvdbApiKeyPresent
+        log.d { "fetchLightweightMeta preferTmdb=$preferTmdbImages type=$type id=$id heroSrc=$heroImageSource isTv=$isTvType tvdbKey=$tvdbApiKeyPresent tvdbActive=$tvdbActiveForType" }
+
+        // Composite CW IDs like "upnext_tt4384086_trakt1989742" embed the real IMDB ID.
+        // External services (TVDB, TMDB) can't resolve the full composite string — extract
+        // the embedded tt-prefixed segment for external lookups.
+        val externalId = id.split("_").firstOrNull { it.startsWith("tt", ignoreCase = true) } ?: id
+
+        val metaLookupId = resolveMetaLookupId(itemId = id, itemType = type)
+        val manifests = findMetaManifests(type = type, id = metaLookupId)
+
+        // Warm up the TVDB token in parallel with the addon meta call so it's cached
+        // by the time we might need it — eliminates the token-acquisition round-trip.
+        if (tvdbActiveForType) scope.launch { TvdbImageService.warmToken() }
+
+        var addonResult: MetaDetails? = null
+        for (manifest in manifests) {
+            val result = withTimeoutOrNull(FETCH_TIMEOUT_MS) {
+                tryFetchMeta(manifest, type, metaLookupId, includeMdbList = false)
+            }
+            if (result != null) {
+                if (!preferTmdbImages) {
+                    // Standard path: first result wins.
+                    lightweightMetaCache[requestKey] = result
+                    return result
+                }
+                if (addonResult == null) addonResult = result
+                // In TVDB-for-TV mode: always break to TVDB regardless of what the addon provides.
+                // Without this guard, AIOMetadata's TMDB-sourced image.tmdb.org URLs cause an
+                // early return that skips TVDB completely.
+                if (!tvdbActiveForType && result.background?.contains("image.tmdb.org") == true) {
+                    lightweightMetaCache[requestKey] = result
+                    return result
+                }
+                break  // Collected text metadata; proceed to image source resolution.
+            }
+        }
+
+        val tvdbResult: com.nuvio.app.features.details.MetaDetails? =
+            if (tvdbActiveForType) {
+                val addonBg = addonResult?.background
+                val addonLogo = addonResult?.logo
+                val addonHasTvdbBackdrop = addonBg?.contains("artworks.thetvdb.com") == true || addonBg?.contains("metahub.space") == true
+                val addonHasTvdbLogo = addonLogo?.contains("artworks.thetvdb.com") == true || addonLogo?.contains("metahub.space") == true
+
+                if (addonHasTvdbBackdrop) {
+                    // Addon (e.g. AIOMetadata) already ran the TVDB selection and embedded the
+                    // result in its meta response — reuse it directly, zero extra HTTP calls.
+                    // This matches AIOMetadata's speed: one meta call returns everything.
+                    log.d { "TVDB: reusing addon backdrop/logo for $id (no extra call needed)" }
+                    com.nuvio.app.features.details.MetaDetails(
+                        id = id, type = type, name = addonResult?.name.orEmpty(),
+                        background = addonBg,
+                        logo = if (addonHasTvdbLogo) addonLogo else null,
+                    )
+                } else {
+                    // Addon doesn't provide a TVDB backdrop (e.g. Cinemeta gives metahub URLs,
+                    // or the show has no art) — call TVDB artworks for proper lang=null selection.
+                    val knownTvdbId = addonResult?.tvdbId?.trim()?.takeIf(String::isNotBlank)
+                    val images = runCatching {
+                        if (knownTvdbId != null) TvdbImageService.fetchWithKnownTvdbId(knownTvdbId)
+                        else TvdbImageService.fetch(type, externalId)
+                    }.getOrNull()
+                    images?.let { imgs ->
+                        com.nuvio.app.features.details.MetaDetails(
+                            id = id, type = type, name = addonResult?.name.orEmpty(),
+                            background = imgs.backdrop,
+                            logo = imgs.logo,
+                        )
+                    }
+                }
+            } else null
+
+        // Determine whether TMDB needs to be called.
+        // Movies (all image modes): always TMDB.
+        // TV in TmdbOnly: always TMDB.
+        // TV in TmdbMoviesTvdbShows: TMDB only when TVDB is missing backdrop OR logo,
+        //   so the full chain TVDB → TMDB → metahub is honoured for each field independently.
+        val shouldUseTmdb = heroImageSource != HeroImageSource.Addon &&
+            !(heroImageSource == HeroImageSource.TmdbMoviesTvdbShows && isTvType)
+        val tvdbMissingAnyImage = tvdbResult?.background == null || tvdbResult?.logo == null
+        val needsTmdb = shouldUseTmdb || tvdbMissingAnyImage
+        val resolvedTmdbNumericId = if (needsTmdb) {
+            TmdbService.ensureTmdbId(externalId, type)
+        } else null
+        val tmdbFallbackId = if (resolvedTmdbNumericId != null) "tmdb:$resolvedTmdbNumericId" else id
+        val tmdbResult = if (needsTmdb && resolvedTmdbNumericId != null) {
+            tryFetchTmdbFallbackMeta(type = type, id = tmdbFallbackId)
+        } else null
+
+        // Metahub fallback check: query metahub ourselves before relying on TMDB.
+        val imdbId = if (externalId.startsWith("tt")) {
+            externalId
+        } else if (resolvedTmdbNumericId != null) {
+            TmdbService.tmdbToImdb(tmdbId = resolvedTmdbNumericId.toInt(), mediaType = type)
+        } else null
+        var explicitMetahubLogo: String? = null
+        var explicitMetahubBackground: String? = null
+        if (imdbId != null && tvdbMissingAnyImage) {
+            coroutineScope {
+                val logoDeferred = if (tvdbResult?.logo == null) async { MetahubService.getValidLogoUrl(imdbId) } else null
+                val bgDeferred = if (tvdbResult?.background == null) async { MetahubService.getValidBackgroundUrl(imdbId) } else null
+                explicitMetahubLogo = logoDeferred?.await()
+                explicitMetahubBackground = bgDeferred?.await()
+            }
+        }
+
+        // Merge independently per field so TMDB fills in when TVDB has no backdrop/logo.
+        // e.g. a series not yet on TVDB gets TVDB logo (if present) + TMDB backdrop.
+        // Priority order: TVDB -> Explicit Metahub -> Addon -> TMDB
+        val textSource = tmdbResult ?: tvdbResult  // TMDB has richer text metadata
+        val merged = when {
+            addonResult != null -> addonResult.copy(
+                background = tvdbResult?.background ?: explicitMetahubBackground ?: addonResult.background ?: tmdbResult?.background,
+                logo = tvdbResult?.logo ?: explicitMetahubLogo ?: addonResult.logo ?: tmdbResult?.logo,
+                genres = addonResult.genres.ifEmpty { textSource?.genres ?: emptyList() },
+                description = addonResult.description ?: textSource?.description,
+                releaseInfo = addonResult.releaseInfo ?: textSource?.releaseInfo,
+                runtime = addonResult.runtime ?: textSource?.runtime,
+            )
+            else -> (tvdbResult ?: tmdbResult)?.let { img ->
+                img.copy(
+                    background = tvdbResult?.background ?: explicitMetahubBackground ?: tmdbResult?.background,
+                    logo = tvdbResult?.logo ?: explicitMetahubLogo ?: tmdbResult?.logo
+                )
+            }
+        }
+        merged?.let { lightweightMetaCache[requestKey] = it }
+        return merged
+    }
+
     private const val FETCH_TIMEOUT_MS = 5_000L
     private const val TMDB_ENRICH_TIMEOUT_MS = 5_000L
     private const val MDBLIST_ENRICH_TIMEOUT_MS = 5_000L
@@ -236,6 +398,7 @@ object MetaDetailsRepository {
         type: String,
         id: String,
         includeMdbList: Boolean,
+        enrichTmdb: Boolean = true,
     ): MetaDetails? {
         val url = buildAddonResourceUrl(
             manifestUrl = manifest.transportUrl,
@@ -250,13 +413,17 @@ object MetaDetailsRepository {
             val payload = httpGetText(url)
             log.d { "Raw payload length=${payload.length}, first 500 chars: ${payload.take(500)}" }
             val result = MetaDetailsParser.parse(payload)
-            val tmdbEnriched = withTimeoutOrNull(TMDB_ENRICH_TIMEOUT_MS) {
-                TmdbMetadataService.enrichMeta(
-                    meta = result,
-                    fallbackItemId = id,
-                    settings = TmdbSettingsRepository.snapshot(),
-                )
-            } ?: result
+            val tmdbEnriched = if (enrichTmdb) {
+                withTimeoutOrNull(TMDB_ENRICH_TIMEOUT_MS) {
+                    TmdbMetadataService.enrichMeta(
+                        meta = result,
+                        fallbackItemId = id,
+                        settings = TmdbSettingsRepository.snapshot(),
+                    )
+                } ?: result
+            } else {
+                result
+            }
             val enriched = if (includeMdbList) {
                 MdbListSettingsRepository.ensureLoaded()
                 withTimeoutOrNull(MDBLIST_ENRICH_TIMEOUT_MS) {
@@ -337,7 +504,6 @@ object MetaDetailsRepository {
 
         _uiState.value = MetaDetailsUiState(
             isLoading = true,
-            meta = meta,
         )
         val enrichedMeta = withContext(Dispatchers.Default) {
             enrichForMetaScreen(
@@ -372,10 +538,55 @@ object MetaDetailsRepository {
                 settings = settings,
             )
         } ?: meta
-        val enrichedMeta = applyMoreLikeThisSource(
+        val moreLikeThisEnrichedMeta = applyMoreLikeThisSource(
             meta = mdbListEnrichedMeta,
             fallbackItemId = fallbackItemId,
             fallbackItemType = fallbackItemType,
+        )
+
+        // Apply TVDB and explicit Metahub fallbacks directly so that the Details screen
+        // prioritizes them over TMDB images in exactly the same way fetchLightweightMeta does.
+        val externalId = fallbackItemId.split("_").firstOrNull { it.startsWith("tt", ignoreCase = true) } ?: fallbackItemId
+        val imdbId = if (externalId.startsWith("tt")) externalId else null
+
+        val heroImageSource = TmdbSettingsRepository.snapshot().heroImageSource
+        val isTvType = fallbackItemType.equals("series", ignoreCase = true) || fallbackItemType.equals("anime", ignoreCase = true)
+        val tvdbApiKeyPresent = TvdbSettingsRepository.snapshot().hasApiKey
+        val tvdbActiveForType = heroImageSource == HeroImageSource.TmdbMoviesTvdbShows && isTvType && tvdbApiKeyPresent
+
+        val tvdbResult = if (tvdbActiveForType) {
+            coroutineScope {
+                val knownTvdbId = meta.tvdbId?.trim()?.takeIf(String::isNotBlank)
+                val images = runCatching {
+                    if (knownTvdbId != null) TvdbImageService.fetchWithKnownTvdbId(knownTvdbId)
+                    else TvdbImageService.fetch(fallbackItemType, externalId)
+                }.getOrNull()
+                images?.let { imgs ->
+                    MetaDetails(
+                        id = meta.id, type = meta.type, name = meta.name,
+                        background = imgs.backdrop,
+                        logo = imgs.logo,
+                    )
+                }
+            }
+        } else null
+
+        val tvdbMissingAnyImage = tvdbResult?.background == null || tvdbResult?.logo == null
+
+        var explicitMetahubLogo: String? = null
+        var explicitMetahubBackground: String? = null
+        if (imdbId != null && tvdbMissingAnyImage) {
+            coroutineScope {
+                val logoDeferred = if (tvdbResult?.logo == null) async { MetahubService.getValidLogoUrl(imdbId) } else null
+                val bgDeferred = if (tvdbResult?.background == null) async { MetahubService.getValidBackgroundUrl(imdbId) } else null
+                explicitMetahubLogo = logoDeferred?.await()
+                explicitMetahubBackground = bgDeferred?.await()
+            }
+        }
+
+        val enrichedMeta = moreLikeThisEnrichedMeta.copy(
+            background = meta.background ?: explicitMetahubBackground ?: tvdbResult?.background ?: moreLikeThisEnrichedMeta.background,
+            logo = tvdbResult?.logo ?: explicitMetahubLogo ?: moreLikeThisEnrichedMeta.logo,
         )
 
         cachedMetaByRequestKey[requestKey] = cachedMetaByRequestKey[requestKey]

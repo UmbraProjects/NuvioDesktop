@@ -142,21 +142,25 @@ private fun PosterCardStyleControls(
             title = stringResource(Res.string.settings_poster_card_width),
             selectedValue = widthDp,
             options = widthOptions,
+            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-width")),
             onSelected = onWidthSelected,
         )
         PosterStyleOptionRow(
             title = stringResource(Res.string.settings_poster_card_radius),
             selectedValue = cornerRadiusDp,
             options = radiusOptions,
+            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-radius")),
             onSelected = onCornerRadiusSelected,
         )
         PosterLandscapeModeToggleRow(
             checked = catalogLandscapeModeEnabled,
+            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-landscape")),
             onCheckedChange = onCatalogLandscapeModeChange,
         )
         PosterToggleRow(
             title = stringResource(Res.string.settings_poster_hide_labels),
             checked = hideLabelsEnabled,
+            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-hide-labels")),
             onCheckedChange = onHideLabelsChange,
         )
     }
@@ -165,11 +169,13 @@ private fun PosterCardStyleControls(
 @Composable
 private fun PosterLandscapeModeToggleRow(
     checked: Boolean,
+    modifier: Modifier = Modifier,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     PosterToggleRow(
         title = stringResource(Res.string.settings_poster_landscape_mode),
         checked = checked,
+        modifier = modifier,
         onCheckedChange = onCheckedChange,
     )
 }
@@ -178,10 +184,11 @@ private fun PosterLandscapeModeToggleRow(
 private fun PosterToggleRow(
     title: String,
     checked: Boolean,
+    modifier: Modifier = Modifier,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -299,12 +306,14 @@ private fun PosterStyleOptionRow(
     title: String,
     selectedValue: Int,
     options: List<PresetOption>,
+    modifier: Modifier = Modifier,
     onSelected: (Int) -> Unit,
 ) {
     val selectedLabel = options.firstOrNull { it.value == selectedValue }?.label
         ?: stringResource(Res.string.settings_poster_custom)
 
     Column(
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(

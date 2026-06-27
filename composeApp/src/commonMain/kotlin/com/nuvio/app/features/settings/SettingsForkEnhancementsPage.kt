@@ -12,6 +12,8 @@ import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_playback
 import nuvio.composeapp.generated.resources.compose_settings_page_poster_customization
 import nuvio.composeapp.generated.resources.compose_settings_page_simkl
+import nuvio.composeapp.generated.resources.compose_settings_page_tmdb_enrichment
+import nuvio.composeapp.generated.resources.settings_fork_hero_images_description
 import nuvio.composeapp.generated.resources.settings_fork_anime_enhancements_description
 import nuvio.composeapp.generated.resources.settings_fork_binge_mode_description
 import nuvio.composeapp.generated.resources.settings_fork_buffer_preset_description
@@ -25,10 +27,11 @@ import nuvio.composeapp.generated.resources.settings_fork_other_features
 import nuvio.composeapp.generated.resources.settings_fork_other_features_note
 import nuvio.composeapp.generated.resources.settings_fork_rtx_hdr_description
 import nuvio.composeapp.generated.resources.settings_fork_simkl_description
+import nuvio.composeapp.generated.resources.settings_fork_tvdb_description
 import nuvio.composeapp.generated.resources.settings_homescreen_hero_ambient_background
 import nuvio.composeapp.generated.resources.settings_homescreen_hero_ambient_background_description
-import nuvio.composeapp.generated.resources.settings_homescreen_immersive_catalog_mode
-import nuvio.composeapp.generated.resources.settings_homescreen_immersive_catalog_mode_description
+import nuvio.composeapp.generated.resources.settings_homescreen_adaptive_hero
+import nuvio.composeapp.generated.resources.settings_homescreen_adaptive_hero_description
 import nuvio.composeapp.generated.resources.settings_homescreen_tv_mode
 import nuvio.composeapp.generated.resources.settings_homescreen_tv_mode_description
 import nuvio.composeapp.generated.resources.settings_playback_auto_play_next_episode
@@ -46,6 +49,7 @@ import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_so
 import nuvio.composeapp.generated.resources.settings_playback_mouse_move_reveals_controls
 import nuvio.composeapp.generated.resources.settings_playback_mouse_move_reveals_controls_description
 import nuvio.composeapp.generated.resources.settings_playback_nvidia_rtx_hdr
+import nuvio.composeapp.generated.resources.settings_licenses_attributions_tvdb_title
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -57,6 +61,7 @@ internal fun LazyListScope.forkEnhancementsContent(
     isTablet: Boolean,
     onOpenHomescreen: (anchor: String) -> Unit,
     onOpenPlayback: (anchor: String) -> Unit,
+    onOpenTmdb: (anchor: String) -> Unit,
     onOpenPosterCustomization: () -> Unit,
     onOpenSimkl: () -> Unit,
 ) {
@@ -77,15 +82,15 @@ internal fun LazyListScope.forkEnhancementsContent(
         ) {
             SettingsGroup(isTablet = isTablet) {
                 SettingsNavigationRow(
-                    title = stringResource(Res.string.settings_homescreen_tv_mode),
-                    description = stringResource(Res.string.settings_homescreen_tv_mode_description),
+                    title = stringResource(Res.string.settings_homescreen_adaptive_hero),
+                    description = stringResource(Res.string.settings_homescreen_adaptive_hero_description),
                     isTablet = isTablet,
                     onClick = { onOpenHomescreen(SettingsScrollAnchor.AdaptiveHero) },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
-                    title = stringResource(Res.string.settings_homescreen_immersive_catalog_mode),
-                    description = stringResource(Res.string.settings_homescreen_immersive_catalog_mode_description),
+                    title = stringResource(Res.string.settings_homescreen_tv_mode),
+                    description = stringResource(Res.string.settings_homescreen_tv_mode_description),
                     isTablet = isTablet,
                     onClick = { onOpenHomescreen(SettingsScrollAnchor.TvMode) },
                 )
@@ -180,6 +185,28 @@ internal fun LazyListScope.forkEnhancementsContent(
                     description = stringResource(Res.string.settings_fork_binge_mode_description),
                     isTablet = isTablet,
                     onClick = { onOpenPlayback(SettingsScrollAnchor.BingeMode) },
+                )
+            }
+        }
+    }
+    item {
+        SettingsSection(
+            title = stringResource(Res.string.compose_settings_page_tmdb_enrichment),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsNavigationRow(
+                    title = "Hero backdrop & logo",
+                    description = stringResource(Res.string.settings_fork_hero_images_description),
+                    isTablet = isTablet,
+                    onClick = { onOpenTmdb(SettingsScrollAnchor.TmdbHeroImages) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_licenses_attributions_tvdb_title),
+                    description = stringResource(Res.string.settings_fork_tvdb_description),
+                    isTablet = isTablet,
+                    onClick = { onOpenTmdb(SettingsScrollAnchor.TvdbApiKey) },
                 )
             }
         }

@@ -83,12 +83,22 @@ internal data class SimklMediaIds(
     val tvdb: Int? = null,
     val mal: String? = null,
     val anidb: String? = null,
+    val kitsu: String? = null,
+    @SerialName("al") val anilist: String? = null,
 )
 
 /** Converts SIMKL ids to the app's preferred content id (imdb > tmdb > simkl). */
 internal fun SimklMediaIds.toBestContentId(): String? =
     imdb?.takeIf { it.isNotBlank() }
         ?: tmdb?.takeIf { it.isNotBlank() }?.let { "tmdb:$it" }
+        ?: tvdb?.let { "tvdb:$it" }
+        ?: simkl?.let { "simkl:$it" }
+
+internal fun SimklMediaIds.toBestAnimeContentId(): String? =
+    imdb?.takeIf { it.isNotBlank() }
+        ?: tmdb?.takeIf { it.isNotBlank() }?.let { "tmdb:$it" }
+        ?: tvdb?.let { "tvdb:$it" }
+        ?: kitsu?.takeIf { it.isNotBlank() }?.let { "kitsu:$it" }
         ?: simkl?.let { "simkl:$it" }
 
 @Serializable

@@ -1,6 +1,7 @@
 package com.nuvio.app.features.player
 
 import com.nuvio.app.features.simkl.SimklScrobbleRepository
+import com.nuvio.app.features.simkl.WatchProgressSourceSimkl
 import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.trakt.TraktScrobbleRepository
 import com.nuvio.app.features.watchprogress.WatchProgressClock
@@ -98,6 +99,34 @@ internal fun PlayerScreenRuntime.currentScrobbleProgressPercent(
     return (raw * speed).coerceIn(0f, 100f)
 }
 
+private fun PlayerScreenRuntime.currentScrobbleStartProgressPercent(
+    snapshot: PlayerPlaybackSnapshot = playbackSnapshot,
+): Float {
+    val current = currentPlaybackProgressPercent(snapshot)
+    val resumeFraction = activeInitialProgressFraction
+        ?.takeIf { it > 0f }
+        ?.coerceIn(0f, 1f)
+    val resumePercent = when {
+        activeInitialPositionMs > 0L && snapshot.durationMs > 0L ->
+            ((activeInitialPositionMs.toFloat() / snapshot.durationMs.toFloat()) * 100f)
+                .coerceIn(0f, 100f)
+        resumeFraction != null -> (resumeFraction * 100f).coerceIn(0f, 100f)
+        else -> null
+    }
+
+    val isBeforeRequestedResume = if (activeInitialPositionMs > 0L) {
+        snapshot.positionMs < (activeInitialPositionMs - 1_000L).coerceAtLeast(0L)
+    } else {
+        resumeFraction != null
+    }
+
+    return if (resumePercent != null && resumePercent > current && isBeforeRequestedResume) {
+        resumePercent
+    } else {
+        current
+    }
+}
+
 internal data class TraktScrobbleItemInputs(
     val contentType: String,
     val parentMetaId: String,
@@ -106,6 +135,17 @@ internal data class TraktScrobbleItemInputs(
     val seasonNumber: Int?,
     val episodeNumber: Int?,
     val episodeTitle: String?,
+    val watchProgressSource: String?,
+)
+
+internal data class SimklScrobbleItemInputs(
+    val contentType: String,
+    val parentMetaId: String,
+    val videoId: String?,
+    val title: String,
+    val seasonNumber: Int?,
+    val episodeNumber: Int?,
+    val isAnime: Boolean,
 )
 
 internal fun PlayerScreenRuntime.snapshotTraktScrobbleItemInputs() = TraktScrobbleItemInputs(
@@ -116,9 +156,24 @@ internal fun PlayerScreenRuntime.snapshotTraktScrobbleItemInputs() = TraktScrobb
     seasonNumber = activeSeasonNumber,
     episodeNumber = activeEpisodeNumber,
     episodeTitle = activeEpisodeTitle,
+    watchProgressSource = activeWatchProgressSource,
+)
+
+internal fun PlayerScreenRuntime.snapshotSimklScrobbleItemInputs() = SimklScrobbleItemInputs(
+    contentType = contentType ?: parentMetaType,
+    parentMetaId = parentMetaId,
+    videoId = activeVideoId,
+    title = title,
+    seasonNumber = activeSeasonNumber,
+    episodeNumber = activeEpisodeNumber,
+    isAnime = AnimeContentCache.isAnime(parentMetaId) ||
+        (activeWatchProgressSource == WatchProgressSourceSimkl && parentMetaId.startsWith("simkl:", ignoreCase = true)),
 )
 
 private suspend fun TraktScrobbleItemInputs.buildItem() =
+    if (watchProgressSource == WatchProgressSourceSimkl) {
+        null
+    } else {
     TraktScrobbleRepository.buildItem(
         contentType = contentType,
         parentMetaId = parentMetaId,
@@ -127,6 +182,18 @@ private suspend fun TraktScrobbleItemInputs.buildItem() =
         seasonNumber = seasonNumber,
         episodeNumber = episodeNumber,
         episodeTitle = episodeTitle,
+    )
+    }
+
+private suspend fun SimklScrobbleItemInputs.buildItem() =
+    SimklScrobbleRepository.buildItem(
+        contentType = contentType,
+        parentMetaId = parentMetaId,
+        videoId = videoId,
+        title = title,
+        seasonNumber = seasonNumber,
+        episodeNumber = episodeNumber,
+        isAnime = isAnime,
     )
 
 internal suspend fun PlayerScreenRuntime.currentTraktScrobbleItem() =
@@ -141,7 +208,8 @@ internal fun PlayerScreenRuntime.emitTraktScrobbleStart() {
 
     scope.launch {
         val item = currentTraktScrobbleItem()
-        if (item == null) {
+        val simklItem = snapshotSimklScrobbleItemInputs().buildItem()
+        if (item == null && simklItem == null) {
             hasRequestedScrobbleStartForCurrentItem = false
             return@launch
         }
@@ -152,9 +220,13 @@ internal fun PlayerScreenRuntime.emitTraktScrobbleStart() {
         }
         currentTraktScrobbleItem = item
         // Report actual video position, not speed-adjusted — services use this for resume.
-        val progress = currentPlaybackProgressPercent()
-        TraktScrobbleRepository.scrobbleStart(item = item, progressPercent = progress)
-        SimklScrobbleRepository.scrobbleStart(item = item, progressPercent = progress)
+        val progress = currentScrobbleStartProgressPercent()
+        if (item != null) {
+            TraktScrobbleRepository.scrobbleStart(item = item, progressPercent = progress)
+        }
+        if (simklItem != null) {
+            SimklScrobbleRepository.scrobbleStart(item = simklItem, progressPercent = progress)
+        }
     }
 }
 
@@ -167,10 +239,15 @@ internal fun PlayerScreenRuntime.emitTraktScrobbleStop(progressPercent: Float? =
     val percent = provided ?: currentPlaybackProgressPercent()
     val itemSnapshot = currentTraktScrobbleItem
     val inputsSnapshot = snapshotTraktScrobbleItemInputs()
+    val simklInputsSnapshot = snapshotSimklScrobbleItemInputs()
     scope.launch(NonCancellable) {
-        val item = itemSnapshot ?: inputsSnapshot.buildItem() ?: return@launch
-        TraktScrobbleRepository.scrobbleStop(item = item, progressPercent = percent)
-        SimklScrobbleRepository.scrobbleStop(item = item, progressPercent = percent)
+        val item = itemSnapshot ?: inputsSnapshot.buildItem()
+        if (item != null) {
+            TraktScrobbleRepository.scrobbleStop(item = item, progressPercent = percent)
+        }
+        simklInputsSnapshot.buildItem()?.let { simklItem ->
+            SimklScrobbleRepository.scrobbleStop(item = simklItem, progressPercent = percent)
+        }
     }
     currentTraktScrobbleItem = null
     hasRequestedScrobbleStartForCurrentItem = false

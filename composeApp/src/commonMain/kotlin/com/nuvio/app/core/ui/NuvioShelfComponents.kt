@@ -3,6 +3,7 @@ package com.nuvio.app.core.ui
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -43,6 +45,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -92,6 +97,7 @@ fun <T> NuvioShelfSection(
     onHoverItem: ((Int) -> Unit)? = null,
     onLoadMore: (() -> Unit)? = null,
     isLoadingMore: Boolean = false,
+    isKeyboardNavigation: Boolean = false,
     key: ((T) -> Any)? = null,
     itemContent: @Composable (T) -> Unit,
 ) {
@@ -110,16 +116,41 @@ fun <T> NuvioShelfSection(
                 }
         }
     }
-    LaunchedEffect(focusedItemIndex) {
+    LaunchedEffect(focusedItemIndex, entries) {
         val target = focusedItemIndex
         if (target == null || target !in entries.indices) return@LaunchedEffect
+        // Item 0 must always snap to scroll offset 0 — after scrolling right and back,
+        // item 0 can be partially clipped on the left while still counting as "visible",
+        // so the normal off-screen check would leave it cut off.
+        if (target == 0) {
+            rowState.animateScrollToItem(0, scrollOffset = 0)
+            return@LaunchedEffect
+        }
+        
+        // Wait for the LazyRow to lay out the new items if they were just added via pagination
+        if (target >= rowState.layoutInfo.totalItemsCount) {
+            androidx.compose.runtime.snapshotFlow { rowState.layoutInfo.totalItemsCount }
+                .first { it > target }
+        }
+
         val layoutInfo = rowState.layoutInfo
-        // Only scroll when the item is completely off-screen. Partially-visible items
-        // do not trigger a scroll — this prevents a cascade where hovering near the
-        // right edge causes the list to scroll, moving a new item under the cursor,
-        // which triggers another hover, which scrolls again.
-        val isAnyPartVisible = layoutInfo.visibleItemsInfo.any { item -> item.index == target }
-        if (!isAnyPartVisible) {
+        // For mouse hover, only scroll when the item is completely off-screen to prevent
+        // hover cascade loops. For keyboard navigation, scroll if the item is even partially clipped.
+        val isVisible = if (isKeyboardNavigation) {
+            layoutInfo.visibleItemsInfo.any { item -> 
+                item.index == target && 
+                item.offset >= layoutInfo.viewportStartOffset && 
+                item.offset + item.size <= layoutInfo.viewportEndOffset 
+            }
+        } else {
+            layoutInfo.visibleItemsInfo.any { item -> item.index == target }
+        }
+        if (!isVisible) {
+            // When navigating with keyboard, scrolling an item into view perfectly from the right edge
+            // by just using animateScrollToItem(target) snaps it to the far LEFT of the screen, which is
+            // visually jarring. We use an offset scroll if possible to bring it into view gently.
+            // Wait, animateScrollToItem(target) natively snaps to the start, but we can't easily calculate
+            // the offset without knowing the item widths. For now, snapping to start is acceptable and ensures visibility.
             rowState.animateScrollToItem(target)
         }
     }
@@ -140,7 +171,7 @@ fun <T> NuvioShelfSection(
             state = rowState,
             modifier = Modifier
                 .desktopShelfDragScroll(rowState)
-                .desktopShelfEdgeScroll(rowState),
+                .desktopShelfEdgeScroll(rowState, isMouseActive = !isKeyboardNavigation),
             contentPadding = rowContentPadding,
             horizontalArrangement = Arrangement.spacedBy(itemSpacing),
         ) {
@@ -255,7 +286,7 @@ private fun Modifier.desktopShelfDragScroll(
     }
 }
 
-private fun Modifier.desktopShelfEdgeScroll(state: LazyListState): Modifier {
+private fun Modifier.desktopShelfEdgeScroll(state: LazyListState, isMouseActive: Boolean): Modifier {
     if (!isDesktop) return this
     return this.pointerInput(state) {
         // PointerInputScope (Compose 1.7+) no longer extends CoroutineScope, so we
@@ -271,7 +302,7 @@ private fun Modifier.desktopShelfEdgeScroll(state: LazyListState): Modifier {
                     val width = pointerScope.size.width.toFloat()
                     val edgeZone = width * 0.10f
                     val newDir = when {
-                        x == null -> 0
+                        !isMouseActive || x == null -> 0
                         x < edgeZone -> -1
                         x > width - edgeZone -> 1
                         else -> 0
@@ -309,6 +340,7 @@ fun NuvioPosterCard(
     title: String,
     imageUrl: String?,
     modifier: Modifier = Modifier,
+    fallbackImageUrl: String? = null,
     shape: NuvioPosterShape = NuvioPosterShape.Poster,
     basePosterWidthDpOverride: Int? = null,
     detailLine: String? = null,
@@ -339,16 +371,39 @@ fun NuvioPosterCard(
                 .fillMaxWidth()
                 .aspectRatio(shape.aspectRatio)
                 .clip(cardShape)
-                .background(tokens.colors.surface)
+                .background(
+                    if (imageUrl == null) {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+                    } else {
+                        tokens.colors.surface
+                    },
+                )
+                .then(
+                    if (imageUrl == null) {
+                        Modifier.border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+                            shape = cardShape,
+                        )
+                    } else {
+                        Modifier
+                    },
+                )
                 .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
             contentAlignment = Alignment.Center,
         ) {
             if (imageUrl != null) {
+                var currentUrl by remember(imageUrl, fallbackImageUrl) { mutableStateOf(imageUrl) }
                 NuvioAsyncImage(
-                    model = imageUrl,
+                    model = currentUrl,
                     contentDescription = title,
                     modifier = Modifier.matchParentSize(),
                     contentScale = ContentScale.Crop,
+                    onError = {
+                        if (currentUrl != fallbackImageUrl && fallbackImageUrl != null) {
+                            currentUrl = fallbackImageUrl
+                        }
+                    }
                 )
             } else {
                 Text(

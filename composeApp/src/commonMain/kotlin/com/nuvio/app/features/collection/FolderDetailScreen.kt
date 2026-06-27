@@ -125,19 +125,18 @@ fun FolderDetailScreen(
     }
     val showImmersiveCollection = isDesktop &&
         homeSettings.heroEnabled &&
-        homeSettings.immersiveCatalogModeEnabled &&
-        collectionSections.isNotEmpty()
-    val showTvCollection = isDesktop &&
-        homeSettings.heroEnabled &&
         homeSettings.tvModeEnabled &&
-        !homeSettings.immersiveCatalogModeEnabled &&
+        collectionSections.isNotEmpty()
+    val showAdaptiveCollection = isDesktop &&
+        homeSettings.heroEnabled &&
+        homeSettings.adaptiveHeroEnabled &&
+        !homeSettings.tvModeEnabled &&
         collectionSections.isNotEmpty()
 
     if (showImmersiveCollection) {
         ImmersiveCollectionContent(
             sections = collectionSections,
             watchedKeys = watchedUiState.watchedKeys,
-            tvMode = homeSettings.tvModeEnabled,
             onBack = onBack,
             onCatalogClick = onCatalogClick,
             onCastClick = onCastClick,
@@ -146,8 +145,8 @@ fun FolderDetailScreen(
         return
     }
 
-    if (showTvCollection) {
-        TvCollectionContent(
+    if (showAdaptiveCollection) {
+        AdaptiveCollectionContent(
             sections = collectionSections,
             watchedKeys = watchedUiState.watchedKeys,
             onBack = onBack,
@@ -269,7 +268,6 @@ fun FolderDetailScreen(
 private fun ImmersiveCollectionContent(
     sections: List<HomeCatalogSection>,
     watchedKeys: Set<String>,
-    tvMode: Boolean = false,
     onBack: () -> Unit,
     onCatalogClick: (HomeCatalogSection) -> Unit,
     onCastClick: (HeroCastMember) -> Unit,
@@ -382,7 +380,6 @@ private fun ImmersiveCollectionContent(
             heightOverride = maxHeight,
             roundedBottomCorners = false,
             immersiveMode = true,
-            tvMode = tvMode,
             immersiveContentBottomPadding = shelfHeight - 20.dp,
             onCastClick = onCastClick,
             onItemClick = onPosterClick,
@@ -437,7 +434,7 @@ private fun ImmersiveCollectionContent(
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun TvCollectionContent(
+private fun AdaptiveCollectionContent(
     sections: List<HomeCatalogSection>,
     watchedKeys: Set<String>,
     onBack: () -> Unit,
@@ -528,7 +525,7 @@ private fun TvCollectionContent(
                 metadataPrefetchItems = metadataPrefetchItems,
                 viewportHeight = FolderAdaptiveHeroHeightFallback,
                 roundedBottomCorners = false,
-                tvMode = true,
+                adaptiveHeroMode = true,
                 onCastClick = onCastClick,
                 onItemClick = onPosterClick,
             )
