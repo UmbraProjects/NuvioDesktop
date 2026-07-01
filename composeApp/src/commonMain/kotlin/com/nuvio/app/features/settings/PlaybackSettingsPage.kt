@@ -707,7 +707,11 @@ private fun PlaybackSettingsSection(
                         onClick = { showSubtitleOutlineColorDialog = true },
                     )
                 }
-                if (!isIos) {
+                // Android-only: this picks between ExoPlayer's WASM/JNI ASS rendering backends.
+                // Desktop always renders ASS/SSA natively via mpv/libass regardless of this
+                // setting (see sub-ass-override handling in player_bridge.cpp) - showing it here
+                // was misleading since toggling it has no effect on this platform.
+                if (!isIos && !isDesktop) {
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_enable_libass),

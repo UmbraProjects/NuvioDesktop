@@ -601,7 +601,11 @@ private fun HeroBackdropImage(
     contentScale: ContentScale,
     onImageLoaded: ((coil3.Image) -> Unit)? = null,
 ) {
+    // Addons that don't supply a backdrop (only a poster) would otherwise render a blank/black
+    // hero — fall back to the poster like the rest of the hero pipeline (e.g. the ambient
+    // background wash) already does.
     val model = item.banner?.takeIf(String::isNotBlank)
+        ?: item.poster?.takeIf(String::isNotBlank)
 
     AsyncImage(
         model = model,

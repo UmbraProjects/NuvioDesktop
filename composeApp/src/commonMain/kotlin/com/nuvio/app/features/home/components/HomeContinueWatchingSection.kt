@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.ExtraLargePosterCardWidthDp
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.core.ui.NuvioShelfSection
@@ -52,7 +53,7 @@ import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.landscapePosterHeightForWidth
 import com.nuvio.app.core.ui.landscapePosterWidth
 import com.nuvio.app.core.ui.posterCardClickable
-import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
+import com.nuvio.app.core.ui.rememberHomePosterCardStyleUiState
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.cloud.cloudLibraryDisplayArtworkUrl
@@ -249,6 +250,13 @@ private fun HomeContinueWatchingSectionContent(
         HomeCatalogSettingsRepository.snapshot()
         HomeCatalogSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
+    // TV Mode's shelf only supports the compact "Card" layout — Wide/Poster don't fit the
+    // fixed shelf sizing and cause layout issues there. Doesn't touch the saved preference.
+    val effectiveStyle = if (homeCatalogSettings.tvModeEnabled) {
+        ContinueWatchingSectionStyle.Card
+    } else {
+        style
+    }
 
     val itemOrderKey = remember(items) {
         items.joinToString(separator = "|") { item -> item.continueWatchingRowOrderKey() }
@@ -267,7 +275,7 @@ private fun HomeContinueWatchingSectionContent(
             onHoverItem = onHoverItem,
             key = { item -> item.videoId },
         ) { item ->
-            when (style) {
+            when (effectiveStyle) {
                 ContinueWatchingSectionStyle.Card -> ContinueWatchingCard(
                     item = item,
                     useEpisodeThumbnails = useEpisodeThumbnails,
@@ -596,10 +604,14 @@ private fun ContinueWatchingCard(
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
 ) {
-    val posterCardStyle = rememberPosterCardStyleUiState()
-    val cardMetrics = remember(posterCardStyle.widthDp, posterCardStyle.cornerRadiusDp) {
+    val posterCardStyle = rememberHomePosterCardStyleUiState()
+    val tvModeEnabled by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+    // TV Mode's shelf reads much better with a bigger continue-watching card — force the
+    // "Extra Large" size instead of the (non-TV-Mode) saved poster size preference.
+    val effectiveWidthDp = if (tvModeEnabled.tvModeEnabled) ExtraLargePosterCardWidthDp else posterCardStyle.widthDp
+    val cardMetrics = remember(effectiveWidthDp, posterCardStyle.cornerRadiusDp) {
         continueWatchingLandscapeCardMetrics(
-            basePosterWidthDp = posterCardStyle.widthDp,
+            basePosterWidthDp = effectiveWidthDp,
             cornerRadiusDp = posterCardStyle.cornerRadiusDp,
         )
     }

@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.ExtraLargePosterCardWidthDp
 import com.nuvio.app.core.ui.NuvioActionLabel
 import com.nuvio.app.core.ui.PosterCardStyleRepository
 import com.nuvio.app.core.ui.PosterCardStyleUiState
@@ -113,7 +114,7 @@ private fun PosterCardStyleControls(
         PresetOption(stringResource(Res.string.settings_poster_width_balanced), 126),
         PresetOption(stringResource(Res.string.settings_poster_width_comfort), 134),
         PresetOption(stringResource(Res.string.settings_poster_width_large), 140),
-        PresetOption(stringResource(Res.string.settings_poster_width_extra_large), 210),
+        PresetOption(stringResource(Res.string.settings_poster_width_extra_large), ExtraLargePosterCardWidthDp),
     )
     val radiusOptions = listOf(
         PresetOption(stringResource(Res.string.settings_poster_radius_sharp), 0),

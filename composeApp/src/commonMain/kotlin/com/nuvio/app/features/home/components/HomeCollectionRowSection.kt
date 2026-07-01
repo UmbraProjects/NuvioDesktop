@@ -30,7 +30,7 @@ import com.nuvio.app.core.ui.NuvioShelfSection
 import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.landscapePosterWidth
 import com.nuvio.app.core.ui.posterCardClickable
-import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
+import com.nuvio.app.core.ui.rememberHomePosterCardStyleUiState
 import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.collection.CollectionFolder
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
@@ -125,7 +125,7 @@ private fun CollectionFolderCard(
     animateGifs: Boolean = true,
     onClick: (() -> Unit)? = null,
 ) {
-    val posterCardStyle = rememberPosterCardStyleUiState()
+    val posterCardStyle = rememberHomePosterCardStyleUiState()
     val basePosterWidthDp = basePosterWidthDpOverride ?: posterCardStyle.widthDp
     val isLandscapeMode = posterCardStyle.catalogLandscapeModeEnabled
     val shape = if (isLandscapeMode) PosterShape.Landscape else folder.posterShape

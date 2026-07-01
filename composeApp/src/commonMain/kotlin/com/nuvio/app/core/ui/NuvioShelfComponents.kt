@@ -351,7 +351,10 @@ fun NuvioPosterCard(
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
-    val posterCardStyle = rememberPosterCardStyleUiState()
+    // Only Home and Collections (FolderDetailScreen) render posters through this component
+    // today, both of which respect TV Mode — see rememberHomePosterCardStyleUiState's doc.
+    // If a non-home screen ever adopts NuvioPosterCard, reconsider this call.
+    val posterCardStyle = rememberHomePosterCardStyleUiState()
     val tokens = MaterialTheme.nuvio
     val basePosterWidthDp = basePosterWidthDpOverride ?: posterCardStyle.widthDp
     val cardWidth = shape.cardWidth(basePosterWidthDp = basePosterWidthDp)

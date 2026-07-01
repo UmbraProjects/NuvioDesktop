@@ -85,12 +85,27 @@ internal class NativePlayerController(
         controlsPageUrlSuffix: String = "",
     ) {
         if (disposed) return
+        // Re-attaching the same stream (surface recreation, RTX/settings toggles) must resume
+        // from where playback currently is — restarting at the original initialPositionMs
+        // looks like playback randomly jumping back. New sources keep the caller's position.
+        val carriedPositionMs = if (pendingSource?.sourceUrl == sourceUrl) {
+            synchronized(handleLock) { handle }
+                .takeIf { it != 0L }
+                ?.let { current ->
+                    runCatching {
+                        NativePlayerBridge.positionMs(current)
+                            .takeIf { it > 0L && !NativePlayerBridge.isEnded(current) }
+                    }.getOrNull()
+                }
+        } else {
+            null
+        }
         val pending = PendingSource(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl?.takeIf { it.isNotBlank() },
             headerLines = sourceHeaders.toHeaderLines(),
             playWhenReady = playWhenReady,
-            initialPositionMs = initialPositionMs.coerceAtLeast(0L),
+            initialPositionMs = (carriedPositionMs ?: initialPositionMs).coerceAtLeast(0L),
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
             nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
             animeSvpFilter = if (PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled) DesktopAnimeSvp.vapoursynthArgument() else null,
@@ -473,7 +488,9 @@ internal class NativePlayerController(
         setMpvProperty("demuxer-max-bytes", limits.maxBytes)
         setMpvProperty("demuxer-max-back-bytes", limits.maxBackBytes)
         setMpvProperty("stream-buffer-size", limits.streamBufferSize)
-        setMpvProperty("cache-pause-wait", if (speed > 1f) "15" else "5")
+        // Media buffered before (re)starting playback: keep small so startup and post-seek
+        // resume stay snappy — the readahead limits above provide the stall resilience.
+        setMpvProperty("cache-pause-wait", if (speed > 1f) "6" else "2")
     }
 
     private fun disposePlayerHandle() {

@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.landscapePosterHeightForWidth
 import com.nuvio.app.core.ui.landscapePosterWidth
-import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
+import com.nuvio.app.core.ui.rememberHomePosterCardStyleUiState
 
 @Composable
 private fun rememberHomeSkeletonBrush(): Brush {
@@ -190,7 +190,7 @@ fun HomeSkeletonRow(
     showHeaderAccent: Boolean = true,
 ) {
     val brush = rememberHomeSkeletonBrush()
-    val posterCardStyle = rememberPosterCardStyleUiState()
+    val posterCardStyle = rememberHomePosterCardStyleUiState()
     val skeletonWidth = if (posterCardStyle.catalogLandscapeModeEnabled) {
         landscapePosterWidth(posterCardStyle.widthDp)
     } else {

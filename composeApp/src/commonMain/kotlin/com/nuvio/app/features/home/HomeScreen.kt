@@ -1127,7 +1127,6 @@ fun HomeScreen(
     }
 
     var immersiveWheelLocked by remember { mutableStateOf(false) }
-    var heroTrailerNavigationAnchor by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     val tvRows = remember(
         contentMode,
@@ -1259,27 +1258,12 @@ fun HomeScreen(
         )
     }
 
-    fun captureHeroTrailerNavigationAnchor() {
-        if (!tvModeEnabled) return
-        syncImmersiveTvFocusSection()
-        heroTrailerNavigationAnchor = getImmersiveRowIndex() to tvFocus.itemIndex
-    }
-
-    fun restoreHeroTrailerNavigationAnchorIfNeeded() {
-        if (!tvModeEnabled || !heroTrailerShowing) return
-        val (rowIndex, itemIndex) = heroTrailerNavigationAnchor ?: return
-        heroTrailerNavigationAnchor = null
-        setImmersiveRowIndex(rowIndex.coerceIn(0, (tvRows.size - 1).coerceAtLeast(0)))
-        tvFocus.sectionIndex = getImmersiveRowIndex() + if (heroFocusable) 1 else 0
-        tvFocus.itemIndex = itemIndex.coerceIn(
-            0,
-            ((tvRows.getOrNull(getImmersiveRowIndex())?.itemCount ?: 0) - 1).coerceAtLeast(0),
-        )
-    }
-
     fun handleHomeTvKey(key: HomeTvKey): Boolean {
+        // Snapshotted before syncImmersiveTvFocusSection() below so navigation keys pick up
+        // wherever the row shelf/mouse actually left focus (including mouse-wheel or hover
+        // drift that happened while the trailer was playing) instead of teleporting back to
+        // a stale pre-trailer position.
         val leavingNativeTrailer = heroTrailerShowing
-        restoreHeroTrailerNavigationAnchorIfNeeded()
         syncImmersiveTvFocusSection()
         return when (key) {
         HomeTvKey.Down -> {
@@ -1346,7 +1330,6 @@ fun HomeScreen(
         }
         HomeTvKey.ToggleTrailer -> {
             if (adaptiveHeroEnabled || tvModeEnabled) {
-                if (!heroTrailerShowing) captureHeroTrailerNavigationAnchor()
                 HomeHeroTrailerManualTrigger.trigger()
                 true
             } else false
@@ -1374,19 +1357,6 @@ fun HomeScreen(
     val latestHomeTvKeyHandler = rememberUpdatedState<(HomeTvKey) -> Boolean>(::handleHomeTvKey)
     LaunchedEffect(Unit) {
         HomeTvKeyboardBridge.keys.collect { key -> latestHomeTvKeyHandler.value(key) }
-    }
-
-    LaunchedEffect(heroTrailerShowing) {
-        if (heroTrailerShowing) {
-            // Manual T playback already captured the position before the native surface was
-            // mounted. Preserve that clean anchor; this fallback is for autoplay, which has no
-            // initiating key handler from which to capture.
-            if (heroTrailerNavigationAnchor == null) {
-                captureHeroTrailerNavigationAnchor()
-            }
-        } else {
-            heroTrailerNavigationAnchor = null
-        }
     }
 
     LaunchedEffect(tvSectionCount) {

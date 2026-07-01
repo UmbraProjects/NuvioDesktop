@@ -579,7 +579,10 @@ object HomeCatalogSettingsRepository {
             heroBadgeScale = heroBadgeScale,
             heroReleaseStatusUnavailableOnly = heroReleaseStatusUnavailableOnly,
             hideUnreleasedContent = hideUnreleasedContent,
-            hideCatalogUnderline = hideCatalogUnderline,
+            // TV Mode's shelf rows don't read well with the underline accent — force it off
+            // while active without touching the user's actual saved preference, so it comes
+            // back exactly as they left it if they turn TV Mode back off.
+            hideCatalogUnderline = hideCatalogUnderline || tvModeEnabled,
             adaptiveHeroEnabled = adaptiveHeroEnabled,
             adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,

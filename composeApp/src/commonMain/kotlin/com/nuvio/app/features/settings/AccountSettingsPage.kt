@@ -21,12 +21,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
+import com.nuvio.app.core.auth.ReauthenticationTrigger
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
+import nuvio.composeapp.generated.resources.compose_auth_sign_in
 import nuvio.composeapp.generated.resources.compose_settings_page_account
 import nuvio.composeapp.generated.resources.settings_account_email
 import nuvio.composeapp.generated.resources.settings_account_not_signed_in
@@ -116,10 +118,17 @@ private fun AccountSettingsBody(
             }
         }
 
-        NuvioPrimaryButton(
-            text = stringResource(Res.string.settings_account_sign_out),
-            onClick = { showSignOutConfirm = true },
-        )
+        if (authState is AuthState.Authenticated) {
+            NuvioPrimaryButton(
+                text = stringResource(Res.string.settings_account_sign_out),
+                onClick = { showSignOutConfirm = true },
+            )
+        } else {
+            NuvioPrimaryButton(
+                text = stringResource(Res.string.compose_auth_sign_in),
+                onClick = { ReauthenticationTrigger.trigger() },
+            )
+        }
     }
 
     NuvioStatusModal(

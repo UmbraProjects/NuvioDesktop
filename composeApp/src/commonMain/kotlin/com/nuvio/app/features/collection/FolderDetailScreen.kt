@@ -44,6 +44,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -94,6 +95,9 @@ import com.nuvio.app.features.home.extractHeroAccentColor
 import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeHeroSection
+import com.nuvio.app.features.home.components.HomeHeroTrailerManualTrigger
+import com.nuvio.app.features.home.components.HomeTvKey
+import com.nuvio.app.features.home.components.HomeTvKeyboardBridge
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watching.application.WatchingState
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -291,6 +295,7 @@ private fun ImmersiveCollectionContent(
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
     val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     val ambientBackgroundEnabled = homeSettings.heroAmbientBackgroundEnabled
+    val heroTrailerShowing by HomeHeroTrailerManualTrigger.active.collectAsStateWithLifecycle()
     val backButtonAlpha by animateFloatAsState(
         targetValue = if (backButtonHovered) 1f else 0f,
         label = "collection_back_button_alpha",
@@ -319,7 +324,62 @@ private fun ImmersiveCollectionContent(
             ?.items
             ?.take(FolderCatalogPreviewLimit)
             .orEmpty()
-    val focusedItem = activeEntries.getOrNull(activeItemIndex)
+    // Look up against activeRowEntries, not the hero-preview-capped activeEntries: paginating
+    // sections render/hover their full item list in the row, so a hover past the 18th tile
+    // must still resolve to a real item instead of going null and freezing the hero on
+    // whatever the pager last showed.
+    val focusedItem = activeRowEntries.getOrNull(activeItemIndex)
+
+    // Mirrors HomeScreen's handleHomeTvKey: a shared handler so the same navigation works
+    // whether Compose still owns keyboard focus or the native hero-trailer surface has
+    // grabbed it (in which case keys arrive via HomeTvKeyboardBridge instead).
+    fun handleTvKey(key: HomeTvKey): Boolean = when (key) {
+        HomeTvKey.Down -> {
+            activeRowIndex = (activeRowIndex + 1).coerceAtMost(sections.lastIndex)
+            activeItemIndex = activeItemIndex.coerceIn(
+                0,
+                (sections[activeRowIndex].items.size - 1).coerceAtLeast(0),
+            )
+            true
+        }
+        HomeTvKey.Up -> {
+            activeRowIndex = (activeRowIndex - 1).coerceAtLeast(0)
+            activeItemIndex = activeItemIndex.coerceIn(
+                0,
+                (sections[activeRowIndex].items.size - 1).coerceAtLeast(0),
+            )
+            true
+        }
+        HomeTvKey.Right -> {
+            activeItemIndex = (activeItemIndex + 1).coerceAtMost((activeRowEntries.size - 1).coerceAtLeast(0))
+            true
+        }
+        HomeTvKey.Left -> {
+            activeItemIndex = (activeItemIndex - 1).coerceAtLeast(0)
+            true
+        }
+        HomeTvKey.Select -> {
+            focusedItem?.let(onPosterClick)
+            true
+        }
+        HomeTvKey.ToggleTrailer -> {
+            HomeHeroTrailerManualTrigger.trigger()
+            true
+        }
+        HomeTvKey.Dismiss -> {
+            if (heroTrailerShowing) {
+                HomeHeroTrailerManualTrigger.trigger()
+                true
+            } else {
+                false
+            }
+        }
+        HomeTvKey.Search, HomeTvKey.Library -> false
+    }
+    val latestTvKeyHandler = rememberUpdatedState<(HomeTvKey) -> Boolean>(::handleTvKey)
+    LaunchedEffect(Unit) {
+        HomeTvKeyboardBridge.keys.collect { key -> latestTvKeyHandler.value(key) }
+    }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -356,35 +416,13 @@ private fun ImmersiveCollectionContent(
                         onBack()
                         true
                     }
-                    Key.DirectionDown -> {
-                        activeRowIndex = (activeRowIndex + 1).coerceAtMost(sections.lastIndex)
-                        activeItemIndex = activeItemIndex.coerceIn(
-                            0,
-                            (sections[activeRowIndex].items.size - 1).coerceAtLeast(0),
-                        )
-                        true
-                    }
-                    Key.DirectionUp -> {
-                        activeRowIndex = (activeRowIndex - 1).coerceAtLeast(0)
-                        activeItemIndex = activeItemIndex.coerceIn(
-                            0,
-                            (sections[activeRowIndex].items.size - 1).coerceAtLeast(0),
-                        )
-                        true
-                    }
-                    Key.DirectionRight -> {
-                        activeItemIndex = (activeItemIndex + 1)
-                            .coerceAtMost((activeEntries.size - 1).coerceAtLeast(0))
-                        true
-                    }
-                    Key.DirectionLeft -> {
-                        activeItemIndex = (activeItemIndex - 1).coerceAtLeast(0)
-                        true
-                    }
-                    Key.Enter, Key.NumPadEnter -> {
-                        focusedItem?.let(onPosterClick)
-                        true
-                    }
+                    Key.DirectionDown -> handleTvKey(HomeTvKey.Down)
+                    Key.DirectionUp -> handleTvKey(HomeTvKey.Up)
+                    Key.DirectionRight -> handleTvKey(HomeTvKey.Right)
+                    Key.DirectionLeft -> handleTvKey(HomeTvKey.Left)
+                    Key.Enter, Key.NumPadEnter -> handleTvKey(HomeTvKey.Select)
+                    Key.T -> handleTvKey(HomeTvKey.ToggleTrailer)
+                    Key.Escape -> handleTvKey(HomeTvKey.Dismiss)
                     else -> false
                 }
             },
@@ -405,6 +443,10 @@ private fun ImmersiveCollectionContent(
             heightOverride = maxHeight,
             roundedBottomCorners = false,
             immersiveMode = true,
+            heroInfoLines = homeSettings.heroInfoLines,
+            heroInfoPriority = homeSettings.heroInfoPriority,
+            heroBadgePlacement = homeSettings.heroBadgePlacement,
+            heroReleaseStatusUnavailableOnly = homeSettings.heroReleaseStatusUnavailableOnly,
             immersiveContentBottomPadding = shelfHeight - 20.dp,
             onActiveItemChanged = { item ->
                 activeHeroBackdrop = item.banner ?: item.poster
@@ -489,6 +531,7 @@ private fun AdaptiveCollectionContent(
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
     val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     val ambientBackgroundEnabled = homeSettings.heroAmbientBackgroundEnabled
+    val heroTrailerShowing by HomeHeroTrailerManualTrigger.active.collectAsStateWithLifecycle()
     val backButtonAlpha by animateFloatAsState(
         targetValue = if (backButtonHovered) 1f else 0f,
         label = "tv_collection_back_button_alpha",
@@ -507,9 +550,71 @@ private fun AdaptiveCollectionContent(
 
     val activeSection = sections.getOrNull(activeRowIndex) ?: return
     val activeEntries = activeSection.items.take(FolderCatalogPreviewLimit)
+    val activeRowEntries = if (activeSection.paginates) {
+        activeSection.items
+    } else {
+        activeEntries
+    }
     val metadataPrefetchItems = activeEntries +
         sections.getOrNull(activeRowIndex + 1)?.items?.take(FolderCatalogPreviewLimit).orEmpty()
-    val focusedItem = activeEntries.getOrNull(activeItemIndex)
+    // Look up against activeRowEntries, not the hero-preview-capped activeEntries: paginating
+    // sections render/hover their full item list in the row, so a hover past the 18th tile
+    // must still resolve to a real item instead of going null and freezing the hero on
+    // whatever the pager last showed.
+    val focusedItem = activeRowEntries.getOrNull(activeItemIndex)
+
+    // Mirrors HomeScreen's handleHomeTvKey: a shared handler so the same navigation works
+    // whether Compose still owns keyboard focus or the native hero-trailer surface has
+    // grabbed it (in which case keys arrive via HomeTvKeyboardBridge instead).
+    fun handleTvKey(key: HomeTvKey): Boolean = when (key) {
+        HomeTvKey.Down -> {
+            activeRowIndex = (activeRowIndex + 1).coerceAtMost(sections.lastIndex)
+            activeItemIndex = activeItemIndex.coerceIn(
+                0,
+                (sections[activeRowIndex].items.size - 1).coerceAtLeast(0),
+            )
+            coroutineScope.launch { lazyListState.animateScrollToItem(activeRowIndex) }
+            true
+        }
+        HomeTvKey.Up -> {
+            activeRowIndex = (activeRowIndex - 1).coerceAtLeast(0)
+            activeItemIndex = activeItemIndex.coerceIn(
+                0,
+                (sections[activeRowIndex].items.size - 1).coerceAtLeast(0),
+            )
+            coroutineScope.launch { lazyListState.animateScrollToItem(activeRowIndex) }
+            true
+        }
+        HomeTvKey.Right -> {
+            activeItemIndex = (activeItemIndex + 1).coerceAtMost((activeRowEntries.size - 1).coerceAtLeast(0))
+            true
+        }
+        HomeTvKey.Left -> {
+            activeItemIndex = (activeItemIndex - 1).coerceAtLeast(0)
+            true
+        }
+        HomeTvKey.Select -> {
+            focusedItem?.let(onPosterClick)
+            true
+        }
+        HomeTvKey.ToggleTrailer -> {
+            HomeHeroTrailerManualTrigger.trigger()
+            true
+        }
+        HomeTvKey.Dismiss -> {
+            if (heroTrailerShowing) {
+                HomeHeroTrailerManualTrigger.trigger()
+                true
+            } else {
+                false
+            }
+        }
+        HomeTvKey.Search, HomeTvKey.Library -> false
+    }
+    val latestTvKeyHandler = rememberUpdatedState<(HomeTvKey) -> Boolean>(::handleTvKey)
+    LaunchedEffect(Unit) {
+        HomeTvKeyboardBridge.keys.collect { key -> latestTvKeyHandler.value(key) }
+    }
 
     Box(
         modifier = Modifier
@@ -524,37 +629,13 @@ private fun AdaptiveCollectionContent(
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
                     Key.Backspace -> { onBack(); true }
-                    Key.DirectionDown -> {
-                        activeRowIndex = (activeRowIndex + 1).coerceAtMost(sections.lastIndex)
-                        activeItemIndex = activeItemIndex.coerceIn(
-                            0,
-                            (sections[activeRowIndex].items.size - 1).coerceAtLeast(0),
-                        )
-                        coroutineScope.launch { lazyListState.animateScrollToItem(activeRowIndex) }
-                        true
-                    }
-                    Key.DirectionUp -> {
-                        activeRowIndex = (activeRowIndex - 1).coerceAtLeast(0)
-                        activeItemIndex = activeItemIndex.coerceIn(
-                            0,
-                            (sections[activeRowIndex].items.size - 1).coerceAtLeast(0),
-                        )
-                        coroutineScope.launch { lazyListState.animateScrollToItem(activeRowIndex) }
-                        true
-                    }
-                    Key.DirectionRight -> {
-                        activeItemIndex = (activeItemIndex + 1)
-                            .coerceAtMost((activeEntries.size - 1).coerceAtLeast(0))
-                        true
-                    }
-                    Key.DirectionLeft -> {
-                        activeItemIndex = (activeItemIndex - 1).coerceAtLeast(0)
-                        true
-                    }
-                    Key.Enter, Key.NumPadEnter -> {
-                        focusedItem?.let(onPosterClick)
-                        true
-                    }
+                    Key.DirectionDown -> handleTvKey(HomeTvKey.Down)
+                    Key.DirectionUp -> handleTvKey(HomeTvKey.Up)
+                    Key.DirectionRight -> handleTvKey(HomeTvKey.Right)
+                    Key.DirectionLeft -> handleTvKey(HomeTvKey.Left)
+                    Key.Enter, Key.NumPadEnter -> handleTvKey(HomeTvKey.Select)
+                    Key.T -> handleTvKey(HomeTvKey.ToggleTrailer)
+                    Key.Escape -> handleTvKey(HomeTvKey.Dismiss)
                     else -> false
                 }
             },
@@ -576,6 +657,10 @@ private fun AdaptiveCollectionContent(
                     viewportHeight = FolderAdaptiveHeroHeightFallback,
                     roundedBottomCorners = false,
                     adaptiveHeroMode = true,
+                    heroInfoLines = homeSettings.heroInfoLines,
+                    heroInfoPriority = homeSettings.heroInfoPriority,
+                    heroBadgePlacement = homeSettings.heroBadgePlacement,
+                    heroReleaseStatusUnavailableOnly = homeSettings.heroReleaseStatusUnavailableOnly,
                     onActiveItemChanged = { item ->
                         activeHeroBackdrop = item.banner ?: item.poster
                     },

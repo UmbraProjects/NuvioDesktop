@@ -20,7 +20,10 @@ import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.CompositionLocalProvider
+import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.player.desktop.DesktopAnimeShaders
 import com.nuvio.app.features.player.desktop.DesktopAnimeSvp
 import com.nuvio.app.features.player.desktop.DesktopHostOs
@@ -347,19 +350,26 @@ private fun NativePlayerSurface(
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        SwingPanel(
-            factory = {
-                host
-            },
-            modifier = if (hostFirstPaintComplete.value) {
-                Modifier.fillMaxSize()
-            } else {
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .requiredSize(1.dp)
-            },
-            background = Color.Black,
-        )
+        // SwingPanel positions/sizes the native mpv surface (a real OS window) using whatever
+        // LocalDensity is ambient — but that surface must match real screen pixels, not the
+        // app's (possibly artificially inflated, see NuvioDesktopViewportDensityScaler) UI
+        // density. Use the window's real density here so the video always fills the space it's
+        // given instead of being sized as a fraction of it.
+        CompositionLocalProvider(LocalDensity provides LocalNuvioBaseDensity.current) {
+            SwingPanel(
+                factory = {
+                    host
+                },
+                modifier = if (hostFirstPaintComplete.value) {
+                    Modifier.fillMaxSize()
+                } else {
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .requiredSize(1.dp)
+                },
+                background = Color.Black,
+            )
+        }
     }
 }
 

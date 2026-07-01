@@ -12,6 +12,9 @@ internal const val DefaultPosterCardWidthDp = 126
 internal const val DefaultPosterCardHeightDp = 189
 internal const val DefaultPosterCardCornerRadiusDp = 12
 
+/** Matches the "Extra Large" preset in the poster size settings page's width options. */
+const val ExtraLargePosterCardWidthDp = 210
+
 @Serializable
 private data class StoredPosterCardStylePreferences(
     val widthDp: Int = DefaultPosterCardWidthDp,

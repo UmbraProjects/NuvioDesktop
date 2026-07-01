@@ -115,6 +115,7 @@ import coil3.svg.SvgDecoder
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
+import com.nuvio.app.core.auth.ReauthenticationTrigger
 import com.nuvio.app.core.deeplink.AppDeepLink
 import com.nuvio.app.core.deeplink.AppDeepLinkRepository
 import com.nuvio.app.core.network.NetworkCondition
@@ -685,6 +686,17 @@ fun App() {
             ProfileRepository.pullProfiles()
         }
 
+        // Explicit "Sign In" request from deep inside Settings (see ReauthenticationTrigger):
+        // drop cached-profile access and send the user to the auth gate instead of waiting for
+        // authState to naturally flip, since a signed-out-but-cached user is otherwise kept on
+        // the main app indefinitely.
+        LaunchedEffect(Unit) {
+            ReauthenticationTrigger.events.collect {
+                ProfileRepository.clearInMemory()
+                gateScreen = AppGateScreen.Auth.name
+            }
+        }
+
         LaunchedEffect(
             gateScreen,
             autoSkipProfileSelection,
@@ -925,12 +937,20 @@ private fun MainAppContent(
         }
     }
 
-    // Pause/reset the TV hero-trailer dwell timer whenever home isn't the foreground screen
-    // (another tab, or a details/player route pushed over the tabs).
+    // Pause/reset the TV hero-trailer dwell timer whenever no home-style screen is the
+    // foreground screen (Settings tab, or a details/player route pushed over the tabs).
+    // Search, Library, and a collection folder all render the same TV Mode / Adaptive Hero
+    // hero as Home, so they count as "home" here too — otherwise their hero trailers could
+    // never play.
     LaunchedEffect(selectedTab, currentBackStackEntry) {
-        val homeForeground = selectedTab == AppScreenTab.Home &&
+        val onTabsWithHomeStyleTab = (
+            selectedTab == AppScreenTab.Home ||
+                selectedTab == AppScreenTab.Search ||
+                selectedTab == AppScreenTab.Library
+            ) &&
             navController.currentDestination?.hasRoute<TabsRoute>() == true
-        HomeHeroTrailerGate.setHomeActive(homeForeground)
+        val onFolderDetail = navController.currentDestination?.hasRoute<FolderDetailRoute>() == true
+        HomeHeroTrailerGate.setHomeActive(onTabsWithHomeStyleTab || onFolderDetail)
     }
 
     DisposableEffect(

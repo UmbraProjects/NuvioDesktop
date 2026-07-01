@@ -11,12 +11,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
@@ -239,15 +242,19 @@ actual fun HomeHeroTrailerSurface(
     }
 
     Box(modifier = modifier) {
-        SwingPanel(
-            factory = { host },
-            modifier = if (playbackRevealReady && playWhenReady) {
-                Modifier.fillMaxSize()
-            } else {
-                Modifier.align(Alignment.BottomEnd).requiredSize(1.dp)
-            },
-            background = Color.Transparent,
-        )
+        // See PlayerEngine.desktop.kt's SwingPanel for why this needs the real (unscaled)
+        // window density rather than the ambient one.
+        CompositionLocalProvider(LocalDensity provides LocalNuvioBaseDensity.current) {
+            SwingPanel(
+                factory = { host },
+                modifier = if (playbackRevealReady && playWhenReady) {
+                    Modifier.fillMaxSize()
+                } else {
+                    Modifier.align(Alignment.BottomEnd).requiredSize(1.dp)
+                },
+                background = Color.Transparent,
+            )
+        }
     }
 }
 

@@ -1,14 +1,32 @@
-This update brings new badges on the hero for more information in choosing what you watch. This includes awards, release status, trending, cult, ability to highlight directors/studios and more. Most of this logic is ported from my poster project PostersPlus (also open source), check it out if you want this info available on other platforms. 
-
-This update hopefully fixes anime ID/metadata issues forever by incorporating Fribb's anime-lists project to solve ID/metadata issues when attempting to use anime specific structures (such as Kitsu) with Trakt. If you spot any issues here, let me know.
-
-There's a key fix to desktop scaling that I never realized was happening. If you thought "this doesn't look like the video for me, it's so small" this is the fix for that. Effectively I developed it at 200% desktop scaling and only tested resolution scaling, not desktop scaling so anyone with a setting of anything other than 200% didn't have the correct layout.
-
-They're some other bits and bobs as well, mostly requests from users. If you have any, you can find me on Reddit, Discord ( PostersPlus discord works or AIOStreams) or open an issue/PR on GH but I'm more likely to see the others first. If anyone has ideas for the badge system that they'd like to see displayed, ideally it can be calculated from TMDB or Mdblist to avoid using any additional APIs.
-
-The changelog covers as much as I remember but they're definitely alot of improvements I forgot about.
-
 # Changelog
+
+## 1.7.1 - 2026-07-01
+
+### Fixed
+
+- **Sync/login broken after Nuvio's backend migration** - Nuvio switched their account/sync backend recently. This build now points at the new one, so signing in and syncing works again. If you were stuck logged out, update and sign back in.
+
+- **Account page showing "Sign Out" while already signed out** - the button wasn't checking your actual sign-in state, so it always showed "Sign Out" even when you weren't signed in. Now shows "Sign In" correctly, and it actually works.
+
+- **Signing out wiped ALL local desktop settings, not just account data** - this was the nasty one behind the above bug: signing out deleted the entire local settings folder, including everything that has nothing to do with your Nuvio account - playback settings (HDR, color profile, buffer presets, volume boost, anime enhancements), Adaptive Hero/TV Mode settings, and your TVDB/SIMKL connections. None of that syncs to your account in the first place, so wiping it just forced you to redo it all for nothing. Sign-out now only clears the stuff that's actually tied to your account.
+
+- **MPV playback (and hero trailers) not filling the screen at certain desktop scaling percentages** - a side effect of last version's desktop viewport scaling fix: the native video surface was inheriting the same "make UI look bigger" density meant for buttons/text, so it ended up sized as a fraction of the real window instead of the real screen. Fixed - video now always fills the space it's given, independent of that scaling.
+
+- **ASS/SSA subtitles** - subtitle styling was forcing *every* subtitle track, including ASS/SSA, through the plain color/font/size settings, discarding the file's own positioning, layout, and any animation effects entirely. For real ASS content that could mean broken positioning or effects rendering as a flat static frame instead of the file's actual styling. Detected automatically now - plain-text formats (SRT/VTT) still get your style settings applied as before, but ASS/SSA is left completely alone and rendered exactly as authored, no exceptions. Removed the "Use libass" toggle and render-mode picker from desktop's subtitle settings - that only ever controlled Android's separate WASM subtitle renderer and had zero effect here, which was actively misleading since desktop always renders ASS/SSA natively via mpv now with no user-facing setting needed. If a track is ASS/SSA, it's handled correctly automatically - there's nothing to configure.
+
+- **Hero trailers not working in Search, Library, or Collections** - autoplay and the manual `T` shortcut were both silently gated off outside the Home tab, and Collections in particular had no keyboard handling wired up at all for a trailer's native surface. Fixed across all of them.
+
+- **Keyboard navigation snapping the hero back to an old position while a trailer played** - pressing an arrow key mid-trailer could jump focus back to wherever it was when the trailer started, discarding any mouse-wheel/hover navigation that happened while it played. Fixed.
+
+- **Collection adaptive hero freezing after the 18th tile** - hovering tiles past the row's preview cap stopped updating the hero backdrop and got stuck on the first tile. Fixed.
+
+- **Hero badge placement not applying inside Collections** - your configured badge position (e.g. top-right vertical) was ignored there and always fell back to the bottom-of-backdrop default. Fixed.
+
+- **Blank/black hero backdrop for addons that don't supply a banner image** - added a poster fallback for the hero backdrop so it can't render nothing if an addon doesn't supply one. Couldn't reproduce the original report on retest (Cinemeta and others rendered backdrops fine), so this is a defensive fix for the gap rather than a confirmed root cause - let me know if you still see a black backdrop anywhere.
+
+### Improved
+
+- **TV Mode now overrides settings that don't work with it** - Poster size, landscape poster mode, continue-watching card style, hide labels, and hide catalog underline all get forced to sensible fixed values while TV Mode is active (extra-large continue-watching cards, landscape off, "Card" style, labels always shown, underline always hidden), since combining them with TV Mode's fixed-size shelf caused broken layouts. Your actual saved preferences aren't touched - they reapply exactly as you left them the moment you turn TV Mode back off.
 
 ## 1.7.0 - 2026-07-01
 

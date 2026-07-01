@@ -857,6 +857,11 @@ public:
         if (shuttingDown.load()) return;
         layoutNativeSubviews();
         syncControls();
+        if (subtitleAssOverrideInitialCheckPending.load() &&
+            std::chrono::steady_clock::now() >= subtitleAssOverrideCheckDeadline) {
+            subtitleAssOverrideInitialCheckPending = false;
+            refreshSubtitleAssOverrideMode();
+        }
     }
 
     void runJavaScript(const std::string &script) {
@@ -916,10 +921,18 @@ public:
         return std::isfinite(value) ? value : 0.0;
     }
 
-    double timePosSecondsLocked() {
+    bool tryGetDoubleLocked(const char *name, double &out) {
         double value = 0.0;
-        if (mpvApi().getProperty(mpv, "time-pos", MPV_FORMAT_DOUBLE, &value) < 0) return 0.0;
-        return std::isfinite(value) ? value : 0.0;
+        if (mpvApi().getProperty(mpv, name, MPV_FORMAT_DOUBLE, &value) < 0) return false;
+        if (!std::isfinite(value)) return false;
+        out = value;
+        return true;
+    }
+
+    bool flagPropertyLocked(const char *name, bool fallback) {
+        int flag = fallback ? 1 : 0;
+        if (mpvApi().getProperty(mpv, name, MPV_FORMAT_FLAG, &flag) < 0) return fallback;
+        return flag != 0;
     }
 
     double clampSeekSecondsLocked(double seconds) {
@@ -931,22 +944,45 @@ public:
         return clamped;
     }
 
+    void issueSeekLocked(double targetSeconds) {
+        std::string seconds = std::to_string(targetSeconds);
+        const char *command[] = {"seek", seconds.c_str(), "absolute+keyframes", nullptr};
+        if (mpvApi().command(mpv, command) >= 0) {
+            pendingSeekTargetSeconds = targetSeconds;
+            pendingSeekIssuedAt = std::chrono::steady_clock::now();
+        }
+    }
+
     void seekToMilliseconds(long long positionMs) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
-        double target = clampSeekSecondsLocked((double)positionMs / 1000.0);
-        std::string seconds = std::to_string(target);
-        const char *command[] = {"seek", seconds.c_str(), "absolute+keyframes", nullptr};
-        mpvApi().command(mpv, command);
+        issueSeekLocked(clampSeekSecondsLocked((double)positionMs / 1000.0));
     }
 
     void seekByMilliseconds(long long offsetMs) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
-        double target = clampSeekSecondsLocked(timePosSecondsLocked() + (double)offsetMs / 1000.0);
-        std::string seconds = std::to_string(target);
-        const char *command[] = {"seek", seconds.c_str(), "absolute+keyframes", nullptr};
-        mpvApi().command(mpv, command);
+        // Base relative seeks on the most recent seek target while a prior seek is still
+        // settling. time-pos lags (or is briefly unavailable) until mpv finishes seeking,
+        // so reading it raw makes rapid repeated seeks collapse into a single step — and
+        // when the property read fails outright, "current position" used to become 0 and
+        // playback jumped to the start of the file.
+        bool seeking = flagPropertyLocked("seeking", false);
+        bool pendingFresh = pendingSeekTargetSeconds >= 0.0 &&
+            (std::chrono::steady_clock::now() - pendingSeekIssuedAt) < std::chrono::milliseconds(800);
+        double base;
+        double timePos = 0.0;
+        if (pendingSeekTargetSeconds >= 0.0 && (seeking || pendingFresh)) {
+            base = pendingSeekTargetSeconds;
+        } else if (tryGetDoubleLocked("time-pos", timePos)) {
+            base = std::max(0.0, timePos);
+        } else if (pendingSeekTargetSeconds >= 0.0) {
+            base = pendingSeekTargetSeconds;
+        } else {
+            // No playable position yet; dropping the seek beats jumping to 0:00.
+            return;
+        }
+        issueSeekLocked(clampSeekSecondsLocked(base + (double)offsetMs / 1000.0));
     }
 
     void setSpeed(double speed) {
@@ -960,7 +996,7 @@ public:
         double bufferFactor = std::max(1.0, clamped);
         std::string readahead = std::to_string(baseReadaheadSecs * bufferFactor);
         std::string cacheSecs = std::to_string(baseCacheSecs * bufferFactor);
-        std::string pauseWait = std::to_string(clamped > 1.0 ? 15.0 : 5.0);
+        std::string pauseWait = std::to_string(clamped > 1.0 ? 6.0 : 2.0);
         mpvApi().setPropertyString(mpv, "demuxer-readahead-secs", readahead.c_str());
         mpvApi().setPropertyString(mpv, "cache-secs", cacheSecs.c_str());
         mpvApi().setPropertyString(mpv, "cache-pause-wait", pauseWait.c_str());
@@ -1057,19 +1093,25 @@ public:
     }
 
     void selectSubtitleTrackId(int trackId) {
-        std::lock_guard<std::mutex> lock(mpvMutex);
-        if (!mpv) return;
-        if (trackId < 0) {
-            mpvApi().setPropertyString(mpv, "sid", "no");
-            return;
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            if (!mpv) return;
+            if (trackId < 0) {
+                mpvApi().setPropertyString(mpv, "sid", "no");
+                return;
+            }
+            int64_t id = trackId;
+            mpvApi().setProperty(mpv, "sid", MPV_FORMAT_INT64, &id);
         }
-        int64_t id = trackId;
-        mpvApi().setProperty(mpv, "sid", MPV_FORMAT_INT64, &id);
+        // Re-derive sub-ass-override for whatever track just became selected — the helper
+        // functions above each take mpvMutex themselves, so this must run after it's released.
+        refreshSubtitleAssOverrideMode();
     }
 
     void addSubtitleUrl(const std::string &url) {
         if (url.empty()) return;
         command({"sub-add", url, "select"});
+        refreshSubtitleAssOverrideMode();
     }
 
     void removeExternalSubtitles() {
@@ -1104,7 +1146,7 @@ public:
         int subPos,
         const std::string &fontName
     ) {
-        setStringProperty("sub-ass-override", "force");
+        refreshSubtitleAssOverrideMode();
         // Empty font name reverts to mpv's built-in default ("sans-serif").
         setStringProperty("sub-font", fontName.empty() ? "sans-serif" : fontName);
         setStringProperty("sub-color", textColor.empty() ? "#FFFFFFFF" : textColor);
@@ -1229,10 +1271,34 @@ private:
     std::string pendingControlsJson;
     double initialStartSeconds = 0.0;
 
+    // Last seek target issued (seconds), used to accumulate rapid relative seeks while a
+    // prior seek is still in flight. Guarded by mpvMutex; -1 when no seek is pending.
+    double pendingSeekTargetSeconds = -1.0;
+    std::chrono::steady_clock::time_point pendingSeekIssuedAt{};
+
+    // Cached track-list JSON for the 500ms controls sync. Rebuilding the lists means dozens
+    // of mutex-locked mpv property reads per tick; tracks only change on file load, external
+    // subtitle add/remove, or selection changes, all of which show up in the key below.
+    std::string cachedTracksKey;
+    std::string cachedAudioTracksJson = "[]";
+    std::string cachedSubtitleTracksJson = "[]";
+
     std::string videoParamsPrimaries;
     std::string videoParamsGamma;
     bool videoParamsPrimariesReceived = false;
     bool videoParamsGammaReceived = false;
+
+    // Empty until the first refresh actually applies a mode, so it never matches and the
+    // first call always sets sub-ass-override explicitly rather than assuming mpv's default.
+    std::string appliedSubAssOverrideMode;
+    // One-shot delayed check a few seconds after each file load, for whatever subtitle track
+    // mpv auto-selects on its own (no explicit selectSubtitleTrackId/addSubtitleUrl call fires
+    // for that). Deliberately not a recurring poll — continuous rechecking interfered with
+    // seeking/playback start. Set from the mpv event thread, read from the UI/timer thread —
+    // the deadline is written before the atomic flag so the flag's release/acquire ordering
+    // makes it visible by the time the reader observes the flag as true.
+    std::atomic_bool subtitleAssOverrideInitialCheckPending = false;
+    std::chrono::steady_clock::time_point subtitleAssOverrideCheckDeadline;
 
     std::string externalAudioUrl;
     bool vsrLogActive = false;
@@ -1576,7 +1642,9 @@ private:
             // it for a general media player silently kills video when D3D11VA fails on edge
             // cases (e.g. H.264-in-AVI with non-standard container extradata).
             setMpvOptionStringLocked("hwdec-codecs", "h264,hevc,vp9,vp8,av1,vc1,mpeg2video");
-            setMpvOptionStringLocked("vd-lavc-threads", "4");
+            // 0 = auto-detect core count. A fixed low cap starves software decoding
+            // (the fallback path for codecs D3D11VA rejects) on modern CPUs.
+            setMpvOptionStringLocked("vd-lavc-threads", "0");
 
             // NVIDIA RTX Video Super Resolution (opt-in). Pin the D3D11 device to the NVIDIA GPU
             // and run the d3d11 video processor with NVIDIA's super-resolution scaler. Default-off
@@ -1652,7 +1720,10 @@ private:
             setMpvOptionStringLocked("cache", "yes");
             setMpvOptionStringLocked("cache-pause", "yes");
             setMpvOptionStringLocked("cache-pause-initial", "yes");
-            setMpvOptionStringLocked("cache-pause-wait", "5");
+            // How much media must be buffered before (re)starting playback — this directly
+            // sets time-to-first-frame and post-seek resume latency. The large readahead
+            // above provides the actual stall resilience once playing, so keep this small.
+            setMpvOptionStringLocked("cache-pause-wait", "2");
             setMpvOptionStringLocked("cache-secs", std::to_string((long long)baseCacheSecs).c_str());
             setMpvOptionStringLocked("demuxer-readahead-secs", std::to_string((long long)baseReadaheadSecs).c_str());
             // Separate YouTube video/audio streams can exhaust the byte ceiling well before
@@ -1795,8 +1866,18 @@ private:
         double buffered = (double)bufferedPositionMs() / 1000.0;
         bool paused = isPaused();
         bool loading = isLoading();
-        std::string audioTracks = audioTracksJson();
-        std::string subtitleTracks = subtitleTracksJson();
+        // Track metadata (titles, languages, codecs) is immutable per track; the lists only
+        // change when tracks appear/disappear or the selection moves, so key the cache on
+        // count + selected audio/subtitle ids instead of re-reading every track each tick.
+        std::string tracksKey = std::to_string(int64Property("track-list/count", 0)) +
+            "|" + stringProperty("aid", "") + "|" + stringProperty("sid", "");
+        if (tracksKey != cachedTracksKey) {
+            cachedTracksKey = tracksKey;
+            cachedAudioTracksJson = audioTracksJson();
+            cachedSubtitleTracksJson = subtitleTracksJson();
+        }
+        const std::string &audioTracks = cachedAudioTracksJson;
+        const std::string &subtitleTracks = cachedSubtitleTracksJson;
 
         std::ostringstream script;
         script << "window.playerUpdate({duration:" << duration
@@ -1926,7 +2007,15 @@ private:
                 }
             }
             if (event->event_id == MPV_EVENT_FILE_LOADED) {
+                {
+                    // A stale seek target from the previous file must not seed relative
+                    // seeks issued right after a source switch.
+                    std::lock_guard<std::mutex> lock(mpvMutex);
+                    pendingSeekTargetSeconds = -1.0;
+                }
                 sendPlayerEvent("fileLoaded", 1.0);
+                subtitleAssOverrideCheckDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+                subtitleAssOverrideInitialCheckPending = true;
                 // Ask VPP to scale directly to the embedded surface instead of always using 2x.
                 // This lets 720p reach 4K in one NVIDIA VSR pass while avoiding needless work
                 // when the source already matches or exceeds the surface dimensions.
@@ -2185,6 +2274,44 @@ private:
 
     std::string trackStringAtIndex(long long index, const std::string &field) {
         return trim(stringProperty(("track-list/" + std::to_string(index) + "/" + field).c_str(), ""));
+    }
+
+    std::string selectedSubtitleCodec() {
+        long long count = int64Property("track-list/count", 0);
+        for (long long index = 0; index < count; index++) {
+            std::string prefix = "track-list/" + std::to_string(index);
+            if (stringProperty((prefix + "/type").c_str(), "") != "sub") continue;
+            if (!flagProperty((prefix + "/selected").c_str(), false)) continue;
+            return trackStringAtIndex(index, "codec");
+        }
+        return "";
+    }
+
+    // ASS/SSA subtitles carry their own positioning and styling (karaoke fills, \fad()/\t()
+    // transform animations, absolute \pos() coordinates, PlayResX/PlayResY-relative layout,
+    // etc.) that "force" silently discards in favour of the plain sub-* properties below — for
+    // real ASS content that can mean broken positioning, blank text, or animation effects
+    // rendering as a flat static frame instead of actually animating. "yes" still turned out to
+    // interfere with this (confirmed: crossfade/transform effects stayed static even under
+    // "yes"), so ASS/SSA now gets "no" — mpv applies zero style overrides and fully trusts the
+    // file's own styling/animation. Only force-override for plain-text formats (SRT/VTT) where
+    // there is no original styling to lose in the first place.
+    //
+    // Codec info for an externally added subtitle (sub-add on a URL) isn't necessarily known
+    // the instant the command returns — mpv still has to fetch/parse it. Callers invoke this
+    // right after track selection as a best-effort immediate attempt, and a one-shot delayed
+    // check a few seconds after file load (see subtitleAssOverrideInitialCheckPending) catches
+    // whatever track mpv auto-selected on its own. Deliberately NOT a recurring poll — that
+    // interfered with seeking/playback start.
+    void refreshSubtitleAssOverrideMode() {
+        std::string codec = selectedSubtitleCodec();
+        bool isAssSubtitle = codec.find("ass") != std::string::npos || codec.find("ssa") != std::string::npos;
+        std::string mode = isAssSubtitle ? "no" : "force";
+        nuvioBridgeLog("refreshSubtitleAssOverrideMode: codec=\"" + codec + "\" mode=" + mode +
+            (mode == appliedSubAssOverrideMode ? " (unchanged)" : " (applying)"));
+        if (mode == appliedSubAssOverrideMode) return;
+        appliedSubAssOverrideMode = mode;
+        setStringProperty("sub-ass-override", mode);
     }
 
     std::string formatTrackTitle(
