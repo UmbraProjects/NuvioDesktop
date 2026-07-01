@@ -18,7 +18,7 @@
 
 [![Nuvio TV Mode Demo](https://img.youtube.com/vi/N3eKjF7sm_o/maxresdefault.jpg)](https://www.youtube.com/watch?v=N3eKjF7sm_o)
 
-This fork is unaffiliated with the Nuvio team. It is intended to be a fork focused solely on the best possible experience for Windows. 
+This fork is unaffiliated with the Nuvio team. It is intended to be a fork focused solely on the best possible experience for Windows. Don't worry about the commit disparity, Nuvio's team makes many small commits while I bundle everything into a single release commit. Their method is more professional for open source projects but I'm going for simplicity and not working on this with anyone else. 
 
 Here is a non exhaustive feature list:
 
