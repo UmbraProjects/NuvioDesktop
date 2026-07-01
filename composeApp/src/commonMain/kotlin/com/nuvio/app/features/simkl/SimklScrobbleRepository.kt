@@ -3,6 +3,9 @@ package com.nuvio.app.features.simkl
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppVersionPolicy
 import com.nuvio.app.features.addons.httpRequestRaw
+import com.nuvio.app.features.metadata.MediaIdResolver
+import com.nuvio.app.features.metadata.ResolvedMediaIds
+import com.nuvio.app.features.metadata.toSimklIds
 import com.nuvio.app.features.trakt.TraktExternalIds
 import com.nuvio.app.features.trakt.TraktScrobbleItem
 import com.nuvio.app.features.trakt.parseTraktContentIds
@@ -75,8 +78,17 @@ internal object SimklScrobbleRepository {
     ): SimklScrobbleItem? {
         val normalizedType = contentType.trim().lowercase()
         val isEpisodeType = normalizedType in listOf("series", "tv", "show", "tvshow", "anime")
-        val ids = buildSimklIds(parentMetaId, videoId)
-            .let { if (isAnime) enrichAnimeIdsForSimkl(it) else it }
+        val resolvedIds = MediaIdResolver.resolve(
+            contentType = contentType,
+            parentMetaId = parentMetaId,
+            videoId = videoId,
+            title = title,
+            sourceSeasonNumber = seasonNumber,
+            isAnimeHint = isAnime || normalizedType == "anime",
+        )
+        val resolvedIsAnime = isAnime || resolvedIds.isAnime
+        val ids = resolvedIds.toSimklIds()
+            .let { if (resolvedIsAnime) enrichAnimeIdsForSimkl(it) else it }
 
         return if (
             isEpisodeType &&
@@ -87,14 +99,26 @@ internal object SimklScrobbleRepository {
             SimklScrobbleItem.Episode(
                 showTitle = title,
                 ids = ids,
-                season = seasonNumber,
-                number = episodeNumber,
-                isAnime = isAnime,
+                season = resolvedIds.simklAnimeSeasonNumber(seasonNumber, resolvedIsAnime),
+                number = resolvedIds.simklAnimeEpisodeNumber(episodeNumber, resolvedIsAnime),
+                isAnime = resolvedIsAnime,
             )
         } else {
             if (!ids.hasAny()) return null
             SimklScrobbleItem.Movie(title = title, ids = ids)
         }
+    }
+
+    private fun ResolvedMediaIds.simklAnimeSeasonNumber(sourceSeason: Int, isAnime: Boolean): Int {
+        if (!isAnime || simkl == null) return sourceSeason
+        val mappedSeason = tmdbSeason ?: tvdbSeason ?: return sourceSeason
+        return if (sourceSeason == mappedSeason) 1 else sourceSeason
+    }
+
+    private fun ResolvedMediaIds.simklAnimeEpisodeNumber(sourceEpisode: Int, isAnime: Boolean): Int {
+        if (!isAnime || simkl == null) return sourceEpisode
+        val offset = tmdbEpisodeOffset ?: tvdbEpisodeOffset ?: 0
+        return (sourceEpisode - offset).coerceAtLeast(1)
     }
 
     private suspend fun send(action: String, item: TraktScrobbleItem, progressPercent: Float, isAnime: Boolean) {

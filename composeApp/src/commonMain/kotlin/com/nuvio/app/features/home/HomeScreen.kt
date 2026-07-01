@@ -91,6 +91,7 @@ import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroReservedSpace
 import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeHeroTrailerGate
+import com.nuvio.app.features.home.components.HomeHeroPeoplePanelToggleTrigger
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.home.components.HomeHeroTrailerManualTrigger
 import com.nuvio.app.features.home.components.HomeTvKey
@@ -1666,6 +1667,14 @@ fun HomeScreen(
                                     // the auto-play setting (TV-style hero only).
                                     handleHomeTvKey(HomeTvKey.ToggleTrailer)
                                 }
+                                Key.P -> {
+                                    if (adaptiveHeroEnabled || tvModeEnabled) {
+                                        HomeHeroPeoplePanelToggleTrigger.trigger()
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
                                 Key.Escape, Key.Back -> {
                                     // If a hero trailer is showing, Escape dismisses it first
                                     // (a clear way out of full-screen playback).
@@ -1822,6 +1831,10 @@ fun HomeScreen(
                         !heroAmbientBackgroundEnabled && !tvModeEnabled,
                     immersiveMode = tvModeEnabled,
                     adaptiveHeroMode = adaptiveHeroEnabled,
+                    heroInfoLines = homeSettingsUiState.heroInfoLines,
+                    heroInfoPriority = homeSettingsUiState.heroInfoPriority,
+                    heroBadgePlacement = homeSettingsUiState.heroBadgePlacement,
+                    heroReleaseStatusUnavailableOnly = homeSettingsUiState.heroReleaseStatusUnavailableOnly,
                     immersiveContentBottomPadding = immersiveShelfHeight - 20.dp,
                     onActiveItemChanged = { item ->
                         activeHeroBackdrop = item.banner ?: item.poster

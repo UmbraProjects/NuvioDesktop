@@ -89,17 +89,26 @@ internal data class SimklMediaIds(
 
 /** Converts SIMKL ids to the app's preferred content id (imdb > tmdb > simkl). */
 internal fun SimklMediaIds.toBestContentId(): String? =
-    imdb?.takeIf { it.isNotBlank() }
+    imdb?.takeIf { it.isNotBlank() && it != "tt2250192" }
         ?: tmdb?.takeIf { it.isNotBlank() }?.let { "tmdb:$it" }
         ?: tvdb?.let { "tvdb:$it" }
         ?: simkl?.let { "simkl:$it" }
 
 internal fun SimklMediaIds.toBestAnimeContentId(): String? =
-    imdb?.takeIf { it.isNotBlank() }
-        ?: tmdb?.takeIf { it.isNotBlank() }?.let { "tmdb:$it" }
-        ?: tvdb?.let { "tvdb:$it" }
-        ?: kitsu?.takeIf { it.isNotBlank() }?.let { "kitsu:$it" }
+    kitsu?.takeIf { it.isNotBlank() }?.let { "kitsu:$it" }
         ?: simkl?.let { "simkl:$it" }
+        ?: mal?.takeIf { it.isNotBlank() }?.let { "mal:$it" }
+        ?: imdb?.takeIf { it.isNotBlank() && it != "tt2250192" }
+        ?: tvdb?.let { "tvdb:$it" }
+        ?: tmdb?.takeIf { it.isNotBlank() }?.let { "tmdb:$it" }
+
+internal fun SimklMediaIds.toBestAnimeMovieContentId(): String? =
+    kitsu?.takeIf { it.isNotBlank() }?.let { "kitsu:$it" }
+        ?: simkl?.let { "simkl:$it" }
+        ?: mal?.takeIf { it.isNotBlank() }?.let { "mal:$it" }
+        ?: imdb?.takeIf { it.isNotBlank() && it != "tt2250192" }
+        ?: tvdb?.let { "tvdb:$it" }
+        ?: tmdb?.takeIf { it.isNotBlank() }?.let { "tmdb:$it" }
 
 @Serializable
 internal data class SimklShowMedia(

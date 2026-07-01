@@ -95,6 +95,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
         PlayerStreamsRepository.loadEpisodeStreams(
             type = type,
             videoId = nextVideo.id,
+            parentMetaId = parentMetaId,
             season = nextVideo.season,
             episode = nextVideo.episode,
         )

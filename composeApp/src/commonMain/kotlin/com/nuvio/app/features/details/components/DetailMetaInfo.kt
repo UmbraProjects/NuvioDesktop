@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,7 +62,7 @@ import nuvio.composeapp.generated.resources.rating_tmdb
 import nuvio.composeapp.generated.resources.rating_trakt
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.getString
-import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.imageResource
 import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.runBlocking
 import kotlin.math.absoluteValue
@@ -231,9 +232,12 @@ internal fun RatingsRow(
                     )
                 } else {
                     Image(
-                        painter = painterResource(visuals.logo),
+                        bitmap = imageResource(visuals.logo),
                         contentDescription = visuals.displayName,
                         modifier = Modifier.size(width = visuals.logoWidth, height = 16.dp),
+                        // The logos are large source PNGs scaled down ~18x; the default Low
+                        // (bilinear) filter makes them look soft. High gives a crisp downscale.
+                        filterQuality = FilterQuality.High,
                     )
                 }
                 Spacer(modifier = Modifier.width(4.dp))

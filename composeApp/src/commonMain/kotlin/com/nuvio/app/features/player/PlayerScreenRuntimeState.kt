@@ -183,6 +183,11 @@ internal class PlayerScreenRuntime(
     var nextEpisodeAutoPlaySourceName by mutableStateOf<String?>(null)
     var nextEpisodeAutoPlayCountdown by mutableStateOf<Int?>(null)
     var nextEpisodeAutoPlayJob by mutableStateOf<Job?>(null)
+    // Latch that allows the next-episode auto-advance to fire at most once per episode. Set when
+    // an advance is initiated; cleared only once the new episode is genuinely playing. Prevents a
+    // stale end-of-file (which lingers while the next stream loads — common with MPV + slow addons)
+    // from triggering a SECOND advance and skipping an episode.
+    var nextEpisodeAdvanceInProgress by mutableStateOf(false)
     var pendingP2pSwitch by mutableStateOf<PendingPlayerP2pSwitch?>(null)
     var credentialRefreshJob by mutableStateOf<Job?>(null)
     var credentialRefreshAttemptedSourceUrl by mutableStateOf<String?>(null)

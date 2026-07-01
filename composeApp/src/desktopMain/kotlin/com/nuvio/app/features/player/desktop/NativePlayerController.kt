@@ -44,6 +44,8 @@ internal class NativePlayerController(
 
     @Volatile
     private var handle: Long = 0L
+    @Volatile
+    private var lastResizeMode: PlayerResizeMode? = null
     private val handleLock = Any()
     private val nativeLifecycleLock = Any()
     private val attachGeneration = AtomicLong(0L)
@@ -166,6 +168,7 @@ internal class NativePlayerController(
                             NativePlayerBridge.setMpvProperty(newHandle, key, value)
                         }
                     }
+                    lastResizeMode?.let { setResizeMode(it) }
                     applyPendingSubtitleConfiguration(newHandle)
                     if (pendingVideoRedraw) {
                         pendingVideoRedraw = false
@@ -206,6 +209,7 @@ internal class NativePlayerController(
     }
 
     fun setResizeMode(mode: PlayerResizeMode) {
+        lastResizeMode = mode
         handle.takeIf { it != 0L }?.let { current ->
             NativePlayerBridge.setResizeMode(
                 handle = current,
@@ -215,6 +219,7 @@ internal class NativePlayerController(
                     PlayerResizeMode.Zoom -> 2
                 },
             )
+            forceVideoRedraw()
         }
     }
 

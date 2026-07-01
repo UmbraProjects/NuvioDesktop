@@ -344,15 +344,31 @@ object MetaDetailsRepository {
             TmdbService.ensureTmdbId(externalId, type)
         } else null
         val tmdbFallbackId = if (resolvedTmdbNumericId != null) "tmdb:$resolvedTmdbNumericId" else id
-        val tmdbResult = if (needsTmdb && resolvedTmdbNumericId != null) {
+        val rawTmdbResult = if (needsTmdb && resolvedTmdbNumericId != null) {
             tryFetchTmdbFallbackMeta(type = type, id = tmdbFallbackId)
         } else null
+        // resolvedTmdbNumericId can come from a bare-numeric addon id trusted without
+        // verification (TmdbService.ensureTmdbId's "all digits" branch) — if that number
+        // collides with an unrelated TMDB entry, discard its background/logo/text rather than
+        // stitching a wrong title's art onto the addon's own correct metadata. No addon result
+        // to compare against means there's nothing to protect, so trust it as before.
+        val tmdbResult = rawTmdbResult?.takeUnless {
+            addonResult != null &&
+                TmdbMetadataService.looksLikeDifferentTitle(addonResult.name, addonResult.releaseInfo, it.name, it.releaseInfo)
+        }
 
         // Metahub fallback check: query metahub ourselves before relying on TMDB.
+        // When there's no TMDB key, resolve the IMDB id straight from TVDB's own /extended
+        // endpoint instead — keeps this fallback working for catalogs that hand back native
+        // tvdb:-prefixed ids (e.g. movies, which TvdbImageService never images itself).
+        val tvdbNativeId = addonResult?.tvdbId?.trim()?.takeIf(String::isNotBlank)
+            ?: externalId.takeIf { it.startsWith("tvdb:", ignoreCase = true) }?.substringAfter(':')?.trim()
         val imdbId = if (externalId.startsWith("tt")) {
             externalId
         } else if (resolvedTmdbNumericId != null) {
             TmdbService.tmdbToImdb(tmdbId = resolvedTmdbNumericId.toInt(), mediaType = type)
+        } else if (tvdbNativeId != null && tvdbApiKeyPresent) {
+            TvdbImageService.resolveImdbId(type = type, tvdbId = tvdbNativeId)
         } else null
         var explicitMetahubLogo: String? = null
         var explicitMetahubBackground: String? = null

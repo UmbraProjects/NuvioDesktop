@@ -36,6 +36,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -131,6 +133,7 @@ import com.nuvio.app.core.ui.configurePlatformImageLoader
 import com.nuvio.app.core.ui.NuvioToastHost
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.NuvioFloatingPrompt
+import com.nuvio.app.core.ui.NuvioDesktopViewportDensityScaler
 import com.nuvio.app.core.ui.TraktListPickerDialog
 import com.nuvio.app.core.ui.NuvioTheme
 import com.nuvio.app.core.ui.NuvioTokens
@@ -165,6 +168,7 @@ import com.nuvio.app.features.details.MetaDetailsScreen
 import com.nuvio.app.features.details.MetaPerson
 import com.nuvio.app.features.details.PersonDetailScreen
 import com.nuvio.app.features.details.TmdbEntityBrowseScreen
+import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.tmdb.TmdbEntityKind
 import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.HomeCatalogSection
@@ -206,6 +210,7 @@ import com.nuvio.app.features.profiles.ProfileSwitcherTab
 import com.nuvio.app.features.profiles.SidebarProfileSwitcherStack
 import com.nuvio.app.features.profiles.profileAvatarImageUrl
 import com.nuvio.app.features.search.SearchScreen
+import com.nuvio.app.features.settings.ApiKeysOnboardingHost
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.features.settings.HomescreenSettingsScreen
 import com.nuvio.app.features.settings.MetaScreenSettingsScreen
@@ -713,66 +718,68 @@ fun App() {
             }
         }
 
-        AnimatedContent(
-            targetState = gateScreen,
-            label = "app_gate",
-            transitionSpec = {
-                (fadeIn(tween(400)) + scaleIn(tween(400), initialScale = 0.94f))
-                    .togetherWith(fadeOut(tween(250)))
-            },
-        ) { currentGate ->
-            when (currentGate) {
-                AppGateScreen.Loading.name,
-                AppGateScreen.ProfileSwitching.name -> {
-                    AppLaunchOverlay(modifier = Modifier.fillMaxSize())
-                }
-                AppGateScreen.Auth.name -> {
-                    AuthScreen(modifier = Modifier.fillMaxSize())
-                }
-                AppGateScreen.ProfileSelection.name -> {
-                    PlatformBackHandler(enabled = gateScreen == AppGateScreen.ProfileSelection.name) {
-                        if (!autoSkipProfileSelection) {
-                            gateScreen = AppGateScreen.Main.name
+        NuvioDesktopViewportDensityScaler(modifier = Modifier.fillMaxSize()) {
+            AnimatedContent(
+                targetState = gateScreen,
+                label = "app_gate",
+                transitionSpec = {
+                    (fadeIn(tween(400)) + scaleIn(tween(400), initialScale = 0.94f))
+                        .togetherWith(fadeOut(tween(250)))
+                },
+            ) { currentGate ->
+                when (currentGate) {
+                    AppGateScreen.Loading.name,
+                    AppGateScreen.ProfileSwitching.name -> {
+                        AppLaunchOverlay(modifier = Modifier.fillMaxSize())
+                    }
+                    AppGateScreen.Auth.name -> {
+                        AuthScreen(modifier = Modifier.fillMaxSize())
+                    }
+                    AppGateScreen.ProfileSelection.name -> {
+                        PlatformBackHandler(enabled = gateScreen == AppGateScreen.ProfileSelection.name) {
+                            if (!autoSkipProfileSelection) {
+                                gateScreen = AppGateScreen.Main.name
+                            }
                         }
+                        ProfileSelectionScreen(
+                            onProfileSelected = { profile ->
+                                requestProfileSwitch(
+                                    profile = profile,
+                                    syncOnEnter = authState is AuthState.Authenticated,
+                                )
+                            },
+                            onEditProfile = { profile ->
+                                editingProfile = profile
+                                isNewProfile = false
+                                gateScreen = AppGateScreen.ProfileEdit.name
+                            },
+                            onAddProfile = {
+                                editingProfile = null
+                                isNewProfile = true
+                                gateScreen = AppGateScreen.ProfileEdit.name
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     }
-                    ProfileSelectionScreen(
-                        onProfileSelected = { profile ->
-                            requestProfileSwitch(
-                                profile = profile,
-                                syncOnEnter = authState is AuthState.Authenticated,
-                            )
-                        },
-                        onEditProfile = { profile ->
-                            editingProfile = profile
-                            isNewProfile = false
-                            gateScreen = AppGateScreen.ProfileEdit.name
-                        },
-                        onAddProfile = {
-                            editingProfile = null
-                            isNewProfile = true
-                            gateScreen = AppGateScreen.ProfileEdit.name
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-                AppGateScreen.ProfileEdit.name -> {
-                    PlatformBackHandler(enabled = gateScreen == AppGateScreen.ProfileEdit.name) {
-                        gateScreen = AppGateScreen.ProfileSelection.name
-                    }
-                    ProfileEditScreen(
-                        profile = editingProfile,
-                        onBack = { gateScreen = AppGateScreen.ProfileSelection.name },
-                        onSaved = { gateScreen = AppGateScreen.ProfileSelection.name },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-                AppGateScreen.Main.name -> {
-                    MainAppContent(
-                        onSwitchProfile = {
-                            autoSkipProfileSelection = false
+                    AppGateScreen.ProfileEdit.name -> {
+                        PlatformBackHandler(enabled = gateScreen == AppGateScreen.ProfileEdit.name) {
                             gateScreen = AppGateScreen.ProfileSelection.name
-                        },
-                    )
+                        }
+                        ProfileEditScreen(
+                            profile = editingProfile,
+                            onBack = { gateScreen = AppGateScreen.ProfileSelection.name },
+                            onSaved = { gateScreen = AppGateScreen.ProfileSelection.name },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    AppGateScreen.Main.name -> {
+                        MainAppContent(
+                            onSwitchProfile = {
+                                autoSkipProfileSelection = false
+                                gateScreen = AppGateScreen.ProfileSelection.name
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -1976,23 +1983,48 @@ private fun MainAppContent(
                             lifecycleOwner.lifecycle.removeObserver(observer)
                         }
                     }
+                    val resolvedLaunchEpisode = remember(
+                        launch.type,
+                        launch.parentMetaId,
+                        launch.videoId,
+                        launch.streamVideoId,
+                        launch.title,
+                        launch.seasonNumber,
+                        launch.episodeNumber,
+                    ) {
+                        MediaIdResolver.resolveLocalEpisodeIdentity(
+                            contentType = launch.type,
+                            parentMetaId = launch.parentMetaId ?: launch.videoId,
+                            videoId = launch.streamVideoId?.takeIf { it.isNotBlank() } ?: launch.videoId,
+                            title = launch.title,
+                            season = launch.seasonNumber,
+                            episode = launch.episodeNumber,
+                            isAnimeHint = launch.type.equals("anime", ignoreCase = true),
+                        )
+                    }
+                    val canonicalSeasonNumber = resolvedLaunchEpisode.season ?: launch.seasonNumber
+                    val canonicalEpisodeNumber = resolvedLaunchEpisode.episode ?: launch.episodeNumber
+                    val streamLookupSeasonNumber = resolvedLaunchEpisode.streamSeason ?: launch.seasonNumber
+                    val streamLookupEpisodeNumber = resolvedLaunchEpisode.streamEpisode ?: launch.episodeNumber
+                    val streamLookupVideoId = resolvedLaunchEpisode.videoId
+                    val canonicalLaunchVideoId = resolvedLaunchEpisode.canonicalVideoId
                     val shouldResolveEpisodeVideoId =
                         launch.parentMetaId != null &&
-                            launch.seasonNumber != null &&
-                            launch.episodeNumber != null
+                            canonicalSeasonNumber != null &&
+                            canonicalEpisodeNumber != null
                     var effectiveVideoId by rememberSaveable(
                         launch.videoId,
                         launch.parentMetaId,
-                        launch.seasonNumber,
-                        launch.episodeNumber,
+                        canonicalSeasonNumber,
+                        canonicalEpisodeNumber,
                     ) {
                         mutableStateOf(launch.videoId)
                     }
                     var hasResolvedVideoId by rememberSaveable(
                         launch.videoId,
                         launch.parentMetaId,
-                        launch.seasonNumber,
-                        launch.episodeNumber,
+                        canonicalSeasonNumber,
+                        canonicalEpisodeNumber,
                     ) {
                         mutableStateOf(!shouldResolveEpisodeVideoId)
                     }
@@ -2002,8 +2034,8 @@ private fun MainAppContent(
                         launch.parentMetaId,
                         launch.parentMetaType,
                         launch.type,
-                        launch.seasonNumber,
-                        launch.episodeNumber,
+                        canonicalSeasonNumber,
+                        canonicalEpisodeNumber,
                     ) {
                         effectiveVideoId = launch.videoId
                         if (!shouldResolveEpisodeVideoId) {
@@ -2013,24 +2045,24 @@ private fun MainAppContent(
 
                         hasResolvedVideoId = false
                         val metaType = launch.parentMetaType ?: launch.type
-                        val metaId = launch.parentMetaId ?: return@LaunchedEffect
+                        val metaId = launch.parentMetaId
                         val resolvedVideoId = runCatching {
                             MetaDetailsRepository.fetch(metaType, metaId)
                         }.getOrNull()
                             ?.videos
                             ?.firstOrNull { video ->
-                                video.season == launch.seasonNumber &&
-                                    video.episode == launch.episodeNumber
+                                video.season == streamLookupSeasonNumber &&
+                                    video.episode == streamLookupEpisodeNumber
                             }
                             ?.id
                             ?.takeIf { it.isNotBlank() }
 
-                        effectiveVideoId = resolvedVideoId ?: launch.videoId
+                        effectiveVideoId = resolvedVideoId ?: canonicalLaunchVideoId
                         hasResolvedVideoId = true
                     }
 
                     val playerSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
-                    val effectiveStreamVideoId = launch.streamVideoId?.takeIf { it.isNotBlank() } ?: effectiveVideoId
+                    val effectiveStreamVideoId = streamLookupVideoId.takeIf { it.isNotBlank() } ?: effectiveVideoId
 
                     fun p2pSentinelUrl(infoHash: String, fileIdx: Int?): String =
                         "torrent://$infoHash${fileIdx?.let { "?index=$it" }.orEmpty()}"
@@ -2048,8 +2080,8 @@ private fun MainAppContent(
                                 type = launch.type,
                                 videoId = effectiveStreamVideoId,
                                 parentMetaId = launch.parentMetaId,
-                                season = launch.seasonNumber,
-                                episode = launch.episodeNumber,
+                                season = streamLookupSeasonNumber,
+                                episode = streamLookupEpisodeNumber,
                             )
                             StreamLinkCacheRepository.save(
                                 contentKey = cacheKey,
@@ -2076,8 +2108,8 @@ private fun MainAppContent(
                             logo = launch.logo,
                             poster = launch.poster,
                             background = launch.background,
-                            seasonNumber = launch.seasonNumber,
-                            episodeNumber = launch.episodeNumber,
+                            seasonNumber = canonicalSeasonNumber,
+                            episodeNumber = canonicalEpisodeNumber,
                             episodeTitle = launch.episodeTitle,
                             episodeThumbnail = launch.episodeThumbnail,
                             streamTitle = stream.streamLabel,
@@ -2156,8 +2188,8 @@ private fun MainAppContent(
                             type = launch.type,
                             videoId = effectiveStreamVideoId,
                             parentMetaId = launch.parentMetaId,
-                            season = launch.seasonNumber,
-                            episode = launch.episodeNumber,
+                            season = streamLookupSeasonNumber,
+                            episode = streamLookupEpisodeNumber,
                         )
                         val maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
                         val cached = StreamLinkCacheRepository.getValid(cacheKey, maxAgeMs)
@@ -2197,8 +2229,8 @@ private fun MainAppContent(
                                     logo = launch.logo,
                                     poster = launch.poster,
                                     background = launch.background,
-                                    seasonNumber = launch.seasonNumber,
-                                    episodeNumber = launch.episodeNumber,
+                                    seasonNumber = canonicalSeasonNumber,
+                                    episodeNumber = canonicalEpisodeNumber,
                                     episodeTitle = launch.episodeTitle,
                                     episodeThumbnail = launch.episodeThumbnail,
                                     streamTitle = cached.streamName,
@@ -2234,8 +2266,10 @@ private fun MainAppContent(
                     val expectedStreamsRequestToken = StreamsRepository.requestToken(
                         type = launch.type,
                         videoId = effectiveStreamVideoId,
-                        season = launch.seasonNumber,
-                        episode = launch.episodeNumber,
+                        parentMetaId = launch.parentMetaId,
+                        title = launch.title,
+                        season = streamLookupSeasonNumber,
+                        episode = streamLookupEpisodeNumber,
                         manualSelection = launch.manualSelection,
                     )
                     var autoPlayHandled by rememberSaveable(launch.videoId, effectiveVideoId) { mutableStateOf(false) }
@@ -2256,8 +2290,8 @@ private fun MainAppContent(
                             when (
                                 val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
                                     stream = selectedStream,
-                                    season = launch.seasonNumber,
-                                    episode = launch.episodeNumber,
+                                    season = streamLookupSeasonNumber,
+                                    episode = streamLookupEpisodeNumber,
                                 )
                             ) {
                                 is DirectDebridPlayableResult.Success -> resolved.stream
@@ -2271,8 +2305,9 @@ private fun MainAppContent(
                                             type = launch.type,
                                             videoId = effectiveStreamVideoId,
                                             parentMetaId = launch.parentMetaId,
-                                            season = launch.seasonNumber,
-                                            episode = launch.episodeNumber,
+                                            title = launch.title,
+                                            season = streamLookupSeasonNumber,
+                                            episode = streamLookupEpisodeNumber,
                                             manualSelection = launch.manualSelection,
                                         )
                                     }
@@ -2306,8 +2341,8 @@ private fun MainAppContent(
                                 type = launch.type,
                                 videoId = effectiveStreamVideoId,
                                 parentMetaId = launch.parentMetaId,
-                                season = launch.seasonNumber,
-                                episode = launch.episodeNumber,
+                                season = streamLookupSeasonNumber,
+                                episode = streamLookupEpisodeNumber,
                             )
                             StreamLinkCacheRepository.save(
                                 contentKey = cacheKey,
@@ -2332,8 +2367,8 @@ private fun MainAppContent(
                                 logo = launch.logo,
                                 poster = launch.poster,
                                 background = launch.background,
-                                seasonNumber = launch.seasonNumber,
-                                episodeNumber = launch.episodeNumber,
+                                seasonNumber = canonicalSeasonNumber,
+                                episodeNumber = canonicalEpisodeNumber,
                                 episodeTitle = launch.episodeTitle,
                                 episodeThumbnail = launch.episodeThumbnail,
                                 streamTitle = stream.streamLabel,
@@ -2387,8 +2422,8 @@ private fun MainAppContent(
                                 resolvingDebridStream = true
                                 val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
                                     stream = stream,
-                                    season = launch.seasonNumber,
-                                    episode = launch.episodeNumber,
+                                    season = streamLookupSeasonNumber,
+                                    episode = streamLookupEpisodeNumber,
                                 )
                                 resolvingDebridStream = false
                                 when (resolved) {
@@ -2406,8 +2441,9 @@ private fun MainAppContent(
                                                 type = launch.type,
                                                 videoId = effectiveStreamVideoId,
                                                 parentMetaId = launch.parentMetaId,
-                                                season = launch.seasonNumber,
-                                                episode = launch.episodeNumber,
+                                                title = launch.title,
+                                                season = streamLookupSeasonNumber,
+                                                episode = streamLookupEpisodeNumber,
                                                 manualSelection = launch.manualSelection,
                                             )
                                         }
@@ -2433,8 +2469,8 @@ private fun MainAppContent(
                                 type = launch.type,
                                 videoId = effectiveStreamVideoId,
                                 parentMetaId = launch.parentMetaId,
-                                season = launch.seasonNumber,
-                                episode = launch.episodeNumber,
+                                season = streamLookupSeasonNumber,
+                                episode = streamLookupEpisodeNumber,
                             )
                             StreamLinkCacheRepository.save(
                                 contentKey = cacheKey,
@@ -2459,8 +2495,8 @@ private fun MainAppContent(
                             logo = launch.logo,
                             poster = launch.poster,
                             background = launch.background,
-                            seasonNumber = launch.seasonNumber,
-                            episodeNumber = launch.episodeNumber,
+                            seasonNumber = canonicalSeasonNumber,
+                            episodeNumber = canonicalEpisodeNumber,
                             episodeTitle = launch.episodeTitle,
                             episodeThumbnail = launch.episodeThumbnail,
                             streamTitle = stream.streamLabel,
@@ -2516,8 +2552,8 @@ private fun MainAppContent(
                             logo = launch.logo,
                             poster = launch.poster,
                             background = launch.background,
-                            seasonNumber = launch.seasonNumber,
-                            episodeNumber = launch.episodeNumber,
+                            seasonNumber = canonicalSeasonNumber,
+                            episodeNumber = canonicalEpisodeNumber,
                             episodeTitle = launch.episodeTitle,
                             episodeThumbnail = launch.episodeThumbnail,
                             resumePositionMs = launch.resumePositionMs,
@@ -3118,6 +3154,12 @@ private fun MainAppContent(
                     .align(Alignment.Center)
                     .zIndex(25f),
             )
+
+            ApiKeysOnboardingHost(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .zIndex(26f),
+            )
         }
 }
 
@@ -3556,11 +3598,10 @@ private fun TabletFloatingTopBar(
     val tokens = MaterialTheme.nuvio
     val focusManager = LocalFocusManager.current
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val hoverSource = remember { MutableInteractionSource() }
-    val hovered by hoverSource.collectIsHoveredAsState()
+    var activationZoneHovered by remember { mutableStateOf(false) }
     val isSearchActive = searchOverlayActive || selectedTab == AppScreenTab.Search
     val barAlpha by animateFloatAsState(
-        targetValue = if (dimUntilHovered && !isSearchActive && !hovered) 0f else 1f,
+        targetValue = if (dimUntilHovered && !isSearchActive && !activationZoneHovered) 0f else 1f,
         animationSpec = tween(durationMillis = 200),
     )
 
@@ -3616,23 +3657,34 @@ private fun TabletFloatingTopBar(
     val activeQuadColor = Color.White.copy(alpha = 0.18f)
     val activeIconTint = Color.White
     val inactiveIconTint = Color.White.copy(alpha = 0.55f)
+    val floatingSearchSurfaceColor = tokens.colors.surface.copy(alpha = tokens.opacity.strong)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(top = statusBarPadding + NuvioTokens.Space.s10, bottom = tokens.spacing.controlGap)
-            .hoverable(hoverSource)
             .alpha(barAlpha),
         contentAlignment = Alignment.TopCenter,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Surface(
-            color = tokens.colors.surface.copy(alpha = tokens.opacity.strong),
+            color = floatingSearchSurfaceColor,
             shape = if (historyShapeVisible) androidx.compose.foundation.shape.RoundedCornerShape(topStartPercent = 50, topEndPercent = 50) else tokens.shapes.chip,
-            tonalElevation = tokens.elevation.playerControls,
-            shadowElevation = tokens.elevation.overlay,
+            tonalElevation = if (historyShapeVisible) 0.dp else tokens.elevation.playerControls,
+            shadowElevation = if (historyShapeVisible) 0.dp else tokens.elevation.overlay,
             border = BorderStroke(0.5.dp, dividerColor),
-            modifier = Modifier.height(44.dp).width(320.dp),
+            modifier = Modifier
+                .height(44.dp)
+                .width(320.dp)
+                .onPointerEvent(PointerEventType.Enter) {
+                    activationZoneHovered = true
+                }
+                .onPointerEvent(PointerEventType.Move) {
+                    activationZoneHovered = true
+                }
+                .onPointerEvent(PointerEventType.Exit) {
+                    activationZoneHovered = false
+                },
         ) {
             AnimatedContent(
                 targetState = isSearchActive,
@@ -3818,10 +3870,10 @@ private fun TabletFloatingTopBar(
                 exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(shrinkTowards = Alignment.Top),
             ) {
                 Surface(
-                    color = tokens.colors.surface.copy(alpha = tokens.opacity.strong),
+                    color = floatingSearchSurfaceColor,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
-                    tonalElevation = tokens.elevation.playerControls,
-                    shadowElevation = tokens.elevation.overlay,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
                     border = androidx.compose.foundation.BorderStroke(0.5.dp, dividerColor),
                     modifier = Modifier.width(320.dp).offset(y = (-0.5).dp),
                 ) {
@@ -3884,6 +3936,12 @@ private fun RowScope.NavQuadrant(
     ) {
         content()
     }
+}
+
+private fun Float.isInCenteredActivationBand(widthPx: Int): Boolean {
+    if (widthPx <= 0) return false
+    val horizontalInset = widthPx * 0.125f
+    return this >= horizontalInset && this <= widthPx - horizontalInset
 }
 
 private fun ContinueWatchingItem.isCloudLibraryContinueWatchingItem(): Boolean =

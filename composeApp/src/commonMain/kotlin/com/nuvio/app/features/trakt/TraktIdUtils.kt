@@ -23,27 +23,27 @@ internal fun parseTraktContentIds(contentId: String?): TraktExternalIds {
     }
 
     if (raw.startsWith("tmdb:", ignoreCase = true)) {
-        return TraktExternalIds(tmdb = raw.substringAfter(':').toIntOrNull())
+        return TraktExternalIds(tmdb = raw.substringAfter(':').substringBefore(':').toIntOrNull())
     }
 
     if (raw.startsWith("tvdb:", ignoreCase = true)) {
-        return TraktExternalIds(tvdb = raw.substringAfter(':').toIntOrNull())
+        return TraktExternalIds(tvdb = raw.substringAfter(':').substringBefore(':').toIntOrNull())
     }
 
     if (raw.startsWith("mal:", ignoreCase = true)) {
-        return TraktExternalIds(mal = raw.substringAfter(':').toIntOrNull())
+        return TraktExternalIds(mal = raw.substringAfter(':').substringBefore(':').toIntOrNull())
     }
 
     if (raw.startsWith("kitsu:", ignoreCase = true)) {
-        return TraktExternalIds(kitsu = raw.substringAfter(':').toIntOrNull())
+        return TraktExternalIds(kitsu = raw.substringAfter(':').substringBefore(':').toIntOrNull())
     }
 
     if (raw.startsWith("al:", ignoreCase = true) || raw.startsWith("anilist:", ignoreCase = true)) {
-        return TraktExternalIds(anilist = raw.substringAfter(':').toIntOrNull())
+        return TraktExternalIds(anilist = raw.substringAfter(':').substringBefore(':').toIntOrNull())
     }
 
     if (raw.startsWith("trakt:", ignoreCase = true)) {
-        return TraktExternalIds(trakt = raw.substringAfter(':').toIntOrNull())
+        return TraktExternalIds(trakt = raw.substringAfter(':').substringBefore(':').toIntOrNull())
     }
 
     val numeric = raw.substringBefore(':').toIntOrNull()

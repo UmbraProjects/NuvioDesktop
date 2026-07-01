@@ -996,12 +996,18 @@ public:
 
     void setResizeMode(int mode) {
         switch (mode) {
-            case 1:
-            case 2:
+            case 1: // Fill (stretch)
+                setStringProperty("keepaspect", "no");
+                setStringProperty("panscan", "0.0");
+                setStringProperty("video-unscaled", "no");
+                break;
+            case 2: // Zoom (crop)
+                setStringProperty("keepaspect", "yes");
                 setStringProperty("panscan", "1.0");
                 setStringProperty("video-unscaled", "no");
                 break;
-            default:
+            default: // Fit (letterbox)
+                setStringProperty("keepaspect", "yes");
                 setStringProperty("panscan", "0.0");
                 setStringProperty("video-unscaled", "no");
                 break;

@@ -1,6 +1,58 @@
-This is an absolutely massive update that integrates search and library into the same UI that your homepage uses, so it should feel like a complete experience. This is the largest update yet in terms of actual work. Hopefully you all enjoy it. I have a really cool idea planned for 1.7, that should enhance the hero even more. 
+This update brings new badges on the hero for more information in choosing what you watch. This includes awards, release status, trending, cult, ability to highlight directors/studios and more. Most of this logic is ported from my poster project PostersPlus (also open source), check it out if you want this info available on other platforms. 
+
+This update hopefully fixes anime ID/metadata issues forever by incorporating Fribb's anime-lists project to solve ID/metadata issues when attempting to use anime specific structures (such as Kitsu) with Trakt. If you spot any issues here, let me know.
+
+There's a key fix to desktop scaling that I never realized was happening. If you thought "this doesn't look like the video for me, it's so small" this is the fix for that. Effectively I developed it at 200% desktop scaling and only tested resolution scaling, not desktop scaling so anyone with a setting of anything other than 200% didn't have the correct layout.
+
+They're some other bits and bobs as well, mostly requests from users. If you have any, you can find me on Reddit, Discord ( PostersPlus discord works or AIOStreams) or open an issue/PR on GH but I'm more likely to see the others first. If anyone has ideas for the badge system that they'd like to see displayed, ideally it can be calculated from TMDB or Mdblist to avoid using any additional APIs.
+
+The changelog covers as much as I remember but they're definitely alot of improvements I forgot about.
 
 # Changelog
+
+## 1.7.0 - 2026-07-01
+
+### Added
+
+Note: hero info badges feature requires Mdblist integration enabled for some of the badges, though not all. The API call to Mdblist is still only one, it pulls the keywords at the same time as it gets ratings so you're not spending double the API hits. Mdblist is used for some award data, while other awards are hardcoded and don't use API. Cult classic, true story also use it. You'll lose about ~25% of the badges without Mdblist. 
+
+- **Hero info badges** - the hero can now show small contextual badges for awards, festivals, critic signals, release status, language, trending/cult/true-story metadata, notable studios/directors, short films, mini series, binge-ready shows, and new releases. These can appear at the bottom of the backdrop or as a horiziontal/vertical stack in the top right. If you hover an icon with the mouse, you'll get some information about what the badge is for. 
+
+- **Customizable hero badge settings** - Settings now includes controls for enabling hero badges, badge placement, badge size, badge priority order, and whether release-status badges should only appear when something may be unavailable to watch.
+
+- **Custom hero discovery config** - the app can load a user `hero_discovery.json` so notable studios and directors can be extended without touching the code. It can also load your own custom badges to replace the defaults shipped. Place badges or json at: %AppDataLocal%\Nuvio\badges <-- create it first. See readme for complete instructions.
+
+- **Fribb anime ID mapping** - added a bundled anime mapping database based on Fribb's anime lists, letting Nuvio translate between AniDB, AniList, Kitsu, MyAnimeList, SIMKL, IMDb, TMDB, and TVDB IDs. This means that Kitsu catalogs should work properly, as well as dual scrobble between Trakt and SIMKL for anime (as well as live action.) Let me know if you have any issues here.
+
+- **Infinite scrolling in collections** - collection row views now use the same load-more behavior as home catalog rows instead of stopping at a small preview with a View All button.
+
+- **Manual adaptive hero backdrop position** - simple "backdrop vertical position" slider in Homescreen settings instead, so you can tune it once to whatever looks best for your library and it'll stay put.
+
+- **API key setup prompt** - if you haven't set a TMDB or Mdblist API key, you'll now get a one-time popup on launch explaining what you're missing (lower quality backdrops/logos, missing ratings and info badges) with fields to add them right there, saved to the same place as the normal settings. You can dismiss it for the session or permanently.
+
+### Improved
+
+- **Hero ambient background across catalog modes** - the ambient blurred hero wash now works in catalog-style modes instead of only the main home page.
+
+- **Desktop viewport scaling** - large desktop displays now scale the UI density against a 1920x1080 reference, making HTPC/high-resolution layouts read more naturally.
+
+- **Fewer redundant API calls** - hero discovery was sometimes hitting TMDB twice for the same movie's release info, and a couple of other spots were re-fetching/re-parsing data on every single item instead of caching it. Home should feel a little lighter now, especially on TMDB rate limits.
+
+### Fixed
+
+- **Anime episode identity mapping** - episode IDs can now be rewritten with mapped season numbers and episode offsets, improving stream lookup and progress tracking for anime entries that use different numbering across services.
+
+- **SIMKL scrobble overlap handling** - SIMKL scrobbling now handles duplicate/overlap responses more gracefully, including SIMKL's short per-user scrobble lock window.
+
+- **Wrong backdrop/logo/cast on a handful of titles** - Added a title/year sanity check before trusting a TMDB match.
+
+- **Auto-advance to the next episode could silently stop working** - a few edge cases (next episode not found in a stale list, a resolved stream going stale) could leave auto-advance permanently disabled for the rest of the session with no error shown. Fixed, plus added a safety net so it can no longer get stuck for good.
+
+- **Hero title jumping position on titles with no logo** - titles that fall back to plain text (no logo artwork) rendered in a different vertical spot than titles with a logo, making everything below the title jump around when scrolling the hero. Fixed.
+
+- **"TMDB (movies) + TheTVDB" hero image toggle staying checked (but greyed out) after removing your TVDB key** - it now automatically falls back to a working option instead of sitting in a confusing half-state.
+
+- **Trakt episode remapping ignoring the playing video's ID** - when an addon's season/episode numbers didn't line up with Trakt's, a bad guard was forcing the remapper to trust the (potentially wrong) season/episode instead of the video ID it was actually given, defeating the point of the video-ID lookup. Fixed.
 
 ## 1.6.0 - 2026-06-25
 

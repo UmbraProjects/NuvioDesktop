@@ -1982,4 +1982,11 @@
     <string name="player_torrent_starting_engine">Starting P2P engine…</string>
     <string name="player_error_failed_start_torrent">Failed to start torrent: %1$s</string>
     <string name="player_error_torrent">Torrent error: %1$s</string>
+    <!-- Pass 5 — API keys onboarding popup -->
+    <string name="api_keys_onboarding_title">Add your API keys</string>
+    <string name="api_keys_onboarding_message">TMDB and MDBList API keys are not set. Without them, the experience will be diminished: lower quality backdrops and logos, and missing rating/info badges. Add your keys below to unlock the full experience.</string>
+    <string name="api_keys_onboarding_tmdb_label">TMDB API Key</string>
+    <string name="api_keys_onboarding_mdblist_label">MDBList API Key</string>
+    <string name="api_keys_onboarding_dont_ask_again">Don't ask again</string>
+    <string name="api_keys_onboarding_skip_for_now">Skip for now</string>
 </resources>

@@ -275,6 +275,32 @@ object FolderDetailRepository {
         }
     }
 
+    fun loadMoreCatalogRow(section: HomeCatalogSection) {
+        val target = section.target
+        val current = _uiState.value
+        val tabIndex = current.tabs.indexOfFirst { tab ->
+            !tab.isAllTab && tab.canLoadMore && !tab.isLoading && !tab.isLoadingMore &&
+                when (target) {
+                    is CatalogTarget.CollectionSource -> {
+                        tab.sourceKey == target.sourceKey &&
+                            tab.type == target.contentType
+                    }
+
+                    is CatalogTarget.Addon -> {
+                        tab.manifestUrl == target.manifestUrl &&
+                            tab.type == target.contentType &&
+                            tab.catalogId == target.catalogId &&
+                            tab.genre == target.genre
+                    }
+
+                    is CatalogTarget.Library -> false
+                }
+        }
+        if (tabIndex >= 0) {
+            loadTabPage(tabIndex, reset = false)
+        }
+    }
+
     private fun updateTab(index: Int, transform: (FolderTab) -> FolderTab) {
         val current = _uiState.value
         val updatedTabs = current.tabs.toMutableList()
@@ -456,6 +482,9 @@ object FolderDetailRepository {
                 items = tab.items,
                 availableItemCount = tab.items.size,
                 hasMore = tab.canLoadMore,
+                paginates = tab.supportsPagination,
+                nextSkip = tab.nextSkip,
+                isLoadingMore = tab.isLoadingMore,
             )
         }
     }

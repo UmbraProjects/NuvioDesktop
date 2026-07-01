@@ -458,7 +458,12 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         )
         if (shouldShow && !showNextEpisodeCard) {
             showNextEpisodeCard = true
-            if (playerSettingsUiState.streamAutoPlayNextEpisodeEnabled && nextEpisodeInfo?.hasAired == true) {
+            if (
+                playerSettingsUiState.streamAutoPlayNextEpisodeEnabled &&
+                nextEpisodeInfo?.hasAired == true &&
+                !nextEpisodeAdvanceInProgress
+            ) {
+                nextEpisodeAdvanceInProgress = true
                 playNextEpisode()
             }
         } else if (!shouldShow) {
@@ -469,12 +474,46 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
     LaunchedEffect(playbackSnapshot.isEnded, nextEpisodeInfo) {
         if (playbackSnapshot.isEnded && nextEpisodeInfo != null) {
             showNextEpisodeCard = true
-            if (nextEpisodeInfo?.hasAired == true && nextEpisodeAutoPlayJob?.isActive != true) {
+            // The latch (cleared only once the next episode is genuinely playing) stops a stale
+            // end-of-file — which lingers while the next stream loads — from advancing twice and
+            // skipping an episode. This effect also re-runs when nextEpisodeInfo changes to the
+            // following episode, which is exactly the path that produced the skip.
+            if (
+                nextEpisodeInfo?.hasAired == true &&
+                nextEpisodeAutoPlayJob?.isActive != true &&
+                !nextEpisodeAdvanceInProgress
+            ) {
+                nextEpisodeAdvanceInProgress = true
                 playNextEpisode()
             }
         }
     }
+
+    // Release the auto-advance latch once the new episode is actually playing (not just selected,
+    // and not in the stale-ended loading gap), so the next end can advance exactly once.
+    LaunchedEffect(
+        playbackSnapshot.isEnded,
+        playbackSnapshot.positionMs >= NEXT_EPISODE_ADVANCE_RESET_POSITION_MS,
+    ) {
+        if (!playbackSnapshot.isEnded && playbackSnapshot.positionMs >= NEXT_EPISODE_ADVANCE_RESET_POSITION_MS) {
+            nextEpisodeAdvanceInProgress = false
+        }
+    }
+
+    // Safety net: some internal stream-switch paths (e.g. a debrid link resolving stale, or a
+    // null playableDirectUrl deep inside switchToEpisodeStream) can bail out silently after the
+    // latch is engaged without ever starting a new episode, which would otherwise leave
+    // auto-advance permanently disabled for the rest of the session. Force-release it after a
+    // bound comfortably longer than the stream-search hard timeout if nothing has cleared it
+    // naturally by then.
+    LaunchedEffect(nextEpisodeAdvanceInProgress) {
+        if (!nextEpisodeAdvanceInProgress) return@LaunchedEffect
+        delay(NEXT_EPISODE_ADVANCE_LATCH_SAFETY_TIMEOUT_MS)
+        nextEpisodeAdvanceInProgress = false
+    }
 }
+
+private const val NEXT_EPISODE_ADVANCE_LATCH_SAFETY_TIMEOUT_MS = 150_000L
 
 internal fun PlayerScreenRuntime.removeFailedStreamFromCache() {
     val currentVideoId = activeVideoId ?: return
@@ -514,6 +553,8 @@ internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message:
         PlayerStreamsRepository.loadSources(
             type = type,
             videoId = currentVideoId,
+            parentMetaId = parentMetaId,
+            title = title,
             season = season,
             episode = episode,
             forceRefresh = true,
@@ -609,3 +650,7 @@ private fun findCredentialRefreshCandidate(
 
 private const val CREDENTIAL_REFRESH_POLL_COUNT = 30
 private const val CREDENTIAL_REFRESH_POLL_INTERVAL_MS = 500L
+// How far into the freshly-loaded episode playback must reach before the next-episode auto-advance
+// latch is released. Long enough to clear the stale end-of-file loading gap, short enough to re-arm
+// well before the new episode itself ends.
+private const val NEXT_EPISODE_ADVANCE_RESET_POSITION_MS = 3_000L

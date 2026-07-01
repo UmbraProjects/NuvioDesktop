@@ -15,6 +15,16 @@ import kotlinx.serialization.json.Json
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 
+private const val DEFAULT_HERO_INFO_PRIORITY =
+    "wins,gg_wins,festival,pic_noms,gg_noms,emmy_noms,studio,director,trending,cult,foreign,new_release,metacritic,true_story,short_film,mini_series,binge_ready,release_status"
+private const val HERO_INFO_LINES_MIN = 0
+private const val HERO_INFO_LINES_MAX = 6
+private const val HERO_BADGE_SCALE_MIN = 1f
+private const val HERO_BADGE_SCALE_MAX = 2.5f
+private const val ADAPTIVE_HERO_VERTICAL_BIAS_MIN = -1f
+private const val ADAPTIVE_HERO_VERTICAL_BIAS_MAX = 1f
+private const val ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT = -0.58f
+
 data class HomeCatalogSettingsItem(
     val key: String,
     val defaultTitle: String,
@@ -33,9 +43,15 @@ data class HomeCatalogSettingsItem(
 
 data class HomeCatalogSettingsUiState(
     val heroEnabled: Boolean = true,
+    val heroInfoLines: Int = 2,
+    val heroInfoPriority: String = DEFAULT_HERO_INFO_PRIORITY,
+    val heroBadgePlacement: HeroBadgePlacement = HeroBadgePlacement.BottomBackdrop,
+    val heroBadgeScale: Float = 1f,
+    val heroReleaseStatusUnavailableOnly: Boolean = true,
     val hideUnreleasedContent: Boolean = false,
     val hideCatalogUnderline: Boolean = false,
     val adaptiveHeroEnabled: Boolean = false,
+    val adaptiveHeroVerticalBias: Float = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT,
     val heroAmbientBackgroundEnabled: Boolean = false,
     val tvModeEnabled: Boolean = false,
     val items: List<HomeCatalogSettingsItem> = emptyList(),
@@ -44,11 +60,23 @@ data class HomeCatalogSettingsUiState(
         get() = buildString {
             append(heroEnabled)
             append('|')
+            append(heroInfoLines)
+            append('|')
+            append(heroInfoPriority)
+            append('|')
+            append(heroBadgePlacement)
+            append('|')
+            append(heroBadgeScale)
+            append('|')
+            append(heroReleaseStatusUnavailableOnly)
+            append('|')
             append(hideUnreleasedContent)
             append('|')
             append(hideCatalogUnderline)
             append('|')
             append(adaptiveHeroEnabled)
+            append('|')
+            append(adaptiveHeroVerticalBias)
             append('|')
             append(heroAmbientBackgroundEnabled)
             append('|')
@@ -71,13 +99,31 @@ internal data class HomeCatalogPreference(
 
 internal data class HomeCatalogSettingsSnapshot(
     val heroEnabled: Boolean,
+    val heroInfoLines: Int,
+    val heroInfoPriority: String,
+    val heroBadgePlacement: HeroBadgePlacement,
+    val heroBadgeScale: Float,
+    val heroReleaseStatusUnavailableOnly: Boolean,
     val hideUnreleasedContent: Boolean,
     val hideCatalogUnderline: Boolean,
     val adaptiveHeroEnabled: Boolean,
+    val adaptiveHeroVerticalBias: Float,
     val heroAmbientBackgroundEnabled: Boolean,
     val tvModeEnabled: Boolean,
     val preferences: Map<String, HomeCatalogPreference>,
 )
+
+@Serializable
+enum class HeroBadgePlacement {
+    @SerialName("bottom_backdrop")
+    BottomBackdrop,
+
+    @SerialName("top_right_horizontal")
+    TopRightHorizontal,
+
+    @SerialName("top_right_vertical")
+    TopRightVertical,
+}
 
 @Serializable
 private data class StoredHomeCatalogPreference(
@@ -91,10 +137,16 @@ private data class StoredHomeCatalogPreference(
 @Serializable
 private data class StoredHomeCatalogSettingsPayload(
     val heroEnabled: Boolean = true,
+    val heroInfoLines: Int = 2,
+    val heroInfoPriority: String = DEFAULT_HERO_INFO_PRIORITY,
+    val heroBadgePlacement: HeroBadgePlacement = HeroBadgePlacement.BottomBackdrop,
+    val heroBadgeScale: Float = 1f,
+    val heroReleaseStatusUnavailableOnly: Boolean = true,
     val hideUnreleasedContent: Boolean = false,
     val hideCatalogUnderline: Boolean = false,
     @SerialName("tvModeEnabled")
     val adaptiveHeroEnabled: Boolean = false,
+    val adaptiveHeroVerticalBias: Float = -0.58f,
     val heroAmbientBackgroundEnabled: Boolean = false,
     @SerialName("immersiveCatalogModeEnabled")
     val tvModeEnabled: Boolean = false,
@@ -117,9 +169,15 @@ object HomeCatalogSettingsRepository {
     private var collectionDefinitions: List<CollectionCatalogDefinition> = emptyList()
     private var preferences: MutableMap<String, StoredHomeCatalogPreference> = mutableMapOf()
     private var heroEnabled = true
+    private var heroInfoLines = 2
+    private var heroInfoPriority = DEFAULT_HERO_INFO_PRIORITY
+    private var heroBadgePlacement = HeroBadgePlacement.BottomBackdrop
+    private var heroBadgeScale = 1f
+    private var heroReleaseStatusUnavailableOnly = true
     private var hideUnreleasedContent = false
     private var hideCatalogUnderline = false
     private var adaptiveHeroEnabled = false
+    private var adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
     private var heroAmbientBackgroundEnabled = false
     private var tvModeEnabled = false
 
@@ -127,9 +185,15 @@ object HomeCatalogSettingsRepository {
         hasLoaded = false
         preferences.clear()
         heroEnabled = true
+        heroInfoLines = 2
+        heroInfoPriority = DEFAULT_HERO_INFO_PRIORITY
+        heroBadgePlacement = HeroBadgePlacement.BottomBackdrop
+        heroBadgeScale = 1f
+        heroReleaseStatusUnavailableOnly = true
         hideUnreleasedContent = false
         hideCatalogUnderline = false
         adaptiveHeroEnabled = false
+        adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
         definitions = emptyList()
@@ -143,9 +207,15 @@ object HomeCatalogSettingsRepository {
         collectionDefinitions = emptyList()
         preferences.clear()
         heroEnabled = true
+        heroInfoLines = 2
+        heroInfoPriority = DEFAULT_HERO_INFO_PRIORITY
+        heroBadgePlacement = HeroBadgePlacement.BottomBackdrop
+        heroBadgeScale = 1f
+        heroReleaseStatusUnavailableOnly = true
         hideUnreleasedContent = false
         hideCatalogUnderline = false
         adaptiveHeroEnabled = false
+        adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
         _uiState.value = HomeCatalogSettingsUiState()
@@ -179,9 +249,15 @@ object HomeCatalogSettingsRepository {
         ensureLoaded()
         return HomeCatalogSettingsSnapshot(
             heroEnabled = heroEnabled,
+            heroInfoLines = heroInfoLines,
+            heroInfoPriority = heroInfoPriority,
+            heroBadgePlacement = heroBadgePlacement,
+            heroBadgeScale = heroBadgeScale,
+            heroReleaseStatusUnavailableOnly = heroReleaseStatusUnavailableOnly,
             hideUnreleasedContent = hideUnreleasedContent,
             hideCatalogUnderline = hideCatalogUnderline,
             adaptiveHeroEnabled = adaptiveHeroEnabled,
+            adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
             preferences = preferences.mapValues { (_, value) ->
@@ -201,6 +277,47 @@ object HomeCatalogSettingsRepository {
         publish()
         persist()
         HomeRepository.applyCurrentSettings()
+    }
+
+
+    fun setHeroInfoPriority(priority: String) {
+        if (heroInfoPriority == priority) return
+        heroInfoPriority = priority
+        publish()
+        persist()
+    }
+    fun setHeroInfoLines(lines: Int) {
+        ensureLoaded()
+        val normalizedLines = lines.coerceIn(HERO_INFO_LINES_MIN, HERO_INFO_LINES_MAX)
+        if (heroInfoLines == normalizedLines) return
+        heroInfoLines = normalizedLines
+        publish()
+        persist()
+    }
+
+    fun setHeroBadgePlacement(placement: HeroBadgePlacement) {
+        ensureLoaded()
+        if (heroBadgePlacement == placement) return
+        heroBadgePlacement = placement
+        publish()
+        persist()
+    }
+
+    fun setHeroBadgeScale(scale: Float) {
+        ensureLoaded()
+        val normalized = normalizeHeroBadgeScale(scale)
+        if (heroBadgeScale == normalized) return
+        heroBadgeScale = normalized
+        publish()
+        persist()
+    }
+
+    fun setHeroReleaseStatusUnavailableOnly(enabled: Boolean) {
+        ensureLoaded()
+        if (heroReleaseStatusUnavailableOnly == enabled) return
+        heroReleaseStatusUnavailableOnly = enabled
+        publish()
+        persist()
     }
 
     fun setHideUnreleasedContent(enabled: Boolean) {
@@ -230,6 +347,15 @@ object HomeCatalogSettingsRepository {
         publish()
         persist()
         HomeRepository.applyCurrentSettings()
+    }
+
+    fun setAdaptiveHeroVerticalBias(bias: Float) {
+        ensureLoaded()
+        val normalized = normalizeAdaptiveHeroVerticalBias(bias)
+        if (adaptiveHeroVerticalBias == normalized) return
+        adaptiveHeroVerticalBias = normalized
+        publish()
+        persist()
     }
 
     fun setHeroAmbientBackgroundEnabled(enabled: Boolean) {
@@ -280,9 +406,15 @@ object HomeCatalogSettingsRepository {
     fun resetToDefaults() {
         ensureLoaded()
         heroEnabled = true
+        heroInfoLines = 2
+        heroInfoPriority = DEFAULT_HERO_INFO_PRIORITY
+        heroBadgePlacement = HeroBadgePlacement.BottomBackdrop
+        heroBadgeScale = 1f
+        heroReleaseStatusUnavailableOnly = true
         hideUnreleasedContent = false
         hideCatalogUnderline = false
         adaptiveHeroEnabled = false
+        adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
         preferences.clear()
@@ -330,9 +462,15 @@ object HomeCatalogSettingsRepository {
 
         if (parsedPayload != null) {
             heroEnabled = parsedPayload.heroEnabled
+            heroInfoLines = normalizeHeroInfoLines(parsedPayload.heroInfoLines)
+            heroInfoPriority = normalizeHeroInfoPriority(parsedPayload.heroInfoPriority)
+            heroBadgePlacement = parsedPayload.heroBadgePlacement
+            heroBadgeScale = normalizeHeroBadgeScale(parsedPayload.heroBadgeScale)
+            heroReleaseStatusUnavailableOnly = parsedPayload.heroReleaseStatusUnavailableOnly
             hideUnreleasedContent = parsedPayload.hideUnreleasedContent
             hideCatalogUnderline = parsedPayload.hideCatalogUnderline
             adaptiveHeroEnabled = parsedPayload.adaptiveHeroEnabled
+            adaptiveHeroVerticalBias = normalizeAdaptiveHeroVerticalBias(parsedPayload.adaptiveHeroVerticalBias)
             heroAmbientBackgroundEnabled = parsedPayload.heroAmbientBackgroundEnabled
             tvModeEnabled = parsedPayload.tvModeEnabled
             normalizeHeroModes()
@@ -435,9 +573,15 @@ object HomeCatalogSettingsRepository {
 
         _uiState.value = HomeCatalogSettingsUiState(
             heroEnabled = heroEnabled,
+            heroInfoLines = normalizeHeroInfoLines(heroInfoLines),
+            heroInfoPriority = heroInfoPriority,
+            heroBadgePlacement = heroBadgePlacement,
+            heroBadgeScale = heroBadgeScale,
+            heroReleaseStatusUnavailableOnly = heroReleaseStatusUnavailableOnly,
             hideUnreleasedContent = hideUnreleasedContent,
             hideCatalogUnderline = hideCatalogUnderline,
             adaptiveHeroEnabled = adaptiveHeroEnabled,
+            adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
             items = items,
@@ -449,6 +593,34 @@ object HomeCatalogSettingsRepository {
             adaptiveHeroEnabled = false
             heroAmbientBackgroundEnabled = false
         }
+        heroInfoLines = normalizeHeroInfoLines(heroInfoLines)
+        heroInfoPriority = normalizeHeroInfoPriority(heroInfoPriority)
+    }
+
+    private fun normalizeHeroInfoLines(lines: Int): Int =
+        lines.coerceIn(HERO_INFO_LINES_MIN, HERO_INFO_LINES_MAX)
+
+    private fun normalizeHeroBadgeScale(scale: Float): Float =
+        if (scale.isNaN()) 1f else scale.coerceIn(HERO_BADGE_SCALE_MIN, HERO_BADGE_SCALE_MAX)
+
+    private fun normalizeAdaptiveHeroVerticalBias(bias: Float): Float =
+        if (bias.isNaN()) ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+        else bias.coerceIn(ADAPTIVE_HERO_VERTICAL_BIAS_MIN, ADAPTIVE_HERO_VERTICAL_BIAS_MAX)
+
+    private fun normalizeHeroInfoPriority(priority: String): String {
+        val slots = priority
+            .split(',')
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toMutableList()
+        if ("emmy_noms" in slots) return slots.joinToString(",")
+
+        val insertIndex = slots.indexOf("gg_noms").takeIf { it >= 0 }
+            ?.let { it + 1 }
+            ?: slots.indexOf("pic_noms").takeIf { it >= 0 }?.let { it + 1 }
+            ?: slots.size
+        slots.add(insertIndex, "emmy_noms")
+        return slots.joinToString(",")
     }
 
     private fun persist() {
@@ -456,9 +628,15 @@ object HomeCatalogSettingsRepository {
             json.encodeToString(
                 StoredHomeCatalogSettingsPayload(
                     heroEnabled = heroEnabled,
+                    heroInfoLines = heroInfoLines,
+                    heroInfoPriority = heroInfoPriority,
+                    heroBadgePlacement = heroBadgePlacement,
+                    heroBadgeScale = heroBadgeScale,
+                    heroReleaseStatusUnavailableOnly = heroReleaseStatusUnavailableOnly,
                     hideUnreleasedContent = hideUnreleasedContent,
                     hideCatalogUnderline = hideCatalogUnderline,
                     adaptiveHeroEnabled = adaptiveHeroEnabled,
+                    adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
                     heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
                     tvModeEnabled = tvModeEnabled,
                     items = preferences.values.sortedBy { it.order },

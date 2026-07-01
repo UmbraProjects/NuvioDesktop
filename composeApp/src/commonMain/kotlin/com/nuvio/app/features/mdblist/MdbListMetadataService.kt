@@ -15,6 +15,8 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 object MdbListMetadataService {
+    const val CACHE_VERSION = 2
+
     const val PROVIDER_IMDB = "imdb"
     const val PROVIDER_TMDB = "tmdb"
     const val PROVIDER_TOMATOES = "tomatoes"
@@ -54,7 +56,7 @@ object MdbListMetadataService {
     private var cache: MutableMap<String, CachedRatings>? = null
     private var rateLimitedUntilMs: Long = 0L
     private val cacheMutex = Mutex()
-    private val inFlightRequests = mutableMapOf<String, CompletableDeferred<List<MetaExternalRating>>>()
+    private val inFlightRequests = mutableMapOf<String, CompletableDeferred<MdbListEnrichmentData>>()
 
     fun shouldFetchForMeta(
         meta: MetaDetails,
@@ -73,7 +75,7 @@ object MdbListMetadataService {
         settings: MdbListSettings,
     ): MetaDetails {
         if (!shouldFetchForMeta(meta, fallbackItemId, settings)) {
-            return meta.copy(externalRatings = emptyList())
+            return meta.copy(externalRatings = emptyList(), mdblistKeywords = emptyList())
         }
         val apiKey = settings.apiKey.trim()
 
@@ -83,13 +85,14 @@ object MdbListMetadataService {
         val mediaType = toMdbListMediaType(meta.type)
         val enabledProviders = settings.enabledProvidersInPriorityOrder().toSet()
 
-        val ratings = fetchRatings(
+        val enrichment = fetchEnrichmentData(
             imdbId = imdbId,
             mediaType = mediaType,
             apiKey = apiKey,
-        ).filter { it.source in enabledProviders }
+        )
+        val ratings = enrichment.ratings.filter { it.source in enabledProviders }
 
-        return meta.copy(externalRatings = ratings)
+        return meta.copy(externalRatings = ratings, mdblistKeywords = enrichment.keywords)
     }
 
     suspend fun clearCache() {
@@ -101,28 +104,28 @@ object MdbListMetadataService {
             .onFailure { error -> log.w { "Failed to clear MDBList ratings cache: ${error.message}" } }
     }
 
-    private suspend fun fetchRatings(
+    private suspend fun fetchEnrichmentData(
         imdbId: String,
         mediaType: String,
         apiKey: String,
-    ): List<MetaExternalRating> {
-        val cacheKey = "$mediaType:$imdbId"
+    ): MdbListEnrichmentData {
+        val cacheKey = "v$CACHE_VERSION:$mediaType:$imdbId"
         val now = LibraryClock.nowEpochMs()
         var ownsRequest = false
         val pending = cacheMutex.withLock {
-            if (rateLimitedUntilMs > now) return emptyList()
             val loaded = ensureCacheLoaded()
             loaded[cacheKey]?.let { entry ->
-                if (entry.expiresAtMs > now) return entry.ratings
+                if (entry.expiresAtMs > now) return MdbListEnrichmentData(entry.ratings, entry.keywords)
             }
-            inFlightRequests[cacheKey] ?: CompletableDeferred<List<MetaExternalRating>>().also {
+            if (rateLimitedUntilMs > now) return MdbListEnrichmentData()
+            inFlightRequests[cacheKey] ?: CompletableDeferred<MdbListEnrichmentData>().also {
                 inFlightRequests[cacheKey] = it
                 ownsRequest = true
             }
         }
         if (!ownsRequest) return pending.await()
 
-        val ratings = try {
+        val enrichment = try {
             fetchFromApi(imdbId = imdbId, mediaType = mediaType, apiKey = apiKey)
         } catch (error: CancellationException) {
             cacheMutex.withLock {
@@ -133,34 +136,34 @@ object MdbListMetadataService {
             log.w { "MDBList rate limit hit; backing off for 30 minutes" }
             cacheMutex.withLock {
                 rateLimitedUntilMs = LibraryClock.nowEpochMs() + RATE_LIMIT_BACKOFF_MS
-                inFlightRequests.remove(cacheKey)?.complete(emptyList())
+                inFlightRequests.remove(cacheKey)?.complete(MdbListEnrichmentData())
             }
-            return emptyList()
+            return MdbListEnrichmentData()
         } catch (error: Throwable) {
             log.w { "MDBList request failed for $mediaType/$imdbId: ${error.message}" }
             cacheMutex.withLock {
-                inFlightRequests.remove(cacheKey)?.complete(emptyList())
+                inFlightRequests.remove(cacheKey)?.complete(MdbListEnrichmentData())
             }
-            return emptyList()
+            return MdbListEnrichmentData()
         }
 
         cacheMutex.withLock {
             val loaded = ensureCacheLoaded()
-            val ttl = if (ratings.isNotEmpty()) FOUND_TTL_MS else NOT_FOUND_TTL_MS
-            loaded[cacheKey] = CachedRatings(ratings = ratings, expiresAtMs = now + ttl)
+            val ttl = if (enrichment.ratings.isNotEmpty() || enrichment.keywords.isNotEmpty()) FOUND_TTL_MS else NOT_FOUND_TTL_MS
+            loaded[cacheKey] = CachedRatings(ratings = enrichment.ratings, keywords = enrichment.keywords, expiresAtMs = now + ttl)
             persistCache(loaded)
-            inFlightRequests.remove(cacheKey)?.complete(ratings)
+            inFlightRequests.remove(cacheKey)?.complete(enrichment)
         }
 
-        return ratings
+        return enrichment
     }
 
     private suspend fun fetchFromApi(
         imdbId: String,
         mediaType: String,
         apiKey: String,
-    ): List<MetaExternalRating> {
-        val url = "https://api.mdblist.com/imdb/$mediaType/$imdbId?apikey=$apiKey"
+    ): MdbListEnrichmentData {
+        val url = "https://api.mdblist.com/imdb/$mediaType/$imdbId?apikey=$apiKey&append_to_response=keyword"
         val response = httpRequestRaw(
             method = "GET",
             url = url,
@@ -168,7 +171,7 @@ object MdbListMetadataService {
             body = "",
         )
         if (response.status == 404) {
-            return emptyList()
+            return MdbListEnrichmentData()
         }
         if (response.status == 429) {
             throw MdbListRateLimitedException()
@@ -178,11 +181,13 @@ object MdbListMetadataService {
         }
         val payload = response.body.takeIf { it.isNotBlank() } ?: error("Empty response body")
         val parsed = json.decodeFromString<MdbListRatingsResponse>(payload)
-        return parsed.ratings.mapNotNull { item ->
+        val ratings = parsed.ratings.mapNotNull { item ->
             val providerId = sourceToProvider[item.source?.lowercase()] ?: return@mapNotNull null
             val value = item.value ?: return@mapNotNull null
             MetaExternalRating(source = providerId, value = value)
         }
+        val keywords = parsed.keywords.mapNotNull { it.name }.filter { it.isNotBlank() }
+        return MdbListEnrichmentData(ratings, keywords)
     }
 
     private fun ensureCacheLoaded(): MutableMap<String, CachedRatings> {
@@ -193,6 +198,7 @@ object MdbListMetadataService {
                 json.decodeFromString<Map<String, CachedRatingsDto>>(raw).forEach { (key, dto) ->
                     loaded[key] = CachedRatings(
                         ratings = dto.ratings.map { MetaExternalRating(source = it.source, value = it.value) },
+                        keywords = dto.keywords,
                         expiresAtMs = dto.expiresAtMs,
                     )
                 }
@@ -208,6 +214,7 @@ object MdbListMetadataService {
         val dto = entries.mapValues { (_, entry) ->
             CachedRatingsDto(
                 ratings = entry.ratings.map { MetaExternalRatingDto(source = it.source, value = it.value) },
+                keywords = entry.keywords,
                 expiresAtMs = entry.expiresAtMs,
             )
         }
@@ -228,14 +235,21 @@ object MdbListMetadataService {
 
 private class MdbListRateLimitedException : RuntimeException()
 
+internal data class MdbListEnrichmentData(
+    val ratings: List<MetaExternalRating> = emptyList(),
+    val keywords: List<String> = emptyList(),
+)
+
 private data class CachedRatings(
     val ratings: List<MetaExternalRating>,
+    val keywords: List<String> = emptyList(),
     val expiresAtMs: Long,
 )
 
 @Serializable
 private data class CachedRatingsDto(
     val ratings: List<MetaExternalRatingDto>,
+    val keywords: List<String> = emptyList(),
     val expiresAtMs: Long,
 )
 
@@ -248,10 +262,16 @@ private data class MetaExternalRatingDto(
 @Serializable
 private data class MdbListRatingsResponse(
     val ratings: List<MdbListRatingItem> = emptyList(),
+    val keywords: List<MdbListKeywordItem> = emptyList(),
 )
 
 @Serializable
 private data class MdbListRatingItem(
     val source: String? = null,
     val value: Double? = null,
+)
+
+@Serializable
+private data class MdbListKeywordItem(
+    val name: String? = null,
 )

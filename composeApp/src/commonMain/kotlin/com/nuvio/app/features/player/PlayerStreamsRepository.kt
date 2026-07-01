@@ -11,6 +11,7 @@ import com.nuvio.app.features.debrid.DebridStreamPresentation
 import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
 import com.nuvio.app.features.debrid.LocalDebridAvailabilityService
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.PluginsUiState
 import com.nuvio.app.features.plugins.pluginContentId
@@ -65,6 +66,8 @@ object PlayerStreamsRepository {
     fun loadSources(
         type: String,
         videoId: String,
+        parentMetaId: String? = null,
+        title: String? = null,
         season: Int? = null,
         episode: Int? = null,
         forceRefresh: Boolean = false,
@@ -72,6 +75,8 @@ object PlayerStreamsRepository {
         fetchStreams(
             type = type,
             videoId = videoId,
+            parentMetaId = parentMetaId,
+            title = title,
             season = season,
             episode = episode,
             forceRefresh = forceRefresh,
@@ -86,6 +91,8 @@ object PlayerStreamsRepository {
     fun loadEpisodeStreams(
         type: String,
         videoId: String,
+        parentMetaId: String? = null,
+        title: String? = null,
         season: Int? = null,
         episode: Int? = null,
         forceRefresh: Boolean = false,
@@ -93,6 +100,8 @@ object PlayerStreamsRepository {
         fetchStreams(
             type = type,
             videoId = videoId,
+            parentMetaId = parentMetaId,
+            title = title,
             season = season,
             episode = episode,
             forceRefresh = forceRefresh,
@@ -128,6 +137,8 @@ object PlayerStreamsRepository {
     private fun fetchStreams(
         type: String,
         videoId: String,
+        parentMetaId: String?,
+        title: String?,
         season: Int?,
         episode: Int?,
         forceRefresh: Boolean,
@@ -137,13 +148,25 @@ object PlayerStreamsRepository {
         jobHolder: () -> Job?,
         setJob: (Job) -> Unit,
     ) {
+        val resolvedEpisode = MediaIdResolver.resolveLocalEpisodeIdentity(
+            contentType = type,
+            parentMetaId = parentMetaId ?: videoId,
+            videoId = videoId,
+            title = title,
+            season = season,
+            episode = episode,
+            isAnimeHint = type.equals("anime", ignoreCase = true),
+        )
+        val effectiveVideoId = resolvedEpisode.videoId
+        val effectiveSeason = resolvedEpisode.streamSeason
+        val effectiveEpisode = resolvedEpisode.streamEpisode
         val pluginUiState = if (AppFeaturePolicy.pluginsEnabled) {
             PluginRepository.initialize()
             PluginRepository.uiState.value
         } else {
             PluginsUiState(pluginsEnabled = false)
         }
-        val requestKey = "$type::$videoId::$season::$episode::pluginsGrouped=${pluginUiState.groupStreamsByRepository}"
+        val requestKey = "$type::$effectiveVideoId::$effectiveSeason::$effectiveEpisode::pluginsGrouped=${pluginUiState.groupStreamsByRepository}"
         val current = stateFlow.value
         if (
             !forceRefresh &&
@@ -158,9 +181,9 @@ object PlayerStreamsRepository {
         stateFlow.value = StreamsUiState()
 
         val streamBadgeRules = StreamBadgeSettingsRepository.snapshot()
-        val embeddedStreams = MetaDetailsRepository.findEmbeddedStreams(videoId)
+        val embeddedStreams = MetaDetailsRepository.findEmbeddedStreams(effectiveVideoId)
         if (embeddedStreams.isNotEmpty()) {
-            log.d { "Using ${embeddedStreams.size} embedded streams for type=$type id=$videoId" }
+            log.d { "Using ${embeddedStreams.size} embedded streams for type=$type id=$effectiveVideoId" }
             val group = AddonStreamGroup(
                 addonName = embeddedStreams.first().addonName,
                 addonId = "embedded",
@@ -208,7 +231,7 @@ object PlayerStreamsRepository {
                     resource.name == "stream" &&
                         resource.types.contains(type) &&
                         (resource.idPrefixes.isEmpty() ||
-                            resource.idPrefixes.any { videoId.startsWith(it) })
+                            resource.idPrefixes.any { effectiveVideoId.startsWith(it) })
                 }
                 if (!supportsRequestedStream) return@mapNotNull null
 
@@ -332,7 +355,7 @@ object PlayerStreamsRepository {
                         manifestUrl = addon.manifest.transportUrl,
                         resource = "stream",
                         type = type,
-                        id = videoId,
+                        id = effectiveVideoId,
                     )
 
                     val displayName = addon.addonName
@@ -364,13 +387,13 @@ object PlayerStreamsRepository {
                         val completion = PluginRepository.executeScraper(
                             scraper = scraper,
                             tmdbId = pluginContentId(
-                                videoId = videoId,
-                                season = season,
-                                episode = episode,
+                                videoId = effectiveVideoId,
+                                season = effectiveSeason,
+                                episode = effectiveEpisode,
                             ),
                             mediaType = type,
-                            season = season,
-                            episode = episode,
+                            season = effectiveSeason,
+                            episode = effectiveEpisode,
                         ).fold(
                             onSuccess = { results ->
                                 StreamLoadCompletion.PluginScraper(
@@ -458,8 +481,8 @@ object PlayerStreamsRepository {
                     streams = stateFlow.value.groups
                         .filter { it.addonId in installedAddonIds }
                         .flatMap { it.streams },
-                    season = season,
-                    episode = episode,
+                    season = effectiveSeason,
+                    episode = effectiveEpisode,
                     playerSettings = playerSettings,
                     installedAddonNames = installedAddonNames,
                 ) { original, prepared ->

@@ -7,6 +7,7 @@ data class MetaDetails(
     val id: String,
     val type: String,
     val name: String,
+    val tmdbId: Int? = null,
     val poster: String? = null,
     val background: String? = null,
     val logo: String? = null,
@@ -21,8 +22,10 @@ data class MetaDetails(
     /** TVDB series ID provided by AIOMetadata in its meta responses as "_tvdbId". */
     @kotlinx.serialization.SerialName("_tvdbId") val tvdbId: String? = null,
     val externalRatings: List<MetaExternalRating> = emptyList(),
+    val mdblistKeywords: List<String> = emptyList(),
     val genres: List<String> = emptyList(),
     val director: List<String> = emptyList(),
+    val producer: List<String> = emptyList(),
     val writer: List<String> = emptyList(),
     val creator: List<String> = emptyList(),
     val cast: List<MetaPerson> = emptyList(),

@@ -480,9 +480,16 @@ fun MetaDetailsScreen(
                 val seriesPauseDescription = remember(seriesActionVideo) {
                     seriesActionVideo?.overview
                 }
-                val seriesStreamVideoId = remember(seriesAction, seriesActionVideo) {
+                val seriesStreamVideoId = remember(meta.id, seriesAction, seriesActionVideo) {
                     val action = seriesAction ?: return@remember null
-                    seriesActionVideo?.id?.takeIf { it.isNotBlank() } ?: action.videoId
+                    val video = seriesActionVideo ?: return@remember action.videoId
+                    val playbackVideoId = buildPlaybackVideoId(
+                        parentMetaId = meta.id,
+                        seasonNumber = video.season,
+                        episodeNumber = video.episode,
+                        fallbackVideoId = video.id,
+                    )
+                    video.streamVideoIdForPlayback(meta.id, playbackVideoId)
                 }
                 val hasEpisodes = meta.videos.any { it.season != null || it.episode != null }
                 val hasProductionSection = remember(meta) {
@@ -718,7 +725,7 @@ fun MetaDetailsScreen(
                         episodeNumber = episode,
                         fallbackVideoId = video.id,
                     )
-                    val streamVideoId = video.id.takeIf { it.isNotBlank() } ?: playbackVideoId
+                    val streamVideoId = video.streamVideoIdForPlayback(meta.id, playbackVideoId)
                     val savedProgress = watchProgressUiState.byVideoId[streamVideoId]
                         ?.takeUnless { it.isCompleted }
                     onPlay?.invoke(
@@ -747,7 +754,7 @@ fun MetaDetailsScreen(
                         episodeNumber = episode,
                         fallbackVideoId = video.id,
                     )
-                    val streamVideoId = video.id.takeIf { it.isNotBlank() } ?: playbackVideoId
+                    val streamVideoId = video.streamVideoIdForPlayback(meta.id, playbackVideoId)
                     val savedProgress = watchProgressUiState.byVideoId[streamVideoId]
                         ?.takeUnless { it.isCompleted }
                     onPlayManually?.invoke(
@@ -1613,6 +1620,27 @@ private fun areEpisodesWatchedForActions(
         progressByVideoId = progressByVideoId,
     )
 }
+
+private fun MetaVideo.streamVideoIdForPlayback(parentMetaId: String, playbackVideoId: String): String {
+    val rawId = id.trim()
+    return if (parentMetaId.isNativeAnimeMetaId() && rawId.isBareNumericId()) {
+        playbackVideoId
+    } else {
+        rawId.takeIf { it.isNotBlank() } ?: playbackVideoId
+    }
+}
+
+private fun String.isNativeAnimeMetaId(): Boolean =
+    startsWith("kitsu:", ignoreCase = true) ||
+        startsWith("mal:", ignoreCase = true) ||
+        startsWith("myanimelist:", ignoreCase = true) ||
+        startsWith("al:", ignoreCase = true) ||
+        startsWith("anilist:", ignoreCase = true) ||
+        startsWith("anidb:", ignoreCase = true) ||
+        startsWith("simkl:", ignoreCase = true)
+
+private fun String.isBareNumericId(): Boolean =
+    isNotBlank() && all(Char::isDigit)
 
 private fun extractImdbId(value: String?): String? =
     value

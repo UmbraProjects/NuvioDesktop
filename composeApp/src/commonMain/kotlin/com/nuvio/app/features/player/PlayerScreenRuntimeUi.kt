@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
@@ -331,6 +335,28 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         },
         nextEpisodePlayable = nextEpisodeForControls?.hasAired == true,
     )
+    var isAnimeContent by remember(args.parentMetaId) {
+        mutableStateOf(
+            AnimeContentCache.isAnime(args.parentMetaId) ||
+            AnimeContentCache.isAnime(args.videoId) ||
+            args.parentMetaType.equals("anime", ignoreCase = true) ||
+            args.contentType?.equals("anime", ignoreCase = true) == true ||
+            (args.watchProgressSource == "simkl" && args.parentMetaId.startsWith("simkl:", ignoreCase = true))
+        )
+    }
+
+    LaunchedEffect(args.parentMetaId) {
+        if (!isAnimeContent) {
+            val meta = MetaDetailsRepository.fetchLightweightMeta(args.parentMetaType, args.parentMetaId)
+            if (meta != null && !meta.genres.isNullOrEmpty()) {
+                AnimeContentCache.record(args.parentMetaId, meta.genres)
+                if (AnimeContentCache.isAnime(args.parentMetaId)) {
+                    isAnimeContent = true
+                }
+            }
+        }
+    }
+
     val gestureCallbacks = rememberSurfaceGestureCallbacks()
 
     Box(
@@ -383,7 +409,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 sourceHeaders = activeSourceHeaders,
                 sourceResponseHeaders = activeSourceResponseHeaders,
                 streamType = activeStreamType,
-                isAnimeContent = AnimeContentCache.isAnime(args.parentMetaId),
+                isAnimeContent = isAnimeContent,
                 modifier = Modifier.fillMaxSize(),
                 playWhenReady = shouldPlay,
                 resizeMode = resizeMode,
@@ -867,6 +893,8 @@ private fun PlayerScreenRuntime.prepareSourcesForPlayerControls(forceRefresh: Bo
     PlayerStreamsRepository.loadSources(
         type = requestType,
         videoId = vid,
+        parentMetaId = parentMetaId,
+        title = title,
         season = activeSeasonNumber,
         episode = activeEpisodeNumber,
         forceRefresh = forceRefresh,
@@ -902,6 +930,8 @@ private fun PlayerScreenRuntime.requestEpisodeStreamsForPlayerControls(
     PlayerStreamsRepository.loadEpisodeStreams(
         type = contentType ?: parentMetaType,
         videoId = episode.id,
+        parentMetaId = parentMetaId,
+        title = title,
         season = episode.season,
         episode = episode.episode,
         forceRefresh = forceRefresh,
@@ -1356,6 +1386,8 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
                 PlayerStreamsRepository.loadSources(
                     type = contentType ?: parentMetaType,
                     videoId = vid,
+                    parentMetaId = parentMetaId,
+                    title = title,
                     season = activeSeasonNumber,
                     episode = activeEpisodeNumber,
                     forceRefresh = true,
@@ -1389,6 +1421,8 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
             PlayerStreamsRepository.loadEpisodeStreams(
                 type = contentType ?: parentMetaType,
                 videoId = episode.id,
+                parentMetaId = parentMetaId,
+                title = title,
                 season = episode.season,
                 episode = episode.episode,
             )
@@ -1406,6 +1440,8 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
                 PlayerStreamsRepository.loadEpisodeStreams(
                     type = contentType ?: parentMetaType,
                     videoId = episode.id,
+                    parentMetaId = parentMetaId,
+                    title = title,
                     season = episode.season,
                     episode = episode.episode,
                     forceRefresh = true,

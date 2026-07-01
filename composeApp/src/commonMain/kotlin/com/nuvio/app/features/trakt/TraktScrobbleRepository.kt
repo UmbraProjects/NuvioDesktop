@@ -3,6 +3,10 @@ package com.nuvio.app.features.trakt
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppVersionPolicy
 import com.nuvio.app.features.addons.httpRequestRaw
+import com.nuvio.app.features.metadata.MediaIdResolver
+import com.nuvio.app.features.metadata.canonicalEpisodeNumber
+import com.nuvio.app.features.metadata.canonicalSeasonNumber
+import com.nuvio.app.features.metadata.toTraktExternalIds
 import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -81,41 +85,19 @@ internal object TraktScrobbleRepository {
         releaseInfo: String? = null,
     ): TraktScrobbleItem? {
         val normalizedType = contentType.trim().lowercase()
-        var ids = parseTraktContentIds(parentMetaId)
         val isEpisodeType = normalizedType in listOf("series", "tv", "show", "tvshow", "anime")
+        val resolvedIds = MediaIdResolver.resolve(
+            contentType = contentType,
+            parentMetaId = parentMetaId,
+            videoId = videoId,
+            title = title,
+            sourceSeasonNumber = seasonNumber,
+            isAnimeHint = normalizedType == "anime",
+        )
+        val ids = resolvedIds.toTraktExternalIds()
 
-        // Fallback: if parentMetaId doesn't resolve to valid Trakt IDs, try videoId.
-        // Some addons use non-standard contentId (e.g. "tun_tt7821582") but set a
-        // valid IMDB/TMDB videoId (e.g. "tt7821582:3:7").
-        if (!ids.hasAnyId() && !videoId.isNullOrBlank() && videoId != parentMetaId) {
-            ids = parseTraktContentIds(videoId)
-        }
-
-        // Ensure we have a Trakt-supported ID (IMDB, TMDB, Trakt, Slug). If we only have
-        // TVDB, Kitsu, MAL, etc., Trakt's scrobble endpoint may reject it. Nuvio's
-        // TmdbService can resolve these to a canonical TMDB ID.
-        if (
-            ids.imdb == null &&
-            ids.tmdb == null &&
-            ids.trakt == null &&
-            ids.tvdb == null &&
-            ids.slug == null &&
-            !isAnimeExternalOnlyId(parentMetaId)
-        ) {
-            val fallbackId = parentMetaId.takeIf { it.isNotBlank() } ?: videoId
-            if (fallbackId != null) {
-                val tmdbId = com.nuvio.app.features.tmdb.TmdbService.ensureTmdbId(
-                    videoId = fallbackId,
-                    mediaType = if (normalizedType in listOf("series", "tv", "show", "tvshow", "anime")) "series" else "movie"
-                )
-                if (tmdbId != null) {
-                    ids = ids.copy(tmdb = tmdbId.toIntOrNull())
-                }
-            }
-        }
-
-        // Don't send scrobble if we still have no valid Trakt IDs — would cause
-        // title-based fuzzy match on Trakt API resulting in wrong show matched.
+        // Don't send scrobble if we still have no Trakt-supported IDs; title-only
+        // fuzzy matches are too easy to send to the wrong show.
         if (!ids.hasScrobbleRequestId()) return null
 
         val parsedYear = extractTraktYear(releaseInfo)
@@ -129,8 +111,8 @@ internal object TraktScrobbleRepository {
                 showTitle = title,
                 showYear = parsedYear,
                 showIds = ids,
-                season = seasonNumber,
-                number = episodeNumber,
+                season = resolvedIds.canonicalSeasonNumber(seasonNumber) ?: seasonNumber,
+                number = resolvedIds.canonicalEpisodeNumber(episodeNumber) ?: episodeNumber,
                 episodeTitle = episodeTitle,
             )
         } else {
@@ -346,25 +328,6 @@ internal object TraktScrobbleRepository {
     private fun TraktExternalIds.hasScrobbleRequestId(): Boolean =
         trakt != null || !imdb.isNullOrBlank() || tmdb != null || tvdb != null
 
-    private fun isAnimeExternalOnlyId(contentId: String): Boolean {
-        val raw = contentId.trim()
-        return raw.startsWith("kitsu:", ignoreCase = true) ||
-            raw.startsWith("mal:", ignoreCase = true) ||
-            raw.startsWith("al:", ignoreCase = true) ||
-            raw.startsWith("anilist:", ignoreCase = true) ||
-            raw.startsWith("simkl:", ignoreCase = true)
-    }
-
-    private fun TraktExternalIds.withFallbacks(fallback: TraktExternalIds): TraktExternalIds = copy(
-        trakt = trakt ?: fallback.trakt,
-        imdb = imdb ?: fallback.imdb,
-        tmdb = tmdb ?: fallback.tmdb,
-        tvdb = tvdb ?: fallback.tvdb,
-        mal = mal ?: fallback.mal,
-        kitsu = kitsu ?: fallback.kitsu,
-        anilist = anilist ?: fallback.anilist,
-        slug = slug ?: fallback.slug,
-    )
 }
 
 @Serializable

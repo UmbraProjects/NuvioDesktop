@@ -26,6 +26,7 @@ import org.jetbrains.compose.resources.getString
 object TmdbMetadataService {
     private val log = Logger.withTag("TmdbMetadata")
     private val json = Json { ignoreUnknownKeys = true }
+    private val titleCompareYearRegex = Regex("""\b(19|20)\d{2}\b""")
 
     private val enrichmentCache = mutableMapOf<String, TmdbEnrichment>()
     private val episodeCache = mutableMapOf<String, Map<Pair<Int, Int>, TmdbEpisodeEnrichment>>()
@@ -553,6 +554,24 @@ object TmdbMetadataService {
             enrichmentDeferred.await() to episodeDeferred?.await()
         }
 
+        // Some addons hand back bare-numeric catalog ids with no tt:/tmdb:/tvdb: prefix
+        // (TmdbService.ensureTmdbId trusts these directly — see its "all digits" branch). If
+        // that number collides with an unrelated TMDB entry, blindly applying its logo/backdrop
+        // and merging its cast produces a Frankenstein result: the wrong title's art and credits
+        // stitched onto the correct addon-sourced synopsis/genres. Bail out and keep the addon's
+        // own meta untouched when both title and release year clearly disagree with what TMDB
+        // actually returned for this id.
+        val mismatch = enrichment != null &&
+            looksLikeDifferentTitle(meta.name, meta.releaseInfo, enrichment.localizedTitle, enrichment.releaseInfo)
+        if (mismatch) {
+            log.w {
+                "TMDB tmdbId=$tmdbId looks like a different title than addon meta " +
+                    "'${meta.name}' (${meta.releaseInfo}) — got '${enrichment?.localizedTitle}' " +
+                    "(${enrichment?.releaseInfo}); skipping enrichment to avoid mismatched metadata."
+            }
+            return meta
+        }
+
         return applyEnrichment(
             meta = meta,
             enrichment = enrichment,
@@ -560,6 +579,40 @@ object TmdbMetadataService {
             settings = settings,
         )
     }
+
+    /**
+     * True when [titleB]/[releaseInfoB] (typically a TMDB-sourced candidate resolved from a
+     * bare-numeric addon id — see [TmdbService.ensureTmdbId]'s "all digits" branch, which trusts
+     * such ids without verification) looks like a different title than [titleA]/[releaseInfoA]
+     * (typically the addon's own, already-correct meta). Used to avoid stitching a wrong id
+     * collision's logo/backdrop/cast onto otherwise-correct addon metadata. Intentionally lenient
+     * on title-only mismatches (legitimately-matched retitled/localized content is common) — only
+     * treats it as a real mismatch when title AND release year both clearly disagree.
+     */
+    internal fun looksLikeDifferentTitle(
+        titleA: String?,
+        releaseInfoA: String?,
+        titleB: String?,
+        releaseInfoB: String?,
+    ): Boolean {
+        val normalizedA = titleA?.takeIf(String::isNotBlank)?.normalizedForTitleCompare() ?: return false
+        val normalizedB = titleB?.takeIf(String::isNotBlank)?.normalizedForTitleCompare() ?: return false
+        val titlesMatch = normalizedA.isNotBlank() && normalizedB.isNotBlank() &&
+            (normalizedA == normalizedB || normalizedA.contains(normalizedB) || normalizedB.contains(normalizedA))
+        if (titlesMatch) return false
+
+        // Titles disagree — only treat this as a real mismatch if the release years also
+        // clearly disagree (allow a 1-year slack for premiere-year vs air-year conventions).
+        val yearA = extractComparisonYear(releaseInfoA) ?: return false
+        val yearB = extractComparisonYear(releaseInfoB) ?: return false
+        return kotlin.math.abs(yearA - yearB) > 1
+    }
+
+    private fun String.normalizedForTitleCompare(): String =
+        lowercase().replace(Regex("[^a-z0-9]"), "")
+
+    private fun extractComparisonYear(value: String?): Int? =
+        value?.let { titleCompareYearRegex.find(it)?.value?.toIntOrNull() }
 
     suspend fun fetchStandaloneMeta(
         type: String,
@@ -600,6 +653,7 @@ object TmdbMetadataService {
             id = id,
             type = type,
             name = enrichment.localizedTitle ?: "TMDB $tmdbId",
+            tmdbId = tmdbId,
             poster = enrichment.poster,
             background = enrichment.backdrop,
             logo = enrichment.logo,
@@ -612,6 +666,7 @@ object TmdbMetadataService {
             runtime = enrichment.runtimeMinutes?.formatRuntime(),
             genres = enrichment.genres,
             director = enrichment.director,
+            producer = enrichment.producer,
             writer = enrichment.writer,
             cast = enrichment.people,
             productionCompanies = enrichment.productionCompanies,
@@ -645,6 +700,7 @@ object TmdbMetadataService {
 
         if (enrichment != null && settings.useBasicInfo) {
             updated = updated.copy(
+                tmdbId = enrichment.tmdbId ?: updated.tmdbId,
                 name = enrichment.localizedTitle ?: updated.name,
                 description = enrichment.description ?: updated.description,
                 imdbRating = updated.imdbRating?.takeIf { it.isNotBlank() }
@@ -668,6 +724,7 @@ object TmdbMetadataService {
         if (enrichment != null && settings.useCredits) {
             updated = updated.copy(
                 director = enrichment.director.ifEmpty { updated.director },
+                producer = enrichment.producer.ifEmpty { updated.producer },
                 writer = enrichment.writer.ifEmpty { updated.writer },
                 cast = mergeCastPreservingBaseOrder(
                     base = updated.cast,
@@ -871,10 +928,12 @@ object TmdbMetadataService {
         val localizedTitle = listOf(details.title, details.name).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotBlank) }
         val people = buildPeople(details = details, credits = credits, mediaType = mediaType)
         val directors = buildDirectors(details = details, credits = credits, mediaType = mediaType)
-        val writers = buildWriters(credits = credits, mediaType = mediaType, hasDirectors = directors.isNotEmpty())
+        val producers = buildProducers(credits = credits)
+        val writers = buildWriters(credits = credits)
         val lastAirDate = details.lastAirDate?.trim()?.takeIf(String::isNotBlank)
             ?.takeIf { mediaType == "tv" }
         val enrichment = TmdbEnrichment(
+            tmdbId = numericId,
             localizedTitle = localizedTitle,
             description = description,
             genres = genres,
@@ -883,6 +942,7 @@ object TmdbMetadataService {
             poster = buildImageUrl(details.posterPath, "w500"),
             people = people,
             director = directors,
+            producer = producers,
             writer = writers,
             releaseInfo = releaseInfo,
             lastAirDate = lastAirDate,
@@ -1171,6 +1231,7 @@ object TmdbMetadataService {
 }
 
 internal data class TmdbEnrichment(
+    val tmdbId: Int? = null,
     val localizedTitle: String?,
     val description: String?,
     val genres: List<String>,
@@ -1179,6 +1240,7 @@ internal data class TmdbEnrichment(
     val poster: String?,
     val people: List<MetaPerson>,
     val director: List<String>,
+    val producer: List<String>,
     val writer: List<String>,
     val releaseInfo: String?,
     val lastAirDate: String? = null,
@@ -1204,6 +1266,7 @@ internal data class TmdbEnrichment(
             poster != null ||
             people.isNotEmpty() ||
             director.isNotEmpty() ||
+            producer.isNotEmpty() ||
             writer.isNotEmpty() ||
             releaseInfo != null ||
             lastAirDate != null ||
@@ -1345,13 +1408,7 @@ private fun buildDirectors(
 
 private fun buildWriters(
     credits: TmdbCreditsResponse?,
-    mediaType: String,
-    hasDirectors: Boolean,
 ): List<String> {
-    if (hasDirectors) {
-        return emptyList()
-    }
-
     return credits?.crew.orEmpty()
         .filter { crew ->
             val job = crew.job?.lowercase().orEmpty()
@@ -1360,6 +1417,18 @@ private fun buildWriters(
         .mapNotNull { it.name?.trim()?.takeIf(String::isNotBlank) }
         .distinct()
 }
+
+private fun buildProducers(credits: TmdbCreditsResponse?): List<String> =
+    credits?.crew.orEmpty()
+        .filter { crew ->
+            val job = crew.job?.lowercase().orEmpty()
+            job == "producer" ||
+                job == "executive producer" ||
+                job == "co-producer" ||
+                job == "co-executive producer"
+        }
+        .mapNotNull { it.name?.trim()?.takeIf(String::isNotBlank) }
+        .distinct()
 
 private fun List<MetaPerson>.dedupePeople(): List<MetaPerson> {
     val merged = linkedMapOf<String, MetaPerson>()

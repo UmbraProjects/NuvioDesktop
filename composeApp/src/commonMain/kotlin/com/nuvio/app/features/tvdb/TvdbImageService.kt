@@ -50,10 +50,44 @@ object TvdbImageService {
     private val remoteIdCache = mutableMapOf<String, String>()
     private val remoteIdCacheMutex = Mutex()
 
+    // TVDB-numeric-ID → IMDB-ID cache (avoids repeat /extended calls)
+    private val imdbIdCache = mutableMapOf<String, String>()
+    private val imdbIdCacheMutex = Mutex()
+
     /** Pre-warms the TVDB auth token so it is cached before any image fetch needs it. */
     suspend fun warmToken() {
         val apiKey = TvdbSettingsRepository.snapshot().apiKey.trim().takeIf(String::isNotBlank) ?: return
         acquireToken(apiKey) // no-op if already cached
+    }
+
+    /**
+     * Resolves the IMDB id for a TVDB-native id straight from TVDB's own /extended endpoint
+     * (its `remoteIds` list) — unlike the TMDB cross-reference, this needs only a TVDB key.
+     * Used to unlock the Metahub backdrop fallback for catalogs/types (e.g. movies) that
+     * TvdbImageService itself can't image, when no TMDB key is configured.
+     */
+    suspend fun resolveImdbId(type: String, tvdbId: String): String? {
+        val apiKey = TvdbSettingsRepository.snapshot().apiKey.trim().takeIf(String::isNotBlank) ?: return null
+        imdbIdCacheMutex.withLock { imdbIdCache[tvdbId] }?.let { return it }
+        val token = acquireToken(apiKey) ?: return null
+        val endpoint = if (isTvType(type)) "series" else "movies"
+        val body = runCatching {
+            httpGetTextWithHeaders("$BASE_URL/$endpoint/$tvdbId/extended", authHeaders(token))
+        }.onFailure { log.w { "TVDB extended fetch failed for $endpoint/$tvdbId: ${it.message}" } }
+            .getOrNull() ?: return null
+
+        val imdbId = runCatching {
+            json.decodeFromString<TvdbExtendedResponse>(body)
+                .data?.remoteIds.orEmpty()
+                .firstOrNull { it.sourceName.equals("IMDB", ignoreCase = true) }
+                ?.id?.trim()?.takeIf { it.startsWith("tt", ignoreCase = true) }
+        }.onFailure { log.w { "TVDB extended parse failed for $endpoint/$tvdbId: ${it.message}" } }
+            .getOrNull()
+
+        if (imdbId != null) {
+            imdbIdCacheMutex.withLock { imdbIdCache[tvdbId] = imdbId }
+        }
+        return imdbId
     }
 
     fun clearCache() {
@@ -258,6 +292,23 @@ private data class TvdbSearchResult(
         tvdbId?.trim()?.takeIf { it.all(Char::isDigit) }
             ?: objectId?.substringAfterLast("-")?.trim()?.takeIf { it.all(Char::isDigit) }
 }
+
+@Serializable
+private data class TvdbExtendedResponse(
+    val data: TvdbExtendedData? = null,
+)
+
+@Serializable
+private data class TvdbExtendedData(
+    val remoteIds: List<TvdbRemoteId> = emptyList(),
+)
+
+@Serializable
+private data class TvdbRemoteId(
+    val id: String? = null,
+    val type: Int? = null,
+    val sourceName: String? = null,
+)
 
 @Serializable
 private data class TvdbArtworksResponse(

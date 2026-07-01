@@ -335,7 +335,6 @@ object TraktEpisodeMappingService {
         val currentSourceEpisodeFromVideoId = requestedVideoId
             ?.takeIf { it.isNotBlank() }
             ?.let { videoId -> orderedSourceEpisodes.firstOrNull { it.videoId == videoId } }
-            ?.takeIf { it.season == requestedSeason && it.episode == requestedEpisode }
 
         val currentSourceEpisode = currentSourceEpisodeFromVideoId
             ?: orderedSourceEpisodes.firstOrNull {

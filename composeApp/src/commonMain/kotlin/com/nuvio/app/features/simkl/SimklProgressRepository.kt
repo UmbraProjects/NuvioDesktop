@@ -209,17 +209,27 @@ internal object SimklProgressRepository {
 
         return when (type) {
             "movie" -> {
-                val m = movie ?: return null
-                val id = m.ids.toBestContentId() ?: return null
+                val isAnimeMovie = anime != null
+                val id = if (isAnimeMovie) {
+                    anime?.ids?.toBestAnimeMovieContentId()
+                } else {
+                    movie?.ids?.toBestContentId()
+                } ?: return null
                 val cachedMeta = MetaDetailsRepository.peek("movie", id)
                 val posterUrl = cachedMeta?.poster
-                    ?: m.poster?.takeIf { it.isNotBlank() }?.simklPosterUrl()
+                    ?: if (isAnimeMovie) {
+                        anime?.poster?.takeIf { it.isNotBlank() }?.simklPosterUrl()
+                    } else {
+                        movie?.poster?.takeIf { it.isNotBlank() }?.simklPosterUrl()
+                    }
                 WatchProgressEntry(
                     contentType = "movie",
                     parentMetaId = id,
                     parentMetaType = "movie",
                     videoId = id,
-                    title = m.title.orEmpty(),
+                    title = (if (isAnimeMovie) anime?.title else movie?.title)
+                        ?.trim()?.takeIf(String::isNotBlank)
+                        ?: cachedMeta?.name?.trim()?.takeIf(String::isNotBlank).orEmpty(),
                     poster = posterUrl,
                     background = cachedMeta?.background ?: posterUrl,
                     lastPositionMs = 0L,

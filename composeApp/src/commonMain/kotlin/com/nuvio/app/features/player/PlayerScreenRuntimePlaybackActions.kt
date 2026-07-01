@@ -135,7 +135,6 @@ internal data class TraktScrobbleItemInputs(
     val seasonNumber: Int?,
     val episodeNumber: Int?,
     val episodeTitle: String?,
-    val watchProgressSource: String?,
 )
 
 internal data class SimklScrobbleItemInputs(
@@ -156,7 +155,6 @@ internal fun PlayerScreenRuntime.snapshotTraktScrobbleItemInputs() = TraktScrobb
     seasonNumber = activeSeasonNumber,
     episodeNumber = activeEpisodeNumber,
     episodeTitle = activeEpisodeTitle,
-    watchProgressSource = activeWatchProgressSource,
 )
 
 internal fun PlayerScreenRuntime.snapshotSimklScrobbleItemInputs() = SimklScrobbleItemInputs(
@@ -171,9 +169,6 @@ internal fun PlayerScreenRuntime.snapshotSimklScrobbleItemInputs() = SimklScrobb
 )
 
 private suspend fun TraktScrobbleItemInputs.buildItem() =
-    if (watchProgressSource == WatchProgressSourceSimkl) {
-        null
-    } else {
     TraktScrobbleRepository.buildItem(
         contentType = contentType,
         parentMetaId = parentMetaId,
@@ -183,7 +178,6 @@ private suspend fun TraktScrobbleItemInputs.buildItem() =
         episodeNumber = episodeNumber,
         episodeTitle = episodeTitle,
     )
-    }
 
 private suspend fun SimklScrobbleItemInputs.buildItem() =
     SimklScrobbleRepository.buildItem(

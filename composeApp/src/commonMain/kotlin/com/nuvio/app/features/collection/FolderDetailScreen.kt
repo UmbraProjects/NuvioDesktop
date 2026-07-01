@@ -1,5 +1,7 @@
 package com.nuvio.app.features.collection
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,6 +27,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -46,11 +49,15 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -83,6 +90,7 @@ import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.canOpenCatalog
+import com.nuvio.app.features.home.extractHeroAccentColor
 import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeHeroSection
@@ -279,6 +287,10 @@ private fun ImmersiveCollectionContent(
     var activeItemIndex by remember { mutableIntStateOf(0) }
     var wheelLocked by remember { mutableStateOf(false) }
     var backButtonHovered by remember { mutableStateOf(false) }
+    var activeHeroBackdrop by remember { mutableStateOf<String?>(null) }
+    var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
+    val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val ambientBackgroundEnabled = homeSettings.heroAmbientBackgroundEnabled
     val backButtonAlpha by animateFloatAsState(
         targetValue = if (backButtonHovered) 1f else 0f,
         label = "collection_back_button_alpha",
@@ -297,6 +309,11 @@ private fun ImmersiveCollectionContent(
 
     val activeSection = sections.getOrNull(activeRowIndex) ?: return
     val activeEntries = activeSection.items.take(FolderCatalogPreviewLimit)
+    val activeRowEntries = if (activeSection.paginates) {
+        activeSection.items
+    } else {
+        activeEntries
+    }
     val metadataPrefetchItems = activeEntries +
         sections.getOrNull(activeRowIndex + 1)
             ?.items
@@ -307,7 +324,7 @@ private fun ImmersiveCollectionContent(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(if (ambientBackgroundEnabled) Color.Transparent else MaterialTheme.colorScheme.background)
             .focusRequester(focusRequester)
             .focusable()
             .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
@@ -372,6 +389,14 @@ private fun ImmersiveCollectionContent(
                 }
             },
     ) {
+        if (ambientBackgroundEnabled) {
+            CollectionHeroAmbientBackground(
+                backdrop = activeHeroBackdrop,
+                accent = activeHeroAccent,
+                onAccentChanged = { activeHeroAccent = it },
+            )
+        }
+
         val shelfHeight = (maxHeight * 0.43f).coerceIn(300.dp, 440.dp)
         HomeHeroSection(
             items = activeEntries.take(FolderAdaptiveHeroItemLimit),
@@ -381,6 +406,9 @@ private fun ImmersiveCollectionContent(
             roundedBottomCorners = false,
             immersiveMode = true,
             immersiveContentBottomPadding = shelfHeight - 20.dp,
+            onActiveItemChanged = { item ->
+                activeHeroBackdrop = item.banner ?: item.poster
+            },
             onCastClick = onCastClick,
             onItemClick = onPosterClick,
         )
@@ -395,8 +423,8 @@ private fun ImmersiveCollectionContent(
                         colorStops = arrayOf(
                             0f to Color.Transparent,
                             0.30f to MaterialTheme.colorScheme.background.copy(alpha = 0.28f),
-                            0.62f to MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
-                            1f to MaterialTheme.colorScheme.background,
+                            0.62f to MaterialTheme.colorScheme.background.copy(alpha = if (ambientBackgroundEnabled) 0.74f else 0.88f),
+                            1f to MaterialTheme.colorScheme.background.copy(alpha = if (ambientBackgroundEnabled) 0.82f else 1f),
                         ),
                     ),
                 )
@@ -404,15 +432,24 @@ private fun ImmersiveCollectionContent(
         ) {
             HomeCatalogRowSection(
                 section = activeSection,
-                entries = activeEntries,
+                entries = activeRowEntries,
                 watchedKeys = watchedKeys,
                 focusedItemIndex = activeItemIndex,
                 onHoverItem = { itemIndex -> activeItemIndex = itemIndex },
-                onViewAllClick = if (activeSection.canOpenCatalog(FolderCatalogPreviewLimit)) {
+                onViewAllClick = if (
+                    !activeSection.paginates &&
+                    activeSection.canOpenCatalog(FolderCatalogPreviewLimit)
+                ) {
                     { onCatalogClick(activeSection) }
                 } else {
                     null
                 },
+                onLoadMore = if (activeSection.paginates) {
+                    { FolderDetailRepository.loadMoreCatalogRow(activeSection) }
+                } else {
+                    null
+                },
+                isLoadingMore = activeSection.isLoadingMore,
                 onPosterClick = onPosterClick,
             )
         }
@@ -448,6 +485,10 @@ private fun AdaptiveCollectionContent(
     var activeRowIndex by remember { mutableIntStateOf(0) }
     var activeItemIndex by remember { mutableIntStateOf(0) }
     var backButtonHovered by remember { mutableStateOf(false) }
+    var activeHeroBackdrop by remember { mutableStateOf<String?>(null) }
+    var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
+    val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val ambientBackgroundEnabled = homeSettings.heroAmbientBackgroundEnabled
     val backButtonAlpha by animateFloatAsState(
         targetValue = if (backButtonHovered) 1f else 0f,
         label = "tv_collection_back_button_alpha",
@@ -470,10 +511,10 @@ private fun AdaptiveCollectionContent(
         sections.getOrNull(activeRowIndex + 1)?.items?.take(FolderCatalogPreviewLimit).orEmpty()
     val focusedItem = activeEntries.getOrNull(activeItemIndex)
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(if (ambientBackgroundEnabled) Color.Transparent else MaterialTheme.colorScheme.background)
             .focusRequester(focusRequester)
             .focusable()
             .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
@@ -518,53 +559,146 @@ private fun AdaptiveCollectionContent(
                 }
             },
     ) {
-        Box {
-            HomeHeroSection(
-                items = activeEntries.take(FolderAdaptiveHeroItemLimit),
-                focusedItem = focusedItem,
-                metadataPrefetchItems = metadataPrefetchItems,
-                viewportHeight = FolderAdaptiveHeroHeightFallback,
-                roundedBottomCorners = false,
-                adaptiveHeroMode = true,
-                onCastClick = onCastClick,
-                onItemClick = onPosterClick,
-            )
-            NuvioBackButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 20.dp, top = 20.dp)
-                    .size(40.dp)
-                    .onPointerEvent(PointerEventType.Enter) { backButtonHovered = true }
-                    .onPointerEvent(PointerEventType.Exit) { backButtonHovered = false },
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f * backButtonAlpha),
-                contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = backButtonAlpha),
-                iconSize = 24.dp,
+        if (ambientBackgroundEnabled) {
+            CollectionHeroAmbientBackground(
+                backdrop = activeHeroBackdrop,
+                accent = activeHeroAccent,
+                onAccentChanged = { activeHeroAccent = it },
             )
         }
 
-        LazyColumn(state = lazyListState, modifier = Modifier.weight(1f)) {
-            sections.forEachIndexed { rowIndex, section ->
-                val entries = section.items.take(FolderCatalogPreviewLimit)
-                item(key = section.key) {
-                    HomeCatalogRowSection(
-                        section = section,
-                        entries = entries,
-                        watchedKeys = watchedKeys,
-                        focusedItemIndex = if (rowIndex == activeRowIndex) activeItemIndex else null,
-                        onHoverItem = { itemIndex ->
-                            activeRowIndex = rowIndex
-                            activeItemIndex = itemIndex
-                        },
-                        onViewAllClick = if (section.canOpenCatalog(FolderCatalogPreviewLimit)) {
-                            { onCatalogClick(section) }
-                        } else {
-                            null
-                        },
-                        onPosterClick = onPosterClick,
-                    )
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box {
+                HomeHeroSection(
+                    items = activeEntries.take(FolderAdaptiveHeroItemLimit),
+                    focusedItem = focusedItem,
+                    metadataPrefetchItems = metadataPrefetchItems,
+                    viewportHeight = FolderAdaptiveHeroHeightFallback,
+                    roundedBottomCorners = false,
+                    adaptiveHeroMode = true,
+                    onActiveItemChanged = { item ->
+                        activeHeroBackdrop = item.banner ?: item.poster
+                    },
+                    onCastClick = onCastClick,
+                    onItemClick = onPosterClick,
+                )
+                NuvioBackButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = 20.dp, top = 20.dp)
+                        .size(40.dp)
+                        .onPointerEvent(PointerEventType.Enter) { backButtonHovered = true }
+                        .onPointerEvent(PointerEventType.Exit) { backButtonHovered = false },
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f * backButtonAlpha),
+                    contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = backButtonAlpha),
+                    iconSize = 24.dp,
+                )
+            }
+
+            LazyColumn(state = lazyListState, modifier = Modifier.weight(1f)) {
+                sections.forEachIndexed { rowIndex, section ->
+                    val previewEntries = section.items.take(FolderCatalogPreviewLimit)
+                    val entries = if (section.paginates) {
+                        section.items
+                    } else {
+                        previewEntries
+                    }
+                    item(key = section.key) {
+                        HomeCatalogRowSection(
+                            section = section,
+                            entries = entries,
+                            watchedKeys = watchedKeys,
+                            focusedItemIndex = if (rowIndex == activeRowIndex) activeItemIndex else null,
+                            onHoverItem = { itemIndex ->
+                                activeRowIndex = rowIndex
+                                activeItemIndex = itemIndex
+                            },
+                            onViewAllClick = if (
+                                !section.paginates &&
+                                section.canOpenCatalog(FolderCatalogPreviewLimit)
+                            ) {
+                                { onCatalogClick(section) }
+                            } else {
+                                null
+                            },
+                            onLoadMore = if (section.paginates) {
+                                { FolderDetailRepository.loadMoreCatalogRow(section) }
+                            } else {
+                                null
+                            },
+                            isLoadingMore = section.isLoadingMore,
+                            onPosterClick = onPosterClick,
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CollectionHeroAmbientBackground(
+    backdrop: String?,
+    accent: Color?,
+    onAccentChanged: (Color?) -> Unit,
+) {
+    val ambientBackdropColorFilter = remember {
+        ColorFilter.colorMatrix(
+            ColorMatrix().apply { setToSaturation(1.7f) },
+        )
+    }
+    val ambientAccent by animateColorAsState(
+        targetValue = accent ?: MaterialTheme.colorScheme.background,
+        animationSpec = tween(durationMillis = 650),
+        label = "collection_hero_ambient_accent",
+    )
+    Crossfade(
+        targetState = backdrop,
+        animationSpec = tween(durationMillis = 650),
+        label = "collection_hero_ambient_background",
+        modifier = Modifier.fillMaxSize(),
+    ) { activeBackdrop ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (!activeBackdrop.isNullOrBlank()) {
+                AsyncImage(
+                    model = activeBackdrop,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = 0.58f
+                            scaleX = 1.18f
+                            scaleY = 1.18f
+                        }
+                        .blur(72.dp),
+                    contentScale = ContentScale.Crop,
+                    colorFilter = ambientBackdropColorFilter,
+                    onSuccess = { state ->
+                        if (backdrop == activeBackdrop) {
+                            onAccentChanged(extractHeroAccentColor(state.result.image))
+                        }
+                    },
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0f to ambientAccent.copy(alpha = 0.46f),
+                                0.42f to ambientAccent.copy(alpha = 0.32f),
+                                1f to MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+                            ),
+                        ),
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.38f)),
+            )
         }
     }
 }
@@ -727,14 +861,28 @@ private fun RowsContent(
             key = { it.lazyKey },
         ) { keyedSection ->
             val section = keyedSection.value
+            val entries = if (section.paginates) {
+                section.items
+            } else {
+                section.items.take(FolderCatalogPreviewLimit)
+            }
             HomeCatalogRowSection(
                 section = section,
-                entries = section.items.take(18),
-                onViewAllClick = if (section.canOpenCatalog(18)) {
+                entries = entries,
+                onViewAllClick = if (
+                    !section.paginates &&
+                    section.canOpenCatalog(FolderCatalogPreviewLimit)
+                ) {
                     { onCatalogClick(section) }
                 } else {
                     null
                 },
+                onLoadMore = if (section.paginates) {
+                    { FolderDetailRepository.loadMoreCatalogRow(section) }
+                } else {
+                    null
+                },
+                isLoadingMore = section.isLoadingMore,
                 watchedKeys = watchedKeys,
                 onPosterClick = { onPosterClick(it) },
             )

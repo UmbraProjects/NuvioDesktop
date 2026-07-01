@@ -44,6 +44,7 @@ internal object MetaDetailsParser {
             runtime = meta.string("runtime"),
             genres = meta.stringList("genres"),
             director = meta.directors(links),
+            producer = meta.producers(links),
             writer = meta.writers(links),
             creator = meta.creators(links),
             cast = meta.cast(links),
@@ -181,6 +182,21 @@ internal object MetaDetailsParser {
         }.map(MetaLink::name)
 
         return (topLevel + extraWriters + linkWriters)
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+    }
+
+    private fun JsonObject.producers(links: List<MetaLink>): List<String> {
+        val appExtras = this["app_extras"] as? JsonObject
+        val topLevel = stringListOrCsv("producer") + stringListOrCsv("producers")
+        val extraProducers = appExtras.personNameList("producer") + appExtras.personNameList("producers")
+        val linkProducers = links.filter { link ->
+            link.category.equals("producer", ignoreCase = true) ||
+                link.category.equals("producers", ignoreCase = true)
+        }.map(MetaLink::name)
+
+        return (topLevel + extraProducers + linkProducers)
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinct()

@@ -228,6 +228,8 @@ internal fun PlayerScreenRuntime.switchToSource(stream: StreamItem) {
                     PlayerStreamsRepository.loadSources(
                         type = contentType ?: parentMetaType,
                         videoId = vid,
+                        parentMetaId = parentMetaId,
+                        title = title,
                         season = activeSeasonNumber,
                         episode = activeEpisodeNumber,
                         forceRefresh = true,
@@ -281,6 +283,8 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(stream: StreamItem, episo
                 PlayerStreamsRepository.loadEpisodeStreams(
                     type = contentType ?: parentMetaType,
                     videoId = episode.id,
+                    parentMetaId = parentMetaId,
+                    title = title,
                     season = episode.season,
                     episode = episode.episode,
                     forceRefresh = true,
@@ -353,6 +357,18 @@ internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: Downloa
 }
 
 internal fun PlayerScreenRuntime.playNextEpisode() {
+    // Mirror launchPlayerNextEpisodeAutoPlay's own early-exit checks: when there's clearly no
+    // episode to advance to, bail out before engaging the latch at all. Engaging it here and
+    // relying on that function's early `return null` to release it doesn't work — those returns
+    // never launch a job, so nothing would ever clear the latch and auto-advance would stay
+    // permanently disabled for the rest of the session.
+    val nextVideoId = nextEpisodeInfo?.videoId
+    val nextVideo = nextVideoId?.let { id -> playerMetaVideos.firstOrNull { video -> video.id == id } }
+    if (nextVideo == null || nextEpisodeInfo?.hasAired != true) return
+
+    // Engage the advance latch for every path (auto and manual) so a stale end-of-file can't
+    // trigger a second advance and skip an episode. Cleared once the new episode is playing.
+    nextEpisodeAdvanceInProgress = true
     scope.launchPlayerNextEpisodeAutoPlay(
         previousJob = nextEpisodeAutoPlayJob,
         nextEpisodeInfo = nextEpisodeInfo,
@@ -386,6 +402,8 @@ internal fun PlayerScreenRuntime.openSourcesPanel() {
     PlayerStreamsRepository.loadSources(
         type = contentType ?: parentMetaType,
         videoId = vid,
+        parentMetaId = parentMetaId,
+        title = title,
         season = activeSeasonNumber,
         episode = activeEpisodeNumber,
     )

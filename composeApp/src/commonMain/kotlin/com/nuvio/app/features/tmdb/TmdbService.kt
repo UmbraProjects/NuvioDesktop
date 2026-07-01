@@ -2,6 +2,10 @@ package com.nuvio.app.features.tmdb
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpGetText
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
@@ -87,6 +91,170 @@ object TmdbService {
         return imdbId
     }
 
+    suspend fun fetchMovieReleaseStatus(
+        tmdbId: Int,
+        tmdbStatus: String?,
+    ): String? {
+        val apiKey = currentApiKey() ?: return null
+        val normalizedStatus = tmdbStatus.orEmpty().trim()
+        when (normalizedStatus.lowercase()) {
+            "in production", "post production", "post-production", "planned", "pilot", "rumored" -> return "Production"
+            "cancelled", "canceled" -> return null
+        }
+
+        val body = fetchReleaseDates(tmdbId, apiKey) ?: return null
+
+        val todayIso = com.nuvio.app.features.watchprogress.CurrentDateProvider.todayIsoDate()
+        var hasPhysical = false
+        var hasDigital = false
+        var theatricalDate: String? = null
+        var futureTheatricalDate: String? = null
+
+        body.results.forEach { country ->
+            country.releaseDates.forEach { release ->
+                val date = release.releaseDate.take(10).takeIf(::isIsoDate) ?: return@forEach
+                if (date > todayIso) {
+                    if (release.type == TMDB_RELEASE_TYPE_THEATRICAL) {
+                        futureTheatricalDate = minIsoDate(futureTheatricalDate, date)
+                    }
+                    return@forEach
+                }
+                when (release.type) {
+                    TMDB_RELEASE_TYPE_PHYSICAL -> hasPhysical = true
+                    TMDB_RELEASE_TYPE_DIGITAL, TMDB_RELEASE_TYPE_TV -> hasDigital = true
+                    TMDB_RELEASE_TYPE_THEATRICAL -> theatricalDate = maxIsoDate(theatricalDate, date)
+                }
+            }
+        }
+
+        return when {
+            hasPhysical -> "Physical"
+            hasDigital -> "Streaming"
+            theatricalDate != null -> "Cinema".takeUnless { isStaleReleaseStatusDate(theatricalDate, todayIso) }
+            futureTheatricalDate != null -> "Production"
+            normalizedStatus.equals("released", ignoreCase = true) -> "Streaming"
+            else -> "Production"
+        }
+    }
+
+    /**
+     * Most recent past date a movie became available to watch at home (digital / physical / TV)
+     * as ISO `yyyy-MM-dd`, or null if it has no such release yet. Deliberately ignores theatrical
+     * dates: a cinema-only title is "in cinemas", not a "new release", and the two must never
+     * coexist. Used by hero discovery to flag genuinely new (streaming) releases.
+     */
+    suspend fun fetchMovieAvailabilityDate(tmdbId: Int): String? {
+        val apiKey = currentApiKey() ?: return null
+        val body = fetchReleaseDates(tmdbId, apiKey) ?: return null
+
+        val todayIso = com.nuvio.app.features.watchprogress.CurrentDateProvider.todayIsoDate()
+        var homeDate: String? = null
+        body.results.forEach { country ->
+            country.releaseDates.forEach { release ->
+                val date = release.releaseDate.take(10).takeIf(::isIsoDate) ?: return@forEach
+                if (date > todayIso) return@forEach
+                when (release.type) {
+                    TMDB_RELEASE_TYPE_DIGITAL, TMDB_RELEASE_TYPE_PHYSICAL, TMDB_RELEASE_TYPE_TV ->
+                        homeDate = maxIsoDate(homeDate, date)
+                }
+            }
+        }
+        return homeDate
+    }
+
+    private val releaseDatesMutex = Mutex()
+    private val releaseDatesCache = mutableMapOf<Int, Pair<TmdbReleaseStatusDatesResponse, Long>>()
+
+    /**
+     * Shared, TTL-cached fetch of `movie/{id}/release_dates` — [fetchMovieReleaseStatus] and
+     * [fetchMovieAvailabilityDate] both derive their answer from the same payload, so hero
+     * discovery evaluating both facts for one movie (the default priority list includes both)
+     * no longer fires two HTTP requests for identical data.
+     */
+    private suspend fun fetchReleaseDates(tmdbId: Int, apiKey: String): TmdbReleaseStatusDatesResponse? {
+        val now = com.nuvio.app.features.watchprogress.WatchProgressClock.nowEpochMs()
+        releaseDatesMutex.withLock {
+            releaseDatesCache[tmdbId]?.let { (cached, fetchedAtMs) ->
+                if (now - fetchedAtMs < TRENDING_CACHE_TTL_MS) return cached
+            }
+        }
+        val body = fetch<TmdbReleaseStatusDatesResponse>(
+            endpoint = "movie/$tmdbId/release_dates",
+            apiKey = apiKey,
+        ) ?: return null
+        releaseDatesMutex.withLock {
+            releaseDatesCache[tmdbId] = body to now
+        }
+        return body
+    }
+
+    private val trendingMutex = Mutex()
+    private var trendingMovieIds: Set<Int> = emptySet()
+    private var trendingTvIds: Set<Int> = emptySet()
+    private var trendingFetchedAtMs: Long = 0L
+
+    /** True if the title is on TMDB's trending-this-week list. Backed by a 6-hour cache. */
+    suspend fun isTrending(tmdbId: Int, mediaType: String): Boolean {
+        ensureTrendingLoaded()
+        return trendingMutex.withLock {
+            if (normalizeMediaType(mediaType) == "tv") tmdbId in trendingTvIds else tmdbId in trendingMovieIds
+        }
+    }
+
+    private suspend fun ensureTrendingLoaded() {
+        val now = com.nuvio.app.features.watchprogress.WatchProgressClock.nowEpochMs()
+        trendingMutex.withLock {
+            val fresh = now - trendingFetchedAtMs < TRENDING_CACHE_TTL_MS
+            if (fresh && (trendingMovieIds.isNotEmpty() || trendingTvIds.isNotEmpty())) return
+        }
+        val apiKey = currentApiKey() ?: return
+        val movies = fetch<TmdbTrendingResponse>(endpoint = "trending/movie/week", apiKey = apiKey)
+            ?.results?.mapNotNull { it.id }?.toSet().orEmpty()
+        val tv = fetch<TmdbTrendingResponse>(endpoint = "trending/tv/week", apiKey = apiKey)
+            ?.results?.mapNotNull { it.id }?.toSet().orEmpty()
+        trendingMutex.withLock {
+            if (movies.isNotEmpty()) trendingMovieIds = movies
+            if (tv.isNotEmpty()) trendingTvIds = tv
+            if (movies.isNotEmpty() || tv.isNotEmpty()) trendingFetchedAtMs = now
+        }
+    }
+
+    private val unreleasedScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val unreleasedWarmMutex = Mutex()
+    private val unreleasedAttemptedIds = mutableSetOf<String>()
+
+    @Volatile
+    private var unreleasedCache: Map<String, Boolean> = emptyMap()
+
+    /**
+     * Best-effort, non-suspending read of a prior [warmUnreleasedStatusAsync] result for a movie
+     * id — null if unresolved (caller should fall back to its own heuristic). A volatile,
+     * copy-on-write map keeps this lock-free: reads never block, and [warmUnreleasedStatusAsync]
+     * publishes the whole map atomically when a lookup completes.
+     */
+    fun peekUnreleasedStatus(itemId: String): Boolean? = unreleasedCache[itemId]
+
+    /**
+     * Resolves whether [itemId] (a movie) is still unreleased via the same `/release_dates` data
+     * [fetchMovieReleaseStatus] already uses for the hero "recently released" badge — reused here
+     * rather than duplicating a separate TMDB lookup. Fires in the background and caches the
+     * result for [peekUnreleasedStatus]; callers should use their own heuristic for the current
+     * call and pick up the resolved answer on a later pass. No-ops without a TMDB key, for
+     * non-movie types, or if already attempted for this id this session.
+     */
+    fun warmUnreleasedStatusAsync(itemId: String, type: String) {
+        if (normalizeMediaType(type) != "movie") return
+        unreleasedScope.launch {
+            val alreadyAttempted = unreleasedWarmMutex.withLock {
+                if (itemId in unreleasedAttemptedIds) true else { unreleasedAttemptedIds += itemId; false }
+            }
+            if (alreadyAttempted) return@launch
+            val tmdbId = ensureTmdbId(itemId, type)?.toIntOrNull() ?: return@launch
+            val status = fetchMovieReleaseStatus(tmdbId = tmdbId, tmdbStatus = null) ?: return@launch
+            unreleasedCache = unreleasedCache + (itemId to (status == "Production"))
+        }
+    }
+
     private suspend fun imdbToTmdb(imdbId: String, mediaType: String, apiKey: String): String? {
         val normalizedType = normalizeMediaType(mediaType)
         val cacheKey = "$imdbId:$normalizedType"
@@ -155,6 +323,59 @@ object TmdbService {
             else -> mediaType.trim().lowercase()
         }
 }
+
+private const val TMDB_RELEASE_TYPE_THEATRICAL = 3
+private const val TMDB_RELEASE_TYPE_DIGITAL = 4
+private const val TMDB_RELEASE_TYPE_PHYSICAL = 5
+private const val TMDB_RELEASE_TYPE_TV = 6
+private const val RELEASE_STATUS_STALE_YEAR_GAP = 3
+private const val TRENDING_CACHE_TTL_MS = 6 * 60 * 60 * 1000L
+
+private fun isIsoDate(value: String): Boolean =
+    value.length == 10 &&
+        value[4] == '-' &&
+        value[7] == '-' &&
+        value.substring(0, 4).all(Char::isDigit) &&
+        value.substring(5, 7).all(Char::isDigit) &&
+        value.substring(8, 10).all(Char::isDigit)
+
+private fun maxIsoDate(current: String?, candidate: String): String =
+    if (current == null || candidate > current) candidate else current
+
+private fun minIsoDate(current: String?, candidate: String): String =
+    if (current == null || candidate < current) candidate else current
+
+private fun isStaleReleaseStatusDate(date: String?, todayIso: String): Boolean {
+    val releaseYear = date?.take(4)?.toIntOrNull() ?: return false
+    val currentYear = todayIso.take(4).toIntOrNull() ?: return false
+    return currentYear - releaseYear > RELEASE_STATUS_STALE_YEAR_GAP
+}
+
+@Serializable
+private data class TmdbReleaseStatusDatesResponse(
+    val results: List<TmdbReleaseStatusDatesCountry> = emptyList(),
+)
+
+@Serializable
+private data class TmdbReleaseStatusDatesCountry(
+    @SerialName("release_dates") val releaseDates: List<TmdbReleaseStatusDate> = emptyList(),
+)
+
+@Serializable
+private data class TmdbReleaseStatusDate(
+    @SerialName("release_date") val releaseDate: String = "",
+    val type: Int = 0,
+)
+
+@Serializable
+private data class TmdbTrendingResponse(
+    val results: List<TmdbTrendingItem> = emptyList(),
+)
+
+@Serializable
+private data class TmdbTrendingItem(
+    val id: Int? = null,
+)
 
 internal fun buildTmdbUrl(
     endpoint: String,

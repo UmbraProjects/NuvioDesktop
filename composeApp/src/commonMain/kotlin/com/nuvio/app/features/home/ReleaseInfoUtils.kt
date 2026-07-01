@@ -1,5 +1,7 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.features.tmdb.TmdbService
+
 private val yearRegex = Regex("""\b(19|20)\d{2}\b""")
 private val isoDateRegex = Regex("""\d{4}-\d{2}-\d{2}""")
 
@@ -20,7 +22,14 @@ internal fun MetaPreview.isUnreleased(todayIsoDate: String): Boolean {
 
     val releaseYear = yearRegex.find(info)?.value?.toIntOrNull() ?: return false
     val currentYear = todayIsoDate.take(4).toIntOrNull() ?: return false
-    return releaseYear > currentYear
+    if (releaseYear != currentYear) return releaseYear > currentYear
+
+    // Same-year bare release info is genuinely ambiguous (e.g. "2026" today could mean already
+    // out in January or still months away in December) — catalog/list payloads almost never carry
+    // day-level precision, so check the real TMDB release date instead of guessing "released".
+    TmdbService.peekUnreleasedStatus(id)?.let { return it }
+    TmdbService.warmUnreleasedStatusAsync(itemId = id, type = type)
+    return false
 }
 
 internal fun HomeCatalogSection.filterReleasedItems(todayIsoDate: String): HomeCatalogSection {

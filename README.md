@@ -18,27 +18,46 @@
 
 [![Nuvio TV Mode Demo](https://img.youtube.com/vi/N3eKjF7sm_o/maxresdefault.jpg)](https://www.youtube.com/watch?v=N3eKjF7sm_o)
 
-Quick note: player_bridge.dll was detected by Windows Defender as a trojan by machine learning. It's currently 0 detections on VirusTotal and is perfectly safe (you can view the code or have Claude review it.) I've submitted it to Microsoft's false positives and hopefully that'll disappear quickly.
+This fork is unaffiliated with the Nuvio team. It is intended to be a fork focused solely on the best possible experience for Windows. 
 
-This fork is unaffiliated with the Nuvio team, here are the changes:
+Here is a non exhaustive feature list:
 
-1. Adaptative Hero, with option to tint the background based on backdrop.
+**Home & Browsing**
+
+1. Adaptive Hero, with an option to tint the background based on the backdrop, plus a manual vertical position slider so you can tune framing to whatever looks best for your library.
 2. Full TV Mode UI for full screen mode.
-3. Trailers on the home screen in either the hero or full screen, they also play in MPV if opened in the media info screen.
-4. Keyboard controls for most of the application.
-5. Improved mouse support, hold your mouse at the edge of a catalog to auto scroll, hold and drag to scroll fast, hold shift and use the mouse wheel.
-6. Larger posters option.
-7. Playback speed defaults.
-8. Hotkeys for search and library.
-9. Renderer swapped from D3D to OpenGL as I was getting irritating lighting issues with the adaptative hero. This doesn't effect playback at all.
-10. Tuned MPV config with three color profiles, thanks to Allecsc the developer of [Stremio Kai](https://github.com/allecsc/Stremio-Kai) who gave permission for them to be used here.
-11. Binge mode to automatically trigger the next episode ASAP without manual input.
-12. Volume boost up to 200% for quiet content (Up/Down past 100%).
-13. Anime enhancements ported from Stremio Kai: Anime4K shaders ([bloc97/Anime4K](https://github.com/bloc97/Anime4K), MIT) plus anime-tuned scaling/deband, auto-applied for anime titles and toggleable with F10 (Auto/Off/Optimized/Fast/HQ).
-14. Buffer presets (Low Data / Balanced / Resilient) to tune playback caching for your connection, with a seek-bar indicator showing how far ahead is cached.
-15. Probably other stuff I've forgotten about, generally just improvements to PC.
+3. Hero info badges for awards, festivals, critic signals, release status, language, trending/cult/true-story metadata, notable studios/directors, short films, mini series, binge-ready shows, and new releases - fully customizable (placement, size, priority order) and extendable with your own badges/config, see below.
+4. Trailers on the home screen in either the hero or full screen, with a configurable auto-play delay; they also play in MPV if opened in the media info screen.
+5. Search and Library are now full home-mode screens (same TV Mode / Adaptive Hero layout as Home) instead of flat lists.
+6. Infinite scrolling on home catalog rows and inside collections instead of stopping at a small "View All" preview.
+7. A Trakt Calendar (press `C`) showing your upcoming and recent airings/releases in a month-view poster grid.
+8. Hero image source setting to pull backdrops/logos straight from TMDB, or TMDB for movies + TheTVDB for TV/anime, applies only to search and library.
+9. A one-time popup on first launch if you haven't set a TMDB or Mdblist API key, explaining what you're missing (lower quality backdrops/logos, fewer badges) with fields to add them right there.
+10. Larger posters option.
 
-The design is partly inspired by Nuvio TV and Stremio Kai. The fork may be discontinued when/if the official Nuvio PC version implements a TV mode.
+**Tracking & Scrobbling**
+
+11. SIMKL integration alongside Trakt - dual scrobbling, and the option to drive Library/Continue Watching/Calendar from SIMKL instead. A bundled Fribb anime ID mapping database translates between AniDB, AniList, Kitsu, MyAnimeList, SIMKL, IMDb, TMDB, and TVDB so anime numbering lines up properly across services.
+
+**Input & Controls**
+
+12. Keyboard controls for most of the application.
+13. Improved mouse support, hold your mouse at the edge of a catalog to auto scroll, hold and drag to scroll fast, hold shift and use the mouse wheel.
+14. Hotkeys for search and library.
+
+**Playback**
+
+15. Tuned MPV config with three color profiles, thanks to Allecsc the developer of [Stremio Kai](https://github.com/allecsc/Stremio-Kai) who gave permission for them to be used here.
+16. Anime enhancements ported from Stremio Kai: Anime4K shaders ([bloc97/Anime4K](https://github.com/bloc97/Anime4K), MIT) plus anime-tuned scaling/deband, auto-applied for anime titles and toggleable with F10 (Auto/Off/Optimized/Fast/HQ), plus SVP frame interpolation support when SVP is running.
+17. Binge mode to automatically trigger the next episode ASAP without manual input.
+18. Volume boost up to 200% for quiet content (Up/Down past 100%).
+19. Buffer presets (Low Data / Balanced / Resilient) to tune playback caching for your connection, with a seek-bar indicator showing how far ahead is cached.
+20. NVIDIA RTX Video True HDR support on RTX GPUs.
+21. Local file drag-and-drop - drop a video file from Explorer straight onto the window to play it immediately.
+22. Playback speed defaults.
+23. Probably other stuff I've forgotten about, generally just a huge list of improvements to PC.
+
+The design is partly inspired by Nuvio TV and Stremio Kai. 
 
 ## Fork Hotkeys
 
@@ -49,12 +68,14 @@ Homepage:
 - S to open the search panel (back to home if already in search)
 - L to open the library panel (back to home if already in library)
 - T to play the trailer (adaptive hero/TV mode only)
+- C to open your Trakt or SIMKL calendar
 
 Player:
 
+- F7 toggles SVP
 - F8 toggles HDR mode
 - F9 toggles color profile
-- F10 cycles anime enhancements (Auto/Off/Optimized/Fast/HQ)
+- F10 cycles anime shaders
 - Tab to skip the intro/outro (only while the skip prompt is showing)
 - A to toggle audio track
 - S to toggle subtitles
@@ -64,22 +85,104 @@ Player:
 - [] to change playback speed
 - C to cycle aspect ratio
 
+## Custom Hero Discovery Config & Badges
+
+Nuvio HTPC can show hero info badges for awards, festivals, critic signals, release status, language, notable studios/directors, trending/cult/true-story metadata, short films, mini series, binge-ready shows, and new releases.
+
+You can extend the studio/director list and override the bundled badge images without touching the code. Create this folder first:
+
+```text
+%LOCALAPPDATA%\Nuvio\Badges
+```
+
+For most Windows users this expands to:
+
+```text
+C:\Users\<you>\AppData\Local\Nuvio\Badges
+```
+
+### Custom `hero_discovery.json`
+
+Place a file named `hero_discovery.json` in `%LOCALAPPDATA%\Nuvio\Badges`.
+
+Example:
+
+```json
+{
+  "version": 1,
+  "mergeWithDefaults": true,
+  "studios": {
+    "Janus Films": "Janus Films",
+    "Toho": "Toho"
+  },
+  "directors": {
+    "Akira Kurosawa": "A. Kurosawa",
+    "Kelly Reichardt": "Kelly Reichardt"
+  }
+}
+```
+
+- `mergeWithDefaults: true` keeps the built-in studios/directors and adds yours.
+- `mergeWithDefaults: false` replaces the built-in studio/director lists with only your entries.
+- The left side must match the studio or director name from the title metadata.
+- The right side is the short label shown in the hero badge/tooltip.
+- Restart Nuvio after changing this file.
+
+### Custom Badge Images
+
+Put image files directly in `%LOCALAPPDATA%\Nuvio\Badges`. Supported formats:
+
+```text
+.png
+.jpg
+.jpeg
+.webp
+```
+
+Custom badge filenames are matched case-insensitively and ignore spaces/punctuation. For example, all of these can match the Metacritic badge:
+
+```text
+Metacritic.png
+Must See.webp
+must-see.jpg
+```
+
+Useful badge names/categories include:
+
+```text
+Best Picture.png
+Best Picture Nominee.png
+Golden Globe.png
+Golden Globe Nominee.png
+Emmy Winner.png
+Emmy Nominee.png
+Palme dOr.png
+Golden Lion.png
+Golden Bear.png
+Peoples Choice.png
+Metacritic.png
+Must See.png
+Cult Classic.png
+Trending.png
+Short Film.png
+Mini Series.png
+Binge Ready.png
+True Story.png
+New Release.png
+Director.png
+Studio.png
+```
+
+For director badges, you can also use the director name itself, such as:
+
+```text
+David Fincher.png
+Christopher Nolan.webp
+```
+
+The custom image wins over the bundled default whenever its filename matches the badge label or category. Restart Nuvio after adding or replacing custom badge files.
+
 This concludes the forks readme, anything beyond this point is from the official upstream Nuvio Desktop.
-
-## Recommended AIOMetadata Setup (For Trakt Users)
-
-If you use Trakt for scrobbling and tracking your watch progress, you need to be careful with how you configure your Anime settings in AIOMetadata (AIOM). Trakt relies on the TMDB/TVDB standard for organizing seasons and episodes. However, some Anime databases (like Kitsu) treat every season as an entirely separate show (e.g., SAO Season 2 is listed as Season 1, Episode 1 of a new show). Because of this mismatch, **Trakt completely rejects Kitsu IDs and cannot accurately scrobble from Kitsu searches.**
-
-To get the absolute best experience with perfect stream compatibility *and* perfect Trakt scrobbling, here is the recommended setup for AIOMetadata:
-
-* **Regular Search / Series Provider:** Set to **TVDB** (or TMDB).
-* **Anime Stream Compatibility:** Set to **Kitsu** (or MAL).
-* **Anime Search Provider:** Turn this **OFF** (or simply ignore the dedicated Kitsu/MAL search catalogs).
-
-**Why this is the optimal setup:**
-When you search for an Anime using the regular Nuvio search (which uses TVDB/TMDB), Nuvio uses the standard TVDB numbering (e.g., S02E01). Behind the scenes, AIOMetadata's *Stream Compatibility* layer automatically translates that TVDB ID into a Kitsu ID to fetch the highest-quality Anime streams for you. Once you hit play, Nuvio sends the correct TVDB `Season 2, Episode 1` data directly to Trakt, and your scrobble works flawlessly!
-
-**The Pitfall:** If you use the dedicated "Anime Search" (which is powered by Kitsu), Nuvio will attempt to send Kitsu IDs to Trakt. Trakt will reject the scrobble, and your watch progress will not sync. Stick to TVDB for your searches and library!
 
 ## About
 

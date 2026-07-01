@@ -1,5 +1,7 @@
 package com.nuvio.app.features.tvdb
 
+import com.nuvio.app.features.tmdb.HeroImageSource
+import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +33,16 @@ object TvdbSettingsRepository {
         publish()
         TvdbSettingsStorage.saveApiKey(normalized)
         TvdbImageService.clearCache()
+        if (apiKey.isBlank()) {
+            // The "TMDB movies + TVDB shows" hero image mode requires this key — without it the
+            // toggle is left checked-but-disabled, which is confusing and stale. Fall back to
+            // the next best mode the user can actually use.
+            val tmdbSettings = TmdbSettingsRepository.snapshot()
+            if (tmdbSettings.heroImageSource == HeroImageSource.TmdbMoviesTvdbShows) {
+                val fallback = if (tmdbSettings.hasApiKey) HeroImageSource.TmdbOnly else HeroImageSource.Addon
+                TmdbSettingsRepository.setHeroImageSource(fallback)
+            }
+        }
     }
 
     private fun loadFromDisk() {

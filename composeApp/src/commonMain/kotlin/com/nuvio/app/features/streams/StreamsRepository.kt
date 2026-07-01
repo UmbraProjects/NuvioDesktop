@@ -11,6 +11,7 @@ import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DebridStreamPresentation
 import com.nuvio.app.features.debrid.LocalDebridAvailabilityService
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.pluginContentId
@@ -41,17 +42,30 @@ object StreamsRepository {
     fun requestToken(
         type: String,
         videoId: String,
+        parentMetaId: String? = null,
+        title: String? = null,
         season: Int? = null,
         episode: Int? = null,
         manualSelection: Boolean = false,
-    ): String =
-        "$type::$videoId::$season::$episode::$manualSelection"
+    ): String {
+        val resolvedEpisode = MediaIdResolver.resolveLocalEpisodeIdentity(
+            contentType = type,
+            parentMetaId = parentMetaId ?: videoId,
+            videoId = videoId,
+            title = title,
+            season = season,
+            episode = episode,
+            isAnimeHint = type.equals("anime", ignoreCase = true),
+        )
+        return "$type::${resolvedEpisode.videoId}::${resolvedEpisode.streamSeason}::${resolvedEpisode.streamEpisode}::$manualSelection"
+    }
 
-    fun load(type: String, videoId: String, parentMetaId: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false) {
+    fun load(type: String, videoId: String, parentMetaId: String? = null, title: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false) {
         load(
             type = type,
             videoId = videoId,
             parentMetaId = parentMetaId,
+            title = title,
             season = season,
             episode = episode,
             manualSelection = manualSelection,
@@ -59,11 +73,12 @@ object StreamsRepository {
         )
     }
 
-    fun reload(type: String, videoId: String, parentMetaId: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false) {
+    fun reload(type: String, videoId: String, parentMetaId: String? = null, title: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false) {
         load(
             type = type,
             videoId = videoId,
             parentMetaId = parentMetaId,
+            title = title,
             season = season,
             episode = episode,
             manualSelection = manualSelection,
@@ -71,7 +86,19 @@ object StreamsRepository {
         )
     }
 
-    private fun load(type: String, videoId: String, parentMetaId: String?, season: Int?, episode: Int?, manualSelection: Boolean, forceRefresh: Boolean) {
+    private fun load(type: String, videoId: String, parentMetaId: String?, title: String?, season: Int?, episode: Int?, manualSelection: Boolean, forceRefresh: Boolean) {
+        val resolvedEpisode = MediaIdResolver.resolveLocalEpisodeIdentity(
+            contentType = type,
+            parentMetaId = parentMetaId ?: videoId,
+            videoId = videoId,
+            title = title,
+            season = season,
+            episode = episode,
+            isAnimeHint = type.equals("anime", ignoreCase = true),
+        )
+        val effectiveVideoId = resolvedEpisode.videoId
+        val effectiveSeason = resolvedEpisode.streamSeason
+        val effectiveEpisode = resolvedEpisode.streamEpisode
         val pluginUiState = if (AppFeaturePolicy.pluginsEnabled) {
             PluginRepository.initialize()
             PluginRepository.uiState.value
@@ -80,9 +107,11 @@ object StreamsRepository {
         }
         val requestToken = requestToken(
             type = type,
-            videoId = videoId,
-            season = season,
-            episode = episode,
+            videoId = effectiveVideoId,
+            parentMetaId = parentMetaId,
+            title = title,
+            season = effectiveSeason,
+            episode = effectiveEpisode,
             manualSelection = manualSelection,
         )
         val requestKey = "$requestToken::pluginsGrouped=${pluginUiState.groupStreamsByRepository}"
@@ -92,7 +121,7 @@ object StreamsRepository {
             activeRequestKey == requestKey &&
             (currentState.groups.isNotEmpty() || currentState.emptyStateReason != null || currentState.isAnyLoading)
         ) {
-            log.d { "Skipping stream reload for unchanged request type=$type id=$videoId" }
+            log.d { "Skipping stream reload for unchanged request type=$type id=$effectiveVideoId" }
             return
         }
 
@@ -132,9 +161,9 @@ object StreamsRepository {
             )
         }
 
-        val embeddedStreams = MetaDetailsRepository.findEmbeddedStreams(videoId)
+        val embeddedStreams = MetaDetailsRepository.findEmbeddedStreams(effectiveVideoId)
         if (embeddedStreams.isNotEmpty()) {
-            log.d { "Using ${embeddedStreams.size} embedded streams for type=$type id=$videoId" }
+            log.d { "Using ${embeddedStreams.size} embedded streams for type=$type id=$effectiveVideoId" }
             val group = AddonStreamGroup(
                 addonName = embeddedStreams.first().addonName,
                 addonId = "embedded",
@@ -181,7 +210,7 @@ object StreamsRepository {
                     resource.name == "stream" &&
                         resource.types.contains(type) &&
                         (resource.idPrefixes.isEmpty() ||
-                            resource.idPrefixes.any { videoId.startsWith(it) })
+                            resource.idPrefixes.any { effectiveVideoId.startsWith(it) })
                 }
                 if (!supportsRequestedStream) return@mapNotNull null
 
@@ -192,7 +221,7 @@ object StreamsRepository {
                 )
             }
 
-        log.d { "Found ${streamAddons.size} addons for stream type=$type id=$videoId" }
+        log.d { "Found ${streamAddons.size} addons for stream type=$type id=$effectiveVideoId" }
 
         if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty()) {
             _uiState.value = StreamsUiState(
@@ -434,7 +463,7 @@ object StreamsRepository {
                         manifestUrl = addon.manifest.transportUrl,
                         resource = "stream",
                         type = type,
-                        id = videoId,
+                        id = effectiveVideoId,
                     )
                     log.d { "Fetching streams from: $url" }
 
@@ -479,13 +508,13 @@ object StreamsRepository {
                         val completion = PluginRepository.executeScraper(
                             scraper = scraper,
                             tmdbId = pluginContentId(
-                                videoId = videoId,
-                                season = season,
-                                episode = episode,
+                                videoId = effectiveVideoId,
+                                season = effectiveSeason,
+                                episode = effectiveEpisode,
                             ),
                             mediaType = type,
-                            season = season,
-                            episode = episode,
+                            season = effectiveSeason,
+                            episode = effectiveEpisode,
                         ).fold(
                             onSuccess = { results ->
                                 StreamLoadCompletion.PluginScraper(
@@ -601,8 +630,8 @@ object StreamsRepository {
                     streams = _uiState.value.groups
                         .filter { it.addonId in installedAddonIds }
                         .flatMap { it.streams },
-                    season = season,
-                    episode = episode,
+                    season = effectiveSeason,
+                    episode = effectiveEpisode,
                     playerSettings = playerSettings,
                     installedAddonNames = installedAddonNames,
                 ) { original, prepared ->
