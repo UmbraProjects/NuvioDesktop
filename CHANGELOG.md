@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.7.2 - 2026-07-02
+
+### Added
+
+- **Discord Rich Presence** - optional Windows desktop integration that shows what you're currently watching on your Discord profile, including title, episode label, paused/playing state, and the remaining-time timeline when available. Uses the bundled Nuvio HTPC Discord application identity, so users only need to turn it on from Settings -> Integrations.
+
+### Improved
+
+- **SVP** - SVP now actually works, I had a bunch of babble here about everything that changed but it doesn't really matter. I managed to convince myself it was working previously through I don't know, jedi mind tricks?
+
+- **Cut Release by ~100MB** - I was bundling way more dlls than required, even adding a bunch of stuff for SVP it was still possible to cut it down. It's still larger than the official desktop but that's to be expected, SVP is adding quite a bit.
+
+### Fixed
+
+- **SVP with faster playback speeds** - SVP interpolation now automatically backs out at high playback speeds and restores when speed returns closer to normal, avoiding the severe lag/audio desync path seen around 2x playback.
+
+- **Windows native player runtime loading** - hardened bundled libmpv loading so the app doesn't fall back to unrelated MSYS2 DLLs on developer machines, added retries for transient DLL load failures, and replaced crashing unused whisper/ggml runtime dependencies with no-op stubs so playback can initialize reliably.
+
+- **Anime enhancement hotkeys not always taking effect** - F10/F7 now force the anime enhancement/SVP choice for the current playback session even when the title was not auto-detected as anime yet.
+
+- **Borderless fullscreen sometimes leaving the video surface black until resize** - toggling fullscreen now forces a redraw after the native window transition settles.
+
+- **Early player exit could mark an item as ended** - suppressed mpv's transient startup EOF signal so backing out during the first moments of playback does not incorrectly mark the title complete or remove it from Continue Watching.
+
 ## 1.7.1 - 2026-07-01
 
 ### Fixed

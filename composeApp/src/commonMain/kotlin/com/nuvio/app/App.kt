@@ -162,6 +162,7 @@ import com.nuvio.app.features.cloud.providerPosterUrl
 import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.debrid.toastMessage
+import com.nuvio.app.features.discord.DiscordPresenceSettingsRepository
 import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.downloads.DownloadsScreen
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -493,6 +494,7 @@ private suspend fun warmProfileBoundRepositories() {
         LibraryRepository.ensureLoaded()
         P2pSettingsRepository.ensureLoaded()
         PlayerSettingsRepository.ensureLoaded()
+        DiscordPresenceSettingsRepository.ensureLoaded()
         TraktAuthRepository.ensureLoaded()
         TraktSettingsRepository.ensureLoaded()
         SimklSettingsRepository.ensureLoaded()

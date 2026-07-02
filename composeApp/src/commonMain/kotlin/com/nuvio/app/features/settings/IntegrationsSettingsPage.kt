@@ -2,7 +2,10 @@ package com.nuvio.app.features.settings
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudQueue
+import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.foundation.lazy.LazyListScope
+import com.nuvio.app.features.discord.DiscordPresenceSettings
+import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_ratings
@@ -15,6 +18,8 @@ import org.jetbrains.compose.resources.stringResource
 
 internal fun LazyListScope.integrationsContent(
     isTablet: Boolean,
+    discordPresenceSettings: DiscordPresenceSettings,
+    onDiscordPresenceEnabledChange: (Boolean) -> Unit,
     onTmdbClick: () -> Unit,
     onMdbListClick: () -> Unit,
     onDebridClick: () -> Unit,
@@ -48,6 +53,17 @@ internal fun LazyListScope.integrationsContent(
                     isTablet = isTablet,
                     onClick = onDebridClick,
                 )
+                if (isDesktop) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = "Discord Rich Presence",
+                        description = "Show the title and episode you are watching on your Discord profile using Nuvio's app identity.",
+                        checked = discordPresenceSettings.enabled,
+                        icon = Icons.Rounded.SportsEsports,
+                        isTablet = isTablet,
+                        onCheckedChange = onDiscordPresenceEnabledChange,
+                    )
+                }
             }
         }
     }

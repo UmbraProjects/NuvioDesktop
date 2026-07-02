@@ -389,6 +389,25 @@ val windowsPlayerBridgePdb = layout.buildDirectory.file("native/windows/player_b
 val windowsPlayerBridgeObj = layout.buildDirectory.file("native/windows/player_bridge.obj")
 val windowsPlayerBridgeScript = layout.buildDirectory.file("native/windows/build-player-bridge.bat")
 val windowsPlayerRuntimeOutput = layout.buildDirectory.dir("native/windows-runtime")
+// Stub replacements for the real ggml.dll/libwhisper-1.dll: see the comment on
+// windowsUnusedLibmpvRuntimeDlls for why the real files can't be shipped. These export exactly
+// the symbols avfilter-11.dll's (never-invoked) whisper audio filter imports, as no-ops.
+val windowsGgmlStubSource = layout.projectDirectory.file("src/desktopMain/native/windows/ggml_stub.cpp")
+val windowsGgmlStubOutput = layout.buildDirectory.file("native/windows-stubs/ggml.dll")
+val windowsGgmlStubImportLib = layout.buildDirectory.file("native/windows-stubs/ggml.lib")
+val windowsGgmlStubPdb = layout.buildDirectory.file("native/windows-stubs/ggml.pdb")
+val windowsGgmlStubObj = layout.buildDirectory.file("native/windows-stubs/ggml.obj")
+val windowsGgmlStubScript = layout.buildDirectory.file("native/windows-stubs/build-ggml-stub.bat")
+val windowsWhisperStubSource = layout.projectDirectory.file("src/desktopMain/native/windows/whisper_stub.cpp")
+val windowsWhisperStubOutput = layout.buildDirectory.file("native/windows-stubs/libwhisper-1.dll")
+val windowsWhisperStubImportLib = layout.buildDirectory.file("native/windows-stubs/libwhisper-1.lib")
+val windowsWhisperStubPdb = layout.buildDirectory.file("native/windows-stubs/libwhisper-1.pdb")
+val windowsWhisperStubObj = layout.buildDirectory.file("native/windows-stubs/libwhisper-1.obj")
+val windowsWhisperStubScript = layout.buildDirectory.file("native/windows-stubs/build-whisper-stub.bat")
+val windowsStubOutputDir = layout.buildDirectory.dir("native/windows-stubs")
+if (isWindowsHost) {
+    windowsStubOutputDir.get().asFile.mkdirs()
+}
 if (isWindowsHost) {
     windowsPlayerBridgeOutput.get().asFile.parentFile.mkdirs()
 }
@@ -416,6 +435,52 @@ val windowsLibmpvRuntimeDir = providers.gradleProperty("nuvio.windows.libmpv.run
         File("C:/msys64/ucrt64/bin"),
         File("C:/msys64/mingw64/bin"),
     ).firstOrNull { it.hasWindowsLibmpvRuntime() }
+
+// SVP (anime motion interpolation) needs VapourSynth's Python scripting layer to actually run
+// svp_main.vpy, not just the vsscript.dll it dlopen()s at runtime. This is the curated,
+// empirically-verified minimal file set (traced by really importing svp_main.vpy's dependency
+// chain under a real interpreter and validating a from-scratch PYTHONHOME built from exactly
+// this list): Python's own boot/site requirements plus what the script itself imports
+// (logging, multiprocessing, math, fractions, subprocess, gc, traceback) plus the vapoursynth
+// Python binding. ~4MB, vs. ~250MB for the full stdlib. Optional: if the source tree isn't
+// found, SVP simply stays unavailable (DesktopAnimeSvp already degrades gracefully for that).
+val windowsPythonLibFiles = listOf(
+    "__future__.py", "_collections_abc.py", "_colorize.py", "_compat_pickle.py",
+    "_opcode_metadata.py", "_py_warnings.py", "_sitebuiltins.py", "_weakrefset.py", "abc.py",
+    "annotationlib.py", "ast.py", "codecs.py", "codeop.py", "collections/__init__.py",
+    "concurrent/__init__.py", "concurrent/futures/__init__.py", "concurrent/futures/_base.py",
+    "contextlib.py", "copy.py", "copyreg.py", "ctypes/__init__.py", "ctypes/_endian.py",
+    "dataclasses.py", "dis.py", "encodings/__init__.py", "encodings/_win_cp_codecs.py",
+    "encodings/aliases.py", "encodings/ascii.py", "encodings/cp1252.py", "encodings/latin_1.py",
+    "encodings/utf_8.py", "enum.py", "fractions.py", "functools.py", "genericpath.py",
+    "importlib/__init__.py", "importlib/_bootstrap.py", "importlib/_bootstrap_external.py",
+    "importlib/machinery.py", "inspect.py", "io.py", "keyword.py",
+    "lib-dynload/_ctypes.cp314-mingw_x86_64_ucrt_gnu.pyd",
+    "lib-dynload/_interpreters.cp314-mingw_x86_64_ucrt_gnu.pyd",
+    "lib-dynload/_pickle.cp314-mingw_x86_64_ucrt_gnu.pyd",
+    "lib-dynload/_socket.cp314-mingw_x86_64_ucrt_gnu.pyd",
+    "lib-dynload/_struct.cp314-mingw_x86_64_ucrt_gnu.pyd",
+    "lib-dynload/math.cp314-mingw_x86_64_ucrt_gnu.pyd",
+    "lib-dynload/zlib.cp314-mingw_x86_64_ucrt_gnu.pyd",
+    "linecache.py", "locale.py", "logging/__init__.py", "multiprocessing/__init__.py",
+    "multiprocessing/context.py", "multiprocessing/process.py", "multiprocessing/reduction.py",
+    "ntpath.py", "numbers.py", "opcode.py", "operator.py", "os.py", "pickle.py",
+    "re/__init__.py", "re/_casefix.py", "re/_compiler.py", "re/_constants.py", "re/_parser.py",
+    "reprlib.py", "signal.py", "site-packages/vapoursynth.cp314-mingw_x86_64_ucrt_gnu.pyd",
+    "site.py", "socket.py", "stat.py", "string/__init__.py", "struct.py", "subprocess.py",
+    "sysconfig/__init__.py", "textwrap.py", "threading.py", "token.py", "tokenize.py",
+    "traceback.py", "types.py", "typing.py", "warnings.py", "weakref.py", "zipimport.py",
+)
+val windowsPythonLibSourceDir = providers.gradleProperty("nuvio.windows.python.libDir").orNull
+    ?.takeIf { it.isNotBlank() }
+    ?.let(::File)
+    ?: listOf(
+        File("C:/Program Files (x86)/Nuvio/app/native/pylib/lib/python3.14"),
+        File("C:/Program Files/Nuvio/app/native/pylib/lib/python3.14"),
+        File("C:/msys64/ucrt64/lib/python3.14"),
+        File("C:/msys64/mingw64/lib/python3.14"),
+    ).firstOrNull { it.isDirectory && it.resolve("os.py").exists() }
+val windowsPythonLibOutput = layout.buildDirectory.dir("native/windows-pylib")
 val windowsVsWhere = File("C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe")
 val windowsVcvarsRelativePath = when (windowsPlayerBridgeArch) {
     "x86" -> "VC\\Auxiliary\\Build\\vcvars32.bat"
@@ -536,9 +601,115 @@ val buildWindowsPlayerBridge = tasks.register<Exec>("buildWindowsPlayerBridge") 
     commandLine(windowsPlayerBridgeCommand)
 }
 
+// Compiles a minimal stand-alone stub DLL (no WebView2/Java includes or extra link libs needed —
+// see ggml_stub.cpp/whisper_stub.cpp) using the same MSVC-via-vcvars discovery as
+// windowsPlayerBridgeCommand above.
+fun windowsStubDllCommand(scriptFile: File, sourceFile: File, outputFile: File, importLibFile: File, pdbFile: File, objFile: File): List<String> {
+    val compileCommand = listOf(
+        "cl",
+        "/nologo",
+        "/EHsc",
+        "/std:c++17",
+        "/LD",
+        "/DUNICODE",
+        "/D_UNICODE",
+        "/DNOMINMAX",
+        "/DWIN32_LEAN_AND_MEAN",
+        "/permissive-",
+        cmdQuote(sourceFile.absolutePath),
+        "/Fo${cmdQuote(objFile.absolutePath)}",
+        "/Fd${cmdQuote(pdbFile.absolutePath)}",
+        "/Fe${cmdQuote(outputFile.absolutePath)}",
+        "/link",
+        "/NOLOGO",
+        "/INCREMENTAL:NO",
+        "/IMPLIB:${cmdQuote(importLibFile.absolutePath)}",
+    ).joinToString(" ")
+    val powershellCompileCommand = compileCommand.replace("\"", "__DQ__")
+    val powershellCommand = """
+        ${'$'}ErrorActionPreference = 'Stop'
+        ${'$'}dq = [char]34
+        ${'$'}vcvars = ${psSingleQuote(windowsVcvarsPath.orEmpty())}
+        if ([string]::IsNullOrWhiteSpace(${'$'}vcvars)) {
+          ${'$'}vswhere = ${psSingleQuote(windowsVsWhere.absolutePath)}
+          if (Test-Path -LiteralPath ${'$'}vswhere) {
+            ${'$'}vcvars = & ${'$'}vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find ${psSingleQuote(windowsVcvarsRelativePath)} | Select-Object -First 1
+          }
+        }
+        if ([string]::IsNullOrWhiteSpace(${'$'}vcvars) -or -not (Test-Path -LiteralPath ${'$'}vcvars)) {
+          Write-Error 'Visual Studio C++ toolchain was not found. Install MSVC or pass -Pnuvio.windows.vcvars.path=C:\path\to\vcvars64.bat.'
+          exit 1
+        }
+        ${'$'}vcvars = ([string]${'$'}vcvars).Trim()
+        ${'$'}bat = ${psSingleQuote(scriptFile.absolutePath)}
+        ${'$'}compile = ${psSingleQuote(powershellCompileCommand)}.Replace('__DQ__', ${'$'}dq)
+        ${'$'}lines = @(
+          '@echo off',
+          ('set {0}VCVARS={1}{0}' -f ${'$'}dq, ${'$'}vcvars),
+          ('call {0}%VCVARS%{0} >nul' -f ${'$'}dq),
+          'if errorlevel 1 exit /b %errorlevel%',
+          ${'$'}compile,
+          'exit /b %ERRORLEVEL%'
+        )
+        Set-Content -LiteralPath ${'$'}bat -Value ${'$'}lines -Encoding ASCII
+        & cmd.exe /d /c ${'$'}bat
+        ${'$'}code = ${'$'}LASTEXITCODE
+        if (${'$'}code -ne 0) { exit ${'$'}code }
+    """.trimIndent()
+    return listOf(
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        powershellCommand,
+    )
+}
+
+val buildWindowsGgmlStub = tasks.register<Exec>("buildWindowsGgmlStub") {
+    notCompatibleWithConfigurationCache("Builds a host-local stub replacement for the broken ggml.dll.")
+    enabled = isWindowsHost
+    inputs.file(windowsGgmlStubSource)
+    outputs.file(windowsGgmlStubOutput)
+    outputs.file(windowsGgmlStubImportLib)
+    outputs.file(windowsGgmlStubPdb)
+    doFirst { windowsGgmlStubOutput.get().asFile.parentFile.mkdirs() }
+    commandLine(
+        windowsStubDllCommand(
+            windowsGgmlStubScript.get().asFile,
+            windowsGgmlStubSource.asFile,
+            windowsGgmlStubOutput.get().asFile,
+            windowsGgmlStubImportLib.get().asFile,
+            windowsGgmlStubPdb.get().asFile,
+            windowsGgmlStubObj.get().asFile,
+        ),
+    )
+}
+
+val buildWindowsWhisperStub = tasks.register<Exec>("buildWindowsWhisperStub") {
+    notCompatibleWithConfigurationCache("Builds a host-local stub replacement for the broken libwhisper-1.dll.")
+    enabled = isWindowsHost
+    inputs.file(windowsWhisperStubSource)
+    outputs.file(windowsWhisperStubOutput)
+    outputs.file(windowsWhisperStubImportLib)
+    outputs.file(windowsWhisperStubPdb)
+    doFirst { windowsWhisperStubOutput.get().asFile.parentFile.mkdirs() }
+    commandLine(
+        windowsStubDllCommand(
+            windowsWhisperStubScript.get().asFile,
+            windowsWhisperStubSource.asFile,
+            windowsWhisperStubOutput.get().asFile,
+            windowsWhisperStubImportLib.get().asFile,
+            windowsWhisperStubPdb.get().asFile,
+            windowsWhisperStubObj.get().asFile,
+        ),
+    )
+}
+
 val prepareWindowsPlayerRuntime = tasks.register<Sync>("prepareWindowsPlayerRuntime") {
     notCompatibleWithConfigurationCache("Validates and bundles host-local Windows native player runtime DLLs.")
     enabled = isWindowsHost
+    dependsOn(buildWindowsGgmlStub, buildWindowsWhisperStub)
     into(windowsPlayerRuntimeOutput)
     doFirst {
         if (missingWindowsPlayerRuntimeInputs.isNotEmpty()) {
@@ -556,8 +727,103 @@ val prepareWindowsPlayerRuntime = tasks.register<Sync>("prepareWindowsPlayerRunt
     if (windowsLibmpvRuntimeDir?.exists() == true) {
         from(windowsLibmpvRuntimeDir) {
             include("*.dll")
+            exclude(windowsUnusedLibmpvRuntimeDlls)
         }
     }
+    // Overlay the stub ggml.dll/libwhisper-1.dll compiled above, replacing the real (broken)
+    // copies excluded from windowsLibmpvRuntimeDir below.
+    from(windowsStubOutputDir) {
+        include("*.dll")
+    }
+}
+
+// windowsLibmpvRuntimeDir is a raw MSYS2 mingw64/ucrt64 bin/ folder shared with every other
+// package installed there, so `include("*.dll")` above grabs everything in it — not just what
+// mpv/ffmpeg/vapoursynth/SVP actually use. This list was derived by tracing the real PE import
+// table closure from player_bridge.dll/libmpv-2.dll/libvapoursynth*.dll/svpflow*_vs.dll outward
+// (not guesswork): these DLLs are unreachable from that closure and belong to unrelated MSYS2
+// packages that happen to share the bin/ folder — an unused ffmpeg whisper.cpp transcription
+// engine and its ggml CPU/GPU backends, GTK/GNOME peripherals, Tcl/Tk, ncurses, libcaca (ASCII
+// art video output), OpenAL, an OpenEXR/Imath/PyImath image chain, and standalone glslang/
+// SPIRV-Tools copies. ~140MB removed from the shipped app.
+//
+// NOT excluded (reverted after real-world failures):
+// - glslang.dll, SPIRV.dll, libSPIRV-Tools*.dll, libglslang-default-resource-limits.dll: static
+//   PE-import analysis showed libshaderc_shared.dll only imports Windows CRT DLLs, which read as
+//   "these are unused" — but that only rules out *static* linking, not a dynamically loaded
+//   optional backend at first-use.
+// - SDL2.dll, libcaca-0.dll/libcaca++-0.dll, libopenal-1.dll: ffmpeg's avdevice module probes
+//   and registers every compiled-in output device (SDL, caca/ASCII-art, OpenAL, etc.) at startup
+//   regardless of whether it's ever used — these looked like dead weight by static analysis for
+//   the same reason as above. Removing libcaca-0.dll specifically was caught live in a WinDbg
+//   session: the failed lookup fell through to loading a second, complete copy of the whole
+//   mpv/ffmpeg dependency chain from an unrelated system directory (two conflicting copies of
+//   avutil/avcodec/etc. sharing one process), which corrupted enough state to crash Python's
+//   own `encodings` import moments later — a real, evidenced crash cause, not a guess. Keep this
+//   whole device-driver-shaped group bundled unless proven individually safe some other way.
+// - ggml*.dll / libwhisper-1.dll: avfilter-11.dll (ffmpeg's compiled-in whisper audio filter)
+//   hard-imports ggml_backend_load_all from ggml.dll and 19 whisper_*/whisper_vad_* symbols from
+//   libwhisper-1.dll, so they're genuinely reachable and can't just be omitted — omitting them
+//   makes LoadLibraryExW on libmpv-2.dll fail outright with ERROR_MOD_NOT_FOUND (126), breaking
+//   ALL playback. But the REAL files are excluded here anyway, because loading them as part of
+//   libmpv's full dependency chain crashes with "GGML_ASSERT(prev != ggml_uncaught_exception)
+//   failed" inside ggml's own backend auto-discovery code — reproduced via a standalone
+//   LoadLibraryExW probe outside Nuvio's own process entirely, i.e. a bug in that MSYS2 build, not
+//   in anything Nuvio owns. Nuvio never builds an "-af whisper=..." filter string, so
+//   buildWindowsGgmlStub/buildWindowsWhisperStub compile minimal stand-ins (see
+//   ggml_stub.cpp/whisper_stub.cpp) that export exactly those symbol names as no-ops, satisfying
+//   avfilter-11.dll's import table without ever running the real (crashing) code. Those stubs are
+//   layered on top of this Sync in prepareWindowsPlayerRuntime, below.
+val windowsUnusedLibmpvRuntimeDlls = listOf(
+    "OpenCL.dll", "edit.dll",
+    "ggml.dll", "ggml-base.dll", "ggml-blas.dll", "ggml-opencl.dll", "ggml-rpc.dll",
+    "ggml-vulkan.dll", "libwhisper-1.dll",
+    "ggml-cpu-alderlake.dll", "ggml-cpu-cannonlake.dll", "ggml-cpu-cascadelake.dll",
+    "ggml-cpu-cooperlake.dll", "ggml-cpu-haswell.dll", "ggml-cpu-icelake.dll",
+    "ggml-cpu-ivybridge.dll", "ggml-cpu-piledriver.dll", "ggml-cpu-sandybridge.dll",
+    "ggml-cpu-sapphirerapids.dll", "ggml-cpu-skylakex.dll", "ggml-cpu-sse42.dll",
+    "ggml-cpu-x64.dll", "ggml-cpu-zen4.dll",
+    "libFLAC++.dll", "libFLAC.dll", "libIex-3_4.dll", "libIlmThread-3_4.dll",
+    "libImath-3_2.dll", "libOpenEXR-3_4.dll", "libOpenEXRCore-3_4.dll", "libOpenEXRUtil-3_4.dll",
+    "libPyImath_Python3_14-3_2.dll", "libasprintf-0.dll", "libatomic-1.dll",
+    "libcairo-script-interpreter-2.dll", "libcddb-2.dll",
+    "libcdio++-1.dll", "libcharset-1.dll", "libexif-12.dll", "libfftw3_omp-3.dll",
+    "libfftw3_threads-3.dll", "libfftw3f-3.dll", "libfftw3f_omp-3.dll", "libfftw3f_threads-3.dll",
+    "libfftw3l-3.dll", "libfftw3l_omp-3.dll", "libfftw3l_threads-3.dll", "libformw6.dll",
+    "libgfortran-5.dll", "libgif-7.dll", "libgirepository-2.0-0.dll",
+    "libgmpxx-4.dll", "libgnutls-openssl-27.dll",
+    "libgnutlsxx-30.dll", "libgthread-2.0-0.dll", "libharfbuzz-gobject-0.dll",
+    "libharfbuzz-raster-0.dll", "libharfbuzz-subset-0.dll", "libharfbuzz-vector-0.dll",
+    "libhwy_contrib.dll", "libhwy_test.dll", "libisl-23.dll", "libiso9660++-1.dll",
+    "libiso9660-12.dll", "liblcms2_fast_float-2.dll", "liblzo2-2.dll", "libmenuw6.dll",
+    "libmpc-3.dll", "libmpdec++-4.dll", "libmpdec-4.dll", "libmpfr-6.dll", "libmpg123-0.dll",
+    "libmysofa.dll", "libncurses++w6.dll", "libncursesw6.dll",
+    "libopenblas.dll", "libopenjph-0.27.dll", "libopenjpip-7.dll", "libout123-0.dll",
+    "libpanelw6.dll", "libpcre2-16-0.dll", "libpcre2-32-0.dll", "libpcre2-posix-3.dll",
+    "libpkgconf-7.dll", "libpython3.dll", "libquadmath-0.dll", "libsndfile-1.dll",
+    "libsoxr-lsr.dll", "libspeexdsp-1.dll", "libsqlite3-0.dll", "libssl-3-x64.dll",
+    "libsyn123-0.dll", "libsystre-0.dll", "libtheora-1.dll", "libtiffxx-6.dll", "libtre-5.dll",
+    "libturbojpeg.dll", "libudf-0.dll", "libvamp-hostsdk.dll", "libvamp-sdk.dll",
+    "libvorbisfile-3.dll", "libwebpdecoder-3.dll", "libwebpdemux-2.dll", "tcl86.dll", "tk86.dll",
+)
+
+val prepareWindowsPythonLib = tasks.register<Sync>("prepareWindowsPythonLib") {
+    notCompatibleWithConfigurationCache("Bundles a curated minimal Python stdlib subset for VapourSynth/SVP scripting.")
+    enabled = isWindowsHost
+    into(windowsPythonLibOutput)
+    if (windowsPythonLibSourceDir?.isDirectory == true) {
+        from(windowsPythonLibSourceDir) {
+            windowsPythonLibFiles.forEach { include(it) }
+        }
+    }
+}
+
+val generateWindowsPythonLibIndex = tasks.register<GenerateNativeRuntimeIndexTask>("generateWindowsPythonLibIndex") {
+    enabled = isWindowsHost
+    dependsOn(prepareWindowsPythonLib)
+    recursive.set(true)
+    runtimeDir.set(windowsPythonLibOutput)
+    indexFile.set(windowsPythonLibOutput.map { it.file("python-lib-files.txt") })
 }
 
 val generateWindowsPlayerRuntimeIndex = tasks.register<GenerateNativeRuntimeIndexTask>("generateWindowsPlayerRuntimeIndex") {
@@ -574,14 +840,26 @@ abstract class GenerateNativeRuntimeIndexTask : DefaultTask() {
     @get:OutputFile
     abstract val indexFile: RegularFileProperty
 
+    @get:Input
+    @get:Optional
+    abstract val recursive: Property<Boolean>
+
     @TaskAction
     fun generate() {
         val dir = runtimeDir.get().asFile
-        val files = dir
-            .listFiles { file -> file.isFile && file.name != indexFile.get().asFile.name }
-            .orEmpty()
-            .map { it.name }
-            .sorted()
+        val indexName = indexFile.get().asFile.name
+        val files = if (recursive.getOrElse(false)) {
+            dir.walkTopDown()
+                .filter { it.isFile && it.name != indexName }
+                .map { it.relativeTo(dir).invariantSeparatorsPath }
+                .sorted()
+                .toList()
+        } else {
+            dir.listFiles { file -> file.isFile && file.name != indexName }
+                .orEmpty()
+                .map { it.name }
+                .sorted()
+        }
         indexFile.get().asFile.writeText(files.joinToString(separator = "\n", postfix = "\n"))
     }
 }
@@ -594,12 +872,21 @@ tasks.withType<Jar>().configureEach {
         }
     }
     if (isWindowsHost && name == "desktopJar") {
-        dependsOn(buildWindowsPlayerBridge, prepareWindowsPlayerRuntime, generateWindowsPlayerRuntimeIndex)
+        dependsOn(
+            buildWindowsPlayerBridge,
+            prepareWindowsPlayerRuntime,
+            generateWindowsPlayerRuntimeIndex,
+            prepareWindowsPythonLib,
+            generateWindowsPythonLibIndex,
+        )
         from(windowsPlayerBridgeOutput) {
             into("native/windows")
         }
         from(windowsPlayerRuntimeOutput) {
             into("native/windows")
+        }
+        from(windowsPythonLibOutput) {
+            into("native/windows/pylib")
         }
     }
 }
@@ -628,7 +915,13 @@ if (isWindowsHost) {
         "packageReleaseUberJarForCurrentOS",
     )
     tasks.matching { it.name in desktopNativePlayerTasks }.configureEach {
-        dependsOn(buildWindowsPlayerBridge, prepareWindowsPlayerRuntime, generateWindowsPlayerRuntimeIndex)
+        dependsOn(
+            buildWindowsPlayerBridge,
+            prepareWindowsPlayerRuntime,
+            generateWindowsPlayerRuntimeIndex,
+            prepareWindowsPythonLib,
+            generateWindowsPythonLibIndex,
+        )
     }
     // Windows doesn't search a loaded DLL's own directory for its dependencies; the DLL
     // directory must be on PATH so player_bridge.dll can find libmpv-2.dll and friends.
@@ -704,9 +997,15 @@ compose.desktop {
         mainClass = "com.nuvio.app.MainKt"
         val smokePlayerUrl = providers.gradleProperty("nuvio.desktop.smokePlayerUrl").orNull
             ?: System.getenv("NUVIO_DESKTOP_SMOKE_PLAYER_URL")
+        // Windows-only experiment: run Compose's own Skia rendering on Direct3D instead of
+        // OpenGL so it shares one graphics API with mpv's D3D11 video surface (currently the
+        // app mixes OpenGL-rendered UI with a D3D11 embedded video child window in the same
+        // top-level window — testing whether that mismatch is what's causing poor DWM/driver
+        // composition behavior on certain GPUs in borderless fullscreen).
+        val skikoRenderApi = if (isWindowsHost) "DIRECT3D" else "OPENGL"
         jvmArgs += listOfNotNull(
             "-Dapple.awt.application.appearance=NSAppearanceNameDarkAqua",
-            "-Dskiko.renderApi=OPENGL",
+            "-Dskiko.renderApi=$skikoRenderApi",
             "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",

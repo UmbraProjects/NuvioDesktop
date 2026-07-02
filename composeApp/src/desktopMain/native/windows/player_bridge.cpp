@@ -337,6 +337,36 @@ std::wstring moduleDirectory() {
     return path.substr(0, separator);
 }
 
+// mpv's vf_vapoursynth filter loads Python (via vsscript.dll) lazily, only when a file with
+// that filter actually opens - so this just needs to land before the first such attempt, not
+// before mpv_create() specifically. Setting PYTHONHOME here (once per mpv instance, cheap,
+// idempotent) points Python at the curated stdlib subset NativePlayerBridge.kt extracts to
+// <installDir>/lib/python3.14 - kept as a harmless fallback for any code path that does honor
+// PYTHONHOME, but a WinDbg trace confirmed the real crash path (mpv -> vsscript_init ->
+// Py_InitializeEx) does NOT consult PYTHONHOME at all: it walks upward from Nuvio.exe's own
+// directory looking for a bare lib/pythonX.Y/os.py, so <installDir>/lib is also where
+// NativePlayerBridge.kt now actually extracts the stdlib to (see extractPythonLibIfNeeded).
+void setPythonHomeEnvironmentVariable() {
+    std::wstring dir = moduleDirectory();
+    if (dir.empty()) {
+        nuvioMpvLogAppend("[nuvio] setPythonHomeEnvironmentVariable: moduleDirectory() empty, skipping\n");
+        return;
+    }
+    std::wstring pythonHome = dir;
+    std::wstring pythonLibLandmark = dir + L"\\lib\\python3.14\\os.py";
+    if (GetFileAttributesW(pythonLibLandmark.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        nuvioMpvLogAppend("[nuvio] setPythonHomeEnvironmentVariable: " + toUtf8(pythonLibLandmark) +
+            " does not exist (GetLastError=" + std::to_string(GetLastError()) + "), skipping\n");
+        return;
+    }
+    BOOL setOk = SetEnvironmentVariableW(L"PYTHONHOME", pythonHome.c_str());
+    wchar_t readback[4096] = {};
+    DWORD readbackLen = GetEnvironmentVariableW(L"PYTHONHOME", readback, 4096);
+    nuvioMpvLogAppend("[nuvio] setPythonHomeEnvironmentVariable: set=" + std::to_string((int)setOk) +
+        " target=" + toUtf8(pythonHome) +
+        " readback=" + (readbackLen > 0 ? toUtf8(std::wstring(readback, readback + readbackLen)) : std::string("(empty)")) + "\n");
+}
+
 std::wstring tempUserDataDirectory() {
     wchar_t tempPath[MAX_PATH] = {};
     DWORD length = GetTempPathW(MAX_PATH, tempPath);
@@ -421,13 +451,32 @@ struct MpvApi {
         }
         candidates.push_back(L"libmpv-2.dll");
         candidates.push_back(L"C:\\Program Files (x86)\\Nuvio\\app\\native\\libmpv-2.dll");
-        candidates.push_back(L"C:\\msys64\\ucrt64\\bin\\libmpv-2.dll");
+        // Deliberately no raw MSYS2 (C:\msys64\...) fallback here: a symbol-resolution mismatch
+        // on the first successful candidate makes loadSymbol() FreeLibrary+throw, and because
+        // that throw escapes the std::call_once callable, the *next* call to mpvApi() retries
+        // this whole candidate list from scratch. On a dev machine with MSYS2 installed, that
+        // retry used to reach a hardcoded C:\msys64\ucrt64\bin\libmpv-2.dll candidate and load a
+        // second, conflicting copy of the entire mpv/ffmpeg dependency chain into the same
+        // process (confirmed live in WinDbg) — corrupting shared global state badly enough to
+        // crash Python's own `encodings` import moments later. Never reachable/correct for an
+        // end-user install regardless of the underlying mechanism, so just don't offer it.
 
+        // LoadLibraryExW on this ~130-DLL chain has been observed to fail transiently (confirmed
+        // via nuvio-mpv.log: "Unable to load libmpv-2.dll" even for the one candidate — the app's
+        // own bundled copy — that has loaded successfully dozens of times before and after). A
+        // few quick retries absorb a brief disk/AV-scan lock without needing a fallback path to
+        // somewhere else on the system (the previous MSYS2 fallback caused a worse failure mode
+        // than just retrying does).
+        constexpr int maxAttemptsPerCandidate = 3;
+        constexpr auto retryDelay = std::chrono::milliseconds(250);
         for (const std::wstring &candidate : candidates) {
-            if (candidate.find(L'\\') != std::wstring::npos || candidate.find(L'/') != std::wstring::npos) {
-                library = LoadLibraryExW(candidate.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-            } else {
-                library = LoadLibraryW(candidate.c_str());
+            for (int attempt = 0; attempt < maxAttemptsPerCandidate && !library; attempt++) {
+                if (attempt > 0) std::this_thread::sleep_for(retryDelay);
+                if (candidate.find(L'\\') != std::wstring::npos || candidate.find(L'/') != std::wstring::npos) {
+                    library = LoadLibraryExW(candidate.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+                } else {
+                    library = LoadLibraryW(candidate.c_str());
+                }
             }
             if (library) break;
         }
@@ -907,6 +956,8 @@ public:
     // the app reads as "ended" — so a scrub/seek that resolves near the end
     // would otherwise cut straight to the end of the file.
     static constexpr double seekEndGuardSeconds = 1.0;
+    static constexpr double svpSpeedBypassThreshold = 1.50;
+    static constexpr double svpSpeedRestoreThreshold = 1.25;
 
     // Baseline streaming buffer (content-seconds) at 1x playback. The demuxer cache is
     // measured in content time, so at >1x it drains faster in wall-clock terms; setSpeed
@@ -914,6 +965,72 @@ public:
     // and avoid rebuffering at higher default speeds.
     static constexpr double baseReadaheadSecs = 180.0;
     static constexpr double baseCacheSecs = 600.0;
+
+    static bool containsVapourSynthFilter(const std::string &filters) {
+        return filters.find("vapoursynth") != std::string::npos;
+    }
+
+    static std::vector<std::string> splitVideoFilters(const std::string &filters) {
+        std::vector<std::string> parts;
+        std::string current;
+        int bracketDepth = 0;
+        for (char ch : filters) {
+            if (ch == '[') {
+                ++bracketDepth;
+            } else if (ch == ']' && bracketDepth > 0) {
+                --bracketDepth;
+            }
+
+            if (ch == ',' && bracketDepth == 0) {
+                if (!current.empty()) parts.push_back(current);
+                current.clear();
+            } else {
+                current.push_back(ch);
+            }
+        }
+        if (!current.empty()) parts.push_back(current);
+        return parts;
+    }
+
+    static std::string joinVideoFilters(const std::vector<std::string> &parts) {
+        std::string out;
+        for (const auto &part : parts) {
+            if (part.empty()) continue;
+            if (!out.empty()) out.push_back(',');
+            out += part;
+        }
+        return out;
+    }
+
+    static std::string removeVapourSynthFilters(const std::string &filters) {
+        std::vector<std::string> kept;
+        for (const auto &part : splitVideoFilters(filters)) {
+            if (!containsVapourSynthFilter(part)) kept.push_back(part);
+        }
+        return joinVideoFilters(kept);
+    }
+
+    void applySpeedSensitiveVideoFiltersLocked(double speed) {
+        if (requestedVideoFilters.empty() || !containsVapourSynthFilter(requestedVideoFilters)) {
+            svpBypassedForSpeed = false;
+            return;
+        }
+
+        bool shouldBypass = speed >= svpSpeedBypassThreshold ||
+            (svpBypassedForSpeed && speed > svpSpeedRestoreThreshold);
+        std::string nextFilters = shouldBypass
+            ? removeVapourSynthFilters(requestedVideoFilters)
+            : requestedVideoFilters;
+
+        mpvApi().setPropertyString(mpv, "vf", nextFilters.c_str());
+        if (shouldBypass != svpBypassedForSpeed) {
+            svpBypassedForSpeed = shouldBypass;
+            nuvioMpvLogAppend(std::string("[nuvio] anime SVP ") +
+                (shouldBypass ? "bypassed" : "restored") +
+                " for playback speed=" + std::to_string(speed) +
+                " vf=" + nextFilters + "\n");
+        }
+    }
 
     double durationSecondsLocked() {
         double value = 0.0;
@@ -1000,6 +1117,7 @@ public:
         mpvApi().setPropertyString(mpv, "demuxer-readahead-secs", readahead.c_str());
         mpvApi().setPropertyString(mpv, "cache-secs", cacheSecs.c_str());
         mpvApi().setPropertyString(mpv, "cache-pause-wait", pauseWait.c_str());
+        applySpeedSensitiveVideoFiltersLocked(clamped);
     }
 
     double speed() {
@@ -1074,6 +1192,13 @@ public:
     }
 
     bool isEnded() {
+        // Right after a file loads, mpv can pass through a transient eof-reached=true while it
+        // settles the initial resume seek and any track-switch "refresh seek" (both routinely
+        // observed in nuvio-mpv.log as "video=eof (paused)" moments after "playback restart
+        // complete"), before real playback has actually begun. Reading eof-reached as genuine
+        // "ended" during that window incorrectly marks a title fully watched (and drops it out
+        // of Continue Watching) if the user backs out within the first couple of seconds.
+        if (std::chrono::steady_clock::now() < eofSuppressedUntil.load()) return false;
         return flagProperty("eof-reached", false);
     }
 
@@ -1175,8 +1300,36 @@ public:
     }
 
     void setMpvPropertyString(const std::string &key, const std::string &value) {
+        if (key == "vf" && value.find("vapoursynth") != std::string::npos) {
+            wchar_t readback[4096] = {};
+            DWORD readbackLen = GetEnvironmentVariableW(L"PYTHONHOME", readback, 4096);
+            nuvioMpvLogAppend("[nuvio] about to set vf=vapoursynth; PYTHONHOME readback=" +
+                (readbackLen > 0 ? toUtf8(std::wstring(readback, readback + readbackLen)) : std::string("(unset)")) + "\n");
+        }
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
+        if (key == "vf") {
+            requestedVideoFilters = value;
+            if (!containsVapourSynthFilter(value)) {
+                svpBypassedForSpeed = false;
+                mpvApi().setPropertyString(mpv, key.c_str(), value.c_str());
+                return;
+            }
+            double currentSpeed = 1.0;
+            tryGetDoubleLocked("speed", currentSpeed);
+            bool shouldBypass = currentSpeed >= svpSpeedBypassThreshold ||
+                (svpBypassedForSpeed && currentSpeed > svpSpeedRestoreThreshold);
+            std::string effectiveValue = shouldBypass ? removeVapourSynthFilters(value) : value;
+            mpvApi().setPropertyString(mpv, key.c_str(), effectiveValue.c_str());
+            if (shouldBypass != svpBypassedForSpeed) {
+                svpBypassedForSpeed = shouldBypass;
+                nuvioMpvLogAppend(std::string("[nuvio] anime SVP ") +
+                    (shouldBypass ? "bypassed" : "restored") +
+                    " for playback speed=" + std::to_string(currentSpeed) +
+                    " vf=" + effectiveValue + "\n");
+            }
+            return;
+        }
         mpvApi().setPropertyString(mpv, key.c_str(), value.c_str());
     }
 
@@ -1287,6 +1440,8 @@ private:
     std::string videoParamsGamma;
     bool videoParamsPrimariesReceived = false;
     bool videoParamsGammaReceived = false;
+    std::string requestedVideoFilters;
+    bool svpBypassedForSpeed = false;
 
     // Empty until the first refresh actually applies a mode, so it never matches and the
     // first call always sets sub-ass-override explicitly rather than assuming mpv's default.
@@ -1299,6 +1454,7 @@ private:
     // makes it visible by the time the reader observes the flag as true.
     std::atomic_bool subtitleAssOverrideInitialCheckPending = false;
     std::chrono::steady_clock::time_point subtitleAssOverrideCheckDeadline;
+    std::atomic<std::chrono::steady_clock::time_point> eofSuppressedUntil{std::chrono::steady_clock::time_point{}};
 
     std::string externalAudioUrl;
     bool vsrLogActive = false;
@@ -1604,6 +1760,7 @@ private:
         const std::string &animeSvpFilter
     ) {
         nuvioBridgeLog("mpv create");
+        setPythonHomeEnvironmentVariable();
         MpvApi &api = mpvApi();
         {
             std::lock_guard<std::mutex> lock(mpvMutex);
@@ -1713,6 +1870,7 @@ private:
             setMpvOptionStringLocked("deband-grain", "0");
 
             if (!animeSvpFilter.empty()) {
+                requestedVideoFilters = animeSvpFilter;
                 setMpvOptionStringLocked("vf", animeSvpFilter.c_str());
             }
 
@@ -2016,6 +2174,7 @@ private:
                 sendPlayerEvent("fileLoaded", 1.0);
                 subtitleAssOverrideCheckDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
                 subtitleAssOverrideInitialCheckPending = true;
+                eofSuppressedUntil.store(std::chrono::steady_clock::now() + std::chrono::seconds(3));
                 // Ask VPP to scale directly to the embedded surface instead of always using 2x.
                 // This lets 720p reach 4K in one NVIDIA VSR pass while avoiding needless work
                 // when the source already matches or exceeds the surface dimensions.
@@ -2452,6 +2611,14 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         gModule = module;
         DisableThreadLibraryCalls(module);
+        // NOT calling SetDefaultDllDirectories here: it's incompatible with
+        // MpvApi::load()'s LoadLibraryExW(..., LOAD_WITH_ALTERED_SEARCH_PATH) call — Windows
+        // documents (and this was confirmed the hard way) that once SetDefaultDllDirectories
+        // has been called in a process, any subsequent LOAD_WITH_ALTERED_SEARCH_PATH load fails
+        // outright with ERROR_INVALID_PARAMETER. That combination previously broke libmpv-2.dll
+        // loading entirely (both anime and plain live-action playback). It was added to stop a
+        // stray fallback to an unrelated MSYS2 install, which is now handled by simply not
+        // offering that fallback path in MpvApi::load()'s own candidate list instead.
     }
     return TRUE;
 }

@@ -312,6 +312,7 @@ internal fun SettingsSwitchRow(
     title: String,
     description: String? = null,
     checked: Boolean,
+    icon: ImageVector? = null,
     enabled: Boolean = true,
     isTablet: Boolean,
     modifier: Modifier = Modifier,
@@ -329,6 +330,26 @@ internal fun SettingsSwitchRow(
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (icon != null) {
+            Surface(
+                modifier = Modifier.size(if (isTablet) 42.dp else 36.dp),
+                color = tokens.colors.accent.copy(alpha = tokens.opacity.pressed),
+                shape = tokens.shapes.compactCard,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = tokens.colors.accent,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(if (isTablet) 16.dp else 14.dp))
+        }
         Column(
             modifier = Modifier
                 .weight(1f)

@@ -1,8 +1,11 @@
 package com.nuvio.app.features.player.desktop
 
+import co.touchlab.kermit.Logger
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
+
+private val log = Logger.withTag("NativePlayerBridge")
 
 internal fun interface NativePlayerEventSink {
     fun onPlayerEvent(type: String, value: Double)
@@ -133,6 +136,7 @@ internal object NativePlayerBridge {
         // resolution works without any PATH setup.
         appInstallDir(platform)?.let { installDir ->
             if (extractBundledNativeLibraryIfNeeded(platformDir, libraryName, installDir)) {
+                extractPythonLibIfNeeded(platformDir, installDir)
                 System.load(installDir.resolve(libraryName).absolutePath)
                 return
             }
@@ -152,7 +156,7 @@ internal object NativePlayerBridge {
         System.load(file.absolutePath)
     }
 
-    private fun appInstallDir(platform: DesktopHostOs): File? {
+    internal fun appInstallDir(platform: DesktopHostOs): File? {
         if (platform != DesktopHostOs.WINDOWS) return null
         val javaHome = System.getProperty("java.home")?.takeIf { it.isNotBlank() }?.let(::File) ?: return null
         val installDir = javaHome.parentFile ?: return null
@@ -163,6 +167,7 @@ internal object NativePlayerBridge {
         val mainFile = dir.resolve(libraryName)
         val runtimeNames = bundledRuntimeResourceNames(platformDir)
         if (mainFile.exists() && runtimeNames.all { dir.resolve(it).exists() }) {
+            aliasVapourSynthScriptLibrary(dir)
             return true
         }
         return runCatching {
@@ -170,8 +175,57 @@ internal object NativePlayerBridge {
             runtimeNames.forEach { name ->
                 copyResourceTo("/native/$platformDir/$name", dir.resolve(name))
             }
+            aliasVapourSynthScriptLibrary(dir)
             true
+        }.onFailure { error ->
+            log.e(error) { "Failed to extract bundled native runtime into $dir" }
         }.getOrElse { false }
+    }
+
+    // Bundles a curated, minimal Python stdlib subset (see windowsPythonLibFiles in
+    // build.gradle.kts) so VapourSynth's vsscript can actually execute svp_main.vpy — vsscript.dll
+    // loading (aliased above) only gets Python's *interpreter* working; without its own stdlib,
+    // Py_Initialize()/`import os` etc. inside the script would still fail. Extracted to
+    // <installDir>/lib/python3.14/... — NOT <installDir>/pylib/lib/python3.14 (an earlier,
+    // incorrect layout). Confirmed via a WinDbg trace of libpython3.14's actual landmark search
+    // (breakpoints on CreateFileW/GetFileAttributesW during a real vsscript_init() call) that this
+    // build's getpath algorithm does not consult PYTHONHOME at all when invoked through
+    // vsscript_init — it walks upward from Nuvio.exe's own directory looking for a bare
+    // lib/pythonX.Y/os.py, so the stdlib must live at <installDir>/lib/python3.14 to ever be
+    // found. Best-effort and silent on failure: SVP simply stays unavailable, exactly as when
+    // VapourSynth itself is missing.
+    private fun extractPythonLibIfNeeded(platformDir: String, installDir: File) {
+        val indexResource = "/native/$platformDir/pylib/python-lib-files.txt"
+        val relativePaths = NativePlayerBridge::class.java.getResourceAsStream(indexResource)
+            ?.bufferedReader()
+            ?.useLines { lines -> lines.map(String::trim).filter { it.isNotEmpty() }.toList() }
+            .orEmpty()
+        if (relativePaths.isEmpty()) return
+        val pythonLibDir = installDir.resolve("lib").resolve("python3.14")
+        if (relativePaths.all { pythonLibDir.resolve(it).exists() }) return
+        runCatching {
+            relativePaths.forEach { relativePath ->
+                val target = pythonLibDir.resolve(relativePath)
+                target.parentFile?.mkdirs()
+                copyResourceTo("/native/$platformDir/pylib/$relativePath", target)
+            }
+        }.onFailure { error ->
+            log.w(error) { "Failed to extract bundled Python stdlib subset into $pythonLibDir" }
+        }
+    }
+
+    // The bundled mpv build was compiled against MSYS2/mingw-w64's VapourSynth package, whose
+    // scripting library ships as libvapoursynth-script-0.dll. mpv's own vf_vapoursynth filter
+    // dlopen()s a hardcoded "vsscript.dll" on Windows regardless of how mpv itself was built
+    // (that's the literal name in mpv's upstream source for the Windows case), so without this
+    // alias the filter fails with "specified module could not be found" even though the real
+    // library is sitting right next to it under its mingw name.
+    private fun aliasVapourSynthScriptLibrary(dir: File) {
+        val source = dir.resolve("libvapoursynth-script-0.dll")
+        val alias = dir.resolve("vsscript.dll")
+        if (!source.isFile || alias.isFile) return
+        runCatching { source.copyTo(alias, overwrite = true) }
+            .onFailure { error -> log.w(error) { "Failed to alias $source as $alias" } }
     }
 
     private fun copyResourceTo(resource: String, target: File) {
@@ -193,6 +247,8 @@ internal object NativePlayerBridge {
             }
             target.deleteOnExit()
         }
+        aliasVapourSynthScriptLibrary(dir)
+        dir.resolve("vsscript.dll").deleteOnExit()
     }
 
     private fun bundledRuntimeResourceNames(platformDir: String): List<String> {
@@ -234,6 +290,7 @@ internal object NativePlayerBridge {
                     runCatching { runtimeFile.copyTo(target, overwrite = true) }
                 }
             }
+        aliasVapourSynthScriptLibrary(targetDir)
     }
 
     private fun nativeDirectoryName(platform: DesktopHostOs): String =

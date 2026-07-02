@@ -30,8 +30,10 @@ import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.DesktopPlayerLaunchShield
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
+import com.nuvio.app.features.player.desktop.desktopAppFullscreenState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import java.awt.KeyEventDispatcher
 import java.awt.KeyboardFocusManager
 import java.awt.event.KeyEvent
@@ -115,6 +117,12 @@ private fun NativePlayerSurface(
     val videoIsHdr = remember { mutableStateOf<Boolean?>(null) }
     val videoVsrScale = remember { mutableStateOf<Double?>(null) }
     val videoProfileRefreshToken = remember { mutableIntStateOf(0) }
+    // F10/F7 are documented as forcing the anime preset "regardless of detection" for this
+    // playback session — but the auto-detect gate below only ever looks at the persisted
+    // "Auto-apply to Anime" setting, so without this it silently overrides an explicit F10/F7
+    // press whenever detection says isAnimeContent=false (e.g. continue-watching, which skips
+    // the meta details screen where genre detection normally runs).
+    val animeModeSessionForced = remember { mutableStateOf(false) }
     LaunchedEffect(sourceUrl) {
         DesktopPlayerLaunchShield.showForActiveWindow()
     }
@@ -206,9 +214,11 @@ private fun NativePlayerSurface(
                     controller.cycleDesktopColorProfile()
                 }
                 KeyEvent.VK_F10 -> {
+                    animeModeSessionForced.value = true
                     controller.cycleDesktopAnimeMode()
                 }
                 KeyEvent.VK_F7 -> {
+                    animeModeSessionForced.value = true
                     controller.cycleDesktopAnimeSvpMode()
                 }
                 KeyEvent.VK_TAB -> {
@@ -298,13 +308,18 @@ private fun NativePlayerSurface(
     LaunchedEffect(sourceUrl) {
         videoIsHdr.value = null
         videoVsrScale.value = null
+        animeModeSessionForced.value = false
     }
 
-    LaunchedEffect(controller, sourceUrl) {
+    LaunchedEffect(controller, sourceUrl, isAnimeContent) {
         // Apply the saved colour/HDR presets whenever they change or the file's HDR
         // state is (re)detected. Deliberately NOT gated on HDR detection: the colour
         // profile (and F8/F9 changes) must take effect even if the video-params event
         // never arrives, otherwise nothing would visibly change.
+        // Keyed on isAnimeContent too: it starts false and can flip true a moment later once
+        // the async genre lookup for continue-watching/resume playback resolves (see
+        // PlayerScreenRuntimeUi's fallback meta fetch) — without this key the anime profile
+        // below would be stuck using whatever isAnimeContent was captured at launch.
         combine(
             snapshotFlow {
                 Triple(videoIsHdr.value, videoVsrScale.value, videoProfileRefreshToken.intValue)
@@ -327,7 +342,7 @@ private fun NativePlayerSurface(
                 applyDesktopAnimeProfile(
                     controller = controller,
                     mode = settings.desktopAnimeMode,
-                    autoEnabled = settings.desktopAnimeModeAutoEnabled,
+                    autoEnabled = settings.desktopAnimeModeAutoEnabled && !animeModeSessionForced.value,
                     animeSvpEnabled = settings.desktopAnimeSvpEnabled,
                     isAnime = isAnimeContent,
                     isHdr = isHdr == true,
@@ -335,6 +350,22 @@ private fun NativePlayerSurface(
                     nvidiaRtxSuperResolutionScale = vsrScale,
                     nvidiaRtxHdrEnabled = settings.nvidiaRtxHdrEnabled,
                 )
+            }
+    }
+
+    LaunchedEffect(controller) {
+        // The F11 borderless-fullscreen toggle restyles/resizes the top-level window via a raw
+        // native SetWindowPos, bypassing Compose's own resize path. The embedded D3D11 video
+        // surface doesn't reliably pick that up on its own — same underlying issue as the HDR/
+        // colour profile case above ("mpv won't repaint... otherwise the change only appears
+        // after a window resize") — leaving it black until something else nudges it. Force a
+        // redraw once the transition has had a moment to settle. drop(1) skips the initial
+        // emission so mounting the player doesn't force a redraw before it's ever painted.
+        snapshotFlow { desktopAppFullscreenState.value }
+            .drop(1)
+            .collect {
+                delay(150)
+                controller.forceVideoRedraw()
             }
     }
 
@@ -480,6 +511,8 @@ private fun applyDesktopAnimeProfile(
     val svpFilter = if (isEffectivelyAnime && animeSvpEnabled) {
         DesktopAnimeSvp.vapoursynthArgument()
     } else null
+    val svpActive = svpFilter != null
+    applyDesktopSvpRuntimeProfile(controller, svpActive)
 
     if (effectivePreset == null) {
         // Restore the bridge's baseline live-action rendering (see startMpv in player_bridge.cpp).
@@ -487,7 +520,7 @@ private fun applyDesktopAnimeProfile(
         
         // Restore the standard D3D11VA hardware decoder so d3d11vpp (RTX features) works.
         // However, if SVP is active, we MUST use a copy-back decoder for the CPU filter.
-        if (svpFilter != null) {
+        if (svpActive) {
             controller.setMpvProperty("hwdec", "d3d11va-copy")
         } else {
             controller.setMpvProperty("hwdec", "d3d11va")
@@ -524,6 +557,28 @@ private fun applyDesktopAnimeProfile(
     controller.setMpvProperty("hwdec", "d3d11va-copy")
     controller.setMpvProperty("vf", finalVf)
     controller.forceVideoRedraw()
+}
+
+private fun applyDesktopSvpRuntimeProfile(
+    controller: NativePlayerController,
+    enabled: Boolean,
+) {
+    if (enabled) {
+        controller.setMpvProperty("vd-queue-enable", "yes")
+        controller.setMpvProperty("vd-queue-max-bytes", "512MiB")
+        controller.setMpvProperty("vd-queue-max-samples", "35")
+        controller.setMpvProperty("vd-queue-max-secs", "60")
+        controller.setMpvProperty("hr-seek-framedrop", "no")
+        controller.setMpvProperty("video-latency-hacks", "yes")
+        controller.setMpvProperty("mc", "0")
+        controller.setMpvProperty("autosync", "30")
+    } else {
+        controller.setMpvProperty("vd-queue-enable", "no")
+        controller.setMpvProperty("hr-seek-framedrop", "yes")
+        controller.setMpvProperty("video-latency-hacks", "no")
+        controller.setMpvProperty("mc", "auto")
+        controller.setMpvProperty("autosync", "0")
+    }
 }
 
 @Composable

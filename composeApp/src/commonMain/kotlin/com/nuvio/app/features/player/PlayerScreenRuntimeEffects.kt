@@ -1,9 +1,14 @@
 package com.nuvio.app.features.player
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.discord.DiscordPresenceSettingsRepository
+import com.nuvio.app.features.discord.DiscordRichPresenceActivity
+import com.nuvio.app.features.discord.DiscordRichPresencePlatform
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.p2p.P2pStreamRequest
 import com.nuvio.app.features.p2p.P2pStreamingEngine
@@ -243,6 +248,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
 
     BindPlayerUiVisibilityEffects()
     BindPlayerMetadataAndSkipEffects()
+    BindDiscordRichPresenceEffect()
 
     DisposableEffect(playbackSession.videoId, activeSourceUrl, activeSourceAudioUrl) {
         val effectVideoId = playbackSession.videoId
@@ -265,6 +271,77 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             PlayerStreamsRepository.clearAll()
         }
     }
+}
+
+@Composable
+private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
+    DiscordPresenceSettingsRepository.ensureLoaded()
+    val discordSettings by DiscordPresenceSettingsRepository.uiState.collectAsState()
+    val positionBucket = playbackSnapshot.positionMs.coerceAtLeast(0L) / DISCORD_PROGRESS_UPDATE_BUCKET_MS
+
+    LaunchedEffect(
+        discordSettings.enabled,
+        title,
+        activeVideoId,
+        activeSeasonNumber,
+        activeEpisodeNumber,
+        activeEpisodeTitle,
+        playbackSnapshot.isLoading,
+        playbackSnapshot.isPlaying,
+        playbackSnapshot.isEnded,
+        playbackSnapshot.durationMs,
+        playbackSnapshot.playbackSpeed,
+        positionBucket,
+        errorMessage,
+    ) {
+        if (
+            !discordSettings.enabled ||
+            playbackSnapshot.isLoading ||
+            playbackSnapshot.isEnded ||
+            errorMessage != null
+        ) {
+            DiscordRichPresencePlatform.update(null)
+            return@LaunchedEffect
+        }
+
+        val presenceTitle = title.trim().takeIf { it.isNotBlank() }
+        if (presenceTitle == null) {
+            DiscordRichPresencePlatform.update(null)
+            return@LaunchedEffect
+        }
+
+        DiscordRichPresencePlatform.update(
+            DiscordRichPresenceActivity(
+                title = presenceTitle,
+                subtitle = discordPresenceSubtitle(),
+                isPlaying = playbackSnapshot.isPlaying,
+                positionMs = playbackSnapshot.positionMs.coerceAtLeast(0L),
+                durationMs = playbackSnapshot.durationMs.coerceAtLeast(0L),
+                playbackSpeed = playbackSnapshot.playbackSpeed,
+            ),
+        )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            DiscordRichPresencePlatform.update(null)
+        }
+    }
+}
+
+private fun PlayerScreenRuntime.discordPresenceSubtitle(): String? {
+    val episodeNumber = activeEpisodeNumber
+    val episodeLabel = when {
+        activeSeasonNumber != null && episodeNumber != null -> {
+            "S${activeSeasonNumber.toString().padStart(2, '0')}E${episodeNumber.toString().padStart(2, '0')}"
+        }
+        episodeNumber != null -> "Episode $episodeNumber"
+        else -> null
+    }
+    return listOfNotNull(
+        episodeLabel,
+        activeEpisodeTitle?.trim()?.takeIf { it.isNotBlank() },
+    ).joinToString(" · ").takeIf { it.isNotBlank() }
 }
 
 @Composable
@@ -650,6 +727,7 @@ private fun findCredentialRefreshCandidate(
 
 private const val CREDENTIAL_REFRESH_POLL_COUNT = 30
 private const val CREDENTIAL_REFRESH_POLL_INTERVAL_MS = 500L
+private const val DISCORD_PROGRESS_UPDATE_BUCKET_MS = 15_000L
 // How far into the freshly-loaded episode playback must reach before the next-episode auto-advance
 // latch is released. Long enough to clear the stale end-of-file loading gap, short enough to re-arm
 // well before the new episode itself ends.
