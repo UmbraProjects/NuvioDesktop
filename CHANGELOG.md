@@ -28,7 +28,7 @@
 
 - **Reduced unnecessary API calls for anime scrobbling and Kitsu ID lookups** - SIMKL's anime-ID enrichment (Kitsu/MAL ID lookup) is now cached instead of repeating the same lookup on every scrobble start and stop, and the anime ID mapping database (used constantly for Kitsu catalogs and dual-scrobble) is now parsed once in the background at launch instead of on your first stream/episode click, so that first click doesn't stall.
 
-
+## 1.7.2 - 2026-07-01
 
 ### Added
 
