@@ -1,6 +1,8 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.ManagedAddon
+import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.collection.CollectionRepository
 import kotlinx.coroutines.runBlocking
@@ -198,6 +200,7 @@ object HomeCatalogSettingsRepository {
         tvModeEnabled = false
         definitions = emptyList()
         collectionDefinitions = emptyList()
+        lastSyncedCatalogKeys = null
         _uiState.value = HomeCatalogSettingsUiState()
     }
 
@@ -205,6 +208,7 @@ object HomeCatalogSettingsRepository {
         hasLoaded = false
         definitions = emptyList()
         collectionDefinitions = emptyList()
+        lastSyncedCatalogKeys = null
         preferences.clear()
         heroEnabled = true
         heroInfoLines = 2
@@ -221,6 +225,10 @@ object HomeCatalogSettingsRepository {
         _uiState.value = HomeCatalogSettingsUiState()
     }
 
+    // Key set from the last syncCatalogs pass — used to force-refresh only when the catalog
+    // set actually changed, not on every home (re)entry.
+    private var lastSyncedCatalogKeys: List<String>? = null
+
     fun syncCatalogs(addons: List<ManagedAddon>) {
         ensureLoaded()
         definitions = buildHomeCatalogDefinitions(addons)
@@ -233,6 +241,15 @@ object HomeCatalogSettingsRepository {
         enforcePinnedCollectionsAtTop()
         publish()
         persist()
+        // HomeScreen re-runs syncCatalogs every time the home screen enters composition. A
+        // force refresh must only happen when the catalog set itself changed (addon
+        // installed/removed, new genre-defaulted catalog) — an unconditional force refetched
+        // every catalog from every addon on each return to home.
+        val catalogKeys = definitions.map(HomeCatalogDefinition::key) +
+            collectionDefinitions.map(CollectionCatalogDefinition::key)
+        val catalogSetChanged = lastSyncedCatalogKeys != catalogKeys
+        lastSyncedCatalogKeys = catalogKeys
+        HomeRepository.refresh(addons.enabledAddons(), force = catalogSetChanged)
     }
 
     fun syncCollections(collections: List<Collection>) {
@@ -392,8 +409,16 @@ object HomeCatalogSettingsRepository {
     }
 
     fun setEnabled(key: String, enabled: Boolean) {
-        updatePreference(key) { preference ->
-            preference.copy(enabled = enabled)
+        ensureLoaded()
+        val current = preferences[key] ?: return
+        if (current.enabled == enabled) return
+        preferences[key] = current.copy(enabled = enabled)
+        publish()
+        persist()
+        if (enabled && !key.startsWith("collection_")) {
+            HomeRepository.refresh(AddonRepository.uiState.value.addons.enabledAddons(), force = true)
+        } else {
+            HomeRepository.applyCurrentSettings()
         }
     }
 
@@ -714,7 +739,7 @@ object HomeCatalogSettingsRepository {
                 SyncCatalogItem(
                     addonId = parts.getOrElse(0) { "" },
                     type = parts.getOrElse(1) { "" },
-                    catalogId = parts.getOrElse(2) { "" },
+                    catalogId = parts.drop(2).joinToString(":"),
                     enabled = pref.enabled,
                     order = pref.order,
                     customTitle = pref.customTitle,

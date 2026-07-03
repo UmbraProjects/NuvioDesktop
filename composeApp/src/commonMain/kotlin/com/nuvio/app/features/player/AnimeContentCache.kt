@@ -24,7 +24,7 @@ object AnimeContentCache {
     fun isAnime(metaId: String?): Boolean {
         if (metaId.isNullOrBlank()) return false
         val prefix = metaId.substringBefore(':', missingDelimiterValue = "").lowercase()
-        if (prefix in listOf("kitsu", "mal", "anilist", "al")) return true
+        if (prefix in listOf("kitsu", "mal", "myanimelist", "anilist", "al", "anidb")) return true
         return animeByMetaId[metaId] ?: false
     }
 

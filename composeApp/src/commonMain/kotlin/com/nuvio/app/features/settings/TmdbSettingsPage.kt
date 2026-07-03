@@ -259,6 +259,12 @@ internal fun LazyListScope.tmdbSettingsContent(
                 isTablet = isTablet,
                 modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TmdbHeroImages),
             ) {
+                TmdbInfoRow(
+                    isTablet = isTablet,
+                    text = "Applies to the Search and Library hero only. The Home page always " +
+                        "uses your metadata addon's own images.",
+                )
+                SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = "Addon (default)",
                     description = "Use whatever backdrop and logo your addons provide. " +

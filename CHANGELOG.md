@@ -1,6 +1,34 @@
 # Changelog
 
-## 1.7.2 - 2026-07-02
+## 1.7.3 - 2026-07-03
+
+### Added
+
+- **Per-season anime backdrops for Kitsu catalogs** - a Kitsu search result for a sequel season (SAO II, Alicization, etc.) used to show the exact same backdrop as season 1, because TMDB/TVDB treat the whole franchise as one show/ID. Sequels, specials, and split-cour parts now pull their own season-specific art from Kitsu (falling back to AniList if Kitsu has nothing), while season-1 entries and anime movies keep the faster TMDB/addon art path since it's already correct for them. No API key required for this.
+
+- **TMDB now defaults to "TMDB for everything" for hero art when you add a key** - entering a TMDB API key (Settings or the onboarding popup) now turns on TMDB enrichment and sets Hero Backdrop & Logo to TMDB for everything automatically, if you haven't already chosen a source yourself. Most metadata/search addons (and Trakt in particular) aren't built to be artwork providers and return no backdrop at all, falling back to a stretched poster - TMDB is consistently better once you have a key, so it's the sensible default now instead of something you had to find and flip yourself. Note this setting only affects Search and Library hero art - the Home page always uses your addon's own images, which is also now spelled out directly in Settings.
+
+### Fixed
+
+- **Kitsu catalogs picking the wrong season/episode entirely** - each Kitsu search result is actually one season of a franchise (SAO, SAO II, Alicization, War of Underworld... are all separate Kitsu IDs sharing one TVDB show), but opening one and picking a different season played, scrobbled, and labeled everything under the season you originally opened. Season 2/3 picks looked like they worked but silently mislabeled themselves too (S1E1 under a season-2 result showed as "S02E01" and scrobbled as season 2 to both Trakt and SIMKL). Nuvio now recognizes when you're navigating across a franchise's seasons and routes streams, scrobbles, and on-screen episode titles to the correct season's real entry - all the way through.
+
+- **SIMKL Continue Watching showing completely wrong thumbnails/titles for anime movies, and failing to resume** - SIMKL sometimes reports anime movies without labeling them as anime, so Nuvio trusted SIMKL's (unreliable, for anime) IMDb ID and could resolve a totally unrelated title's art and metadata - for one user this showed a Jeff Foxworthy stand-up special as the thumbnail for a Sword Art Online movie. Resuming pulled nonsense streams for the same reason. Fixed by cross-checking against the bundled anime ID database instead of trusting SIMKL's own labeling, and by no longer gating title/poster lookup on that label.
+
+- **"No metadata available" on some anime movies from a fresh app start** - fallout from the SIMKL fix above: title/poster were only read from SIMKL's dedicated anime payload field, which doesn't exist when SIMKL reports the movie under its plain movie listing. Session caching was masking this until a full restart. Now reads whichever field SIMKL actually provided.
+
+- **Home page force-refreshing every catalog from every addon on every visit** - a Cinemeta compatibility fix landed with an unconditional full refresh that fired every time you returned to Home, discarding the whole session cache each time. Now only force-refreshes when your catalog list actually changed (addon installed/removed, etc.) - normal navigation is back to using the cache and feels noticeably snappier.
+
+- **Cinemeta's genre/year catalogs (Popular by Genre, etc.) not showing up on Home at all** - catalogs whose only required filter is a genre selection were being skipped entirely rather than defaulting to a genre. These, along with other addons needing similar required filters, now load using their first available option and show up as normal rows.
+
+- **Blank or ugly hero art on the Home page for catalogs that don't supply a real backdrop (public domain movie catalogs and similar)** - catalog-only addons like Cinemeta often return a poster but no proper wide backdrop for these, which used to just show blank or a stretched poster on the Home hero. Nuvio now backfills a real backdrop and logo for these specifically (via TMDB and Metahub), targeted narrowly at titles actually missing one - everything else on Home still gets its art straight from your addon as always. This is separate from the Hero Backdrop & Logo setting above, which only touches Search and Library.
+
+- **Occasional crash parsing catalog metadata from addons that return unexpected JSON shapes** - some fields (genres in particular) could arrive as something other than a plain value depending on the addon, which crashed the parse instead of just skipping that field.
+
+### Improved
+
+- **Reduced unnecessary API calls for anime scrobbling and Kitsu ID lookups** - SIMKL's anime-ID enrichment (Kitsu/MAL ID lookup) is now cached instead of repeating the same lookup on every scrobble start and stop, and the anime ID mapping database (used constantly for Kitsu catalogs and dual-scrobble) is now parsed once in the background at launch instead of on your first stream/episode click, so that first click doesn't stall.
+
+
 
 ### Added
 

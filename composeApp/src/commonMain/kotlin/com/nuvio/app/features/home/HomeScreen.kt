@@ -83,6 +83,8 @@ import com.nuvio.app.features.cloud.findPlaybackTargetForProgress
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.details.MetahubService
+import com.nuvio.app.features.metadata.isAnimeSeasonArtUrl
 import com.nuvio.app.features.details.SeriesPrimaryAction
 import com.nuvio.app.features.details.seriesPrimaryAction
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
@@ -352,10 +354,14 @@ fun HomeScreen(
         co.touchlab.kermit.Logger.withTag("HomeEnrichment").d {
             "LaunchedEffect fired: mode=$displayMode heroSrc=${tmdbSnap.heroImageSource} tmdbKey=${tmdbSnap.hasApiKey} tmdbOn=$tmdbImageModeOn items=${baseHeroItems.size}"
         }
-        // Home page: addon (AIOMetadata) already provides good real-time images.
-        // Only enrich for Search and Library where addon access is limited.
-        if (displayMode is HomeContentMode.Normal) return@LaunchedEffect
-        if (!tmdbImageModeOn) return@LaunchedEffect
+        val normalHomeMode = displayMode is HomeContentMode.Normal
+        val normalHomeNeedsBackdropFallback = normalHomeMode &&
+            baseHeroItems.any(MetaPreview::needsHomeHeroBackdropFallback)
+        // Home page: rich metadata addons already provide good real-time images. The exception
+        // is catalog-only addons that return posters but no banner/background, so fill just
+        // those missing hero backdrops from the existing lightweight metadata fallback path.
+        if (normalHomeMode && !normalHomeNeedsBackdropFallback) return@LaunchedEffect
+        if (!normalHomeMode && !tmdbImageModeOn) return@LaunchedEffect
 
         // Only replace items when the set of IDs actually changed — an unconditional
         // clear() + addAll() resets the hero carousel page to 0 even when switching
@@ -372,15 +378,25 @@ fun HomeScreen(
         // Peek pass — instantly apply any metadata already in cache.
         val peekedHeroItems = baseHeroItems.mapIndexed { idx, item ->
             val current = effectiveHeroItems.getOrNull(idx) ?: item
+            val shouldUseHomeBackdropFallback = normalHomeMode && current.needsHomeHeroBackdropFallback()
+            if (normalHomeMode && !shouldUseHomeBackdropFallback) return@mapIndexed current
             val cached = MetaDetailsRepository.peek(item.type, item.id) ?: return@mapIndexed current
-            current.copy(
-                genres = cached.genres.ifEmpty { current.genres }.map(::normalizeSearchGenre),
-                description = cached.description ?: current.description,
-                releaseInfo = cached.releaseInfo ?: current.releaseInfo,
-                runtime = current.runtime ?: cached.runtime,
-                banner = bestBackdrop(cached.background, current.banner),
-                logo = current.logo ?: cached.logo,
-            ).also { enriched ->
+            val enriched = if (normalHomeMode) {
+                current.copy(
+                    banner = bestBackdrop(cached.background, current.banner),
+                    logo = current.logo ?: cached.logo,
+                )
+            } else {
+                current.copy(
+                    genres = cached.genres.ifEmpty { current.genres }.map(::normalizeSearchGenre),
+                    description = cached.description ?: current.description,
+                    releaseInfo = cached.releaseInfo ?: current.releaseInfo,
+                    runtime = current.runtime ?: cached.runtime,
+                    banner = bestBackdrop(cached.background, current.banner),
+                    logo = current.logo ?: cached.logo,
+                )
+            }
+            enriched.also {
                 heroEnrichmentMap[canonicalHeroKey(enriched.type, enriched.id)] = enriched
             }
         }
@@ -404,6 +420,8 @@ fun HomeScreen(
         val fetchedHeroItems = baseHeroItems.mapIndexed { idx, _ ->
             async {
                 val current = peekedHeroItems.getOrNull(idx) ?: return@async null
+                val shouldUseHomeBackdropFallback = normalHomeMode && current.needsHomeHeroBackdropFallback()
+                if (normalHomeMode && !shouldUseHomeBackdropFallback) return@async idx to current
             val hasFullMetadata = current.genres.isNotEmpty() && current.description != null &&
                 current.runtime != null
 
@@ -413,10 +431,11 @@ fun HomeScreen(
             val isTvItemForTvdb = (heroImageSource == HeroImageSource.TmdbMoviesTvdbShows) &&
                 (current.type.equals("series", ignoreCase = true) ||
                     current.type.equals("anime", ignoreCase = true))
-            val hasIdealBanner = if (isTvItemForTvdb) {
-                current.banner?.contains("artworks.thetvdb.com") == true
-            } else {
-                current.banner?.contains("image.tmdb.org/t/p/original") == true
+            val hasIdealBanner = when {
+                // Per-season anime art (AniList/Kitsu) outranks franchise-wide TMDB/TVDB art.
+                current.banner.isAnimeSeasonArtUrl() -> true
+                isTvItemForTvdb -> current.banner?.contains("artworks.thetvdb.com") == true
+                else -> current.banner?.contains("image.tmdb.org/t/p/original") == true
             }
             when {
                 // Skip only when we already have the ideal-quality banner from the right source.
@@ -432,26 +451,48 @@ fun HomeScreen(
                         MetaDetailsRepository.fetchLightweightMeta(
                             type = current.type,
                             id = current.id,
-                            preferTmdbImages = tmdbImageModeOn,
+                            preferTmdbImages = tmdbImageModeOn || normalHomeMode,
                         )
-                    }.getOrNull() ?: return@withPermit idx to current
+                    }.getOrNull()
                     val now = peekedHeroItems.getOrNull(idx) ?: current
-                    val enriched = now.copy(
-                        genres = meta.genres.ifEmpty { now.genres }.map(::normalizeSearchGenre),
-                        description = meta.description ?: now.description,
-                        releaseInfo = meta.releaseInfo ?: now.releaseInfo,
-                        runtime = now.runtime ?: meta.runtime,
-                        // When TVDB supplied the backdrop, use it directly — bestBackdrop
-                        // prefers image.tmdb.org URLs and would override TVDB with TMDB.
-                        banner = if (meta.background?.contains("artworks.thetvdb.com") == true)
-                            meta.background
-                        else
-                            bestBackdrop(meta.background, now.banner),
-                        logo = if (meta.logo?.contains("artworks.thetvdb.com") == true)
-                            meta.logo
-                        else
-                            now.logo ?: meta.logo,
-                    )
+                    val enriched = if (normalHomeMode) {
+                        val imdbId = now.homeHeroFallbackImdbId()
+                        val metahubBackdrop = if (meta?.background.isNullOrBlank() && imdbId != null) {
+                            MetahubService.getValidBackgroundUrl(imdbId)
+                        } else {
+                            null
+                        }
+                        val metahubLogo = if (now.logo.isNullOrBlank() && meta?.logo.isNullOrBlank() && imdbId != null) {
+                            MetahubService.getValidLogoUrl(imdbId)
+                        } else {
+                            null
+                        }
+                        now.copy(
+                            banner = bestBackdrop(meta?.background, metahubBackdrop, now.banner),
+                            logo = now.logo ?: meta?.logo ?: metahubLogo,
+                        )
+                    } else {
+                        val fetchedMeta = meta ?: return@withPermit idx to current
+                        now.copy(
+                            genres = fetchedMeta.genres.ifEmpty { now.genres }.map(::normalizeSearchGenre),
+                            description = fetchedMeta.description ?: now.description,
+                            releaseInfo = fetchedMeta.releaseInfo ?: now.releaseInfo,
+                            runtime = now.runtime ?: fetchedMeta.runtime,
+                            // When TVDB or the per-season anime providers supplied the backdrop,
+                            // use it directly — bestBackdrop prefers image.tmdb.org URLs and
+                            // would override it with franchise-wide TMDB art.
+                            banner = if (fetchedMeta.background?.contains("artworks.thetvdb.com") == true ||
+                                fetchedMeta.background.isAnimeSeasonArtUrl()
+                            )
+                                fetchedMeta.background
+                            else
+                                bestBackdrop(fetchedMeta.background, now.banner),
+                            logo = if (fetchedMeta.logo?.contains("artworks.thetvdb.com") == true)
+                                fetchedMeta.logo
+                            else
+                                now.logo ?: fetchedMeta.logo,
+                        )
+                    }
                     heroEnrichmentMap[canonicalHeroKey(enriched.type, enriched.id)] = enriched
                     idx to enriched
                 }
@@ -838,7 +879,10 @@ fun HomeScreen(
                     append(manifest.transportUrl)
                     append(':')
                     append(manifest.catalogs.joinToString(separator = ",") { catalog ->
-                        "${catalog.type}:${catalog.id}:${catalog.extra.count { it.isRequired }}"
+                        val extrasKey = catalog.extra.joinToString(separator = "|") { extra ->
+                            "${extra.name}:${extra.isRequired}:${extra.options.firstOrNull().orEmpty()}"
+                        }
+                        "${catalog.type}:${catalog.id}:$extrasKey"
                     })
                 }
             }
@@ -848,7 +892,6 @@ fun HomeScreen(
     LaunchedEffect(catalogRefreshKey) {
         if (catalogRefreshKey.isEmpty()) return@LaunchedEffect
         HomeCatalogSettingsRepository.syncCatalogs(enabledAddons)
-        HomeRepository.refresh(enabledAddons)
     }
 
     LaunchedEffect(collections) {
@@ -1425,8 +1468,10 @@ fun HomeScreen(
     // For Normal (home): pass through directly — addon already provides good images.
     var displayedFocusedItem by remember { mutableStateOf<MetaPreview?>(null) }
     LaunchedEffect(tvFocusedHeroItemRaw, tmdbImageModeOn, displayMode) {
-        val isEnrichedMode = tmdbImageModeOn &&
-            displayMode !is HomeContentMode.Normal
+        val normalHomeFocusedFallback = displayMode is HomeContentMode.Normal &&
+            tvFocusedHeroItemRaw?.needsHomeHeroBackdropFallback() == true
+        val isEnrichedMode = (tmdbImageModeOn && displayMode !is HomeContentMode.Normal) ||
+            normalHomeFocusedFallback
         if (!isEnrichedMode) {
             displayedFocusedItem = tvFocusedHeroItemRaw
             return@LaunchedEffect
@@ -1437,6 +1482,12 @@ fun HomeScreen(
             return@LaunchedEffect
         }
         val key = canonicalHeroKey(raw.type, raw.id)
+        if (normalHomeFocusedFallback) {
+            heroEnrichmentMap[key]?.let { enriched ->
+                displayedFocusedItem = enriched
+                return@LaunchedEffect
+            }
+        }
         snapshotFlow { heroEnrichmentMap[key] }
             .filterNotNull()
             .first()
@@ -1447,8 +1498,11 @@ fun HomeScreen(
     // next section in full. Search/library sets are small (20–50 items) so this is cheap.
     // Home is excluded — the addon handles it in real-time.
     LaunchedEffect(tvFocus.sectionIndex, tvFocus.itemIndex, displayMode) {
-        if (!tmdbImageModeOn) return@LaunchedEffect
-        if (displayMode is HomeContentMode.Normal) return@LaunchedEffect
+        val normalHomeMode = displayMode is HomeContentMode.Normal
+        val focusedNeedsHomeFallback = normalHomeMode &&
+            tvFocusedHeroItemRaw?.needsHomeHeroBackdropFallback() == true
+        if (!tmdbImageModeOn && !focusedNeedsHomeFallback) return@LaunchedEffect
+        if (normalHomeMode && !focusedNeedsHomeFallback) return@LaunchedEffect
 
         val isTvForTvdb = tmdbSettingsUiState.heroImageSource == HeroImageSource.TmdbMoviesTvdbShows
 
@@ -1457,21 +1511,43 @@ fun HomeScreen(
             if (heroEnrichmentMap.containsKey(mapKey)) return@launch
             val meta = runCatching {
                 MetaDetailsRepository.fetchLightweightMeta(raw.type, raw.id, preferTmdbImages = true)
-            }.getOrNull() ?: return@launch
+            }.getOrNull()
+            if (normalHomeMode) {
+                val imdbId = raw.homeHeroFallbackImdbId()
+                val metahubBackdrop = if (meta?.background.isNullOrBlank() && imdbId != null) {
+                    MetahubService.getValidBackgroundUrl(imdbId)
+                } else {
+                    null
+                }
+                val metahubLogo = if (raw.logo.isNullOrBlank() && meta?.logo.isNullOrBlank() && imdbId != null) {
+                    MetahubService.getValidLogoUrl(imdbId)
+                } else {
+                    null
+                }
+                val enriched = raw.copy(
+                    banner = bestBackdrop(meta?.background, metahubBackdrop, raw.banner),
+                    logo = raw.logo ?: meta?.logo ?: metahubLogo,
+                )
+                heroEnrichmentMap[canonicalHeroKey(enriched.type, enriched.id)] = enriched
+                return@launch
+            }
+            val fetchedMeta = meta ?: return@launch
             val tvdb = isTvForTvdb && (raw.type.equals("series", ignoreCase = true) ||
                 raw.type.equals("anime", ignoreCase = true))
             val enriched = raw.copy(
-                genres = meta.genres.ifEmpty { raw.genres }.map(::normalizeSearchGenre),
-                description = meta.description ?: raw.description,
-                releaseInfo = meta.releaseInfo ?: raw.releaseInfo,
-                runtime = raw.runtime ?: meta.runtime,
-                banner = if (tvdb && meta.background?.contains("artworks.thetvdb.com") == true)
-                    meta.background else bestBackdrop(meta.background, raw.banner),
+                genres = fetchedMeta.genres.ifEmpty { raw.genres }.map(::normalizeSearchGenre),
+                description = fetchedMeta.description ?: raw.description,
+                releaseInfo = fetchedMeta.releaseInfo ?: raw.releaseInfo,
+                runtime = raw.runtime ?: fetchedMeta.runtime,
+                banner = if ((tvdb && fetchedMeta.background?.contains("artworks.thetvdb.com") == true) ||
+                    fetchedMeta.background.isAnimeSeasonArtUrl()
+                )
+                    fetchedMeta.background else bestBackdrop(fetchedMeta.background, raw.banner),
                 logo = when {
-                    tvdb && meta.logo?.contains("artworks.thetvdb.com") == true -> meta.logo
+                    tvdb && fetchedMeta.logo?.contains("artworks.thetvdb.com") == true -> fetchedMeta.logo
                     // Prefer TMDB-direct logo over existing (e.g. Trakt sets Fanart.tv logos).
-                    meta.logo?.contains("image.tmdb.org") == true -> meta.logo
-                    else -> raw.logo ?: meta.logo
+                    fetchedMeta.logo?.contains("image.tmdb.org") == true -> fetchedMeta.logo
+                    else -> raw.logo ?: fetchedMeta.logo
                 },
             )
             heroEnrichmentMap[canonicalHeroKey(enriched.type, enriched.id)] = enriched
@@ -1479,6 +1555,7 @@ fun HomeScreen(
 
         // Current item — immediately, highest priority.
         tvFocusedHeroItemRaw?.let { enrich(it) }
+        if (normalHomeMode) return@LaunchedEffect
 
         // Entire current row (all remaining items the user will scroll through).
         tvRows.getOrNull(tvFocus.sectionIndex)?.metaItems?.let { items ->
@@ -2915,6 +2992,14 @@ private fun canonicalHeroKey(type: String, id: String): String {
     val canonicalId = id.split("_").firstOrNull { it.startsWith("tt", ignoreCase = true) } ?: id
     return "$type:$canonicalId"
 }
+
+private fun MetaPreview.needsHomeHeroBackdropFallback(): Boolean =
+    type != COLLECTION_HERO_TYPE &&
+        banner.isNullOrBlank() &&
+        homeHeroFallbackImdbId() != null
+
+private fun MetaPreview.homeHeroFallbackImdbId(): String? =
+    id.split("_").firstOrNull { segment -> segment.startsWith("tt", ignoreCase = true) }
 
 private fun normalizeSearchGenre(genre: String): String =
     genre.split("-", " ").joinToString(" ") { word ->

@@ -29,6 +29,24 @@ class SimklModelsTest {
     }
 
     @Test
+    fun `simkl-only payload translates to kitsu via the anime list`() {
+        // SIMKL playback sessions often carry nothing but the simkl id. A "simkl:" content id
+        // is opaque downstream (meta addons mangle it into wrong-title lookups, stream
+        // scrapers return nothing), so it must be translated through anime-list-mini.json.
+        // Real data: SAO the Movie: Ordinal Scale, simkl 527702 -> kitsu 11423.
+        val ids = SimklMediaIds(simkl = 527702)
+
+        assertEquals("kitsu:11423", ids.toBestAnimeMovieContentId())
+    }
+
+    @Test
+    fun `unknown simkl id keeps the simkl fallback`() {
+        val ids = SimklMediaIds(simkl = 999999999)
+
+        assertEquals("simkl:999999999", ids.toBestAnimeMovieContentId())
+    }
+
+    @Test
     fun `placeholder imdb id is ignored`() {
         // simkl deliberately omitted: it outranks tvdb in toBestAnimeMovieContentId's fallback
         // order, which would mask what this test is actually verifying (the imdb placeholder

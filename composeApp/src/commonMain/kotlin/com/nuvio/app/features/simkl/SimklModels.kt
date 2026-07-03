@@ -1,5 +1,7 @@
 package com.nuvio.app.features.simkl
 
+import com.nuvio.app.features.metadata.AnimeIdMapping
+import com.nuvio.app.features.metadata.AnimeIdMappingRepository
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -94,21 +96,42 @@ internal fun SimklMediaIds.toBestContentId(): String? =
         ?: tvdb?.let { "tvdb:$it" }
         ?: simkl?.let { "simkl:$it" }
 
-internal fun SimklMediaIds.toBestAnimeContentId(): String? =
+internal fun SimklMediaIds.toBestAnimeContentId(): String? = toBestNativeAnimeContentId()
+
+internal fun SimklMediaIds.toBestAnimeMovieContentId(): String? = toBestNativeAnimeContentId()
+
+// SIMKL playback payloads are often sparse (just a simkl id + slug). A "simkl:" content id
+// is opaque to every downstream consumer — meta addons mangle it (some strip the prefix and
+// treat the number as a TMDB id, fetching a completely unrelated title) and stream scrapers
+// return nothing useful. Translate through the local anime-list first so the id we hand out
+// is one the pipeline actually understands (kitsu preferred, then mal).
+private fun SimklMediaIds.toBestNativeAnimeContentId(): String? =
     kitsu?.takeIf { it.isNotBlank() }?.let { "kitsu:$it" }
+        ?: animeListEntry()?.let { entry ->
+            entry.kitsuId?.let { "kitsu:$it" } ?: entry.malId?.let { "mal:$it" }
+        }
         ?: simkl?.let { "simkl:$it" }
         ?: mal?.takeIf { it.isNotBlank() }?.let { "mal:$it" }
         ?: imdb?.takeIf { it.isNotBlank() && it != "tt2250192" }
         ?: tvdb?.let { "tvdb:$it" }
         ?: tmdb?.takeIf { it.isNotBlank() }?.let { "tmdb:$it" }
 
-internal fun SimklMediaIds.toBestAnimeMovieContentId(): String? =
-    kitsu?.takeIf { it.isNotBlank() }?.let { "kitsu:$it" }
-        ?: simkl?.let { "simkl:$it" }
-        ?: mal?.takeIf { it.isNotBlank() }?.let { "mal:$it" }
-        ?: imdb?.takeIf { it.isNotBlank() && it != "tt2250192" }
-        ?: tvdb?.let { "tvdb:$it" }
-        ?: tmdb?.takeIf { it.isNotBlank() }?.let { "tmdb:$it" }
+private fun SimklMediaIds.animeListEntry(): AnimeIdMapping? =
+    AnimeIdMappingRepository.entryForNativeIds(
+        anidb = anidb?.toIntOrNull(),
+        anilist = anilist?.toIntOrNull(),
+        kitsu = kitsu?.toIntOrNull(),
+        mal = mal?.toIntOrNull(),
+        simkl = simkl,
+    )
+
+/**
+ * True when these ids belong to a known anime entry. SIMKL delivers anime movies under the
+ * plain `movie` node in some payloads (no `anime` node), where the non-anime id preference
+ * (imdb first) trusts SIMKL's imdb — which is unreliable for anime and can point at a
+ * completely unrelated title. Anime-list membership proves anime regardless of the node.
+ */
+internal fun SimklMediaIds.isKnownAnime(): Boolean = animeListEntry() != null
 
 @Serializable
 internal data class SimklShowMedia(

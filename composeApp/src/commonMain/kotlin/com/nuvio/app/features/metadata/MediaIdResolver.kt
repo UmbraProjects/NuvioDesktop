@@ -10,6 +10,8 @@ import com.nuvio.app.features.trakt.TraktExternalIds
 import com.nuvio.app.features.trakt.parseTraktContentIds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
@@ -38,6 +40,10 @@ internal data class ResolvedMediaIds(
     val tmdbEpisodeOffset: Int? = null,
     val tvdbEpisodeOffset: Int? = null,
     val preferredTmdbMediaType: String? = null,
+    // True when the caller's season/episode numbers are already franchise (TVDB/TMDB)
+    // numbering — e.g. a kitsu-catalog entry whose meta shows the whole franchise's seasons.
+    // Entry-local sources (Kitsu addon, SIMKL) always report season 1 and leave this false.
+    val franchiseNumbering: Boolean = false,
 ) {
     fun merge(other: ResolvedMediaIds?): ResolvedMediaIds {
         if (other == null) return this
@@ -59,6 +65,7 @@ internal data class ResolvedMediaIds(
             tmdbEpisodeOffset = tmdbEpisodeOffset ?: other.tmdbEpisodeOffset,
             tvdbEpisodeOffset = tvdbEpisodeOffset ?: other.tvdbEpisodeOffset,
             preferredTmdbMediaType = preferredTmdbMediaType ?: other.preferredTmdbMediaType,
+            franchiseNumbering = franchiseNumbering || other.franchiseNumbering,
         )
     }
 }
@@ -76,45 +83,56 @@ internal object MediaIdResolver {
         videoId: String?,
         title: String? = null,
         sourceSeasonNumber: Int? = null,
+        sourceEpisodeNumber: Int? = null,
         isAnimeHint: Boolean = false,
     ): ResolvedMediaIds {
-        val key = listOf(contentType, parentMetaId, videoId.orEmpty(), title.orEmpty(), sourceSeasonNumber, isAnimeHint).joinToString("|")
+        val key = listOf(contentType, parentMetaId, videoId.orEmpty(), title.orEmpty(), sourceSeasonNumber, sourceEpisodeNumber, isAnimeHint).joinToString("|")
 
         // Trakt and Simkl scrobble builds now both resolve the same content concurrently on
         // every dual-scrobble tick — dedupe concurrent callers onto one in-flight resolution
         // instead of each independently repeating the anime-mapping/Simkl/TMDB lookup chain.
-        var ownsRequest = false
-        val pending = cacheMutex.withLock {
-            cache[key]?.let { return it }
-            inFlightRequests[key] ?: CompletableDeferred<ResolvedMediaIds>().also {
-                inFlightRequests[key] = it
-                ownsRequest = true
+        while (true) {
+            var ownsRequest = false
+            val pending = cacheMutex.withLock {
+                cache[key]?.let { return it }
+                inFlightRequests[key] ?: CompletableDeferred<ResolvedMediaIds>().also {
+                    inFlightRequests[key] = it
+                    ownsRequest = true
+                }
+            }
+            if (ownsRequest) break
+            try {
+                return pending.await()
+            } catch (error: CancellationException) {
+                // The owning caller was cancelled, not us — its CancellationException must not
+                // kill an unrelated waiter (e.g. the Trakt build dying because the Simkl build
+                // was cancelled). Retry with a fresh resolution unless we are cancelled too.
+                currentCoroutineContext().ensureActive()
             }
         }
-        if (!ownsRequest) return pending.await()
 
         try {
             val normalizedType = contentType.trim().lowercase().ifBlank { "movie" }
-            val initial = parseIds(parentMetaId, normalizedType)
+            val franchiseCoords = franchiseEpisodeCoords(parentMetaId, videoId, sourceSeasonNumber, sourceEpisodeNumber)
+            val parsed = parseIds(parentMetaId, normalizedType)
                 .merge(parseIds(videoId, normalizedType))
-                .copy(
-                    sourceTitle = title?.takeIf { it.isNotBlank() },
-                    sourceSeasonNumber = sourceSeasonNumber,
-                    isAnime = isAnimeHint || normalizedType.equals("anime", ignoreCase = true),
-                )
+            val initial = parsed.copy(
+                sourceTitle = title?.takeIf { it.isNotBlank() },
+                sourceSeasonNumber = sourceSeasonNumber,
+                // Preserve the anime flag derived from native id prefixes (kitsu:/mal:/…) so
+                // titles missing from anime-list-mini.json still get anime stream-id handling.
+                isAnime = parsed.isAnime || isAnimeHint || normalizedType.equals("anime", ignoreCase = true),
+                franchiseNumbering = franchiseCoords != null,
+            )
 
             var resolved = initial
-            AnimeIdMappingRepository.lookup(resolved)?.let { mapping ->
-                resolved = resolved.merge(mapping.toResolvedIds(normalizedType, parentMetaId))
-            }
+            resolved = applyAnimeMapping(resolved, franchiseCoords, normalizedType, parentMetaId)
 
             if (resolved.simkl != null && shouldFetchSimklDetails(resolved)) {
                 resolved = resolved.merge(fetchSimklDetailsIds(resolved.simkl, normalizedType, resolved.isAnime))
             }
 
-            AnimeIdMappingRepository.lookup(resolved)?.let { mapping ->
-                resolved = resolved.merge(mapping.toResolvedIds(normalizedType, parentMetaId))
-            }
+            resolved = applyAnimeMapping(resolved, franchiseCoords, normalizedType, parentMetaId)
 
             if (resolved.tmdb != null && resolved.imdb == null) {
                 val imdb = runCatching {
@@ -162,16 +180,16 @@ internal object MediaIdResolver {
         isAnimeHint: Boolean = false,
     ): ResolvedEpisodeIdentity {
         val normalizedType = contentType.trim().lowercase().ifBlank { "movie" }
-        var ids = parseIds(parentMetaId, normalizedType)
+        val franchiseCoords = franchiseEpisodeCoords(parentMetaId, videoId, season, episode)
+        val parsed = parseIds(parentMetaId, normalizedType)
             .merge(parseIds(videoId, normalizedType))
-            .copy(
-                sourceTitle = title?.takeIf { it.isNotBlank() },
-                sourceSeasonNumber = season,
-                isAnime = isAnimeHint || normalizedType.equals("anime", ignoreCase = true),
-            )
-        AnimeIdMappingRepository.lookup(ids)?.let { mapping ->
-            ids = ids.merge(mapping.toResolvedIds(normalizedType, parentMetaId))
-        }
+        var ids = parsed.copy(
+            sourceTitle = title?.takeIf { it.isNotBlank() },
+            sourceSeasonNumber = season,
+            isAnime = parsed.isAnime || isAnimeHint || normalizedType.equals("anime", ignoreCase = true),
+            franchiseNumbering = franchiseCoords != null,
+        )
+        ids = applyAnimeMapping(ids, franchiseCoords, normalizedType, parentMetaId)
         val mappedSeason = ids.canonicalSeasonNumber(season)
         val mappedEpisode = ids.canonicalEpisodeNumber(episode)
         val streamEpisodeParts = ids.streamEpisodeParts(videoId, season, episode, mappedSeason, mappedEpisode)
@@ -186,6 +204,91 @@ internal object MediaIdResolver {
             canonicalVideoId = ids.rewriteEpisodeVideoId(videoId, season, episode, mappedSeason, mappedEpisode),
         )
     }
+
+    /**
+     * Merges the anime-list mapping for [ids], then — when the caller addresses episodes in
+     * franchise numbering ([franchiseCoords]) — swaps the per-entry native ids for the sibling
+     * entry that actually covers that franchise season/episode. Anime franchises are one
+     * TVDB/TMDB show but many kitsu/mal entries (SAO season 3 is its own kitsu id), so a
+     * kitsu-catalog result pinned to one season must not answer for the whole franchise.
+     */
+    private fun applyAnimeMapping(
+        ids: ResolvedMediaIds,
+        franchiseCoords: Pair<Int, Int>?,
+        contentType: String,
+        sourceId: String,
+    ): ResolvedMediaIds {
+        val mapping = AnimeIdMappingRepository.lookup(ids) ?: return ids
+        var merged = ids.merge(mapping.toResolvedIds(contentType, sourceId))
+        franchiseCoords?.let { (season, episode) ->
+            AnimeIdMappingRepository.franchiseEntryFor(mapping, season, episode)?.let { entry ->
+                merged = merged.withFranchiseEntry(entry)
+            }
+        }
+        return merged
+    }
+
+    /**
+     * The franchise-numbered season/episode a caller is addressing, or null when the source
+     * uses entry-local numbering.
+     *
+     * - A 4-part native id (`kitsu:8174:3:5`, AIOMetadata style) is explicit franchise
+     *   numbering — the id stays pinned to the entry the user opened while season/episode
+     *   walk the whole franchise.
+     * - A 2/3-part native id with a season parameter other than 1 can only be franchise
+     *   numbering: entry-local sources (Kitsu addon metas, SIMKL) always report season 1.
+     * - Season 1 with a 2/3-part id is franchise numbering only when the id addresses a
+     *   different entry than the parent in the same namespace (`kitsu:6589:1` under parent
+     *   `kitsu:8174`) — that shape is produced exclusively by an earlier franchise remap.
+     *   Otherwise it stays entry-local, the long-standing behaviour for those sources.
+     */
+    private fun franchiseEpisodeCoords(
+        parentMetaId: String?,
+        videoId: String?,
+        season: Int?,
+        episode: Int?,
+    ): Pair<Int, Int>? {
+        videoId?.explicitFranchiseCoords()?.let { return it }
+        if (videoId == null || !videoId.hasAnimeNamespacePrefix()) return null
+        if (season == null || episode == null) return null
+        if (season != 1) return season to episode
+        if (videoId.addressesDifferentEntryThan(parentMetaId)) return season to episode
+        return null
+    }
+
+    /**
+     * True when this native id and [parentMetaId] use the same anime namespace but address
+     * different entry ids. Entry-local metas always address the parent's own entry, so a
+     * mismatch proves the id came from a franchise remap.
+     */
+    private fun String.addressesDifferentEntryThan(parentMetaId: String?): Boolean {
+        if (parentMetaId == null || !parentMetaId.hasAnimeNamespacePrefix()) return false
+        val parts = split(':')
+        val parentParts = parentMetaId.split(':')
+        if (parts.size < 2 || parentParts.size < 2) return false
+        if (!parts[0].equals(parentParts[0], ignoreCase = true)) return false
+        return parts[1] != parentParts[1]
+    }
+
+    /**
+     * Re-points the per-entry id namespaces (kitsu/mal/anilist/anidb/simkl) and the
+     * season/offset fields at the franchise sibling [entry], keeping the franchise-level ids
+     * (imdb/tmdb/tvdb/trakt) already resolved. Replaces wholesale — a stale kitsu id from the
+     * opened entry would address the wrong season's streams.
+     */
+    private fun ResolvedMediaIds.withFranchiseEntry(entry: AnimeIdMapping): ResolvedMediaIds =
+        copy(
+            simkl = entry.simklId,
+            mal = entry.malId,
+            kitsu = entry.kitsuId,
+            anilist = entry.anilistId,
+            anidb = entry.anidbId,
+            tmdbSeason = entry.tmdbSeason,
+            tvdbSeason = entry.tvdbSeason,
+            tmdbEpisodeOffset = entry.tmdbEpisodeOffset,
+            tvdbEpisodeOffset = entry.tvdbEpisodeOffset,
+            isAnime = true,
+        )
 
     private fun shouldFetchSimklDetails(ids: ResolvedMediaIds): Boolean =
         ids.imdb == null || ids.tmdb == null || ids.tvdb == null ||
@@ -251,14 +354,10 @@ internal object MediaIdResolver {
         )
     }
 
-    private fun hasAnimeNativePrefix(value: String): Boolean =
-        value.startsWith("kitsu:", ignoreCase = true) ||
-            value.startsWith("mal:", ignoreCase = true) ||
-            value.startsWith("myanimelist:", ignoreCase = true) ||
-            value.startsWith("al:", ignoreCase = true) ||
-            value.startsWith("anilist:", ignoreCase = true) ||
-            value.startsWith("anidb:", ignoreCase = true) ||
-            value.startsWith("simkl:", ignoreCase = true)
+    // Deliberately excludes "simkl:" — SIMKL ids cover regular TV/movies too, so a simkl:
+    // prefix alone must not flag content as anime (the anime-list/Simkl-details lookups set
+    // isAnime for genuine simkl anime instead).
+    private fun hasAnimeNativePrefix(value: String): Boolean = value.hasAnimeNamespacePrefix()
 
     private fun extractPrefixedInt(value: String, prefix: String): Int? {
         val marker = "$prefix:"
@@ -306,38 +405,6 @@ internal data class ResolvedEpisodeIdentity(
     val canonicalVideoId: String,
 )
 
-internal suspend fun MediaIdResolver.resolveEpisodeIdentity(
-    contentType: String,
-    parentMetaId: String,
-    videoId: String,
-    title: String?,
-    season: Int?,
-    episode: Int?,
-    isAnimeHint: Boolean = false,
-): ResolvedEpisodeIdentity {
-    val ids = resolve(
-        contentType = contentType,
-        parentMetaId = parentMetaId,
-        videoId = videoId,
-        title = title,
-        sourceSeasonNumber = season,
-        isAnimeHint = isAnimeHint,
-    )
-    val mappedSeason = ids.canonicalSeasonNumber(season)
-    val mappedEpisode = ids.canonicalEpisodeNumber(episode)
-    val streamEpisodeParts = ids.streamEpisodeParts(videoId, season, episode, mappedSeason, mappedEpisode)
-    val streamVideoId = ids.streamLookupVideoId(videoId, streamEpisodeParts)
-    return ResolvedEpisodeIdentity(
-        ids = ids,
-        season = mappedSeason,
-        episode = mappedEpisode,
-        streamSeason = streamEpisodeParts.first,
-        streamEpisode = streamEpisodeParts.second,
-        videoId = streamVideoId,
-        canonicalVideoId = ids.rewriteEpisodeVideoId(videoId, season, episode, mappedSeason, mappedEpisode),
-    )
-}
-
 private fun ResolvedMediaIds.streamEpisodeParts(
     videoId: String,
     sourceSeason: Int?,
@@ -351,6 +418,25 @@ private fun ResolvedMediaIds.streamEpisodeParts(
     // but the stream lookup must drop the season entirely. Returning a null season keeps
     // the rest of the pipeline from re-appending one.
     if (isAnime && videoId.hasNativeAnimePrefix()) {
+        // Franchise-numbered callers: once the franchise sibling entry has been applied
+        // (its mapped season matches the addressed season), convert the franchise episode
+        // to that entry's local absolute episode via its episode offset.
+        val franchiseEpisode: Int? = if (!franchiseNumbering) {
+            null
+        } else {
+            videoId.explicitFranchiseCoords()
+                ?.takeIf { (season, _) -> tvdbSeason == season || tmdbSeason == season }
+                ?.second
+                ?: sourceEpisode.takeIf {
+                    videoId.nativeAnimeEpisode() == null &&
+                        sourceSeason != null &&
+                        (tvdbSeason == sourceSeason || tmdbSeason == sourceSeason)
+                }
+        }
+        if (franchiseEpisode != null) {
+            val offset = tvdbEpisodeOffset ?: tmdbEpisodeOffset ?: 0
+            return null to (franchiseEpisode - offset).coerceAtLeast(1)
+        }
         return null to (videoId.nativeAnimeEpisode() ?: sourceEpisode)
     }
     val suffix = videoId.episodeSuffix()
@@ -359,7 +445,14 @@ private fun ResolvedMediaIds.streamEpisodeParts(
 
 private fun ResolvedMediaIds.streamLookupVideoId(videoId: String, streamEpisodeParts: Pair<Int?, Int?>): String {
     if (!isAnime || !videoId.hasNativeAnimePrefix()) return videoId
+    // An entry-addressed (2/3-part) kitsu id is already in the preferred stream namespace and
+    // is more specific than the parent-derived ids — it may be a franchise sibling produced by
+    // an earlier resolution pass (StreamsRepository re-resolves its own output for request
+    // tokens). Re-basing it onto the parent entry would undo that remap, so keep its base.
+    val isEntryAddressedKitsu = videoId.startsWith("kitsu:", ignoreCase = true) &&
+        videoId.explicitFranchiseCoords() == null
     val preferredBase = when {
+        isEntryAddressedKitsu -> videoId.nativeAnimeBase()
         kitsu != null -> "kitsu:$kitsu"
         mal != null -> "mal:$mal"
         anilist != null -> "anilist:$anilist"
@@ -400,17 +493,36 @@ private fun String.episodeSuffix(): Pair<Int?, Int?>? {
 }
 
 private fun String.hasNativeAnimePrefix(): Boolean =
+    hasAnimeNamespacePrefix() || startsWith("simkl:", ignoreCase = true)
+
+/** Anime-only id namespaces (unlike simkl:, these prefixes imply anime content). */
+internal fun String.hasAnimeNamespacePrefix(): Boolean =
     startsWith("kitsu:", ignoreCase = true) ||
         startsWith("mal:", ignoreCase = true) ||
         startsWith("myanimelist:", ignoreCase = true) ||
         startsWith("al:", ignoreCase = true) ||
         startsWith("anilist:", ignoreCase = true) ||
-        startsWith("anidb:", ignoreCase = true) ||
-        startsWith("simkl:", ignoreCase = true)
+        startsWith("anidb:", ignoreCase = true)
+
+/**
+ * Season/episode from an explicit 4-part franchise-numbered native id
+ * (`prefix:entryId:season:episode`, AIOMetadata style), or null for any other shape.
+ */
+internal fun String.explicitFranchiseCoords(): Pair<Int, Int>? {
+    if (!hasAnimeNamespacePrefix()) return null
+    val parts = split(':')
+    if (parts.size != 4) return null
+    if (parts[1].toIntOrNull() == null) return null
+    val season = parts[2].toIntOrNull() ?: return null
+    val episode = parts[3].toIntOrNull() ?: return null
+    return season to episode
+}
 
 internal fun ResolvedMediaIds.canonicalSeasonNumber(sourceSeasonNumber: Int?): Int? =
     when {
         sourceSeasonNumber == null -> null
+        // Already franchise numbering — the entry-local season-1 remap must not apply.
+        franchiseNumbering -> sourceSeasonNumber
         tmdbSeason != null && sourceSeasonNumber == 1 -> tmdbSeason
         tvdbSeason != null && sourceSeasonNumber == 1 -> tvdbSeason
         else -> sourceSeasonNumber
@@ -418,6 +530,14 @@ internal fun ResolvedMediaIds.canonicalSeasonNumber(sourceSeasonNumber: Int?): I
 
 internal fun ResolvedMediaIds.canonicalEpisodeNumber(sourceEpisodeNumber: Int?): Int? {
     if (sourceEpisodeNumber == null) return null
+    if (franchiseNumbering) return sourceEpisodeNumber
+    // A caller already passing the entry's mapped (franchise) season is franchise-numbered —
+    // re-adding the entry's episode offset would double-map. Entry-local sources (SIMKL,
+    // Kitsu addon metas) always report season 1, so they never take this branch.
+    val mappedSeason = tmdbSeason ?: tvdbSeason
+    if (sourceSeasonNumber != null && sourceSeasonNumber != 1 && sourceSeasonNumber == mappedSeason) {
+        return sourceEpisodeNumber
+    }
     val offset = tmdbEpisodeOffset ?: tvdbEpisodeOffset ?: 0
     return sourceEpisodeNumber + offset
 }
@@ -431,6 +551,10 @@ private fun ResolvedMediaIds.rewriteEpisodeVideoId(
 ): String {
     if (sourceSeason == null || sourceEpisode == null || mappedSeason == null || mappedEpisode == null) return videoId
     if (sourceSeason == mappedSeason && sourceEpisode == mappedEpisode) return videoId
+    // Native anime ids are `prefix:id:absoluteEpisode` — already canonical in their own
+    // namespace. Splicing TVDB-style season/episode numbers into them would replace the
+    // entry id itself (`kitsu:123:5` → `kitsu:3:17`), so leave them untouched.
+    if (videoId.hasNativeAnimePrefix()) return videoId
     val parts = videoId.split(':')
     if (parts.size >= 3 && parts[parts.lastIndex - 1].toIntOrNull() != null && parts.last().toIntOrNull() != null) {
         return (parts.dropLast(2) + listOf(mappedSeason.toString(), mappedEpisode.toString())).joinToString(":")
@@ -445,7 +569,12 @@ private fun AnimeIdMapping.toResolvedIds(contentType: String, sourceId: String):
         sourceTitle = null,
         sourceSeasonNumber = null,
         imdb = imdbIds.firstOrNull(),
-        tmdb = tmdbMovieIds.firstOrNull() ?: tmdbTvId,
+        // Match the TMDB namespace to the content type; only fall back across namespaces
+        // when the mapping has no id of the matching kind.
+        tmdb = when (contentType.trim().lowercase()) {
+            "series", "tv", "show", "tvshow", "anime" -> tmdbTvId ?: tmdbMovieIds.firstOrNull()
+            else -> tmdbMovieIds.firstOrNull() ?: tmdbTvId
+        },
         tvdb = tvdbId,
         simkl = simklId,
         mal = malId,

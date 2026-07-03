@@ -92,6 +92,7 @@ internal object TraktScrobbleRepository {
             videoId = videoId,
             title = title,
             sourceSeasonNumber = seasonNumber,
+            sourceEpisodeNumber = episodeNumber,
             isAnimeHint = normalizedType == "anime",
         )
         val ids = resolvedIds.toTraktExternalIds()

@@ -130,6 +130,12 @@ internal object SimklProgressRepository {
             error("SIMKL /sync/playback returned ${playbackResponse.status}")
         }
         val sessions = json.decodeFromString<List<SimklPlaybackSession>>(playbackResponse.body)
+        sessions.filter { it.type == "movie" }.forEach { session ->
+            log.d {
+                "SIMKL playback movie session: animeNode=${session.anime != null} " +
+                    "movieIds=${session.movie?.ids} animeIds=${session.anime?.ids} title=${session.anime?.title ?: session.movie?.title}"
+            }
+        }
         sessionIdByVideoId.clear()
         val playbackEntries = sessions.mapNotNull { session ->
             session.toWatchProgressEntry()?.also { entry ->
@@ -209,25 +215,27 @@ internal object SimklProgressRepository {
 
         return when (type) {
             "movie" -> {
-                val isAnimeMovie = anime != null
+                // SIMKL sometimes delivers anime movies under the plain `movie` node — check
+                // the anime list too, or the imdb-first non-anime preference trusts SIMKL's
+                // (unreliable for anime) imdb id and resolves a completely unrelated title.
+                val isAnimeMovie = anime != null || movie?.ids?.isKnownAnime() == true
+                // The payload node and the anime flag are independent: anime movies can arrive
+                // under the plain `movie` node (isKnownAnime), so title/poster must read from
+                // whichever node exists — not from the flag.
                 val id = if (isAnimeMovie) {
-                    anime?.ids?.toBestAnimeMovieContentId()
+                    (anime?.ids ?: movie?.ids)?.toBestAnimeMovieContentId()
                 } else {
                     movie?.ids?.toBestContentId()
                 } ?: return null
                 val cachedMeta = MetaDetailsRepository.peek("movie", id)
                 val posterUrl = cachedMeta?.poster
-                    ?: if (isAnimeMovie) {
-                        anime?.poster?.takeIf { it.isNotBlank() }?.simklPosterUrl()
-                    } else {
-                        movie?.poster?.takeIf { it.isNotBlank() }?.simklPosterUrl()
-                    }
+                    ?: (anime?.poster ?: movie?.poster)?.takeIf { it.isNotBlank() }?.simklPosterUrl()
                 WatchProgressEntry(
                     contentType = "movie",
                     parentMetaId = id,
                     parentMetaType = "movie",
                     videoId = id,
-                    title = (if (isAnimeMovie) anime?.title else movie?.title)
+                    title = (anime?.title ?: movie?.title)
                         ?.trim()?.takeIf(String::isNotBlank)
                         ?: cachedMeta?.name?.trim()?.takeIf(String::isNotBlank).orEmpty(),
                     poster = posterUrl,

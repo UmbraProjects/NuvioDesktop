@@ -63,12 +63,23 @@ object HomeRepository {
         }
         if (force) sectionDuplicatePageCounts.clear()
         val requestKey = requests.joinToString(separator = "|") { request ->
-            "${request.manifestUrl}:${request.type}:${request.catalogId}"
+            "${request.manifestUrl}:${request.type}:${request.catalogId}:${request.genre.orEmpty()}"
         }
 
         if (!force && activeRequestKey == requestKey && _uiState.value.isLoading) return
 
-        if (!force && requestKey == lastRequestKey && requestKeys.all(cachedSections::containsKey)) {
+        val snapshot = HomeCatalogSettingsRepository.snapshot()
+        fun HomeCatalogDefinition.isActiveInHome(): Boolean {
+            val preference = snapshot.preferences[key] ?: return true
+            return preference.enabled || (snapshot.heroEnabled && preference.heroSourceEnabled)
+        }
+        val activeRequestKeys = requests
+            .filter(HomeCatalogDefinition::isActiveInHome)
+            .mapTo(mutableSetOf(), HomeCatalogDefinition::key)
+        val allRenderableRowsCached = activeRequestKeys.all { key ->
+            cachedSections[key]?.items?.isNotEmpty() == true
+        }
+        if (!force && requestKey == lastRequestKey && allRenderableRowsCached) {
             if (_uiState.value.sections.isEmpty() || _uiState.value.heroItems.isEmpty()) {
                 applyCurrentSettings()
             }
@@ -99,11 +110,16 @@ object HomeRepository {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         activeJob = scope.launch {
             val prioritizedRequests = prioritizeDefinitions(
-                definitions = requests,
-                snapshot = HomeCatalogSettingsRepository.snapshot(),
+                definitions = requests.filter(HomeCatalogDefinition::isActiveInHome),
+                snapshot = snapshot,
             )
             val pendingRequests = prioritizedRequests.filter { definition ->
-                force || cachedSections[definition.key] == null
+                force || cachedSections[definition.key]?.items?.isNotEmpty() != true
+            }
+            log.i {
+                "Home refresh: definitions=${requests.size}, enabled=${prioritizedRequests.size}, " +
+                    "pending=${pendingRequests.size}, " +
+                    "cached=${cachedSections.size}, force=$force"
             }
             if (pendingRequests.isEmpty()) {
                 publishCurrentState(
@@ -131,7 +147,9 @@ object HomeRepository {
                 }
                 results.forEachIndexed { i, result ->
                     result.exceptionOrNull()?.let { error ->
-                        log.w(error) { "Catalog fetch failed: ${batch.getOrNull(i)?.let { "${it.addonName} / ${it.catalogId}" } ?: "unknown"}" }
+                        log.w(error) {
+                            "Catalog fetch failed: ${batch.getOrNull(i)?.let { "${it.addonName} / ${it.catalogId}" } ?: "unknown"}"
+                        }
                     }
                 }
                 if (firstErrorMessage == null) {
@@ -202,14 +220,24 @@ object HomeRepository {
         fun HomeCatalogSection.withReleaseFilter(): HomeCatalogSection =
             if (todayIsoDate == null) this else filterReleasedItems(todayIsoDate)
 
+        val skippedEnabledSections = mutableListOf<String>()
         val sections = currentDefinitions
             .sortedBy { definition -> preferences[definition.key]?.order ?: Int.MAX_VALUE }
             .mapNotNull { definition ->
                 val preference = preferences[definition.key]
                 if (preference?.enabled == false) return@mapNotNull null
 
-                val section = cachedSections[definition.key]?.withReleaseFilter() ?: return@mapNotNull null
-                if (section.items.isEmpty()) return@mapNotNull null
+                val cachedSection = cachedSections[definition.key]
+                if (cachedSection == null) {
+                    skippedEnabledSections += "${definition.key}:not-fetched"
+                    return@mapNotNull null
+                }
+                val section = cachedSection.withReleaseFilter()
+                if (section.items.isEmpty()) {
+                    val reason = if (cachedSection.items.isEmpty()) "empty" else "filtered-empty"
+                    skippedEnabledSections += "${definition.key}:$reason"
+                    return@mapNotNull null
+                }
                 val customTitle = preference?.customTitle.orEmpty()
                 section.copy(
                     title = customTitle.ifBlank { section.title },
@@ -242,7 +270,10 @@ object HomeRepository {
                 catalogHeroItems.isNotEmpty() -> "catalogs (${heroItems.size} items)"
                 else -> "collection fallback (${heroItems.size} items)"
             }
-            "Home state: ${sections.size} sections visible, hero=$heroSource"
+            val skipped = skippedEnabledSections.takeIf { it.isNotEmpty() }
+                ?.joinToString(prefix = ", skipped=", limit = 12)
+                .orEmpty()
+            "Home state: ${sections.size} sections visible, hero=$heroSource$skipped"
         }
 
         _uiState.value = HomeUiState(
@@ -258,6 +289,7 @@ object HomeRepository {
             manifestUrl = manifestUrl,
             type = type,
             catalogId = catalogId,
+            genre = genre,
             // Paginating rows are horizontal infinite-scroll, so fetch the full first page (skip stays
             // page-aligned for subsequent loads). Non-paginating rows only need the preview + pill.
             maxItems = if (supportsPagination) null else HOME_CATALOG_PREVIEW_FETCH_LIMIT,
@@ -275,6 +307,7 @@ object HomeRepository {
                     manifestUrl = manifestUrl,
                     contentType = type,
                     catalogId = catalogId,
+                    genre = genre,
                     supportsPagination = supportsPagination,
                 ),
                 items = emptyList(),
@@ -292,6 +325,7 @@ object HomeRepository {
                 manifestUrl = manifestUrl,
                 contentType = type,
                 catalogId = catalogId,
+                genre = genre,
                 supportsPagination = supportsPagination,
             ),
             items = items,
@@ -320,6 +354,7 @@ object HomeRepository {
                     manifestUrl = target.manifestUrl,
                     type = target.contentType,
                     catalogId = target.catalogId,
+                    genre = target.genre,
                     skip = skip,
                 )
             }.fold(

@@ -55,10 +55,25 @@ object TmdbSettingsRepository {
         ensureLoaded()
         val normalized = value.trim()
         if (apiKey == normalized) return
+        val wasBlank = apiKey.isBlank()
         apiKey = normalized
         if (apiKey.isBlank()) {
             enabled = false
             TmdbSettingsStorage.saveEnabled(false)
+        } else if (wasBlank) {
+            // Entering a TMDB key turns enrichment on and defaults hero art to TMDB for
+            // everything. Many search/meta providers (Trakt via AIOMetadata, TVDB search)
+            // return no backdrop at all and fall back to a stretched poster, so TMDB art is
+            // the consistent choice once a key exists. Users can switch either setting after;
+            // both are only touched on a blank → non-blank key transition. (Previously only
+            // the onboarding popup auto-enabled — the settings panel path did not.)
+            enabled = true
+            TmdbSettingsStorage.saveEnabled(true)
+            if (heroImageSource != HeroImageSource.TmdbOnly) {
+                heroImageSource = HeroImageSource.TmdbOnly
+                TmdbSettingsStorage.saveHeroImageSource(HeroImageSource.TmdbOnly.name)
+                TmdbHeroImageService.clearCache()
+            }
         }
         publish()
         TmdbSettingsStorage.saveApiKey(normalized)

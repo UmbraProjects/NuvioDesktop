@@ -7,10 +7,11 @@ import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.metadata.ResolvedMediaIds
 import com.nuvio.app.features.metadata.toSimklIds
 import com.nuvio.app.features.trakt.TraktExternalIds
-import com.nuvio.app.features.trakt.TraktScrobbleItem
 import com.nuvio.app.features.trakt.parseTraktContentIds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -84,6 +85,7 @@ internal object SimklScrobbleRepository {
             videoId = videoId,
             title = title,
             sourceSeasonNumber = seasonNumber,
+            sourceEpisodeNumber = episodeNumber,
             isAnimeHint = isAnime || normalizedType == "anime",
         )
         val resolvedIsAnime = isAnime || resolvedIds.isAnime
@@ -119,63 +121,6 @@ internal object SimklScrobbleRepository {
         if (!isAnime || simkl == null) return sourceEpisode
         val offset = tmdbEpisodeOffset ?: tvdbEpisodeOffset ?: 0
         return (sourceEpisode - offset).coerceAtLeast(1)
-    }
-
-    private suspend fun send(action: String, item: TraktScrobbleItem, progressPercent: Float, isAnime: Boolean) {
-        if (!SimklAuthRepository.isAuthenticated.value) return
-        val headers = SimklAuthRepository.authorizedHeaders() ?: return
-        val progress = progressPercent.coerceIn(0f, 100f)
-        val itemKey = item.itemKey
-        if (shouldSkip(action, itemKey, progress)) return
-
-        val body = buildBodyJson(item, progress, isAnime)
-        val url = SimklAuthRepository.appendParams("$BASE_URL/scrobble/$action")
-
-        log.d { "SIMKL scrobble $action: $itemKey @ ${"%.1f".format(progress)}%" }
-
-        val attempts = if (action == "stop") maxStopRetries + 1 else 1
-        for (attempt in 1..attempts) {
-            val response = runCatching {
-                httpRequestRaw(method = "POST", url = url, headers = headers, body = body)
-            }.onFailure { error ->
-                if (error is CancellationException) throw error
-                log.w(error) { "SIMKL scrobble $action transport failure (attempt $attempt/$attempts)" }
-            }.getOrNull()
-
-            if (response == null) {
-                if (attempt < attempts) { delay(retryDelayMs * attempt); continue }
-                return
-            }
-
-            log.d { "SIMKL scrobble $action response: ${response.status}" }
-
-            when (response.status) {
-                in 200..299 -> {
-                    lastStamp = ScrobbleStamp(action, itemKey, progress, System.currentTimeMillis())
-                    return
-                }
-                // 429 = 20-second per-user lock; back off and retry once.
-                429 -> {
-                    if (attempt < attempts) { delay(overlapRetryDelayMs); continue }
-                    log.w { "SIMKL scrobble $action: 429 overlap lock, giving up" }
-                    return
-                }
-                // 409 = already scrobbled (duplicate) — not an error.
-                409 -> {
-                    log.d { "SIMKL scrobble $action: 409 duplicate, ignoring" }
-                    return
-                }
-                in 500..504 -> {
-                    if (attempt < attempts) { delay(retryDelayMs * 3 * attempt); continue }
-                    log.w { "SIMKL scrobble $action: server error ${response.status}" }
-                    return
-                }
-                else -> {
-                    log.w { "SIMKL scrobble $action: unexpected ${response.status} ${response.body.take(200)}" }
-                    return
-                }
-            }
-        }
     }
 
     private suspend fun send(action: String, item: SimklScrobbleItem, progressPercent: Float) {
@@ -282,32 +227,6 @@ internal object SimklScrobbleRepository {
         val episode: SimklEpisodeBody,
     )
 
-    private fun buildBodyJson(item: TraktScrobbleItem, progress: Float, isAnime: Boolean): String = when (item) {
-        is TraktScrobbleItem.Movie -> json.encodeToString(
-            SimklMovieRequest(
-                progress = progress,
-                movie = SimklMovieBody(title = item.title, ids = item.ids.toSimklIds()),
-            )
-        )
-        is TraktScrobbleItem.Episode -> {
-            val media = SimklShowBody(title = item.showTitle, ids = item.showIds.toSimklIds())
-            val episode = SimklEpisodeBody(season = item.season, number = item.number)
-            if (isAnime) json.encodeToString(
-                SimklAnimeEpisodeRequest(
-                    progress = progress,
-                    anime = media,
-                    episode = episode,
-                )
-            ) else json.encodeToString(
-                SimklEpisodeRequest(
-                    progress = progress,
-                    show = media,
-                    episode = episode,
-                )
-            )
-        }
-    }
-
     private fun buildBodyJson(item: SimklScrobbleItem, progress: Float): String = when (item) {
         is SimklScrobbleItem.Movie -> json.encodeToString(
             SimklMovieRequest(
@@ -362,11 +281,19 @@ internal object SimklScrobbleRepository {
         return parentIds.withFallbacks(videoIds)
     }
 
+    // Memoized per input ids: scrobble start and stop both rebuild the item, and without
+    // this each rebuild repeats the SIMKL redirect + details round-trips.
+    private val animeIdEnrichmentMutex = Mutex()
+    private val animeIdEnrichmentCache = mutableMapOf<SimklIds, SimklIds>()
+
     private suspend fun enrichAnimeIdsForSimkl(ids: SimklIds): SimklIds {
         if (ids.simkl != null && (ids.tvdb != null || ids.kitsu != null || ids.mal != null)) return ids
+        animeIdEnrichmentMutex.withLock { animeIdEnrichmentCache[ids] }?.let { return it }
         val resolvedSimklId = ids.simkl ?: resolveAnimeSimklId(ids) ?: return ids
         val detailsIds = fetchAnimeIds(resolvedSimklId)
-        return ids.copy(simkl = resolvedSimklId).withFallbacks(detailsIds)
+        val enriched = ids.copy(simkl = resolvedSimklId).withFallbacks(detailsIds)
+        animeIdEnrichmentMutex.withLock { animeIdEnrichmentCache[ids] = enriched }
+        return enriched
     }
 
     private suspend fun resolveAnimeSimklId(ids: SimklIds): Int? {

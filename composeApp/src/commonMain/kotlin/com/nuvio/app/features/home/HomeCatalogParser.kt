@@ -58,7 +58,7 @@ internal object HomeCatalogParser {
                     ageRating = meta.string("ageRating") ?: meta.string("certification"),
                     runtime = meta.string("runtime"),
                     genres = meta.array("genres").mapNotNull { genre ->
-                        genre.jsonPrimitive.contentOrNull?.takeIf { it.isNotBlank() }
+                        (genre as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
                     },
                     cast = meta.stringListOrCsv("cast").ifEmpty {
                         meta.stringListOrCsv("actors")
@@ -76,7 +76,7 @@ internal object HomeCatalogParser {
     }
 
     private fun JsonObject.string(name: String): String? =
-        this[name]?.jsonPrimitive?.contentOrNull
+        (this[name] as? JsonPrimitive)?.contentOrNull
 
     private fun JsonObject.array(name: String): JsonArray =
         this[name] as? JsonArray ?: JsonArray(emptyList())

@@ -10,6 +10,8 @@ import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.filterReleasedItems
 import com.nuvio.app.features.mdblist.MdbListMetadataService
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
+import com.nuvio.app.features.metadata.AnimeArtworkService
+import com.nuvio.app.features.metadata.hasAnimeNamespacePrefix
 import com.nuvio.app.features.tmdb.TmdbMetadataService
 import com.nuvio.app.features.tmdb.HeroImageSource
 import com.nuvio.app.features.tmdb.TmdbService
@@ -244,6 +246,16 @@ object MetaDetailsRepository {
     // TMDB backdrop/logo. Merges the two so text comes from the addon and images from TMDB.
     // This is simpler and more reliable than a separate TMDB image service.
     suspend fun fetchLightweightMeta(type: String, id: String, preferTmdbImages: Boolean = false): MetaDetails? {
+        val meta = fetchLightweightMetaInternal(type = type, id = id, preferTmdbImages = preferTmdbImages)
+        // Native anime ids are per-season entries, but TMDB/TVDB art is franchise-wide — every
+        // season of a kitsu catalog would show the same backdrop. Swap in the entry's own
+        // AniList/Kitsu banner when one exists (service-cached, so repeat calls are free).
+        if (meta == null || !id.hasAnimeNamespacePrefix()) return meta
+        val seasonBackdrop = AnimeArtworkService.seasonBackdrop(id) ?: return meta
+        return meta.copy(background = seasonBackdrop)
+    }
+
+    private suspend fun fetchLightweightMetaInternal(type: String, id: String, preferTmdbImages: Boolean): MetaDetails? {
         val requestKey = "$type:$id:${if (preferTmdbImages) "tmdb" else "addon"}"
         // When preferTmdbImages is false: use the main detail-page cache (cachedMetaByRequestKey).
         // When preferTmdbImages is true: skip the main cache — it contains AIOMetadata responses

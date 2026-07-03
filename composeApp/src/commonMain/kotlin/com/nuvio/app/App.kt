@@ -537,6 +537,9 @@ fun App() {
             NetworkStatusRepository.ensureStarted()
             ProfileRepository.loadCachedProfiles()
             AvatarRepository.fetchAvatars()
+            // Parse anime-list-mini.json (~6 MB) off the UI thread now, so the first
+            // stream/player launch doesn't pay for it inside composition.
+            com.nuvio.app.features.metadata.AnimeIdMappingRepository.warmAsync()
         }
 
         val authState by AuthRepository.state.collectAsStateWithLifecycle()

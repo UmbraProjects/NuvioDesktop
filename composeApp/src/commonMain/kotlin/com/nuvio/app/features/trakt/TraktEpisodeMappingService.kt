@@ -480,19 +480,28 @@ object TraktEpisodeMappingService {
         getTraktMisses++
         val startTime = TimeSource.Monotonic.markNow()
         val headers = TraktAuthRepository.authorizedHeaders() ?: run {
+            // Complete the deferred before removing it — a waiter that already grabbed it
+            // would otherwise await an abandoned deferred forever.
+            deferred.complete(emptyList())
             cleanupTraktFlight(showLookupId)
             return emptyList()
         }
 
         // Trakt API: GET /shows/{id}/seasons?extended=episodes
         val url = "$BASE_URL/shows/$showLookupId/seasons?extended=episodes"
-        val payload = runCatching {
+        val payload = try {
             httpGetTextWithHeaders(url = url, headers = headers)
-        }.onFailure { e ->
-            if (e is CancellationException) throw e
+        } catch (e: Throwable) {
+            if (e is CancellationException) {
+                deferred.completeExceptionally(e)
+                cleanupTraktFlight(showLookupId)
+                throw e
+            }
             log.w { "getTraktEpisodes: seasons request failed id=$showLookupId: ${e.message}" }
-        }.getOrNull() ?: run {
+            null
+        } ?: run {
             getTraktTimeMs += startTime.elapsedNow().inWholeMilliseconds
+            deferred.complete(emptyList())
             cleanupTraktFlight(showLookupId)
             return emptyList()
         }

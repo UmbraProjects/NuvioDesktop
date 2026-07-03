@@ -1,6 +1,10 @@
 package com.nuvio.app.features.metadata
 
 import co.touchlab.kermit.Logger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -52,7 +56,8 @@ internal object AnimeIdMappingRepository {
         val byMal: Map<Int, AnimeIdMapping>,
         val bySimkl: Map<Int, AnimeIdMapping>,
         val byImdb: Map<String, List<AnimeIdMapping>>,
-        val byTmdb: Map<Int, List<AnimeIdMapping>>,
+        val byTmdbTv: Map<Int, List<AnimeIdMapping>>,
+        val byTmdbMovie: Map<Int, List<AnimeIdMapping>>,
         val byTvdb: Map<Int, List<AnimeIdMapping>>,
     )
 
@@ -68,10 +73,72 @@ internal object AnimeIdMappingRepository {
         ids.mal?.let { index.byMal[it]?.let { mapping -> return mapping } }
         ids.simkl?.let { index.bySimkl[it]?.let { mapping -> return mapping } }
         ids.imdb?.lowercase()?.let { index.byImdb[it]?.selectBest(ids)?.let { mapping -> return mapping } }
-        ids.tmdb?.let { index.byTmdb[it]?.selectBest(ids)?.let { mapping -> return mapping } }
+        // TMDB movie and TV ids are separate namespaces (movie 26209 ≠ tv 26209), so only
+        // consult the map(s) matching the content type — a bare "movie" id must never match
+        // an anime's tv mapping just because the numbers collide.
+        ids.tmdb?.let { tmdb ->
+            tmdbCandidateMaps(ids.contentType, index).forEach { map ->
+                map[tmdb]?.selectBest(ids)?.let { mapping -> return mapping }
+            }
+        }
         ids.tvdb?.let { index.byTvdb[it]?.selectBest(ids)?.let { mapping -> return mapping } }
         return null
     }
+
+    private fun tmdbCandidateMaps(contentType: String, index: Index): List<Map<Int, List<AnimeIdMapping>>> =
+        when (contentType.trim().lowercase()) {
+            "movie", "movies", "film" -> listOf(index.byTmdbMovie)
+            "series", "tv", "show", "tvshow" -> listOf(index.byTmdbTv)
+            else -> listOf(index.byTmdbTv, index.byTmdbMovie)
+        }
+
+    /**
+     * The sibling entry of [base] that covers franchise [season]/[episode]. Anime franchises
+     * are one TVDB/TMDB show but many per-season entries on kitsu/mal/etc (SAO season 3 is
+     * its own kitsu id), and split-cour seasons additionally carve one franchise season into
+     * several entries via episode_offset (an entry covers episodes offset+1 and up). Returns
+     * null when no sibling with native anime ids matches — callers keep the base entry.
+     */
+    fun franchiseEntryFor(base: AnimeIdMapping, season: Int, episode: Int): AnimeIdMapping? {
+        val index = loadIndex()
+        val siblings = base.tvdbId?.let { index.byTvdb[it] }
+            ?: base.tmdbTvId?.let { index.byTmdbTv[it] }
+            ?: return null
+        return siblings
+            .filter { entry ->
+                (entry.tvdbSeason == season || entry.tmdbSeason == season) &&
+                    entry.hasNativeAnimeId() &&
+                    entry.franchiseEpisodeOffset() < episode
+            }
+            .maxByOrNull { it.franchiseEpisodeOffset() }
+    }
+
+    private fun AnimeIdMapping.hasNativeAnimeId(): Boolean =
+        kitsuId != null || malId != null || anilistId != null || anidbId != null
+
+    /**
+     * Direct entry lookup by native ids. Used to translate sparse payloads (e.g. SIMKL
+     * playback sessions that only carry a simkl id) into ids the rest of the pipeline —
+     * meta addons, stream scrapers — actually understands.
+     */
+    fun entryForNativeIds(
+        anidb: Int? = null,
+        anilist: Int? = null,
+        kitsu: Int? = null,
+        mal: Int? = null,
+        simkl: Int? = null,
+    ): AnimeIdMapping? {
+        val index = loadIndex()
+        anidb?.let { index.byAnidb[it]?.let { mapping -> return mapping } }
+        anilist?.let { index.byAnilist[it]?.let { mapping -> return mapping } }
+        kitsu?.let { index.byKitsu[it]?.let { mapping -> return mapping } }
+        mal?.let { index.byMal[it]?.let { mapping -> return mapping } }
+        simkl?.let { index.bySimkl[it]?.let { mapping -> return mapping } }
+        return null
+    }
+
+    private fun AnimeIdMapping.franchiseEpisodeOffset(): Int =
+        tvdbEpisodeOffset ?: tmdbEpisodeOffset ?: 0
 
     private fun List<AnimeIdMapping>.selectBest(ids: ResolvedMediaIds): AnimeIdMapping? {
         if (isEmpty()) return null
@@ -100,6 +167,18 @@ internal object AnimeIdMappingRepository {
         }
         return first()
     }
+
+    // anime-list-mini.json is ~6 MB / 42k entries; parsing it takes long enough to jank the
+    // UI thread when the first lookup() happens inside composition (stream load, player
+    // launch). Warming from App startup moves that cost to a background thread before any
+    // user interaction needs it. Safe to call repeatedly; the double-checked loadIndex()
+    // makes concurrent first-touch callers wait on the same parse instead of repeating it.
+    fun warmAsync() {
+        if (cachedIndex != null) return
+        warmScope.launch { runCatching { loadIndex() } }
+    }
+
+    private val warmScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // Double-checked locking: cachedIndex is read from multiple coroutines (MediaIdResolver,
     // scrobble builds, hero prefetch) without a suspend context available here, so a plain
@@ -132,7 +211,8 @@ internal object AnimeIdMappingRepository {
         val byMal = linkedMapOf<Int, AnimeIdMapping>()
         val bySimkl = linkedMapOf<Int, AnimeIdMapping>()
         val byImdb = linkedMapOf<String, MutableList<AnimeIdMapping>>()
-        val byTmdb = linkedMapOf<Int, MutableList<AnimeIdMapping>>()
+        val byTmdbTv = linkedMapOf<Int, MutableList<AnimeIdMapping>>()
+        val byTmdbMovie = linkedMapOf<Int, MutableList<AnimeIdMapping>>()
         val byTvdb = linkedMapOf<Int, MutableList<AnimeIdMapping>>()
 
         mappings.forEach { mapping ->
@@ -142,8 +222,8 @@ internal object AnimeIdMappingRepository {
             mapping.malId?.let { byMal.putIfAbsent(it, mapping) }
             mapping.simklId?.let { bySimkl.putIfAbsent(it, mapping) }
             mapping.imdbIds.forEach { byImdb.getOrPut(it.lowercase()) { mutableListOf() } += mapping }
-            mapping.tmdbTvId?.let { byTmdb.getOrPut(it) { mutableListOf() } += mapping }
-            mapping.tmdbMovieIds.forEach { byTmdb.getOrPut(it) { mutableListOf() } += mapping }
+            mapping.tmdbTvId?.let { byTmdbTv.getOrPut(it) { mutableListOf() } += mapping }
+            mapping.tmdbMovieIds.forEach { byTmdbMovie.getOrPut(it) { mutableListOf() } += mapping }
             mapping.tvdbId?.let { byTvdb.getOrPut(it) { mutableListOf() } += mapping }
         }
 
@@ -154,7 +234,8 @@ internal object AnimeIdMappingRepository {
             byMal = byMal,
             bySimkl = bySimkl,
             byImdb = byImdb,
-            byTmdb = byTmdb,
+            byTmdbTv = byTmdbTv,
+            byTmdbMovie = byTmdbMovie,
             byTvdb = byTvdb,
         )
     }
@@ -166,7 +247,8 @@ internal object AnimeIdMappingRepository {
         byMal = emptyMap(),
         bySimkl = emptyMap(),
         byImdb = emptyMap(),
-        byTmdb = emptyMap(),
+        byTmdbTv = emptyMap(),
+        byTmdbMovie = emptyMap(),
         byTvdb = emptyMap(),
     )
 }
