@@ -669,13 +669,19 @@ private fun MobileSettingsScreen(
                         SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                         onPageChange(SettingsPage.TmdbEnrichment)
                     },
-                    onOpenPosterCustomization = {
+                    onOpenPosterCustomization = { anchor ->
+                        SettingsScrollAnchor.request(anchor)
                         SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                         onPageChange(SettingsPage.PosterCustomization)
                     },
                     onOpenSimkl = {
                         SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                         onPageChange(SettingsPage.SimklAuthentication)
+                    },
+                    onOpenIntegrations = { anchor ->
+                        SettingsScrollAnchor.request(anchor)
+                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
+                        onPageChange(SettingsPage.Integrations)
                     },
                 )
                 SettingsPage.SupportersContributors -> supportersContributorsContent(
@@ -1141,13 +1147,19 @@ private fun TabletSettingsScreen(
                             SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                             openInlinePage(SettingsPage.TmdbEnrichment)
                         },
-                        onOpenPosterCustomization = {
+                        onOpenPosterCustomization = { anchor ->
+                            SettingsScrollAnchor.request(anchor)
                             SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                             openInlinePage(SettingsPage.PosterCustomization)
                         },
                         onOpenSimkl = {
                             SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
                             openInlinePage(SettingsPage.SimklAuthentication)
+                        },
+                        onOpenIntegrations = { anchor ->
+                            SettingsScrollAnchor.request(anchor)
+                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
+                            openInlinePage(SettingsPage.Integrations)
                         },
                     )
                     SettingsPage.SupportersContributors -> supportersContributorsContent(

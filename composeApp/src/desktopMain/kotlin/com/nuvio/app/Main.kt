@@ -25,7 +25,9 @@ import java.awt.dnd.DnDConstants
 import java.awt.dnd.DropTargetDragEvent
 import java.awt.dnd.DropTargetDropEvent
 import com.nuvio.app.core.ui.DesktopNavigationGestureBridge
+import com.nuvio.app.features.player.DesktopRendererApi
 import com.nuvio.app.features.player.PlatformPlayerSurface
+import com.nuvio.app.features.player.PlayerSettingsStorage
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.applyNativeBorderlessFullscreen
 import com.nuvio.app.features.player.desktop.applyNativeDesktopWindowChrome
@@ -54,6 +56,7 @@ private const val NuvioDesktopIconPath = "icons/nuvio-app-icon.png"
 private const val MacosDarkAquaAppearance = "NSAppearanceNameDarkAqua"
 
 fun main() {
+    configureDesktopRenderer()
     configureDesktopFileLogging()
     configureDesktopChrome()
     preloadNativePlayerBridgeAsync()
@@ -202,5 +205,21 @@ fun main() {
 private fun configureDesktopChrome() {
     if (System.getProperty("os.name").contains("mac", ignoreCase = true)) {
         System.setProperty("apple.awt.application.appearance", MacosDarkAquaAppearance)
+    }
+}
+
+// Selects the Compose/Skiko UI graphics backend from the persisted renderer setting. Skiko
+// reads the skiko.renderApi system property once, when it initializes for the first window, so
+// this must run before any Compose window is shown and a change only takes effect on the next
+// launch. An explicit user choice always wins; if none is saved we default to OpenGL unless
+// skiko.renderApi was already set out-of-band (e.g. a JVM flag for debugging), which is left
+// untouched. Best-effort — on any failure Skiko falls back to its own platform default.
+private fun configureDesktopRenderer() {
+    runCatching {
+        val stored = PlayerSettingsStorage.loadDesktopRendererApi()
+            ?.let { runCatching { DesktopRendererApi.valueOf(it) }.getOrNull() }
+        val renderer = stored
+            ?: DesktopRendererApi.OpenGL.takeIf { System.getProperty("skiko.renderApi").isNullOrBlank() }
+        renderer?.let { System.setProperty("skiko.renderApi", it.skikoRenderApi) }
     }
 }

@@ -1008,7 +1008,20 @@ object WatchProgressRepository {
         }
     }
 
+    // Nuvio Sync RPCs require a real (non-anonymous) Supabase session server-side; pushing
+    // without one just earns an "Unauthorized: valid session required for sync" rejection.
+    // Mirrors the gate the pull path (forceSnapshotRefreshFromServer) and LibraryRepository
+    // already apply.
+    private fun isNuvioSyncAuthenticated(): Boolean {
+        val authState = AuthRepository.state.value
+        return authState is AuthState.Authenticated && !authState.isAnonymous
+    }
+
     private fun pushScrobbleToServer(entry: WatchProgressEntry) {
+        if (!isNuvioSyncAuthenticated()) {
+            log.d { "Skipping watch progress scrobble push: Nuvio Sync is not authenticated" }
+            return
+        }
         syncScope.launch {
             runCatching {
                 val profileId = ProfileRepository.activeProfileId
@@ -1022,6 +1035,10 @@ object WatchProgressRepository {
 
     private fun pushDeleteToServer(entries: Collection<WatchProgressEntry>) {
         if (shouldUseTraktProgress()) return
+        if (!isNuvioSyncAuthenticated()) {
+            log.d { "Skipping watch progress delete push: Nuvio Sync is not authenticated" }
+            return
+        }
         syncScope.launch {
             runCatching {
                 if (entries.isEmpty()) return@runCatching

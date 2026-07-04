@@ -263,6 +263,18 @@ internal fun settingsSearchEntries(
         description = stringResource(Res.string.compose_settings_root_integrations_description),
         icon = Icons.Rounded.Link,
     )
+    if (isDesktop) {
+        addRow(
+            page = SettingsPage.Integrations,
+            key = "discord-presence",
+            title = "Discord Rich Presence",
+            description = "Show the title and episode you are watching on your Discord profile.",
+            pageLabel = integrationsPage,
+            section = stringResource(Res.string.settings_integrations_section_title),
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.DiscordPresence,
+        )
+    }
     if (notificationsEnabled) {
         addPage(
             page = SettingsPage.Notifications,
@@ -296,6 +308,8 @@ internal fun settingsSearchEntries(
         PlaybackSearchRow("torbox-attribution", stringResource(Res.string.settings_licenses_attributions_torbox_title), stringResource(Res.string.settings_licenses_attributions_torbox_body)),
         PlaybackSearchRow("mdblist-attribution", stringResource(Res.string.settings_licenses_attributions_mdblist_title), stringResource(Res.string.settings_licenses_attributions_mdblist_body)),
         PlaybackSearchRow("introdb-attribution", stringResource(Res.string.settings_licenses_attributions_introdb_title), stringResource(Res.string.settings_licenses_attributions_introdb_body)),
+        PlaybackSearchRow("tvdb-attribution", stringResource(Res.string.settings_licenses_attributions_tvdb_title), stringResource(Res.string.settings_licenses_attributions_tvdb_body)),
+        PlaybackSearchRow("simkl-attribution", stringResource(Res.string.settings_licenses_attributions_simkl_title), stringResource(Res.string.settings_licenses_attributions_simkl_body)),
         PlaybackSearchRow("imdb-datasets", stringResource(Res.string.settings_licenses_attributions_imdb_title), stringResource(Res.string.settings_licenses_attributions_imdb_body)),
         PlaybackSearchRow(
             if (isIos) "mpvkit-license" else "exoplayer-license",
@@ -563,6 +577,12 @@ internal fun settingsSearchEntries(
                 anchor = SettingsScrollAnchor.ColorProfile,
             ) else null,
             if (isDesktop) PlaybackSearchRow(
+                "desktop-renderer",
+                stringResource(Res.string.settings_playback_desktop_renderer),
+                stringResource(Res.string.settings_playback_desktop_renderer_dialog),
+                anchor = SettingsScrollAnchor.DesktopRenderer,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
                 "desktop-buffer-preset",
                 stringResource(Res.string.settings_playback_desktop_buffer_preset),
                 anchor = SettingsScrollAnchor.BufferPreset,
@@ -573,10 +593,28 @@ internal fun settingsSearchEntries(
                 anchor = SettingsScrollAnchor.AnimeEnhancements,
             ) else null,
             if (isDesktop) PlaybackSearchRow(
+                "desktop-anime-auto",
+                stringResource(Res.string.settings_playback_desktop_anime_auto),
+                stringResource(Res.string.settings_playback_desktop_anime_auto_desc),
+                anchor = SettingsScrollAnchor.AnimeAutoApply,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "desktop-anime-svp",
+                stringResource(Res.string.settings_playback_desktop_anime_svp),
+                stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
+                anchor = SettingsScrollAnchor.AnimeSvp,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
                 "hero-tv-trailer",
                 stringResource(Res.string.settings_playback_hero_tv_trailer),
                 stringResource(Res.string.settings_playback_hero_tv_trailer_description),
                 anchor = SettingsScrollAnchor.AutoPlayTrailer,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "hero-tv-trailer-delay",
+                stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
+                "Delay before focused hero trailers start playing.",
+                anchor = SettingsScrollAnchor.TrailerDelay,
             ) else null,
             if (isDesktop) PlaybackSearchRow(
                 "hero-tv-trailer-sound",
@@ -724,7 +762,12 @@ internal fun settingsSearchEntries(
 
     val posterSection = stringResource(Res.string.settings_poster_card_style)
     listOf(
-        PlaybackSearchRow("poster-width", stringResource(Res.string.settings_poster_card_width)),
+        PlaybackSearchRow(
+            "poster-width",
+            stringResource(Res.string.settings_poster_card_width),
+            "Includes Compact, Dense, Standard, Balanced, Comfort, Large, and Extra Large poster sizes.",
+            anchor = SettingsScrollAnchor.ExtraLargePosters,
+        ),
         PlaybackSearchRow("poster-radius", stringResource(Res.string.settings_poster_card_radius)),
         PlaybackSearchRow("poster-landscape", stringResource(Res.string.settings_poster_landscape_mode)),
         PlaybackSearchRow("poster-hide-labels", stringResource(Res.string.settings_poster_hide_labels)),
@@ -737,15 +780,22 @@ internal fun settingsSearchEntries(
             pageLabel = posterStylePage,
             section = posterSection,
             icon = Icons.Rounded.Tune,
+            anchor = row.anchor,
         )
     }
 
     val homeLayoutSection = stringResource(Res.string.settings_homescreen_section_hero)
     listOf(
         PlaybackSearchRow("home-hero", stringResource(Res.string.settings_homescreen_show_hero), stringResource(Res.string.settings_homescreen_show_hero_description)),
+        PlaybackSearchRow("home-hero-badge-count", "Hero badge count", "Choose how many hero badges are shown.", anchor = SettingsScrollAnchor.HeroBadgeCount),
+        PlaybackSearchRow("home-hero-badge-position", "Hero badge position", "Choose where hero badges appear.", anchor = SettingsScrollAnchor.HeroBadgePosition),
+        PlaybackSearchRow("home-hero-badge-size", "Hero badge size", "Scale badges for desktop or TV viewing.", anchor = SettingsScrollAnchor.HeroBadgeSize),
+        PlaybackSearchRow("home-hero-badge-priority", "Hero info priority", "Choose which hero badges are preferred first.", anchor = SettingsScrollAnchor.HeroBadgePriority),
+        PlaybackSearchRow("home-hero-release-status", "Only show unavailable release status", "Show release status only for cinema and production titles.", anchor = SettingsScrollAnchor.HeroReleaseStatus),
         PlaybackSearchRow("home-hide-unreleased", stringResource(Res.string.layout_hide_unreleased), stringResource(Res.string.layout_hide_unreleased_sub)),
         PlaybackSearchRow("home-hide-catalog-underline", stringResource(Res.string.settings_homescreen_hide_catalog_underline), stringResource(Res.string.settings_homescreen_hide_catalog_underline_description)),
         PlaybackSearchRow("home-adaptive-hero", stringResource(Res.string.settings_homescreen_adaptive_hero), stringResource(Res.string.settings_homescreen_adaptive_hero_description), anchor = SettingsScrollAnchor.AdaptiveHero),
+        PlaybackSearchRow("home-adaptive-hero-position", "Backdrop vertical position", "Manually tune how adaptive hero backdrops crop vertically.", anchor = SettingsScrollAnchor.AdaptiveHeroPosition),
         PlaybackSearchRow("home-hero-ambient", stringResource(Res.string.settings_homescreen_hero_ambient_background), stringResource(Res.string.settings_homescreen_hero_ambient_background_description), anchor = SettingsScrollAnchor.HeroAmbient),
         PlaybackSearchRow("home-tv-mode", stringResource(Res.string.settings_homescreen_tv_mode), stringResource(Res.string.settings_homescreen_tv_mode_description), anchor = SettingsScrollAnchor.TvMode),
         PlaybackSearchRow("home-hero-sources", stringResource(Res.string.settings_homescreen_section_hero_sources)),

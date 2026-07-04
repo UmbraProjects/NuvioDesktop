@@ -176,6 +176,22 @@ enum class DesktopBufferPreset(val label: String, val description: String) {
 }
 
 /**
+ * Graphics backend the desktop app UI (Compose/Skiko) renders with. Not the video player —
+ * mpv always uses Direct3D 11. Applied to `skiko.renderApi` at startup, so a change only takes
+ * effect after an app restart. OpenGL is the default: Direct3D has subtle lighting/color
+ * differences that make the UI look slightly worse. Direct3D is offered as a compatibility
+ * fallback for systems where OpenGL misbehaves (e.g. fullscreen optimizations on older GPUs).
+ */
+enum class DesktopRendererApi(val label: String, val description: String, val skikoRenderApi: String) {
+    OpenGL("OpenGL", "Best-looking UI. Recommended for most systems.", "OPENGL"),
+    D3D11(
+        "Direct3D 11",
+        "Compatibility option for systems where OpenGL has issues. UI colors may look slightly different.",
+        "DIRECT3D",
+    ),
+}
+
+/**
  * Desktop anime enhancement mode. Ports Stremio-Kai's Anime4K shader pipeline plus anime-tuned
  * scaling/deband. `Auto` applies the Optimized preset only when the title is detected as anime;
  * the named presets force that preset regardless of detection. Cycled in-player with F10.

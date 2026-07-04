@@ -87,6 +87,7 @@ internal actual object PlayerSettingsStorage {
     private const val desktopHdrModeKey = "desktop_hdr_mode"
     private const val desktopColorProfileKey = "desktop_color_profile"
     private const val desktopBufferPresetKey = "desktop_buffer_preset"
+    private const val desktopRendererApiKey = "desktop_renderer_api"
     private const val desktopAnimeModeKey = "desktop_anime_mode"
     private const val desktopAnimeModeAutoEnabledKey = "desktop_anime_mode_auto_enabled"
     private const val desktopAnimeSvpEnabledKey = "desktop_anime_svp_enabled"
@@ -312,6 +313,8 @@ internal actual object PlayerSettingsStorage {
     actual fun loadDesktopBufferPreset(): String? =
         loadString(desktopBufferPresetKey) ?: if (hadExistingDesktopPreferences) DesktopBufferPreset.Resilient.name else null
     actual fun saveDesktopBufferPreset(preset: String) = saveString(desktopBufferPresetKey, preset)
+    actual fun loadDesktopRendererApi(): String? = loadString(desktopRendererApiKey)
+    actual fun saveDesktopRendererApi(api: String) = saveString(desktopRendererApiKey, api)
     actual fun loadDesktopAnimeMode(): String? = loadString(desktopAnimeModeKey)
     actual fun saveDesktopAnimeMode(mode: String) = saveString(desktopAnimeModeKey, mode)
     actual fun loadDesktopAnimeModeAutoEnabled(): Boolean? = loadBoolean(desktopAnimeModeAutoEnabledKey)

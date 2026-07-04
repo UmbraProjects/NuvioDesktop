@@ -13,6 +13,7 @@ import com.nuvio.app.features.player.DesktopBufferPreset
 import com.nuvio.app.features.player.DesktopColorProfile
 import com.nuvio.app.features.player.DesktopHdrMode
 import com.nuvio.app.features.player.ParentalWarning
+import com.nuvio.app.features.player.PlaybackStartTrace
 import com.nuvio.app.features.player.PlayerAudioLevel
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
@@ -83,6 +84,9 @@ internal class NativePlayerController(
         nvidiaRtxHdrEnabled: Boolean,
         onError: (String?) -> Unit,
         controlsPageUrlSuffix: String = "",
+        // Records this attach on PlaybackStartTrace. Only the main player surface passes true;
+        // hero trailers share this controller but must not pollute the playback-start timeline.
+        tracePlaybackStart: Boolean = false,
     ) {
         if (disposed) return
         // Re-attaching the same stream (surface recreation, RTX/settings toggles) must resume
@@ -111,6 +115,7 @@ internal class NativePlayerController(
             animeSvpFilter = if (PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled) DesktopAnimeSvp.vapoursynthArgument() else null,
             onError = onError,
             controlsPageUrl = NativePlayerBridge.controlsPageUrl + controlsPageUrlSuffix,
+            tracePlaybackStart = tracePlaybackStart,
         )
         pendingSource = pending
         host.onPeerReady = { attachPending() }
@@ -133,6 +138,7 @@ internal class NativePlayerController(
             lastSentControlsStructureKey = null
             thread(isDaemon = true, name = "Nuvio-Player-Attach") {
                 synchronized(nativeLifecycleLock) {
+                    if (pending.tracePlaybackStart) PlaybackStartTrace.mark("nativeAttachThread")
                     if (previousHandle != 0L) {
                         runCatching { NativePlayerBridge.dispose(previousHandle) }
                     }
@@ -178,6 +184,7 @@ internal class NativePlayerController(
                         NativePlayerBridge.dispose(newHandle)
                         return@synchronized
                     }
+                    if (pending.tracePlaybackStart) PlaybackStartTrace.mark("nativeCreateReturned")
                     synchronized(pendingMpvProperties) {
                         pendingMpvProperties.forEach { (key, value) ->
                             NativePlayerBridge.setMpvProperty(newHandle, key, value)
@@ -436,6 +443,9 @@ internal class NativePlayerController(
         val currentSpeed = NativePlayerBridge.speed(current)
         val next = speeds.firstOrNull { it > currentSpeed + 0.01f } ?: speeds.first()
         NativePlayerBridge.setSpeed(current, next)
+        // Buffer sizing is owned here (not in the native bridge), so every speed change must
+        // re-apply the preset with the new rate — see setPlaybackSpeed for the main path.
+        applyDesktopBufferPreset(PlayerSettingsRepository.uiState.value.desktopBufferPreset, next)
     }
 
     fun snapshot(): PlayerPlaybackSnapshot {
@@ -535,6 +545,7 @@ internal class NativePlayerController(
             nvidiaRtxSuperResolutionEnabled = pending.nvidiaRtxSuperResolutionEnabled,
             nvidiaRtxHdrEnabled = pending.nvidiaRtxHdrEnabled,
             onError = pending.onError,
+            tracePlaybackStart = pending.tracePlaybackStart,
         )
     }
 
@@ -744,6 +755,7 @@ private data class PendingSource(
     val animeSvpFilter: String?,
     val onError: (String?) -> Unit,
     val controlsPageUrl: String,
+    val tracePlaybackStart: Boolean = false,
 )
 
 private fun Map<String, String>.toHeaderLines(): List<String> =

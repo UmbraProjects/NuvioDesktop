@@ -127,6 +127,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                     heroInfoLines = heroInfoLines,
                     heroEnabled = heroEnabled,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HeroBadgeCount),
                 )
                   SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
@@ -134,6 +135,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                     description = heroBadgePlacement.settingsLabel(),
                     isTablet = isTablet,
                     enabled = heroEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HeroBadgePosition),
                     onClick = {
                         HomeCatalogSettingsRepository.setHeroBadgePlacement(heroBadgePlacement.nextPlacement())
                     },
@@ -144,13 +146,17 @@ internal fun LazyListScope.homescreenSettingsContent(
                     description = "${heroBadgeScale.heroBadgeScaleLabel()}  (larger for TV viewing)",
                     isTablet = isTablet,
                     enabled = heroEnabled,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HeroBadgeSize),
                     onClick = {
                         HomeCatalogSettingsRepository.setHeroBadgeScale(heroBadgeScale.nextHeroBadgeScale())
                     },
                 )
                   SettingsGroupDivider(isTablet = isTablet)
                   androidx.compose.foundation.layout.Row(
-                      modifier = androidx.compose.ui.Modifier.padding(horizontal = 24.dp, vertical = 16.dp).fillMaxWidth(),
+                      modifier = androidx.compose.ui.Modifier
+                          .settingsScrollAnchor(SettingsScrollAnchor.HeroBadgePriority)
+                          .padding(horizontal = 24.dp, vertical = 16.dp)
+                          .fillMaxWidth(),
                       verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                   ) {
                       androidx.compose.material3.OutlinedTextField(
@@ -169,6 +175,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                     checked = heroReleaseStatusUnavailableOnly,
                     enabled = heroEnabled,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HeroReleaseStatus),
                     onCheckedChange = HomeCatalogSettingsRepository::setHeroReleaseStatusUnavailableOnly,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -205,6 +212,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                         bias = adaptiveHeroVerticalBias,
                         enabled = heroEnabled && adaptiveHeroEnabled && !tvModeEnabled,
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHeroPosition),
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
@@ -294,12 +302,13 @@ private fun AdaptiveHeroVerticalBiasRow(
     bias: Float,
     enabled: Boolean,
     isTablet: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
     var sliderValue by remember(bias) { mutableFloatStateOf(bias) }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = horizontalPadding, vertical = 10.dp)
             .alpha(if (enabled) 1f else 0.55f),
@@ -360,9 +369,10 @@ private fun HeroBadgeCountDropdownRow(
     heroInfoLines: Int,
     heroEnabled: Boolean,
     isTablet: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
+    Box(modifier = modifier) {
         SettingsNavigationRow(
             title = "Hero badge count",
             description = heroInfoLines.heroBadgeCountLabel(),

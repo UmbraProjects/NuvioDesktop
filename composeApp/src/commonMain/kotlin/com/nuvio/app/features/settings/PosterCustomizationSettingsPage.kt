@@ -143,7 +143,9 @@ private fun PosterCardStyleControls(
             title = stringResource(Res.string.settings_poster_card_width),
             selectedValue = widthDp,
             options = widthOptions,
-            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-width")),
+            modifier = Modifier
+                .settingsScrollAnchor(SettingsScrollAnchor.ExtraLargePosters)
+                .settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-width")),
             onSelected = onWidthSelected,
         )
         PosterStyleOptionRow(

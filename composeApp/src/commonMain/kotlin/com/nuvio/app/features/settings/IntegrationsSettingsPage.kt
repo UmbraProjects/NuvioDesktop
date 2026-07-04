@@ -61,6 +61,7 @@ internal fun LazyListScope.integrationsContent(
                         checked = discordPresenceSettings.enabled,
                         icon = Icons.Rounded.SportsEsports,
                         isTablet = isTablet,
+                        modifier = androidx.compose.ui.Modifier.settingsScrollAnchor(SettingsScrollAnchor.DiscordPresence),
                         onCheckedChange = onDiscordPresenceEnabledChange,
                     )
                 }

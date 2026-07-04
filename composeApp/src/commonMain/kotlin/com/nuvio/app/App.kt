@@ -163,6 +163,9 @@ import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.debrid.toastMessage
 import com.nuvio.app.features.discord.DiscordPresenceSettingsRepository
+import com.nuvio.app.features.discord.DiscordRichPresenceActivity
+import com.nuvio.app.features.discord.DiscordRichPresenceActivityType
+import com.nuvio.app.features.discord.DiscordRichPresenceController
 import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.downloads.DownloadsScreen
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -652,18 +655,27 @@ fun App() {
             val hasCachedProfileAccess =
                 cachedProfiles.isNotEmpty() &&
                     authState !is AuthState.Authenticated
+            // Signed-out users with cached profiles may only bypass the sign-in gate when the
+            // app is provably offline (signing in is impossible anyway) or when they are
+            // already past the gate (a session dying mid-use must not yank the UI away).
+            // Anything else — including startup while the network probe is still Unknown —
+            // waits for auth to resolve and lands on the sign-in screen when there is no
+            // session. Previously the cached fast path won that race, so an expired/lost
+            // session silently entered the app and the user never learned they were signed
+            // out. "Continue without account" on the sign-in screen persists a local
+            // anonymous account, which permanently opts out of this prompt.
+            val pastGate = gateScreen == AppGateScreen.Main.name ||
+                gateScreen == AppGateScreen.ProfileSelection.name ||
+                gateScreen == AppGateScreen.ProfileEdit.name
             val allowCachedProfileAccess =
                 hasCachedProfileAccess &&
-                    (
-                        networkStatusUiState.condition != NetworkCondition.Online ||
-                            gateScreen != AppGateScreen.Auth.name
-                    )
+                    (networkStatusUiState.isOfflineLike || pastGate)
 
             when (authState) {
                 is AuthState.Loading -> {
-                    if (hasCachedProfileAccess) {
+                    if (allowCachedProfileAccess) {
                         enterProfileGate(cachedProfiles, syncOnEnter = false)
-                    } else {
+                    } else if (!pastGate) {
                         gateScreen = AppGateScreen.Loading.name
                     }
                 }
@@ -671,6 +683,8 @@ fun App() {
                     if (allowCachedProfileAccess) {
                         enterProfileGate(cachedProfiles, syncOnEnter = false)
                     } else {
+                        // Also covers signing out mid-session (profiles wiped, so no cached
+                        // access): the user must land back on the auth gate, not stay inside.
                         ProfileRepository.clearInMemory()
                         gateScreen = AppGateScreen.Auth.name
                     }
@@ -679,7 +693,13 @@ fun App() {
                     val authenticatedState = authState as AuthState.Authenticated
                     ProfileRepository.ensureLoaded(authenticatedState.userId)
                     if (gateScreen == AppGateScreen.Loading.name || gateScreen == AppGateScreen.Auth.name) {
-                        enterProfileGate(ProfileRepository.state.value.profiles, syncOnEnter = true)
+                        // Warm startups now pass through here (they used to enter via the
+                        // cached fast path with syncOnEnter=false); only a fresh sign-in from
+                        // the auth gate should trigger the blocking full sync pull.
+                        enterProfileGate(
+                            ProfileRepository.state.value.profiles,
+                            syncOnEnter = gateScreen == AppGateScreen.Auth.name,
+                        )
                     }
                 }
             }
@@ -844,6 +864,13 @@ private fun MainAppContent(
             warmProfileBoundRepositories()
         }
         val currentBackStackEntry by navController.currentBackStackEntryAsState()
+        BindDiscordBrowsingPresence(
+            currentBackStackEntry = currentBackStackEntry,
+            selectedTab = selectedTab,
+            searchOverlayActive = searchOverlayActive,
+            searchQuery = searchQuery,
+            submittedSearchQuery = submittedSearchQuery,
+        )
         LaunchedEffect(navController) {
             DesktopNavigationGestureBridge.backRequests.collect {
                 if (navController.previousBackStackEntry != null) {
@@ -3207,6 +3234,151 @@ private fun rememberGuardedPopBackStack(
         }
     }
 }
+
+@Composable
+private fun BindDiscordBrowsingPresence(
+    currentBackStackEntry: NavBackStackEntry?,
+    selectedTab: AppScreenTab,
+    searchOverlayActive: Boolean,
+    searchQuery: String,
+    submittedSearchQuery: String,
+) {
+    DiscordPresenceSettingsRepository.ensureLoaded()
+    val discordSettings by DiscordPresenceSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val detailsUiState by MetaDetailsRepository.uiState.collectAsStateWithLifecycle()
+    val activity = remember(
+        currentBackStackEntry,
+        selectedTab,
+        searchOverlayActive,
+        searchQuery,
+        submittedSearchQuery,
+        detailsUiState.meta,
+        detailsUiState.isLoading,
+    ) {
+        currentBackStackEntry?.toDiscordBrowsingActivity(
+            selectedTab = selectedTab,
+            searchOverlayActive = searchOverlayActive,
+            searchQuery = searchQuery,
+            submittedSearchQuery = submittedSearchQuery,
+            detailTitle = detailsUiState.meta?.name,
+        )
+    }
+
+    LaunchedEffect(discordSettings.enabled, activity) {
+        if (discordSettings.enabled) {
+            DiscordRichPresenceController.setBrowsingActivity(activity)
+        } else {
+            DiscordRichPresenceController.refresh()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            DiscordRichPresenceController.setBrowsingActivity(null)
+        }
+    }
+}
+
+private fun NavBackStackEntry.toDiscordBrowsingActivity(
+    selectedTab: AppScreenTab,
+    searchOverlayActive: Boolean,
+    searchQuery: String,
+    submittedSearchQuery: String,
+    detailTitle: String?,
+): DiscordRichPresenceActivity? {
+    if (destination.hasRoute<PlayerRoute>()) return null
+
+    return when {
+        destination.hasRoute<TabsRoute>() -> tabsDiscordBrowsingActivity(
+            selectedTab = selectedTab,
+            searchOverlayActive = searchOverlayActive,
+            searchQuery = searchQuery,
+            submittedSearchQuery = submittedSearchQuery,
+        )
+        destination.hasRoute<DetailRoute>() -> {
+            val route = routeOrNull<DetailRoute>()
+            val title = detailTitle
+                ?.takeIf { route == null || MetaDetailsRepository.peek(route.type, route.id)?.name == it }
+                ?: route?.let { MetaDetailsRepository.peek(it.type, it.id)?.name }
+            browsingActivity(
+                title = title?.let { "Viewing $it" } ?: "Viewing details",
+                subtitle = "Details",
+            )
+        }
+        destination.hasRoute<PersonDetailRoute>() -> {
+            val route = routeOrNull<PersonDetailRoute>()
+            browsingActivity(
+                title = route?.personName?.let { "Viewing $it" } ?: "Viewing a person",
+                subtitle = "Person",
+            )
+        }
+        destination.hasRoute<EntityBrowseRoute>() -> {
+            val route = routeOrNull<EntityBrowseRoute>()
+            browsingActivity(
+                title = route?.entityName?.let { "Browsing $it" } ?: "Browsing titles",
+                subtitle = "Discovery",
+            )
+        }
+        destination.hasRoute<StreamRoute>() -> browsingActivity("Choosing a stream")
+        destination.hasRoute<CatalogRoute>() -> {
+            val route = routeOrNull<CatalogRoute>()
+            browsingActivity(
+                title = route?.title?.let { "Browsing $it" } ?: "Browsing a catalog",
+                subtitle = route?.subtitle?.takeIf { it.isNotBlank() },
+            )
+        }
+        destination.hasRoute<CalendarRoute>() -> browsingActivity("Viewing Calendar")
+        destination.hasRoute<CollectionsRoute>() -> browsingActivity("Viewing Collections")
+        destination.hasRoute<CollectionEditorRoute>() -> browsingActivity("Editing Collections")
+        destination.hasRoute<FolderDetailRoute>() -> browsingActivity("Viewing a collection")
+        destination.hasRoute<HomescreenSettingsRoute>() -> settingsBrowsingActivity("Home Screen")
+        destination.hasRoute<MetaScreenSettingsRoute>() -> settingsBrowsingActivity("Meta Screen")
+        destination.hasRoute<ContinueWatchingSettingsRoute>() -> settingsBrowsingActivity("Continue Watching")
+        destination.hasRoute<DownloadsSettingsRoute>() -> settingsBrowsingActivity("Downloads")
+        destination.hasRoute<AddonsSettingsRoute>() -> settingsBrowsingActivity("Addons")
+        destination.hasRoute<PluginsSettingsRoute>() -> settingsBrowsingActivity("Plugins")
+        destination.hasRoute<AccountSettingsRoute>() -> settingsBrowsingActivity("Account")
+        destination.hasRoute<SupportersContributorsSettingsRoute>() -> settingsBrowsingActivity("Supporters")
+        destination.hasRoute<LicensesAttributionsSettingsRoute>() -> settingsBrowsingActivity("Licenses")
+        else -> browsingActivity("Browsing Nuvio")
+    }
+}
+
+private fun tabsDiscordBrowsingActivity(
+    selectedTab: AppScreenTab,
+    searchOverlayActive: Boolean,
+    searchQuery: String,
+    submittedSearchQuery: String,
+): DiscordRichPresenceActivity {
+    val query = submittedSearchQuery.ifBlank { searchQuery }.trim()
+    return when {
+        searchOverlayActive || selectedTab == AppScreenTab.Search -> browsingActivity(
+            title = query.takeIf { it.isNotBlank() }?.let { "Searching for $it" } ?: "Searching",
+        )
+        selectedTab == AppScreenTab.Library -> browsingActivity("Viewing Library")
+        selectedTab == AppScreenTab.Settings -> settingsBrowsingActivity()
+        else -> browsingActivity("Browsing Nuvio")
+    }
+}
+
+private fun settingsBrowsingActivity(page: String? = null): DiscordRichPresenceActivity =
+    browsingActivity(
+        title = "Changing settings",
+        subtitle = page,
+    )
+
+private fun browsingActivity(
+    title: String,
+    subtitle: String? = null,
+): DiscordRichPresenceActivity =
+    DiscordRichPresenceActivity(
+        title = title,
+        subtitle = subtitle,
+        type = DiscordRichPresenceActivityType.Browsing,
+    )
+
+private inline fun <reified T : Any> NavBackStackEntry.routeOrNull(): T? =
+    runCatching { toRoute<T>() }.getOrNull()
 
 @Composable
 private fun AppTabHost(

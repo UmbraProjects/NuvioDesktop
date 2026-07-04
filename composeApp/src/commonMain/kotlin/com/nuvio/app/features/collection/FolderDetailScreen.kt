@@ -94,6 +94,8 @@ import com.nuvio.app.features.home.canOpenCatalog
 import com.nuvio.app.features.home.extractHeroAccentColor
 import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
+import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
+import com.nuvio.app.features.home.immersiveCatalogPosterBaseWidthDp
 import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeHeroTrailerManualTrigger
 import com.nuvio.app.features.home.components.HomeTvKey
@@ -436,6 +438,17 @@ private fun ImmersiveCollectionContent(
         }
 
         val shelfHeight = (maxHeight * 0.43f).coerceIn(300.dp, 440.dp)
+        // Fill-the-shelf poster sizing, matching HomeScreen's TV Mode shelf. Without the
+        // override the row below fell back to the saved poster width preference, which
+        // account sync can overwrite with a mobile-sized value.
+        val shelfPosterBaseWidthDp = remember(maxWidth, shelfHeight) {
+            immersiveCatalogPosterBaseWidthDp(
+                maxWidthDp = maxWidth.value,
+                shelfHeightDp = shelfHeight.value,
+                sectionPaddingDp = homeSectionHorizontalPaddingForWidth(maxWidth.value).value,
+                hideLabels = true,
+            )
+        }
         HomeHeroSection(
             items = activeEntries.take(FolderAdaptiveHeroItemLimit),
             focusedItem = focusedItem,
@@ -476,6 +489,7 @@ private fun ImmersiveCollectionContent(
                 section = activeSection,
                 entries = activeRowEntries,
                 watchedKeys = watchedKeys,
+                basePosterWidthDpOverride = shelfPosterBaseWidthDp,
                 focusedItemIndex = activeItemIndex,
                 onHoverItem = { itemIndex -> activeItemIndex = itemIndex },
                 onViewAllClick = if (

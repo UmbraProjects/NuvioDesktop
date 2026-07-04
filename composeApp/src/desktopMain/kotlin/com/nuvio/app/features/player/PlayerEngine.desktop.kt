@@ -176,7 +176,12 @@ private fun NativePlayerSurface(
                     videoVsrScale.value = value
                     true
                 } else if (type == "fileLoaded") {
+                    PlaybackStartTrace.mark("fileLoaded")
                     videoProfileRefreshToken.intValue += 1
+                    true
+                } else if (type == "playbackRestart") {
+                    // First decoded/rendered frame of the current file (once per load).
+                    PlaybackStartTrace.complete("firstFrame")
                     true
                 } else {
                     latestOnPlayerControlsEvent.value(type, value)
@@ -277,7 +282,9 @@ private fun NativePlayerSurface(
             return@LaunchedEffect
         }
         delay(16L)
+        PlaybackStartTrace.mark("playerAttach")
         controller.attach(
+            tracePlaybackStart = true,
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl,
             sourceHeaders = playbackHeaders,
@@ -576,7 +583,9 @@ private fun applyDesktopSvpRuntimeProfile(
         controller.setMpvProperty("vd-queue-enable", "no")
         controller.setMpvProperty("hr-seek-framedrop", "yes")
         controller.setMpvProperty("video-latency-hacks", "no")
-        controller.setMpvProperty("mc", "auto")
+        // mpv's default --mc is 0.1; it does not accept "auto" ("The mc option must be a
+        // floating point number"), which left mc stuck at the SVP profile's 0 after a session.
+        controller.setMpvProperty("mc", "0.1")
         controller.setMpvProperty("autosync", "0")
     }
 }

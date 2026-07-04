@@ -148,6 +148,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopColorProfile(profile: String)
     fun loadDesktopBufferPreset(): String?
     fun saveDesktopBufferPreset(preset: String)
+    fun loadDesktopRendererApi(): String?
+    fun saveDesktopRendererApi(api: String)
     fun loadDesktopAnimeMode(): String?
     fun saveDesktopAnimeMode(mode: String)
     fun loadHeroTvTrailerEnabled(): Boolean?

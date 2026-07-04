@@ -102,6 +102,7 @@ data class PlayerSettingsUiState(
     val desktopHdrMode: DesktopHdrMode = DesktopHdrMode.Auto,
     val desktopColorProfile: DesktopColorProfile = DesktopColorProfile.Neutral,
     val desktopBufferPreset: DesktopBufferPreset = DesktopBufferPreset.Balanced,
+    val desktopRendererApi: DesktopRendererApi = DesktopRendererApi.OpenGL,
     val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Off,
     val desktopAnimeModeAutoEnabled: Boolean = false,
     val desktopAnimeSvpEnabled: Boolean = false,
@@ -176,6 +177,7 @@ object PlayerSettingsRepository {
     private var desktopHdrMode = DesktopHdrMode.Auto
     private var desktopColorProfile = DesktopColorProfile.Neutral
     private var desktopBufferPreset = DesktopBufferPreset.Balanced
+    private var desktopRendererApi = DesktopRendererApi.OpenGL
     private var desktopAnimeMode = DesktopAnimeMode.Off
     private var desktopAnimeModeAutoEnabled = false
     private var desktopAnimeSvpEnabled = false
@@ -255,6 +257,7 @@ object PlayerSettingsRepository {
         desktopHdrMode = DesktopHdrMode.Auto
         desktopColorProfile = DesktopColorProfile.Neutral
         desktopBufferPreset = DesktopBufferPreset.Balanced
+        desktopRendererApi = DesktopRendererApi.OpenGL
         desktopAnimeMode = DesktopAnimeMode.Off
         desktopAnimeModeAutoEnabled = false
         desktopAnimeSvpEnabled = false
@@ -406,6 +409,9 @@ object PlayerSettingsRepository {
             ?.let { runCatching { DesktopBufferPreset.valueOf(it) }.getOrNull() }
             ?: DesktopBufferPreset.Balanced
         PlayerSettingsStorage.saveDesktopBufferPreset(desktopBufferPreset.name)
+        desktopRendererApi = PlayerSettingsStorage.loadDesktopRendererApi()
+            ?.let { runCatching { DesktopRendererApi.valueOf(it) }.getOrNull() }
+            ?: DesktopRendererApi.OpenGL
         val storedAnimeMode = PlayerSettingsStorage.loadDesktopAnimeMode()
         if (storedAnimeMode == "Auto") {
             // Migrate: old "Auto" = Optimized preset + auto-detect on.
@@ -1018,6 +1024,7 @@ object PlayerSettingsRepository {
             desktopHdrMode = desktopHdrMode,
             desktopColorProfile = desktopColorProfile,
             desktopBufferPreset = desktopBufferPreset,
+            desktopRendererApi = desktopRendererApi,
             desktopAnimeMode = desktopAnimeMode,
             desktopAnimeModeAutoEnabled = desktopAnimeModeAutoEnabled,
             desktopAnimeSvpEnabled = desktopAnimeSvpEnabled,
@@ -1050,6 +1057,14 @@ object PlayerSettingsRepository {
         desktopBufferPreset = preset
         publish()
         PlayerSettingsStorage.saveDesktopBufferPreset(preset.name)
+    }
+
+    fun setDesktopRendererApi(api: DesktopRendererApi) {
+        ensureLoaded()
+        if (desktopRendererApi == api) return
+        desktopRendererApi = api
+        publish()
+        PlayerSettingsStorage.saveDesktopRendererApi(api.name)
     }
 
     fun setDesktopAnimeMode(mode: DesktopAnimeMode) {

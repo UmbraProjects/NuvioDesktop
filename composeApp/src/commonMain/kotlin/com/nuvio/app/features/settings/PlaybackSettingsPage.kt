@@ -59,6 +59,7 @@ import com.nuvio.app.features.player.AudioLanguageOption
 import com.nuvio.app.features.player.AvailableLanguageOptions
 import com.nuvio.app.features.player.DesktopAnimeMode
 import com.nuvio.app.features.player.DesktopBufferPreset
+import com.nuvio.app.features.player.DesktopRendererApi
 import com.nuvio.app.features.player.DesktopColorProfile
 import com.nuvio.app.features.player.DesktopHdrMode
 import com.nuvio.app.features.player.ExternalPlayerApp
@@ -290,6 +291,7 @@ private fun PlaybackSettingsSection(
     var showDesktopHdrModeDialog by remember { mutableStateOf(false) }
     var showDesktopColorProfileDialog by remember { mutableStateOf(false) }
     var showDesktopBufferPresetDialog by remember { mutableStateOf(false) }
+    var showDesktopRendererApiDialog by remember { mutableStateOf(false) }
     var showDesktopAnimeModeDialog by remember { mutableStateOf(false) }
     var showHeroTvTrailerDelayDialog by remember { mutableStateOf(false) }
     var showAutoPlayModeDialog by remember { mutableStateOf(false) }
@@ -457,6 +459,14 @@ private fun PlaybackSettingsSection(
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_playback_desktop_renderer),
+                        description = autoPlayPlayerSettings.desktopRendererApi.label,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.DesktopRenderer),
+                        onClick = { showDesktopRendererApiDialog = true },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
                         title = stringResource(Res.string.settings_playback_desktop_buffer_preset),
                         description = autoPlayPlayerSettings.desktopBufferPreset.label,
                         isTablet = isTablet,
@@ -478,6 +488,7 @@ private fun PlaybackSettingsSection(
                             description = stringResource(Res.string.settings_playback_desktop_anime_auto_desc),
                             checked = autoPlayPlayerSettings.desktopAnimeModeAutoEnabled,
                             isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeAutoApply),
                             onCheckedChange = PlayerSettingsRepository::setDesktopAnimeModeAutoEnabled,
                         )
                         SettingsGroupDivider(isTablet = isTablet)
@@ -486,6 +497,7 @@ private fun PlaybackSettingsSection(
                             description = stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
                             checked = autoPlayPlayerSettings.desktopAnimeSvpEnabled,
                             isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvp),
                             onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
                         )
                     }
@@ -509,6 +521,7 @@ private fun PlaybackSettingsSection(
                                 autoPlayPlayerSettings.heroTvTrailerDelaySeconds,
                             ),
                             isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerDelay),
                             onClick = { showHeroTvTrailerDelayDialog = true },
                         )
                     }
@@ -1560,6 +1573,21 @@ private fun PlaybackSettingsSection(
                 showDesktopBufferPresetDialog = false
             },
             onDismiss = { showDesktopBufferPresetDialog = false },
+        )
+    }
+
+    if (showDesktopRendererApiDialog) {
+        IosEnumSelectionDialog(
+            title = stringResource(Res.string.settings_playback_desktop_renderer_dialog),
+            options = DesktopRendererApi.entries,
+            selected = autoPlayPlayerSettings.desktopRendererApi,
+            label = { it.label },
+            description = { it.description },
+            onSelect = {
+                PlayerSettingsRepository.setDesktopRendererApi(it)
+                showDesktopRendererApiDialog = false
+            },
+            onDismiss = { showDesktopRendererApiDialog = false },
         )
     }
 

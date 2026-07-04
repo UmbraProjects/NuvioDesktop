@@ -1827,13 +1827,17 @@ fun HomeScreen(
             maxWidth.value,
             immersiveShelfHeight,
             homeSectionPadding,
-            posterCardStyle.hideLabelsEnabled,
         ) {
             immersiveCatalogPosterBaseWidthDp(
                 maxWidthDp = maxWidth.value,
                 shelfHeightDp = immersiveShelfHeight.value,
                 sectionPaddingDp = homeSectionPadding.value,
-                hideLabels = posterCardStyle.hideLabelsEnabled,
+                // This width is only consumed by the TV Mode shelf, whose renderers always
+                // hide poster labels (rememberHomePosterCardStyleUiState forces it). Sizing
+                // from the raw saved preference reserved label space that never renders —
+                // e.g. after account sync pulled a mobile hideLabels=false — shrinking the
+                // shelf posters below the fill-the-shelf size.
+                hideLabels = true,
             )
         }
         val adaptiveHeroLayout = if (adaptiveHeroEnabled && showHeroSlot && !tvModeEnabled) {
@@ -2330,7 +2334,9 @@ private const val OPTIMISTIC_NEXT_UP_SEED_WINDOW_MS = 3L * 60L * 1000L
 private const val NEXT_UP_RESOLUTION_CONCURRENCY = 4
 private const val NEXT_UP_RESOLUTION_BATCH_SIZE = NEXT_UP_RESOLUTION_CONCURRENCY
 
-private fun immersiveCatalogPosterBaseWidthDp(
+// Also used by the Collections immersive folder view (FolderDetailScreen), which renders the
+// same TV Mode shelf and must size posters the same shelf-filling way.
+internal fun immersiveCatalogPosterBaseWidthDp(
     maxWidthDp: Float,
     shelfHeightDp: Float,
     sectionPaddingDp: Float,

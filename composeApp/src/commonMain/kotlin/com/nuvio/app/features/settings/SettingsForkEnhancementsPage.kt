@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
+import nuvio.composeapp.generated.resources.compose_settings_page_integrations
 import nuvio.composeapp.generated.resources.compose_settings_page_playback
 import nuvio.composeapp.generated.resources.compose_settings_page_poster_customization
 import nuvio.composeapp.generated.resources.compose_settings_page_simkl
@@ -36,11 +37,18 @@ import nuvio.composeapp.generated.resources.settings_homescreen_tv_mode
 import nuvio.composeapp.generated.resources.settings_homescreen_tv_mode_description
 import nuvio.composeapp.generated.resources.settings_playback_auto_play_next_episode
 import nuvio.composeapp.generated.resources.settings_playback_default_speed
+import nuvio.composeapp.generated.resources.settings_playback_desktop_anime_auto
+import nuvio.composeapp.generated.resources.settings_playback_desktop_anime_auto_desc
 import nuvio.composeapp.generated.resources.settings_playback_desktop_anime_mode
+import nuvio.composeapp.generated.resources.settings_playback_desktop_anime_svp
+import nuvio.composeapp.generated.resources.settings_playback_desktop_anime_svp_desc
 import nuvio.composeapp.generated.resources.settings_playback_desktop_buffer_preset
 import nuvio.composeapp.generated.resources.settings_playback_desktop_color_profile
 import nuvio.composeapp.generated.resources.settings_playback_desktop_hdr_mode
+import nuvio.composeapp.generated.resources.settings_playback_desktop_renderer
+import nuvio.composeapp.generated.resources.settings_playback_desktop_renderer_dialog
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer
+import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_delay
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_description
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_fullscreen
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_fullscreen_description
@@ -62,8 +70,9 @@ internal fun LazyListScope.forkEnhancementsContent(
     onOpenHomescreen: (anchor: String) -> Unit,
     onOpenPlayback: (anchor: String) -> Unit,
     onOpenTmdb: (anchor: String) -> Unit,
-    onOpenPosterCustomization: () -> Unit,
+    onOpenPosterCustomization: (anchor: String) -> Unit,
     onOpenSimkl: () -> Unit,
+    onOpenIntegrations: (anchor: String) -> Unit,
 ) {
     item {
         Text(
@@ -89,6 +98,13 @@ internal fun LazyListScope.forkEnhancementsContent(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
+                    title = "Backdrop vertical position",
+                    description = "Manually tune how adaptive hero backdrops crop vertically.",
+                    isTablet = isTablet,
+                    onClick = { onOpenHomescreen(SettingsScrollAnchor.AdaptiveHeroPosition) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
                     title = stringResource(Res.string.settings_homescreen_tv_mode),
                     description = stringResource(Res.string.settings_homescreen_tv_mode_description),
                     isTablet = isTablet,
@@ -100,6 +116,13 @@ internal fun LazyListScope.forkEnhancementsContent(
                     description = stringResource(Res.string.settings_homescreen_hero_ambient_background_description),
                     isTablet = isTablet,
                     onClick = { onOpenHomescreen(SettingsScrollAnchor.HeroAmbient) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = "Hero badge settings",
+                    description = "Control badge count, placement, size, priority, and release-status filtering.",
+                    isTablet = isTablet,
+                    onClick = { onOpenHomescreen(SettingsScrollAnchor.HeroBadgeCount) },
                 )
             }
         }
@@ -115,6 +138,13 @@ internal fun LazyListScope.forkEnhancementsContent(
                     description = stringResource(Res.string.settings_playback_hero_tv_trailer_description),
                     isTablet = isTablet,
                     onClick = { onOpenPlayback(SettingsScrollAnchor.AutoPlayTrailer) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
+                    description = "Delay before focused hero trailers start playing.",
+                    isTablet = isTablet,
+                    onClick = { onOpenPlayback(SettingsScrollAnchor.TrailerDelay) },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
@@ -146,6 +176,13 @@ internal fun LazyListScope.forkEnhancementsContent(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_desktop_renderer),
+                    description = stringResource(Res.string.settings_playback_desktop_renderer_dialog),
+                    isTablet = isTablet,
+                    onClick = { onOpenPlayback(SettingsScrollAnchor.DesktopRenderer) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
                     title = stringResource(Res.string.settings_playback_desktop_buffer_preset),
                     description = stringResource(Res.string.settings_fork_buffer_preset_description),
                     isTablet = isTablet,
@@ -157,6 +194,20 @@ internal fun LazyListScope.forkEnhancementsContent(
                     description = stringResource(Res.string.settings_fork_anime_enhancements_description),
                     isTablet = isTablet,
                     onClick = { onOpenPlayback(SettingsScrollAnchor.AnimeEnhancements) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_desktop_anime_auto),
+                    description = stringResource(Res.string.settings_playback_desktop_anime_auto_desc),
+                    isTablet = isTablet,
+                    onClick = { onOpenPlayback(SettingsScrollAnchor.AnimeAutoApply) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_desktop_anime_svp),
+                    description = stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
+                    isTablet = isTablet,
+                    onClick = { onOpenPlayback(SettingsScrollAnchor.AnimeSvp) },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
@@ -221,7 +272,22 @@ internal fun LazyListScope.forkEnhancementsContent(
                     title = stringResource(Res.string.settings_fork_extra_large_posters),
                     description = stringResource(Res.string.settings_fork_extra_large_posters_description),
                     isTablet = isTablet,
-                    onClick = onOpenPosterCustomization,
+                    onClick = { onOpenPosterCustomization(SettingsScrollAnchor.ExtraLargePosters) },
+                )
+            }
+        }
+    }
+    item {
+        SettingsSection(
+            title = stringResource(Res.string.compose_settings_page_integrations),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsNavigationRow(
+                    title = "Discord Rich Presence",
+                    description = "Show what you are watching on your Discord profile.",
+                    isTablet = isTablet,
+                    onClick = { onOpenIntegrations(SettingsScrollAnchor.DiscordPresence) },
                 )
             }
         }

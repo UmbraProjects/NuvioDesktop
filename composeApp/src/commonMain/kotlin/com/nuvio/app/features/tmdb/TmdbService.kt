@@ -193,11 +193,21 @@ object TmdbService {
     private var trendingTvIds: Set<Int> = emptySet()
     private var trendingFetchedAtMs: Long = 0L
 
-    /** True if the title is on TMDB's trending-this-week list. Backed by a 6-hour cache. */
+    /**
+     * True if the title is on TMDB's trending-this-week list (top [TRENDING_PAGES]×20 per media
+     * type — movies and TV are separate TMDB lists, so they never compete for slots). Backed by
+     * a 6-hour cache. Media types that are neither movie nor tv (e.g. "anime" catalog entries,
+     * which can be either) are accepted from both lists rather than silently checked against
+     * the movie list only.
+     */
     suspend fun isTrending(tmdbId: Int, mediaType: String): Boolean {
         ensureTrendingLoaded()
         return trendingMutex.withLock {
-            if (normalizeMediaType(mediaType) == "tv") tmdbId in trendingTvIds else tmdbId in trendingMovieIds
+            when (normalizeMediaType(mediaType)) {
+                "tv" -> tmdbId in trendingTvIds
+                "movie" -> tmdbId in trendingMovieIds
+                else -> tmdbId in trendingTvIds || tmdbId in trendingMovieIds
+            }
         }
     }
 
@@ -205,18 +215,44 @@ object TmdbService {
         val now = com.nuvio.app.features.watchprogress.WatchProgressClock.nowEpochMs()
         trendingMutex.withLock {
             val fresh = now - trendingFetchedAtMs < TRENDING_CACHE_TTL_MS
-            if (fresh && (trendingMovieIds.isNotEmpty() || trendingTvIds.isNotEmpty())) return
+            if (fresh && trendingMovieIds.isNotEmpty() && trendingTvIds.isNotEmpty()) return
         }
         val apiKey = currentApiKey() ?: return
-        val movies = fetch<TmdbTrendingResponse>(endpoint = "trending/movie/week", apiKey = apiKey)
-            ?.results?.mapNotNull { it.id }?.toSet().orEmpty()
-        val tv = fetch<TmdbTrendingResponse>(endpoint = "trending/tv/week", apiKey = apiKey)
-            ?.results?.mapNotNull { it.id }?.toSet().orEmpty()
+        val movies = fetchTrendingIds("trending/movie/week", apiKey)
+        val tv = fetchTrendingIds("trending/tv/week", apiKey)
+        // The full id sets are logged so the in-memory cache can be inspected from nuvio.log —
+        // there is no on-disk copy of this cache.
+        log.i { "TMDB trending refreshed: ${movies.size} movies, ${tv.size} tv" }
+        log.d { "TMDB trending movie ids: ${movies.sorted()}" }
+        log.d { "TMDB trending tv ids: ${tv.sorted()}" }
         trendingMutex.withLock {
             if (movies.isNotEmpty()) trendingMovieIds = movies
             if (tv.isNotEmpty()) trendingTvIds = tv
-            if (movies.isNotEmpty() || tv.isNotEmpty()) trendingFetchedAtMs = now
+            // Only a fully successful refresh earns the full TTL. Previously one endpoint
+            // failing (timeout/rate limit) while the other succeeded still stamped the cache
+            // fresh, freezing the failed side as empty for 6 hours — no TV title could badge
+            // as trending for the whole window. Partial/total failures now retry sooner while
+            // still backing off enough to avoid hammering TMDB on every check.
+            trendingFetchedAtMs = if (movies.isNotEmpty() && tv.isNotEmpty()) {
+                now
+            } else {
+                now - (TRENDING_CACHE_TTL_MS - TRENDING_FAILURE_RETRY_MS)
+            }
         }
+    }
+
+    private suspend fun fetchTrendingIds(endpoint: String, apiKey: String): Set<Int> {
+        val ids = mutableSetOf<Int>()
+        for (page in 1..TRENDING_PAGES) {
+            val results = fetch<TmdbTrendingResponse>(
+                endpoint = endpoint,
+                apiKey = apiKey,
+                query = mapOf("page" to page.toString()),
+            )?.results ?: break
+            ids += results.mapNotNull { it.id }
+            if (results.isEmpty()) break
+        }
+        return ids
     }
 
     private val unreleasedScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -330,6 +366,13 @@ private const val TMDB_RELEASE_TYPE_PHYSICAL = 5
 private const val TMDB_RELEASE_TYPE_TV = 6
 private const val RELEASE_STATUS_STALE_YEAR_GAP = 3
 private const val TRENDING_CACHE_TTL_MS = 6 * 60 * 60 * 1000L
+
+// TMDB trending pages are 20 items each; 2 pages = top 40 per media type (movies and TV
+// each get their own 40 — the lists are independent).
+private const val TRENDING_PAGES = 2
+
+// Retry delay after a failed/partial trending refresh (see ensureTrendingLoaded).
+private const val TRENDING_FAILURE_RETRY_MS = 15 * 60 * 1000L
 
 private fun isIsoDate(value: String): Boolean =
     value.length == 10 &&

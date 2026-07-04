@@ -439,29 +439,18 @@ private fun TvdbApiKeyRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        OutlinedTextField(
+        SettingsSecretTextField(
             value = draft,
             onValueChange = { draft = it },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            placeholder = {
-                Text(
-                    text = "Paste your TVDB API key",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-            ),
+            label = "TVDB API key",
         )
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
             Button(
                 onClick = { onKeyCommitted(normalizedDraft) },
                 enabled = normalizedDraft != value.trim(),
             ) {
-                Text("Save")
+                Text(stringResource(Res.string.action_save))
             }
         }
     }

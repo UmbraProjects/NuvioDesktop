@@ -55,7 +55,7 @@ internal actual object DiscordRichPresencePlatform {
                     activeConnection.setActivity(activity.toDiscordActivity())
                     println(
                         "[nuvio-discord] activity updated title=\"${activity.title}\" " +
-                            "subtitle=\"${activity.subtitle.orEmpty()}\" playing=${activity.isPlaying}",
+                            "subtitle=\"${activity.subtitle.orEmpty()}\" type=${activity.type} playing=${activity.isPlaying}",
                     )
                 }.onFailure { error ->
                     closeConnection()
@@ -168,6 +168,13 @@ private class DiscordIpcConnection(
 private fun DiscordRichPresenceActivity.toDiscordActivity(): JsonObject {
     val titleText = title.trim().takeIf { it.isNotBlank() } ?: "Nuvio"
     val subtitleText = subtitle?.trim()?.takeIf { it.isNotBlank() }
+    if (type == DiscordRichPresenceActivityType.Browsing) {
+        return buildJsonObject {
+            put("details", truncateDiscordText(titleText))
+            subtitleText?.let { put("state", truncateDiscordText(it)) }
+        }
+    }
+
     val nowMs = System.currentTimeMillis()
     val safeSpeed = playbackSpeed.takeIf { it > 0.05f } ?: 1f
     val hasTimeline = isPlaying && durationMs > 0L && positionMs >= 0L && positionMs < durationMs
@@ -199,6 +206,7 @@ private fun DiscordRichPresenceActivity.toDiscordActivity(): JsonObject {
 
 private fun DiscordRichPresenceActivity.toPayloadKey(): String =
     listOf(
+        type.name,
         title.trim(),
         subtitle.orEmpty().trim(),
         isPlaying.toString(),

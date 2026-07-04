@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.7.4 - 2026-07-04
+
+### Added
+
+- **Richer Discord Rich Presence states** - Discord now shows what you're doing outside active playback too: browsing Nuvio, searching, viewing Library, opening detail pages, browsing catalogs, choosing a stream, and starting a stream. Actual playback still takes priority once the video is running, including the existing title/episode/timeline behavior.
+
+- **Interface Renderer setting** - desktop now exposes a restart-required renderer picker for the Compose UI backend. OpenGL remains the default, with Direct3D 11 available as a compatibility option for systems where OpenGL causes fullscreen or driver weirdness.
+
+### Improved
+
+- **Settings search and Fork Enhancements shortcuts** - more fork-specific settings are now searchable and deep-link directly to the right control, including hero badge options, adaptive hero positioning, trailer delay, anime auto/SVP toggles, Discord Rich Presence, poster size, TVDB/SIMKL attribution, and the new interface renderer setting.
+
+- **Direct autoplay stream selection** - instant/unlimited autoplay can now react as addon, plugin, and debrid results arrive instead of waiting for slower providers to finish. Persisted binge-group matches still get first chance before the timeout behavior opens up to the normal fallback selection.
+
+- **Profile switcher overflow** - the profile switcher popup can now scroll horizontally when there are enough profiles to overflow the available space.
+
+- **TMDB trending badge lookup** - trending checks now consider both movie and TV trending lists for ambiguous/anime entries, load the first two TMDB pages per media type, and retry sooner after partial refresh failures instead of treating an empty side as fresh for hours.
+
+- **Updated desktop app icon** - refreshed the bundled Windows/macOS/Linux app icon assets used by the packaged desktop app. Be warned that Windows caches this, to get the new icon un-pin from taskbar and either restart Windows explorer or restart the computer. It gets rid of the random black background and just uses the Nuvio logo with a transparent background.
+
+### Fixed
+
+- **TV Mode collection poster sizing** - collection folder shelves now use the same fill-the-shelf sizing logic as Home TV Mode, so synced/mobile poster label preferences no longer shrink collection posters unexpectedly.
+
+- **Discord Rich Presence blank gap while playback starts** - after picking a stream, Discord now shows "Starting stream" until the player reports real playback, instead of briefly clearing presence between stream selection and playback.
+
+- **SVP/player timing cleanup** - speed changes now leave buffer preset scaling to the desktop controller instead of the native bridge fighting the selected preset, and returning from SVP restores mpv's motion-compensation value correctly.
+
+- **Signed-out cached profile startup** - cached profiles no longer silently bypass the sign-in gate while the app is online and auth has failed/expired. Offline cached access still works, and users already inside the app are not kicked out mid-session just because auth is resolving.
+
+- **Watch progress sync without a real Nuvio session** - local watch-progress pushes now skip Nuvio Sync when there is no authenticated non-anonymous session, avoiding noisy unauthorized sync attempts.
+
 ## 1.7.3 - 2026-07-03
 
 ### Added

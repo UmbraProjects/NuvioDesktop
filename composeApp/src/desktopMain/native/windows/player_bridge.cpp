@@ -15,9 +15,11 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cwctype>
 #include <deque>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -46,6 +48,7 @@ typedef enum mpv_event_id {
     MPV_EVENT_SHUTDOWN = 1,
     MPV_EVENT_LOG_MESSAGE = 2,
     MPV_EVENT_FILE_LOADED = 8,
+    MPV_EVENT_PLAYBACK_RESTART = 21,
     MPV_EVENT_PROPERTY_CHANGE = 22,
 } mpv_event_id;
 
@@ -76,8 +79,9 @@ HMODULE gModule = nullptr;
 constexpr UINT WM_NUVIO_TASK = WM_APP + 0x4E50;
 constexpr UINT_PTR NUVIO_TIMER_ID = 0x4E50;
 
-// Diagnostic mpv log -> %TEMP%\nuvio-mpv.log. Only written while a feature that requests mpv
-// log messages is active (currently RTX VSR), so normal playback never touches the file.
+// Diagnostic mpv log -> %TEMP%\nuvio-mpv.log. Normal playback writes only bridge lifecycle
+// markers and mpv warnings/errors; full verbose mpv output requires RTX VSR/HDR to be active
+// or the NUVIO_MPV_VERBOSE environment variable (see the requestLogMessages call in startMpv).
 std::string nuvioMpvLogPath() {
     char tempPath[MAX_PATH];
     DWORD len = GetTempPathA(MAX_PATH, tempPath);
@@ -102,13 +106,32 @@ void nuvioMpvLogAppend(const std::string &line) {
     }
 }
 
+// Wall-clock HH:MM:SS.mmm so bridge markers can be correlated with the app's Kotlin-side
+// logs (PlaybackStartTrace et al.) when breaking down playback start time.
+std::string nuvioLogTimestamp() {
+    SYSTEMTIME st = {};
+    GetLocalTime(&st);
+    char buffer[16];
+    std::snprintf(buffer, sizeof(buffer), "%02u:%02u:%02u.%03u",
+                  (unsigned)st.wHour, (unsigned)st.wMinute, (unsigned)st.wSecond, (unsigned)st.wMilliseconds);
+    return std::string(buffer);
+}
+
 void nuvioBridgeLog(const std::string &line) {
-    nuvioMpvLogAppend("[nuvio-bridge] " + line + "\n");
+    nuvioMpvLogAppend("[nuvio-bridge " + nuvioLogTimestamp() + "] " + line + "\n");
 }
 
 std::string redactedSourceSummary(const std::string &sourceUrl) {
     if (sourceUrl.empty()) return "(empty)";
-    const size_t idPos = sourceUrl.find("tt");
+    // IMDB ids are "tt" followed by digits; a bare find("tt") matched the "tt" inside
+    // "https://" and reduced every URL to the summary "ttps:".
+    size_t idPos = std::string::npos;
+    for (size_t pos = sourceUrl.find("tt"); pos != std::string::npos; pos = sourceUrl.find("tt", pos + 1)) {
+        if (pos + 2 < sourceUrl.size() && std::isdigit((unsigned char)sourceUrl[pos + 2])) {
+            idPos = pos;
+            break;
+        }
+    }
     if (idPos != std::string::npos) {
         size_t end = idPos;
         while (end < sourceUrl.size() && (std::isalnum((unsigned char)sourceUrl[end]) || sourceUrl[end] == ':' || sourceUrl[end] == '-')) {
@@ -959,10 +982,11 @@ public:
     static constexpr double svpSpeedBypassThreshold = 1.50;
     static constexpr double svpSpeedRestoreThreshold = 1.25;
 
-    // Baseline streaming buffer (content-seconds) at 1x playback. The demuxer cache is
-    // measured in content time, so at >1x it drains faster in wall-clock terms; setSpeed
-    // scales these with the playback rate to keep the wall-clock headroom roughly constant
-    // and avoid rebuffering at higher default speeds.
+    // Initial streaming buffer (content-seconds). These only serve as the values in effect
+    // between loadfile and the moment the Kotlin side applies the user's buffer preset (a few
+    // milliseconds later on the main player path) — and for hero trailers, which never apply
+    // a preset and keep them for their whole playback. All runtime buffer sizing, including
+    // speed scaling, is owned by NativePlayerController.applyDesktopBufferPreset.
     static constexpr double baseReadaheadSecs = 180.0;
     static constexpr double baseCacheSecs = 600.0;
 
@@ -1107,16 +1131,10 @@ public:
         if (!mpv) return;
         double clamped = std::max(0.25, std::min(4.0, speed));
         mpvApi().setProperty(mpv, "speed", MPV_FORMAT_DOUBLE, &clamped);
-
-        // Grow the demuxer cache in proportion to the playback rate so faster-than-real-time
-        // playback keeps the same wall-clock buffer headroom and does not rebuffer.
-        double bufferFactor = std::max(1.0, clamped);
-        std::string readahead = std::to_string(baseReadaheadSecs * bufferFactor);
-        std::string cacheSecs = std::to_string(baseCacheSecs * bufferFactor);
-        std::string pauseWait = std::to_string(clamped > 1.0 ? 6.0 : 2.0);
-        mpvApi().setPropertyString(mpv, "demuxer-readahead-secs", readahead.c_str());
-        mpvApi().setPropertyString(mpv, "cache-secs", cacheSecs.c_str());
-        mpvApi().setPropertyString(mpv, "cache-pause-wait", pauseWait.c_str());
+        // Buffer sizing (demuxer-readahead-secs / cache-secs / cache-pause-wait) is owned by
+        // the Kotlin side: NativePlayerController re-applies the user's buffer preset scaled
+        // by the new rate on every speed change. Scaling it here too from the init-time
+        // constants silently fought the preset the user actually selected.
         applySpeedSensitiveVideoFiltersLocked(clamped);
     }
 
@@ -1429,6 +1447,9 @@ private:
     double pendingSeekTargetSeconds = -1.0;
     std::chrono::steady_clock::time_point pendingSeekIssuedAt{};
 
+    // Per-message occurrence counts backing shouldWriteMpvLogLine. Event-thread only.
+    std::map<std::string, int> mpvLogLineCounts;
+
     // Cached track-list JSON for the 500ms controls sync. Rebuilding the lists means dozens
     // of mutex-locked mpv property reads per tick; tracks only change on file load, external
     // subtitle add/remove, or selection changes, all of which show up in the key below.
@@ -1442,6 +1463,10 @@ private:
     bool videoParamsGammaReceived = false;
     std::string requestedVideoFilters;
     bool svpBypassedForSpeed = false;
+    // Arms the one-shot "playbackRestart" notification below: set on FILE_LOADED, cleared by
+    // the first PLAYBACK_RESTART, so the app learns when the first frame of a load rendered
+    // without hearing about every post-seek restart. Only touched on the mpv event thread.
+    bool playbackRestartPendingForFile = false;
 
     // Empty until the first refresh actually applies a mode, so it never matches and the
     // first call always sets sub-ass-override explicitly rather than assuming mpv's default.
@@ -1770,12 +1795,20 @@ private:
             }
             initialStartSeconds = initialPositionMs > 0 ? (double)initialPositionMs / 1000.0 : 0.0;
 
-            // When RTX VSR is enabled, capture mpv's own log so filter/hwdec issues are visible
-            // (file: %TEMP%\nuvio-mpv.log). Enabled unconditionally for debugging.
+            // Capture mpv's own log to %TEMP%\nuvio-mpv.log so filter/hwdec issues are visible.
+            // Verbose ("v") level is only requested when diagnosing the RTX pipeline or when
+            // NUVIO_MPV_VERBOSE is set: at "v" mpv emits hundreds of messages during open/probe
+            // alone, and each one costs an open/append/close of the log file on the same event
+            // thread that dispatches playback events to the app — measurably delaying startup
+            // event handling. Normal playback keeps warnings/errors only.
             if (mpvApi().requestLogMessages) {
                 vsrLogActive = true;
-                nuvioMpvLogAppend("[nuvio] Logging enabled\n");
-                mpvApi().requestLogMessages(mpv, "v");
+                const char *verboseEnv = std::getenv("NUVIO_MPV_VERBOSE");
+                bool verboseLog = (verboseEnv && *verboseEnv && std::string(verboseEnv) != "0") ||
+                    nvidiaRtxSuperResolutionEnabled || nvidiaRtxHdrEnabled;
+                nuvioMpvLogAppend(std::string("[nuvio] Logging enabled (level=") +
+                    (verboseLog ? "v" : "warn") + ")\n");
+                mpvApi().requestLogMessages(mpv, verboseLog ? "v" : "warn");
             }
 
             nuvioBridgeLog("mpv set options");
@@ -2142,6 +2175,32 @@ private:
         return false;
     }
 
+    // Repeated-message suppressor for the mpv log. Some streams emit the same ffmpeg warning
+    // pair for every frame (e.g. "h264: Late SEI is not implemented" on web-DL sources) —
+    // roughly ten lines per second for the entire playback, each paying an open/append/close
+    // of the log file on this event thread and burying the useful markers. Each distinct
+    // message is written a few times, then silenced with a one-time notice. Counting per
+    // message (not just consecutive-duplicate collapsing) is deliberate: the warnings arrive
+    // as an alternating A/B pair that consecutive dedupe would never catch. Only touched on
+    // the mpv event thread. The map is capped as a safety valve — pathological log variety
+    // just falls back to writing everything rather than growing without bound.
+    bool shouldWriteMpvLogLine(const std::string &line) {
+        static constexpr int kRepeatLimit = 5;
+        static constexpr size_t kMaxTrackedMessages = 128;
+        auto existing = mpvLogLineCounts.find(line);
+        if (existing == mpvLogLineCounts.end() && mpvLogLineCounts.size() >= kMaxTrackedMessages) {
+            return true;
+        }
+        int count = (existing == mpvLogLineCounts.end())
+            ? (mpvLogLineCounts[line] = 1)
+            : ++existing->second;
+        if (count < kRepeatLimit) return true;
+        if (count == kRepeatLimit) {
+            nuvioMpvLogAppend("[nuvio] (suppressing further repeats of the previous message)\n");
+        }
+        return false;
+    }
+
     void drainMpvEvents() {
         while (!stopping.load()) {
             mpv_handle *current = nullptr;
@@ -2161,10 +2220,18 @@ private:
             if (event->event_id == MPV_EVENT_LOG_MESSAGE && vsrLogActive && event->data) {
                 auto *msg = static_cast<mpv_event_log_message *>(event->data);
                 if (msg && msg->prefix && msg->level && msg->text) {
-                    nuvioMpvLogAppend(std::string("[") + msg->level + "] " + msg->prefix + ": " + msg->text);
+                    std::string line = std::string("[") + msg->level + "] " + msg->prefix + ": " + msg->text;
+                    if (shouldWriteMpvLogLine(line)) {
+                        nuvioMpvLogAppend(line);
+                    }
                 }
             }
+            if (event->event_id == MPV_EVENT_PLAYBACK_RESTART && playbackRestartPendingForFile) {
+                playbackRestartPendingForFile = false;
+                sendPlayerEvent("playbackRestart", 1.0);
+            }
             if (event->event_id == MPV_EVENT_FILE_LOADED) {
+                playbackRestartPendingForFile = true;
                 {
                     // A stale seek target from the previous file must not seed relative
                     // seeks issued right after a source switch.

@@ -8,7 +8,8 @@ import androidx.compose.runtime.LaunchedEffect
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.discord.DiscordPresenceSettingsRepository
 import com.nuvio.app.features.discord.DiscordRichPresenceActivity
-import com.nuvio.app.features.discord.DiscordRichPresencePlatform
+import com.nuvio.app.features.discord.DiscordRichPresenceController
+import com.nuvio.app.features.discord.DiscordRichPresenceActivityType
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.p2p.P2pStreamRequest
 import com.nuvio.app.features.p2p.P2pStreamingEngine
@@ -294,26 +295,37 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
         positionBucket,
         errorMessage,
     ) {
+        val presenceTitle = title.trim().takeIf { it.isNotBlank() }
         if (
             !discordSettings.enabled ||
-            playbackSnapshot.isLoading ||
             playbackSnapshot.isEnded ||
             errorMessage != null
         ) {
-            DiscordRichPresencePlatform.update(null)
+            DiscordRichPresenceController.setPlaybackActivity(null)
             return@LaunchedEffect
         }
 
-        val presenceTitle = title.trim().takeIf { it.isNotBlank() }
+        if (playbackSnapshot.isLoading) {
+            DiscordRichPresenceController.setPlaybackActivity(
+                DiscordRichPresenceActivity(
+                    title = "Starting stream",
+                    subtitle = presenceTitle,
+                    type = DiscordRichPresenceActivityType.Browsing,
+                ),
+            )
+            return@LaunchedEffect
+        }
+
         if (presenceTitle == null) {
-            DiscordRichPresencePlatform.update(null)
+            DiscordRichPresenceController.setPlaybackActivity(null)
             return@LaunchedEffect
         }
 
-        DiscordRichPresencePlatform.update(
+        DiscordRichPresenceController.setPlaybackActivity(
             DiscordRichPresenceActivity(
                 title = presenceTitle,
                 subtitle = discordPresenceSubtitle(),
+                type = DiscordRichPresenceActivityType.Playback,
                 isPlaying = playbackSnapshot.isPlaying,
                 positionMs = playbackSnapshot.positionMs.coerceAtLeast(0L),
                 durationMs = playbackSnapshot.durationMs.coerceAtLeast(0L),
@@ -324,7 +336,7 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
 
     DisposableEffect(Unit) {
         onDispose {
-            DiscordRichPresencePlatform.update(null)
+            DiscordRichPresenceController.setPlaybackActivity(null)
         }
     }
 }
