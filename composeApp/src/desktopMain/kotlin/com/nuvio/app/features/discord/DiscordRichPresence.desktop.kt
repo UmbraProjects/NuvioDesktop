@@ -172,6 +172,7 @@ private fun DiscordRichPresenceActivity.toDiscordActivity(): JsonObject {
         return buildJsonObject {
             put("details", truncateDiscordText(titleText))
             subtitleText?.let { put("state", truncateDiscordText(it)) }
+            put("assets", discordPresenceAssets())
         }
     }
 
@@ -192,6 +193,7 @@ private fun DiscordRichPresenceActivity.toDiscordActivity(): JsonObject {
     return buildJsonObject {
         put("details", if (isPlaying) truncateDiscordText(titleText) else truncateDiscordText("Paused: $titleText"))
         subtitleText?.let { put("state", truncateDiscordText(it)) }
+        put("assets", discordPresenceAssets())
         if (startEpochSeconds != null && endEpochSeconds != null && endEpochSeconds > startEpochSeconds) {
             put(
                 "timestamps",
@@ -203,6 +205,12 @@ private fun DiscordRichPresenceActivity.toDiscordActivity(): JsonObject {
         }
     }
 }
+
+private fun discordPresenceAssets(): JsonObject =
+    buildJsonObject {
+        put("large_image", DISCORD_LARGE_IMAGE_KEY)
+        put("large_text", "Nuvio")
+    }
 
 private fun DiscordRichPresenceActivity.toPayloadKey(): String =
     listOf(
@@ -222,3 +230,4 @@ private const val OPCODE_HANDSHAKE = 0
 private const val OPCODE_FRAME = 1
 private const val DISCORD_TEXT_LIMIT = 128
 private const val DISCORD_APPLICATION_ID = "1522129829363843195"
+private const val DISCORD_LARGE_IMAGE_KEY = "nuvio_logo"

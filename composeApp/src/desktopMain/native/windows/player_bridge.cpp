@@ -360,6 +360,108 @@ std::wstring moduleDirectory() {
     return path.substr(0, separator);
 }
 
+std::string modulePath(HMODULE handle) {
+    if (!handle) return "(not loaded)";
+    wchar_t buffer[32768] = {};
+    DWORD length = GetModuleFileNameW(handle, buffer, (DWORD)(sizeof(buffer) / sizeof(buffer[0])));
+    if (length == 0 || length >= (DWORD)(sizeof(buffer) / sizeof(buffer[0]))) {
+        return "(loaded, path unavailable; GetLastError=" + std::to_string(GetLastError()) + ")";
+    }
+    return toUtf8(std::wstring(buffer, buffer + length));
+}
+
+bool fileExists(const std::wstring &path) {
+    DWORD attributes = GetFileAttributesW(path.c_str());
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+std::wstring moduleFilePath(const wchar_t *name) {
+    std::wstring moduleDir = moduleDirectory();
+    return moduleDir.empty() ? std::wstring() : moduleDir + L"\\" + name;
+}
+
+void configureBundledDllSearchPath() {
+    static std::once_flag configureOnce;
+    std::call_once(configureOnce, []() {
+        std::wstring moduleDir = moduleDirectory();
+        if (moduleDir.empty()) {
+            nuvioMpvLogAppend("[nuvio] DLL search isolation skipped: moduleDirectory() empty\n");
+            return;
+        }
+
+        HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+        using SetDefaultDllDirectoriesFn = BOOL(WINAPI *)(DWORD);
+        using AddDllDirectoryFn = DLL_DIRECTORY_COOKIE(WINAPI *)(PCWSTR);
+        auto setDefaultDllDirectories = kernel32
+            ? reinterpret_cast<SetDefaultDllDirectoriesFn>(GetProcAddress(kernel32, "SetDefaultDllDirectories"))
+            : nullptr;
+        auto addDllDirectory = kernel32
+            ? reinterpret_cast<AddDllDirectoryFn>(GetProcAddress(kernel32, "AddDllDirectory"))
+            : nullptr;
+
+        BOOL defaultDirsOk = FALSE;
+        DLL_DIRECTORY_COOKIE cookie = nullptr;
+        if (setDefaultDllDirectories && addDllDirectory) {
+            defaultDirsOk = setDefaultDllDirectories(
+                LOAD_LIBRARY_SEARCH_APPLICATION_DIR |
+                LOAD_LIBRARY_SEARCH_SYSTEM32 |
+                LOAD_LIBRARY_SEARCH_USER_DIRS
+            );
+            if (defaultDirsOk) {
+                cookie = addDllDirectory(moduleDir.c_str());
+            }
+        }
+
+        // SetDllDirectory is kept as a fallback for older systems and for libraries that still
+        // use legacy LoadLibrary search semantics. SetDefaultDllDirectories above removes PATH
+        // from the default DLL search path for future loads, which prevents an installed SVP 4
+        // VapourSynth runtime from being mixed with Nuvio's bundled mpv/Python stack.
+        BOOL setDirOk = SetDllDirectoryW(moduleDir.c_str());
+        nuvioMpvLogAppend("[nuvio] DLL search isolation moduleDir=" + toUtf8(moduleDir) +
+            " defaultDirs=" + std::to_string((int)defaultDirsOk) +
+            " addDir=" + std::to_string(cookie != nullptr) +
+            " setDllDirectory=" + std::to_string((int)setDirOk) + "\n");
+    });
+}
+
+void preloadBundledDll(const wchar_t *name, bool required) {
+    std::wstring path = moduleFilePath(name);
+    std::string utf8Name = toUtf8(std::wstring(name));
+    if (path.empty() || !fileExists(path)) {
+        if (required) {
+            nuvioMpvLogAppend("[nuvio] bundled DLL missing: " + utf8Name + "\n");
+        }
+        return;
+    }
+    if (HMODULE existing = GetModuleHandleW(name)) {
+        nuvioMpvLogAppend("[nuvio] already loaded " + utf8Name + " from " + modulePath(existing) + "\n");
+        return;
+    }
+
+    HMODULE handle = LoadLibraryExW(
+        path.c_str(),
+        nullptr,
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
+    );
+    if (!handle) {
+        nuvioMpvLogAppend("[nuvio] failed to preload " + utf8Name +
+            " from " + toUtf8(path) +
+            " GetLastError=" + std::to_string(GetLastError()) + "\n");
+        return;
+    }
+    nuvioMpvLogAppend("[nuvio] preloaded " + utf8Name + " from " + modulePath(handle) + "\n");
+}
+
+void preloadBundledVapourSynthRuntime() {
+    static std::once_flag preloadOnce;
+    std::call_once(preloadOnce, []() {
+        configureBundledDllSearchPath();
+        preloadBundledDll(L"libpython3.14.dll", true);
+        preloadBundledDll(L"libvapoursynth.dll", true);
+        preloadBundledDll(L"vsscript.dll", true);
+    });
+}
+
 // mpv's vf_vapoursynth filter loads Python (via vsscript.dll) lazily, only when a file with
 // that filter actually opens - so this just needs to land before the first such attempt, not
 // before mpv_create() specifically. Setting PYTHONHOME here (once per mpv instance, cheap,
@@ -459,6 +561,8 @@ struct MpvApi {
     }
 
     void load() {
+        configureBundledDllSearchPath();
+
         std::vector<std::wstring> candidates;
 
         wchar_t envPath[32768] = {};
@@ -496,9 +600,13 @@ struct MpvApi {
             for (int attempt = 0; attempt < maxAttemptsPerCandidate && !library; attempt++) {
                 if (attempt > 0) std::this_thread::sleep_for(retryDelay);
                 if (candidate.find(L'\\') != std::wstring::npos || candidate.find(L'/') != std::wstring::npos) {
-                    library = LoadLibraryExW(candidate.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+                    library = LoadLibraryExW(
+                        candidate.c_str(),
+                        nullptr,
+                        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
+                    );
                 } else {
-                    library = LoadLibraryW(candidate.c_str());
+                    library = LoadLibraryExW(candidate.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
                 }
             }
             if (library) break;
@@ -1046,7 +1154,7 @@ public:
             ? removeVapourSynthFilters(requestedVideoFilters)
             : requestedVideoFilters;
 
-        mpvApi().setPropertyString(mpv, "vf", nextFilters.c_str());
+        setVideoFiltersPropertyLocked(nextFilters);
         if (shouldBypass != svpBypassedForSpeed) {
             svpBypassedForSpeed = shouldBypass;
             nuvioMpvLogAppend(std::string("[nuvio] anime SVP ") +
@@ -1060,6 +1168,25 @@ public:
         double value = 0.0;
         if (mpvApi().getProperty(mpv, "duration", MPV_FORMAT_DOUBLE, &value) < 0) return 0.0;
         return std::isfinite(value) ? value : 0.0;
+    }
+
+    void setVideoFiltersPropertyLocked(const std::string &filters) {
+        if (filters == appliedVideoFilters) {
+            if (containsVapourSynthFilter(filters)) {
+                nuvioMpvLogAppend("[nuvio] skipped duplicate vf containing vapoursynth\n");
+            }
+            return;
+        }
+        if (containsVapourSynthFilter(filters)) {
+            preloadBundledVapourSynthRuntime();
+        }
+        int result = mpvApi().setPropertyString(mpv, "vf", filters.c_str());
+        if (result >= 0) {
+            appliedVideoFilters = filters;
+        } else {
+            nuvioMpvLogAppend("[nuvio] mpv property rejected: vf=" + filters +
+                " (" + mpvApi().errorText(result) + ")\n");
+        }
     }
 
     bool tryGetDoubleLocked(const char *name, double &out) {
@@ -1319,6 +1446,7 @@ public:
 
     void setMpvPropertyString(const std::string &key, const std::string &value) {
         if (key == "vf" && value.find("vapoursynth") != std::string::npos) {
+            preloadBundledVapourSynthRuntime();
             wchar_t readback[4096] = {};
             DWORD readbackLen = GetEnvironmentVariableW(L"PYTHONHOME", readback, 4096);
             nuvioMpvLogAppend("[nuvio] about to set vf=vapoursynth; PYTHONHOME readback=" +
@@ -1330,7 +1458,7 @@ public:
             requestedVideoFilters = value;
             if (!containsVapourSynthFilter(value)) {
                 svpBypassedForSpeed = false;
-                mpvApi().setPropertyString(mpv, key.c_str(), value.c_str());
+                setVideoFiltersPropertyLocked(value);
                 return;
             }
             double currentSpeed = 1.0;
@@ -1338,7 +1466,7 @@ public:
             bool shouldBypass = currentSpeed >= svpSpeedBypassThreshold ||
                 (svpBypassedForSpeed && currentSpeed > svpSpeedRestoreThreshold);
             std::string effectiveValue = shouldBypass ? removeVapourSynthFilters(value) : value;
-            mpvApi().setPropertyString(mpv, key.c_str(), effectiveValue.c_str());
+            setVideoFiltersPropertyLocked(effectiveValue);
             if (shouldBypass != svpBypassedForSpeed) {
                 svpBypassedForSpeed = shouldBypass;
                 nuvioMpvLogAppend(std::string("[nuvio] anime SVP ") +
@@ -1462,6 +1590,7 @@ private:
     bool videoParamsPrimariesReceived = false;
     bool videoParamsGammaReceived = false;
     std::string requestedVideoFilters;
+    std::string appliedVideoFilters;
     bool svpBypassedForSpeed = false;
     // Arms the one-shot "playbackRestart" notification below: set on FILE_LOADED, cleared by
     // the first PLAYBACK_RESTART, so the app learns when the first frame of a load rendered
@@ -1903,8 +2032,11 @@ private:
             setMpvOptionStringLocked("deband-grain", "0");
 
             if (!animeSvpFilter.empty()) {
+                preloadBundledVapourSynthRuntime();
                 requestedVideoFilters = animeSvpFilter;
-                setMpvOptionStringLocked("vf", animeSvpFilter.c_str());
+                if (setMpvOptionStringLocked("vf", animeSvpFilter.c_str())) {
+                    appliedVideoFilters = animeSvpFilter;
+                }
             }
 
             // Streaming cache (1x baseline; setSpeed scales these with playback rate)
@@ -2329,13 +2461,15 @@ private:
         }
     }
 
-    void setMpvOptionStringLocked(const char *name, const char *value) {
+    bool setMpvOptionStringLocked(const char *name, const char *value) {
         int result = mpvApi().setOptionString(mpv, name, value);
         if (result < 0) {
             std::string message = std::string("[nuvio] mpv option rejected: ") + name + "=" + value +
                 " (" + mpvApi().errorText(result) + ")\n";
             OutputDebugStringA(message.c_str());
+            return false;
         }
+        return true;
     }
 
     double doubleProperty(const char *name, double fallback) {

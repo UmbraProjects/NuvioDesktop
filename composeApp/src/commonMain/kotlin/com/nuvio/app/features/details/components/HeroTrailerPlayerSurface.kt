@@ -9,8 +9,12 @@ expect fun HeroTrailerPlayerSurface(
     sourceAudioUrl: String?,
     playWhenReady: Boolean,
     muted: Boolean,
+    volume: Int,
+    keyboardNavigationEnabled: Boolean,
     modifier: Modifier,
     onReady: () -> Unit,
     onEnded: () -> Unit,
     onError: () -> Unit,
+    onMuteToggle: () -> Unit = {},
+    onVolumeChange: (Int) -> Unit = {},
 )

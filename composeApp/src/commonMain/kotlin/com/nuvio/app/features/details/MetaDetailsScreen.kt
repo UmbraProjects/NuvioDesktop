@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -46,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -77,6 +79,7 @@ import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.build.TrailerPlaybackMode
 import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.network.NetworkStatusRepository
+import com.nuvio.app.core.ui.LocalNuvioDesktopCompactWindow
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.TraktListPickerDialog
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
@@ -87,6 +90,7 @@ import com.nuvio.app.features.details.components.CommentDetailSheet
 import com.nuvio.app.features.details.components.DetailAdditionalInfoSection
 import com.nuvio.app.features.details.components.DetailCastSection
 import com.nuvio.app.features.details.components.DetailCommentsSection
+import com.nuvio.app.features.details.components.DetailCompactMediaSelector
 import com.nuvio.app.features.details.components.DetailFloatingHeader
 import com.nuvio.app.features.details.components.DetailHero
 import com.nuvio.app.features.details.components.DetailMetaInfo
@@ -94,6 +98,8 @@ import com.nuvio.app.features.details.components.DetailPosterRailSection
 import com.nuvio.app.features.details.components.DetailProductionSection
 import com.nuvio.app.features.details.components.DetailSeriesContent
 import com.nuvio.app.features.details.components.DetailTrailersSection
+import com.nuvio.app.features.details.components.DetailTvKey
+import com.nuvio.app.features.details.components.DetailTvKeyboardBridge
 import com.nuvio.app.features.details.components.EpisodeWatchedActionSheet
 import com.nuvio.app.features.details.components.MetaDetailsTvFocusState
 import com.nuvio.app.features.details.components.SeasonWatchedActionSheet
@@ -119,6 +125,9 @@ import com.nuvio.app.features.trakt.TraktListTab
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trailer.TrailerPlaybackResolver
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
+import com.nuvio.app.features.trailer.TrailerResolution
+import com.nuvio.app.features.trailer.TrailerUnavailableReason
+import com.nuvio.app.features.trailer.sourceOrNull
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watched.previousReleasedEpisodesBefore
 import com.nuvio.app.features.watched.releasedPlayableEpisodes
@@ -465,13 +474,13 @@ fun MetaDetailsScreen(
                     val action = seriesAction ?: return@remember null
                     meta.videos.firstOrNull { video ->
                         if (action.seasonNumber != null && action.episodeNumber != null) {
-                            video.season == action.seasonNumber &&
-                                video.episode == action.episodeNumber
+                            video.effectiveSeasonNumber() == action.seasonNumber &&
+                                video.effectiveEpisodeNumber() == action.episodeNumber
                         } else {
                             buildPlaybackVideoId(
                                 parentMetaId = meta.id,
-                                seasonNumber = video.season,
-                                episodeNumber = video.episode,
+                                seasonNumber = video.effectiveSeasonNumber(),
+                                episodeNumber = video.effectiveEpisodeNumber(),
                                 fallbackVideoId = video.id,
                             ) == action.videoId || video.id == action.videoId
                         }
@@ -485,15 +494,22 @@ fun MetaDetailsScreen(
                     val video = seriesActionVideo ?: return@remember action.videoId
                     val playbackVideoId = buildPlaybackVideoId(
                         parentMetaId = meta.id,
-                        seasonNumber = video.season,
-                        episodeNumber = video.episode,
+                        seasonNumber = video.effectiveSeasonNumber(),
+                        episodeNumber = video.effectiveEpisodeNumber(),
                         fallbackVideoId = video.id,
                     )
                     video.streamVideoIdForPlayback(meta.id, playbackVideoId)
                 }
-                val hasEpisodes = meta.videos.any { it.season != null || it.episode != null }
+                val hasEpisodes = meta.videos.any {
+                    it.effectiveSeasonNumber() != null || it.effectiveEpisodeNumber() != null
+                }
                 val hasProductionSection = remember(meta) {
-                    meta.productionCompanies.isNotEmpty() || meta.networks.isNotEmpty()
+                    meta.productionCompanies.isNotEmpty() ||
+                        meta.networks.isNotEmpty() ||
+                        meta.creator.isNotEmpty() ||
+                        meta.director.isNotEmpty() ||
+                        meta.writer.isNotEmpty() ||
+                        meta.producer.isNotEmpty()
                 }
                 val hasAdditionalInfoSection = remember(meta) {
                     meta.status != null ||
@@ -519,6 +535,9 @@ fun MetaDetailsScreen(
                 var trailerPlaybackSource by remember(meta.id) { mutableStateOf<TrailerPlaybackSource?>(null) }
                 var trailerLoading by remember(meta.id) { mutableStateOf(false) }
                 var trailerErrorMessage by remember(meta.id) { mutableStateOf<String?>(null) }
+                // False when the failure is a definitive YouTube verdict (region block, age
+                // gate, removed) that a retry can never change; the popup then hides Retry.
+                var trailerErrorRetryable by remember(meta.id) { mutableStateOf(true) }
                 var trailerRequestToken by remember(meta.id) { mutableIntStateOf(0) }
                 var isLeavingDetails by remember(meta.id) { mutableStateOf(false) }
                 val heroTrailerCandidate = remember(meta.trailers) {
@@ -527,12 +546,27 @@ fun MetaDetailsScreen(
                 val heroTrailerPlaybackEnabled = AppFeaturePolicy.heroTrailerPlaybackSupported &&
                     inAppTrailerPlaybackEnabled &&
                     metaScreenSettingsUiState.heroTrailerPlayback
+                // "Manual" delay: the hero trailer never auto-plays (no auto candidate mounts),
+                // but a trailer click still plays it in the hero.
+                val heroTrailerManualOnly = metaScreenSettingsUiState.heroTrailerDelaySeconds <= 0
                 var heroTrailerPlaybackSource by remember(meta.id, heroTrailerCandidate?.id) { mutableStateOf<TrailerPlaybackSource?>(null) }
                 var heroTrailerReady by remember(meta.id, heroTrailerCandidate?.id) { mutableStateOf(false) }
                 var heroTrailerFinished by remember(meta.id, heroTrailerCandidate?.id) { mutableStateOf(false) }
+                var heroTrailerAutoplayReady by remember(meta.id, heroTrailerCandidate?.id) { mutableStateOf(false) }
+                // True when the current hero trailer source was picked by an explicit
+                // trailer click (rather than the auto-selected hero candidate). Such
+                // playback starts immediately (no autoplay delay) and with audio on.
+                var heroTrailerManualPlayback by remember(meta.id, heroTrailerCandidate?.id) { mutableStateOf(false) }
+                // True after the user dismisses (or the trailer ends): the player surface
+                // stays mounted but paused and hidden, so a later trailer click can re-attach
+                // in place (mpv loadfile) instead of rebuilding the native surface — a rebuild
+                // comes up on a permanent black frame.
+                var heroTrailerDismissed by remember(meta.id, heroTrailerCandidate?.id) { mutableStateOf(false) }
                 val heroTrailerMuted by HeroTrailerAudioState.muted.collectAsStateWithLifecycle()
+                val heroTrailerVolume by HeroTrailerAudioState.volume.collectAsStateWithLifecycle()
                 LaunchedEffect(
                     heroTrailerPlaybackEnabled,
+                    heroTrailerManualOnly,
                     heroTrailerCandidate?.id,
                     heroTrailerCandidate?.key,
                     deferredMetaWorkAllowed,
@@ -540,12 +574,23 @@ fun MetaDetailsScreen(
                     heroTrailerPlaybackSource = null
                     heroTrailerReady = false
                     heroTrailerFinished = false
-                    if (!deferredMetaWorkAllowed || !heroTrailerPlaybackEnabled || heroTrailerCandidate == null) {
+                    heroTrailerAutoplayReady = false
+                    heroTrailerManualPlayback = false
+                    heroTrailerDismissed = false
+                    // Seed this new trailer session's starting mute state from the "play with
+                    // sound by default" setting (mirrors the home page's own toggle). The user
+                    // can still interactively mute/adjust volume via the slider afterward.
+                    HeroTrailerAudioState.setMuted(!metaScreenSettingsUiState.heroTrailerSoundEnabled)
+                    // In Manual mode we don't resolve/mount the auto candidate — a trailer click
+                    // resolves its own source and mounts the surface fresh.
+                    if (!deferredMetaWorkAllowed || !heroTrailerPlaybackEnabled ||
+                        heroTrailerCandidate == null || heroTrailerManualOnly
+                    ) {
                         return@LaunchedEffect
                     }
                     val resolvedSource = runCatching {
                         TrailerPlaybackResolver.resolveFromYouTubeUrl(heroTrailerCandidate.youtubePlaybackUrl())
-                    }.getOrNull()
+                    }.getOrNull()?.sourceOrNull()
                     if (resolvedSource == null) {
                         heroTrailerFinished = true
                     } else {
@@ -558,25 +603,89 @@ fun MetaDetailsScreen(
                     heroTrailerFinished = true
                     onBack()
                 }
+                // When hero trailer playback is on, an explicit trailer click plays that
+                // trailer through the same lightweight in-place autoplay surface the hero
+                // candidate uses, instead of handing off to the full MPV player. This applies
+                // in both Hero and Fullscreen playback-area modes — DetailHero already renders
+                // that surface bounded to the hero region or stretched to fill the screen based
+                // on the area setting, so this only decides *how* playback starts (fast, no
+                // full player-engine bootstrap), not the resulting size. Trailers are meant to
+                // be quick in-and-out and are already low quality, so the full player's extra
+                // capabilities buy nothing here.
+                val heroTrailerClickPlaybackEnabled = isDesktop && heroTrailerPlaybackEnabled
+                val currentHeroTrailerClickEnabled = rememberUpdatedState(heroTrailerClickPlaybackEnabled)
+                val playTrailerInHero = rememberUpdatedState<(MetaTrailer) -> Unit> { trailer ->
+                    val youtubeUrl = trailer.youtubePlaybackUrl()
+                    // Cancel any pending trailer resolution, then resolve the clicked
+                    // trailer and start it immediately in the hero. We deliberately do
+                    // NOT null out heroTrailerPlaybackSource first: assigning the new
+                    // source directly lets the hero player surface re-attach in place
+                    // (its attach is keyed on the source URL). Tearing the surface down
+                    // and rebuilding it leaves the native player on a black frame.
+                    trailerRequestToken += 1
+                    val currentRequestToken = trailerRequestToken
+                    selectedTrailer = null
+                    trailerPlaybackSource = null
+                    trailerErrorMessage = null
+                    trailerLoading = false
+                    // Hide + pause the current trailer (show the backdrop) while we resolve,
+                    // so the previously-loaded source doesn't resume for a beat and cause a
+                    // double-attach flash. The surface stays mounted, so once the new source is
+                    // set it re-attaches in place (attach is keyed on the source URL) and the
+                    // backdrop covers the buffering gap until the new frame is on screen.
+                    heroTrailerReady = false
+                    heroTrailerAutoplayReady = false
+                    heroTrailerDismissed = true
+                    heroTrailerFinished = false
+                    heroTrailerManualPlayback = true
+                    HeroTrailerAudioState.setMuted(false)
+                    trailerScope.launch {
+                        val resolution = runCatching {
+                            TrailerPlaybackResolver.resolveFromYouTubeUrl(youtubeUrl)
+                        }.getOrNull()
+                        if (currentRequestToken != trailerRequestToken) {
+                            return@launch
+                        }
+                        val resolvedSource = resolution?.sourceOrNull()
+                        if (resolvedSource != null) {
+                            heroTrailerFinished = false
+                            heroTrailerPlaybackSource = resolvedSource
+                            heroTrailerDismissed = false
+                        } else {
+                            // Resolution failed — fall back to surfacing the error.
+                            heroTrailerManualPlayback = false
+                            heroTrailerFinished = true
+                            selectedTrailer = trailer
+                            val reason = (resolution as? TrailerResolution.Unavailable)?.reason
+                                ?: TrailerUnavailableReason.UNKNOWN
+                            trailerErrorRetryable = reason.isRetryable()
+                            trailerErrorMessage = trailerUnavailableMessage(reason)
+                        }
+                    }
+                }
                 val resolveTrailer: (MetaTrailer) -> Unit = remember(meta.id, inAppTrailerPlaybackEnabled, uriHandler) {
                     { trailer ->
                         val youtubeUrl = trailer.youtubePlaybackUrl()
                         if (!inAppTrailerPlaybackEnabled) {
                             runCatching { uriHandler.openUri(youtubeUrl) }
+                        } else if (currentHeroTrailerClickEnabled.value) {
+                            playTrailerInHero.value(trailer)
                         } else {
                             selectedTrailer = trailer
                             trailerPlaybackSource = null
                             trailerErrorMessage = null
+                            trailerErrorRetryable = true
                             trailerLoading = true
                             trailerRequestToken += 1
                             val currentRequestToken = trailerRequestToken
                             trailerScope.launch {
-                                val resolvedSource = runCatching {
+                                val resolution = runCatching {
                                     TrailerPlaybackResolver.resolveFromYouTubeUrl(youtubeUrl)
                                 }.getOrNull()
                                 if (currentRequestToken != trailerRequestToken) {
                                     return@launch
                                 }
+                                val resolvedSource = resolution?.sourceOrNull()
                                 if (resolvedSource != null && isDesktop && onPlayTrailer != null) {
                                     // Desktop: hand the resolved trailer to the full-screen
                                     // player instead of the embedded popup (which can't be
@@ -606,10 +715,13 @@ fun MetaDetailsScreen(
                                     selectedTrailer = null
                                 } else {
                                     trailerPlaybackSource = resolvedSource
-                                    trailerErrorMessage = if (resolvedSource == null) {
-                                        getString(Res.string.trailer_no_playable_stream)
+                                    if (resolvedSource == null) {
+                                        val reason = (resolution as? TrailerResolution.Unavailable)?.reason
+                                            ?: TrailerUnavailableReason.UNKNOWN
+                                        trailerErrorRetryable = reason.isRetryable()
+                                        trailerErrorMessage = trailerUnavailableMessage(reason)
                                     } else {
-                                        null
+                                        trailerErrorMessage = null
                                     }
                                     trailerLoading = false
                                 }
@@ -717,8 +829,8 @@ fun MetaDetailsScreen(
                         }
                     }
                 val onEpisodePlayClick: (MetaVideo) -> Unit = { video ->
-                    val season = video.season
-                    val episode = video.episode
+                    val season = video.effectiveSeasonNumber()
+                    val episode = video.effectiveEpisodeNumber()
                     val playbackVideoId = buildPlaybackVideoId(
                         parentMetaId = meta.id,
                         seasonNumber = season,
@@ -746,8 +858,8 @@ fun MetaDetailsScreen(
                     )
                 }
                 val onEpisodeManualPlayClick: (MetaVideo) -> Unit = { video ->
-                    val season = video.season
-                    val episode = video.episode
+                    val season = video.effectiveSeasonNumber()
+                    val episode = video.effectiveEpisodeNumber()
                     val playbackVideoId = buildPlaybackVideoId(
                         parentMetaId = meta.id,
                         seasonNumber = season,
@@ -784,11 +896,13 @@ fun MetaDetailsScreen(
                 val mouseActivity = rememberMouseActivityState()
 
                 val groupedEpisodesForTv = remember(meta.videos, meta.type) {
-                    val withSeasonOrEp = meta.videos.filter { it.season != null || it.episode != null }
+                    val withSeasonOrEp = meta.videos.filter {
+                        it.effectiveSeasonNumber() != null || it.effectiveEpisodeNumber() != null
+                    }
                     if (withSeasonOrEp.isNotEmpty()) {
                         withSeasonOrEp
                             .sortedWith(metaVideoSeasonEpisodeComparator)
-                            .groupBy { normalizeSeasonNumber(it.season) }
+                            .groupBy { normalizeSeasonNumber(it.effectiveSeasonNumber()) }
                     } else if (meta.type != "series" && meta.videos.isNotEmpty()) {
                         mapOf(normalizeSeasonNumber(null) to meta.videos)
                     } else {
@@ -851,6 +965,35 @@ fun MetaDetailsScreen(
                         .map { it.key }
                 }
 
+                val mergedDetailKeyboardNavigation = isDesktop && !metaScreenSettingsUiState.tabLayout
+                val mergedSelectorTabs = remember(
+                    visibleSectionKeys,
+                    hasEpisodes,
+                    seasonsForTv,
+                    meta.trailers,
+                    meta.collectionItems,
+                    meta.moreLikeThis,
+                ) {
+                    buildList {
+                        if (MetaScreenSectionKey.TRAILERS in visibleSectionKeys && meta.trailers.isNotEmpty()) {
+                            add(DETAIL_TRAILER_SELECTOR)
+                        }
+                        if (hasEpisodes) {
+                            addAll(seasonsForTv)
+                        }
+                        if (MetaScreenSectionKey.COLLECTION in visibleSectionKeys && meta.collectionItems.isNotEmpty()) {
+                            add(DETAIL_COLLECTION_SELECTOR)
+                        }
+                        if (MetaScreenSectionKey.MORE_LIKE_THIS in visibleSectionKeys && meta.moreLikeThis.isNotEmpty()) {
+                            add(DETAIL_MORE_LIKE_THIS_SELECTOR)
+                        }
+                    }
+                }
+                val currentMergedSelector = selectedSeasonForTv
+                    ?.takeIf { it in mergedSelectorTabs }
+                    ?: currentSeasonForTv.takeIf { hasEpisodes && it in mergedSelectorTabs }
+                    ?: mergedSelectorTabs.firstOrNull()
+
                 val tvSections = remember(
                     visibleSectionKeys,
                     comments,
@@ -858,12 +1001,97 @@ fun MetaDetailsScreen(
                     seasonsForTv,
                     groupedEpisodesForTv,
                     currentSeasonForTv,
+                    currentMergedSelector,
+                    mergedSelectorTabs,
                     meta.collectionItems,
                     meta.moreLikeThis,
                     hasEpisodes,
+                    mergedDetailKeyboardNavigation,
                     metaScreenSettingsUiState.episodeCardStyle,
                 ) {
                     buildList {
+                        if (mergedDetailKeyboardNavigation) {
+                            if (MetaScreenSectionKey.ACTIONS in visibleSectionKeys) {
+                                add(
+                                    MetaTvSection(
+                                        kind = MetaTvSectionKind.ACTIONS,
+                                        lazyItemIndex = 0,
+                                        itemCount = 1,
+                                        onEnter = { onPrimaryPlayClick() },
+                                    ),
+                                )
+                            }
+                            if (mergedSelectorTabs.isNotEmpty()) {
+                                add(
+                                    MetaTvSection(
+                                        kind = MetaTvSectionKind.SEASONS,
+                                        lazyItemIndex = 0,
+                                        itemCount = mergedSelectorTabs.size,
+                                        onEnter = { idx ->
+                                            mergedSelectorTabs.getOrNull(idx)?.let { selectedSeasonForTv = it }
+                                        },
+                                    ),
+                                )
+                            }
+                            when (currentMergedSelector) {
+                                DETAIL_TRAILER_SELECTOR -> if (meta.trailers.isNotEmpty()) {
+                                    add(
+                                        MetaTvSection(
+                                            kind = MetaTvSectionKind.TRAILERS,
+                                            lazyItemIndex = 0,
+                                            itemCount = meta.trailers.size,
+                                            onEnter = { idx -> meta.trailers.getOrNull(idx)?.let { resolveTrailer(it) } },
+                                        ),
+                                    )
+                                }
+                                DETAIL_COLLECTION_SELECTOR -> if (meta.collectionItems.isNotEmpty()) {
+                                    add(
+                                        MetaTvSection(
+                                            kind = MetaTvSectionKind.COLLECTION,
+                                            lazyItemIndex = 0,
+                                            itemCount = meta.collectionItems.size,
+                                            onEnter = { idx -> meta.collectionItems.getOrNull(idx)?.let { onOpenMeta?.invoke(it) } },
+                                        ),
+                                    )
+                                }
+                                DETAIL_MORE_LIKE_THIS_SELECTOR -> if (meta.moreLikeThis.isNotEmpty()) {
+                                    add(
+                                        MetaTvSection(
+                                            kind = MetaTvSectionKind.MORE_LIKE_THIS,
+                                            lazyItemIndex = 0,
+                                            itemCount = meta.moreLikeThis.size,
+                                            onEnter = { idx -> meta.moreLikeThis.getOrNull(idx)?.let { onOpenMeta?.invoke(it) } },
+                                        ),
+                                    )
+                                }
+                                null -> Unit
+                                else -> {
+                                    val episodes = groupedEpisodesForTv[currentMergedSelector].orEmpty()
+                                    if (episodes.isNotEmpty()) {
+                                        add(
+                                            MetaTvSection(
+                                                kind = MetaTvSectionKind.EPISODES,
+                                                lazyItemIndex = 0,
+                                                itemCount = episodes.size,
+                                                isVerticalEpisodeList = false,
+                                                onEnter = { idx -> episodes.getOrNull(idx)?.let { onEpisodePlayClick(it) } },
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+                            if (comments.isNotEmpty() && MetaScreenSectionKey.COMMENTS in visibleSectionKeys) {
+                                add(
+                                    MetaTvSection(
+                                        kind = MetaTvSectionKind.COMMENTS,
+                                        lazyItemIndex = 1,
+                                        itemCount = comments.size,
+                                        onEnter = { idx -> comments.getOrNull(idx)?.let { selectedComment = it } },
+                                    ),
+                                )
+                            }
+                            return@buildList
+                        }
                         visibleSectionKeys.forEachIndexed { index, key ->
                             val lazyItemIndex = index + 1
                             when (key) {
@@ -972,9 +1200,10 @@ fun MetaDetailsScreen(
                     focusedMoreLikeThisIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.MORE_LIKE_THIS },
                 )
 
-                LaunchedEffect(tvFocusInfo.focusedSeasonIndex, seasonsForTv) {
+                LaunchedEffect(tvFocusInfo.focusedSeasonIndex, seasonsForTv, mergedSelectorTabs, mergedDetailKeyboardNavigation) {
+                    val selectorItems = if (mergedDetailKeyboardNavigation) mergedSelectorTabs else seasonsForTv
                     tvFocusInfo.focusedSeasonIndex
-                        ?.let(seasonsForTv::getOrNull)
+                        ?.let(selectorItems::getOrNull)
                         ?.let { focusedSeason -> selectedSeasonForTv = focusedSeason }
                 }
 
@@ -1007,8 +1236,42 @@ fun MetaDetailsScreen(
                 val heroTrailerSourceAudioUrl = heroTrailerPlaybackSource
                     ?.audioUrl
                     ?.takeIf { heroTrailerSourceUrl != null && it.isNotBlank() }
+                val dismissHeroTrailerPlayback: () -> Unit = {
+                    // Pause and hide, but keep the source (and the mounted player surface)
+                    // so a later trailer click re-attaches in place instead of rebuilding a
+                    // fresh native surface — the rebuild comes up on a black frame.
+                    heroTrailerReady = false
+                    heroTrailerAutoplayReady = false
+                    heroTrailerManualPlayback = false
+                    heroTrailerDismissed = true
+                }
+                LaunchedEffect(
+                    heroTrailerSourceUrl,
+                    metaScreenSettingsUiState.heroTrailerDelaySeconds,
+                    isLeavingDetails,
+                    heroTrailerManualPlayback,
+                    heroTrailerDismissed,
+                ) {
+                    heroTrailerAutoplayReady = false
+                    if (heroTrailerSourceUrl == null || isLeavingDetails || heroTrailerDismissed) return@LaunchedEffect
+                    // Both paths keep playWhenReady false during this wait, so the surface attaches
+                    // paused and decodes its first frame before playback starts. The automatic path
+                    // waits the configured delay; a user-clicked trailer only needs a brief buffer.
+                    // Starting a fresh attach playing immediately never reveals (the frame isn't
+                    // ready when the reveal poll checks), which left manual playback black.
+                    if (heroTrailerManualPlayback) {
+                        delay(HERO_TRAILER_MANUAL_PREBUFFER_MS)
+                    } else {
+                        delay(metaScreenSettingsUiState.heroTrailerDelaySeconds.coerceAtLeast(1) * 1000L)
+                    }
+                    if (!isLeavingDetails) {
+                        heroTrailerAutoplayReady = true
+                    }
+                }
                 val heroTrailerPlayWhenReady = heroTrailerSourceUrl != null &&
+                    heroTrailerAutoplayReady &&
                     !isLeavingDetails &&
+                    !heroTrailerDismissed &&
                     (heroHeightPx == 0 || detailScrollOffsetPx <= thresholdPx)
                 val headerProgress by animateFloatAsState(
                     targetValue = headerTarget,
@@ -1018,6 +1281,123 @@ fun MetaDetailsScreen(
                     ),
                     label = "detail_floating_header_progress",
                 )
+
+                // Shared details keyboard-navigation handler. Driven by Compose key events, and
+                // — while the native hero-trailer surface holds OS focus — by DetailTvKeyboardBridge
+                // (see the surface's global key dispatcher). Both feed identical navigation.
+                val handleDetailTvKey: (DetailTvKey) -> Boolean = handleKey@{ key ->
+                    if ((key == DetailTvKey.Dismiss || key == DetailTvKey.Back) &&
+                        heroTrailerSourceUrl != null && !heroTrailerDismissed
+                    ) {
+                        dismissHeroTrailerPlayback()
+                        return@handleKey true
+                    }
+                    if (key == DetailTvKey.Back) {
+                        onBack()
+                        return@handleKey true
+                    }
+                    if (tvSections.isEmpty()) return@handleKey false
+                    val current = tvSections.getOrNull(tvFocus.sectionIndex) ?: return@handleKey false
+                    val isVerticalEpisodes = current.kind == MetaTvSectionKind.EPISODES &&
+                        current.isVerticalEpisodeList
+                    when (key) {
+                        DetailTvKey.Down -> {
+                            mouseActivity.onKeyboardNavigation()
+                            if (isVerticalEpisodes && tvFocus.itemIndex < current.itemCount - 1) {
+                                tvFocus.moveItem(1, current.itemCount)
+                            } else {
+                                tvFocus.moveSection(1, tvSections.size)
+                                val next = tvSections[tvFocus.sectionIndex]
+                                val crossesSeasonEpisodeBoundary =
+                                    current.kind == MetaTvSectionKind.SEASONS && next.kind == MetaTvSectionKind.EPISODES ||
+                                        current.kind == MetaTvSectionKind.EPISODES && next.kind == MetaTvSectionKind.SEASONS
+                                if (mergedDetailKeyboardNavigation && next.kind == MetaTvSectionKind.SEASONS) {
+                                    // Land on the currently-selected tab (e.g. Season 1), not the
+                                    // first tab (Trailers) — focusing a tab also selects it.
+                                    tvFocus.itemIndex =
+                                        mergedSelectorTabs.indexOf(currentMergedSelector).coerceAtLeast(0)
+                                } else if (mergedDetailKeyboardNavigation || isVerticalEpisodes || crossesSeasonEpisodeBoundary) {
+                                    tvFocus.itemIndex = 0
+                                } else {
+                                    tvFocus.coerceItemIndex(next.itemCount)
+                                }
+                                tvCoroutineScope.launch {
+                                    val targetIndex = if (next.kind == MetaTvSectionKind.ACTIONS) 0 else next.lazyItemIndex
+                                    listState.animateScrollToItem(
+                                        index = targetIndex,
+                                        scrollOffset = -with(density) { 96.dp.roundToPx() },
+                                    )
+                                }
+                            }
+                            true
+                        }
+                        DetailTvKey.Up -> {
+                            mouseActivity.onKeyboardNavigation()
+                            if (isVerticalEpisodes && tvFocus.itemIndex > 0) {
+                                tvFocus.moveItem(-1, current.itemCount)
+                            } else {
+                                tvFocus.moveSection(-1, tvSections.size)
+                                val next = tvSections[tvFocus.sectionIndex]
+                                val crossesSeasonEpisodeBoundary =
+                                    current.kind == MetaTvSectionKind.SEASONS && next.kind == MetaTvSectionKind.EPISODES ||
+                                        current.kind == MetaTvSectionKind.EPISODES && next.kind == MetaTvSectionKind.SEASONS
+                                if (mergedDetailKeyboardNavigation && next.kind == MetaTvSectionKind.SEASONS) {
+                                    // Land on the currently-selected tab (e.g. Season 1), not the
+                                    // first tab (Trailers) — focusing a tab also selects it.
+                                    tvFocus.itemIndex =
+                                        mergedSelectorTabs.indexOf(currentMergedSelector).coerceAtLeast(0)
+                                } else if (mergedDetailKeyboardNavigation) {
+                                    tvFocus.itemIndex = 0
+                                } else if (crossesSeasonEpisodeBoundary) {
+                                    tvFocus.itemIndex = if (next.kind == MetaTvSectionKind.SEASONS) {
+                                        seasonsForTv.indexOf(currentSeasonForTv).coerceAtLeast(0)
+                                    } else {
+                                        0
+                                    }
+                                } else if (isVerticalEpisodes) {
+                                    tvFocus.itemIndex = (next.itemCount - 1).coerceAtLeast(0)
+                                } else {
+                                    tvFocus.coerceItemIndex(next.itemCount)
+                                }
+                                tvCoroutineScope.launch {
+                                    val targetIndex = if (next.kind == MetaTvSectionKind.ACTIONS) 0 else next.lazyItemIndex
+                                    listState.animateScrollToItem(
+                                        index = targetIndex,
+                                        scrollOffset = -with(density) { 96.dp.roundToPx() },
+                                    )
+                                }
+                            }
+                            true
+                        }
+                        DetailTvKey.Right -> {
+                            if (!isVerticalEpisodes) {
+                                mouseActivity.onKeyboardNavigation()
+                                tvFocus.moveItem(1, current.itemCount)
+                            }
+                            true
+                        }
+                        DetailTvKey.Left -> {
+                            if (!isVerticalEpisodes) {
+                                mouseActivity.onKeyboardNavigation()
+                                tvFocus.moveItem(-1, current.itemCount)
+                            }
+                            true
+                        }
+                        DetailTvKey.Select -> {
+                            current.onEnter(tvFocus.itemIndex)
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                val currentHandleDetailTvKey = rememberUpdatedState(handleDetailTvKey)
+                LaunchedEffect(Unit) {
+                    DetailTvKeyboardBridge.keys.collect { key ->
+                        if (detailsKeyboardNavigationEnabled) {
+                            currentHandleDetailTvKey.value(key)
+                        }
+                    }
+                }
 
                 BoxWithConstraints(
                     modifier = Modifier
@@ -1032,100 +1412,17 @@ fun MetaDetailsScreen(
                                     }
                                     .onPreviewKeyEvent { event ->
                                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                        if (event.key == Key.Backspace) {
-                                            onBack()
-                                            return@onPreviewKeyEvent true
+                                        val navKey = when (event.key) {
+                                            Key.Escape -> DetailTvKey.Dismiss
+                                            Key.Backspace -> DetailTvKey.Back
+                                            Key.DirectionDown -> DetailTvKey.Down
+                                            Key.DirectionUp -> DetailTvKey.Up
+                                            Key.DirectionRight -> DetailTvKey.Right
+                                            Key.DirectionLeft -> DetailTvKey.Left
+                                            Key.Enter, Key.NumPadEnter -> DetailTvKey.Select
+                                            else -> return@onPreviewKeyEvent false
                                         }
-                                        if (tvSections.isEmpty()) return@onPreviewKeyEvent false
-                                        val current = tvSections.getOrNull(tvFocus.sectionIndex)
-                                            ?: return@onPreviewKeyEvent false
-                                        val isVerticalEpisodes = current.kind == MetaTvSectionKind.EPISODES &&
-                                            current.isVerticalEpisodeList
-                                        when (event.key) {
-                                            Key.DirectionDown -> {
-                                                mouseActivity.onKeyboardNavigation()
-                                                if (isVerticalEpisodes && tvFocus.itemIndex < current.itemCount - 1) {
-                                                    tvFocus.moveItem(1, current.itemCount)
-                                                } else {
-                                                    tvFocus.moveSection(1, tvSections.size)
-                                                    val next = tvSections[tvFocus.sectionIndex]
-                                                    val crossesSeasonEpisodeBoundary =
-                                                        current.kind == MetaTvSectionKind.SEASONS && next.kind == MetaTvSectionKind.EPISODES ||
-                                                            current.kind == MetaTvSectionKind.EPISODES && next.kind == MetaTvSectionKind.SEASONS
-                                                    if (isVerticalEpisodes || crossesSeasonEpisodeBoundary) {
-                                                        tvFocus.itemIndex = 0
-                                                    } else {
-                                                        tvFocus.coerceItemIndex(next.itemCount)
-                                                    }
-                                                    tvCoroutineScope.launch {
-                                                        val targetIndex = if (next.kind == MetaTvSectionKind.ACTIONS) {
-                                                            0
-                                                        } else {
-                                                            next.lazyItemIndex
-                                                        }
-                                                        listState.animateScrollToItem(
-                                                            index = targetIndex,
-                                                            scrollOffset = -with(density) { 96.dp.roundToPx() },
-                                                        )
-                                                    }
-                                                }
-                                                true
-                                            }
-                                            Key.DirectionUp -> {
-                                                mouseActivity.onKeyboardNavigation()
-                                                if (isVerticalEpisodes && tvFocus.itemIndex > 0) {
-                                                    tvFocus.moveItem(-1, current.itemCount)
-                                                } else {
-                                                    tvFocus.moveSection(-1, tvSections.size)
-                                                    val next = tvSections[tvFocus.sectionIndex]
-                                                    val crossesSeasonEpisodeBoundary =
-                                                        current.kind == MetaTvSectionKind.SEASONS && next.kind == MetaTvSectionKind.EPISODES ||
-                                                            current.kind == MetaTvSectionKind.EPISODES && next.kind == MetaTvSectionKind.SEASONS
-                                                    if (crossesSeasonEpisodeBoundary) {
-                                                        tvFocus.itemIndex = if (next.kind == MetaTvSectionKind.SEASONS) {
-                                                            seasonsForTv.indexOf(currentSeasonForTv).coerceAtLeast(0)
-                                                        } else {
-                                                            0
-                                                        }
-                                                    } else if (isVerticalEpisodes) {
-                                                        tvFocus.itemIndex = (next.itemCount - 1).coerceAtLeast(0)
-                                                    } else {
-                                                        tvFocus.coerceItemIndex(next.itemCount)
-                                                    }
-                                                    tvCoroutineScope.launch {
-                                                        val targetIndex = if (next.kind == MetaTvSectionKind.ACTIONS) {
-                                                            0
-                                                        } else {
-                                                            next.lazyItemIndex
-                                                        }
-                                                        listState.animateScrollToItem(
-                                                            index = targetIndex,
-                                                            scrollOffset = -with(density) { 96.dp.roundToPx() },
-                                                        )
-                                                    }
-                                                }
-                                                true
-                                            }
-                                            Key.DirectionRight -> {
-                                                if (!isVerticalEpisodes) {
-                                                    mouseActivity.onKeyboardNavigation()
-                                                    tvFocus.moveItem(1, current.itemCount)
-                                                }
-                                                true
-                                            }
-                                            Key.DirectionLeft -> {
-                                                if (!isVerticalEpisodes) {
-                                                    mouseActivity.onKeyboardNavigation()
-                                                    tvFocus.moveItem(-1, current.itemCount)
-                                                }
-                                                true
-                                            }
-                                            Key.Enter, Key.NumPadEnter -> {
-                                                current.onEnter(tvFocus.itemIndex)
-                                                true
-                                            }
-                                            else -> false
-                                        }
+                                        handleDetailTvKey(navKey)
                                     }
                             } else {
                                 Modifier
@@ -1134,8 +1431,28 @@ fun MetaDetailsScreen(
                 ) {
                     val isTablet = maxWidth >= 720.dp
                     val viewportHeight = maxHeight
-                    val contentHorizontalPadding = if (isTablet) 32.dp else 18.dp
                     val contentMaxWidth = detailTabletContentMaxWidth(maxWidth, isTablet)
+                    val useCompactWindowLayout = LocalNuvioDesktopCompactWindow.current
+                    val useDesktopDetailLayout =
+                        isDesktop &&
+                            !useCompactWindowLayout &&
+                            isTablet &&
+                            maxWidth >= 1120.dp &&
+                            !metaScreenSettingsUiState.tabLayout
+                    val contentHorizontalPadding = if (useDesktopDetailLayout) {
+                        64.dp
+                    } else if (isTablet) {
+                        32.dp
+                    } else {
+                        18.dp
+                    }
+                    val sectionContentMaxWidth = if (useDesktopDetailLayout) {
+                        Dp.Unspecified
+                    } else if (isTablet) {
+                        contentMaxWidth
+                    } else {
+                        Dp.Unspecified
+                    }
                     val cinematicEnabled = metaScreenSettingsUiState.cinematicBackground && deferredMetaWorkAllowed
 
                     Box(modifier = Modifier.fillMaxSize()) {
@@ -1162,37 +1479,161 @@ fun MetaDetailsScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .zIndex(1f),
+                            userScrollEnabled = !useDesktopDetailLayout,
                         ) {
                             item(key = "detail-hero") {
-                                DetailHero(
-                                    meta = meta,
-                                    isTablet = isTablet,
-                                    contentMaxWidth = contentMaxWidth,
-                                    viewportHeight = viewportHeight,
-                                    scrollOffset = heroScrollOffset,
-                                    onHeightChanged = { heroHeightPx = it },
-                                    heroTrailerSourceUrl = heroTrailerSourceUrl,
-                                    heroTrailerSourceAudioUrl = heroTrailerSourceAudioUrl,
-                                    heroTrailerReady = heroTrailerReady,
-                                    heroTrailerPlayWhenReady = heroTrailerPlayWhenReady,
-                                    heroTrailerMuted = heroTrailerMuted,
-                                    onHeroTrailerMuteToggle = {
-                                        HeroTrailerAudioState.toggleMuted()
-                                    },
-                                    onHeroTrailerReady = {
-                                        if (!heroTrailerFinished) {
-                                            heroTrailerReady = true
-                                        }
-                                    },
-                                    onHeroTrailerEnded = {
-                                        heroTrailerReady = false
-                                        heroTrailerFinished = true
-                                    },
-                                    onHeroTrailerError = {
-                                        heroTrailerReady = false
-                                        heroTrailerFinished = true
-                                    },
-                                )
+                                val enabledHeroSections = metaScreenSettingsUiState.items
+                                    .filter { it.enabled }
+                                    .map { it.key }
+                                    .toSet()
+                                Box(modifier = Modifier.fillMaxWidth()) {
+                                    DetailHero(
+                                        meta = meta,
+                                        isTablet = isTablet,
+                                        contentMaxWidth = if (useDesktopDetailLayout) 760.dp else contentMaxWidth,
+                                        viewportHeight = viewportHeight,
+                                        scrollOffset = heroScrollOffset,
+                                        onHeightChanged = { heroHeightPx = it },
+                                        heroTrailerSourceUrl = heroTrailerSourceUrl,
+                                        heroTrailerSourceAudioUrl = heroTrailerSourceAudioUrl,
+                                        heroTrailerReady = heroTrailerReady,
+                                        heroTrailerPlayWhenReady = heroTrailerPlayWhenReady,
+                                        heroTrailerMuted = heroTrailerMuted,
+                                        heroTrailerVolume = heroTrailerVolume,
+                                        heroTrailerKeyboardNavigation = detailsKeyboardNavigationEnabled,
+                                        heroTrailerPlaybackMode = metaScreenSettingsUiState.heroTrailerPlaybackMode,
+                                        desktopOverlay = useDesktopDetailLayout,
+                                        playButtonLabel = playButtonLabel,
+                                        isSaved = isSaved,
+                                        isWatched = isWatched,
+                                        showActions = useDesktopDetailLayout && MetaScreenSectionKey.ACTIONS in enabledHeroSections,
+                                        showOverview = useDesktopDetailLayout && MetaScreenSectionKey.OVERVIEW in enabledHeroSections,
+                                        showCast = useDesktopDetailLayout &&
+                                            MetaScreenSectionKey.CAST in enabledHeroSections &&
+                                            meta.cast.isNotEmpty(),
+                                        showProduction = useDesktopDetailLayout &&
+                                            MetaScreenSectionKey.PRODUCTION in enabledHeroSections &&
+                                            hasProductionSection,
+                                        showDetails = useDesktopDetailLayout &&
+                                            MetaScreenSectionKey.DETAILS in enabledHeroSections &&
+                                            hasAdditionalInfoSection,
+                                        showManualPlayOption = showManualPlayOption,
+                                        actionsFocused = tvFocusInfo.actionsFocused,
+                                        onPrimaryPlayClick = onPrimaryPlayClick,
+                                        onPrimaryPlayLongClick = onPrimaryPlayLongClick,
+                                        onSaveClick = toggleSaved,
+                                        onSaveLongClick = openLibraryListPicker,
+                                        onWatchedClick = toggleWatched,
+                                        onCastClick = onCastClick,
+                                        onCompanyClick = onCompanyClick,
+                                        onHeroTrailerMuteToggle = {
+                                            HeroTrailerAudioState.toggleMuted()
+                                        },
+                                        onHeroTrailerVolumeChange = { newVolume ->
+                                            HeroTrailerAudioState.setVolume(newVolume)
+                                        },
+                                        onHeroTrailerDismiss = dismissHeroTrailerPlayback,
+                                        onHeroTrailerReady = {
+                                            if (!heroTrailerFinished && !heroTrailerDismissed) {
+                                                heroTrailerReady = true
+                                            }
+                                        },
+                                        onHeroTrailerEnded = {
+                                            // Keep the surface mounted (dismissed, not finished)
+                                            // so clicking a trailer afterwards re-attaches in
+                                            // place instead of rebuilding a black native surface.
+                                            heroTrailerReady = false
+                                            heroTrailerDismissed = true
+                                            heroTrailerManualPlayback = false
+                                        },
+                                        onHeroTrailerError = {
+                                            heroTrailerReady = false
+                                            heroTrailerDismissed = true
+                                            heroTrailerManualPlayback = false
+                                        },
+                                    )
+                                    val showDesktopEpisodesOverlay = useDesktopDetailLayout &&
+                                        hasEpisodes &&
+                                        MetaScreenSectionKey.EPISODES in enabledHeroSections
+                                    val showDesktopRelatedOverlay = useDesktopDetailLayout &&
+                                        !hasEpisodes &&
+                                        (
+                                            MetaScreenSectionKey.TRAILERS in enabledHeroSections && meta.trailers.isNotEmpty() ||
+                                                MetaScreenSectionKey.COLLECTION in enabledHeroSections && meta.collectionItems.isNotEmpty() ||
+                                                MetaScreenSectionKey.MORE_LIKE_THIS in enabledHeroSections && meta.moreLikeThis.isNotEmpty()
+                                            )
+                                    if (showDesktopEpisodesOverlay) {
+                                        DetailSeriesContent(
+                                            meta = meta,
+                                            modifier = Modifier
+                                                .align(Alignment.BottomStart)
+                                                .fillMaxWidth()
+                                                .padding(start = 64.dp, end = 64.dp, bottom = 42.dp)
+                                                .height(300.dp)
+                                                .zIndex(2f),
+                                            showHeader = false,
+                                            preferredSeasonNumber = seriesAction?.seasonNumber,
+                                            preferredEpisodeNumber = seriesAction?.episodeNumber,
+                                            episodeCardStyle = metaScreenSettingsUiState.episodeCardStyle,
+                                            progressByVideoId = progressByVideoId,
+                                            watchedKeys = watchedUiState.watchedKeys,
+                                            episodeRatings = episodeImdbRatings,
+                                            blurUnwatchedEpisodes = metaScreenSettingsUiState.blurUnwatchedEpisodes,
+                                            onEpisodeClick = onEpisodePlayClick,
+                                            onEpisodeLongPress = { video -> selectedEpisodeForActions = video },
+                                            onSeasonLongPress = { season -> selectedSeasonForActions = season },
+                                            externalSelectedSeason = selectedSeasonForTv,
+                                            onSeasonSelected = { season -> selectedSeasonForTv = season },
+                                            focusedSeasonIndex = tvFocusInfo.focusedSeasonIndex,
+                                            focusedEpisodeIndex = tvFocusInfo.focusedEpisodeIndex,
+                                            focusedTrailerIndex = tvFocusInfo.focusedTrailersIndex,
+                                            focusedCollectionIndex = tvFocusInfo.focusedCollectionIndex,
+                                            focusedMoreLikeThisIndex = tvFocusInfo.focusedMoreLikeThisIndex,
+                                            compactDesktopLayout = true,
+                                            trailers = meta.trailers.takeIf {
+                                                MetaScreenSectionKey.TRAILERS in enabledHeroSections
+                                            }.orEmpty(),
+                                            onTrailerClick = resolveTrailer,
+                                            collectionTitle = meta.collectionName,
+                                            collectionItems = meta.collectionItems.takeIf {
+                                                MetaScreenSectionKey.COLLECTION in enabledHeroSections
+                                            }.orEmpty(),
+                                            onCollectionItemClick = { preview -> onOpenMeta?.invoke(preview) },
+                                            moreLikeThis = meta.moreLikeThis.takeIf {
+                                                MetaScreenSectionKey.MORE_LIKE_THIS in enabledHeroSections
+                                            }.orEmpty(),
+                                            onMoreLikeThisClick = { preview -> onOpenMeta?.invoke(preview) },
+                                        )
+                                    } else if (showDesktopRelatedOverlay) {
+                                        DetailCompactMediaSelector(
+                                            trailers = meta.trailers.takeIf {
+                                                MetaScreenSectionKey.TRAILERS in enabledHeroSections
+                                            }.orEmpty(),
+                                            collectionTitle = meta.collectionName,
+                                            collectionItems = meta.collectionItems.takeIf {
+                                                MetaScreenSectionKey.COLLECTION in enabledHeroSections
+                                            }.orEmpty(),
+                                            moreLikeThis = meta.moreLikeThis.takeIf {
+                                                MetaScreenSectionKey.MORE_LIKE_THIS in enabledHeroSections
+                                            }.orEmpty(),
+                                            modifier = Modifier
+                                                .align(Alignment.BottomStart)
+                                                .fillMaxWidth()
+                                                .padding(start = 64.dp, end = 64.dp, bottom = 42.dp)
+                                                .height(300.dp)
+                                                .zIndex(2f),
+                                            selectedTabKey = currentMergedSelector,
+                                            focusedTabIndex = tvFocusInfo.focusedSeasonIndex,
+                                            onTabSelected = { selectedSeasonForTv = it },
+                                            onTrailerClick = resolveTrailer,
+                                            onCollectionItemClick = { preview -> onOpenMeta?.invoke(preview) },
+                                            onMoreLikeThisClick = { preview -> onOpenMeta?.invoke(preview) },
+                                            focusedTrailerIndex = tvFocusInfo.focusedTrailersIndex,
+                                            focusedCollectionIndex = tvFocusInfo.focusedCollectionIndex,
+                                            focusedMoreLikeThisIndex = tvFocusInfo.focusedMoreLikeThisIndex,
+                                        )
+                                    }
+                                }
                             }
 
                             configuredMetaSectionItems(
@@ -1200,7 +1641,8 @@ fun MetaDetailsScreen(
                                 meta = meta,
                                 isTablet = isTablet,
                                 contentHorizontalPadding = contentHorizontalPadding,
-                                contentMaxWidth = if (isTablet) contentMaxWidth else Dp.Unspecified,
+                                contentMaxWidth = sectionContentMaxWidth,
+                                desktopTwoColumnLayout = useDesktopDetailLayout,
                                 playButtonLabel = playButtonLabel,
                                 isSaved = isSaved,
                                 isWatched = isWatched,
@@ -1410,7 +1852,7 @@ fun MetaDetailsScreen(
                                 val normalizedSelectedSeason = selectedSeason.coerceAtLeast(0)
                                 meta.releasedPlayableEpisodes(todayIsoDate)
                                     .filter { episode ->
-                                        val season = episode.season?.coerceAtLeast(0) ?: 0
+                                        val season = episode.effectiveSeasonNumber()?.coerceAtLeast(0) ?: 0
                                         season > 0 && season < normalizedSelectedSeason
                                     }
                             }
@@ -1474,7 +1916,7 @@ fun MetaDetailsScreen(
                                     trailerErrorMessage = null
                                     selectedTrailer = null
                                 },
-                                onRetry = selectedTrailer?.let { trailer ->
+                                onRetry = selectedTrailer?.takeIf { trailerErrorRetryable }?.let { trailer ->
                                     { resolveTrailer(trailer) }
                                 },
                             )
@@ -1574,7 +2016,9 @@ fun MetaDetailsScreen(
 
 private fun MetaDetails.isSeriesLikeForEpisodeRatings(): Boolean {
     val normalizedType = type.trim().lowercase()
-    val hasNumberedEpisodes = videos.any { it.season != null && it.episode != null }
+    val hasNumberedEpisodes = videos.any {
+        it.effectiveSeasonNumber() != null && it.effectiveEpisodeNumber() != null
+    }
     return hasNumberedEpisodes && normalizedType in setOf("series", "show", "tv", "tvshow")
 }
 
@@ -1594,8 +2038,8 @@ private fun isEpisodeWatchedForActions(
 ): Boolean {
     val episodeVideoId = buildPlaybackVideoId(
         parentMetaId = meta.id,
-        seasonNumber = episode.season,
-        episodeNumber = episode.episode,
+        seasonNumber = episode.effectiveSeasonNumber(),
+        episodeNumber = episode.effectiveEpisodeNumber(),
         fallbackVideoId = episode.id,
     )
     return progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
@@ -1629,6 +2073,21 @@ private fun MetaVideo.streamVideoIdForPlayback(parentMetaId: String, playbackVid
         rawId.takeIf { it.isNotBlank() } ?: playbackVideoId
     }
 }
+
+/**
+ * User-facing explanation for a trailer that YouTube itself refuses to serve (region block,
+ * age gate, removed video). Distinct from the generic [Res.string.trailer_no_playable_stream]
+ * message so users understand it isn't a bug in the app.
+ */
+private suspend fun trailerUnavailableMessage(reason: TrailerUnavailableReason): String = when (reason) {
+    TrailerUnavailableReason.REGION_BLOCKED -> getString(Res.string.trailer_unavailable_region)
+    TrailerUnavailableReason.AGE_RESTRICTED -> getString(Res.string.trailer_unavailable_age_restricted)
+    TrailerUnavailableReason.REMOVED_OR_PRIVATE -> getString(Res.string.trailer_unavailable_removed)
+    TrailerUnavailableReason.UNKNOWN -> getString(Res.string.trailer_no_playable_stream)
+}
+
+/** Only an unrecognized failure might succeed on retry; YouTube's own verdicts never change. */
+private fun TrailerUnavailableReason.isRetryable(): Boolean = this == TrailerUnavailableReason.UNKNOWN
 
 private fun String.isNativeAnimeMetaId(): Boolean =
     startsWith("kitsu:", ignoreCase = true) ||
@@ -1682,6 +2141,7 @@ private fun LazyListScope.configuredMetaSectionItems(
     isTablet: Boolean,
     contentHorizontalPadding: Dp,
     contentMaxWidth: Dp,
+    desktopTwoColumnLayout: Boolean = false,
     playButtonLabel: String,
     isSaved: Boolean,
     isWatched: Boolean,
@@ -1747,6 +2207,7 @@ private fun LazyListScope.configuredMetaSectionItems(
         key: String,
         sectionItems: List<MetaScreenSectionItem>,
         forceTabLayout: Boolean = settings.tabLayout,
+        desktopTwoColumn: Boolean = false,
     ) {
         item(key = key) {
             DetailSectionContainer(
@@ -1760,6 +2221,7 @@ private fun LazyListScope.configuredMetaSectionItems(
                     ),
                     meta = meta,
                     isTablet = isTablet,
+                    desktopTwoColumnLayout = desktopTwoColumn,
                     playButtonLabel = playButtonLabel,
                     isSaved = isSaved,
                     isWatched = isWatched,
@@ -1809,15 +2271,24 @@ private fun LazyListScope.configuredMetaSectionItems(
     }
 
     if (!settings.tabLayout) {
-        enabledItems
+        val visibleItems = enabledItems
             .filter { sectionHasContent(it.key) }
-            .forEach { section ->
+        if (desktopTwoColumnLayout && visibleItems.isNotEmpty()) {
+            addSectionItem(
+                key = "detail-desktop-sections",
+                sectionItems = visibleItems,
+                forceTabLayout = false,
+                desktopTwoColumn = true,
+            )
+        } else {
+            visibleItems.forEach { section ->
                 addSectionItem(
                     key = "detail-section-${section.key.name}",
                     sectionItems = listOf(section),
                     forceTabLayout = false,
                 )
             }
+        }
         return
     }
 
@@ -1905,6 +2376,15 @@ private fun metaSectionHasContent(
         MetaScreenSectionKey.MORE_LIKE_THIS -> hasMoreLikeThisSection
     }
 
+private const val DETAIL_TRAILER_SELECTOR = Int.MIN_VALUE
+private const val DETAIL_COLLECTION_SELECTOR = Int.MAX_VALUE - 1
+private const val DETAIL_MORE_LIKE_THIS_SELECTOR = Int.MAX_VALUE
+
+// Brief pause before a clicked hero trailer starts, so the native surface can attach and
+// decode its first frame while paused (mirrors the automatic path's longer wait). Without
+// it a fresh attach starts playing before it can paint and never reveals.
+private const val HERO_TRAILER_MANUAL_PREBUFFER_MS = 750L
+
 private enum class MetaTvSectionKind {
     ACTIONS, COMMENTS, TRAILERS, SEASONS, EPISODES, COLLECTION, MORE_LIKE_THIS
 }
@@ -1933,6 +2413,7 @@ private fun ConfiguredMetaSections(
     settings: MetaScreenSettingsUiState,
     meta: MetaDetails,
     isTablet: Boolean,
+    desktopTwoColumnLayout: Boolean = false,
     playButtonLabel: String,
     isSaved: Boolean,
     isWatched: Boolean,
@@ -1996,7 +2477,11 @@ private fun ConfiguredMetaSections(
     }
 
     @Composable
-    fun RenderSection(key: MetaScreenSectionKey, showHeader: Boolean = true) {
+    fun RenderSection(
+        key: MetaScreenSectionKey,
+        showHeader: Boolean = true,
+        compactDetails: Boolean = false,
+    ) {
         when (key) {
             MetaScreenSectionKey.ACTIONS -> {
                 DetailActionButtons(
@@ -2100,12 +2585,17 @@ private fun ConfiguredMetaSections(
                         onSeasonSelected = onSeasonSelected,
                         focusedSeasonIndex = tvFocus.focusedSeasonIndex,
                         focusedEpisodeIndex = tvFocus.focusedEpisodeIndex,
+                        compactDesktopLayout = desktopTwoColumnLayout,
                     )
                 }
             }
             MetaScreenSectionKey.DETAILS -> {
                 if (hasAdditionalInfoSection) {
-                    DetailAdditionalInfoSection(meta = meta, showHeader = showHeader)
+                    DetailAdditionalInfoSection(
+                        meta = meta,
+                        showHeader = showHeader,
+                        compact = compactDetails,
+                    )
                 }
             }
             MetaScreenSectionKey.COLLECTION -> {
@@ -2141,7 +2631,23 @@ private fun ConfiguredMetaSections(
         }
     }
 
-    if (!settings.tabLayout) {
+    if (!settings.tabLayout && desktopTwoColumnLayout) {
+        val visibleKeys = enabledItems
+            .map { it.key }
+            .filter(sectionHasContent)
+            .toSet()
+        val desktopMainKeys = listOf(
+            MetaScreenSectionKey.COMMENTS,
+        ).filter { it in visibleKeys }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            desktopMainKeys.forEach { key ->
+                RenderSection(key)
+            }
+        }
+    } else if (!settings.tabLayout) {
         // Standard mode: render sections individually in order
         enabledItems.forEach { section -> RenderSection(section.key) }
     } else {

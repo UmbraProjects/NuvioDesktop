@@ -200,6 +200,8 @@ fun DetailMetaInfo(
 @Composable
 internal fun RatingsRow(
     ratings: List<MetaExternalRating>,
+    modifier: Modifier = Modifier,
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.spacedBy(14.dp),
 ) {
     val orderedRatings = remember(ratings) {
         val bySource = ratings.associateBy { it.source }
@@ -211,11 +213,11 @@ internal fun RatingsRow(
     if (orderedRatings.isEmpty()) return
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = horizontalArrangement,
     ) {
         orderedRatings.forEach { (visuals, rating) ->
             val ratingTextStyle = MaterialTheme.typography.titleSmall.copy(

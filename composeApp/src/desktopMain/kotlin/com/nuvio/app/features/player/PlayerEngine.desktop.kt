@@ -332,8 +332,10 @@ private fun NativePlayerSurface(
                 Triple(videoIsHdr.value, videoVsrScale.value, videoProfileRefreshToken.intValue)
             },
             PlayerSettingsRepository.uiState,
-        ) { videoState, settings -> Triple(videoState.first, videoState.second, settings) }
-            .collect { (isHdr, vsrScale, settings) ->
+        ) { videoState, settings -> Triple(videoState, settings, videoState.third > 0) }
+            .collect { (videoState, settings, fileLoaded) ->
+                val isHdr = videoState.first
+                val vsrScale = videoState.second
                 System.out.println(
                     "Desktop video profile: detectedHdr=${isHdr ?: "unknown"}, " +
                         "hdrMode=${settings.desktopHdrMode.name}, colorProfile=${settings.desktopColorProfile.name}, " +
@@ -350,7 +352,10 @@ private fun NativePlayerSurface(
                     controller = controller,
                     mode = settings.desktopAnimeMode,
                     autoEnabled = settings.desktopAnimeModeAutoEnabled && !animeModeSessionForced.value,
-                    animeSvpEnabled = settings.desktopAnimeSvpEnabled,
+                    // Do not queue vapoursynth before mpv has resolved a real video stream.
+                    // Some HLS sources expose odd probe tracks during startup, and applying SVP
+                    // in that window can kill the native process before fileLoaded is emitted.
+                    animeSvpEnabled = settings.desktopAnimeSvpEnabled && fileLoaded,
                     isAnime = isAnimeContent,
                     isHdr = isHdr == true,
                     nvidiaRtxSuperResolutionEnabled = settings.nvidiaRtxSuperResolutionEnabled,

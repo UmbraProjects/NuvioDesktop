@@ -71,6 +71,7 @@ internal object AddonManifestParser {
                 type = catalog.requiredString("type"),
                 id = catalog.requiredString("id"),
                 name = catalog.optionalString("name").orEmpty().ifBlank { catalog.requiredString("id") },
+                showInHome = catalog.optionalBoolean("showInHome") ?: true,
                 extra = catalog.array("extra").mapNotNull { extraElement ->
                     extraElement.jsonObject.optionalString("name")?.takeIf { it.isNotBlank() }?.let { name ->
                         AddonExtraProperty(
@@ -113,6 +114,9 @@ internal object AddonManifestParser {
 
     private fun JsonObject.boolean(name: String): Boolean =
         this[name]?.jsonPrimitive?.booleanOrNull == true
+
+    private fun JsonObject.optionalBoolean(name: String): Boolean? =
+        this[name]?.jsonPrimitive?.booleanOrNull
 
     private fun JsonObject.int(name: String): Int? =
         this[name]?.jsonPrimitive?.contentOrNull?.toIntOrNull()

@@ -1,10 +1,7 @@
 package com.nuvio.app.features.details.components
 
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,21 +12,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -68,20 +64,18 @@ fun DetailActionButtons(
     val playPainter = appIconPainter(AppIconResource.PlayerPlay)
     val buttonHeight = if (isTablet) 56.dp else 52.dp
     val iconButtonSize = buttonHeight
-    val playShape = RoundedCornerShape(40.dp)
+    val playShape = RoundedCornerShape(12.dp)
     val hapticFeedback = LocalHapticFeedback.current
-    var actionsExpanded by remember { mutableStateOf(false) }
-    val menuProgress by animateFloatAsState(
-        targetValue = if (actionsExpanded) 1f else 0f,
-        animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
-        label = "detail_action_menu_progress",
-    )
-    val playScale by animateFloatAsState(targetValue = if (focused) 1.04f else 1f)
+    // Kept small: this button is wide, so even a few percent of scale would push its edge into
+    // the secondary buttons beside it.
+    val playScale by animateFloatAsState(targetValue = if (focused) 1.02f else 1f)
+    val focusRingAlpha by animateFloatAsState(targetValue = if (focused) 1f else 0f)
+    val focusRingColor = MaterialTheme.colorScheme.primary
     val hasSecondaryActions = secondaryActions.isNotEmpty()
 
     Box(
         modifier = modifier
-            .widthIn(max = if (isTablet) 520.dp else 420.dp)
+            .widthIn(max = if (isTablet) 620.dp else 420.dp)
             .fillMaxWidth()
             .height(buttonHeight),
     ) {
@@ -99,6 +93,22 @@ fun DetailActionButtons(
                     .graphicsLayer {
                         scaleX = playScale
                         scaleY = playScale
+                    }
+                    // Focus ring: an accent-coloured outline drawn just inside the button edge
+                    // (on top of the fill), so it doesn't overlap the buttons beside it while
+                    // still clearly showing keyboard focus.
+                    .drawWithContent {
+                        drawContent()
+                        if (focusRingAlpha <= 0f) return@drawWithContent
+                        val stroke = 3.dp.toPx()
+                        val inset = stroke / 2f
+                        drawRoundRect(
+                            color = focusRingColor.copy(alpha = focusRingColor.alpha * focusRingAlpha),
+                            topLeft = Offset(inset, inset),
+                            size = Size(size.width - inset * 2f, size.height - inset * 2f),
+                            cornerRadius = CornerRadius((12.dp.toPx() - inset).coerceAtLeast(0f)),
+                            style = Stroke(width = stroke),
+                        )
                     },
                 shape = playShape,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -141,76 +151,25 @@ fun DetailActionButtons(
             if (hasSecondaryActions) {
                 Spacer(modifier = Modifier.width(12.dp))
                 secondaryActions.forEachIndexed { index, action ->
-                    Box(
-                        modifier = Modifier
-                            .width(iconButtonSize * menuProgress)
-                            .height(iconButtonSize)
-                            .graphicsLayer {
-                                clip = true
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (actionsExpanded || menuProgress > 0.01f) {
-                            DetailIconAction(
-                                label = action.label,
-                                icon = action.icon,
-                                active = action.isActive,
-                                progress = menuProgress,
-                                size = iconButtonSize,
-                                onClick = {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    action.onClick()
-                                },
-                                onLongClick = action.onLongClick?.let { longClick ->
-                                    {
-                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        longClick()
-                                    }
-                                },
-                            )
-                        }
-                    }
+                    DetailIconAction(
+                        label = action.label,
+                        icon = action.icon,
+                        active = action.isActive,
+                        size = iconButtonSize,
+                        onClick = {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            action.onClick()
+                        },
+                        onLongClick = action.onLongClick?.let { longClick ->
+                            {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                longClick()
+                            }
+                        },
+                    )
 
                     if (index != secondaryActions.lastIndex) {
-                        Spacer(modifier = Modifier.width(12.dp * menuProgress))
-                    }
-                }
-                Spacer(modifier = Modifier.width(12.dp * menuProgress))
-            }
-
-            if (hasSecondaryActions) {
-                Surface(
-                    modifier = Modifier.size(iconButtonSize),
-                    shape = CircleShape,
-                    color = if (actionsExpanded) {
-                        MaterialTheme.colorScheme.onBackground
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
-                    },
-                    contentColor = if (actionsExpanded) {
-                        MaterialTheme.colorScheme.background
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(iconButtonSize)
-                            .clickable(role = Role.Button) {
-                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                actionsExpanded = !actionsExpanded
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreHoriz,
-                            contentDescription = actionsMenuLabel,
-                            modifier = Modifier
-                                .size(24.dp)
-                                .graphicsLayer {
-                                    rotationZ = 90f * menuProgress
-                                },
-                        )
+                        Spacer(modifier = Modifier.width(12.dp))
                     }
                 }
             }
@@ -224,23 +183,18 @@ private fun DetailIconAction(
     label: String,
     icon: ImageVector,
     active: Boolean,
-    progress: Float,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp,
     onLongClick: (() -> Unit)? = null,
 ) {
     Surface(
-        modifier = modifier.graphicsLayer {
-            alpha = progress
-            scaleX = 0.86f + (0.14f * progress)
-            scaleY = 0.86f + (0.14f * progress)
-        },
-        shape = CircleShape,
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
         color = if (active) {
             MaterialTheme.colorScheme.onBackground
         } else {
-            MaterialTheme.colorScheme.surfaceVariant
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f)
         },
         contentColor = if (active) {
             MaterialTheme.colorScheme.background

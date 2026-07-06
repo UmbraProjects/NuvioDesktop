@@ -773,6 +773,11 @@
     <string name="settings_meta_details_description">Runtime, status, release, language, and related info.</string>
     <string name="settings_meta_hero_trailer_playback">Hero Trailer Playback</string>
     <string name="settings_meta_hero_trailer_playback_description">Play trailer previews in the metadata hero when a trailer is available.</string>
+    <string name="settings_meta_hero_trailer_playback_area">Playback area</string>
+    <string name="settings_meta_hero_trailer_playback_area_hero">Hero</string>
+    <string name="settings_meta_hero_trailer_playback_area_fullscreen">Full screen</string>
+    <string name="settings_meta_hero_trailer_sound">Play with sound</string>
+    <string name="settings_meta_hero_trailer_sound_description">Play the hero trailer with audio instead of muted.</string>
     <string name="settings_meta_episode_cards">Episode Cards</string>
     <string name="settings_meta_episode_cards_description">Choose how episodes are rendered on the metadata screen.</string>
     <string name="settings_meta_episode_style_horizontal">Horizontal</string>
@@ -1655,6 +1660,9 @@
     <string name="person_role_writer">Writer</string>
     <string name="rating_audience_score">Audience Score</string>
     <string name="trailer_no_playable_stream">No playable trailer stream found.</string>
+    <string name="trailer_unavailable_region">This trailer isn't available in your region.</string>
+    <string name="trailer_unavailable_age_restricted">This trailer requires a signed-in YouTube account to view.</string>
+    <string name="trailer_unavailable_removed">This trailer is no longer available.</string>
     <string name="trailer_season_label">Season %1$d - %2$s</string>
     <string name="unit_bytes_b">B</string>
     <string name="unit_bytes_kb">KB</string>

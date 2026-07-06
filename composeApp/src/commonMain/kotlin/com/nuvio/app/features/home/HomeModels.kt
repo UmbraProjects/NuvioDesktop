@@ -33,6 +33,10 @@ data class HeroCastMember(
 
 fun MetaPreview.stableKey(): String = "$type:$id"
 
+/** [MetaPreview.type] used for a hero item that represents a whole Collection rather than a
+ *  single piece of content (e.g. its own curated backdrop image, not a movie/show poster). */
+internal const val COLLECTION_HERO_TYPE = "collection"
+
 enum class PosterShape {
     Poster,
     Square,

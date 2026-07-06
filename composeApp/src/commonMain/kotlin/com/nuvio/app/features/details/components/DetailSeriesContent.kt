@@ -10,6 +10,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,6 +31,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -61,7 +63,6 @@ import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppFeaturePolicy
-import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.i18n.localizedSeasonEpisodeCode
 import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
 import com.nuvio.app.core.ui.NuvioProgressBar
@@ -70,13 +71,17 @@ import com.nuvio.app.core.ui.desktopHorizontalListNavigation
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaEpisodeCardStyle
+import com.nuvio.app.features.details.MetaTrailer
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.SeasonViewMode
 import com.nuvio.app.features.details.SeasonViewModeStorage
+import com.nuvio.app.features.details.effectiveEpisodeNumber
+import com.nuvio.app.features.details.effectiveSeasonNumber
 import com.nuvio.app.features.details.formatRuntimeFromMinutes
 import com.nuvio.app.features.details.metaVideoSeasonEpisodeComparator
 import com.nuvio.app.features.details.normalizeSeasonNumber
 import com.nuvio.app.features.details.seasonSortKey
+import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import com.nuvio.app.features.watching.application.WatchingState
@@ -89,6 +94,9 @@ import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
 private val log = Logger.withTag("SeriesContent")
+private const val TRAILER_SELECTOR_SEASON = Int.MIN_VALUE
+private const val COLLECTION_SELECTOR_SEASON = Int.MAX_VALUE - 1
+private const val MORE_LIKE_THIS_SELECTOR_SEASON = Int.MAX_VALUE
 
 @Composable
 fun DetailSeriesContent(
@@ -109,6 +117,17 @@ fun DetailSeriesContent(
     onSeasonSelected: ((Int) -> Unit)? = null,
     focusedSeasonIndex: Int? = null,
     focusedEpisodeIndex: Int? = null,
+    focusedTrailerIndex: Int? = null,
+    focusedCollectionIndex: Int? = null,
+    focusedMoreLikeThisIndex: Int? = null,
+    compactDesktopLayout: Boolean = false,
+    trailers: List<MetaTrailer> = emptyList(),
+    onTrailerClick: ((MetaTrailer) -> Unit)? = null,
+    collectionTitle: String? = null,
+    collectionItems: List<MetaPreview> = emptyList(),
+    onCollectionItemClick: ((MetaPreview) -> Unit)? = null,
+    moreLikeThis: List<MetaPreview> = emptyList(),
+    onMoreLikeThisClick: ((MetaPreview) -> Unit)? = null,
 ) {
     val hasVideos = meta.videos.isNotEmpty()
     if (meta.type != "series" && !hasVideos) return
@@ -135,7 +154,9 @@ fun DetailSeriesContent(
 
     val groupedEpisodes = remember(meta.videos) {
         log.d { "videos count=${meta.videos.size}, type=${meta.type}" }
-        val withSeasonOrEp = meta.videos.filter { it.season != null || it.episode != null }
+        val withSeasonOrEp = meta.videos.filter {
+            it.effectiveSeasonNumber() != null || it.effectiveEpisodeNumber() != null
+        }
         log.d { "videos with season/episode=${withSeasonOrEp.size}" }
         if (meta.videos.isNotEmpty() && withSeasonOrEp.isEmpty()) {
             log.w { "All videos lack season/episode fields! First: ${meta.videos.first()}" }
@@ -143,7 +164,7 @@ fun DetailSeriesContent(
         if (withSeasonOrEp.isNotEmpty()) {
             withSeasonOrEp
                 .sortedWith(metaVideoSeasonEpisodeComparator)
-                .groupBy { normalizeSeasonNumber(it.season) }
+                .groupBy { normalizeSeasonNumber(it.effectiveSeasonNumber()) }
         } else if (meta.type != "series" && meta.videos.isNotEmpty()) {
             // For non-series types (e.g. "other"), show videos without season/episode as a flat list
             mapOf(normalizeSeasonNumber(null) to meta.videos)
@@ -170,13 +191,22 @@ fun DetailSeriesContent(
     }
 
     val seasons = groupedEpisodes.keys.sortedBy(::seasonSortKey)
+    val mergeTrailersIntoSelector = compactDesktopLayout && trailers.isNotEmpty() && onTrailerClick != null
+    val mergeCollectionIntoSelector = compactDesktopLayout && collectionItems.isNotEmpty() && onCollectionItemClick != null
+    val mergeMoreLikeThisIntoSelector = compactDesktopLayout && moreLikeThis.isNotEmpty() && onMoreLikeThisClick != null
+    val selectorSeasons = buildList {
+        if (mergeTrailersIntoSelector) add(TRAILER_SELECTOR_SEASON)
+        addAll(seasons)
+        if (mergeCollectionIntoSelector) add(COLLECTION_SELECTOR_SEASON)
+        if (mergeMoreLikeThisIntoSelector) add(MORE_LIKE_THIS_SELECTOR_SEASON)
+    }
     val defaultSeason = preferredSeasonNumber
         ?.takeIf { it in groupedEpisodes }
         ?: seasons.first()
     var selectedSeasonOverride by rememberSaveable(meta.id) { mutableStateOf<Int?>(null) }
     val currentSeason = externalSelectedSeason
-        ?.takeIf { it in groupedEpisodes }
-        ?: selectedSeasonOverride?.takeIf { it in groupedEpisodes }
+        ?.takeIf { it in groupedEpisodes || it in selectorSeasons }
+        ?: selectedSeasonOverride?.takeIf { it in groupedEpisodes || it in selectorSeasons }
         ?: defaultSeason
     val onSeasonSelect: (Int) -> Unit = { season ->
         selectedSeasonOverride = season
@@ -188,84 +218,107 @@ fun DetailSeriesContent(
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val sizing = seriesContentSizing(maxWidth.value)
+        val sizing = seriesContentSizing(maxWidth.value, compactDesktopLayout)
         val containerWidthDp = maxWidth.value
 
         Column(
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compactDesktopLayout) 14.dp else 16.dp),
         ) {
-            if (seasons.size > 1) {
-                val hasSeasonPosters = seasons.any { season ->
-                    groupedEpisodes[season]
-                        .orEmpty()
-                        .any { !it.seasonPoster.isNullOrBlank() }
-                }
-                Column(
-                    modifier = Modifier.animateContentSize(animationSpec = tween(280)),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(Res.string.details_seasons),
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontSize = sizing.seasonHeaderSize,
-                                fontWeight = FontWeight.SemiBold,
-                            ),
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                        if (hasSeasonPosters) {
-                            SeasonViewModeToggle(
-                                mode = seasonViewMode,
-                                sizing = sizing,
-                                onClick = {
-                                    val next = seasonViewMode.toggled()
-                                    seasonViewMode = next
-                                    SeasonViewModeStorage.save(next)
-                                },
-                            )
-                        }
+            if (selectorSeasons.size > 1 || compactDesktopLayout) {
+                if (compactDesktopLayout) {
+                    SeasonTextChipScrollRow(
+                        seasons = selectorSeasons,
+                        currentSeason = currentSeason,
+                        sizing = sizing,
+                        focusedSeasonIndex = focusedSeasonIndex,
+                        collectionTitle = collectionTitle,
+                        onSelect = onSeasonSelect,
+                        onLongPress = onSeasonLongPress?.let { handler ->
+                            { season ->
+                                if (
+                                    season != TRAILER_SELECTOR_SEASON &&
+                                    season != COLLECTION_SELECTOR_SEASON &&
+                                    season != MORE_LIKE_THIS_SELECTOR_SEASON
+                                ) {
+                                    handler(season)
+                                }
+                            }
+                        },
+                        compactDesktopLayout = true,
+                    )
+                } else {
+                    val hasSeasonPosters = seasons.any { season ->
+                        groupedEpisodes[season]
+                            .orEmpty()
+                            .any { !it.seasonPoster.isNullOrBlank() }
                     }
-
-                    if (hasSeasonPosters) {
-                        Crossfade(
-                            targetState = seasonViewMode,
-                            animationSpec = tween(280),
-                            label = "season_selector_layout",
-                        ) { mode ->
-                            when (mode) {
-                                SeasonViewMode.Posters -> SeasonPosterScrollRow(
-                                    seasons = seasons,
-                                    groupedEpisodes = groupedEpisodes,
-                                    meta = meta,
-                                    currentSeason = currentSeason,
+                    Column(
+                        modifier = Modifier.animateContentSize(animationSpec = tween(280)),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.details_seasons),
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontSize = sizing.seasonHeaderSize,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                                color = MaterialTheme.colorScheme.onBackground,
+                            )
+                            if (hasSeasonPosters) {
+                                SeasonViewModeToggle(
+                                    mode = seasonViewMode,
                                     sizing = sizing,
-                                    focusedSeasonIndex = focusedSeasonIndex,
-                                    onSelect = onSeasonSelect,
-                                    onLongPress = onSeasonLongPress,
-                                )
-                                SeasonViewMode.Text -> SeasonTextChipScrollRow(
-                                    seasons = seasons,
-                                    currentSeason = currentSeason,
-                                    sizing = sizing,
-                                    focusedSeasonIndex = focusedSeasonIndex,
-                                    onSelect = onSeasonSelect,
-                                    onLongPress = onSeasonLongPress,
+                                    onClick = {
+                                        val next = seasonViewMode.toggled()
+                                        seasonViewMode = next
+                                        SeasonViewModeStorage.save(next)
+                                    },
                                 )
                             }
                         }
-                    } else {
-                        SeasonTextChipScrollRow(
-                            seasons = seasons,
-                            currentSeason = currentSeason,
-                            sizing = sizing,
-                            focusedSeasonIndex = focusedSeasonIndex,
-                            onSelect = onSeasonSelect,
-                            onLongPress = onSeasonLongPress,
-                        )
+
+                        if (hasSeasonPosters) {
+                            Crossfade(
+                                targetState = seasonViewMode,
+                                animationSpec = tween(280),
+                                label = "season_selector_layout",
+                            ) { mode ->
+                                when (mode) {
+                                    SeasonViewMode.Posters -> SeasonPosterScrollRow(
+                                        seasons = seasons,
+                                        groupedEpisodes = groupedEpisodes,
+                                        meta = meta,
+                                        currentSeason = currentSeason,
+                                        sizing = sizing,
+                                        focusedSeasonIndex = focusedSeasonIndex,
+                                        onSelect = onSeasonSelect,
+                                        onLongPress = onSeasonLongPress,
+                                    )
+                                    SeasonViewMode.Text -> SeasonTextChipScrollRow(
+                                        seasons = seasons,
+                                        currentSeason = currentSeason,
+                                        sizing = sizing,
+                                        focusedSeasonIndex = focusedSeasonIndex,
+                                        onSelect = onSeasonSelect,
+                                        onLongPress = onSeasonLongPress,
+                                    )
+                                }
+                            }
+                        } else {
+                            SeasonTextChipScrollRow(
+                                seasons = seasons,
+                                currentSeason = currentSeason,
+                                sizing = sizing,
+                                focusedSeasonIndex = focusedSeasonIndex,
+                                onSelect = onSeasonSelect,
+                                onLongPress = onSeasonLongPress,
+                            )
+                        }
                     }
                 }
             }
@@ -273,8 +326,8 @@ fun DetailSeriesContent(
             AnimatedContent(
                 targetState = currentSeason,
                 transitionSpec = {
-                    val fromIdx = seasons.indexOf(initialState).takeIf { it >= 0 } ?: 0
-                    val toIdx = seasons.indexOf(targetState).takeIf { it >= 0 } ?: 0
+                    val fromIdx = selectorSeasons.indexOf(initialState).takeIf { it >= 0 } ?: 0
+                    val toIdx = selectorSeasons.indexOf(targetState).takeIf { it >= 0 } ?: 0
                     val dir = if (toIdx >= fromIdx) 1 else -1
                     (fadeIn(tween(220)) + slideInHorizontally(tween(220)) { dir * it / 5 })
                         .togetherWith(
@@ -286,19 +339,46 @@ fun DetailSeriesContent(
                 val sectionTitle = if (meta.type != "series" && seasons.size == 1 && seasonForContent <= 0) {
                     stringResource(Res.string.details_videos)
                 } else {
-                    seasonForContent.label()
+                    seasonForContent.label(collectionTitle)
                 }
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (compactDesktopLayout) 12.dp else 16.dp),
                 ) {
-                    DetailSectionTitle(
-                        title = sectionTitle,
-                    )
+                    if (!compactDesktopLayout) {
+                        DetailSectionTitle(
+                            title = sectionTitle,
+                        )
+                    }
+                    if (seasonForContent == TRAILER_SELECTOR_SEASON && mergeTrailersIntoSelector) {
+                        CompactTrailerLandscapeRow(
+                            trailers = trailers,
+                            onTrailerClick = onTrailerClick,
+                            focusedItemIndex = focusedTrailerIndex,
+                        )
+                        return@Column
+                    }
+                    if (seasonForContent == COLLECTION_SELECTOR_SEASON && mergeCollectionIntoSelector) {
+                        CompactMetaPreviewLandscapeRow(
+                            items = collectionItems,
+                            onItemClick = onCollectionItemClick,
+                            focusedItemIndex = focusedCollectionIndex,
+                        )
+                        return@Column
+                    }
+                    if (seasonForContent == MORE_LIKE_THIS_SELECTOR_SEASON && mergeMoreLikeThisIntoSelector) {
+                        CompactMetaPreviewLandscapeRow(
+                            items = moreLikeThis,
+                            onItemClick = onMoreLikeThisClick,
+                            focusedItemIndex = focusedMoreLikeThisIndex,
+                        )
+                        return@Column
+                    }
                     val seasonEpisodes = groupedEpisodes.getValue(seasonForContent)
                     if (episodeCardStyle == MetaEpisodeCardStyle.Horizontal) {
                         EpisodeHorizontalRow(
                             episodes = seasonEpisodes,
                             maxWidthDp = containerWidthDp,
+                            compactDesktopLayout = compactDesktopLayout,
                             parentMetaId = meta.id,
                             metaType = meta.type,
                             watchedKeys = watchedKeys,
@@ -321,8 +401,8 @@ fun DetailSeriesContent(
                             seasonEpisodes.forEachIndexed { index, episode ->
                                 val episodeVideoId = buildPlaybackVideoId(
                                     parentMetaId = meta.id,
-                                    seasonNumber = episode.season,
-                                    episodeNumber = episode.episode,
+                                    seasonNumber = episode.effectiveSeasonNumber(),
+                                    episodeNumber = episode.effectiveEpisodeNumber(),
                                     fallbackVideoId = episode.id,
                                 )
                                 NuvioShelfItemSlot(focused = index == focusedEpisodeIndex) {
@@ -347,6 +427,165 @@ fun DetailSeriesContent(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DetailCompactMediaSelector(
+    trailers: List<MetaTrailer>,
+    collectionTitle: String? = null,
+    collectionItems: List<MetaPreview> = emptyList(),
+    moreLikeThis: List<MetaPreview>,
+    modifier: Modifier = Modifier,
+    selectedTabKey: Int? = null,
+    focusedTabIndex: Int? = null,
+    onTabSelected: ((Int) -> Unit)? = null,
+    onTrailerClick: (MetaTrailer) -> Unit,
+    onCollectionItemClick: (MetaPreview) -> Unit,
+    onMoreLikeThisClick: (MetaPreview) -> Unit,
+    focusedTrailerIndex: Int? = null,
+    focusedCollectionIndex: Int? = null,
+    focusedMoreLikeThisIndex: Int? = null,
+) {
+    val tabs = buildList {
+        if (trailers.isNotEmpty()) add(CompactMediaSelectorTab.Trailers)
+        if (collectionItems.isNotEmpty()) add(CompactMediaSelectorTab.Collection)
+        if (moreLikeThis.isNotEmpty()) add(CompactMediaSelectorTab.MoreLikeThis)
+    }
+    if (tabs.isEmpty()) return
+
+    var selectedTabOverride by rememberSaveable(trailers.size, collectionItems.size, moreLikeThis.size) {
+        mutableStateOf<CompactMediaSelectorTab?>(null)
+    }
+    val selectedTab = selectedTabKey
+        ?.let(CompactMediaSelectorTab::fromSelectorKey)
+        ?.takeIf { it in tabs }
+        ?: selectedTabOverride?.takeIf { it in tabs }
+        ?: tabs.first()
+    val selectTab: (CompactMediaSelectorTab) -> Unit = { tab ->
+        selectedTabOverride = tab
+        onTabSelected?.invoke(tab.selectorKey)
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (tabs.size > 1) {
+            CompactMediaSelectorTabRow(
+                tabs = tabs,
+                selectedTab = selectedTab,
+                collectionTitle = collectionTitle,
+                focusedTabIndex = focusedTabIndex,
+                onSelect = selectTab,
+            )
+        }
+
+        when (selectedTab) {
+            CompactMediaSelectorTab.Trailers -> CompactTrailerLandscapeRow(
+                trailers = trailers,
+                onTrailerClick = onTrailerClick,
+                focusedItemIndex = focusedTrailerIndex,
+            )
+            CompactMediaSelectorTab.Collection -> CompactMetaPreviewLandscapeRow(
+                items = collectionItems,
+                onItemClick = onCollectionItemClick,
+                focusedItemIndex = focusedCollectionIndex,
+            )
+            CompactMediaSelectorTab.MoreLikeThis -> CompactMetaPreviewLandscapeRow(
+                items = moreLikeThis,
+                onItemClick = onMoreLikeThisClick,
+                focusedItemIndex = focusedMoreLikeThisIndex,
+            )
+        }
+    }
+}
+
+private enum class CompactMediaSelectorTab {
+    Trailers,
+    Collection,
+    MoreLikeThis;
+
+    val selectorKey: Int
+        get() = when (this) {
+            Trailers -> TRAILER_SELECTOR_SEASON
+            Collection -> COLLECTION_SELECTOR_SEASON
+            MoreLikeThis -> MORE_LIKE_THIS_SELECTOR_SEASON
+        }
+
+    companion object {
+        fun fromSelectorKey(key: Int): CompactMediaSelectorTab? =
+            when (key) {
+                TRAILER_SELECTOR_SEASON -> Trailers
+                COLLECTION_SELECTOR_SEASON -> Collection
+                MORE_LIKE_THIS_SELECTOR_SEASON -> MoreLikeThis
+                else -> null
+            }
+    }
+}
+
+@Composable
+private fun CompactMediaSelectorTabRow(
+    tabs: List<CompactMediaSelectorTab>,
+    selectedTab: CompactMediaSelectorTab,
+    collectionTitle: String? = null,
+    focusedTabIndex: Int? = null,
+    onSelect: (CompactMediaSelectorTab) -> Unit,
+) {
+    val listState = rememberLazyListState()
+
+    LazyRow(
+        state = listState,
+        modifier = Modifier
+            .fillMaxWidth()
+            // Only ever rendered in the fixed-height desktop hero overlay (no episodes, so
+            // Trailers/Collection/More Like This are merged into this tab strip), which never
+            // scrolls vertically — a plain wheel can scroll this row without requiring Shift.
+            .desktopHorizontalListNavigation(listState, treatPlainScrollAsHorizontal = true),
+        // Keep the first tab aligned with surrounding section text; trailing padding preserves
+        // scroll breathing room at the end of the row.
+        contentPadding = PaddingValues(start = 0.dp, end = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        itemsIndexed(tabs, key = { _, tab -> tab.name }) { index, tab ->
+            val isSelected = tab == selectedTab
+            val startPadding = if (index == 0) 0.dp else 14.dp
+            NuvioShelfItemSlot(focused = index == focusedTabIndex) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                            } else {
+                                Color.Transparent
+                            },
+                        )
+                        .clickable { onSelect(tab) }
+                        .padding(start = startPadding, end = 14.dp, top = 10.dp, bottom = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = when (tab) {
+                            CompactMediaSelectorTab.Trailers -> stringResource(Res.string.detail_trailers_title)
+                            CompactMediaSelectorTab.Collection -> collectionTitle
+                                ?.takeIf { it.isNotBlank() }
+                                ?: stringResource(Res.string.settings_meta_collection)
+                            CompactMediaSelectorTab.MoreLikeThis -> stringResource(Res.string.details_more_like_this)
+                        },
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 14.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                        ),
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.onBackground
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
                 }
             }
         }
@@ -407,6 +646,12 @@ private fun SeasonTextChipScrollRow(
     onSelect: (Int) -> Unit,
     onLongPress: ((Int) -> Unit)?,
     focusedSeasonIndex: Int? = null,
+    collectionTitle: String? = null,
+    // True in the fixed-height desktop hero overlay, which never scrolls vertically, so a
+    // plain mouse wheel over this row can scroll it horizontally without requiring Shift.
+    // False in the regular (tablet/mobile/tab-layout) vertically-scrolling season list, where
+    // a plain wheel must still be free to scroll the page past this row.
+    compactDesktopLayout: Boolean = false,
 ) {
     val seasonListState = rememberLazyListState()
     var hasPositionedSeasonRow by remember(seasons) { mutableStateOf(false) }
@@ -441,12 +686,19 @@ private fun SeasonTextChipScrollRow(
         state = seasonListState,
         modifier = Modifier
             .fillMaxWidth()
-            .desktopHorizontalListNavigation(seasonListState),
+            .desktopHorizontalListNavigation(
+                seasonListState,
+                treatPlainScrollAsHorizontal = compactDesktopLayout,
+            ),
+        // Keep the first chip aligned with surrounding section text; trailing padding preserves
+        // scroll breathing room at the end of the row.
+        contentPadding = PaddingValues(start = 0.dp, end = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(sizing.seasonChipGap),
     ) {
         itemsIndexed(seasons, key = { _, season -> season }) { index, season ->
             val isSelected = season == currentSeason
             val onSecondaryClick = onLongPress?.let { handler -> { handler(season) } }
+            val startPadding = if (index == 0) 0.dp else sizing.seasonChipHorizontalPadding
             NuvioShelfItemSlot(focused = index == focusedSeasonIndex) {
                 Box(
                     modifier = Modifier
@@ -464,13 +716,15 @@ private fun SeasonTextChipScrollRow(
                         )
                         .secondaryClick(onSecondaryClick)
                         .padding(
-                            horizontal = sizing.seasonChipHorizontalPadding,
-                            vertical = sizing.seasonChipVerticalPadding,
+                            start = startPadding,
+                            end = sizing.seasonChipHorizontalPadding,
+                            top = sizing.seasonChipVerticalPadding,
+                            bottom = sizing.seasonChipVerticalPadding,
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = season.label(),
+                        text = season.label(collectionTitle),
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = sizing.seasonChipTextSize,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
@@ -648,17 +902,18 @@ private fun EpisodeHorizontalRow(
     blurUnwatchedEpisodes: Boolean,
     preferredEpisodeNumber: Int? = null,
     focusedEpisodeIndex: Int? = null,
+    compactDesktopLayout: Boolean = false,
     onEpisodeClick: ((MetaVideo) -> Unit)?,
     onEpisodeLongPress: ((MetaVideo) -> Unit)?,
 ) {
-    val rowMetrics = rememberEpisodeHorizontalCardMetrics(maxWidthDp)
+    val rowMetrics = rememberEpisodeHorizontalCardMetrics(maxWidthDp, compactDesktopLayout)
     val listState = rememberLazyListState()
     var hasPositioned by remember(episodes) { mutableStateOf(false) }
     val itemExtentPx = with(LocalDensity.current) { (rowMetrics.cardWidth + rowMetrics.itemSpacing).toPx() }
 
     LaunchedEffect(episodes, preferredEpisodeNumber) {
         val targetIndex = if (preferredEpisodeNumber != null) {
-            episodes.indexOfFirst { it.episode == preferredEpisodeNumber }
+            episodes.indexOfFirst { it.effectiveEpisodeNumber() == preferredEpisodeNumber }
         } else {
             -1
         }
@@ -690,18 +945,29 @@ private fun EpisodeHorizontalRow(
         state = listState,
         modifier = Modifier
             .fillMaxWidth()
-            .desktopHorizontalListNavigation(listState, scrollStepPx = itemExtentPx),
-        contentPadding = PaddingValues(horizontal = rowMetrics.rowHorizontalPadding, vertical = rowMetrics.rowVerticalPadding),
+            .desktopHorizontalListNavigation(
+                listState,
+                scrollStepPx = itemExtentPx,
+                treatPlainScrollAsHorizontal = compactDesktopLayout,
+            ),
+        contentPadding = PaddingValues(
+            start = 0.dp,
+            top = rowMetrics.rowVerticalPadding,
+            end = rowMetrics.rowHorizontalPadding,
+            bottom = rowMetrics.rowVerticalPadding,
+        ),
         horizontalArrangement = Arrangement.spacedBy(rowMetrics.itemSpacing),
     ) {
         itemsIndexed(
             items = episodes,
-            key = { index, episode -> "${episode.season}:${episode.episode}:${episode.id}#$index" },
+            key = { index, episode ->
+                "${episode.effectiveSeasonNumber()}:${episode.effectiveEpisodeNumber()}:${episode.id}#$index"
+            },
         ) { index, episode ->
             val episodeVideoId = buildPlaybackVideoId(
                 parentMetaId = parentMetaId,
-                seasonNumber = episode.season,
-                episodeNumber = episode.episode,
+                seasonNumber = episode.effectiveSeasonNumber(),
+                episodeNumber = episode.effectiveEpisodeNumber(),
                 fallbackVideoId = episode.id,
             )
             NuvioShelfItemSlot(focused = index == focusedEpisodeIndex) {
@@ -742,8 +1008,7 @@ private fun EpisodeHorizontalCard(
 ) {
     val cardShape = RoundedCornerShape(metrics.cornerRadius)
     val ratingLabel = remember(imdbRating) { imdbRating?.takeIf { it > 0.0 }?.let(::formatEpisodeRating) }
-    val formattedDate = remember(video.released) { video.released?.let { formatReleaseDateForDisplay(it) } }
-    val runtimeLabel = remember(video.runtime) { video.runtime?.takeIf { it > 0 }?.let(::formatEpisodeRuntime) }
+    val formattedDate = remember(video.released) { video.released?.let { formatEpisodeThumbnailDate(it) } }
     Box(
         modifier = Modifier
             .width(metrics.cardWidth)
@@ -790,11 +1055,40 @@ private fun EpisodeHorizontalCard(
                 ),
         )
 
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth()
+                .padding(metrics.contentPadding),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            formattedDate?.let { date ->
+                CardOverlayBadge(
+                    text = date,
+                    textSize = metrics.metaTextSize,
+                    radius = metrics.badgeRadius,
+                    horizontalPadding = metrics.badgeHorizontalPadding,
+                    verticalPadding = metrics.badgeVerticalPadding,
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            CardOverlayBadge(
+                text = video.episodeBadge(),
+                textSize = metrics.badgeTextSize,
+                radius = metrics.badgeRadius,
+                horizontalPadding = metrics.badgeHorizontalPadding,
+                verticalPadding = metrics.badgeVerticalPadding,
+            )
+        }
+
         NuvioAnimatedWatchedBadge(
             isVisible = isWatched,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(metrics.contentPadding),
+                .padding(
+                    top = metrics.contentPadding + 24.dp,
+                    end = metrics.contentPadding,
+                ),
         )
 
         Column(
@@ -806,18 +1100,9 @@ private fun EpisodeHorizontalCard(
                     end = metrics.contentPadding,
                     top = metrics.contentPadding,
                     bottom = metrics.contentBottomPadding,
-                ),
+            ),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            EpisodeCodeBadge(
-                text = video.episodeBadge(),
-                textSize = metrics.badgeTextSize,
-                radius = metrics.badgeRadius,
-                horizontalPadding = metrics.badgeHorizontalPadding,
-                verticalPadding = metrics.badgeVerticalPadding,
-                backgroundAlpha = 0.42f,
-            )
-
             Text(
                 text = video.title,
                 style = MaterialTheme.typography.titleMedium.copy(
@@ -843,39 +1128,18 @@ private fun EpisodeHorizontalCard(
                 )
             }
 
-            if (runtimeLabel != null || ratingLabel != null || formattedDate != null) {
+            if (ratingLabel != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    runtimeLabel?.let { runtime ->
-                        Text(
-                            text = runtime,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.metaTextSize),
-                            color = Color.White.copy(alpha = 0.78f),
-                            maxLines = 1,
-                        )
-                    }
-                    ratingLabel?.let { rating ->
-                        ImdbEpisodeRatingBadge(
-                            rating = rating,
-                            logoWidth = metrics.imdbLogoWidth,
-                            logoHeight = metrics.imdbLogoHeight,
-                            textSize = metrics.metaTextSize,
-                        )
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    formattedDate?.let { date ->
-                        Text(
-                            text = date,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.metaTextSize),
-                            color = Color.White.copy(alpha = 0.78f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.End,
-                        )
-                    }
+                    ImdbEpisodeRatingBadge(
+                        rating = ratingLabel,
+                        logoWidth = metrics.imdbLogoWidth,
+                        logoHeight = metrics.imdbLogoHeight,
+                        textSize = metrics.metaTextSize,
+                    )
                 }
             }
         }
@@ -921,12 +1185,360 @@ private data class EpisodeHorizontalCardMetrics(
 )
 
 @Composable
-private fun rememberEpisodeHorizontalCardMetrics(maxWidthDp: Float): EpisodeHorizontalCardMetrics {
-    return remember(maxWidthDp) {
+private fun CompactTrailerLandscapeRow(
+    trailers: List<MetaTrailer>,
+    onTrailerClick: (MetaTrailer) -> Unit,
+    focusedItemIndex: Int? = null,
+) {
+    if (trailers.isEmpty()) return
+
+    val listState = rememberLazyListState()
+    val cardWidth = 330.dp
+    val itemSpacing = 14.dp
+    val itemExtentPx = with(LocalDensity.current) { (cardWidth + itemSpacing).toPx() }
+
+    LaunchedEffect(focusedItemIndex, trailers) {
+        val target = focusedItemIndex
+        if (target == null || target !in trailers.indices) return@LaunchedEffect
+        val layoutInfo = listState.layoutInfo
+        val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
+            item.index == target &&
+                item.offset >= layoutInfo.viewportStartOffset &&
+                item.offset + item.size <= layoutInfo.viewportEndOffset
+        }
+        if (!isFullyVisible) {
+            listState.animateScrollToItem(target)
+        }
+    }
+
+    LazyRow(
+        state = listState,
+        modifier = Modifier
+            .fillMaxWidth()
+            // Always rendered in the fixed-height desktop hero overlay, which never scrolls
+            // vertically — a plain wheel can scroll this row without requiring Shift.
+            .desktopHorizontalListNavigation(
+                listState,
+                scrollStepPx = itemExtentPx,
+                treatPlainScrollAsHorizontal = true,
+            ),
+        // Room on every edge so the focus-scale of a highlighted card isn't clipped by the row
+        // bounds — most visible on the first card, which has no neighbor to its left to absorb
+        // the scale-up into.
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(itemSpacing),
+    ) {
+        itemsIndexed(
+            items = trailers,
+            key = { index, trailer -> "${trailer.type}-${trailer.id}-${trailer.seasonNumber ?: 0}#$index" },
+        ) { index, trailer ->
+            NuvioShelfItemSlot(focused = index == focusedItemIndex) {
+                CompactTrailerTextBelowCard(
+                    trailer = trailer,
+                    width = cardWidth,
+                    onClick = { onTrailerClick(trailer) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactTrailerTextBelowCard(
+    trailer: MetaTrailer,
+    width: Dp,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(width)
+            .clickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+        ) {
+            AsyncImage(
+                model = "https://img.youtube.com/vi/${trailer.key}/hqdefault.jpg",
+                contentDescription = trailer.displayName ?: trailer.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        }
+        Text(
+            text = trailer.displayName ?: trailer.name,
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 19.sp,
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun CompactTrailerLandscapeCard(
+    trailer: MetaTrailer,
+    width: Dp,
+    height: Dp,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(height)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .clickable(onClick = onClick),
+    ) {
+        AsyncImage(
+            model = "https://img.youtube.com/vi/${trailer.key}/hqdefault.jpg",
+            contentDescription = trailer.displayName ?: trailer.name,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.44f to Color.Black.copy(alpha = 0.08f),
+                        1f to Color.Black.copy(alpha = 0.78f),
+                    ),
+                ),
+        )
+
+        CompactLandscapeTopMetaRow(
+            startText = trailer.type.takeIf { it.isNotBlank() },
+            endText = trailer.publishedAt?.take(4)?.takeIf { it.isNotBlank() },
+        )
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = trailer.displayName ?: trailer.name,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 19.sp,
+                ),
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = listOfNotNull(
+                    trailer.site.takeIf { it.isNotBlank() },
+                    trailer.size?.let { "${it}p" },
+                ).joinToString(" • ").ifBlank { trailer.type },
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                ),
+                color = Color.White.copy(alpha = 0.82f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactMetaPreviewLandscapeRow(
+    items: List<MetaPreview>,
+    onItemClick: (MetaPreview) -> Unit,
+    focusedItemIndex: Int? = null,
+) {
+    if (items.isEmpty()) return
+
+    val listState = rememberLazyListState()
+    val cardWidth = 330.dp
+    val cardHeight = 196.dp
+    val itemSpacing = 14.dp
+    val itemExtentPx = with(LocalDensity.current) { (cardWidth + itemSpacing).toPx() }
+
+    LaunchedEffect(focusedItemIndex, items) {
+        val target = focusedItemIndex
+        if (target == null || target !in items.indices) return@LaunchedEffect
+        val layoutInfo = listState.layoutInfo
+        val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
+            item.index == target &&
+                item.offset >= layoutInfo.viewportStartOffset &&
+                item.offset + item.size <= layoutInfo.viewportEndOffset
+        }
+        if (!isFullyVisible) {
+            listState.animateScrollToItem(target)
+        }
+    }
+
+    LazyRow(
+        state = listState,
+        modifier = Modifier
+            .fillMaxWidth()
+            // Always rendered in the fixed-height desktop hero overlay, which never scrolls
+            // vertically — a plain wheel can scroll this row without requiring Shift.
+            .desktopHorizontalListNavigation(
+                listState,
+                scrollStepPx = itemExtentPx,
+                treatPlainScrollAsHorizontal = true,
+            ),
+        // Room on every edge so the focus-scale of a highlighted card isn't clipped by the row
+        // bounds — most visible on the first card, which has no neighbor to its left to absorb
+        // the scale-up into.
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(itemSpacing),
+    ) {
+        itemsIndexed(
+            items = items,
+            key = { index, item -> "${item.type}:${item.id}:$index" },
+        ) { index, item ->
+            NuvioShelfItemSlot(focused = index == focusedItemIndex) {
+                CompactMetaPreviewLandscapeCard(
+                    item = item,
+                    width = cardWidth,
+                    height = cardHeight,
+                    onClick = { onItemClick(item) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactMetaPreviewLandscapeCard(
+    item: MetaPreview,
+    width: Dp,
+    height: Dp,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(height)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .clickable(onClick = onClick),
+    ) {
+        AsyncImage(
+            model = item.banner ?: item.posterFallback ?: item.poster,
+            contentDescription = item.name,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.48f to Color.Black.copy(alpha = 0.08f),
+                        1f to Color.Black.copy(alpha = 0.74f),
+                    ),
+                ),
+        )
+
+        CompactLandscapeTopMetaRow(
+            startText = item.runtime?.takeIf { it.isNotBlank() },
+            endText = item.releaseInfo?.takeIf { it.isNotBlank() },
+        )
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = item.name,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 19.sp,
+                ),
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            item.description?.takeIf { it.isNotBlank() }?.let { description ->
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                    ),
+                    color = Color.White.copy(alpha = 0.82f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            val meta = listOfNotNull(
+                item.releaseInfo?.takeIf { it.isNotBlank() },
+                item.runtime?.takeIf { it.isNotBlank() },
+            ).joinToString(" • ")
+            if (false && meta.isNotBlank()) {
+                Text(
+                    text = meta,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = Color.White.copy(alpha = 0.82f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun rememberEpisodeHorizontalCardMetrics(
+    maxWidthDp: Float,
+    compactDesktopLayout: Boolean = false,
+): EpisodeHorizontalCardMetrics {
+    return remember(maxWidthDp, compactDesktopLayout) {
+        if (compactDesktopLayout) {
+            return@remember EpisodeHorizontalCardMetrics(
+                rowHorizontalPadding = 10.dp,
+                rowVerticalPadding = 8.dp,
+                itemSpacing = 14.dp,
+                cardWidth = 330.dp,
+                cardHeight = 196.dp,
+                cornerRadius = 12.dp,
+                contentPadding = 12.dp,
+                contentBottomPadding = 14.dp,
+                titleTextSize = 15.sp,
+                titleLineHeight = 19.sp,
+                bodyTextSize = 11.sp,
+                bodyLineHeight = 15.sp,
+                overviewMaxLines = 2,
+                metaTextSize = 10.sp,
+                badgeTextSize = 9.sp,
+                badgeRadius = 5.dp,
+                badgeHorizontalPadding = 7.dp,
+                badgeVerticalPadding = 3.dp,
+                imdbLogoWidth = 22.dp,
+                imdbLogoHeight = 11.dp,
+            )
+        }
         when {
             maxWidthDp >= 1300f -> EpisodeHorizontalCardMetrics(
-                rowHorizontalPadding = 0.dp,
-                rowVerticalPadding = 0.dp,
+                rowHorizontalPadding = 10.dp,
+                rowVerticalPadding = 8.dp,
                 itemSpacing = 18.dp,
                 cardWidth = 420.dp,
                 cardHeight = 256.dp,
@@ -948,8 +1560,8 @@ private fun rememberEpisodeHorizontalCardMetrics(maxWidthDp: Float): EpisodeHori
             )
 
             maxWidthDp >= 1000f -> EpisodeHorizontalCardMetrics(
-                rowHorizontalPadding = 0.dp,
-                rowVerticalPadding = 0.dp,
+                rowHorizontalPadding = 10.dp,
+                rowVerticalPadding = 8.dp,
                 itemSpacing = 16.dp,
                 cardWidth = 384.dp,
                 cardHeight = 236.dp,
@@ -971,8 +1583,8 @@ private fun rememberEpisodeHorizontalCardMetrics(maxWidthDp: Float): EpisodeHori
             )
 
             maxWidthDp >= 760f -> EpisodeHorizontalCardMetrics(
-                rowHorizontalPadding = 0.dp,
-                rowVerticalPadding = 0.dp,
+                rowHorizontalPadding = 10.dp,
+                rowVerticalPadding = 8.dp,
                 itemSpacing = 14.dp,
                 cardWidth = 340.dp,
                 cardHeight = 212.dp,
@@ -994,8 +1606,8 @@ private fun rememberEpisodeHorizontalCardMetrics(maxWidthDp: Float): EpisodeHori
             )
 
             else -> EpisodeHorizontalCardMetrics(
-                rowHorizontalPadding = 0.dp,
-                rowVerticalPadding = 0.dp,
+                rowHorizontalPadding = 10.dp,
+                rowVerticalPadding = 8.dp,
                 itemSpacing = 12.dp,
                 cardWidth = 296.dp,
                 cardHeight = 184.dp,
@@ -1021,6 +1633,116 @@ private fun rememberEpisodeHorizontalCardMetrics(maxWidthDp: Float): EpisodeHori
 
 private fun formatEpisodeRuntime(runtimeMinutes: Int): String {
     return formatRuntimeFromMinutes(runtimeMinutes)
+}
+
+/**
+ * Episode thumbnail date badge: "16 Dec 2021" (day, then month, then year) instead of the
+ * shared formatReleaseDateForDisplay's "2021 December 16". Deliberately scoped to this
+ * screen's thumbnails rather than changing the shared formatter, which also drives the
+ * catalog/home/search date displays elsewhere.
+ */
+private fun formatEpisodeThumbnailDate(raw: String): String {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return raw
+    val datePart = trimmed.substringBefore('T').trim()
+    val parts = datePart.split('-')
+    if (parts.size != 3) return raw
+    val year = parts[0].toIntOrNull() ?: return raw
+    val month = parts[1].toIntOrNull()?.takeIf { it in 1..12 } ?: return raw
+    val day = parts[2].toIntOrNull()?.takeIf { it in 1..31 } ?: return raw
+    return "$day ${compactMonthAbbreviation(month)} $year"
+}
+
+/**
+ * A user-requested, non-standard abbreviation set: unlike the generic 3-letter short month
+ * names elsewhere in the app, March/April/May/June/July stay unabbreviated (already short or
+ * abbreviating them saves little) and September shortens to "Sept" rather than "Sep".
+ */
+private fun compactMonthAbbreviation(month: Int): String = when (month) {
+    1 -> "Jan"
+    2 -> "Feb"
+    3 -> "March"
+    4 -> "April"
+    5 -> "May"
+    6 -> "June"
+    7 -> "July"
+    8 -> "Aug"
+    9 -> "Sept"
+    10 -> "Oct"
+    11 -> "Nov"
+    12 -> "Dec"
+    else -> month.toString()
+}
+
+@Composable
+private fun CardOverlayText(
+    text: String,
+    textSize: androidx.compose.ui.unit.TextUnit,
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium.copy(
+            fontSize = textSize,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.sp,
+        ),
+        color = Color.White.copy(alpha = 0.9f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun CompactLandscapeTopMetaRow(
+    startText: String?,
+    endText: String?,
+) {
+    if (startText.isNullOrBlank() && endText.isNullOrBlank()) return
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        startText?.takeIf { it.isNotBlank() }?.let { text ->
+            CardOverlayBadge(
+                text = text,
+                textSize = 10.sp,
+                radius = 5.dp,
+                horizontalPadding = 7.dp,
+                verticalPadding = 3.dp,
+            )
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        endText?.takeIf { it.isNotBlank() }?.let { text ->
+            CardOverlayBadge(
+                text = text,
+                textSize = 10.sp,
+                radius = 5.dp,
+                horizontalPadding = 7.dp,
+                verticalPadding = 3.dp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CardOverlayBadge(
+    text: String,
+    textSize: androidx.compose.ui.unit.TextUnit,
+    radius: Dp,
+    horizontalPadding: Dp,
+    verticalPadding: Dp,
+) {
+    EpisodeCodeBadge(
+        text = text,
+        textSize = textSize,
+        radius = radius,
+        horizontalPadding = horizontalPadding,
+        verticalPadding = verticalPadding,
+        backgroundAlpha = 0.52f,
+    )
 }
 
 @Composable
@@ -1112,7 +1834,7 @@ private fun EpisodeListCard(
 ) {
     val cardShape = RoundedCornerShape(sizing.cardRadius)
     val ratingLabel = remember(imdbRating) { imdbRating?.takeIf { it > 0.0 }?.let(::formatEpisodeRating) }
-    val formattedDate = remember(video.released) { video.released?.let { formatReleaseDateForDisplay(it) } }
+    val formattedDate = remember(video.released) { video.released?.let { formatEpisodeThumbnailDate(it) } }
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -1296,7 +2018,42 @@ private data class SeriesContentSizing(
     val badgeVerticalPadding: Dp,
 )
 
-private fun seriesContentSizing(maxWidthDp: Float): SeriesContentSizing =
+private fun seriesContentSizing(
+    maxWidthDp: Float,
+    compactDesktopLayout: Boolean = false,
+): SeriesContentSizing =
+    if (compactDesktopLayout) {
+        SeriesContentSizing(
+            seasonHeaderSize = 24.sp,
+            seasonToggleTextSize = 13.sp,
+            seasonChipGap = 14.dp,
+            seasonChipRadius = 10.dp,
+            seasonChipHorizontalPadding = 14.dp,
+            seasonChipVerticalPadding = 10.dp,
+            seasonChipTextSize = 14.sp,
+            seasonPosterWidth = 96.dp,
+            seasonPosterHeight = 144.dp,
+            seasonPosterRadius = 10.dp,
+            cardHeight = 150.dp,
+            imageWidth = 150.dp,
+            cardRadius = 14.dp,
+            cardGap = 14.dp,
+            contentHorizontalPadding = 14.dp,
+            contentVerticalPadding = 12.dp,
+            contentSpacing = 6.dp,
+            titleTextSize = 15.sp,
+            titleLineHeight = 19.sp,
+            titleMaxLines = 2,
+            bodyTextSize = 13.sp,
+            bodyLineHeight = 18.sp,
+            overviewMaxLines = 2,
+            metaTextSize = 11.sp,
+            badgeTextSize = 10.sp,
+            badgeRadius = 4.dp,
+            badgeHorizontalPadding = 6.dp,
+            badgeVerticalPadding = 2.dp,
+        )
+    } else
     when {
         maxWidthDp >= 1440f -> SeriesContentSizing(
             seasonHeaderSize = 28.sp,
@@ -1420,8 +2177,16 @@ private fun seriesContentSizing(maxWidthDp: Float): SeriesContentSizing =
         )
     }
 
-private fun Int.label(): String =
-    if (this <= 0) {
+private fun Int.label(collectionTitle: String? = null): String =
+    if (this == TRAILER_SELECTOR_SEASON) {
+        runBlocking { getString(Res.string.detail_trailers_title) }
+    } else if (this == COLLECTION_SELECTOR_SEASON) {
+        collectionTitle
+            ?.takeIf { it.isNotBlank() }
+            ?: runBlocking { getString(Res.string.settings_meta_collection) }
+    } else if (this == MORE_LIKE_THIS_SELECTOR_SEASON) {
+        runBlocking { getString(Res.string.details_more_like_this) }
+    } else if (this <= 0) {
         runBlocking { getString(Res.string.episodes_specials) }
     } else {
         runBlocking { getString(Res.string.episodes_season, this@label) }
@@ -1429,14 +2194,17 @@ private fun Int.label(): String =
 
 private fun MetaVideo.episodeBadge(): String =
     when {
-        episode != null || season != null ->
-            localizedSeasonEpisodeCode(seasonNumber = season, episodeNumber = episode).orEmpty()
+        effectiveEpisodeNumber() != null || effectiveSeasonNumber() != null ->
+            localizedSeasonEpisodeCode(
+                seasonNumber = effectiveSeasonNumber(),
+                episodeNumber = effectiveEpisodeNumber(),
+            ).orEmpty()
         else -> runBlocking { getString(Res.string.details_episode_badge_file) }
     }
 
 private fun MetaVideo.seasonEpisodeKey(): Pair<Int, Int>? {
-    val seasonNumber = season ?: return null
-    val episodeNumber = episode ?: return null
+    val seasonNumber = effectiveSeasonNumber() ?: return null
+    val episodeNumber = effectiveEpisodeNumber() ?: return null
     return seasonNumber to episodeNumber
 }
 

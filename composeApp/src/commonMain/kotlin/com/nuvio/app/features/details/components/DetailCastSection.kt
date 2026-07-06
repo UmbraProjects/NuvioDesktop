@@ -45,9 +45,14 @@ fun DetailCastSection(
     cast: List<MetaPerson>,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
+    visibleItemCount: Int? = null,
     onCastClick: ((MetaPerson, String?) -> Unit)? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    // True in the fixed-height desktop hero overlay, which never scrolls vertically, so a
+    // plain mouse wheel over this row can scroll it horizontally without requiring Shift.
+    // False in the regular (tablet/mobile/tab-layout) vertically-scrolling section list.
+    compactDesktopLayout: Boolean = false,
 ) {
     if (cast.isEmpty()) return
 
@@ -57,14 +62,20 @@ fun DetailCastSection(
         showHeader = showHeader,
     ) {
         BoxWithConstraints {
-            val sizing = castSectionSizing(maxWidth.value)
+            val sizing = castSectionSizing(
+                maxWidthDp = maxWidth.value,
+                visibleItemCount = visibleItemCount,
+            )
             val rowState = rememberLazyListState()
 
             LazyRow(
                 state = rowState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .desktopHorizontalListNavigation(rowState),
+                    .desktopHorizontalListNavigation(
+                        rowState,
+                        treatPlainScrollAsHorizontal = compactDesktopLayout,
+                    ),
                 horizontalArrangement = Arrangement.spacedBy(sizing.avatarGap),
             ) {
                 itemsIndexed(
@@ -204,8 +215,25 @@ private data class CastSectionSizing(
     val subLabelSize: TextUnit,
 )
 
-private fun castSectionSizing(maxWidthDp: Float): CastSectionSizing =
-    when {
+private fun castSectionSizing(
+    maxWidthDp: Float,
+    visibleItemCount: Int? = null,
+): CastSectionSizing {
+    if (visibleItemCount != null && visibleItemCount > 0 && maxWidthDp > 0f) {
+        val gap = 16.dp
+        val itemWidthDp = ((maxWidthDp - gap.value * (visibleItemCount - 1)) / visibleItemCount)
+            .coerceAtLeast(72f)
+        val avatarSizeDp = itemWidthDp.coerceAtMost(80f)
+        return CastSectionSizing(
+            avatarSize = avatarSizeDp.dp,
+            itemWidth = itemWidthDp.dp,
+            avatarGap = gap,
+            nameLabelSize = 14.sp,
+            subLabelSize = 12.sp,
+        )
+    }
+
+    return when {
         maxWidthDp >= 1200f -> CastSectionSizing(
             avatarSize = 100.dp,
             itemWidth = 112.dp,
@@ -235,6 +263,7 @@ private fun castSectionSizing(maxWidthDp: Float): CastSectionSizing =
             subLabelSize = 12.sp,
         )
     }
+}
 
 private fun String.initials(): String {
     val parts = trim().split(" ").filter { it.isNotBlank() }

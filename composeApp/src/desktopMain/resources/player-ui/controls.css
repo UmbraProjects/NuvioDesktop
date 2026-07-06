@@ -2309,12 +2309,75 @@ svg {
   text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
 }
 
+#heroTrailerChrome {
+  position: absolute;
+  top: calc(28px + env(safe-area-inset-top));
+  right: calc(28px + env(safe-area-inset-right));
+  z-index: 7;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.48);
+  pointer-events: auto;
+}
+
+.hero-trailer-button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.hero-trailer-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.hero-trailer-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.hero-trailer-button:active {
+  transform: scale(0.94);
+}
+
+.hero-trailer-volume {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 96px;
+  height: 4px;
+  margin: 0 10px 0 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  outline: none;
+  cursor: pointer;
+}
+
+.hero-trailer-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.hero-trailer-volume::-webkit-slider-thumb:hover {
+  background: #ffffff;
+  transform: scale(1.08);
+}
+
 .player.hero-trailer-active {
   background: transparent !important;
   cursor: default !important;
   pointer-events: none !important;
 }
 
-.player.hero-trailer-active > *:not(#heroTrailerFade):not(#heroTrailerContent) {
+.player.hero-trailer-active > *:not(#heroTrailerFade):not(#heroTrailerContent):not(#heroTrailerChrome) {
   display: none !important;
 }

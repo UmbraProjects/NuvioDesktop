@@ -1,5 +1,6 @@
 package com.nuvio.app
 
+import co.touchlab.kermit.Logger
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
@@ -486,28 +487,60 @@ private data class PendingProfileSwitch(
     val syncOnEnter: Boolean,
 )
 
-private suspend fun warmProfileBoundRepositories() {
+private val appStartupLog = Logger.withTag("AppStartup")
+
+private inline fun startupWarmStep(
+    name: String,
+    rethrow: Boolean = true,
+    block: () -> Unit,
+) {
+    val startedAt = System.currentTimeMillis()
+    val result = runCatching(block)
+    val elapsedMs = System.currentTimeMillis() - startedAt
+    result.onSuccess {
+        appStartupLog.i { "$name completed in ${elapsedMs}ms" }
+    }.onFailure { error ->
+        appStartupLog.e(error) { "$name failed after ${elapsedMs}ms" }
+        if (rethrow) throw error
+    }
+}
+
+private suspend fun warmProfileStartupRepositories() {
     withContext(Dispatchers.Default) {
-        AddonRepository.initialize()
-        CollectionRepository.initialize()
-        ContinueWatchingPreferencesRepository.ensureLoaded()
-        DownloadsRepository.ensureLoaded()
-        EpisodeReleaseNotificationsRepository.ensureLoaded()
-        HomeCatalogSettingsRepository.snapshot()
-        LibraryRepository.ensureLoaded()
-        P2pSettingsRepository.ensureLoaded()
-        PlayerSettingsRepository.ensureLoaded()
-        DiscordPresenceSettingsRepository.ensureLoaded()
-        TraktAuthRepository.ensureLoaded()
-        TraktSettingsRepository.ensureLoaded()
-        SimklSettingsRepository.ensureLoaded()
-        SimklAuthRepository.ensureLoaded()
-        com.nuvio.app.features.tvdb.TvdbSettingsRepository.ensureLoaded()
-        WatchedRepository.ensureLoaded()
-        WatchProgressRepository.ensureLoaded()
-        CollectionSyncService.startObserving()
-        HomeCatalogSettingsSyncService.startObserving()
-        ProfileSettingsSync.startObserving()
+        val startedAt = System.currentTimeMillis()
+        appStartupLog.i { "critical profile warm started" }
+        startupWarmStep("addons local load") { AddonRepository.initialize() }
+        startupWarmStep("collections local load") { CollectionRepository.initialize() }
+        startupWarmStep("continue watching preferences load") { ContinueWatchingPreferencesRepository.ensureLoaded() }
+        startupWarmStep("home catalog settings load") { HomeCatalogSettingsRepository.snapshot() }
+        startupWarmStep("player settings load") { PlayerSettingsRepository.ensureLoaded() }
+        startupWarmStep("p2p settings load") { P2pSettingsRepository.ensureLoaded() }
+        startupWarmStep("trakt settings load") { TraktSettingsRepository.ensureLoaded() }
+        startupWarmStep("trakt auth load") { TraktAuthRepository.ensureLoaded() }
+        startupWarmStep("watch progress load") { WatchProgressRepository.ensureLoaded() }
+        startupWarmStep("watched state load") { WatchedRepository.ensureLoaded() }
+        appStartupLog.i { "critical profile warm completed in ${System.currentTimeMillis() - startedAt}ms" }
+    }
+}
+
+private suspend fun warmProfileDeferredRepositories() {
+    withContext(Dispatchers.Default) {
+        val startedAt = System.currentTimeMillis()
+        appStartupLog.i { "deferred profile warm started" }
+        startupWarmStep("downloads load", rethrow = false) { DownloadsRepository.ensureLoaded() }
+        startupWarmStep("episode notifications load", rethrow = false) { EpisodeReleaseNotificationsRepository.ensureLoaded() }
+        startupWarmStep("library load", rethrow = false) { LibraryRepository.ensureLoaded() }
+        startupWarmStep("discord presence settings load", rethrow = false) { DiscordPresenceSettingsRepository.ensureLoaded() }
+        startupWarmStep("simkl settings load", rethrow = false) { SimklSettingsRepository.ensureLoaded() }
+        startupWarmStep("simkl auth load", rethrow = false) { SimklAuthRepository.ensureLoaded() }
+        startupWarmStep("tvdb settings load", rethrow = false) { com.nuvio.app.features.tvdb.TvdbSettingsRepository.ensureLoaded() }
+        startupWarmStep("collection sync observer start", rethrow = false) { CollectionSyncService.startObserving() }
+        startupWarmStep("home catalog sync observer start", rethrow = false) { HomeCatalogSettingsSyncService.startObserving() }
+        startupWarmStep("profile settings sync observer start", rethrow = false) { ProfileSettingsSync.startObserving() }
+        startupWarmStep("anime id mapping warm start", rethrow = false) {
+            com.nuvio.app.features.metadata.AnimeIdMappingRepository.warmAsync()
+        }
+        appStartupLog.i { "deferred profile warm completed in ${System.currentTimeMillis() - startedAt}ms" }
     }
 }
 
@@ -540,9 +573,6 @@ fun App() {
             NetworkStatusRepository.ensureStarted()
             ProfileRepository.loadCachedProfiles()
             AvatarRepository.fetchAvatars()
-            // Parse anime-list-mini.json (~6 MB) off the UI thread now, so the first
-            // stream/player launch doesn't pay for it inside composition.
-            com.nuvio.app.features.metadata.AnimeIdMappingRepository.warmAsync()
         }
 
         val authState by AuthRepository.state.collectAsStateWithLifecycle()
@@ -633,7 +663,7 @@ fun App() {
             val request = pendingProfileSwitch ?: return@LaunchedEffect
             runCatching {
                 ProfileRepository.switchToProfile(request.profile.profileIndex)
-                warmProfileBoundRepositories()
+                warmProfileStartupRepositories()
                 if (request.syncOnEnter) {
                     SyncManager.pullAllForProfile(request.profile.profileIndex)
                 }
@@ -861,7 +891,7 @@ private fun MainAppContent(
         val settingsRootActionRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
 
         LaunchedEffect(Unit) {
-            warmProfileBoundRepositories()
+            warmProfileDeferredRepositories()
         }
         val currentBackStackEntry by navController.currentBackStackEntryAsState()
         BindDiscordBrowsingPresence(
@@ -1652,8 +1682,11 @@ private fun MainAppContent(
                             coroutineScope.launch {
                                 try {
                                     ProfileRepository.switchToProfile(profile.profileIndex)
-                                    warmProfileBoundRepositories()
+                                    warmProfileStartupRepositories()
                                     SyncManager.pullAllForProfile(profile.profileIndex)
+                                    launch {
+                                        warmProfileDeferredRepositories()
+                                    }
                                     delay(300)
                                 } finally {
                                     profileSwitchLoading = false

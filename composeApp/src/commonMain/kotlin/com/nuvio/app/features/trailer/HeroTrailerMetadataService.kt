@@ -64,7 +64,7 @@ object HeroTrailerMetadataService {
                 "resolve $type/$id metaFound=${meta != null} trailers=${meta?.trailers?.size ?: 0} " +
                     "candidate=${candidate?.key} (${candidate?.site})"
             }
-            candidate?.let { TrailerPlaybackResolver.resolveFromYouTubeUrl(it.youtubePlaybackUrl()) }
+            candidate?.let { TrailerPlaybackResolver.resolveFromYouTubeUrl(it.youtubePlaybackUrl()).sourceOrNull() }
                 .also { log.i { "resolve $type/$id playbackSource=${it != null}" } }
         } catch (error: CancellationException) {
             cacheMutex.withLock {

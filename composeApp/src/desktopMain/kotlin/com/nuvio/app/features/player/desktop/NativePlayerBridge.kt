@@ -13,6 +13,7 @@ internal fun interface NativePlayerEventSink {
 
 internal object NativePlayerBridge {
     private val preloadStarted = AtomicBoolean(false)
+    private var loadedRuntimeDir: File? = null
 
     init {
         loadNativeLibrary()
@@ -89,6 +90,13 @@ internal object NativePlayerBridge {
     val controlsPageUrl: String by lazy { controlsPageAssets.url }
     private val controlsPageAssets: ControlsPageAssets by lazy { exportControlsPageAssets() }
 
+    /**
+     * Forces the object initializer (and therefore [loadNativeLibrary]) to run. Callers use this
+     * to pay the DLL extraction/link cost on a thread of their choosing instead of wherever the
+     * first real bridge call happens to land (historically the AWT event thread).
+     */
+    fun ensureNativeLibraryLoaded() = Unit
+
     fun preloadAsync() {
         if (!preloadStarted.compareAndSet(false, true)) return
         Thread {
@@ -124,6 +132,7 @@ internal object NativePlayerBridge {
         val platformDir = nativeDirectoryName(platform)
         findLocalBuildLibrary(platformDir, libraryName)?.let { localLibrary ->
             copyLocalRuntimeResources(platformDir, localLibrary.parentFile)
+            loadedRuntimeDir = localLibrary.parentFile
             System.load(localLibrary.absolutePath)
             return
         }
@@ -137,6 +146,7 @@ internal object NativePlayerBridge {
         appInstallDir(platform)?.let { installDir ->
             if (extractBundledNativeLibraryIfNeeded(platformDir, libraryName, installDir)) {
                 extractPythonLibIfNeeded(platformDir, installDir)
+                loadedRuntimeDir = installDir
                 System.load(installDir.resolve(libraryName).absolutePath)
                 return
             }
@@ -153,8 +163,11 @@ internal object NativePlayerBridge {
         input.use { source ->
             file.outputStream().use { target -> source.copyTo(target) }
         }
+        loadedRuntimeDir = dir
         System.load(file.absolutePath)
     }
+
+    internal fun runtimeDllDir(): File? = loadedRuntimeDir
 
     internal fun appInstallDir(platform: DesktopHostOs): File? {
         if (platform != DesktopHostOs.WINDOWS) return null
@@ -397,5 +410,26 @@ internal object NativePlayerBridge {
 internal fun preloadNativePlayerBridgeAsync() {
     if (DesktopHostOs.current == DesktopHostOs.MACOS || DesktopHostOs.current == DesktopHostOs.WINDOWS) {
         NativePlayerBridge.preloadAsync()
+    }
+}
+
+/** Blocks until the native bridge library is loaded (concurrent callers wait on class init). */
+internal fun ensureNativePlayerBridgeLoaded() {
+    NativePlayerBridge.ensureNativeLibraryLoaded()
+}
+
+/**
+ * Starts loading the native bridge library on a background daemon thread. Called from `main()`
+ * before the Compose window is created so the load overlaps UI startup and the startup
+ * borderless-fullscreen swap never pays it on the AWT event thread.
+ */
+internal fun warmNativePlayerBridgeLoadAsync() {
+    if (DesktopHostOs.current != DesktopHostOs.MACOS && DesktopHostOs.current != DesktopHostOs.WINDOWS) return
+    Thread {
+        runCatching { ensureNativePlayerBridgeLoaded() }
+    }.apply {
+        name = "nuvio-native-bridge-load-warmup"
+        isDaemon = true
+        start()
     }
 }

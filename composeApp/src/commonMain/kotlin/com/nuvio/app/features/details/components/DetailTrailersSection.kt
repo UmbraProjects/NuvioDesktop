@@ -54,6 +54,7 @@ fun DetailTrailersSection(
     onTrailerClick: (MetaTrailer) -> Unit,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
+    showCategorySelector: Boolean = true,
     focusedItemIndex: Int? = null,
 ) {
     if (trailers.isEmpty()) return
@@ -83,74 +84,78 @@ fun DetailTrailersSection(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val sizing = trailerSectionSizing(maxWidth.value)
+        if (showHeader || showCategorySelector) {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val sizing = trailerSectionSizing(maxWidth.value)
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (showHeader) {
-                    DetailSectionTitle(
-                        title = stringResource(Res.string.detail_trailers_title),
-                        fullWidth = false,
-                    )
-                }
-
-                Box {
-                    Surface(
-                        shape = RoundedCornerShape(sizing.selectorRadius),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                        tonalElevation = 0.dp,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(sizing.selectorRadius))
-                            .clickable { menuExpanded = true },
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(
-                                horizontal = sizing.selectorHorizontalPadding,
-                                vertical = sizing.selectorVerticalPadding,
-                            ),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text(
-                                text = selectedCategory,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Icon(
-                                imageVector = Icons.Filled.ExpandMore,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(sizing.selectorIconSize),
-                            )
-                        }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (showHeader) {
+                        DetailSectionTitle(
+                            title = stringResource(Res.string.detail_trailers_title),
+                            fullWidth = false,
+                        )
                     }
 
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                    ) {
-                        grouped.keys.forEach { category ->
-                            val count = grouped[category]?.size ?: 0
-                            DropdownMenuItem(
-                                text = {
+                    if (showCategorySelector) {
+                        Box {
+                            Surface(
+                                shape = RoundedCornerShape(sizing.selectorRadius),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                tonalElevation = 0.dp,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(sizing.selectorRadius))
+                                    .clickable { menuExpanded = true },
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(
+                                        horizontal = sizing.selectorHorizontalPadding,
+                                        vertical = sizing.selectorVerticalPadding,
+                                    ),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
                                     Text(
-                                        text = stringResource(Res.string.detail_trailer_category_count, category, count),
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        text = selectedCategory,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.labelLarge.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
-                                },
-                                onClick = {
-                                    selectedCategory = category
-                                    menuExpanded = false
-                                },
-                            )
+                                    Icon(
+                                        imageVector = Icons.Filled.ExpandMore,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(sizing.selectorIconSize),
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                            ) {
+                                grouped.keys.forEach { category ->
+                                    val count = grouped[category]?.size ?: 0
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = stringResource(Res.string.detail_trailer_category_count, category, count),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                            )
+                                        },
+                                        onClick = {
+                                            selectedCategory = category
+                                            menuExpanded = false
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 }

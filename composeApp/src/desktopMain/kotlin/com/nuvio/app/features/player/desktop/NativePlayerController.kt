@@ -36,6 +36,17 @@ import javax.swing.SwingUtilities
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.thread
 
+/**
+ * mpv audio-filter chain applied to trailer playback (hero previews, fullscreen trailers, and
+ * manual trailer clicks — anything using [NativePlayerController] outside the main player).
+ * Trailer loudness varies wildly between uploads with no consistent mastering, unlike a film's
+ * own audio track; `dynaudnorm` continuously adjusts gain toward a target loudness in real
+ * time (no pre-analysis pass needed, so it works on a streamed URL), smoothing out the
+ * silent-then-jump-scare swings. `f=150` (a 150ms analysis frame, shorter than the 500ms
+ * default) reacts fast enough to catch a sudden loud spike rather than only the next one.
+ */
+internal const val TRAILER_AUDIO_NORMALIZATION_FILTER = "dynaudnorm=f=150:g=15"
+
 internal class NativePlayerController(
     private val host: NativePlayerHost,
 ) : PlayerEngineController {
@@ -87,6 +98,10 @@ internal class NativePlayerController(
         // Records this attach on PlaybackStartTrace. Only the main player surface passes true;
         // hero trailers share this controller but must not pollute the playback-start timeline.
         tracePlaybackStart: Boolean = false,
+        // Allows init-time SVP / vapoursynth to be explicitly requested. Keep the default off:
+        // the main player applies SVP after fileLoaded, once mpv has resolved a real video
+        // stream, and hero trailers should never start the heavy interpolation runtime.
+        animeSvpEnabled: Boolean = false,
     ) {
         if (disposed) return
         // Re-attaching the same stream (surface recreation, RTX/settings toggles) must resume
@@ -112,7 +127,7 @@ internal class NativePlayerController(
             initialPositionMs = (carriedPositionMs ?: initialPositionMs).coerceAtLeast(0L),
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
             nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
-            animeSvpFilter = if (PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled) DesktopAnimeSvp.vapoursynthArgument() else null,
+            animeSvpFilter = if (animeSvpEnabled && PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled) DesktopAnimeSvp.vapoursynthArgument() else null,
             onError = onError,
             controlsPageUrl = NativePlayerBridge.controlsPageUrl + controlsPageUrlSuffix,
             tracePlaybackStart = tracePlaybackStart,
@@ -136,12 +151,23 @@ internal class NativePlayerController(
             val previousHandle = takePlayerHandle()
             keyboardPanelOpen = false
             lastSentControlsStructureKey = null
+            // Dispose the outgoing player on its own thread rather than inline before create().
+            // Native shutdown() posts a cleanup task to that player's own UI thread and blocks
+            // up to 5s waiting for it (see player_bridge.cpp's sendUiTask); a session that has
+            // been actively rendering for a while is more likely to still be mid-task when
+            // asked to tear down, so that wait was landing squarely in front of the new
+            // attach and delaying it by however much of the 5s window got eaten. Each player
+            // instance owns independent child windows/mpv instance/WebView2 environment under
+            // the shared host HWND, so the outgoing and incoming instances don't contend for
+            // the same native resources during the brief overlap this allows.
+            if (previousHandle != 0L) {
+                thread(isDaemon = true, name = "Nuvio-Player-Dispose") {
+                    runCatching { NativePlayerBridge.dispose(previousHandle) }
+                }
+            }
             thread(isDaemon = true, name = "Nuvio-Player-Attach") {
                 synchronized(nativeLifecycleLock) {
                     if (pending.tracePlaybackStart) PlaybackStartTrace.mark("nativeAttachThread")
-                    if (previousHandle != 0L) {
-                        runCatching { NativePlayerBridge.dispose(previousHandle) }
-                    }
                     if (disposed || generation != attachGeneration.get()) {
                         return@synchronized
                     }
@@ -797,6 +823,7 @@ private fun String.toPlayerControlsAction(): PlayerControlsAction? =
         "submitIntro" -> PlayerControlsAction.SubmitIntro
         "lock" -> PlayerControlsAction.LockToggle
         "videoSettings" -> PlayerControlsAction.VideoSettings
+        "heroTrailerMute" -> PlayerControlsAction.HeroTrailerMute
         else -> null
     }
 
@@ -1114,6 +1141,10 @@ private fun PlayerControlsState.toControlsJson(): String =
         appendJsonField("heroTrailerMeta", heroTrailerMeta)
         append(',')
         appendJsonField("heroTrailerDescription", heroTrailerDescription)
+        append(',')
+        appendJsonField("heroTrailerMuted", heroTrailerMuted)
+        append(',')
+        appendJsonField("heroTrailerVolume", heroTrailerVolume)
         append('}')
     }
 
@@ -1123,6 +1154,8 @@ private fun PlayerControlsState.nativeControlsStructureKey(): PlayerControlsStat
         isLoading = false,
         durationMs = 0L,
         positionMs = 0L,
+        // Volatile data (driven by the overlay volume slider); not a structural change.
+        heroTrailerVolume = 0,
     )
 
 private fun StringBuilder.appendJsonField(name: String, value: String) {

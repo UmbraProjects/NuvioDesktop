@@ -27,6 +27,7 @@ fun buildHomeCatalogDefinitions(addons: List<ManagedAddon>): List<HomeCatalogDef
         addon to manifest
     }.flatMap { (addon, manifest) ->
         manifest.catalogs
+            .filter(AddonCatalog::showInHome)
             .mapNotNull { catalog ->
                 val defaultGenre = catalog.defaultRequiredGenre()
                 val hasUnsupportedRequiredExtra = catalog.extra.any { extra ->

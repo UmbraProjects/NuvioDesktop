@@ -49,12 +49,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.build.TrailerPlaybackMode
+import com.nuvio.app.features.details.MetaHeroTrailerPlaybackMode
 import com.nuvio.app.core.ui.NuvioActionLabel
 import com.nuvio.app.features.details.MetaEpisodeCardStyle
 import com.nuvio.app.features.details.MetaScreenSectionItem
 import com.nuvio.app.features.details.MetaScreenSectionKey
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsUiState
+import com.nuvio.app.features.player.HERO_TV_TRAILER_DELAY_VALUES
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_reorder
 import nuvio.composeapp.generated.resources.action_reset
@@ -73,7 +75,12 @@ import nuvio.composeapp.generated.resources.settings_meta_comments_description
 import nuvio.composeapp.generated.resources.settings_meta_details
 import nuvio.composeapp.generated.resources.settings_meta_details_description
 import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback
+import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback_area
+import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback_area_fullscreen
+import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback_area_hero
 import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback_description
+import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_sound
+import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_sound_description
 import nuvio.composeapp.generated.resources.settings_meta_episode_cards
 import nuvio.composeapp.generated.resources.settings_meta_episode_cards_description
 import nuvio.composeapp.generated.resources.settings_meta_episode_style_horizontal
@@ -99,6 +106,8 @@ import nuvio.composeapp.generated.resources.settings_meta_tab_layout
 import nuvio.composeapp.generated.resources.settings_meta_tab_layout_description
 import nuvio.composeapp.generated.resources.settings_meta_trailers
 import nuvio.composeapp.generated.resources.settings_meta_trailers_description
+import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_delay
+import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_delay_seconds
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableCollectionItemScope
@@ -134,6 +143,85 @@ internal fun LazyListScope.metaScreenSettingsContent(
                         isTablet = isTablet,
                         onCheckedChange = { MetaScreenSettingsRepository.setHeroTrailerPlayback(it) },
                     )
+                    AnimatedVisibility(
+                        visible = uiState.heroTrailerPlayback,
+                        enter = expandVertically(),
+                        exit = shrinkVertically(),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = if (isTablet) 24.dp else 16.dp)
+                                .padding(bottom = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.settings_meta_hero_trailer_playback_area),
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                HeroTrailerPlaybackModeChip(
+                                    mode = MetaHeroTrailerPlaybackMode.Hero,
+                                    selectedMode = uiState.heroTrailerPlaybackMode,
+                                    label = stringResource(Res.string.settings_meta_hero_trailer_playback_area_hero),
+                                )
+                                HeroTrailerPlaybackModeChip(
+                                    mode = MetaHeroTrailerPlaybackMode.Fullscreen,
+                                    selectedMode = uiState.heroTrailerPlaybackMode,
+                                    label = stringResource(Res.string.settings_meta_hero_trailer_playback_area_fullscreen),
+                                )
+                            }
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_meta_hero_trailer_sound),
+                                description = stringResource(Res.string.settings_meta_hero_trailer_sound_description),
+                                checked = uiState.heroTrailerSoundEnabled,
+                                isTablet = isTablet,
+                                onCheckedChange = { MetaScreenSettingsRepository.setHeroTrailerSoundEnabled(it) },
+                            )
+                            Text(
+                                text = stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                // "Manual" disables auto-play — the hero trailer only plays when
+                                // a trailer is clicked (Hero playback mode).
+                                FilterChip(
+                                    selected = uiState.heroTrailerDelaySeconds <= 0,
+                                    onClick = { MetaScreenSettingsRepository.setHeroTrailerDelaySeconds(0) },
+                                    label = { Text(text = "Manual") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                    ),
+                                )
+                                HERO_TV_TRAILER_DELAY_VALUES.forEach { seconds ->
+                                    val selected = seconds == uiState.heroTrailerDelaySeconds
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = { MetaScreenSettingsRepository.setHeroTrailerDelaySeconds(seconds) },
+                                        label = {
+                                            Text(
+                                                text = stringResource(
+                                                    Res.string.settings_playback_hero_tv_trailer_delay_seconds,
+                                                    seconds,
+                                                ),
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
@@ -183,6 +271,23 @@ internal fun LazyListScope.metaScreenSettingsContent(
             }
         }
     }
+}
+
+@Composable
+private fun HeroTrailerPlaybackModeChip(
+    mode: MetaHeroTrailerPlaybackMode,
+    selectedMode: MetaHeroTrailerPlaybackMode,
+    label: String,
+) {
+    val selected = mode == selectedMode
+    FilterChip(
+        selected = selected,
+        onClick = { MetaScreenSettingsRepository.setHeroTrailerPlaybackMode(mode) },
+        label = { Text(text = label) },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+        ),
+    )
 }
 
 @Composable

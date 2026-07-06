@@ -133,8 +133,8 @@ private val CLIENTS = listOf(
 class InAppYouTubeExtractor {
     private val log = Logger.withTag(TRAILER_EXTRACTOR_TAG)
 
-    suspend fun extractPlaybackSource(youtubeUrl: String): TrailerPlaybackSource? = withContext(Dispatchers.Default) {
-        if (youtubeUrl.isBlank()) return@withContext null
+    suspend fun extractPlaybackSource(youtubeUrl: String): TrailerResolution = withContext(Dispatchers.Default) {
+        if (youtubeUrl.isBlank()) return@withContext TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
 
         runCatching {
             withTimeout(EXTRACTOR_TIMEOUT_MS) {
@@ -142,11 +142,12 @@ class InAppYouTubeExtractor {
             }
         }.onFailure {
             log.w { "Trailer extractor failed for $youtubeUrl: ${it.message}" }
-        }.getOrNull()
+        }.getOrNull() ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
     }
 
-    private suspend fun extractPlaybackSourceInternal(youtubeUrl: String): TrailerPlaybackSource? {
-        val videoId = extractVideoId(youtubeUrl) ?: return null
+    private suspend fun extractPlaybackSourceInternal(youtubeUrl: String): TrailerResolution {
+        val videoId = extractVideoId(youtubeUrl)
+            ?: return TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
 
         val watchUrl = "https://www.youtube.com/watch?v=$videoId&hl=en"
         val watchResponse = TrailerExtractionPlatform.performRequest(
@@ -168,6 +169,10 @@ class InAppYouTubeExtractor {
         val adaptiveVideo = mutableListOf<StreamCandidate>()
         val adaptiveAudio = mutableListOf<StreamCandidate>()
         val manifestUrls = mutableListOf<Triple<String, Int, String>>()
+        // Kept for messaging only: when every client comes back with no streamingData, this is
+        // YouTube's own explanation (region block, age gate, removed video, ...), read from
+        // whichever client responded last.
+        var lastPlayabilityStatus: JsonObject? = null
 
         for (client in CLIENTS) {
             runCatching {
@@ -178,7 +183,12 @@ class InAppYouTubeExtractor {
                     visitorData = watchConfig.visitorData,
                 )
 
-                val streamingData = playerResponse.objectValue("streamingData") ?: return@runCatching
+                val streamingData = playerResponse.objectValue("streamingData")
+                if (streamingData == null) {
+                    lastPlayabilityStatus = playerResponse.objectValue("playabilityStatus")
+                        ?: lastPlayabilityStatus
+                    return@runCatching
+                }
                 val hlsManifestUrl = streamingData.stringValue("hlsManifestUrl")
                 if (!hlsManifestUrl.isNullOrBlank()) {
                     manifestUrls += Triple(client.key, client.priority, hlsManifestUrl)
@@ -263,7 +273,9 @@ class InAppYouTubeExtractor {
         }
 
         if (manifestUrls.isEmpty() && progressive.isEmpty() && adaptiveVideo.isEmpty() && adaptiveAudio.isEmpty()) {
-            return null
+            val reason = classifyUnavailability(lastPlayabilityStatus)
+            log.i { "No streams for $videoId: playabilityStatus=$lastPlayabilityStatus reason=$reason" }
+            return TrailerResolution.Unavailable(reason)
         }
 
         var bestManifest: ManifestCandidate? = null
@@ -303,12 +315,41 @@ class InAppYouTubeExtractor {
                 "separateAudio=${bestAudio != null}"
         }
 
-        return TrailerExtractionPlatform.buildPlaybackSource(
+        val source = TrailerExtractionPlatform.buildPlaybackSource(
             bestManifest = bestManifest,
             bestProgressive = bestProgressive,
             bestVideo = bestVideo,
             bestAudio = bestAudio,
         )
+        return source?.let { TrailerResolution.Available(it) }
+            ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
+    }
+
+    /**
+     * Reads YouTube's own explanation for why a video has no streamable formats. The reason
+     * text is a fixed English phrase (all clients request `hl=en`), so substring matching is
+     * reliable — e.g. region blocks always read "not available in your country".
+     */
+    private fun classifyUnavailability(status: JsonObject?): TrailerUnavailableReason {
+        val playabilityText = listOfNotNull(
+            status?.stringValue("reason"),
+            status?.objectValue("errorScreen")
+                ?.objectValue("playerErrorMessageRenderer")
+                ?.objectValue("subreason")
+                ?.stringValue("simpleText"),
+        ).joinToString(" ").lowercase()
+
+        return when {
+            playabilityText.contains("country") || playabilityText.contains("region") ->
+                TrailerUnavailableReason.REGION_BLOCKED
+            status?.stringValue("status").equals("LOGIN_REQUIRED", ignoreCase = true) ||
+                playabilityText.contains("sign in to confirm") ->
+                TrailerUnavailableReason.AGE_RESTRICTED
+            playabilityText.contains("removed") || playabilityText.contains("private") ||
+                playabilityText.contains("no longer available") ->
+                TrailerUnavailableReason.REMOVED_OR_PRIVATE
+            else -> TrailerUnavailableReason.UNKNOWN
+        }
     }
 
     private suspend fun fetchPlayerResponse(

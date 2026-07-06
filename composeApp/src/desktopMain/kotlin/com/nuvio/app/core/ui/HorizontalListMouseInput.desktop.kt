@@ -16,7 +16,11 @@ import kotlin.math.abs
 private const val SCROLL_PIXELS_PER_NOTCH = 240f
 
 @OptIn(ExperimentalComposeUiApi::class)
-internal actual fun Modifier.horizontalListMouseInput(state: LazyListState, onFocusRequest: () -> Unit): Modifier = composed {
+internal actual fun Modifier.horizontalListMouseInput(
+    state: LazyListState,
+    onFocusRequest: () -> Unit,
+    treatPlainScrollAsHorizontal: Boolean,
+): Modifier = composed {
     val touchSlopPx = with(LocalDensity.current) { 8.dp.toPx() }
 
     this.pointerInput(state, touchSlopPx) {
@@ -60,12 +64,14 @@ internal actual fun Modifier.horizontalListMouseInput(state: LazyListState, onFo
                         val change = event.changes.firstOrNull() ?: continue
                         val scrollDelta = change.scrollDelta
                         // Only hijack the wheel for horizontal scrolling when the wheel itself
-                        // produced a horizontal delta (trackpad swipe) or the user holds Shift
-                        // (the standard "scroll horizontally" gesture). A plain vertical wheel
-                        // scroll is left alone so the page can scroll past this row.
+                        // produced a horizontal delta (trackpad swipe), the user holds Shift
+                        // (the standard "scroll horizontally" gesture), or this row lives
+                        // somewhere that never scrolls vertically anyway (treatPlainScrollAsHorizontal).
+                        // Otherwise a plain vertical wheel scroll is left alone so an enclosing
+                        // vertically-scrolling page can scroll past this row.
                         val amount = when {
                             abs(scrollDelta.x) > abs(scrollDelta.y) -> scrollDelta.x
-                            event.keyboardModifiers.isShiftPressed -> scrollDelta.y
+                            event.keyboardModifiers.isShiftPressed || treatPlainScrollAsHorizontal -> scrollDelta.y
                             else -> 0f
                         }
                         if (amount != 0f) {

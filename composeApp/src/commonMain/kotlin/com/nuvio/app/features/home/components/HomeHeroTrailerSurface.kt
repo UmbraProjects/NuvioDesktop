@@ -19,6 +19,7 @@ expect fun HomeHeroTrailerSurface(
     sourceAudioUrl: String?,
     playWhenReady: Boolean,
     muted: Boolean,
+    volume: Int,
     backgroundColor: Color,
     logoUrl: String?,
     title: String,
@@ -28,4 +29,11 @@ expect fun HomeHeroTrailerSurface(
     onReady: () -> Unit,
     onEnded: () -> Unit,
     onError: () -> Unit,
+    onVolumeChange: (Int) -> Unit = {},
+    // Called when this surface leaves composition — including when the default (non-adaptive,
+    // non-TV) home layout scrolls the hero out of the LazyColumn's viewport and Compose
+    // recycles it mid-playback. The native panel can be left holding real OS keyboard focus at
+    // that point, silently swallowing all further key presses; the caller should reclaim
+    // keyboard focus for its own focusable content here.
+    onSurfaceDisposed: () -> Unit = {},
 )

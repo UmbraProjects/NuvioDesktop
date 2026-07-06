@@ -384,6 +384,7 @@ const chromeInteractionSelector = [
   ".modal-layer",
   ".skip-prompt",
   ".next-episode-card",
+  "#heroTrailerChrome",
 ].join(",");
 
 const send = (type, value = 0) => {
@@ -1902,10 +1903,43 @@ heroTrailerContent.innerHTML =
 heroTrailerContent.style.display = "none";
 root.appendChild(heroTrailerContent);
 
+const heroTrailerChrome = document.createElement("div");
+heroTrailerChrome.id = "heroTrailerChrome";
+heroTrailerChrome.innerHTML =
+  '<button class="hero-trailer-button" type="button" data-command="back" aria-label="Stop trailer">' +
+  '<svg><use href="#icon-close"></use></svg>' +
+  '</button>' +
+  '<button class="hero-trailer-button" type="button" data-command="heroTrailerMute" aria-label="Mute trailer">' +
+  '<svg><use id="heroTrailerMuteIcon" href="#icon-volume-mute"></use></svg>' +
+  '</button>' +
+  '<input id="heroTrailerVolumeSlider" class="hero-trailer-volume" type="range" min="0" max="100" step="1" value="0" aria-label="Trailer volume">';
+heroTrailerChrome.style.display = "none";
+root.appendChild(heroTrailerChrome);
+
 const heroTrailerLogo = heroTrailerContent.querySelector("#heroTrailerLogo");
 const heroTrailerTitle = heroTrailerContent.querySelector("#heroTrailerTitle");
 const heroTrailerMeta = heroTrailerContent.querySelector("#heroTrailerMeta");
 const heroTrailerDescription = heroTrailerContent.querySelector("#heroTrailerDescription");
+const heroTrailerMuteIcon = heroTrailerChrome.querySelector("#heroTrailerMuteIcon");
+const heroTrailerVolumeSlider = heroTrailerChrome.querySelector("#heroTrailerVolumeSlider");
+const clampHeroVolume = value => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+if (heroTrailerVolumeSlider) {
+  const onVolumeInput = event => {
+    event.stopPropagation();
+    const v = clampHeroVolume(heroTrailerVolumeSlider.value);
+    state.heroTrailerVolume = v;
+    state.heroTrailerMuted = v <= 0;
+    heroTrailerMuteIcon.setAttribute("href", v <= 0 ? "#icon-volume-mute" : "#icon-volume");
+    send("heroTrailerVolume", v);
+  };
+  heroTrailerVolumeSlider.addEventListener("input", onVolumeInput);
+  heroTrailerVolumeSlider.addEventListener("change", onVolumeInput);
+  // Keep drags/clicks on the slider from bubbling to the surface (which would
+  // toggle/dismiss the trailer).
+  ["click", "pointerdown", "mousedown"].forEach(type => {
+    heroTrailerVolumeSlider.addEventListener(type, event => event.stopPropagation());
+  });
+}
 let heroTrailerLogoFailed = false;
 heroTrailerLogo.addEventListener("error", () => {
   heroTrailerLogoFailed = true;
@@ -1950,6 +1984,7 @@ const applyHeroTrailer = () => {
   if (!active) {
     heroTrailerFade.style.display = "none";
     heroTrailerContent.style.display = "none";
+    heroTrailerChrome.style.display = "none";
     return;
   }
   // Make sure the cursor is restored if it had been hidden before entering hero mode.
@@ -1970,6 +2005,14 @@ const applyHeroTrailer = () => {
   heroTrailerFade.style.display = "block";
   applyHeroTrailerContent();
   heroTrailerContent.style.display = "flex";
+  heroTrailerChrome.style.display = "flex";
+  const heroVol = clampHeroVolume(state.heroTrailerVolume);
+  heroTrailerMuteIcon.setAttribute("href", heroVol <= 0 ? "#icon-volume-mute" : "#icon-volume");
+  // Don't fight the user mid-drag.
+  if (heroTrailerVolumeSlider && document.activeElement !== heroTrailerVolumeSlider) {
+    const next = String(heroVol);
+    if (heroTrailerVolumeSlider.value !== next) heroTrailerVolumeSlider.value = next;
+  }
 };
 
 const render = () => {

@@ -50,6 +50,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 private const val WATCH_PROGRESS_METADATA_RESOLUTION_CONCURRENCY = 4
 private const val WATCH_PROGRESS_METADATA_RESOLUTION_LIMIT = 64
+private const val WATCH_PROGRESS_STARTUP_METADATA_GRACE_MS = 1_200L
 private const val WATCH_PROGRESS_DELTA_PAGE_SIZE = 900
 private const val WATCH_PROGRESS_DELTA_OPERATION_UPSERT = "upsert"
 private const val WATCH_PROGRESS_DELTA_OPERATION_DELETE = "delete"
@@ -92,6 +93,7 @@ object WatchProgressRepository {
     private var currentProfileId: Int = 1
     private var entriesByVideoId: MutableMap<String, WatchProgressEntry> = mutableMapOf()
     private var metadataResolutionJob: Job? = null
+    private var metadataResolutionStartupGraceUsed = false
     private var isPullingNuvioSyncFromServer = false
     private var lastSuccessfulPushEpochMs = 0L
     private var deltaCursorEventId = 0L
@@ -163,7 +165,7 @@ object WatchProgressRepository {
                     // so resolveRemoteMetadata() runs again once addons are ready.
                     if (state.hasLoaded && state.entries.any { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }) {
                         lastAddonMetadataReadyFingerprint = null
-                        resolveRemoteMetadata()
+                        resolveRemoteMetadata(useStartupGrace = true)
                         retryMetadataResolutionWhenAddonMetaProvidersReady(AddonRepository.uiState.value)
                     }
                 }
@@ -263,7 +265,7 @@ object WatchProgressRepository {
                 "deltaInitialized=$deltaInitialized cursor=$deltaCursorEventId lastPush=$lastSuccessfulPushEpochMs"
         }
         publish()
-        resolveRemoteMetadata()
+        resolveRemoteMetadata(useStartupGrace = true)
     }
 
     suspend fun pullFromServer(profileId: Int) {
@@ -624,10 +626,10 @@ object WatchProgressRepository {
         lastAddonMetadataReadyFingerprint = fingerprint
 
         if (metadataResolutionJob?.isActive == true) return
-        resolveRemoteMetadata()
+        resolveRemoteMetadata(useStartupGrace = true)
     }
 
-    private fun resolveRemoteMetadata() {
+    private fun resolveRemoteMetadata(useStartupGrace: Boolean = false) {
         val localMissing = entriesByVideoId.values
             .filter { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }
         val simklMissing = if (shouldUseSimklProgress()) {
@@ -644,7 +646,14 @@ object WatchProgressRepository {
         if (needsResolution.isEmpty()) return
 
         metadataResolutionJob?.cancel()
+        val shouldDelayForStartup = useStartupGrace && !metadataResolutionStartupGraceUsed
+        if (shouldDelayForStartup) {
+            metadataResolutionStartupGraceUsed = true
+        }
         metadataResolutionJob = syncScope.launch {
+            if (shouldDelayForStartup) {
+                kotlinx.coroutines.delay(WATCH_PROGRESS_STARTUP_METADATA_GRACE_MS)
+            }
             val providerReadiness = awaitReadyMetadataProviders() ?: return@launch
             lastAddonMetadataReadyFingerprint = providerReadiness.fingerprint
 

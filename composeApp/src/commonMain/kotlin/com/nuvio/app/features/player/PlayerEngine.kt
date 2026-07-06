@@ -51,6 +51,7 @@ enum class PlayerControlsAction {
     SubmitIntro,
     LockToggle,
     VideoSettings,
+    HeroTrailerMute,
     DoubleTapSeekBack,
     DoubleTapSeekForward,
 }
@@ -217,6 +218,9 @@ data class PlayerControlsState(
     val heroTrailerTitle: String = "",
     val heroTrailerMeta: String = "",
     val heroTrailerDescription: String = "",
+    val heroTrailerMuted: Boolean = true,
+    /** Desktop only: hero-trailer volume (0..100) reflected by the overlay volume slider. */
+    val heroTrailerVolume: Int = 0,
 )
 
 data class PlayerControlFilterItem(

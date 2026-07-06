@@ -38,6 +38,8 @@ data class HomeCatalogSettingsItem(
     val isCollection: Boolean = false,
     val collectionId: String? = null,
     val isPinnedToTop: Boolean = false,
+    // Collections only: whether the collection or at least one folder has curated hero art.
+    val hasHeroBackdrop: Boolean = false,
 ) {
     val displayTitle: String
         get() = customTitle.ifBlank { defaultTitle }
@@ -400,6 +402,8 @@ object HomeCatalogSettingsRepository {
         updatePreference(key) { preference ->
             if (!enabled) {
                 preference.copy(heroSourceEnabled = false)
+            } else if (!isHeroSourceEligible(key)) {
+                preference.copy(heroSourceEnabled = false)
             } else if (selectedHeroSourceCount(excludingKey = key) >= HERO_SOURCE_SELECTION_LIMIT) {
                 preference
             } else {
@@ -514,9 +518,11 @@ object HomeCatalogSettingsRepository {
 
     private fun normalizePreferences() {
         val current = preferences
-        data class UnifiedEntry(val key: String, val isCollection: Boolean)
-        val catalogEntries = definitions.map { UnifiedEntry(it.key, false) }
-        val collectionEntries = collectionDefinitions.map { UnifiedEntry(it.key, true) }
+        data class UnifiedEntry(val key: String, val isCollection: Boolean, val hasHeroBackdrop: Boolean)
+        val catalogEntries = definitions.map { UnifiedEntry(it.key, false, hasHeroBackdrop = true) }
+        val collectionEntries = collectionDefinitions.map {
+            UnifiedEntry(it.key, isCollection = true, hasHeroBackdrop = it.hasHeroBackdrop)
+        }
         val allEntries = catalogEntries + collectionEntries
         val knownKeys = allEntries.mapTo(linkedSetOf(), UnifiedEntry::key)
         var nextOrder = (current.values.maxOfOrNull(StoredHomeCatalogPreference::order) ?: -1) + 1
@@ -540,11 +546,17 @@ object HomeCatalogSettingsRepository {
         var enabledHeroSourceCount = 0
         orderedEntries.forEach { entry ->
             val stored = current[entry.key]
-            val heroSourceEnabled = if (entry.isCollection) {
-                false
-            } else {
-                (stored?.heroSourceEnabled ?: true) &&
-                    enabledHeroSourceCount < HERO_SOURCE_SELECTION_LIMIT
+            val heroSourceEnabled = when {
+                !entry.hasHeroBackdrop -> false
+                // Opt-in: unlike catalogs, a collection never defaults to being a hero
+                // source on its own — an existing collection shouldn't suddenly start
+                // appearing in the hero rotation without the user asking for it.
+                entry.isCollection ->
+                    (stored?.heroSourceEnabled ?: false) &&
+                        enabledHeroSourceCount < HERO_SOURCE_SELECTION_LIMIT
+                else ->
+                    (stored?.heroSourceEnabled ?: true) &&
+                        enabledHeroSourceCount < HERO_SOURCE_SELECTION_LIMIT
             }
             if (heroSourceEnabled) {
                 enabledHeroSourceCount += 1
@@ -585,11 +597,12 @@ object HomeCatalogSettingsRepository {
                 addonName = colDef.subtitle,
                 customTitle = preference?.customTitle.orEmpty(),
                 enabled = preference?.enabled ?: true,
-                heroSourceEnabled = false,
+                heroSourceEnabled = preference?.heroSourceEnabled ?: false,
                 order = preference?.order ?: 0,
                 isCollection = true,
                 collectionId = colDef.collectionId,
                 isPinnedToTop = colDef.isPinnedToTop,
+                hasHeroBackdrop = colDef.hasHeroBackdrop,
             )
         }
 
@@ -686,11 +699,14 @@ object HomeCatalogSettingsRepository {
     }
 
     private fun selectedHeroSourceCount(excludingKey: String? = null): Int {
-        val catalogKeys = definitions.mapTo(mutableSetOf()) { it.key }
         return preferences.count { (itemKey, preference) ->
-            itemKey != excludingKey && itemKey in catalogKeys && preference.heroSourceEnabled
+            itemKey != excludingKey && isHeroSourceEligible(itemKey) && preference.heroSourceEnabled
         }
     }
+
+    private fun isHeroSourceEligible(key: String): Boolean =
+        definitions.any { it.key == key } ||
+            collectionDefinitions.any { it.key == key && it.hasHeroBackdrop }
 
     private fun move(
         key: String,
@@ -819,6 +835,7 @@ internal data class CollectionCatalogDefinition(
     val title: String,
     val subtitle: String,
     val isPinnedToTop: Boolean,
+    val hasHeroBackdrop: Boolean = false,
 )
 
 internal fun buildCollectionDefinitions(collections: List<Collection>): List<CollectionCatalogDefinition> =
@@ -829,5 +846,7 @@ internal fun buildCollectionDefinitions(collections: List<Collection>): List<Col
             title = collection.title,
             subtitle = runBlocking { getString(Res.string.collections_folder_count, collection.folders.size) },
             isPinnedToTop = collection.pinToTop,
+            hasHeroBackdrop = collection.backdropImageUrl?.trim()?.isNotEmpty() == true ||
+                collection.folders.any { folder -> folder.heroBackdropUrl?.trim()?.isNotEmpty() == true },
         )
     }

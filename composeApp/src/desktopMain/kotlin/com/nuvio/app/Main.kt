@@ -11,12 +11,14 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.ui.unit.dp
@@ -32,11 +34,15 @@ import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.applyNativeBorderlessFullscreen
 import com.nuvio.app.features.player.desktop.applyNativeDesktopWindowChrome
 import com.nuvio.app.features.player.desktop.desktopAppFullscreenState
+import com.nuvio.app.features.player.desktop.ensureNativePlayerBridgeLoaded
 import com.nuvio.app.features.player.desktop.installDesktopAppFullscreenShortcuts
 import com.nuvio.app.features.player.desktop.preloadNativePlayerBridgeAsync
 import com.nuvio.app.features.player.desktop.registerDesktopAppFullscreenToggle
 import com.nuvio.app.features.player.desktop.toggleDesktopAppFullscreen
+import com.nuvio.app.features.player.desktop.warmNativePlayerBridgeLoadAsync
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.awt.AWTEvent
 import java.awt.Color as AwtColor
 import java.awt.KeyEventDispatcher
@@ -55,22 +61,53 @@ private val NuvioDesktopNativeBackground = AwtColor(0x0D, 0x0D, 0x0D)
 private const val NuvioDesktopIconPath = "icons/nuvio-app-icon.png"
 private const val MacosDarkAquaAppearance = "NSAppearanceNameDarkAqua"
 
+private inline fun desktopStartupStep(name: String, block: () -> Unit) {
+    val startedAt = System.currentTimeMillis()
+    runCatching(block)
+        .onSuccess {
+            System.out.println("Info: (DesktopStartup) $name completed in ${System.currentTimeMillis() - startedAt}ms")
+        }
+        .onFailure { error ->
+            System.err.println("Error: (DesktopStartup) $name failed after ${System.currentTimeMillis() - startedAt}ms")
+            error.printStackTrace(System.err)
+        }
+}
+
 fun main() {
-    configureDesktopRenderer()
     configureDesktopFileLogging()
-    configureDesktopChrome()
-    preloadNativePlayerBridgeAsync()
-    com.nuvio.app.features.player.warmSubtitleFontCache()
+    val desktopStartupStartedAt = System.currentTimeMillis()
+    System.out.println("Info: (DesktopStartup) main entered")
+    desktopStartupStep("configure renderer") { configureDesktopRenderer() }
+    desktopStartupStep("configure chrome") { configureDesktopChrome() }
+    desktopStartupStep("subtitle font warm request") { com.nuvio.app.features.player.warmSubtitleFontCache() }
+    // Overlaps the native bridge DLL extraction/link with Compose/Skia startup so the
+    // startup fullscreen swap below never waits for it on the AWT event thread.
+    desktopStartupStep("native bridge load warm request") { warmNativePlayerBridgeLoadAsync() }
+    System.out.println("Info: (DesktopStartup) entering Compose application")
 
     application {
+        remember {
+            System.out.println(
+                "Info: (DesktopStartup) Compose application composition entered after " +
+                    "${System.currentTimeMillis() - desktopStartupStartedAt}ms"
+            )
+            Unit
+        }
         val smokePlayerUrl = (
             System.getProperty("nuvio.desktop.smokePlayerUrl")
                 ?: System.getenv("NUVIO_DESKTOP_SMOKE_PLAYER_URL")
             )
             ?.takeIf { it.isNotBlank() }
-        val windowState = rememberWindowState(width = 1280.dp, height = 820.dp)
+        // Explicit centered position (instead of the platform default) so the restore rect the
+        // native borderless-fullscreen code captures from the still-hidden window is sane.
+        val windowState = rememberWindowState(
+            width = 1280.dp,
+            height = 820.dp,
+            position = WindowPosition.Aligned(Alignment.Center),
+        )
         val restoreWindowPlacement = remember { mutableStateOf(WindowPlacement.Floating) }
         val isBorderlessFullscreen = remember { mutableStateOf(false) }
+        val isWindowsHost = remember { DesktopHostOs.current == DesktopHostOs.WINDOWS }
 
         Window(
             onCloseRequest = ::exitApplication,
@@ -78,14 +115,40 @@ fun main() {
             state = windowState,
             icon = painterResource(NuvioDesktopIconPath),
         ) {
+            remember {
+                System.out.println(
+                    "Info: (DesktopStartup) Window content composed after " +
+                        "${System.currentTimeMillis() - desktopStartupStartedAt}ms"
+                )
+                Unit
+            }
+            val windowSideEffectLogged = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
             SideEffect {
+                if (windowSideEffectLogged.compareAndSet(false, true)) {
+                    System.out.println(
+                        "Info: (DesktopStartup) Window side effect after " +
+                            "${System.currentTimeMillis() - desktopStartupStartedAt}ms"
+                    )
+                }
                 window.background = NuvioDesktopNativeBackground
                 window.rootPane.background = NuvioDesktopNativeBackground
                 window.contentPane.background = NuvioDesktopNativeBackground
                 (window.contentPane as? JComponent)?.isOpaque = true
             }
             LaunchedEffect(window) {
-                applyNativeDesktopWindowChrome(window)
+                delay(3_000)
+                desktopStartupStep("apply native desktop chrome") {
+                    applyNativeDesktopWindowChrome(window)
+                }
+                Thread {
+                    desktopStartupStep("native player bridge preload request") {
+                        preloadNativePlayerBridgeAsync()
+                    }
+                }.apply {
+                    name = "nuvio-native-startup-warmup"
+                    isDaemon = true
+                    start()
+                }
             }
             DisposableEffect(window, windowState) {
                 val unregisterFullscreenToggle = registerDesktopAppFullscreenToggle { targetWindow ->
@@ -141,8 +204,29 @@ fun main() {
             }
 
             LaunchedEffect(window) {
-                delay(400)
-                toggleDesktopAppFullscreen(window)
+                if (!isWindowsHost) {
+                    delay(400)
+                    toggleDesktopAppFullscreen(window)
+                    return@LaunchedEffect
+                }
+                // Load the bridge off the AWT event thread (warmed from main(), so this is
+                // usually already done), then wait for Compose to actually show the window.
+                // Native styling must only ever touch a showing window: applying it pre-show
+                // desyncs AWT's own show/bounds bookkeeping and breaks activation/focus.
+                withContext(Dispatchers.IO) { runCatching { ensureNativePlayerBridgeLoaded() } }
+                var shownWaitMs = 0
+                while (!window.isShowing && shownWaitMs < 10_000) {
+                    delay(16)
+                    shownWaitMs += 16
+                }
+                if (window.isShowing) {
+                    desktopStartupStep("apply startup borderless fullscreen") {
+                        applyNativeDesktopWindowChrome(window)
+                        applyNativeBorderlessFullscreen(window, true)
+                        isBorderlessFullscreen.value = true
+                        desktopAppFullscreenState.value = true
+                    }
+                }
             }
 
             if (smokePlayerUrl == null) {

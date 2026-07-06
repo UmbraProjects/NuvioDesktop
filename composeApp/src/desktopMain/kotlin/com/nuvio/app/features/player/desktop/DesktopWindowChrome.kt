@@ -21,7 +21,9 @@ internal fun applyNativeDesktopWindowChrome(window: Window) {
 }
 
 internal fun applyNativeBorderlessFullscreen(window: Window, enabled: Boolean) {
-    if (DesktopHostOs.current != DesktopHostOs.WINDOWS || !window.isDisplayable) return
+    // isShowing (not just isDisplayable): restyling a created-but-not-yet-shown window
+    // desyncs AWT's show/bounds bookkeeping and breaks activation and keyboard focus.
+    if (DesktopHostOs.current != DesktopHostOs.WINDOWS || !window.isShowing) return
 
     runCatching {
         val hwnd = AwtNativeViewResolver.resolveNativeViewPointer(window)

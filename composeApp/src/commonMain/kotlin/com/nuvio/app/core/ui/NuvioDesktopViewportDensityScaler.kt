@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import com.nuvio.app.desktopDisplaySizePx
 import com.nuvio.app.isDesktop
 
 /**
@@ -22,6 +23,8 @@ import com.nuvio.app.isDesktop
  * density locally instead of the ambient (possibly inflated) [LocalDensity].
  */
 val LocalNuvioBaseDensity = compositionLocalOf { Density(1f) }
+
+val LocalNuvioDesktopCompactWindow = compositionLocalOf { false }
 
 @Composable
 fun NuvioDesktopViewportDensityScaler(
@@ -37,11 +40,23 @@ fun NuvioDesktopViewportDensityScaler(
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val baseDensity = LocalDensity.current
-        val viewportScale = remember(maxWidth, maxHeight) {
-            minOf(
-                maxWidth.value / NUVIO_DESKTOP_REFERENCE_WIDTH_DP,
-                maxHeight.value / NUVIO_DESKTOP_REFERENCE_HEIGHT_DP,
-            ).coerceIn(1f, NUVIO_DESKTOP_MAX_VIEWPORT_SCALE)
+        val displaySizePx = remember { desktopDisplaySizePx() }
+        val useCompactWindowLayout = remember(maxWidth, maxHeight, baseDensity, displaySizePx) {
+            val displaySize = displaySizePx ?: return@remember false
+            val displayWidthDp = displaySize.width / baseDensity.density
+            val displayHeightDp = displaySize.height / baseDensity.density
+            maxWidth.value < displayWidthDp * NUVIO_DESKTOP_COMPACT_WINDOW_FRACTION ||
+                maxHeight.value < displayHeightDp * NUVIO_DESKTOP_COMPACT_WINDOW_FRACTION
+        }
+        val viewportScale = remember(maxWidth, maxHeight, useCompactWindowLayout) {
+            if (useCompactWindowLayout) {
+                1f
+            } else {
+                minOf(
+                    maxWidth.value / NUVIO_DESKTOP_REFERENCE_WIDTH_DP,
+                    maxHeight.value / NUVIO_DESKTOP_REFERENCE_HEIGHT_DP,
+                ).coerceIn(NUVIO_DESKTOP_MIN_VIEWPORT_SCALE, NUVIO_DESKTOP_MAX_VIEWPORT_SCALE)
+            }
         }
         val scaledDensity = remember(baseDensity, viewportScale) {
             Density(
@@ -53,6 +68,7 @@ fun NuvioDesktopViewportDensityScaler(
         CompositionLocalProvider(
             LocalDensity provides scaledDensity,
             LocalNuvioBaseDensity provides baseDensity,
+            LocalNuvioDesktopCompactWindow provides useCompactWindowLayout,
         ) {
             content()
         }
@@ -61,4 +77,6 @@ fun NuvioDesktopViewportDensityScaler(
 
 private const val NUVIO_DESKTOP_REFERENCE_WIDTH_DP = 1920f
 private const val NUVIO_DESKTOP_REFERENCE_HEIGHT_DP = 1080f
+private const val NUVIO_DESKTOP_MIN_VIEWPORT_SCALE = 0.5f
 private const val NUVIO_DESKTOP_MAX_VIEWPORT_SCALE = 2f
+private const val NUVIO_DESKTOP_COMPACT_WINDOW_FRACTION = 0.5f

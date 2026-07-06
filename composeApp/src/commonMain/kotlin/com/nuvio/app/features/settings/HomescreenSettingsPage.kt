@@ -98,7 +98,8 @@ internal fun LazyListScope.homescreenSettingsContent(
     tvModeEnabled: Boolean = false,
     items: List<HomeCatalogSettingsItem>,
 ) {
-    val selectedHeroSourceCount = items.count { it.heroSourceEnabled }
+    val heroEligibleItems = items.filter { !it.isCollection || it.hasHeroBackdrop }
+    val selectedHeroSourceCount = heroEligibleItems.count { it.heroSourceEnabled }
     val enabledCatalogCount = items.count { it.enabled }
     item {
         HomescreenSummaryCard(
@@ -239,8 +240,9 @@ internal fun LazyListScope.homescreenSettingsContent(
         }
     }
     item {
-        val catalogOnlyItems = items.filter { !it.isCollection }
-        if (heroEnabled && catalogOnlyItems.isNotEmpty()) {
+        // Catalogs are always eligible; collections qualify only when they or their
+        // folders have curated hero art.
+        if (heroEnabled && heroEligibleItems.isNotEmpty()) {
             var heroSourcesExpanded by remember { mutableStateOf(false) }
             SettingsSection(
                 title = stringResource(Res.string.settings_homescreen_section_hero_sources),
@@ -248,7 +250,7 @@ internal fun LazyListScope.homescreenSettingsContent(
             ) {
                 HeroSourcesDropdown(
                     isTablet = isTablet,
-                    items = catalogOnlyItems,
+                    items = heroEligibleItems,
                     selectedHeroSourceCount = selectedHeroSourceCount,
                     expanded = heroSourcesExpanded,
                     onExpandedChange = { heroSourcesExpanded = it },

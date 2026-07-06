@@ -88,6 +88,7 @@ import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.NuvioDesktopImageScaling
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
+import com.nuvio.app.features.details.HeroTrailerAudioState
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaCompany
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -221,6 +222,10 @@ fun HomeHeroSection(
     onActiveItemChanged: ((MetaPreview) -> Unit)? = null,
     onCastClick: ((HeroCastMember) -> Unit)? = null,
     onItemClick: ((MetaPreview) -> Unit)? = null,
+    // See HomeHeroTrailerSurface's onSurfaceDisposed doc: reclaim keyboard focus for the caller
+    // when the native trailer surface disposes, so scrolling away from the hero mid-playback
+    // (in the default, non-adaptive layout) can't leave the app's keyboard input stuck.
+    onHeroTrailerSurfaceDisposed: () -> Unit = {},
 ) {
     if (items.isEmpty()) return
 
@@ -433,6 +438,7 @@ fun HomeHeroSection(
                     productionCache = productionCache,
                     onCastClick = onCastClick,
                     onItemClick = onItemClick,
+                    onHeroTrailerSurfaceDisposed = onHeroTrailerSurfaceDisposed,
                 )
             } else {
                 DefaultHomeHeroFrame(
@@ -649,6 +655,7 @@ private fun DesktopHomeHeroFrame(
     productionCache: Map<String, List<HeroProductionCredit>>,
     onCastClick: ((HeroCastMember) -> Unit)?,
     onItemClick: ((MetaPreview) -> Unit)?,
+    onHeroTrailerSurfaceDisposed: () -> Unit = {},
 ) {
     val backgroundColor = if (immersiveMode) Color.Black else MaterialTheme.colorScheme.background
 
@@ -765,6 +772,7 @@ private fun DesktopHomeHeroFrame(
         }
     }
     val heroTrailerMuted = !playerSettings.heroTvTrailerSoundEnabled
+    val heroTrailerVolume by HeroTrailerAudioState.volume.collectAsState()
     val heroTrailerMounted = tvHeroActive &&
         heroTrailerSource != null &&
         !heroTrailerFinished
@@ -862,6 +870,7 @@ private fun DesktopHomeHeroFrame(
                     sourceAudioUrl = source.audioUrl,
                     playWhenReady = heroTrailerPlaybackRequested,
                     muted = heroTrailerMuted,
+                    volume = heroTrailerVolume,
                     backgroundColor = backgroundColor,
                     logoUrl = currentItem.logo,
                     title = currentItem.name,
@@ -892,6 +901,8 @@ private fun DesktopHomeHeroFrame(
                         heroTrailerPlaybackRequested = false
                         heroTrailerFinished = true
                     },
+                    onVolumeChange = { newVolume -> HeroTrailerAudioState.setVolume(newVolume) },
+                    onSurfaceDisposed = onHeroTrailerSurfaceDisposed,
                 )
             }
         }
@@ -1260,24 +1271,22 @@ private fun HeroContentBlock(
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = if (layout.isTablet) {
-                Arrangement.spacedBy(8.dp, Alignment.Start)
-            } else {
-                Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
-            },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            HeroMetaText(text = item.type.replaceFirstChar(Char::uppercase))
-            item.genres.firstOrNull()?.let { genre ->
-                HeroMetaDot()
-                HeroMetaText(text = genre)
-            }
-            item.releaseInfo?.takeIf { it.isNotBlank() }?.let { info ->
-                HeroMetaDot()
-                HeroMetaText(text = formatReleaseDateForDisplay(info))
+        val metaParts = compactHeroMetaParts(item)
+        if (metaParts.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = if (layout.isTablet) {
+                    Arrangement.spacedBy(8.dp, Alignment.Start)
+                } else {
+                    Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                metaParts.forEachIndexed { index, text ->
+                    if (index > 0) HeroMetaDot()
+                    HeroMetaText(text = text)
+                }
             }
         }
     }
@@ -1903,6 +1912,21 @@ private fun desktopHeroLogoSlotHeight(layout: HomeHeroLayout): Dp =
         else -> 104.dp
     }
 
+private fun compactHeroMetaParts(item: MetaPreview): List<String> =
+    buildList {
+        if (item.type != "collection") {
+            add(item.type.replaceFirstChar(Char::uppercase))
+        }
+        item.genres.firstOrNull()
+            ?.takeIf(String::isNotBlank)
+            ?.let(::add)
+        item.releaseInfo
+            ?.takeIf(String::isNotBlank)
+            ?.let(::formatReleaseDateForDisplay)
+            ?.takeIf(String::isNotBlank)
+            ?.let(::add)
+    }
+
 private fun desktopHeroGenreText(
     item: MetaPreview,
     showExtendedMetadata: Boolean,
@@ -1925,6 +1949,7 @@ private fun desktopHeroGenreText(
                 ?.let(::add)
         }
     }
+    if (values.isEmpty() && item.type == "collection") return ""
     return values.joinToString(" • ").ifBlank { item.type.replaceFirstChar(Char::uppercase) }
 }
 

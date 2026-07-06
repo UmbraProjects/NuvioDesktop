@@ -3,10 +3,12 @@ package com.nuvio.app.features.details.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +29,7 @@ fun DetailAdditionalInfoSection(
     meta: MetaDetails,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
+    compact: Boolean = false,
 ) {
     val isSeriesLike = meta.type == "series" || meta.videos.any { it.season != null || it.episode != null }
     val title = if (isSeriesLike) {
@@ -56,11 +59,19 @@ fun DetailAdditionalInfoSection(
         showHeader = showHeader,
     ) {
         rows.forEachIndexed { index, (label, value) ->
-            DetailInfoRow(
-                label = label,
-                value = value,
-                showDivider = index < rows.lastIndex,
-            )
+            if (compact) {
+                CompactDetailInfoRow(
+                    label = label,
+                    value = value,
+                    showDivider = index < rows.lastIndex,
+                )
+            } else {
+                DetailInfoRow(
+                    label = label,
+                    value = value,
+                    showDivider = index < rows.lastIndex,
+                )
+            }
         }
     }
 }
@@ -71,7 +82,7 @@ private fun DetailInfoRow(
     value: String,
     showDivider: Boolean,
 ) {
-    androidx.compose.foundation.layout.Column(
+    Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
@@ -98,6 +109,55 @@ private fun DetailInfoRow(
                 fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.End,
                 maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        if (showDivider) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactDetailInfoRow(
+    label: String,
+    value: String,
+    showDivider: Boolean,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 9.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.widthIn(min = 112.dp, max = 150.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = value,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 14.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
         }

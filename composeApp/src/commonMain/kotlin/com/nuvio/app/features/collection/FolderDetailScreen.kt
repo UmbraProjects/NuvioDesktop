@@ -1,7 +1,5 @@
 package com.nuvio.app.features.collection
 
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -50,15 +48,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -81,8 +75,10 @@ import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioPosterCard
+import com.nuvio.app.core.ui.HeroAmbientBackdrop
 import com.nuvio.app.core.ui.NuvioPosterShape
 import com.nuvio.app.core.ui.NuvioScreenHeader
+import com.nuvio.app.core.ui.MouseActivityState
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.home.HomeCatalogSection
@@ -91,7 +87,6 @@ import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.canOpenCatalog
-import com.nuvio.app.features.home.extractHeroAccentColor
 import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
@@ -133,7 +128,6 @@ fun FolderDetailScreen(
         WatchedRepository.uiState
     }.collectAsState()
     val folder = uiState.folder
-    val coverImageUrl = folder?.coverImageUrl?.takeIf { it.isNotBlank() }
     val collectionSections = remember(uiState.tabs) {
         FolderDetailRepository.getCatalogSectionsForRows()
     }
@@ -146,6 +140,19 @@ fun FolderDetailScreen(
         homeSettings.adaptiveHeroEnabled &&
         !homeSettings.tvModeEnabled &&
         collectionSections.isNotEmpty()
+    // While Adaptive Hero or TV mode is the user's actual setting, an empty collectionSections
+    // is only ever a momentary loading gap before the real per-item hero (above) takes over —
+    // not a genuine "Default mode" view. Falling through to the plain cover-image banner below
+    // for that gap flashes the folder's title logo (stretched full-bleed via ContentScale.Crop,
+    // since it's a wordmark image, not a backdrop) full-screen for a frame. Suppress the banner
+    // in that case; real Default mode (hero/adaptive/TV all off) is unaffected.
+    val suppressFallbackCoverBanner = homeSettings.heroEnabled &&
+        (homeSettings.adaptiveHeroEnabled || homeSettings.tvModeEnabled)
+    val coverImageUrl = if (suppressFallbackCoverBanner) {
+        null
+    } else {
+        folder?.coverImageUrl?.takeIf { it.isNotBlank() }
+    }
 
     if (showImmersiveCollection) {
         ImmersiveCollectionContent(
@@ -220,7 +227,7 @@ fun FolderDetailScreen(
         if (coverImageUrl != null && heroHeight > 0.dp) {
             FolderCoverImage(
                 imageUrl = coverImageUrl,
-                title = folder.title,
+                title = folder?.title.orEmpty(),
                 modifier = Modifier.height(heroHeight),
             )
         }
@@ -430,10 +437,11 @@ private fun ImmersiveCollectionContent(
             },
     ) {
         if (ambientBackgroundEnabled) {
-            CollectionHeroAmbientBackground(
+            HeroAmbientBackdrop(
                 backdrop = activeHeroBackdrop,
                 accent = activeHeroAccent,
                 onAccentChanged = { activeHeroAccent = it },
+                label = "collection_hero_ambient_background",
             )
         }
 
@@ -540,6 +548,15 @@ private fun AdaptiveCollectionContent(
     val lazyListState = rememberLazyListState()
     var activeRowIndex by remember { mutableIntStateOf(0) }
     var activeItemIndex by remember { mutableIntStateOf(0) }
+    // The mouse cursor stays at whatever screen position it was at on Home when the user
+    // clicked into this collection. Since this screen always mounts scrolled to the top,
+    // Compose Desktop's hit-testing fires a synthetic hover "Enter" for whichever row now
+    // sits under that stationary cursor - which, the further down Home was scrolled, the
+    // deeper into this list it lands - snapping the hero/active row there and making the
+    // screen look like it didn't open at the start. Arm ignoreNextMouseMove synchronously
+    // (mirrors HomeScreen's native-surface-disposal guard) so that first synthetic event is
+    // swallowed; a genuine mouse move afterwards re-activates hover normally.
+    val mouseActivity = remember { MouseActivityState().apply { onKeyboardNavigation(ignoreNextMouseMove = true) } }
     var backButtonHovered by remember { mutableStateOf(false) }
     var activeHeroBackdrop by remember { mutableStateOf<String?>(null) }
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
@@ -639,6 +656,14 @@ private fun AdaptiveCollectionContent(
             .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
                 try { focusRequester.requestFocus() } catch (_: Exception) {}
             }
+            .onPointerEvent(PointerEventType.Move, PointerEventPass.Initial) { event ->
+                mouseActivity.onMouseMoved(event.changes.first().position)
+            }
+            // Enter fires before Move when the cursor first crosses into a child;
+            // use Initial pass so isMouseActive is set before child Enter handlers run.
+            .onPointerEvent(PointerEventType.Enter, PointerEventPass.Initial) { event ->
+                mouseActivity.onMouseMoved(event.changes.first().position)
+            }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
@@ -655,10 +680,11 @@ private fun AdaptiveCollectionContent(
             },
     ) {
         if (ambientBackgroundEnabled) {
-            CollectionHeroAmbientBackground(
+            HeroAmbientBackdrop(
                 backdrop = activeHeroBackdrop,
                 accent = activeHeroAccent,
                 onAccentChanged = { activeHeroAccent = it },
+                label = "collection_hero_ambient_background",
             )
         }
 
@@ -710,8 +736,10 @@ private fun AdaptiveCollectionContent(
                             watchedKeys = watchedKeys,
                             focusedItemIndex = if (rowIndex == activeRowIndex) activeItemIndex else null,
                             onHoverItem = { itemIndex ->
-                                activeRowIndex = rowIndex
-                                activeItemIndex = itemIndex
+                                if (mouseActivity.isMouseActive) {
+                                    activeRowIndex = rowIndex
+                                    activeItemIndex = itemIndex
+                                }
                             },
                             onViewAllClick = if (
                                 !section.paginates &&
@@ -732,72 +760,6 @@ private fun AdaptiveCollectionContent(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun CollectionHeroAmbientBackground(
-    backdrop: String?,
-    accent: Color?,
-    onAccentChanged: (Color?) -> Unit,
-) {
-    val ambientBackdropColorFilter = remember {
-        ColorFilter.colorMatrix(
-            ColorMatrix().apply { setToSaturation(1.7f) },
-        )
-    }
-    val ambientAccent by animateColorAsState(
-        targetValue = accent ?: MaterialTheme.colorScheme.background,
-        animationSpec = tween(durationMillis = 650),
-        label = "collection_hero_ambient_accent",
-    )
-    Crossfade(
-        targetState = backdrop,
-        animationSpec = tween(durationMillis = 650),
-        label = "collection_hero_ambient_background",
-        modifier = Modifier.fillMaxSize(),
-    ) { activeBackdrop ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            if (!activeBackdrop.isNullOrBlank()) {
-                AsyncImage(
-                    model = activeBackdrop,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            alpha = 0.58f
-                            scaleX = 1.18f
-                            scaleY = 1.18f
-                        }
-                        .blur(72.dp),
-                    contentScale = ContentScale.Crop,
-                    colorFilter = ambientBackdropColorFilter,
-                    onSuccess = { state ->
-                        if (backdrop == activeBackdrop) {
-                            onAccentChanged(extractHeroAccentColor(state.result.image))
-                        }
-                    },
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0f to ambientAccent.copy(alpha = 0.46f),
-                                0.42f to ambientAccent.copy(alpha = 0.32f),
-                                1f to MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
-                            ),
-                        ),
-                    ),
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.38f)),
-            )
         }
     }
 }

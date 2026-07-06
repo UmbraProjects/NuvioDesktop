@@ -1,8 +1,5 @@
 package com.nuvio.app.features.home
 
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import coil3.compose.LocalPlatformContext
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
@@ -15,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.blur
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -48,8 +44,6 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -62,6 +56,7 @@ import kotlinx.coroutines.flow.first
 import com.nuvio.app.isDesktop
 import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.network.NetworkStatusRepository
+import com.nuvio.app.core.ui.HeroAmbientBackdrop
 import com.nuvio.app.core.ui.LocalNuvioBottomNavigationOverlayPadding
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioInputField
@@ -150,6 +145,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.sync.Semaphore
@@ -163,6 +159,20 @@ import kotlinx.coroutines.CancellationException
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
+
+/**
+ * Session-scoped memory of the Home tab's vertical scroll position. Lets the user
+ * return to where they left off after navigating into (and back out of) other
+ * screens such as the details view. Intentionally in-memory only: a fresh app
+ * launch should start at the top.
+ */
+private object HomeScrollMemory {
+    // Non-immersive (LazyColumn) home layout.
+    var firstVisibleItemIndex: Int = 0
+    var firstVisibleItemScrollOffset: Int = 0
+    // Immersive home layout: the selected catalog row (its vertical "scroll" position).
+    var immersiveRowIndex: Int = 0
+}
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -212,16 +222,22 @@ fun HomeScreen(
         SearchRepository.uiState
     }.collectAsStateWithLifecycle()
 
-    // Library mode state
-    val libraryUiState by remember {
-        LibraryRepository.ensureLoaded()
-        LibraryRepository.uiState
-    }.collectAsStateWithLifecycle()
+    // Library mode state. Load it off the composition path so Home startup doesn't pay
+    // for library/provider cache work before the user opens Library.
+    LaunchedEffect(contentMode) {
+        if (contentMode is HomeContentMode.Library) {
+            withContext(Dispatchers.Default) {
+                LibraryRepository.ensureLoaded()
+            }
+        }
+    }
+    val libraryUiState by LibraryRepository.uiState.collectAsStateWithLifecycle()
 
     val platformContext = LocalPlatformContext.current
     val imageLoader = SingletonImageLoader.get(platformContext)
 
-    LaunchedEffect(libraryUiState.sections) {
+    LaunchedEffect(contentMode, libraryUiState.sections) {
+        if (contentMode !is HomeContentMode.Library) return@LaunchedEffect
         val itemsToPrefetch = libraryUiState.sections.take(2).flatMap { it.items.take(8) }
         itemsToPrefetch.forEach { item ->
             item.poster?.takeIf { it.isNotBlank() }?.let { url ->
@@ -246,6 +262,7 @@ fun HomeScreen(
             simklLibraryHasLoaded.hasLoaded &&
             simklLibraryHasLoaded.allItems.isNotEmpty()
         ) {
+            delay(HOME_STARTUP_METADATA_GRACE_MS)
             SimklLibraryRepository.triggerEnrichment()
         }
     }
@@ -339,6 +356,8 @@ fun HomeScreen(
     // HomeRepository emits new heroItems list objects on each catalog tick, which would
     // otherwise reset effectiveHeroItems (and all TMDB-fetched backdrops) every few seconds.
     val heroEnrichmentMap = remember { mutableStateMapOf<String, MetaPreview>() }
+    var heroMetadataStartupGraceUsed by remember { mutableStateOf(false) }
+    var continueWatchingMetadataStartupGraceUsed by remember { mutableStateOf(false) }
 
     // Initialise from base items, applying any already-fetched enrichment from the map.
     // When baseHeroItems changes (new reference, same content) we preserve enrichment.
@@ -362,6 +381,10 @@ fun HomeScreen(
         // those missing hero backdrops from the existing lightweight metadata fallback path.
         if (normalHomeMode && !normalHomeNeedsBackdropFallback) return@LaunchedEffect
         if (!normalHomeMode && !tmdbImageModeOn) return@LaunchedEffect
+        if (!heroMetadataStartupGraceUsed) {
+            heroMetadataStartupGraceUsed = true
+            delay(HOME_STARTUP_METADATA_GRACE_MS)
+        }
 
         // Only replace items when the set of IDs actually changed — an unconditional
         // clear() + addAll() resets the hero carousel page to 0 even when switching
@@ -518,6 +541,34 @@ fun HomeScreen(
         is HomeContentMode.Normal -> homeListState
         is HomeContentMode.Library -> libraryListState
         is HomeContentMode.Search -> searchListState
+    }
+    // Remember the Home tab's scroll position across navigation (e.g. opening the
+    // details screen and coming back) so the user returns to where they were rather
+    // than the top. The details screen disposes Home, and on return the catalog list
+    // is populated progressively — so we can't just seed an initial index (it would be
+    // clamped before the rows exist). Instead we wait for content, restore, then keep
+    // a session-scoped holder in sync while the user scrolls. Only the real Home view
+    // (Normal mode) participates; Search/Library share this composable but not its
+    // remembered position.
+    if (displayMode is HomeContentMode.Normal) {
+        LaunchedEffect(Unit) {
+            val savedIndex = HomeScrollMemory.firstVisibleItemIndex
+            val savedOffset = HomeScrollMemory.firstVisibleItemScrollOffset
+            if (savedIndex > 0 || savedOffset > 0) {
+                withTimeoutOrNull(4000) {
+                    snapshotFlow { homeListState.layoutInfo.totalItemsCount }
+                        .first { it > savedIndex }
+                }
+                homeListState.scrollToItem(savedIndex, savedOffset)
+            }
+            // From here on, mirror the live scroll position into the holder.
+            snapshotFlow {
+                homeListState.firstVisibleItemIndex to homeListState.firstVisibleItemScrollOffset
+            }.collect { (index, offset) ->
+                HomeScrollMemory.firstVisibleItemIndex = index
+                HomeScrollMemory.firstVisibleItemScrollOffset = offset
+            }
+        }
     }
     val collections by CollectionRepository.collections.collectAsStateWithLifecycle()
     val continueWatchingPreferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
@@ -834,9 +885,15 @@ fun HomeScreen(
     }
 
     LaunchedEffect(continueWatchingItems, tmdbImageModeOn) {
-        val sem = kotlinx.coroutines.sync.Semaphore(4)
-        continueWatchingItems
+        val metadataTargets = continueWatchingItems
             .filter { it.parentMetaType.equals("series", ignoreCase = true) || it.parentMetaType.equals("anime", ignoreCase = true) }
+        if (metadataTargets.isEmpty()) return@LaunchedEffect
+        if (!continueWatchingMetadataStartupGraceUsed) {
+            continueWatchingMetadataStartupGraceUsed = true
+            delay(HOME_STARTUP_METADATA_GRACE_MS)
+        }
+        val sem = kotlinx.coroutines.sync.Semaphore(4)
+        metadataTargets
             .forEach { item ->
                 launch {
                     sem.withPermit {
@@ -1035,11 +1092,6 @@ fun HomeScreen(
     var firstCatalogReported by remember { mutableStateOf(false) }
     var activeHeroBackdrop by remember { mutableStateOf<String?>(null) }
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
-    val ambientBackdropColorFilter = remember {
-        ColorFilter.colorMatrix(
-            ColorMatrix().apply { setToSaturation(1.7f) },
-        )
-    }
 
     LaunchedEffect(effectiveSections.firstOrNull()?.key, onFirstCatalogRendered) {
         if (firstCatalogReported || effectiveSections.isEmpty()) return@LaunchedEffect
@@ -1151,7 +1203,10 @@ fun HomeScreen(
     }
     val tvCoroutineScope = rememberCoroutineScope()
     val mouseActivity = rememberMouseActivityState()
-    var homeImmersiveRowIndex by remember { mutableStateOf(0) }
+    // Seed from the session-scoped holder so the immersive home layout returns to the
+    // catalog row the user was on (e.g. after visiting the details screen) instead of
+    // resetting to the top. Saved back whenever it changes (see below).
+    var homeImmersiveRowIndex by remember { mutableStateOf(HomeScrollMemory.immersiveRowIndex) }
     var libraryImmersiveRowIndex by remember { mutableStateOf(0) }
     var searchImmersiveRowIndex by remember { mutableStateOf(0) }
     val getImmersiveRowIndex = {
@@ -1166,6 +1221,12 @@ fun HomeScreen(
             is HomeContentMode.Normal -> homeImmersiveRowIndex = value
             is HomeContentMode.Library -> libraryImmersiveRowIndex = value
             is HomeContentMode.Search -> searchImmersiveRowIndex = value
+        }
+    }
+    // Persist the immersive home row so it survives leaving/returning to this screen.
+    if (displayMode is HomeContentMode.Normal) {
+        LaunchedEffect(homeImmersiveRowIndex) {
+            HomeScrollMemory.immersiveRowIndex = homeImmersiveRowIndex
         }
     }
 
@@ -1199,12 +1260,23 @@ fun HomeScreen(
                 if (settingsItem.isCollection) {
                     val collection = collectionsMap[settingsItem.key]
                     if (collection != null) {
-                        val collectionHeroItem = collection.homeHeroPreview()
+                        val collectionHeroItems = collection.folders.map { folder ->
+                            folder.homeHeroPreview(collection)
+                        }
                         add(
                             HomeTvRow(
                                 itemCount = collection.folders.size,
-                                metaItems = collectionHeroItem?.let { heroItem ->
-                                    List(collection.folders.size) { heroItem }
+                                metaItems = collectionHeroItems.takeIf { heroItems ->
+                                    heroItems.any { it != null }
+                                }?.mapIndexed { index, heroItem ->
+                                    heroItem ?: collectionHeroItems.firstNotNullOfOrNull { it }
+                                        ?: MetaPreview(
+                                            id = "collection:${collection.id}:${collection.folders[index].id}",
+                                            type = COLLECTION_HERO_TYPE,
+                                            name = collection.folders[index].title,
+                                            poster = collection.folders[index].coverImageUrl,
+                                            posterShape = PosterShape.Landscape,
+                                        )
                                 },
                                 onEnter = { index ->
                                     collection.folders.getOrNull(index)?.let {
@@ -1736,59 +1808,12 @@ fun HomeScreen(
             ),
     ) {
         if (heroAmbientBackgroundEnabled) {
-            val ambientAccent by animateColorAsState(
-                targetValue = activeHeroAccent ?: MaterialTheme.colorScheme.background,
-                animationSpec = tween(durationMillis = 650),
-                label = "home_hero_ambient_accent",
-            )
-            Crossfade(
-                targetState = activeHeroBackdrop,
-                animationSpec = tween(durationMillis = 650),
+            HeroAmbientBackdrop(
+                backdrop = activeHeroBackdrop,
+                accent = activeHeroAccent,
+                onAccentChanged = { activeHeroAccent = it },
                 label = "home_hero_ambient_background",
-                modifier = Modifier.fillMaxSize(),
-            ) { backdrop ->
-                Box(modifier = Modifier.fillMaxSize()) {
-                    if (!backdrop.isNullOrBlank()) {
-                        NuvioAsyncImage(
-                            model = backdrop,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    alpha = 0.58f
-                                    scaleX = 1.18f
-                                    scaleY = 1.18f
-                                }
-                                .blur(72.dp),
-                            contentScale = ContentScale.Crop,
-                            colorFilter = ambientBackdropColorFilter,
-                            onSuccess = { state ->
-                                if (activeHeroBackdrop == backdrop) {
-                                    activeHeroAccent = extractHeroAccentColor(state.result.image)
-                                }
-                            },
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colorStops = arrayOf(
-                                        0f to ambientAccent.copy(alpha = 0.46f),
-                                        0.42f to ambientAccent.copy(alpha = 0.32f),
-                                        1f to MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
-                                    ),
-                                ),
-                            ),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.38f)),
-                    )
-                }
-            }
+            )
         }
 
         val homeSectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value)
@@ -1895,6 +1920,21 @@ fun HomeScreen(
                         if (item.type != COLLECTION_HERO_TYPE) {
                             onPosterClick?.invoke(item)
                         }
+                    },
+                    onHeroTrailerSurfaceDisposed = {
+                        try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                        // Re-arm the "ignore next mouse move" guard right here, at the moment
+                        // the native surface actually goes away and its synthetic re-entry
+                        // event is imminent. The guard set at key-press time (see
+                        // handleHomeTvKey's onKeyboardNavigation(ignoreNextMouseMove = ...))
+                        // only survives until the very next onMouseMoved call — if Down
+                        // triggers this disposal indirectly via an async scroll animation, a
+                        // genuine mouse move can land first and consume that guard, leaving
+                        // the real synthetic event unguarded. That reactivates hover-driven
+                        // focus, which then snaps tvFocus back to whatever's under the
+                        // cursor — silently undoing the keyboard navigation that caused the
+                        // scroll in the first place.
+                        mouseActivity.onKeyboardNavigation(ignoreNextMouseMove = true)
                     },
                 )
 
@@ -2316,7 +2356,9 @@ fun HomeScreen(
 
 private const val HOME_CATALOG_PREVIEW_LIMIT = 18
 private const val SEARCH_LIBRARY_METADATA_PREFETCH_LIMIT = 3
-private const val COLLECTION_HERO_TYPE = "collection"
+private const val HOME_STARTUP_METADATA_GRACE_MS = 900L
+// COLLECTION_HERO_TYPE now lives in HomeModels.kt, shared with HomeRepository's own
+// collection-backdrop hero items.
 private const val IMMERSIVE_SHELF_TOP_PADDING_DP = 68f
 private const val IMMERSIVE_SHELF_BOTTOM_PADDING_DP = 12f
 private const val IMMERSIVE_SHELF_HEADER_ESTIMATE_DP = 54f
@@ -2370,16 +2412,7 @@ internal fun immersiveCatalogPosterBaseWidthDp(
     )
 }
 
-private fun com.nuvio.app.features.collection.Collection.homeHeroPreview(): MetaPreview? {
-    val backdrop = backdropImageUrl?.trim()?.takeIf(String::isNotBlank) ?: return null
-    return MetaPreview(
-        id = "collection:$id",
-        type = COLLECTION_HERO_TYPE,
-        name = title,
-        banner = backdrop,
-        posterShape = PosterShape.Landscape,
-    )
-}
+// homeHeroPreview() now lives in HomeRepository.kt, shared with the hero-source pool.
 
 internal fun filterEntriesForTraktContinueWatchingWindow(
     entries: List<WatchProgressEntry>,

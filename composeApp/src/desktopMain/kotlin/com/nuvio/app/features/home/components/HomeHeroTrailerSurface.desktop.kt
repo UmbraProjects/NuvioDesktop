@@ -20,10 +20,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.LocalNuvioBaseDensity
+import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
+import com.nuvio.app.features.player.desktop.TRAILER_AUDIO_NORMALIZATION_FILTER
 import kotlinx.coroutines.delay
 import java.awt.KeyEventDispatcher
 import java.awt.KeyboardFocusManager
@@ -48,6 +50,7 @@ actual fun HomeHeroTrailerSurface(
     sourceAudioUrl: String?,
     playWhenReady: Boolean,
     muted: Boolean,
+    volume: Int,
     backgroundColor: Color,
     logoUrl: String?,
     title: String,
@@ -57,12 +60,18 @@ actual fun HomeHeroTrailerSurface(
     onReady: () -> Unit,
     onEnded: () -> Unit,
     onError: () -> Unit,
+    onVolumeChange: (Int) -> Unit,
+    onSurfaceDisposed: () -> Unit,
 ) {
     val supported = DesktopHostOs.current == DesktopHostOs.WINDOWS ||
         DesktopHostOs.current == DesktopHostOs.MACOS
     val latestOnError = rememberUpdatedState(onError)
     val latestOnReady = rememberUpdatedState(onReady)
     val latestOnEnded = rememberUpdatedState(onEnded)
+    val latestOnVolumeChange = rememberUpdatedState(onVolumeChange)
+    val latestOnSurfaceDisposed = rememberUpdatedState(onSurfaceDisposed)
+    // The settings toggle gates sound on/off; the shared slider sets the level.
+    val effectiveVolume = if (muted) 0 else volume.coerceIn(0, 100)
 
     if (!supported) {
         LaunchedEffect(sourceUrl) {
@@ -137,13 +146,34 @@ actual fun HomeHeroTrailerSurface(
         }
         val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
         focusManager.addKeyEventDispatcher(dispatcher)
-        onDispose { focusManager.removeKeyEventDispatcher(dispatcher) }
+        onDispose {
+            focusManager.removeKeyEventDispatcher(dispatcher)
+            // The heavyweight native panel can still be the real AWT focus owner right up until
+            // this dispose (e.g. the default home layout renders the hero as a plain LazyColumn
+            // item, so scrolling to Popular/Trending mid-playback recycles it). Nothing else
+            // reclaims focus in that case, so every key press silently vanishes afterward.
+            // Explicitly hand focus back to the caller's own focusable content.
+            latestOnSurfaceDisposed.value()
+        }
     }
 
     LaunchedEffect(controller) {
         controller.setControlCallbacks(
-            onAction = { false },
-            onEvent = { type, _ ->
+            onAction = { action ->
+                // The hero-trailer chrome's Stop button sends Back; stop playback (matches the
+                // details hero surface). Without this it's a dead button on the home hero.
+                if (action == PlayerControlsAction.Back) {
+                    latestOnEnded.value()
+                    true
+                } else {
+                    false
+                }
+            },
+            onEvent = { type, value ->
+                if (type == "heroTrailerVolume") {
+                    latestOnVolumeChange.value(value.toInt().coerceIn(0, 100))
+                    return@setControlCallbacks true
+                }
                 val key = when (type) {
                     "homeKeyUp" -> HomeTvKey.Up
                     "homeKeyDown" -> HomeTvKey.Down
@@ -176,9 +206,11 @@ actual fun HomeHeroTrailerSurface(
                 heroTrailerMeta = meta,
                 heroTrailerDescription = description,
                 isLoading = true,
+                heroTrailerMuted = muted,
+                heroTrailerVolume = effectiveVolume,
             ),
         )
-        trailerSurfaceLog.i { "attach video=${sourceUrl.take(80)} audio=${sourceAudioUrl?.take(60)} muted=$muted" }
+        trailerSurfaceLog.i { "attach video=${sourceUrl.take(80)} audio=${sourceAudioUrl?.take(60)} muted=$muted vol=$effectiveVolume" }
         controller.attach(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl?.takeIf { it.isNotBlank() },
@@ -188,6 +220,9 @@ actual fun HomeHeroTrailerSurface(
             // Hero trailers are passive background video; never spend RTX VSR on them.
             nvidiaRtxSuperResolutionEnabled = false,
             nvidiaRtxHdrEnabled = false,
+            // Likewise skip SVP/vapoursynth frame interpolation: it's wasted on a muted
+            // preview and its Python runtime can hang the native UI thread (black surface).
+            animeSvpEnabled = false,
             onError = { message ->
                 trailerSurfaceLog.w { "playback error: $message" }
                 latestOnError.value()
@@ -198,15 +233,18 @@ actual fun HomeHeroTrailerSurface(
         )
     }
 
-    // mpv "mute" property queues until the handle exists, so it survives the async attach.
-    LaunchedEffect(controller, sourceUrl, muted) {
+    // mpv "mute"/"volume" properties queue until the handle exists, so they survive the async attach.
+    LaunchedEffect(controller, sourceUrl, muted, effectiveVolume) {
         controller.setMpvProperty("mute", if (muted) "yes" else "no")
+        controller.setMpvProperty("volume", effectiveVolume.toString())
     }
 
     // Crop the trailer to fill the hero region (no letterbox) so it reads as part of the
     // hero rather than a pillarboxed PIP window. panscan queues until the handle exists.
     LaunchedEffect(controller, sourceUrl) {
         controller.setMpvProperty("panscan", "1.0")
+        // Trailer loudness is wildly inconsistent between uploads; smooth it out in real time.
+        controller.setMpvProperty("af", TRAILER_AUDIO_NORMALIZATION_FILTER)
     }
 
     LaunchedEffect(controller, playWhenReady) {

@@ -21,8 +21,17 @@ import kotlinx.coroutines.launch
  * scrolling [LazyListState]. No-op on platforms where touch swiping already works.
  * [onFocusRequest] is invoked when the pointer interacts with (or hovers over) the
  * list, e.g. to request keyboard focus for the list.
+ *
+ * A plain (non-Shift) vertical mouse-wheel scroll is normally left alone so it can
+ * fall through to an enclosing vertically-scrolling page. Set [treatPlainScrollAsHorizontal]
+ * when this row lives somewhere that never scrolls vertically (e.g. a fixed-height
+ * overlay), so the row can be scrolled with a plain wheel instead of requiring Shift.
  */
-internal expect fun Modifier.horizontalListMouseInput(state: LazyListState, onFocusRequest: () -> Unit = {}): Modifier
+internal expect fun Modifier.horizontalListMouseInput(
+    state: LazyListState,
+    onFocusRequest: () -> Unit = {},
+    treatPlainScrollAsHorizontal: Boolean = false,
+): Modifier
 
 /**
  * Makes a horizontally scrolling [LazyListState] usable on desktop: mouse wheel and
@@ -30,25 +39,31 @@ internal expect fun Modifier.horizontalListMouseInput(state: LazyListState, onFo
  * (acquired automatically when the mouse hovers over it).
  *
  * [scrollStepPx] is the distance scrolled per arrow-key press. If null, defaults to
- * a fraction of the viewport width.
+ * a fraction of the viewport width. See [horizontalListMouseInput] for
+ * [treatPlainScrollAsHorizontal].
  */
 @Composable
 internal fun Modifier.desktopHorizontalListNavigation(
     state: LazyListState,
     scrollStepPx: Float? = null,
+    treatPlainScrollAsHorizontal: Boolean = false,
 ): Modifier {
     val coroutineScope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
 
     return this
         .focusRequester(focusRequester)
-        .horizontalListMouseInput(state, onFocusRequest = {
-            try {
-                focusRequester.requestFocus()
-            } catch (_: IllegalStateException) {
-                // The node may not be attached yet (or may have been disposed mid-navigation).
-            }
-        })
+        .horizontalListMouseInput(
+            state,
+            onFocusRequest = {
+                try {
+                    focusRequester.requestFocus()
+                } catch (_: IllegalStateException) {
+                    // The node may not be attached yet (or may have been disposed mid-navigation).
+                }
+            },
+            treatPlainScrollAsHorizontal = treatPlainScrollAsHorizontal,
+        )
         .focusable()
         .onKeyEvent { keyEvent ->
             if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false

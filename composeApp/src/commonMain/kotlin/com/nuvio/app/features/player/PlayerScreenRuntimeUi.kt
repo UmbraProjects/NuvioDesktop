@@ -667,6 +667,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
                 controlsVisible = true
             }
         }
+        PlayerControlsAction.HeroTrailerMute -> Unit
         PlayerControlsAction.DoubleTapSeekBack -> {
             prepareDoubleTapSeekForNativeFallback(PlayerSeekDirection.Backward)
             return false

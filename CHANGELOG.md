@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.8.0 - 2026-07-06
+
+### Added
+
+- **New desktop media info screen** - details pages now have a proper desktop/HTPC layout instead of stretching the mobile-style sections into a big window. The hero area can carry the overview, action buttons, cast, production credits, media details, seasons/episodes, trailers, collection items, and more-like-this rows in a denser fixed-height view, with keyboard/remote navigation across the whole screen.
+
+- **Detail-page hero trailer controls** - metadata screens can now play trailers directly in the hero area or full screen, with Settings controls for playback area, auto-play delay/manual mode, and whether new trailers start with sound. Manual trailer clicks also use the faster hero trailer surface on desktop instead of booting the full player just to preview a trailer.
+
+- **Collections in the Home hero rotation** - collections now use their backdrops properly instead of remaining on the default hero backdrop, assuming the creator created backdrops for them.
+
+- **Hero trailer volume chrome** - hero trailers now get in-overlay stop, mute, and volume controls, and the chosen trailer volume is shared between Home and detail-page trailer previews.
+
+### Improved
+
+- **Trailer failure messages** - when YouTube says a trailer is region-blocked, age-gated, removed, or private, Nuvio now shows that specific reason instead of a generic "No playable trailer stream found" retry loop. Unknown/transient failures still offer retry.
+
+- **Home catalog compatibility** - addon catalogs that explicitly set `showInHome: false` are now respected, so collection-only or utility catalogs do not clutter the Home catalog list.
+
+- **Collection and Home ambient backdrops** - the blurred ambient backdrop renderer is now shared and downsampled before blur, which keeps the same look while avoiding the heavy full-resolution blur cost on 2K/4K desktop displays.
+
+- **Desktop startup path** - profile startup work is split into critical and deferred phases, native player bridge loading is warmed off the UI thread, and startup fullscreen waits for the real window before applying native chrome. Opening the app should feel less prone to early stalls or weird first-window placement.
+
+- **Hero trailer audio** - trailer previews now use audio normalization to smooth out wildly inconsistent YouTube trailer loudness, and Home/detail previews avoid heavy SVP/VapourSynth processing that does not belong on short preview videos.
+
+### Fixed
+
+- **Slow stream-to-stream player handoff** - replacing an active native player no longer waits inline for the outgoing mpv/WebView instance to finish disposing, avoiding multi-second delays before the next selected stream attaches.
+
+- **Series episode detection when addons omit season fields** - episode sorting, primary play/resume labels, future-season filtering, and next-episode resolution can now infer `SxxExx` / `1x02` style numbers from titles or IDs when explicit season/episode fields are missing.
+
+- **Continue Watching artwork after startup** - watch-progress metadata resolution now gives addons a brief startup grace period before filling missing posters/backdrops, reducing the chance of blank or low-quality Continue Watching art from racing ahead of metadata providers.
+
+- **Home hero trailer keyboard focus** - scrolling a default Home hero trailer out of view can no longer leave the native video surface holding OS focus and swallowing keyboard input afterward.
+
+- **Collection entry hover jump** - opening an adaptive collection screen no longer lets the stationary mouse cursor immediately snap focus to whichever row happens to appear under it during the screen transition.
+
 ## 1.7.4 - 2026-07-04
 
 ### Added

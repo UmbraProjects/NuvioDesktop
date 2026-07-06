@@ -26,12 +26,11 @@ internal object DesktopAnimeSvp {
     private val vapourSynthCoreAvailable: Boolean by lazy {
         val candidateNames = listOf("vsscript.dll", "VSScript.dll")
         val searchDirs = buildList {
-            NativePlayerBridge.appInstallDir(DesktopHostOs.WINDOWS)?.let(::add)
-            System.getenv("PATH")?.split(File.pathSeparator)?.forEach { add(File(it)) }
+            NativePlayerBridge.runtimeDllDir()?.let(::add)
         }
         val found = searchDirs.any { dir -> candidateNames.any { name -> File(dir, name).isFile } }
         if (!found) {
-            log.w { "VapourSynth core (vsscript.dll) not found alongside the app or on PATH; SVP will be skipped" }
+            log.w { "Bundled VapourSynth core (vsscript.dll) not found in Nuvio runtime directory; SVP will be skipped" }
         }
         found
     }

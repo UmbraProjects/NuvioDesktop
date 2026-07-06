@@ -20,17 +20,17 @@ import com.nuvio.app.features.watching.domain.upNextLabel
 
 internal fun MetaDetails.sortedPlayableEpisodes(): List<MetaVideo> =
     videos
-        .filter { it.season != null || it.episode != null }
+        .filter { it.effectiveSeasonNumber() != null || it.effectiveEpisodeNumber() != null }
         .sortedWith(metaVideoSeasonEpisodeComparator)
 
 internal fun List<MetaVideo>.filterUnavailableFutureSeasons(
     todayIsoDate: String,
 ): List<MetaVideo> {
-    val unavailableSeasons = groupBy { episode -> normalizeSeasonNumber(episode.season) }
+    val unavailableSeasons = groupBy { episode -> normalizeSeasonNumber(episode.effectiveSeasonNumber()) }
         .filter { (seasonNumber, episodes) ->
             if (seasonNumber <= 0) return@filter false
             val firstEpisode = episodes.minWithOrNull(
-                compareBy<MetaVideo>({ it.episode ?: Int.MAX_VALUE }, { it.released.orEmpty() }),
+                compareBy<MetaVideo>({ it.effectiveEpisodeNumber() ?: Int.MAX_VALUE }, { it.released.orEmpty() }),
             ) ?: return@filter false
             !isReleasedBy(todayIsoDate = todayIsoDate, releasedDate = firstEpisode.released)
         }
@@ -39,7 +39,7 @@ internal fun List<MetaVideo>.filterUnavailableFutureSeasons(
     return if (unavailableSeasons.isEmpty()) {
         this
     } else {
-        filter { episode -> normalizeSeasonNumber(episode.season) !in unavailableSeasons }
+        filter { episode -> normalizeSeasonNumber(episode.effectiveSeasonNumber()) !in unavailableSeasons }
     }
 }
 
@@ -89,8 +89,8 @@ internal fun MetaDetails.nextReleasedEpisodeAfter(
     var watchedIndex = sortedEpisodes.indexOfFirst { episode ->
         buildPlaybackVideoId(
             content = WatchingContentRef(type = type, id = id),
-            seasonNumber = episode.season,
-            episodeNumber = episode.episode,
+            seasonNumber = episode.effectiveSeasonNumber(),
+            episodeNumber = episode.effectiveEpisodeNumber(),
             fallbackVideoId = episode.id,
         ) == watchedVideoId
     }
@@ -98,9 +98,9 @@ internal fun MetaDetails.nextReleasedEpisodeAfter(
     // Fallback: if the seed wasn't found by season+episode (anime with absolute
     // numbering on Trakt vs multi-season on addon), try global index matching.
     if (watchedIndex < 0 && seasonNumber != null && episodeNumber != null) {
-        val mainEpisodes = sortedEpisodes.filter { episode -> normalizeSeasonNumber(episode.season) > 0 }
+        val mainEpisodes = sortedEpisodes.filter { episode -> normalizeSeasonNumber(episode.effectiveSeasonNumber()) > 0 }
         val addonSeasons = mainEpisodes.mapTo(mutableSetOf()) { episode ->
-            normalizeSeasonNumber(episode.season)
+            normalizeSeasonNumber(episode.effectiveSeasonNumber())
         }
         if (seasonNumber == 1 && addonSeasons.size > 1 && episodeNumber > 0) {
             val globalIndex = episodeNumber - 1
@@ -112,19 +112,19 @@ internal fun MetaDetails.nextReleasedEpisodeAfter(
 
     if (watchedIndex < 0) return null
 
-    val watchedEpisodeSeason = sortedEpisodes[watchedIndex].season
+    val watchedEpisodeSeason = sortedEpisodes[watchedIndex].effectiveSeasonNumber()
     val candidates = sortedEpisodes
         .drop(watchedIndex + 1)
         .filter { episode ->
             shouldSurfaceNextEpisode(
                 watchedSeasonNumber = watchedEpisodeSeason,
-                candidateSeasonNumber = episode.season,
+                candidateSeasonNumber = episode.effectiveSeasonNumber(),
                 todayIsoDate = todayIsoDate,
                 releasedDate = episode.released,
                 showUnairedNextUp = showUnairedNextUp,
             )
         }
-    return candidates.firstOrNull { normalizeSeasonNumber(it.season) > 0 }
+    return candidates.firstOrNull { normalizeSeasonNumber(it.effectiveSeasonNumber()) > 0 }
 }
 
 internal data class SeriesPrimaryAction(
@@ -172,10 +172,10 @@ internal fun MetaDetails.seriesPrimaryAction(
     )?.toLegacySeriesPrimaryAction()
 
 internal fun MetaVideo.playLabel(): String =
-    playLabel(seasonNumber = season, episodeNumber = episode)
+    playLabel(seasonNumber = effectiveSeasonNumber(), episodeNumber = effectiveEpisodeNumber())
 
 internal fun MetaVideo.upNextLabel(): String =
-    upNextLabel(seasonNumber = season, episodeNumber = episode)
+    upNextLabel(seasonNumber = effectiveSeasonNumber(), episodeNumber = effectiveEpisodeNumber())
 
 internal fun WatchProgressEntry.resumeLabel(): String =
     resumeLabel(seasonNumber = seasonNumber, episodeNumber = episodeNumber)
@@ -204,8 +204,8 @@ internal fun latestCompletedSeriesEpisode(
 private fun MetaVideo.toDomainReleasedEpisode(): WatchingReleasedEpisode =
     WatchingReleasedEpisode(
         videoId = id,
-        seasonNumber = season,
-        episodeNumber = episode,
+        seasonNumber = effectiveSeasonNumber(),
+        episodeNumber = effectiveEpisodeNumber(),
         title = title,
         thumbnail = thumbnail,
         releasedDate = released,

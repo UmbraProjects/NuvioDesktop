@@ -9,6 +9,7 @@ import com.nuvio.app.features.catalog.fetchCatalogPage
 import com.nuvio.app.features.catalog.mergeCatalogItems
 import com.nuvio.app.features.catalog.nextCatalogPaginationState
 import com.nuvio.app.features.collection.Collection
+import com.nuvio.app.features.collection.CollectionFolder
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.collection.CollectionSource
 import com.nuvio.app.features.collection.TmdbCollectionSourceResolver
@@ -29,6 +30,24 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.random.Random
+
+internal fun Collection.homeHeroPreviews(): List<MetaPreview> =
+    folders.mapNotNull { folder -> folder.homeHeroPreview(this) }
+
+internal fun CollectionFolder.homeHeroPreview(collection: Collection): MetaPreview? {
+    val backdrop = heroBackdropUrl?.trim()?.takeIf(String::isNotBlank)
+        ?: collection.backdropImageUrl?.trim()?.takeIf(String::isNotBlank)
+        ?: return null
+    return MetaPreview(
+        id = "collection:${collection.id}:$id",
+        type = COLLECTION_HERO_TYPE,
+        name = title,
+        poster = coverImageUrl?.trim()?.takeIf(String::isNotBlank),
+        banner = backdrop,
+        logo = titleLogoUrl?.trim()?.takeIf(String::isNotBlank),
+        posterShape = PosterShape.Landscape,
+    )
+}
 
 object HomeRepository {
     private val log = Logger.withTag("HomeRepository")
@@ -108,6 +127,7 @@ object HomeRepository {
 
         activeJob?.cancel()
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        val refreshStartedAt = System.currentTimeMillis()
         activeJob = scope.launch {
             val prioritizedRequests = prioritizeDefinitions(
                 definitions = requests.filter(HomeCatalogDefinition::isActiveInHome),
@@ -126,6 +146,7 @@ object HomeRepository {
                     isLoading = false,
                     requestKey = requestKey,
                 )
+                log.i { "Home refresh completed from cache in ${System.currentTimeMillis() - refreshStartedAt}ms" }
                 return@launch
             }
             val loadedSections = linkedMapOf<String, HomeCatalogSection>().apply {
@@ -136,6 +157,7 @@ object HomeRepository {
 
             pendingRequests.chunked(HOME_CATALOG_FETCH_BATCH_SIZE).forEach { batch ->
                 if (activeRequestKey != requestKey) return@launch
+                val batchStartedAt = System.currentTimeMillis()
                 val results = batch.map { request ->
                     async { runCatching { request.toSection() } }
                 }.awaitAll()
@@ -163,6 +185,12 @@ object HomeRepository {
                         requestKey = requestKey,
                     )
                 }
+                val batchElapsedMs = System.currentTimeMillis() - batchStartedAt
+                if (batchIndex == 0) {
+                    log.i { "Home refresh first batch loaded ${results.count { it.isSuccess }} / ${batch.size} in ${batchElapsedMs}ms" }
+                } else {
+                    log.d { "Home refresh batch ${batchIndex + 1} loaded ${results.count { it.isSuccess }} / ${batch.size} in ${batchElapsedMs}ms" }
+                }
                 batchIndex++
             }
 
@@ -174,6 +202,10 @@ object HomeRepository {
                 isLoading = false,
                 requestKey = requestKey,
             )
+            log.i {
+                "Home refresh completed: loaded=${loadedSections.size}, pending=${pendingRequests.size}, " +
+                    "elapsed=${System.currentTimeMillis() - refreshStartedAt}ms"
+            }
             ensureCollectionHeroFallback(
                 addons = activeAddons,
                 force = force,
@@ -246,11 +278,18 @@ object HomeRepository {
 
         val catalogHeroItems = if (snapshot.heroEnabled) {
             val heroRandom = Random((requestKey?.hashCode() ?: 0).absoluteValue + 1)
-            currentDefinitions
+            val catalogItems = currentDefinitions
                 .filter { definition -> preferences[definition.key]?.heroSourceEnabled != false }
                 .mapNotNull { definition -> cachedSections[definition.key] }
                 .map { section -> section.withReleaseFilter() }
                 .flatMap { section -> section.items }
+            // A collection opted into hero rotation contributes its curated folder
+            // backdrops, mixed in with regular catalog items rather than only used as
+            // a last-resort fallback.
+            val collectionBackdropItems = CollectionRepository.collections.value
+                .filter { collection -> preferences["collection_${collection.id}"]?.heroSourceEnabled == true }
+                .flatMap { collection -> collection.homeHeroPreviews() }
+            (catalogItems + collectionBackdropItems)
                 .distinctBy { item -> "${item.type}:${item.id}" }
                 .shuffled(heroRandom)
                 .take(HOME_HERO_ITEM_LIMIT)

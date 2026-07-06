@@ -29,6 +29,7 @@ data class AddonCatalog(
     val type: String,
     val id: String,
     val name: String,
+    val showInHome: Boolean = true,
     val extra: List<AddonExtraProperty> = emptyList(),
 )
 
