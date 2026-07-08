@@ -1,6 +1,7 @@
 package com.nuvio.app.core.ui
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 data class ThemeColorPalette(
     val secondary: Color,
@@ -16,6 +17,10 @@ data class ThemeColorPalette(
 )
 
 object ThemeColors {
+    const val DefaultCustomAccentHex = "#FFD700"
+    const val DefaultCustomBackgroundHex = "#0B0F10"
+    const val DefaultCustomElevatedHex = "#151D1F"
+    const val DefaultCustomCardHex = "#182427"
 
     val Crimson = ThemeColorPalette(
         secondary = Color(0xFFE53935),
@@ -96,6 +101,37 @@ object ThemeColors {
         backgroundCard = Color(0xFF222222),
     )
 
+    val Custom = customPalette(
+        accentHex = DefaultCustomAccentHex,
+        backgroundHex = DefaultCustomBackgroundHex,
+        elevatedHex = DefaultCustomElevatedHex,
+        cardHex = DefaultCustomCardHex,
+    )
+
+    fun customPalette(
+        accentHex: String,
+        backgroundHex: String,
+        elevatedHex: String,
+        cardHex: String,
+    ): ThemeColorPalette {
+        val accent = accentHex.toThemeColor(Color(0xFFFFD700))
+        val background = backgroundHex.toThemeColor(Color(0xFF0B0F10))
+        val elevated = elevatedHex.toThemeColor(Color(0xFF151D1F))
+        val card = cardHex.toThemeColor(Color(0xFF182427))
+        return ThemeColorPalette(
+            secondary = accent,
+            secondaryVariant = accent,
+            nativeAccentHex = accentHex.normalizedThemeHex(DefaultCustomAccentHex),
+            onSecondary = contentColorFor(accent),
+            onSecondaryVariant = Color.White,
+            focusRing = accent,
+            focusBackground = card,
+            background = background,
+            backgroundElevated = elevated,
+            backgroundCard = card,
+        )
+    }
+
     fun getColorPalette(theme: AppTheme): ThemeColorPalette = when (theme) {
         AppTheme.CRIMSON -> Crimson
         AppTheme.OCEAN -> Ocean
@@ -104,5 +140,26 @@ object ThemeColors {
         AppTheme.AMBER -> Amber
         AppTheme.ROSE -> Rose
         AppTheme.WHITE -> White
+        AppTheme.CUSTOM -> Custom
     }
+}
+
+private fun contentColorFor(background: Color): Color =
+    if (background.luminance() > 0.5f) Color(0xFF111111) else Color.White
+
+private fun String.toThemeColor(fallback: Color): Color {
+    val cleaned = trim().removePrefix("#")
+    return runCatching {
+        when (cleaned.length) {
+            6 -> Color(("FF$cleaned").toLong(16))
+            8 -> Color(cleaned.toLong(16))
+            else -> fallback
+        }
+    }.getOrDefault(fallback)
+}
+
+fun String.normalizedThemeHex(fallback: String): String {
+    val cleaned = trim().removePrefix("#")
+    val valid = cleaned.length == 6 && cleaned.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+    return if (valid) "#${cleaned.uppercase()}" else fallback
 }

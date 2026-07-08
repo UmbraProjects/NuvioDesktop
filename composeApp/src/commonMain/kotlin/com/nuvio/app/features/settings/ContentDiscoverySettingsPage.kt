@@ -2,6 +2,7 @@ package com.nuvio.app.features.settings
 
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Home
@@ -13,6 +14,8 @@ import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
 import nuvio.composeapp.generated.resources.compose_settings_page_plugins
 import nuvio.composeapp.generated.resources.collections_header
+import nuvio.composeapp.generated.resources.compose_settings_root_downloads_description
+import nuvio.composeapp.generated.resources.compose_settings_root_downloads_title
 import nuvio.composeapp.generated.resources.settings_content_discovery_addons_description
 import nuvio.composeapp.generated.resources.settings_content_discovery_collections_description
 import nuvio.composeapp.generated.resources.settings_content_discovery_homescreen_description
@@ -25,11 +28,13 @@ import org.jetbrains.compose.resources.stringResource
 internal fun LazyListScope.contentDiscoveryContent(
     isTablet: Boolean,
     showPluginsEntry: Boolean,
+    showDownloadsEntry: Boolean = false,
     onAddonsClick: () -> Unit,
     onPluginsClick: () -> Unit,
     onHomescreenClick: () -> Unit,
     onMetaScreenClick: () -> Unit,
     onCollectionsClick: () -> Unit = {},
+    onDownloadsClick: () -> Unit = {},
 ) {
     item {
         SettingsSection(
@@ -51,6 +56,15 @@ internal fun LazyListScope.contentDiscoveryContent(
                         icon = Icons.Rounded.Hub,
                         isTablet = isTablet,
                         onClick = onPluginsClick,
+                    )
+                }
+                if (showDownloadsEntry) {
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_root_downloads_title),
+                        description = stringResource(Res.string.compose_settings_root_downloads_description),
+                        icon = Icons.Rounded.CloudDownload,
+                        isTablet = isTablet,
+                        onClick = onDownloadsClick,
                     )
                 }
             }

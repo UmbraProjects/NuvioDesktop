@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,12 +57,27 @@ import com.nuvio.app.core.ui.NuvioDesktopImageScaling
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.features.details.MetaCompany
 import com.nuvio.app.features.details.MetaDetails
+import com.nuvio.app.features.details.MetaHeroTrailerBackgroundMode
 import com.nuvio.app.features.details.MetaHeroTrailerPlaybackMode
 import com.nuvio.app.features.details.MetaPerson
 import com.nuvio.app.features.details.formatMetaReleaseLineForDetails
 import com.nuvio.app.features.details.formatRuntimeForDisplay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
+
+object DetailHeroPeoplePanelToggleTrigger {
+    private val _tokens = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    val tokens: SharedFlow<Int> = _tokens.asSharedFlow()
+    private var nextToken = 0
+
+    fun trigger() {
+        nextToken += 1
+        _tokens.tryEmit(nextToken)
+    }
+}
 
 @Composable
 fun DetailHero(
@@ -78,6 +95,7 @@ fun DetailHero(
     heroTrailerVolume: Int = 0,
     heroTrailerKeyboardNavigation: Boolean = false,
     heroTrailerPlaybackMode: MetaHeroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero,
+    heroTrailerBackgroundMode: MetaHeroTrailerBackgroundMode = MetaHeroTrailerBackgroundMode.Black,
     desktopOverlay: Boolean = false,
     playButtonLabel: String = stringResource(Res.string.action_play),
     isSaved: Boolean = false,
@@ -98,6 +116,9 @@ fun DetailHero(
     onCompanyClick: ((MetaCompany, String) -> Unit)? = null,
     onHeroTrailerMuteToggle: () -> Unit = {},
     onHeroTrailerVolumeChange: (Int) -> Unit = {},
+    // Invoked when the passive trailer surface's WebView2 transiently grabs OS focus (chrome
+    // click), so the caller can hand keyboard focus back to the details screen.
+    onHeroTrailerReclaimFocus: () -> Unit = {},
     onHeroTrailerDismiss: () -> Unit = {},
     onHeroTrailerReady: () -> Unit = {},
     onHeroTrailerEnded: () -> Unit = {},
@@ -131,6 +152,17 @@ fun DetailHero(
             maxWidth * 0.44f,
         )
         val heroTrailerArtworkBottomPadding = 358.dp
+        // The desktop hero draws its content over scrim gradients that normally fade to the theme
+        // background. While a bounded trailer plays, the trailer-background setting recolours those
+        // scrims (and the flat fill) so the whole surround honours the choice — the flat background
+        // Box alone is invisible here because these gradients paint over it. "Black" (lights out)
+        // and "Backdrop" (a dark wash over the artwork) both scrim to black; "Theme" and the
+        // no-trailer state keep the theme background.
+        val heroTrailerScrimColor = when {
+            !boundedHeroTrailerActive -> MaterialTheme.colorScheme.background
+            heroTrailerBackgroundMode == MetaHeroTrailerBackgroundMode.Theme -> MaterialTheme.colorScheme.background
+            else -> Color.Black
+        }
 
         Box(
             modifier = Modifier
@@ -152,7 +184,16 @@ fun DetailHero(
                     isTablet -> 1f
                     else -> 1.08f
                 }
-                if (imageUrl != null && !boundedHeroTrailerActive) {
+                // While a bounded trailer is on screen the area around it shows a configurable
+                // background: "Backdrop" keeps the artwork dimmed to a wash, "Black" (default,
+                // lights-out) and "Theme" replace it with a flat colour. Reverting is automatic —
+                // once the trailer ends boundedHeroTrailerActive flips false and the normal
+                // backdrop image returns.
+                val backdropWashActive = boundedHeroTrailerActive &&
+                    heroTrailerBackgroundMode == MetaHeroTrailerBackgroundMode.Backdrop &&
+                    imageUrl != null
+                val showBackdropImage = imageUrl != null && (!boundedHeroTrailerActive || backdropWashActive)
+                if (showBackdropImage) {
                     AsyncImage(
                         model = imageUrl,
                         contentDescription = meta.name,
@@ -171,13 +212,22 @@ fun DetailHero(
                         contentScale = ContentScale.Crop,
                         desktopImageScaling = NuvioDesktopImageScaling.Disabled,
                     )
+                    if (backdropWashActive) {
+                        // Dim the backdrop so the small trailer stays the focal point. The scrim
+                        // gradients below add further darkening on the content side.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.4f)),
+                        )
+                    }
                 } else {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(
                                 if (boundedHeroTrailerActive) {
-                                    MaterialTheme.colorScheme.background
+                                    heroTrailerScrimColor
                                 } else {
                                     MaterialTheme.colorScheme.surface
                                 },
@@ -205,6 +255,7 @@ fun DetailHero(
                         onError = onHeroTrailerError,
                         onMuteToggle = onHeroTrailerMuteToggle,
                         onVolumeChange = onHeroTrailerVolumeChange,
+                        onReclaimFocus = onHeroTrailerReclaimFocus,
                     )
                 }
 
@@ -217,10 +268,10 @@ fun DetailHero(
                             if (desktopOverlay) {
                                 Brush.horizontalGradient(
                                     colorStops = arrayOf(
-                                        0f to MaterialTheme.colorScheme.background,
-                                        0.34f to MaterialTheme.colorScheme.background.copy(alpha = 0.9f),
-                                        0.6f to MaterialTheme.colorScheme.background.copy(alpha = 0.42f),
-                                        0.82f to MaterialTheme.colorScheme.background.copy(alpha = 0.12f),
+                                        0f to heroTrailerScrimColor,
+                                        0.34f to heroTrailerScrimColor.copy(alpha = 0.9f),
+                                        0.6f to heroTrailerScrimColor.copy(alpha = 0.42f),
+                                        0.82f to heroTrailerScrimColor.copy(alpha = 0.12f),
                                         1f to Color.Transparent,
                                     ),
                                 )
@@ -245,8 +296,8 @@ fun DetailHero(
                                     colorStops = arrayOf(
                                         0f to Color.Transparent,
                                         0.38f to Color.Transparent,
-                                        0.68f to MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
-                                        1f to MaterialTheme.colorScheme.background,
+                                        0.68f to heroTrailerScrimColor.copy(alpha = 0.72f),
+                                        1f to heroTrailerScrimColor,
                                     ),
                                 ),
                             ),
@@ -331,6 +382,7 @@ fun DetailHero(
                         onError = onHeroTrailerError,
                         onMuteToggle = onHeroTrailerMuteToggle,
                         onVolumeChange = onHeroTrailerVolumeChange,
+                        onReclaimFocus = onHeroTrailerReclaimFocus,
                     )
                 }
 
@@ -385,6 +437,16 @@ private fun DetailDesktopHeroOverlay(
             canShowCast -> DetailHeroPeopleTab.Starring
             canShowProduction -> DetailHeroPeopleTab.Production
             else -> DetailHeroPeopleTab.Starring
+        }
+        val peoplePanelToggleToken by DetailHeroPeoplePanelToggleTrigger.tokens.collectAsState(initial = 0)
+        LaunchedEffect(peoplePanelToggleToken) {
+            if (peoplePanelToggleToken == 0) return@LaunchedEffect
+            if (!canShowCast || !canShowProduction) return@LaunchedEffect
+            peopleTab = if (activePeopleTab == DetailHeroPeopleTab.Starring) {
+                DetailHeroPeopleTab.Production
+            } else {
+                DetailHeroPeopleTab.Starring
+            }
         }
 
         Box(

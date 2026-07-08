@@ -21,10 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.rounded.Language
-import androidx.compose.material.icons.rounded.Style
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,33 +40,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.AppTheme
 import com.nuvio.app.core.ui.NuvioBottomSheetActionRow
 import com.nuvio.app.core.ui.NuvioBottomSheetDivider
 import com.nuvio.app.core.ui.NuvioModalBottomSheet
+import com.nuvio.app.core.ui.NuvioActionLabel
+import com.nuvio.app.core.ui.PosterCardStyleRepository
+import com.nuvio.app.core.ui.PosterCardStyleUiState
+import com.nuvio.app.core.ui.ThemeColorPalette
 import com.nuvio.app.core.ui.dismissNuvioBottomSheet
 import com.nuvio.app.core.ui.labelRes
 import com.nuvio.app.core.ui.ThemeColors
+import com.nuvio.app.isDesktop
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.action_reset
 import nuvio.composeapp.generated.resources.cd_selected
-import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
-import nuvio.composeapp.generated.resources.compose_settings_page_poster_customization
 import nuvio.composeapp.generated.resources.settings_appearance_app_language
 import nuvio.composeapp.generated.resources.settings_appearance_app_language_sheet_title
 import nuvio.composeapp.generated.resources.settings_appearance_amoled_black
 import nuvio.composeapp.generated.resources.settings_appearance_amoled_description
-import nuvio.composeapp.generated.resources.settings_appearance_continue_watching_description
-import nuvio.composeapp.generated.resources.settings_appearance_desktop_navigation
-import nuvio.composeapp.generated.resources.settings_appearance_desktop_navigation_sheet_title
 import nuvio.composeapp.generated.resources.settings_appearance_liquid_glass
 import nuvio.composeapp.generated.resources.settings_appearance_liquid_glass_description
-import nuvio.composeapp.generated.resources.settings_appearance_poster_customization_description
+import nuvio.composeapp.generated.resources.settings_appearance_desktop_navigation
 import nuvio.composeapp.generated.resources.settings_appearance_section_display
-import nuvio.composeapp.generated.resources.settings_appearance_section_home
 import nuvio.composeapp.generated.resources.settings_appearance_section_theme
+import nuvio.composeapp.generated.resources.settings_poster_card_style
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -76,15 +75,17 @@ internal fun LazyListScope.appearanceSettingsContent(
     isTablet: Boolean,
     selectedTheme: AppTheme,
     onThemeSelected: (AppTheme) -> Unit,
+    customTheme: CustomThemeSettings,
     amoledEnabled: Boolean,
     onAmoledToggle: (Boolean) -> Unit,
     liquidGlassNativeTabBarSupported: Boolean,
     liquidGlassNativeTabBarEnabled: Boolean,
     onLiquidGlassNativeTabBarToggle: (Boolean) -> Unit,
+    desktopNavigationLayout: DesktopNavigationLayout = DesktopNavigationLayout.Default,
+    onDesktopNavigationLayoutSelected: (DesktopNavigationLayout) -> Unit = {},
     selectedAppLanguage: AppLanguage,
     onAppLanguageSelected: (AppLanguage) -> Unit,
-    onContinueWatchingClick: () -> Unit,
-    onPosterCustomizationClick: () -> Unit,
+    posterCardStyleUiState: PosterCardStyleUiState,
 ) {
     item {
         SettingsSection(
@@ -123,6 +124,11 @@ internal fun LazyListScope.appearanceSettingsContent(
                                 rowThemes.forEach { theme ->
                                     ThemeChip(
                                         theme = theme,
+                                        palette = if (theme == AppTheme.CUSTOM) {
+                                            customTheme.palette
+                                        } else {
+                                            ThemeColors.getColorPalette(theme)
+                                        },
                                         isSelected = theme == selectedTheme,
                                         onClick = { onThemeSelected(theme) },
                                         modifier = Modifier.weight(1f),
@@ -135,16 +141,18 @@ internal fun LazyListScope.appearanceSettingsContent(
                         }
                     }
                 }
+                if (selectedTheme == AppTheme.CUSTOM) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    CustomThemeEditor(
+                        customTheme = customTheme,
+                        isTablet = isTablet,
+                    )
+                }
             }
         }
     }
     item {
         var showLanguageSheet by remember { mutableStateOf(false) }
-        var showDesktopNavigationSheet by remember { mutableStateOf(false) }
-        val desktopNavigationLayout by remember {
-            ThemeSettingsRepository.ensureLoaded()
-            ThemeSettingsRepository.desktopNavigationLayout
-        }.collectAsStateWithLifecycle()
         SettingsSection(
             title = stringResource(Res.string.settings_appearance_section_display),
             isTablet = isTablet,
@@ -171,35 +179,32 @@ internal fun LazyListScope.appearanceSettingsContent(
                 }
                 if (isDesktop) {
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
+                    SettingsChoiceRow(
                         title = stringResource(Res.string.settings_appearance_desktop_navigation),
                         description = stringResource(desktopNavigationLayout.labelRes),
-                        icon = Icons.Rounded.Style,
+                        options = DesktopNavigationLayout.entries.map { layout ->
+                            SettingsChoiceOption(layout, stringResource(layout.labelRes))
+                        },
+                        selectedValue = desktopNavigationLayout,
                         isTablet = isTablet,
-                        onClick = { showDesktopNavigationSheet = true },
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("desktop-navigation")),
+                        onSelected = onDesktopNavigationLayoutSelected,
                     )
                 }
                 SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
+                SettingsChoiceRow(
                     title = stringResource(Res.string.settings_appearance_app_language),
                     description = stringResource(selectedAppLanguage.labelRes),
-                    icon = Icons.Rounded.Language,
+                    options = AppLanguage.entries.map { language ->
+                        SettingsChoiceOption(language, stringResource(language.labelRes))
+                    },
+                    selectedValue = selectedAppLanguage,
                     isTablet = isTablet,
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("app-language")),
-                    onClick = { showLanguageSheet = true },
+                    onSelected = onAppLanguageSelected,
+                    onMoreOptionsClick = { showLanguageSheet = true },
                 )
             }
-        }
-
-        if (showDesktopNavigationSheet) {
-            DesktopNavigationLayoutBottomSheet(
-                selectedLayout = desktopNavigationLayout,
-                onLayoutSelected = {
-                    ThemeSettingsRepository.setDesktopNavigationLayout(it)
-                    showDesktopNavigationSheet = false
-                },
-                onDismiss = { showDesktopNavigationSheet = false },
-            )
         }
 
         if (showLanguageSheet) {
@@ -216,84 +221,26 @@ internal fun LazyListScope.appearanceSettingsContent(
 
     item {
         SettingsSection(
-            title = stringResource(Res.string.settings_appearance_section_home),
+            title = stringResource(Res.string.settings_poster_card_style),
             isTablet = isTablet,
+            actions = {
+                NuvioActionLabel(
+                    text = stringResource(Res.string.action_reset),
+                    onClick = PosterCardStyleRepository::resetToDefaults,
+                )
+            },
         ) {
             SettingsGroup(isTablet = isTablet) {
-                SettingsNavigationRow(
-                    title = stringResource(Res.string.compose_settings_page_continue_watching),
-                    description = stringResource(Res.string.settings_appearance_continue_watching_description),
-                    icon = Icons.Rounded.Style,
+                PosterCardStyleControls(
                     isTablet = isTablet,
-                    onClick = onContinueWatchingClick,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = stringResource(Res.string.compose_settings_page_poster_customization),
-                    description = stringResource(Res.string.settings_appearance_poster_customization_description),
-                    icon = Icons.Rounded.Tune,
-                    isTablet = isTablet,
-                    onClick = onPosterCustomizationClick,
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DesktopNavigationLayoutBottomSheet(
-    selectedLayout: DesktopNavigationLayout,
-    onLayoutSelected: (DesktopNavigationLayout) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val coroutineScope = rememberCoroutineScope()
-
-    NuvioModalBottomSheet(
-        onDismissRequest = {
-            coroutineScope.launch {
-                dismissNuvioBottomSheet(sheetState = sheetState, onDismiss = onDismiss)
-            }
-        },
-        sheetState = sheetState,
-    ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp),
-        ) {
-            item {
-                Text(
-                    text = stringResource(Res.string.settings_appearance_desktop_navigation_sheet_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                )
-            }
-
-            itemsIndexed(DesktopNavigationLayout.entries) { index, layout ->
-                if (index > 0) {
-                    NuvioBottomSheetDivider()
-                }
-                NuvioBottomSheetActionRow(
-                    title = stringResource(layout.labelRes),
-                    onClick = {
-                        onLayoutSelected(layout)
-                        coroutineScope.launch {
-                            dismissNuvioBottomSheet(sheetState = sheetState, onDismiss = onDismiss)
-                        }
-                    },
-                    trailingContent = {
-                        if (layout == selectedLayout) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = stringResource(Res.string.cd_selected),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    },
+                    widthDp = posterCardStyleUiState.widthDp,
+                    cornerRadiusDp = posterCardStyleUiState.cornerRadiusDp,
+                    catalogLandscapeModeEnabled = posterCardStyleUiState.catalogLandscapeModeEnabled,
+                    hideLabelsEnabled = posterCardStyleUiState.hideLabelsEnabled,
+                    onWidthSelected = PosterCardStyleRepository::setWidthDp,
+                    onCornerRadiusSelected = PosterCardStyleRepository::setCornerRadiusDp,
+                    onCatalogLandscapeModeChange = PosterCardStyleRepository::setCatalogLandscapeModeEnabled,
+                    onHideLabelsChange = PosterCardStyleRepository::setHideLabelsEnabled,
                 )
             }
         }
@@ -374,14 +321,144 @@ private fun AppearanceLanguageBottomSheet(
 }
 
 @Composable
+private fun CustomThemeEditor(
+    customTheme: CustomThemeSettings,
+    isTablet: Boolean,
+) {
+    val horizontalPadding = if (isTablet) 20.dp else 16.dp
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = horizontalPadding, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = "Custom theme",
+                    style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Use six-digit hex colors. Changes apply as soon as a value is valid.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            NuvioActionLabel(
+                text = stringResource(Res.string.action_reset),
+                onClick = ThemeSettingsRepository::resetCustomTheme,
+            )
+        }
+        CustomThemeColorField(
+            label = "Accent",
+            value = customTheme.accentHex,
+            onValidHex = ThemeSettingsRepository::setCustomThemeAccent,
+        )
+        CustomThemeColorField(
+            label = "Background",
+            value = customTheme.backgroundHex,
+            onValidHex = ThemeSettingsRepository::setCustomThemeBackground,
+        )
+        CustomThemeColorField(
+            label = "Raised surface",
+            value = customTheme.elevatedHex,
+            onValidHex = ThemeSettingsRepository::setCustomThemeElevated,
+        )
+        CustomThemeColorField(
+            label = "Card surface",
+            value = customTheme.cardHex,
+            onValidHex = ThemeSettingsRepository::setCustomThemeCard,
+        )
+    }
+}
+
+@Composable
+private fun CustomThemeColorField(
+    label: String,
+    value: String,
+    onValidHex: (String) -> Unit,
+) {
+    var text by remember(value) { mutableStateOf(value) }
+    val parsedColor = text.themeHexColorOrNull()
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(parsedColor ?: MaterialTheme.colorScheme.surfaceVariant)
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.72f),
+                    shape = CircleShape,
+                )
+                .clickable {
+                    pickCustomThemeColor(text)?.let { pickedHex ->
+                        text = pickedHex
+                        onValidHex(pickedHex)
+                    }
+                },
+        )
+        OutlinedTextField(
+            value = text,
+            onValueChange = { next ->
+                text = next
+                if (next.isValidThemeHexInput()) {
+                    onValidHex(next)
+                }
+            },
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            label = { Text(label) },
+            supportingText = if (parsedColor == null) {
+                { Text("Example: #1E88E5") }
+            } else {
+                null
+            },
+            isError = parsedColor == null,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+            ),
+        )
+    }
+}
+
+private fun String.isValidThemeHexInput(): Boolean =
+    trim().removePrefix("#").let { cleaned ->
+        cleaned.length == 6 && cleaned.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+    }
+
+private fun String.themeHexColorOrNull(): Color? {
+    val cleaned = trim().removePrefix("#")
+    if (cleaned.length != 6 || !cleaned.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
+        return null
+    }
+    return runCatching { Color(("FF$cleaned").toLong(16)) }.getOrNull()
+}
+
+@Composable
 private fun ThemeChip(
     theme: AppTheme,
+    palette: ThemeColorPalette,
     isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val palette = ThemeColors.getColorPalette(theme)
-
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))

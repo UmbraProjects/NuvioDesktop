@@ -490,6 +490,20 @@ void setPythonHomeEnvironmentVariable() {
     nuvioMpvLogAppend("[nuvio] setPythonHomeEnvironmentVariable: set=" + std::to_string((int)setOk) +
         " target=" + toUtf8(pythonHome) +
         " readback=" + (readbackLen > 0 ? toUtf8(std::wstring(readback, readback + readbackLen)) : std::string("(empty)")) + "\n");
+
+    // Scrub any inherited PYTHONPATH. SVP 4 Pro (and other standalone VapourSynth/Python installs)
+    // set a user/system PYTHONPATH pointing at their own plugins directory. Our bundled interpreter
+    // reads it at Py_InitializeEx and pulls in that foreign, ABI-incompatible `vapoursynth` module
+    // and plugins, which crashes Nuvio the first time an interpolated file opens. We locate our own
+    // stdlib by the exe-relative directory walk (see comment above), not PYTHONPATH, so clearing it
+    // costs us nothing and isolates the bundled interpreter. Confirmed fix from an SVP4 Pro user.
+    wchar_t priorPythonPath[4096] = {};
+    DWORD priorPythonPathLen = GetEnvironmentVariableW(L"PYTHONPATH", priorPythonPath, 4096);
+    SetEnvironmentVariableW(L"PYTHONPATH", nullptr);
+    nuvioMpvLogAppend("[nuvio] scrubbed inherited PYTHONPATH (was " +
+        (priorPythonPathLen > 0
+            ? toUtf8(std::wstring(priorPythonPath, priorPythonPath + priorPythonPathLen))
+            : std::string("(unset)")) + ")\n");
 }
 
 std::wstring tempUserDataDirectory() {
@@ -909,6 +923,7 @@ public:
         bool nvidiaRtxSuperResolutionEnabled,
         bool nvidiaRtxHdrEnabled,
         const std::string &animeSvpFilter,
+        const std::vector<std::string> &extraMpvOptionsIn,
         jobject sink,
         jmethodID method
     ) {
@@ -924,6 +939,7 @@ public:
         // (e.g. a YouTube trailer with separate hi-res video + audio tracks) it is
         // attached via the audio-add command once the main file has loaded.
         externalAudioUrl = audioUrl;
+        extraMpvOptions = extraMpvOptionsIn;
 
         nuvioMpvLogReset();
         nuvioBridgeLog(
@@ -1537,6 +1553,10 @@ public:
         nuvioBridgeLog(stream.str());
     }
 
+    // True for hero-trailer preview surfaces, which must never hold OS keyboard focus.
+    // Read by containerWindowProc to reject mouse activation (WM_MOUSEACTIVATE).
+    bool isPassiveSurface() const { return passiveSurface; }
+
 private:
     HWND hostHwnd = nullptr;
     HWND containerHwnd = nullptr;
@@ -1544,6 +1564,11 @@ private:
     DWORD uiThreadId = 0;
     bool didOleInitialize = false;
     bool cursorHidden = false;
+    // A passive surface is a hero-trailer preview (controlsUrl carries "heroTrailer=1"). It must
+    // never take OS keyboard focus: the Compose UI stays the sole keyboard owner and only
+    // trailer-specific actions (mute/volume) are forwarded to it. Full-screen playback leaves
+    // this false so mpv/WebView2 receive focus normally (text entry, forms, shortcuts).
+    bool passiveSurface = false;
     std::thread uiThread;
 
     ComPtr<ICoreWebView2Environment> environment;
@@ -1611,6 +1636,9 @@ private:
     std::atomic<std::chrono::steady_clock::time_point> eofSuppressedUntil{std::chrono::steady_clock::time_point{}};
 
     std::string externalAudioUrl;
+    // User's desktop mpv options ("key=value"), applied just before mpv_initialize so they
+    // override Nuvio's built-in options. Carries the audio-passthrough and custom-options settings.
+    std::vector<std::string> extraMpvOptions;
     bool vsrLogActive = false;
 
     friend LRESULT CALLBACK messageWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -1670,6 +1698,10 @@ private:
         nuvioBridgeLog("init register window classes");
         registerWindowClasses();
         uiThreadId = GetCurrentThreadId();
+        // Hero-trailer previews pass "heroTrailer=1" in the controls URL. Mark this surface passive
+        // so its container refuses focus-stealing mouse activation and its WebView2 bounces any
+        // focus it grabs back to the Compose window (see containerWindowProc / startWebView).
+        passiveSurface = controlsUrl.find("heroTrailer=1") != std::string::npos;
         nuvioBridgeLog("init ole");
         HRESULT oleResult = OleInitialize(nullptr);
         didOleInitialize = SUCCEEDED(oleResult);
@@ -1702,7 +1734,9 @@ private:
         LONG width = std::max<LONG>(1, bounds.right - bounds.left);
         LONG height = std::max<LONG>(1, bounds.bottom - bounds.top);
         containerHwnd = CreateWindowExW(
-            0,
+            // Passive trailer surfaces get WS_EX_NOACTIVATE so the container can't be activated
+            // (and thus can't pull OS focus off the Compose window) when clicked.
+            passiveSurface ? WS_EX_NOACTIVATE : 0,
             kContainerWindowClass,
             L"",
             WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
@@ -1823,6 +1857,7 @@ private:
 
     void startWebView(const std::string &controlsUrl) {
         nuvioBridgeLog("webview create environment");
+        const bool controlsFocusable = controlsUrl.find("heroTrailer=1") == std::string::npos;
         std::wstring userDataDir = tempUserDataDirectory();
         auto weakSelf = weak_from_this();
         HRESULT result = CreateCoreWebView2EnvironmentWithOptions(
@@ -1830,7 +1865,7 @@ private:
             userDataDir.c_str(),
             nullptr,
             Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-                [weakSelf, controlsUrl](HRESULT envResult, ICoreWebView2Environment *createdEnvironment) -> HRESULT {
+                [weakSelf, controlsUrl, controlsFocusable](HRESULT envResult, ICoreWebView2Environment *createdEnvironment) -> HRESULT {
                     auto self = weakSelf.lock();
                     if (!self || self->shuttingDown.load()) return S_OK;
                     if (FAILED(envResult) || !createdEnvironment) {
@@ -1843,7 +1878,7 @@ private:
                     HRESULT controllerResult = createdEnvironment->CreateCoreWebView2Controller(
                         self->containerHwnd,
                         Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                            [controllerWeakSelf, controlsUrl](HRESULT controllerResult, ICoreWebView2Controller *createdController) -> HRESULT {
+                            [controllerWeakSelf, controlsUrl, controlsFocusable](HRESULT controllerResult, ICoreWebView2Controller *createdController) -> HRESULT {
                                 auto controllerSelf = controllerWeakSelf.lock();
                                 if (!controllerSelf || controllerSelf->shuttingDown.load()) return S_OK;
                                 if (FAILED(controllerResult) || !createdController) {
@@ -1864,6 +1899,16 @@ private:
                                 if (controllerSelf->webView && SUCCEEDED(controllerSelf->webView->get_Settings(&settings)) && settings) {
                                     settings->put_AreDefaultContextMenusEnabled(FALSE);
                                     settings->put_IsStatusBarEnabled(FALSE);
+                                    // The controls overlay is a headless HTML surface driven entirely by
+                                    // updateControls()/JS; it must never intercept playback hotkeys. Disable
+                                    // the browser's built-in accelerator keys so keys like F7 (caret
+                                    // browsing), F5 (reload), Ctrl+F/P, etc. can't leak into the WebView2
+                                    // during playback. Needs the Settings3 interface (WebView2 SDK
+                                    // 1.0.864.35+); older runtimes degrade gracefully via the null check.
+                                    ComPtr<ICoreWebView2Settings3> settings3;
+                                    if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&settings3))) && settings3) {
+                                        settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+                                    }
                                 }
 
                                 if (controllerSelf->webView) {
@@ -1887,7 +1932,11 @@ private:
                                     std::wstring url = toWide(controlsUrl);
                                     controllerSelf->logBridge("webview navigate controls");
                                     controllerSelf->webView->Navigate(url.c_str());
-                                    createdController->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+                                    if (controlsFocusable) {
+                                        createdController->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+                                    } else {
+                                        controllerSelf->logBridge("webview focus skipped for passive hero trailer controls");
+                                    }
                                 }
                                 return S_OK;
                             }
@@ -2085,6 +2134,20 @@ private:
                 setMpvOptionStringLocked("http-header-fields", headers.c_str());
             }
 
+            // User-supplied options (audio passthrough + custom options box) are applied last so
+            // they override any of Nuvio's built-in options above. Each entry is "key=value";
+            // a malformed line (no '=') is skipped rather than aborting playback.
+            for (const std::string &option : extraMpvOptions) {
+                std::string::size_type equals = option.find('=');
+                if (equals == std::string::npos) continue;
+                std::string key = option.substr(0, equals);
+                std::string value = option.substr(equals + 1);
+                if (key.empty()) continue;
+                if (!setMpvOptionStringLocked(key.c_str(), value.c_str())) {
+                    nuvioMpvLogAppend("[nuvio] ignored custom mpv option: " + key + "\n");
+                }
+            }
+
             nuvioBridgeLog("mpv initialize");
             int initResult = api.initialize(mpv);
             if (initResult < 0) {
@@ -2215,11 +2278,42 @@ private:
         webView->ExecuteScript(wideScript.c_str(), nullptr);
     }
 
+    // Moves OS keyboard focus off the WebView2 child and onto the app's top-level window. A
+    // passive trailer surface must never keep focus, but clicking its chrome (mute/volume) can
+    // still focus the WebView2's HWND. Compose's own requestFocus() can't pull Win32 focus back
+    // off a live native child, so we do it here at the Win32 level. AttachThreadInput bridges the
+    // WebView2/AWT thread boundary so SetFocus is honoured; Kotlin then routes focus to its
+    // Compose node (see the "heroTrailerFocusEscaped" event below). Runs on the native UI thread.
+    void reclaimHostKeyboardFocus() {
+        HWND topLevel = GetAncestor(hostHwnd, GA_ROOT);
+        if (!topLevel || !IsWindow(topLevel)) return;
+        DWORD thisThread = GetCurrentThreadId();
+        DWORD targetThread = GetWindowThreadProcessId(topLevel, nullptr);
+        bool attached = false;
+        if (targetThread != 0 && targetThread != thisThread) {
+            attached = AttachThreadInput(thisThread, targetThread, TRUE) != FALSE;
+        }
+        SetFocus(topLevel);
+        if (attached) {
+            AttachThreadInput(thisThread, targetThread, FALSE);
+        }
+    }
+
     void handleWebMessage(const std::wstring &messageJson) {
         std::string type = extractJsonString(messageJson, L"type");
         if (type.empty()) return;
         double value = extractJsonNumber(messageJson, L"value", 0.0);
 
+        if (type == "heroTrailerReclaimFocus") {
+            // Fired by the trailer chrome (controls.js) when a mute/volume interaction ends.
+            // Unstick Win32 focus from the WebView2 here, then let Kotlin place Compose focus.
+            // Passive surfaces only — the full-screen player legitimately keeps WebView2 focus.
+            if (passiveSurface) {
+                reclaimHostKeyboardFocus();
+                sendPlayerEvent("heroTrailerFocusEscaped", 0.0);
+            }
+            return;
+        }
         if (type == "controlsReady") {
             controlsWebReady.store(true);
             flushPendingControlsJsonIfReady();
@@ -2783,7 +2877,18 @@ LRESULT CALLBACK containerWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPA
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(create->lpCreateParams));
         return TRUE;
     }
+    auto *player = reinterpret_cast<WindowsMpvWebPlayer *>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     switch (message) {
+        case WM_MOUSEACTIVATE:
+            // A passive trailer surface must never steal keyboard focus. Refuse activation so a
+            // click on the video (or the mpv child under this container) can't move OS focus off
+            // the Compose window. MA_NOACTIVATE still delivers the click to children (the
+            // WebView2 mute/volume chrome keeps working); the WebView2's own GotFocus bounce
+            // (see startWebView) covers focus it grabs internally on click.
+            if (player && player->isPassiveSurface()) {
+                return MA_NOACTIVATE;
+            }
+            return DefWindowProcW(hwnd, message, wParam, lParam);
         case WM_SIZE:
             return 0;
         case WM_ERASEBKGND: {
@@ -2838,6 +2943,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jboolean nvidiaRtxSuperResolutionEnabled,
     jboolean nvidiaRtxHdrEnabled,
     jstring animeSvpFilter,
+    jobjectArray extraMpvOptions,
     jobject eventSink
 ) {
     HWND hostHwnd = (HWND)(intptr_t)hostViewPtr;
@@ -2846,6 +2952,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     std::vector<std::string> headerLineValues = jstringArrayToVector(env, headerLines);
     std::string controlsPageUrlText = jstringToUtf8(env, controlsPageUrl);
     std::string animeSvpFilterText = animeSvpFilter ? jstringToUtf8(env, animeSvpFilter) : std::string();
+    std::vector<std::string> extraMpvOptionsValues = jstringArrayToVector(env, extraMpvOptions);
     JavaVM *javaVm = nullptr;
     env->GetJavaVM(&javaVm);
 
@@ -2877,6 +2984,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
             nvidiaRtxSuperResolutionEnabled == JNI_TRUE,
             nvidiaRtxHdrEnabled == JNI_TRUE,
             animeSvpFilterText,
+            extraMpvOptionsValues,
             eventSinkRef,
             eventMethod
         );

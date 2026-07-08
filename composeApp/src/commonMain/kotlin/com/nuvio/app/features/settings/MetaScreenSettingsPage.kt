@@ -33,8 +33,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.build.TrailerPlaybackMode
+import com.nuvio.app.features.details.MetaHeroTrailerBackgroundMode
 import com.nuvio.app.features.details.MetaHeroTrailerPlaybackMode
 import com.nuvio.app.core.ui.NuvioActionLabel
 import com.nuvio.app.features.details.MetaEpisodeCardStyle
@@ -126,22 +125,39 @@ internal fun LazyListScope.metaScreenSettingsContent(
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_meta_cinematic_background),
-                    description = stringResource(Res.string.settings_meta_cinematic_background_description),
-                    checked = uiState.cinematicBackground,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-cinematic")),
-                    onCheckedChange = { MetaScreenSettingsRepository.setCinematicBackground(it) },
-                )
                 if (showHeroTrailerPlaybackSetting) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
+                    val selectedPlaybackArea = if (!uiState.heroTrailerPlayback) {
+                        HeroTrailerPlaybackArea.Off
+                    } else {
+                        when (uiState.heroTrailerPlaybackMode) {
+                            MetaHeroTrailerPlaybackMode.Hero -> HeroTrailerPlaybackArea.Hero
+                            MetaHeroTrailerPlaybackMode.Fullscreen -> HeroTrailerPlaybackArea.Fullscreen
+                        }
+                    }
+                    SettingsChoiceRow(
                         title = stringResource(Res.string.settings_meta_hero_trailer_playback),
                         description = stringResource(Res.string.settings_meta_hero_trailer_playback_description),
-                        checked = uiState.heroTrailerPlayback,
+                        options = listOf(
+                            SettingsChoiceOption(HeroTrailerPlaybackArea.Off, stringResource(Res.string.settings_meta_none)),
+                            SettingsChoiceOption(HeroTrailerPlaybackArea.Hero, stringResource(Res.string.settings_meta_hero_trailer_playback_area_hero)),
+                            SettingsChoiceOption(HeroTrailerPlaybackArea.Fullscreen, stringResource(Res.string.settings_meta_hero_trailer_playback_area_fullscreen)),
+                        ),
+                        selectedValue = selectedPlaybackArea,
                         isTablet = isTablet,
-                        onCheckedChange = { MetaScreenSettingsRepository.setHeroTrailerPlayback(it) },
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-hero-trailer-playback")),
+                        onSelected = { area ->
+                            when (area) {
+                                HeroTrailerPlaybackArea.Off -> MetaScreenSettingsRepository.setHeroTrailerPlayback(false)
+                                HeroTrailerPlaybackArea.Hero -> {
+                                    MetaScreenSettingsRepository.setHeroTrailerPlayback(true)
+                                    MetaScreenSettingsRepository.setHeroTrailerPlaybackMode(MetaHeroTrailerPlaybackMode.Hero)
+                                }
+                                HeroTrailerPlaybackArea.Fullscreen -> {
+                                    MetaScreenSettingsRepository.setHeroTrailerPlayback(true)
+                                    MetaScreenSettingsRepository.setHeroTrailerPlaybackMode(MetaHeroTrailerPlaybackMode.Fullscreen)
+                                }
+                            }
+                        },
                     )
                     AnimatedVisibility(
                         visible = uiState.heroTrailerPlayback,
@@ -149,97 +165,59 @@ internal fun LazyListScope.metaScreenSettingsContent(
                         exit = shrinkVertically(),
                     ) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = if (isTablet) 24.dp else 16.dp)
-                                .padding(bottom = 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text(
-                                text = stringResource(Res.string.settings_meta_hero_trailer_playback_area),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface,
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsChoiceRow(
+                                title = stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
+                                description = heroTrailerDelayLabel(uiState.heroTrailerDelaySeconds),
+                                options = heroTrailerDelayOptions(),
+                                selectedValue = uiState.heroTrailerDelaySeconds,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-hero-trailer-delay")),
+                                onSelected = MetaScreenSettingsRepository::setHeroTrailerDelaySeconds,
                             )
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                HeroTrailerPlaybackModeChip(
-                                    mode = MetaHeroTrailerPlaybackMode.Hero,
-                                    selectedMode = uiState.heroTrailerPlaybackMode,
-                                    label = stringResource(Res.string.settings_meta_hero_trailer_playback_area_hero),
-                                )
-                                HeroTrailerPlaybackModeChip(
-                                    mode = MetaHeroTrailerPlaybackMode.Fullscreen,
-                                    selectedMode = uiState.heroTrailerPlaybackMode,
-                                    label = stringResource(Res.string.settings_meta_hero_trailer_playback_area_fullscreen),
-                                )
-                            }
+                            SettingsGroupDivider(isTablet = isTablet)
                             SettingsSwitchRow(
                                 title = stringResource(Res.string.settings_meta_hero_trailer_sound),
                                 description = stringResource(Res.string.settings_meta_hero_trailer_sound_description),
                                 checked = uiState.heroTrailerSoundEnabled,
                                 isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-hero-trailer-sound")),
                                 onCheckedChange = { MetaScreenSettingsRepository.setHeroTrailerSoundEnabled(it) },
                             )
-                            Text(
-                                text = stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                // "Manual" disables auto-play — the hero trailer only plays when
-                                // a trailer is clicked (Hero playback mode).
-                                FilterChip(
-                                    selected = uiState.heroTrailerDelaySeconds <= 0,
-                                    onClick = { MetaScreenSettingsRepository.setHeroTrailerDelaySeconds(0) },
-                                    label = { Text(text = "Manual") },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                            SettingsGroupDivider(isTablet = isTablet)
+                            // NOTE: literal labels rather than Res.string.* — the compose resource
+                            // accessor generator would not surface freshly-added string keys to the
+                            // compiler in this environment (siblings resolved, these did not, even
+                            // on a fully clean build). Wire these to string resources once that
+                            // generation issue is resolved.
+                            SettingsChoiceRow(
+                                title = "Trailer background",
+                                description = "Background shown around a trailer while it plays on the info screen. Returns to normal when it ends.",
+                                options = listOf(
+                                    SettingsChoiceOption(
+                                        MetaHeroTrailerBackgroundMode.Black,
+                                        "Black (lights out)",
                                     ),
-                                )
-                                HERO_TV_TRAILER_DELAY_VALUES.forEach { seconds ->
-                                    val selected = seconds == uiState.heroTrailerDelaySeconds
-                                    FilterChip(
-                                        selected = selected,
-                                        onClick = { MetaScreenSettingsRepository.setHeroTrailerDelaySeconds(seconds) },
-                                        label = {
-                                            Text(
-                                                text = stringResource(
-                                                    Res.string.settings_playback_hero_tv_trailer_delay_seconds,
-                                                    seconds,
-                                                ),
-                                            )
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                                        ),
-                                    )
-                                }
-                            }
+                                    SettingsChoiceOption(
+                                        MetaHeroTrailerBackgroundMode.Backdrop,
+                                        "Backdrop wash",
+                                    ),
+                                    SettingsChoiceOption(
+                                        MetaHeroTrailerBackgroundMode.Theme,
+                                        "Theme background",
+                                    ),
+                                ),
+                                selectedValue = uiState.heroTrailerBackgroundMode,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-hero-trailer-background")),
+                                onSelected = MetaScreenSettingsRepository::setHeroTrailerBackgroundMode,
+                            )
                         }
                     }
+                    SettingsGroupDivider(isTablet = isTablet)
                 }
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_meta_tab_layout),
-                    description = stringResource(Res.string.settings_meta_tab_layout_description),
-                    checked = uiState.tabLayout,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-tabs")),
-                    onCheckedChange = { MetaScreenSettingsRepository.setTabLayout(it) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                MetaEpisodeCardStyleSelector(
-                    isTablet = isTablet,
-                    selectedStyle = uiState.episodeCardStyle,
-                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-episode-cards")),
-                    onStyleSelected = MetaScreenSettingsRepository::setEpisodeCardStyle,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_meta_blur_unwatched_episodes),
                     description = stringResource(Res.string.settings_meta_blur_unwatched_episodes_description),
@@ -251,27 +229,30 @@ internal fun LazyListScope.metaScreenSettingsContent(
             }
         }
     }
-    item {
-        SettingsSection(
-            title = stringResource(Res.string.settings_meta_section_sections),
-            isTablet = isTablet,
-            actions = {
-                NuvioActionLabel(
-                    text = stringResource(Res.string.action_reset),
-                    onClick = MetaScreenSettingsRepository::resetToDefaults,
-                )
-            },
-        ) {
-            SettingsGroup(isTablet = isTablet) {
-                MetaSectionReorderableList(
-                    items = uiState.items,
-                    isTablet = isTablet,
-                    tabLayout = uiState.tabLayout,
-                )
-            }
-        }
-    }
 }
+
+private enum class HeroTrailerPlaybackArea {
+    Off,
+    Hero,
+    Fullscreen,
+}
+
+@Composable
+private fun heroTrailerDelayOptions(): List<SettingsChoiceOption<Int>> =
+    listOf(SettingsChoiceOption(0, "Manual")) + HERO_TV_TRAILER_DELAY_VALUES.map { seconds ->
+        SettingsChoiceOption(
+            seconds,
+            stringResource(Res.string.settings_playback_hero_tv_trailer_delay_seconds, seconds),
+        )
+    }
+
+@Composable
+private fun heroTrailerDelayLabel(seconds: Int): String =
+    if (seconds <= 0) {
+        "Manual"
+    } else {
+        stringResource(Res.string.settings_playback_hero_tv_trailer_delay_seconds, seconds)
+    }
 
 @Composable
 private fun HeroTrailerPlaybackModeChip(
@@ -418,15 +399,9 @@ private fun MetaSectionRow(
                     }
                 }
             }
-            Switch(
+            SettingsSquareSwitch(
                 checked = item.enabled,
                 onCheckedChange = onEnabledChange,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                    checkedTrackColor = MaterialTheme.colorScheme.primary,
-                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
-                ),
             )
             IconButton(
                 modifier = with(dragHandleScope) {

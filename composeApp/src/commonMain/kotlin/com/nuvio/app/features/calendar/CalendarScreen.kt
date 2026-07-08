@@ -54,6 +54,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import com.nuvio.app.core.ui.navigationKey
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -207,23 +208,24 @@ fun CalendarScreen(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 if (selectedDay != null) return@onPreviewKeyEvent false
+                val navKey = event.navigationKey()
                 when {
                     event.key == Key.C || event.key == Key.H -> {
                         navigatingAway = true
                         onNavigateHome?.invoke(); true
                     }
-                    event.isShiftPressed && event.key == Key.DirectionLeft -> { goToMonth(-1); true }
-                    event.isShiftPressed && event.key == Key.DirectionRight -> { goToMonth(1); true }
-                    event.key == Key.DirectionLeft -> {
+                    event.isShiftPressed && navKey == Key.DirectionLeft -> { goToMonth(-1); true }
+                    event.isShiftPressed && navKey == Key.DirectionRight -> { goToMonth(1); true }
+                    navKey == Key.DirectionLeft -> {
                         focusedDay = (focusedDay - 1).coerceAtLeast(1); true
                     }
-                    event.key == Key.DirectionRight -> {
+                    navKey == Key.DirectionRight -> {
                         focusedDay = (focusedDay + 1).coerceAtMost(totalDays); true
                     }
-                    event.key == Key.DirectionUp -> {
+                    navKey == Key.DirectionUp -> {
                         focusedDay = (focusedDay - 7).coerceAtLeast(1); true
                     }
-                    event.key == Key.DirectionDown -> {
+                    navKey == Key.DirectionDown -> {
                         focusedDay = (focusedDay + 7).coerceAtMost(totalDays); true
                     }
                     event.key == Key.Enter || event.key == Key.NumPadEnter -> {

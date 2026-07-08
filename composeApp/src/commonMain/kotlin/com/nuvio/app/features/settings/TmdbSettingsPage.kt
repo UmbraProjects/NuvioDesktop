@@ -265,33 +265,27 @@ internal fun LazyListScope.tmdbSettingsContent(
                         "uses your metadata addon's own images.",
                 )
                 SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = "Addon (default)",
-                    description = "Use whatever backdrop and logo your addons provide. " +
-                        "Quality depends on the search provider configured in your addons.",
-                    checked = settings.heroImageSource == HeroImageSource.Addon,
+                val heroImageOptions = buildList {
+                    add(SettingsChoiceOption(HeroImageSource.Addon, "Addon (default)"))
+                    if (settings.hasApiKey) {
+                        add(SettingsChoiceOption(HeroImageSource.TmdbOnly, "TMDB for everything"))
+                    }
+                    if (settings.hasApiKey && tvdbSettingsUiState.hasApiKey) {
+                        add(SettingsChoiceOption(HeroImageSource.TmdbMoviesTvdbShows, "TMDB movies + TVDB shows"))
+                    }
+                }
+                val selectedHeroImageSource = if (heroImageOptions.any { it.value == settings.heroImageSource }) {
+                    settings.heroImageSource
+                } else {
+                    HeroImageSource.Addon
+                }
+                SettingsChoiceRow(
+                    title = "Hero artwork source",
+                    description = selectedHeroImageSource.settingsDescription(),
+                    options = heroImageOptions,
+                    selectedValue = selectedHeroImageSource,
                     isTablet = isTablet,
-                    onCheckedChange = { if (it) TmdbSettingsRepository.setHeroImageSource(HeroImageSource.Addon) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = "TMDB for everything",
-                    description = "Fetch backdrop + logo from TMDB for all content. " +
-                        "Original quality. Requires a TMDB API key below.",
-                    checked = settings.heroImageSource == HeroImageSource.TmdbOnly,
-                    enabled = settings.hasApiKey,
-                    isTablet = isTablet,
-                    onCheckedChange = { if (it) TmdbSettingsRepository.setHeroImageSource(HeroImageSource.TmdbOnly) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = "TMDB (movies) + TheTVDB (TV & anime)",
-                    description = "Best quality: TMDB backdrops for movies, TVDB for series " +
-                        "and anime. Requires both a TMDB API key and a TVDB API key below.",
-                    checked = settings.heroImageSource == HeroImageSource.TmdbMoviesTvdbShows,
-                    enabled = settings.hasApiKey && tvdbSettingsUiState.hasApiKey,
-                    isTablet = isTablet,
-                    onCheckedChange = { if (it) TmdbSettingsRepository.setHeroImageSource(HeroImageSource.TmdbMoviesTvdbShows) },
+                    onSelected = TmdbSettingsRepository::setHeroImageSource,
                 )
                 if (!settings.hasApiKey) {
                     SettingsGroupDivider(isTablet = isTablet)
@@ -350,6 +344,13 @@ internal fun LazyListScope.tmdbSettingsContent(
         }
     }
 }
+
+private fun HeroImageSource.settingsDescription(): String =
+    when (this) {
+        HeroImageSource.Addon -> "Use whatever backdrop and logo your addons provide."
+        HeroImageSource.TmdbOnly -> "Fetch backdrop and logo from TMDB for all content."
+        HeroImageSource.TmdbMoviesTvdbShows -> "Use TMDB for movies and TVDB for TV and anime."
+    }
 
 @Composable
 private fun TmdbApiKeyRow(

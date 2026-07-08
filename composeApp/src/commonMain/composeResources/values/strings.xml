@@ -101,7 +101,7 @@
     <string name="collections_editor_shape_square">Square</string>
     <string name="collections_editor_shape_wide">Wide</string>
     <string name="collections_editor_show_all_tab_desc">Combine all catalogs into one tab</string>
-    <string name="collections_editor_show_all_tab">Show \"All\" Tab</string>
+    <string name="collections_editor_show_all_tab">Show &quot;All&quot; Tab</string>
     <string name="collections_editor_show_gif_when_configured_desc">Play the configured GIF instead of the static cover when available.</string>
     <string name="collections_editor_show_gif_when_configured">Show GIF When Configured</string>
     <string name="collections_editor_source_count">%1$d source(s) · %2$s</string>
@@ -409,7 +409,7 @@
     <string name="compose_settings_page_appearance">Layout</string>
     <string name="compose_settings_page_content_discovery">Content &amp; Discovery</string>
     <string name="compose_settings_page_continue_watching">Continue Watching</string>
-    <string name="compose_settings_page_debrid">Connected Services</string>
+    <string name="compose_settings_page_debrid">Debrid Services</string>
     <string name="compose_settings_page_homescreen">Home Layout</string>
     <string name="compose_settings_page_integrations">Integrations</string>
     <string name="compose_settings_page_licenses_attributions">Licenses &amp; Attribution</string>
@@ -419,6 +419,7 @@
     <string name="compose_settings_page_playback">Playback</string>
     <string name="compose_settings_page_plugins">Plugins</string>
     <string name="compose_settings_page_poster_customization">Poster Card Style</string>
+    <string name="compose_settings_page_keyboard_shortcuts">Keyboard Shortcuts</string>
     <string name="compose_settings_page_root">Settings</string>
     <string name="compose_settings_page_streams">Streams</string>
     <string name="compose_settings_page_supporters_contributors">Supporters &amp; Contributors</string>
@@ -469,7 +470,7 @@
     <string name="compose_settings_root_switch_profile_title">Switch Profile</string>
     <string name="compose_settings_root_trakt_description">Open Trakt connection screen</string>
     <string name="settings_search_empty">No settings found.</string>
-    <string name="settings_search_placeholder">Search settings...</string>
+    <string name="settings_search_placeholder">Search</string>
     <string name="settings_search_results_section">RESULTS</string>
     <string name="settings_advanced_section_startup">STARTUP</string>
     <string name="settings_advanced_section_cache">CACHE</string>
@@ -481,8 +482,10 @@
     <string name="settings_licenses_attributions_section_app">APP LICENSE</string>
     <string name="settings_licenses_attributions_section_data">DATA &amp; SERVICES</string>
     <string name="settings_licenses_attributions_section_playback">PLAYBACK LICENSE</string>
-    <string name="settings_licenses_attributions_nuvio_title">Nuvio Mobile</string>
-    <string name="settings_licenses_attributions_nuvio_body">Source code and license terms are available in the project repository.</string>
+    <string name="settings_licenses_attributions_nuvio_team_title">Nuvio</string>
+    <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC is a fork of Nuvio Desktop, led by Tapframe and the Nuvio team. Support their work through the contribution page.</string>
+    <string name="settings_licenses_attributions_nuvio_title">Nuvio Desktop</string>
+    <string name="settings_licenses_attributions_nuvio_body">This project is based on Nuvio Desktop. Source code and license terms are available in the project repository.</string>
     <string name="settings_licenses_attributions_nuvio_license">Licensed under the GNU General Public License v3.0.</string>
     <string name="settings_licenses_attributions_tmdb_title">The Movie Database (TMDB)</string>
     <string name="settings_licenses_attributions_tmdb_body">Nuvio uses the TMDB API for movie and TV metadata, artwork, trailers, cast, production details, collections, and recommendations. This product uses the TMDB API but is not endorsed or certified by TMDB.</string>
@@ -677,7 +680,7 @@
     <string name="settings_integrations_tmdb_description">Metadata enrichment controls</string>
     <string name="settings_integrations_mdblist_description">External ratings providers</string>
     <string name="settings_integrations_debrid_description">Connect accounts for links and library access</string>
-    <string name="settings_debrid_section_title">Connected Services</string>
+    <string name="settings_debrid_section_title">Debrid Services</string>
     <string name="settings_debrid_experimental_notice">These integrations are experimental and may be kept, changed, or removed later.</string>
     <string name="settings_debrid_cloud_library">Cloud library</string>
     <string name="settings_debrid_cloud_library_description">Browse and play files already in your connected accounts.</string>
@@ -778,6 +781,11 @@
     <string name="settings_meta_hero_trailer_playback_area_fullscreen">Full screen</string>
     <string name="settings_meta_hero_trailer_sound">Play with sound</string>
     <string name="settings_meta_hero_trailer_sound_description">Play the hero trailer with audio instead of muted.</string>
+    <string name="settings_meta_hero_trailer_background">Trailer background</string>
+    <string name="settings_meta_hero_trailer_background_description">Background shown around a trailer while it plays on the info screen. Returns to normal when it ends.</string>
+    <string name="settings_meta_hero_trailer_background_black">Black (lights out)</string>
+    <string name="settings_meta_hero_trailer_background_backdrop">Backdrop wash</string>
+    <string name="settings_meta_hero_trailer_background_theme">Theme background</string>
     <string name="settings_meta_episode_cards">Episode Cards</string>
     <string name="settings_meta_episode_cards_description">Choose how episodes are rendered on the metadata screen.</string>
     <string name="settings_meta_episode_style_horizontal">Horizontal</string>
@@ -893,9 +901,9 @@
     <string name="settings_playback_desktop_hdr_mode">HDR Mode</string>
     <string name="settings_playback_desktop_hdr_mode_description">Controls how HDR content is handled on your display.</string>
     <string name="settings_playback_desktop_hdr_mode_dialog">HDR Mode</string>
-    <string name="settings_playback_desktop_color_profile">Color Profile</string>
-    <string name="settings_playback_desktop_color_profile_description">Applies a visual color adjustment to the playback image.</string>
-    <string name="settings_playback_desktop_color_profile_dialog">Color Profile</string>
+    <string name="settings_playback_desktop_color_profile">SDR Color Profile</string>
+    <string name="settings_playback_desktop_color_profile_description">Applies a visual color grade to SDR playback. Has no effect on HDR content, which is left at its original colors.</string>
+    <string name="settings_playback_desktop_color_profile_dialog">SDR Color Profile</string>
     <string name="settings_playback_desktop_buffer_preset">Playback Buffer</string>
     <string name="settings_playback_desktop_buffer_preset_dialog">Playback Buffer</string>
     <string name="settings_playback_desktop_renderer">Interface Renderer</string>
@@ -906,12 +914,17 @@
     <string name="settings_playback_desktop_anime_auto">Auto-apply to Anime</string>
     <string name="settings_playback_desktop_anime_auto_desc">Only apply the selected preset when the title is detected as anime. Disable to always apply.</string>
     <string name="settings_playback_desktop_anime_svp">Anime SVP (Interpolation)</string>
-    <string name="settings_playback_desktop_anime_svp_desc">Uses VapourSynth to interpolate motion for a smoother experience. Requires SVPCore DLLs installed in your MPV directory.</string>
+    <string name="settings_playback_desktop_anime_svp_desc">Uses VapourSynth to interpolate motion for a smoother experience.</string>
+    <string name="settings_playback_desktop_audio_passthrough">Audio passthrough (bitstream)</string>
+    <string name="settings_playback_desktop_audio_passthrough_desc">Experimental. Send compressed audio (AC3, DTS, E-AC3, TrueHD, DTS-HD) untouched to an AV receiver over HDMI/S-PDIF. Requires a receiver that accepts the bitstream — if you don't have one, leave this off. If a stream won't start playing, turn this off.</string>
+    <string name="settings_playback_desktop_custom_mpv_options">Advanced mpv options</string>
+    <string name="settings_playback_desktop_custom_mpv_options_desc">One option per line as key=value. Applied on top of Nuvio's defaults; invalid options are ignored.</string>
+    <string name="settings_playback_desktop_custom_mpv_options_hint">e.g.\nprofile=gpu-hq\ndeband=no</string>
     <string name="compose_settings_page_fork_enhancements">Fork Enhancements</string>
     <string name="settings_fork_enhancements_root_description">Extra features added by this desktop fork.</string>
     <string name="settings_fork_enhancements_intro">Extra features this fork adds on top of upstream Nuvio Desktop, aimed at couch/HTPC use. Select one to open its settings.</string>
     <string name="settings_fork_hdr_mode_description">Control how HDR video is tone-mapped to your display.</string>
-    <string name="settings_fork_color_profile_description">Apply a Neutral, Cinematic, or Vivid grade (presets from Stremio-Kai).</string>
+    <string name="settings_fork_color_profile_description">Apply a Neutral, Cinematic, or Vivid grade to SDR playback (presets from Stremio-Kai). No effect on HDR content.</string>
     <string name="settings_fork_default_speed_description">Set the playback speed the player starts at.</string>
     <string name="settings_fork_binge_mode_description">Automatically continue to the next episode.</string>
     <string name="settings_fork_extra_large_posters">Extra Large Posters</string>
@@ -1040,7 +1053,7 @@
     <string name="settings_playback_stream_timeout_description">Wait time for addons before selecting.</string>
     <string name="settings_playback_threshold_minutes">Threshold Minutes</string>
     <string name="settings_playback_threshold_mode">Next Episode Threshold Mode</string>
-    <string name="settings_playback_threshold_mode_minutes_before_end">Minutes before end</string>
+    <string name="settings_playback_threshold_mode_minutes_before_end">Minutes</string>
     <string name="settings_playback_threshold_mode_percentage">Percentage</string>
     <string name="settings_playback_threshold_percentage">Threshold Percentage</string>
     <string name="settings_playback_threshold_percentage_description">Fallback when no outro timestamp exists.</string>
@@ -1148,6 +1161,7 @@
     <string name="subtitle_language_unknown">Unknown</string>
     <string name="theme_amber">Amber</string>
     <string name="theme_crimson">Crimson</string>
+    <string name="theme_custom">Custom</string>
     <string name="theme_emerald">Emerald</string>
     <string name="theme_ocean">Ocean</string>
     <string name="theme_rose">Rose</string>
@@ -1609,10 +1623,10 @@
     <string name="library_trakt_load_failed">Couldn't load Trakt library</string>
     <string name="library_trakt_title">Trakt Library</string>
     <string name="cloud_library_connect_action">Connect account</string>
-    <string name="cloud_library_connect_message">Connect an account in Connected Services settings to browse playable files from your cloud library.</string>
+    <string name="cloud_library_connect_message">Connect an account in Debrid Services settings to browse playable files from your cloud library.</string>
     <string name="cloud_library_connect_title">No cloud account connected</string>
-    <string name="cloud_library_disabled_action">Open Connected Services</string>
-    <string name="cloud_library_disabled_message">Turn on Cloud library in Connected Services settings to browse files from connected accounts.</string>
+    <string name="cloud_library_disabled_action">Open Debrid Services</string>
+    <string name="cloud_library_disabled_message">Turn on Cloud library in Debrid Services settings to browse files from connected accounts.</string>
     <string name="cloud_library_disabled_title">Cloud library is off</string>
     <string name="cloud_library_empty_message">No playable cloud files match the current filters.</string>
     <string name="cloud_library_empty_title">Nothing here yet</string>
@@ -1837,7 +1851,7 @@
     <string name="cloud_library_playback_disabled">Cloud library is disabled.</string>
     <!-- IntroDB settings -->
     <string name="settings_playback_introdb_invalid_api_key">Invalid API Key or connection failed</string>
-    <string name="addons_manifest_missing_field">Manifest missing \"%1$s\"</string>
+    <string name="addons_manifest_missing_field">Manifest missing &quot;%1$s&quot;</string>
     <string name="collections_editor_tmdb_collection_title_format">TMDB Collection %1$s</string>
     <string name="collections_editor_tmdb_director_title_format">TMDB Director %1$s</string>
     <string name="collections_editor_tmdb_discover_title">TMDB Discover</string>
@@ -1887,7 +1901,7 @@
     <string name="player_error_mpv_unavailable">MPV player engine not available. Please rebuild the app.</string>
     <string name="player_error_unable_to_play_stream">Unable to play this stream.</string>
     <string name="plugins_badge_disabled">Plugins disabled</string>
-    <string name="plugins_badge_enabled">Plugins enabled</string>
+    <string name="plugins_badge_enabled">Enabled</string>
     <string name="plugins_badge_providers">%1$d providers</string>
     <string name="plugins_badge_refreshing">Refreshing</string>
     <string name="plugins_badge_repos">%1$d repos</string>

@@ -39,6 +39,16 @@ private val desktopHttpClient: HttpClient = HttpClient.newBuilder()
     .followRedirects(HttpClient.Redirect.NORMAL)
     .build()
 
+// Manual-redirect callers (SIMKL anime redirect resolution, plugin fetch redirect="manual")
+// previously built a brand-new HttpClient per request. A JDK HttpClient is never closed here,
+// and each one holds a SelectorManager thread + an IOCP handle + a connection pool that are only
+// reclaimed lazily on GC — so repeated calls leaked threads/handles over a long session. Reuse a
+// single NEVER-redirect client instead; it is functionally identical per request.
+private val desktopHttpClientNoRedirect: HttpClient = HttpClient.newBuilder()
+    .connectTimeout(Duration.ofSeconds(30))
+    .followRedirects(HttpClient.Redirect.NEVER)
+    .build()
+
 actual suspend fun httpGetText(url: String): String =
     httpGetTextWithHeaders(url, emptyMap())
 
@@ -70,14 +80,7 @@ actual suspend fun httpRequestRaw(
     body: String,
     followRedirects: Boolean,
 ): RawHttpResponse = withContext(Dispatchers.IO) {
-    val client = if (followRedirects) {
-        desktopHttpClient
-    } else {
-        HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(30))
-            .followRedirects(HttpClient.Redirect.NEVER)
-            .build()
-    }
+    val client = if (followRedirects) desktopHttpClient else desktopHttpClientNoRedirect
     val normalizedMethod = method.trim().uppercase().ifBlank { "GET" }
     val requestBuilder = HttpRequest.newBuilder()
         .uri(URI(url.encodeUnsafeHttpUrlCharacters()))

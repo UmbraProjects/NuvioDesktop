@@ -30,6 +30,7 @@ internal object NativePlayerBridge {
         nvidiaRtxSuperResolutionEnabled: Boolean,
         nvidiaRtxHdrEnabled: Boolean,
         animeSvpFilter: String?,
+        extraMpvOptions: Array<String>,
         eventSink: NativePlayerEventSink,
     ): Long
 

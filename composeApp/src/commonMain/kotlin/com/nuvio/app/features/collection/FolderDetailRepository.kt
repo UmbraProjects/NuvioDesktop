@@ -13,6 +13,7 @@ import com.nuvio.app.core.i18n.localizedMediaTypeLabel
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.ensureUniqueKeys
 import com.nuvio.app.features.home.filterReleasedItems
 import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.trakt.TraktPublicListSourceResolver
@@ -486,7 +487,7 @@ object FolderDetailRepository {
                 nextSkip = tab.nextSkip,
                 isLoadingMore = tab.isLoadingMore,
             )
-        }
+        }.ensureUniqueKeys()
     }
 }
 

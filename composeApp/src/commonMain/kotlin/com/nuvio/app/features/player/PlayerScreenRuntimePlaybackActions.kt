@@ -51,8 +51,6 @@ internal fun PlayerScreenRuntime.resetIdentityStateIfNeeded() {
         shouldPlay = true
         initialLoadCompleted = false
         defaultPlaybackSpeedApplied = false
-        speedBoostRestoreSpeed = null
-        isHoldToSpeedGestureActive = false
         initialSeekApplied = activeInitialPositionMs <= 0L &&
             (activeInitialProgressFraction == null || activeInitialProgressFraction!! <= 0f)
         lastProgressPersistEpochMs = 0L

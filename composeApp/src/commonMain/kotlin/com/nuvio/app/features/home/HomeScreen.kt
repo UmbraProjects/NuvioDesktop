@@ -37,6 +37,8 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import com.nuvio.app.core.ui.WasdNavigation
+import com.nuvio.app.core.ui.navigationKey
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -79,6 +81,7 @@ import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.MetahubService
+import com.nuvio.app.features.details.HeroTrailerAudioState
 import com.nuvio.app.features.metadata.isAnimeSeasonArtUrl
 import com.nuvio.app.features.details.SeriesPrimaryAction
 import com.nuvio.app.features.details.seriesPrimaryAction
@@ -339,16 +342,25 @@ fun HomeScreen(
                     hasMore = false,
                     paginates = false,
                 )
-            }
+            }.ensureUniqueKeys()
         }
     }
 
     // Base hero items from the mode — no genre/description/releaseInfo for library/search items yet.
-    val baseHeroItems: List<MetaPreview> = remember(displayMode, contentMode, searchQuery, homeUiState.heroItems, effectiveSections) {
+    val baseHeroItems: List<MetaPreview> = remember(displayMode, contentMode, searchQuery, homeUiState.heroItems, effectiveSections, tmdbImageModeOn) {
+        // In non-Addon hero-image modes, suppress the catalog's art/metadata on Search/Library
+        // hero items so TMDB/TVDB enrichment doesn't visibly replace it ~1s later. Hero-only:
+        // baseHeroItems is a separate list from the results grid (which reads effectiveSections).
+        fun List<MetaPreview>.suppressingCatalogHero() =
+            if (tmdbImageModeOn) map(MetaPreview::asPendingHeroPreview) else this
         when (displayMode) {
             is HomeContentMode.Normal -> homeUiState.heroItems
-            is HomeContentMode.Search -> effectiveSections.flatMap { it.items }.distinctBy { "${it.type}:${it.id}" }.take(8)
-            else -> effectiveSections.take(2).flatMap { it.items.take(8) }.distinctBy { "${it.type}:${it.id}" }
+            is HomeContentMode.Search ->
+                effectiveSections.flatMap { it.items }.distinctBy { "${it.type}:${it.id}" }.take(8)
+                    .suppressingCatalogHero()
+            else ->
+                effectiveSections.take(2).flatMap { it.items.take(8) }.distinctBy { "${it.type}:${it.id}" }
+                    .suppressingCatalogHero()
         }
     }
 
@@ -1133,9 +1145,12 @@ fun HomeScreen(
     val adaptiveHeroEnabled = homeSettingsUiState.adaptiveHeroEnabled && isDesktop
     val heroTrailerShowing by HomeHeroTrailerManualTrigger.active.collectAsStateWithLifecycle()
     val playerTrailerSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val trailersEnabledForCurrentMode =
+        displayMode !is HomeContentMode.Search || playerTrailerSettings.heroTvTrailerSearchEnabled
     // In Adaptive Hero mode the hero is only a strip, so a full-screen trailer needs its
     // container expanded to the whole screen (TV Mode's hero already fills the viewport).
-    val heroTrailerFullscreenActive = heroTrailerShowing && playerTrailerSettings.heroTvTrailerFullscreen
+    val heroTrailerFullscreenActive =
+        heroTrailerShowing && trailersEnabledForCurrentMode && playerTrailerSettings.heroTvTrailerFullscreen
     val heroAmbientBackgroundEnabled =
         homeSettingsUiState.heroAmbientBackgroundEnabled && isDesktop && showHeroSlot
     val tvModeEnabled =
@@ -1444,10 +1459,36 @@ fun HomeScreen(
             true
         }
         HomeTvKey.ToggleTrailer -> {
-            if (adaptiveHeroEnabled || tvModeEnabled) {
+            if (trailersEnabledForCurrentMode && (adaptiveHeroEnabled || tvModeEnabled)) {
                 HomeHeroTrailerManualTrigger.trigger()
                 true
             } else false
+        }
+        HomeTvKey.ToggleMute -> {
+            // Always toggle + consume. heroTrailerShowing is the global manual-trigger flag and can
+            // be stomped when two catalog heroes mount at startup (one instance's setActive(false)
+            // races the other's true), so gating on it let M fall through during autoplay — the
+            // unconsumed key then shifted focus and stopped the trailer. Toggling when nothing is
+            // playing is harmless: the mute flag is re-derived from the sound setting on focus change.
+            HeroTrailerAudioState.toggleMuted()
+            true
+        }
+        HomeTvKey.VolumeDown -> {
+            // [ / ] step trailer volume as a keyboard alternative to the overlay slider.
+            HeroTrailerAudioState.nudgeVolume(-5)
+            true
+        }
+        HomeTvKey.VolumeUp -> {
+            HeroTrailerAudioState.nudgeVolume(5)
+            true
+        }
+        HomeTvKey.TogglePeoplePanel -> {
+            if (adaptiveHeroEnabled || tvModeEnabled) {
+                HomeHeroPeoplePanelToggleTrigger.trigger()
+                true
+            } else {
+                false
+            }
         }
         HomeTvKey.Dismiss -> {
             if (heroTrailerShowing) {
@@ -1659,8 +1700,9 @@ fun HomeScreen(
                 try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
             }
             .onPreviewKeyEvent { event ->
+                val searchKey = if (WasdNavigation.enabled) Key.Q else Key.S
                 when (event.key) {
-                    Key.S -> {
+                    searchKey -> {
                         if (event.type == KeyEventType.KeyUp) {
                             onNavigateToSearch?.invoke()
                         }
@@ -1733,7 +1775,7 @@ fun HomeScreen(
                         )
                         .onPreviewKeyEvent { event ->
                             if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                            when (event.key) {
+                            when (event.navigationKey()) {
                                 Key.DirectionDown -> {
                                     mouseActivity.onKeyboardNavigation()
                                     if (tvModeEnabled) {
@@ -1786,13 +1828,17 @@ fun HomeScreen(
                                     // the auto-play setting (TV-style hero only).
                                     handleHomeTvKey(HomeTvKey.ToggleTrailer)
                                 }
+                                Key.M -> {
+                                    handleHomeTvKey(HomeTvKey.ToggleMute)
+                                }
+                                Key.LeftBracket -> {
+                                    handleHomeTvKey(HomeTvKey.VolumeDown)
+                                }
+                                Key.RightBracket -> {
+                                    handleHomeTvKey(HomeTvKey.VolumeUp)
+                                }
                                 Key.P -> {
-                                    if (adaptiveHeroEnabled || tvModeEnabled) {
-                                        HomeHeroPeoplePanelToggleTrigger.trigger()
-                                        true
-                                    } else {
-                                        false
-                                    }
+                                    handleHomeTvKey(HomeTvKey.TogglePeoplePanel)
                                 }
                                 Key.Escape, Key.Back -> {
                                     // If a hero trailer is showing, Escape dismisses it first
@@ -1911,6 +1957,7 @@ fun HomeScreen(
                     heroInfoPriority = homeSettingsUiState.heroInfoPriority,
                     heroBadgePlacement = homeSettingsUiState.heroBadgePlacement,
                     heroReleaseStatusUnavailableOnly = homeSettingsUiState.heroReleaseStatusUnavailableOnly,
+                    trailersEnabledInCurrentMode = trailersEnabledForCurrentMode,
                     immersiveContentBottomPadding = immersiveShelfHeight - 20.dp,
                     onActiveItemChanged = { item ->
                         activeHeroBackdrop = item.banner ?: item.poster
@@ -3036,6 +3083,23 @@ private fun MetaPreview.needsHomeHeroBackdropFallback(): Boolean =
     type != COLLECTION_HERO_TYPE &&
         banner.isNullOrBlank() &&
         homeHeroFallbackImdbId() != null
+
+/**
+ * Strips the addon catalog's art and metadata from a Search/Library hero item so the hero shows
+ * nothing but the (correct) title until TMDB/TVDB enrichment resolves. Used only when the hero
+ * image source isn't Addon — otherwise the catalog's poster/backdrop/text flash for ~1s and then
+ * get replaced, which reads as a metadata race. Identity (id/type/name) is preserved so
+ * enrichment can still fetch by it; the grid is unaffected (it reads effectiveSections).
+ */
+private fun MetaPreview.asPendingHeroPreview(): MetaPreview = copy(
+    poster = null,
+    posterFallback = null,
+    banner = null,
+    logo = null,
+    description = null,
+    releaseInfo = null,
+    genres = emptyList(),
+)
 
 private fun MetaPreview.homeHeroFallbackImdbId(): String? =
     id.split("_").firstOrNull { segment -> segment.startsWith("tt", ignoreCase = true) }

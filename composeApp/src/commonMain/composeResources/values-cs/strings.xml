@@ -97,7 +97,7 @@
     <string name="collections_editor_shape_square">Čtverec</string>
     <string name="collections_editor_shape_wide">Širokoúhlý</string>
     <string name="collections_editor_show_all_tab_desc">Sloučit všechny katalogy do jedné karty</string>
-    <string name="collections_editor_show_all_tab">Zobrazit kartu \"Vše\"</string>
+    <string name="collections_editor_show_all_tab">Zobrazit kartu &quot;Vše&quot;</string>
     <string name="collections_editor_show_gif_when_configured_desc">Přehrát nastavený GIF místo statického obalu, pokud je k dispozici.</string>
     <string name="collections_editor_show_gif_when_configured">Zobrazit GIF, když je nastavený</string>
     <string name="collections_editor_source_count">%1$d zdroj(ů) · %2$s</string>

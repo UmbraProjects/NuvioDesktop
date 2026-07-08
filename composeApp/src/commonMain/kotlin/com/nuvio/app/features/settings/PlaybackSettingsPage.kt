@@ -11,9 +11,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
@@ -22,14 +23,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -72,8 +74,6 @@ import com.nuvio.app.features.player.IosTargetPrimaries
 import com.nuvio.app.features.player.IosTargetTransfer
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.player.STREAM_AUTO_PLAY_TIMEOUT_VALUES
-import com.nuvio.app.features.player.SubtitleBackgroundColorSwatches
-import com.nuvio.app.features.player.SubtitleColorSwatches
 import com.nuvio.app.features.player.SubtitleLanguageOption
 import com.nuvio.app.features.player.formatPlaybackSpeedLabel
 import com.nuvio.app.features.player.languageLabelForCode
@@ -97,10 +97,7 @@ import kotlin.math.roundToInt
 internal fun LazyListScope.playbackSettingsContent(
     isTablet: Boolean,
     showLoadingOverlay: Boolean,
-    holdToSpeedEnabled: Boolean,
-    holdToSpeedValue: Float,
     defaultPlaybackSpeed: Float,
-    touchGesturesEnabled: Boolean,
     preferredAudioLanguage: String,
     secondaryPreferredAudioLanguage: String?,
     preferredSubtitleLanguage: String,
@@ -117,10 +114,7 @@ internal fun LazyListScope.playbackSettingsContent(
         PlaybackSettingsSection(
             isTablet = isTablet,
             showLoadingOverlay = showLoadingOverlay,
-            holdToSpeedEnabled = holdToSpeedEnabled,
-            holdToSpeedValue = holdToSpeedValue,
             defaultPlaybackSpeed = defaultPlaybackSpeed,
-            touchGesturesEnabled = touchGesturesEnabled,
             preferredAudioLanguage = preferredAudioLanguage,
             secondaryPreferredAudioLanguage = secondaryPreferredAudioLanguage,
             preferredSubtitleLanguage = preferredSubtitleLanguage,
@@ -199,44 +193,41 @@ private fun SettingsSliderRow(
     enabled: Boolean = true,
     onValueChange: (Int) -> Unit,
 ) {
-    val horizontalPadding = if (isTablet) 20.dp else 16.dp
+    val horizontalPadding = 16.dp
     var sliderValue by remember(value) { mutableFloatStateOf(value.toFloat()) }
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = 10.dp)
+            .padding(horizontal = horizontalPadding, vertical = 8.dp)
             .alpha(if (enabled) 1f else 0.55f),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Text(
+            text = title,
+            style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f),
+        )
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.width(if (isTablet) 210.dp else 260.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
+            SettingsModernSlider(
+                value = sliderValue.coerceIn(valueRange.first.toFloat(), valueRange.last.toFloat()),
+                onValueChange = { if (enabled) sliderValue = snapToStep(it, step.toFloat()) },
+                onValueChangeFinished = {
+                    if (enabled) onValueChange(sliderValue.roundToInt().coerceIn(valueRange.first, valueRange.last))
+                },
+                enabled = enabled,
+                valueRange = valueRange.first.toFloat()..valueRange.last.toFloat(),
+                steps = calculateSteps(valueRange.first.toFloat(), valueRange.last.toFloat(), step.toFloat()),
                 modifier = Modifier.weight(1f),
             )
-            ValueBox(text = valueText, modifier = Modifier.wrapContentWidth())
+            ValueBox(text = valueText, modifier = Modifier.width(44.dp))
         }
-        Slider(
-            value = sliderValue.coerceIn(valueRange.first.toFloat(), valueRange.last.toFloat()),
-            onValueChange = { if (enabled) sliderValue = snapToStep(it, step.toFloat()) },
-            onValueChangeFinished = {
-                if (enabled) onValueChange(sliderValue.roundToInt().coerceIn(valueRange.first, valueRange.last))
-            },
-            enabled = enabled,
-            valueRange = valueRange.first.toFloat()..valueRange.last.toFloat(),
-            steps = calculateSteps(valueRange.first.toFloat(), valueRange.last.toFloat(), step.toFloat()),
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 
@@ -249,14 +240,158 @@ private fun subtitleColorLabel(color: Color): String {
     }
 }
 
+private data class SubtitleColorOption(
+    val color: Color,
+    val label: String,
+)
+
+@Composable
+private fun subtitleTextColorOptions(): List<SubtitleColorOption> =
+    listOf(
+        SubtitleColorOption(Color.White, "White"),
+        SubtitleColorOption(Color(0xFFFFD700), "Gold"),
+        SubtitleColorOption(Color(0xFF00E5FF), "Cyan"),
+        SubtitleColorOption(Color(0xFFFF5C5C), "Coral"),
+        SubtitleColorOption(Color(0xFF00FF88), "Mint"),
+        SubtitleColorOption(Color(0xFF9B59B6), "Purple"),
+        SubtitleColorOption(Color(0xFFF97316), "Orange"),
+        SubtitleColorOption(Color(0xFF22C55E), "Green"),
+        SubtitleColorOption(Color(0xFF3B82F6), "Blue"),
+        SubtitleColorOption(Color.Black, "Black"),
+    )
+
+@Composable
+private fun subtitleBackgroundColorOptions(): List<SubtitleColorOption> =
+    listOf(
+        SubtitleColorOption(Color.Transparent, stringResource(Res.string.settings_playback_subtitle_color_transparent)),
+        SubtitleColorOption(Color.Black.copy(alpha = 0.55f), "Soft black"),
+        SubtitleColorOption(Color(0xFF111827).copy(alpha = 0.72f), "Charcoal"),
+        SubtitleColorOption(Color(0xFF7F1D1D).copy(alpha = 0.68f), "Burgundy"),
+        SubtitleColorOption(Color(0xFF064E3B).copy(alpha = 0.68f), "Forest"),
+        SubtitleColorOption(Color(0xFF1E3A8A).copy(alpha = 0.68f), "Navy"),
+    )
+
+@Composable
+private fun SubtitleColorDropdownRow(
+    title: String,
+    options: List<SubtitleColorOption>,
+    selectedColor: Color,
+    enabled: Boolean,
+    isTablet: Boolean,
+    onColorSelected: (Color) -> Unit,
+) {
+    val selectedOption = options.firstOrNull { it.color.toStorageHexString() == selectedColor.toStorageHexString() }
+        ?: options.first()
+    var expanded by remember { mutableStateOf(false) }
+    val controlWidth = if (isTablet) 210.dp else 260.dp
+    val triggerShape = RoundedCornerShape(
+        topStart = 8.dp,
+        topEnd = 8.dp,
+        bottomStart = if (expanded) 0.dp else 8.dp,
+        bottomEnd = if (expanded) 0.dp else 8.dp,
+    )
+    val menuShape = RoundedCornerShape(
+        topStart = 0.dp,
+        topEnd = 0.dp,
+        bottomStart = 8.dp,
+        bottomEnd = 8.dp,
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = if (isTablet) 16.dp else 16.dp, vertical = if (isTablet) 8.8.dp else 12.dp)
+            .alpha(if (enabled) 1f else 0.55f),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f),
+        )
+        Box(modifier = Modifier.width(controlWidth)) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = enabled) { expanded = true },
+                shape = triggerShape,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SubtitleColorSwatch(color = selectedOption.color)
+                    Text(
+                        text = selectedOption.label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.ArrowDropDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            DropdownMenu(
+                expanded = expanded && enabled,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.width(controlWidth),
+                shape = menuShape,
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+            ) {
+                options.forEach { option ->
+                    val selected = option.color.toStorageHexString() == selectedOption.color.toStorageHexString()
+                    DropdownMenuItem(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .alpha(if (selected) 1f else 0.82f),
+                        text = {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                SubtitleColorSwatch(color = option.color)
+                                Text(option.label)
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            onColorSelected(option.color)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubtitleColorSwatch(color: Color) {
+    Surface(
+        modifier = Modifier.size(18.dp),
+        shape = RoundedCornerShape(5.dp),
+        color = if (color.alpha == 0f) MaterialTheme.colorScheme.surface else color,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
+    ) {}
+}
+
 @Composable
 private fun PlaybackSettingsSection(
     isTablet: Boolean,
     showLoadingOverlay: Boolean,
-    holdToSpeedEnabled: Boolean,
-    holdToSpeedValue: Float,
     defaultPlaybackSpeed: Float,
-    touchGesturesEnabled: Boolean,
     preferredAudioLanguage: String,
     secondaryPreferredAudioLanguage: String?,
     preferredSubtitleLanguage: String,
@@ -274,15 +409,8 @@ private fun PlaybackSettingsSection(
     var showPreferredSubtitleDialog by remember { mutableStateOf(false) }
     var showSecondarySubtitleDialog by remember { mutableStateOf(false) }
     var showAddonSubtitleStartupModeDialog by remember { mutableStateOf(false) }
-    var showSubtitleTextColorDialog by remember { mutableStateOf(false) }
-    var showSubtitleBackgroundColorDialog by remember { mutableStateOf(false) }
-    var showSubtitleOutlineColorDialog by remember { mutableStateOf(false) }
-    var showExternalPlayerDialog by remember { mutableStateOf(false) }
     var showExternalPlayerAppDialog by remember { mutableStateOf(false) }
     var showReuseCacheDurationDialog by remember { mutableStateOf(false) }
-    var showDecoderPriorityDialog by remember { mutableStateOf(false) }
-    var showHoldToSpeedValueDialog by remember { mutableStateOf(false) }
-    var showDefaultPlaybackSpeedDialog by remember { mutableStateOf(false) }
     var showIosAudioOutputDialog by remember { mutableStateOf(false) }
     var showIosHardwareDecoderDialog by remember { mutableStateOf(false) }
     var showIosTargetPrimariesDialog by remember { mutableStateOf(false) }
@@ -293,7 +421,6 @@ private fun PlaybackSettingsSection(
     var showDesktopBufferPresetDialog by remember { mutableStateOf(false) }
     var showDesktopRendererApiDialog by remember { mutableStateOf(false) }
     var showDesktopAnimeModeDialog by remember { mutableStateOf(false) }
-    var showHeroTvTrailerDelayDialog by remember { mutableStateOf(false) }
     var showAutoPlayModeDialog by remember { mutableStateOf(false) }
     var showAutoPlaySourceDialog by remember { mutableStateOf(false) }
     var showAutoPlayAddonSelectionDialog by remember { mutableStateOf(false) }
@@ -362,17 +489,18 @@ private fun PlaybackSettingsSection(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 // Player preference picker: Internal / External
-                SettingsNavigationRow(
+                SettingsChoiceRow(
                     title = stringResource(Res.string.settings_playback_player_preference),
-                    description = if (autoPlayPlayerSettings.externalPlayerEnabled) {
-                        stringResource(Res.string.settings_playback_player_preference_external)
-                    } else {
-                        stringResource(Res.string.settings_playback_player_preference_internal)
-                    },
+                    description = stringResource(Res.string.settings_playback_player_preference),
+                    options = listOf(
+                        SettingsChoiceOption(false, stringResource(Res.string.settings_playback_player_preference_internal)),
+                        SettingsChoiceOption(true, stringResource(Res.string.settings_playback_player_preference_external)),
+                    ),
+                    selectedValue = autoPlayPlayerSettings.externalPlayerEnabled,
                     isTablet = isTablet,
-                    onClick = { showExternalPlayerDialog = true },
+                    onSelected = PlayerSettingsRepository::setExternalPlayerEnabled,
                 )
-                if (isIos && autoPlayPlayerSettings.externalPlayerEnabled) {
+                if ((isIos || isDesktop) && autoPlayPlayerSettings.externalPlayerEnabled) {
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
                         title = stringResource(Res.string.settings_playback_external_player_app),
@@ -397,39 +525,22 @@ private fun PlaybackSettingsSection(
                     )
                 }
                 SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_touch_gestures),
-                    description = stringResource(Res.string.settings_playback_touch_gestures_description),
-                    checked = touchGesturesEnabled,
-                    enabled = !autoPlayPlayerSettings.externalPlayerEnabled,
-                    isTablet = isTablet,
-                    onCheckedChange = PlayerSettingsRepository::setTouchGesturesEnabled,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_hold_to_speed),
-                    description = stringResource(Res.string.settings_playback_hold_to_speed_description),
-                    checked = holdToSpeedEnabled,
-                    enabled = !autoPlayPlayerSettings.externalPlayerEnabled,
-                    isTablet = isTablet,
-                    onCheckedChange = PlayerSettingsRepository::setHoldToSpeedEnabled,
-                )
-                if (holdToSpeedEnabled && !autoPlayPlayerSettings.externalPlayerEnabled) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_playback_hold_speed),
-                        description = formatPlaybackSpeedLabel(holdToSpeedValue),
-                        isTablet = isTablet,
-                        onClick = { showHoldToSpeedValueDialog = true },
-                    )
+                val standardDefaultSpeedOptions = listOf(1f, 1.25f, 1.5f, 1.75f, 2f)
+                val defaultSpeedOptions = if (standardDefaultSpeedOptions.any { it == defaultPlaybackSpeed }) {
+                    standardDefaultSpeedOptions
+                } else {
+                    (standardDefaultSpeedOptions + defaultPlaybackSpeed).sorted()
                 }
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
+                SettingsChoiceRow(
                     title = stringResource(Res.string.settings_playback_default_speed),
                     description = formatPlaybackSpeedLabel(defaultPlaybackSpeed),
+                    options = defaultSpeedOptions.map { speed ->
+                        SettingsChoiceOption(speed, formatPlaybackSpeedLabel(speed))
+                    },
+                    selectedValue = defaultSpeedOptions.firstOrNull { it == defaultPlaybackSpeed } ?: defaultPlaybackSpeed,
                     isTablet = isTablet,
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.DefaultSpeed),
-                    onClick = { showDefaultPlaybackSpeedDialog = true },
+                    onSelected = PlayerSettingsRepository::setDefaultPlaybackSpeed,
                 )
                 if (isDesktop) {
                     SettingsGroupDivider(isTablet = isTablet)
@@ -442,44 +553,59 @@ private fun PlaybackSettingsSection(
                         onCheckedChange = PlayerSettingsRepository::setMouseMoveRevealsControlsEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
+                    SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_desktop_hdr_mode),
-                        description = autoPlayPlayerSettings.desktopHdrMode.label,
+                        description = autoPlayPlayerSettings.desktopHdrMode.description,
+                        options = DesktopHdrMode.entries.map { SettingsChoiceOption(it, it.label) },
+                        selectedValue = autoPlayPlayerSettings.desktopHdrMode,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HdrMode),
-                        onClick = { showDesktopHdrModeDialog = true },
+                        onSelected = PlayerSettingsRepository::setDesktopHdrMode,
+                        onMoreOptionsClick = { showDesktopHdrModeDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
+                    SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_desktop_color_profile),
-                        description = autoPlayPlayerSettings.desktopColorProfile.label,
+                        description = autoPlayPlayerSettings.desktopColorProfile.description,
+                        options = DesktopColorProfile.entries.map { SettingsChoiceOption(it, it.label) },
+                        selectedValue = autoPlayPlayerSettings.desktopColorProfile,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.ColorProfile),
-                        onClick = { showDesktopColorProfileDialog = true },
+                        onSelected = PlayerSettingsRepository::setDesktopColorProfile,
+                        onMoreOptionsClick = { showDesktopColorProfileDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
+                    SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_desktop_renderer),
-                        description = autoPlayPlayerSettings.desktopRendererApi.label,
+                        description = autoPlayPlayerSettings.desktopRendererApi.description,
+                        options = DesktopRendererApi.entries.map { SettingsChoiceOption(it, it.label) },
+                        selectedValue = autoPlayPlayerSettings.desktopRendererApi,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.DesktopRenderer),
-                        onClick = { showDesktopRendererApiDialog = true },
+                        onSelected = PlayerSettingsRepository::setDesktopRendererApi,
+                        onMoreOptionsClick = { showDesktopRendererApiDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
+                    SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_desktop_buffer_preset),
-                        description = autoPlayPlayerSettings.desktopBufferPreset.label,
+                        description = autoPlayPlayerSettings.desktopBufferPreset.description,
+                        options = DesktopBufferPreset.entries.map { SettingsChoiceOption(it, it.label) },
+                        selectedValue = autoPlayPlayerSettings.desktopBufferPreset,
                         isTablet = isTablet,
-                        onClick = { showDesktopBufferPresetDialog = true },
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BufferPreset),
+                        onSelected = PlayerSettingsRepository::setDesktopBufferPreset,
+                        onMoreOptionsClick = { showDesktopBufferPresetDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
+                    SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_desktop_anime_mode),
-                        description = autoPlayPlayerSettings.desktopAnimeMode.label,
+                        description = autoPlayPlayerSettings.desktopAnimeMode.description,
+                        options = DesktopAnimeMode.entries.map { SettingsChoiceOption(it, it.label) },
+                        selectedValue = autoPlayPlayerSettings.desktopAnimeMode,
                         isTablet = isTablet,
-                        onClick = { showDesktopAnimeModeDialog = true },
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeEnhancements),
+                        onSelected = PlayerSettingsRepository::setDesktopAnimeMode,
+                        onMoreOptionsClick = { showDesktopAnimeModeDialog = true },
                     )
                     if (autoPlayPlayerSettings.desktopAnimeMode != DesktopAnimeMode.Off) {
                         SettingsGroupDivider(isTablet = isTablet)
@@ -503,46 +629,36 @@ private fun PlaybackSettingsSection(
                     }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_hero_tv_trailer),
-                        description = stringResource(Res.string.settings_playback_hero_tv_trailer_description),
-                        checked = autoPlayPlayerSettings.heroTvTrailerEnabled,
+                        title = stringResource(Res.string.settings_playback_desktop_audio_passthrough),
+                        description = stringResource(Res.string.settings_playback_desktop_audio_passthrough_desc),
+                        checked = autoPlayPlayerSettings.desktopAudioPassthroughEnabled,
                         isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AutoPlayTrailer),
-                        onCheckedChange = PlayerSettingsRepository::setHeroTvTrailerEnabled,
+                        onCheckedChange = PlayerSettingsRepository::setDesktopAudioPassthroughEnabled,
                     )
-                    // Only the delay is gated behind auto-play; sound and full screen also
-                    // apply to manually triggered (T) trailers, so they stay visible.
-                    if (autoPlayPlayerSettings.heroTvTrailerEnabled) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsNavigationRow(
-                            title = stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
-                            description = stringResource(
-                                Res.string.settings_playback_hero_tv_trailer_delay_seconds,
-                                autoPlayPlayerSettings.heroTvTrailerDelaySeconds,
-                            ),
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerDelay),
-                            onClick = { showHeroTvTrailerDelayDialog = true },
+                    SettingsGroupDivider(isTablet = isTablet)
+                    var showCustomMpvOptionsDialog by remember { mutableStateOf(false) }
+                    val mpvOptionsNotSet = stringResource(Res.string.settings_playback_not_set)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_playback_desktop_custom_mpv_options),
+                        description = autoPlayPlayerSettings.desktopCustomMpvOptions
+                            .lineSequence()
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() && !it.startsWith("#") }
+                            .joinToString("  •  ")
+                            .ifBlank { mpvOptionsNotSet },
+                        isTablet = isTablet,
+                        onClick = { showCustomMpvOptionsDialog = true },
+                    )
+                    if (showCustomMpvOptionsDialog) {
+                        CustomMpvOptionsDialog(
+                            initialValue = autoPlayPlayerSettings.desktopCustomMpvOptions,
+                            onSave = {
+                                PlayerSettingsRepository.setDesktopCustomMpvOptions(it)
+                                showCustomMpvOptionsDialog = false
+                            },
+                            onDismiss = { showCustomMpvOptionsDialog = false },
                         )
                     }
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_hero_tv_trailer_sound),
-                        description = stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description),
-                        checked = autoPlayPlayerSettings.heroTvTrailerSoundEnabled,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerSound),
-                        onCheckedChange = PlayerSettingsRepository::setHeroTvTrailerSoundEnabled,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_hero_tv_trailer_fullscreen),
-                        description = stringResource(Res.string.settings_playback_hero_tv_trailer_fullscreen_description),
-                        checked = autoPlayPlayerSettings.heroTvTrailerFullscreen,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerFullscreen),
-                        onCheckedChange = PlayerSettingsRepository::setHeroTvTrailerFullscreen,
-                    )
                 }
             }
         }
@@ -684,22 +800,6 @@ private fun PlaybackSettingsSection(
                     },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_text_color),
-                    description = subtitleColorLabel(subtitleStyle.textColor),
-                    enabled = subtitleRenderingEnabled,
-                    isTablet = isTablet,
-                    onClick = { showSubtitleTextColorDialog = true },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_background_color),
-                    description = subtitleColorLabel(subtitleStyle.backgroundColor),
-                    enabled = subtitleRenderingEnabled,
-                    isTablet = isTablet,
-                    onClick = { showSubtitleBackgroundColorDialog = true },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_playback_subtitle_outline),
                     description = stringResource(Res.string.settings_playback_subtitle_outline_description),
@@ -712,14 +812,39 @@ private fun PlaybackSettingsSection(
                 )
                 if (subtitleStyle.outlineEnabled) {
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
+                    SubtitleColorDropdownRow(
                         title = stringResource(Res.string.settings_playback_subtitle_outline_color),
-                        description = subtitleColorLabel(subtitleStyle.outlineColor),
+                        options = subtitleTextColorOptions(),
+                        selectedColor = subtitleStyle.outlineColor,
                         enabled = subtitleRenderingEnabled,
                         isTablet = isTablet,
-                        onClick = { showSubtitleOutlineColorDialog = true },
+                        onColorSelected = { color ->
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineColor = color))
+                        },
                     )
                 }
+                SettingsGroupDivider(isTablet = isTablet)
+                SubtitleColorDropdownRow(
+                    title = stringResource(Res.string.settings_playback_subtitle_text_color),
+                    options = subtitleTextColorOptions(),
+                    selectedColor = subtitleStyle.textColor,
+                    enabled = subtitleRenderingEnabled,
+                    isTablet = isTablet,
+                    onColorSelected = { color ->
+                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(textColor = color))
+                    },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SubtitleColorDropdownRow(
+                    title = stringResource(Res.string.settings_playback_subtitle_background_color),
+                    options = subtitleBackgroundColorOptions(),
+                    selectedColor = subtitleStyle.backgroundColor,
+                    enabled = subtitleRenderingEnabled,
+                    isTablet = isTablet,
+                    onColorSelected = { color ->
+                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(backgroundColor = color))
+                    },
+                )
                 // Android-only: this picks between ExoPlayer's WASM/JNI ASS rendering backends.
                 // Desktop always renders ASS/SSA natively via mpv/libass regardless of this
                 // setting (see sub-ass-override handling in player_bridge.cpp) - showing it here
@@ -808,11 +933,16 @@ private fun PlaybackSettingsSection(
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
-                SettingsNavigationRow(
+                SettingsChoiceRow(
                     title = stringResource(Res.string.settings_playback_stream_selection_mode),
                     description = stringResource(autoPlayPlayerSettings.streamAutoPlayMode.labelRes),
+                    options = StreamAutoPlayMode.entries.map { mode ->
+                        SettingsChoiceOption(mode, stringResource(mode.labelRes))
+                    },
+                    selectedValue = autoPlayPlayerSettings.streamAutoPlayMode,
                     isTablet = isTablet,
-                    onClick = { showAutoPlayModeDialog = true },
+                    onSelected = PlayerSettingsRepository::setStreamAutoPlayMode,
+                    onMoreOptionsClick = { showAutoPlayModeDialog = true },
                 )
                 if (autoPlayPlayerSettings.streamAutoPlayMode == StreamAutoPlayMode.REGEX_MATCH) {
                     SettingsGroupDivider(isTablet = isTablet)
@@ -831,64 +961,73 @@ private fun PlaybackSettingsSection(
                     Int.MAX_VALUE -> stringResource(Res.string.settings_playback_timeout_unlimited)
                     else -> stringResource(Res.string.settings_playback_timeout_seconds, timeoutSec)
                 }
-                Column(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 10.dp),
+                        .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 12.dp),
                     ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(
-                                text = stringResource(Res.string.settings_playback_stream_timeout),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = stringResource(Res.string.settings_playback_stream_timeout_description),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        ValueBox(text = timeoutLabel, modifier = Modifier.wrapContentWidth())
+                        Text(
+                            text = stringResource(Res.string.settings_playback_stream_timeout),
+                            style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = stringResource(Res.string.settings_playback_stream_timeout_description),
+                            style = if (isTablet) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     val timeoutIndex = STREAM_AUTO_PLAY_TIMEOUT_VALUES.indexOf(timeoutSec)
                         .coerceAtLeast(0)
                     val maxIndex = (STREAM_AUTO_PLAY_TIMEOUT_VALUES.size - 1).toFloat()
                     var sliderValue by remember(timeoutIndex) { mutableFloatStateOf(timeoutIndex.toFloat()) }
                     var lastHapticStep by remember(timeoutIndex) { mutableStateOf(timeoutIndex.toFloat()) }
-                    Slider(
-                        value = sliderValue,
-                        onValueChange = {
-                            val snapped = snapToStep(it, 1f)
-                            sliderValue = snapped
+                    Row(
+                        modifier = Modifier.width(if (isTablet) 210.dp else 260.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        SettingsModernSlider(
+                            value = sliderValue,
+                            onValueChange = {
+                                val snapped = snapToStep(it, 1f)
+                                sliderValue = snapped
 
-                            if (snapped != lastHapticStep) {
-                                lastHapticStep = snapped
-                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
-                        },
-                        onValueChangeFinished = {
-                            val index = sliderValue.toInt().coerceIn(0, STREAM_AUTO_PLAY_TIMEOUT_VALUES.size - 1)
-                            PlayerSettingsRepository.setStreamAutoPlayTimeoutSeconds(STREAM_AUTO_PLAY_TIMEOUT_VALUES[index])
-                        },
-                        valueRange = 0f..maxIndex,
-                        steps = calculateSteps(0f, maxIndex, 1f),
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                                if (snapped != lastHapticStep) {
+                                    lastHapticStep = snapped
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                            },
+                            onValueChangeFinished = {
+                                val index = sliderValue.toInt().coerceIn(0, STREAM_AUTO_PLAY_TIMEOUT_VALUES.size - 1)
+                                PlayerSettingsRepository.setStreamAutoPlayTimeoutSeconds(STREAM_AUTO_PLAY_TIMEOUT_VALUES[index])
+                            },
+                            valueRange = 0f..maxIndex,
+                            steps = calculateSteps(0f, maxIndex, 1f),
+                            modifier = Modifier.weight(1f),
+                        )
+                        ValueBox(text = timeoutLabel, modifier = Modifier.width(72.dp))
+                    }
                 }
                 SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
+                SettingsChoiceRow(
                     title = stringResource(Res.string.settings_playback_source_scope),
                     description = stringResource(autoPlayPlayerSettings.streamAutoPlaySource.labelRes(pluginsEnabled)),
+                    options = StreamAutoPlaySource.entries
+                        .filter { pluginsEnabled || it != StreamAutoPlaySource.ENABLED_PLUGINS_ONLY }
+                        .map { source ->
+                            SettingsChoiceOption(source, stringResource(source.labelRes(pluginsEnabled)))
+                        },
+                    selectedValue = autoPlayPlayerSettings.streamAutoPlaySource,
                     isTablet = isTablet,
-                    onClick = { showAutoPlaySourceDialog = true },
+                    onSelected = PlayerSettingsRepository::setStreamAutoPlaySource,
+                    onMoreOptionsClick = { showAutoPlaySourceDialog = true },
                 )
                 if (autoPlayPlayerSettings.streamAutoPlaySource != StreamAutoPlaySource.ENABLED_PLUGINS_ONLY) {
                     SettingsGroupDivider(isTablet = isTablet)
@@ -927,53 +1066,20 @@ private fun PlaybackSettingsSection(
             }
         }
 
-        if (!isIos) {
-            val decoderEnabled = !autoPlayPlayerSettings.externalPlayerEnabled
-            SettingsSection(
-                title = stringResource(Res.string.settings_playback_section_decoder),
-                isTablet = isTablet,
-            ) {
-                SettingsGroup(isTablet = isTablet) {
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_playback_decoder_priority),
-                        description = decoderPriorityLabel(decoderPriority),
-                        enabled = decoderEnabled,
-                        isTablet = isTablet,
-                        onClick = { showDecoderPriorityDialog = true },
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_map_dv7_to_hevc),
-                        description = stringResource(Res.string.settings_playback_map_dv7_to_hevc_description),
-                        checked = mapDV7ToHevc,
-                        enabled = decoderEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setMapDV7ToHevc,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_tunneled_playback),
-                        description = stringResource(Res.string.settings_playback_tunneled_playback_description),
-                        checked = tunnelingEnabled,
-                        enabled = decoderEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setTunnelingEnabled,
-                    )
-                }
-            }
-        }
-
         if (isIos) {
             SettingsSection(
                 title = stringResource(Res.string.settings_playback_ios_audio_output_section),
                 isTablet = isTablet,
             ) {
                 SettingsGroup(isTablet = isTablet) {
-                    SettingsNavigationRow(
+                    SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_ios_audio_output),
                         description = autoPlayPlayerSettings.iosAudioOutputMode.label,
+                        options = IosAudioOutputMode.entries.map { SettingsChoiceOption(it, it.label) },
+                        selectedValue = autoPlayPlayerSettings.iosAudioOutputMode,
                         isTablet = isTablet,
-                        onClick = { showIosAudioOutputDialog = true },
+                        onSelected = PlayerSettingsRepository::setIosAudioOutputMode,
+                        onMoreOptionsClick = { showIosAudioOutputDialog = true },
                     )
                 }
             }
@@ -983,11 +1089,14 @@ private fun PlaybackSettingsSection(
                 isTablet = isTablet,
             ) {
                 SettingsGroup(isTablet = isTablet) {
-                    SettingsNavigationRow(
+                    SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_ios_hardware_decoder),
                         description = autoPlayPlayerSettings.iosHardwareDecoderMode.localizedLabel(),
+                        options = IosHardwareDecoderMode.entries.map { SettingsChoiceOption(it, it.localizedLabel()) },
+                        selectedValue = autoPlayPlayerSettings.iosHardwareDecoderMode,
                         isTablet = isTablet,
-                        onClick = { showIosHardwareDecoderDialog = true },
+                        onSelected = PlayerSettingsRepository::setIosHardwareDecoderMode,
+                        onMoreOptionsClick = { showIosHardwareDecoderDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
@@ -1006,18 +1115,24 @@ private fun PlaybackSettingsSection(
                         onCheckedChange = PlayerSettingsRepository::setIosTargetColorspaceHintEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
+                    SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_ios_target_primaries),
                         description = autoPlayPlayerSettings.iosTargetPrimaries.label,
+                        options = IosTargetPrimaries.entries.map { SettingsChoiceOption(it, it.label) },
+                        selectedValue = autoPlayPlayerSettings.iosTargetPrimaries,
                         isTablet = isTablet,
-                        onClick = { showIosTargetPrimariesDialog = true },
+                        onSelected = PlayerSettingsRepository::setIosTargetPrimaries,
+                        onMoreOptionsClick = { showIosTargetPrimariesDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
+                    SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_ios_target_transfer),
                         description = autoPlayPlayerSettings.iosTargetTransfer.label,
+                        options = IosTargetTransfer.entries.map { SettingsChoiceOption(it, it.label) },
+                        selectedValue = autoPlayPlayerSettings.iosTargetTransfer,
                         isTablet = isTablet,
-                        onClick = { showIosTargetTransferDialog = true },
+                        onSelected = PlayerSettingsRepository::setIosTargetTransfer,
+                        onMoreOptionsClick = { showIosTargetTransferDialog = true },
                     )
                 }
             }
@@ -1129,11 +1244,16 @@ private fun PlaybackSettingsSection(
                 }
                 SettingsGroupDivider(isTablet = isTablet)
                 var showThresholdModeDialog by remember { mutableStateOf(false) }
-                SettingsNavigationRow(
+                SettingsChoiceRow(
                     title = stringResource(Res.string.settings_playback_threshold_mode),
                     description = stringResource(autoPlayPlayerSettings.nextEpisodeThresholdMode.labelRes),
+                    options = com.nuvio.app.features.player.skip.NextEpisodeThresholdMode.entries.map { mode ->
+                        SettingsChoiceOption(mode, stringResource(mode.labelRes))
+                    },
+                    selectedValue = autoPlayPlayerSettings.nextEpisodeThresholdMode,
                     isTablet = isTablet,
-                    onClick = { showThresholdModeDialog = true },
+                    onSelected = PlayerSettingsRepository::setNextEpisodeThresholdMode,
+                    onMoreOptionsClick = { showThresholdModeDialog = true },
                 )
                 if (showThresholdModeDialog) {
                     NextEpisodeThresholdModeDialog(
@@ -1149,108 +1269,120 @@ private fun PlaybackSettingsSection(
                 when (autoPlayPlayerSettings.nextEpisodeThresholdMode) {
                     com.nuvio.app.features.player.skip.NextEpisodeThresholdMode.PERCENTAGE -> {
                         val thresholdPercent = autoPlayPlayerSettings.nextEpisodeThresholdPercent
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 10.dp),
+                                .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 12.dp),
                             ) {
-                                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                                    Text(
-                                        text = stringResource(Res.string.settings_playback_threshold_percentage),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        text = stringResource(Res.string.settings_playback_threshold_percentage_description),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                ValueBox(text = stringResource(
-                                    Res.string.settings_playback_threshold_percentage_value,
-                                    formatStep(thresholdPercent)), modifier = Modifier.wrapContentWidth())
+                                Text(
+                                    text = stringResource(Res.string.settings_playback_threshold_percentage),
+                                    style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = stringResource(Res.string.settings_playback_threshold_percentage_description),
+                                    style = if (isTablet) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                             var sliderValue by remember(thresholdPercent) { mutableFloatStateOf(thresholdPercent) }
                             var lastHapticPercent by remember(thresholdPercent) { mutableStateOf(thresholdPercent) }
-                            Slider(
-                                value = sliderValue,
-                                onValueChange = {
-                                    val snapped = snapToStep(it, 0.5f)
-                                    sliderValue = snapped
+                            Row(
+                                modifier = Modifier.width(if (isTablet) 210.dp else 260.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                SettingsModernSlider(
+                                    value = sliderValue,
+                                    onValueChange = {
+                                        val snapped = snapToStep(it, 0.5f)
+                                        sliderValue = snapped
 
-                                    if (snapped != lastHapticPercent) {
-                                        lastHapticPercent = snapped
-                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    }
-                                },
-                                onValueChangeFinished = {
-                                    PlayerSettingsRepository.setNextEpisodeThresholdPercent(sliderValue)
-                                },
-                                valueRange = 97f..100f,
-                                steps = calculateSteps(97f, 100f, 0.5f),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MaterialTheme.colorScheme.primary,
-                                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                                ),
-                                modifier = Modifier.fillMaxWidth(),
-                            )
+                                        if (snapped != lastHapticPercent) {
+                                            lastHapticPercent = snapped
+                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        }
+                                    },
+                                    onValueChangeFinished = {
+                                        PlayerSettingsRepository.setNextEpisodeThresholdPercent(sliderValue)
+                                    },
+                                    valueRange = 97f..100f,
+                                    steps = calculateSteps(97f, 100f, 0.5f),
+                                    modifier = Modifier.weight(1f),
+                                )
+                                ValueBox(
+                                    text = stringResource(
+                                        Res.string.settings_playback_threshold_percentage_value,
+                                        formatStep(thresholdPercent),
+                                    ),
+                                    modifier = Modifier.width(56.dp),
+                                )
+                            }
                         }
                     }
                     com.nuvio.app.features.player.skip.NextEpisodeThresholdMode.MINUTES_BEFORE_END -> {
                         val thresholdMinutes = autoPlayPlayerSettings.nextEpisodeThresholdMinutesBeforeEnd
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 10.dp),
+                                .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 12.dp),
                             ) {
-                                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                                    Text(
-                                        text = stringResource(Res.string.settings_playback_minutes_before_end),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        text = stringResource(Res.string.settings_playback_minutes_before_end_description),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                ValueBox(text = stringResource(
-                                        Res.string.settings_playback_minutes_value,
-                                        formatStep(thresholdMinutes)), modifier = Modifier.wrapContentWidth())
+                                Text(
+                                    text = stringResource(Res.string.settings_playback_minutes_before_end),
+                                    style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = stringResource(Res.string.settings_playback_minutes_before_end_description),
+                                    style = if (isTablet) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                             var sliderValue by remember(thresholdMinutes) { mutableFloatStateOf(thresholdMinutes) }
                             var lastHapticMin by remember(thresholdMinutes) { mutableStateOf(thresholdMinutes) }
-                            Slider(
-                                value = sliderValue,
-                                onValueChange = {
-                                    val snapped = snapToStep(it, 0.5f)
-                                    sliderValue = snapped
+                            Row(
+                                modifier = Modifier.width(if (isTablet) 210.dp else 260.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                SettingsModernSlider(
+                                    value = sliderValue,
+                                    onValueChange = {
+                                        val snapped = snapToStep(it, 0.5f)
+                                        sliderValue = snapped
 
-                                    if (snapped != lastHapticMin) {
-                                        lastHapticMin = snapped
-                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    }
-                                },
-                                onValueChangeFinished = {
-                                    PlayerSettingsRepository.setNextEpisodeThresholdMinutesBeforeEnd(sliderValue)
-                                },
-                                valueRange = 0f..3.5f,
-                                steps = calculateSteps(0f, 3.5f, 0.5f),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MaterialTheme.colorScheme.primary,
-                                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                                ),
-                                modifier = Modifier.fillMaxWidth(),
-                            )
+                                        if (snapped != lastHapticMin) {
+                                            lastHapticMin = snapped
+                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        }
+                                    },
+                                    onValueChangeFinished = {
+                                        PlayerSettingsRepository.setNextEpisodeThresholdMinutesBeforeEnd(sliderValue)
+                                    },
+                                    valueRange = 0f..3.5f,
+                                    steps = calculateSteps(0f, 3.5f, 0.5f),
+                                    modifier = Modifier.weight(1f),
+                                )
+                                ValueBox(
+                                    text = stringResource(
+                                        Res.string.settings_playback_minutes_value,
+                                        formatStep(thresholdMinutes),
+                                    ),
+                                    modifier = Modifier.width(56.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -1341,45 +1473,6 @@ private fun PlaybackSettingsSection(
         )
     }
 
-    if (showSubtitleTextColorDialog) {
-        SubtitleColorDialog(
-            title = stringResource(Res.string.settings_playback_subtitle_text_color),
-            colors = SubtitleColorSwatches,
-            selectedColor = autoPlayPlayerSettings.subtitleStyle.textColor,
-            onColorSelected = { color ->
-                PlayerSettingsRepository.setSubtitleStyle(autoPlayPlayerSettings.subtitleStyle.copy(textColor = color))
-                showSubtitleTextColorDialog = false
-            },
-            onDismiss = { showSubtitleTextColorDialog = false },
-        )
-    }
-
-    if (showSubtitleBackgroundColorDialog) {
-        SubtitleColorDialog(
-            title = stringResource(Res.string.settings_playback_subtitle_background_color),
-            colors = SubtitleBackgroundColorSwatches,
-            selectedColor = autoPlayPlayerSettings.subtitleStyle.backgroundColor,
-            onColorSelected = { color ->
-                PlayerSettingsRepository.setSubtitleStyle(autoPlayPlayerSettings.subtitleStyle.copy(backgroundColor = color))
-                showSubtitleBackgroundColorDialog = false
-            },
-            onDismiss = { showSubtitleBackgroundColorDialog = false },
-        )
-    }
-
-    if (showSubtitleOutlineColorDialog) {
-        SubtitleColorDialog(
-            title = stringResource(Res.string.settings_playback_subtitle_outline_color),
-            colors = SubtitleColorSwatches,
-            selectedColor = autoPlayPlayerSettings.subtitleStyle.outlineColor,
-            onColorSelected = { color ->
-                PlayerSettingsRepository.setSubtitleStyle(autoPlayPlayerSettings.subtitleStyle.copy(outlineColor = color))
-                showSubtitleOutlineColorDialog = false
-            },
-            onDismiss = { showSubtitleOutlineColorDialog = false },
-        )
-    }
-
     if (showReuseCacheDurationDialog) {
         ReuseCacheDurationDialog(
             selectedHours = streamReuseLastLinkCacheHours,
@@ -1388,17 +1481,6 @@ private fun PlaybackSettingsSection(
                 showReuseCacheDurationDialog = false
             },
             onDismiss = { showReuseCacheDurationDialog = false },
-        )
-    }
-
-    if (showExternalPlayerDialog) {
-        PlayerPreferenceDialog(
-            isExternal = autoPlayPlayerSettings.externalPlayerEnabled,
-            onPreferenceSelected = { external ->
-                PlayerSettingsRepository.setExternalPlayerEnabled(external)
-                showExternalPlayerDialog = false
-            },
-            onDismiss = { showExternalPlayerDialog = false },
         )
     }
 
@@ -1421,39 +1503,6 @@ private fun PlaybackSettingsSection(
                 showP2pConsentDialog = false
             },
             onDismiss = { showP2pConsentDialog = false },
-        )
-    }
-
-    if (showDecoderPriorityDialog) {
-        DecoderPriorityDialog(
-            selectedPriority = decoderPriority,
-            onPrioritySelected = { priority ->
-                PlayerSettingsRepository.setDecoderPriority(priority)
-                showDecoderPriorityDialog = false
-            },
-            onDismiss = { showDecoderPriorityDialog = false },
-        )
-    }
-
-    if (showHoldToSpeedValueDialog) {
-        HoldToSpeedValueDialog(
-            selectedSpeed = holdToSpeedValue,
-            onSpeedSelected = { speed ->
-                PlayerSettingsRepository.setHoldToSpeedValue(speed)
-                showHoldToSpeedValueDialog = false
-            },
-            onDismiss = { showHoldToSpeedValueDialog = false },
-        )
-    }
-
-    if (showDefaultPlaybackSpeedDialog) {
-        DefaultPlaybackSpeedDialog(
-            selectedSpeed = defaultPlaybackSpeed,
-            onSpeedSelected = { speed ->
-                PlayerSettingsRepository.setDefaultPlaybackSpeed(speed)
-                showDefaultPlaybackSpeedDialog = false
-            },
-            onDismiss = { showDefaultPlaybackSpeedDialog = false },
         )
     }
 
@@ -1606,17 +1655,6 @@ private fun PlaybackSettingsSection(
         )
     }
 
-    if (showHeroTvTrailerDelayDialog) {
-        HeroTvTrailerDelayDialog(
-            selectedSeconds = autoPlayPlayerSettings.heroTvTrailerDelaySeconds,
-            onSecondsSelected = {
-                PlayerSettingsRepository.setHeroTvTrailerDelaySeconds(it)
-                showHeroTvTrailerDelayDialog = false
-            },
-            onDismiss = { showHeroTvTrailerDelayDialog = false },
-        )
-    }
-
     if (showAutoPlayModeDialog) {
         StreamAutoPlayModeDialog(
             selectedMode = autoPlayPlayerSettings.streamAutoPlayMode,
@@ -1708,133 +1746,6 @@ private data class LanguageSelectionOption(
     val value: String?,
     val label: String,
 )
-
-@Composable
-@OptIn(ExperimentalMaterial3Api::class)
-private fun PlayerPreferenceDialog(
-    isExternal: Boolean,
-    onPreferenceSelected: (Boolean) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    BasicAlertDialog(
-        onDismissRequest = onDismiss,
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = stringResource(Res.string.settings_playback_player_preference),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                )
-
-                Text(
-                    text = stringResource(Res.string.settings_playback_player_preference_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    // Internal option
-                    val internalSelected = !isExternal
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPreferenceSelected(false) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (internalSelected) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                        },
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = stringResource(Res.string.settings_playback_player_preference_internal),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Box(
-                                modifier = Modifier.size(24.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (internalSelected) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Check,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // External option
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPreferenceSelected(true) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isExternal) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                        },
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = stringResource(Res.string.settings_playback_player_preference_external),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Box(
-                                modifier = Modifier.size(24.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (isExternal) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Check,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = stringResource(Res.string.settings_playback_dialog_close),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -2301,268 +2212,6 @@ private fun <T> IosEnumSelectionDialog(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun HeroTvTrailerDelayDialog(
-    selectedSeconds: Int,
-    onSecondsSelected: (Int) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    BasicAlertDialog(
-        onDismissRequest = onDismiss,
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = stringResource(Res.string.settings_playback_hero_tv_trailer_delay_dialog),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    HERO_TV_TRAILER_DELAY_VALUES.forEach { seconds ->
-                        val isSelected = seconds == selectedSeconds
-                        val containerColor = if (isSelected) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                        }
-
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSecondsSelected(seconds) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = containerColor,
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = stringResource(
-                                        Res.string.settings_playback_hero_tv_trailer_delay_seconds,
-                                        seconds,
-                                    ),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Box(
-                                    modifier = Modifier.size(24.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = stringResource(Res.string.settings_playback_dialog_close),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-@OptIn(ExperimentalMaterial3Api::class)
-private fun HoldToSpeedValueDialog(
-    selectedSpeed: Float,
-    onSpeedSelected: (Float) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val options = listOf(1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
-
-    BasicAlertDialog(
-        onDismissRequest = onDismiss,
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = stringResource(Res.string.settings_playback_hold_speed),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    options.forEach { speed ->
-                        val isSelected = speed == selectedSpeed
-                        val containerColor = if (isSelected) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                        }
-
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSpeedSelected(speed) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = containerColor,
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = formatPlaybackSpeedLabel(speed),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Box(
-                                    modifier = Modifier.size(24.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = stringResource(Res.string.settings_playback_dialog_close),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-@OptIn(ExperimentalMaterial3Api::class)
-private fun DefaultPlaybackSpeedDialog(
-    selectedSpeed: Float,
-    onSpeedSelected: (Float) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val options = listOf(1f, 1.25f, 1.5f, 1.75f, 2f)
-
-    BasicAlertDialog(
-        onDismissRequest = onDismiss,
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = stringResource(Res.string.settings_playback_default_speed),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    options.forEach { speed ->
-                        val isSelected = speed == selectedSpeed
-                        val containerColor = if (isSelected) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                        }
-
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSpeedSelected(speed) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = containerColor,
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = formatPlaybackSpeedLabel(speed),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Box(
-                                    modifier = Modifier.size(24.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = stringResource(Res.string.settings_playback_dialog_close),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-@OptIn(ExperimentalMaterial3Api::class)
 private fun LibassRenderTypeDialog(
     selectedRenderType: String,
     onRenderTypeSelected: (String) -> Unit,
@@ -2752,106 +2401,6 @@ private fun AddonSubtitleStartupModeDialog(
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-@OptIn(ExperimentalMaterial3Api::class)
-private fun SubtitleColorDialog(
-    title: String,
-    colors: List<Color>,
-    selectedColor: Color,
-    onColorSelected: (Color) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    BasicAlertDialog(
-        onDismissRequest = onDismiss,
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    colors.forEach { color ->
-                        val isSelected = selectedColor.toStorageHexString() == color.toStorageHexString()
-                        val containerColor = if (isSelected) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                        }
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onColorSelected(color) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = containerColor,
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Surface(
-                                    modifier = Modifier.size(28.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (color.alpha == 0f) {
-                                        MaterialTheme.colorScheme.surface
-                                    } else {
-                                        color
-                                    },
-                                    border = BorderStroke(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-                                    ),
-                                ) {}
-                                Spacer(modifier = Modifier.size(12.dp))
-                                Text(
-                                    text = subtitleColorLabel(color),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Box(
-                                    modifier = Modifier.size(24.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = stringResource(Res.string.settings_playback_dialog_close),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
     }
@@ -3393,6 +2942,80 @@ private fun StreamAutoPlayRegexDialog(
                     }) {
                         Text(stringResource(Res.string.action_save))
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun CustomMpvOptionsDialog(
+    initialValue: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var value by remember { mutableStateOf(initialValue) }
+
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.settings_playback_desktop_custom_mpv_options),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(Res.string.settings_playback_desktop_custom_mpv_options_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                ) {
+                    BasicTextField(
+                        value = value,
+                        onValueChange = { value = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 96.dp)
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        singleLine = false,
+                        decorationBox = { inner ->
+                            if (value.isEmpty()) {
+                                Text(
+                                    text = stringResource(Res.string.settings_playback_desktop_custom_mpv_options_hint),
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                )
+                            }
+                            inner()
+                        },
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
+                    TextButton(onClick = { onSave(value.trim()) }) { Text(stringResource(Res.string.action_save)) }
                 }
             }
         }

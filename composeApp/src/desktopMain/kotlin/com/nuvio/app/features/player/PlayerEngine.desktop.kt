@@ -193,6 +193,7 @@ private fun NativePlayerSurface(
     }
 
     DisposableEffect(controller) {
+        PlayerShortcutsRepository.ensureLoaded()
         val dispatcher = KeyEventDispatcher { event ->
             if (event.id != KeyEvent.KEY_PRESSED) return@KeyEventDispatcher false
             if (event.isMetaDown || event.isControlDown || event.isAltDown) return@KeyEventDispatcher false
@@ -211,54 +212,53 @@ private fun NativePlayerSurface(
                 event.consume()
                 return@KeyEventDispatcher true
             }
-            when (event.keyCode) {
-                KeyEvent.VK_F8 -> {
-                    controller.cycleDesktopHdrMode()
+            // Tab skips the intro/outro, but only while the skip prompt is on screen; otherwise
+            // let Tab keep its normal behavior. Fixed (not rebindable).
+            if (event.keyCode == KeyEvent.VK_TAB) {
+                if (!controller.triggerSkipIntervalIfAvailable()) {
+                    return@KeyEventDispatcher false
                 }
-                KeyEvent.VK_F9 -> {
-                    controller.cycleDesktopColorProfile()
-                }
-                KeyEvent.VK_F10 -> {
-                    animeModeSessionForced.value = true
-                    controller.cycleDesktopAnimeMode()
-                }
-                KeyEvent.VK_F7 -> {
+                event.consume()
+                return@KeyEventDispatcher true
+            }
+            // Fixed, non-rebindable alternates preserved exactly from the historical bindings:
+            // the arrow keys (seek/volume) and K (play/pause). These always apply.
+            val fixedType = when (event.keyCode) {
+                KeyEvent.VK_LEFT -> "keyboardSeekBack"
+                KeyEvent.VK_RIGHT -> "keyboardSeekForward"
+                KeyEvent.VK_UP -> "volumeUp"
+                KeyEvent.VK_DOWN -> "volumeDown"
+                KeyEvent.VK_K -> "keyboardToggle"
+                else -> null
+            }
+            if (fixedType != null) {
+                controller.dispatchKeyboardShortcut(fixedType, 1.0)
+                event.consume()
+                return@KeyEventDispatcher true
+            }
+            // Rebindable actions, resolved against the user's current bindings.
+            val action = PlayerShortcutsRepository.actionForKeyCode(event.keyCode)
+                ?: return@KeyEventDispatcher false
+            when (action) {
+                PlayerShortcutAction.PlayPause -> controller.dispatchKeyboardShortcut("keyboardToggle", 1.0)
+                PlayerShortcutAction.SeekBackward -> controller.dispatchKeyboardShortcut("keyboardSeekBack", 1.0)
+                PlayerShortcutAction.SeekForward -> controller.dispatchKeyboardShortcut("keyboardSeekForward", 1.0)
+                PlayerShortcutAction.SpeedUp -> controller.dispatchKeyboardShortcut("keyboardSpeedStep", 1.0)
+                PlayerShortcutAction.SpeedDown -> controller.dispatchKeyboardShortcut("keyboardSpeedStep", -1.0)
+                PlayerShortcutAction.NextSubtitle -> controller.dispatchKeyboardShortcut("keyboardNextSubtitle", 1.0)
+                PlayerShortcutAction.NextAudio -> controller.dispatchKeyboardShortcut("keyboardNextAudio", 1.0)
+                PlayerShortcutAction.OpenSources -> controller.openKeyboardPanel("sources")
+                PlayerShortcutAction.OpenEpisodes -> controller.openKeyboardPanel("episodes")
+                PlayerShortcutAction.CycleZoom -> controller.dispatchKeyboardShortcut("resize", 1.0)
+                PlayerShortcutAction.CycleSvp -> {
                     animeModeSessionForced.value = true
                     controller.cycleDesktopAnimeSvpMode()
                 }
-                KeyEvent.VK_TAB -> {
-                    // Tab skips the intro/outro, but only while the skip prompt is on screen;
-                    // otherwise let Tab keep its normal behavior.
-                    if (!controller.triggerSkipIntervalIfAvailable()) {
-                        return@KeyEventDispatcher false
-                    }
-                }
-                else -> {
-                    val type = when (event.keyCode) {
-                        KeyEvent.VK_LEFT, KeyEvent.VK_J -> "keyboardSeekBack"
-                        KeyEvent.VK_RIGHT, KeyEvent.VK_L -> "keyboardSeekForward"
-                        KeyEvent.VK_UP -> "volumeUp"
-                        KeyEvent.VK_DOWN -> "volumeDown"
-                        KeyEvent.VK_SPACE, KeyEvent.VK_K -> "keyboardToggle"
-                        KeyEvent.VK_C -> "resize"
-                        KeyEvent.VK_OPEN_BRACKET -> "keyboardSpeedStep"
-                        KeyEvent.VK_CLOSE_BRACKET -> "keyboardSpeedStep"
-                        KeyEvent.VK_S -> "keyboardNextSubtitle"
-                        KeyEvent.VK_A -> "keyboardNextAudio"
-                        KeyEvent.VK_O -> {
-                            controller.openKeyboardPanel("sources")
-                            event.consume()
-                            return@KeyEventDispatcher true
-                        }
-                        KeyEvent.VK_E -> {
-                            controller.openKeyboardPanel("episodes")
-                            event.consume()
-                            return@KeyEventDispatcher true
-                        }
-                        else -> return@KeyEventDispatcher false
-                    }
-                    val value = if (event.keyCode == KeyEvent.VK_OPEN_BRACKET) -1.0 else 1.0
-                    controller.dispatchKeyboardShortcut(type, value)
+                PlayerShortcutAction.CycleHdr -> controller.cycleDesktopHdrMode()
+                PlayerShortcutAction.CycleColorProfile -> controller.cycleDesktopColorProfile()
+                PlayerShortcutAction.CycleAnime -> {
+                    animeModeSessionForced.value = true
+                    controller.cycleDesktopAnimeMode()
                 }
             }
             event.consume()
@@ -292,6 +292,7 @@ private fun NativePlayerSurface(
             initialPositionMs = initialPositionMs,
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
             nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
+            enableUserMpvOptions = true,
             onError = { message -> latestOnError.value(message) },
         )
     }
@@ -346,6 +347,7 @@ private fun NativePlayerSurface(
                     controller = controller,
                     hdrMode = settings.desktopHdrMode,
                     colorProfile = settings.desktopColorProfile,
+                    isHdr = isHdr == true,
                 )
                 controller.applyDesktopBufferPreset(settings.desktopBufferPreset)
                 applyDesktopAnimeProfile(
@@ -420,6 +422,7 @@ private fun applyDesktopVideoProfile(
     controller: NativePlayerController,
     hdrMode: DesktopHdrMode,
     colorProfile: DesktopColorProfile,
+    isHdr: Boolean,
 ) {
     when (hdrMode) {
         DesktopHdrMode.Auto -> {
@@ -456,10 +459,22 @@ private fun applyDesktopVideoProfile(
     // rendering pipeline (gpu-next, spline36/lanczos/mitchell scaling, sigmoid upscaling,
     // fruit dithering, deband, bt.2446a tonemapping), so these match its film-accurate
     // Original / Kai / Vivid presets instead of the previous heavier-handed values.
-    val (contrast, brightness, saturation, gamma) = when (colorProfile) {
-        DesktopColorProfile.Neutral -> listOf(0, 0, 0, 0)
-        DesktopColorProfile.Cinematic -> listOf(2, -6, 2, 2)
-        DesktopColorProfile.Vivid -> listOf(5, -4, 15, -2)
+    //
+    // These offsets are SDR-tuned (Kai's SDR presets): mpv's brightness/contrast/gamma
+    // equalizer operates on the encoded video signal, so on an HDR PQ passthrough signal the
+    // steep near-black PQ curve turns e.g. Cinematic's -6 brightness into badly crushed/darkened
+    // shadows. Kai avoids this by forcing "original" (neutral) colors whenever HDR passthrough is
+    // active (profile-manager.lua). We can't probe the display's HDR state from here (mpv owns
+    // that via target-colorspace-hint=auto), so mirror the intent by neutralizing the grade for
+    // HDR content unless we're actively tonemapping down to SDR, where the SDR presets are correct.
+    val forceNeutral = isHdr && hdrMode != DesktopHdrMode.AlwaysTonemap
+    val (contrast, brightness, saturation, gamma) = when {
+        forceNeutral -> listOf(0, 0, 0, 0)
+        else -> when (colorProfile) {
+            DesktopColorProfile.Neutral -> listOf(0, 0, 0, 0)
+            DesktopColorProfile.Cinematic -> listOf(2, -6, 2, 2)
+            DesktopColorProfile.Vivid -> listOf(5, -4, 15, -2)
+        }
     }
     controller.setMpvProperty("contrast", contrast.toString())
     controller.setMpvProperty("brightness", brightness.toString())

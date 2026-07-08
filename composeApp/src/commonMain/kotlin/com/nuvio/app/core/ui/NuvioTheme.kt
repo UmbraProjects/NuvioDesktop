@@ -189,10 +189,15 @@ private val NuvioRippleConfiguration = RippleConfiguration(
 fun NuvioTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     appTheme: AppTheme = AppTheme.WHITE,
+    customThemePalette: ThemeColorPalette = ThemeColors.Custom,
     amoled: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val palette = ThemeColors.getColorPalette(appTheme)
+    val palette = if (appTheme == AppTheme.CUSTOM) {
+        customThemePalette
+    } else {
+        ThemeColors.getColorPalette(appTheme)
+    }
     val colorScheme = buildColorScheme(palette, amoled = amoled)
     val tokens = defaultNuvioThemeTokens(palette, amoled = amoled, colorScheme = colorScheme)
 

@@ -46,6 +46,7 @@ data class MetaScreenSettingsUiState(
     val heroTrailerPlayback: Boolean = false,
     val heroTrailerPlaybackMode: MetaHeroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero,
     val heroTrailerDelaySeconds: Int = 5,
+    val heroTrailerBackgroundMode: MetaHeroTrailerBackgroundMode = MetaHeroTrailerBackgroundMode.Black,
     // Mirrors the home page's "hero trailer sound" toggle: whether a NEW auto-played hero
     // trailer starts with sound by default. The user can still interactively mute/adjust
     // volume during playback; this only seeds a fresh trailer's starting state.
@@ -70,6 +71,33 @@ enum class MetaHeroTrailerPlaybackMode {
         fun persist(mode: MetaHeroTrailerPlaybackMode): String = when (mode) {
             Hero -> "hero"
             Fullscreen -> "fullscreen"
+        }
+    }
+}
+
+/**
+ * Background shown around an info-screen hero trailer while it plays. [Black] ("lights out") is the
+ * default — including for users who never set anything. When the trailer ends the hero reverts to
+ * its normal backdrop automatically (this only applies while a trailer is on screen).
+ */
+enum class MetaHeroTrailerBackgroundMode {
+    Theme,
+    Black,
+    Backdrop,
+    ;
+
+    companion object {
+        fun parse(raw: String?): MetaHeroTrailerBackgroundMode? = when (raw?.lowercase()) {
+            "theme", "default", "app" -> Theme
+            "black", "lightsout", "lights_out", "lights-out" -> Black
+            "backdrop", "wash", "backdrop_wash" -> Backdrop
+            else -> null
+        }
+
+        fun persist(mode: MetaHeroTrailerBackgroundMode): String = when (mode) {
+            Theme -> "theme"
+            Black -> "black"
+            Backdrop -> "backdrop"
         }
     }
 }
@@ -111,6 +139,8 @@ private data class StoredMetaScreenSettingsPayload(
     val heroTrailerPlaybackMode: String = "hero",
     @SerialName("hero_trailer_delay_seconds")
     val heroTrailerDelaySeconds: Int = 5,
+    @SerialName("hero_trailer_background_mode")
+    val heroTrailerBackgroundMode: String = "black",
     @SerialName("hero_trailer_sound_enabled")
     val heroTrailerSoundEnabled: Boolean = false,
     @SerialName("tvStyleLayout")
@@ -194,6 +224,7 @@ object MetaScreenSettingsRepository {
     private var heroTrailerPlayback: Boolean = false
     private var heroTrailerPlaybackMode: MetaHeroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
     private var heroTrailerDelaySeconds: Int = 5
+    private var heroTrailerBackgroundMode: MetaHeroTrailerBackgroundMode = MetaHeroTrailerBackgroundMode.Black
     private var heroTrailerSoundEnabled: Boolean = false
     private var tabLayout: Boolean = false
     private var episodeCardStyle: MetaEpisodeCardStyle = MetaEpisodeCardStyle.Horizontal
@@ -210,15 +241,16 @@ object MetaScreenSettingsRepository {
                 json.decodeFromString<StoredMetaScreenSettingsPayload>(payload)
             }.getOrNull()
             if (parsed != null) {
-                cinematicBackground = parsed.cinematicBackground
+                cinematicBackground = false
                 heroTrailerPlayback = parsed.heroTrailerPlayback
                 heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.parse(parsed.heroTrailerPlaybackMode)
                     ?: MetaHeroTrailerPlaybackMode.Hero
                 heroTrailerDelaySeconds = parsed.heroTrailerDelaySeconds.coerceIn(0, 15)
+                heroTrailerBackgroundMode = MetaHeroTrailerBackgroundMode.parse(parsed.heroTrailerBackgroundMode)
+                    ?: MetaHeroTrailerBackgroundMode.Black
                 heroTrailerSoundEnabled = parsed.heroTrailerSoundEnabled
-                tabLayout = parsed.tabLayout
-                episodeCardStyle = MetaEpisodeCardStyle.parse(parsed.episodeCardStyle)
-                    ?: MetaEpisodeCardStyle.Horizontal
+                tabLayout = false
+                episodeCardStyle = MetaEpisodeCardStyle.Horizontal
                 blurUnwatchedEpisodes = parsed.blurUnwatchedEpisodes
                 preferences = parsed.items.mapNotNull { item ->
                     val key = runCatching { MetaScreenSectionKey.valueOf(item.key) }.getOrNull() ?: return@mapNotNull null
@@ -239,6 +271,7 @@ object MetaScreenSettingsRepository {
         heroTrailerPlayback = false
         heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
         heroTrailerDelaySeconds = 5
+        heroTrailerBackgroundMode = MetaHeroTrailerBackgroundMode.Black
         heroTrailerSoundEnabled = false
         tabLayout = false
         episodeCardStyle = MetaEpisodeCardStyle.Horizontal
@@ -249,7 +282,7 @@ object MetaScreenSettingsRepository {
 
     fun setCinematicBackground(enabled: Boolean) {
         ensureLoaded()
-        cinematicBackground = enabled
+        cinematicBackground = false
         publish()
         persist()
     }
@@ -277,6 +310,13 @@ object MetaScreenSettingsRepository {
         persist()
     }
 
+    fun setHeroTrailerBackgroundMode(mode: MetaHeroTrailerBackgroundMode) {
+        ensureLoaded()
+        heroTrailerBackgroundMode = mode
+        publish()
+        persist()
+    }
+
     fun setHeroTrailerSoundEnabled(enabled: Boolean) {
         ensureLoaded()
         heroTrailerSoundEnabled = enabled
@@ -286,14 +326,14 @@ object MetaScreenSettingsRepository {
 
     fun setTabLayout(enabled: Boolean) {
         ensureLoaded()
-        tabLayout = enabled
+        tabLayout = false
         publish()
         persist()
     }
 
     fun setEpisodeCardStyle(style: MetaEpisodeCardStyle) {
         ensureLoaded()
-        episodeCardStyle = style
+        episodeCardStyle = MetaEpisodeCardStyle.Horizontal
         publish()
         persist()
     }
@@ -307,15 +347,9 @@ object MetaScreenSettingsRepository {
 
     fun setTabGroup(key: MetaScreenSectionKey, groupId: Int?) {
         ensureLoaded()
-        if (!key.canBeTabbed) return
-        if (groupId != null) {
-            // Enforce max 3 sections per group
-            val currentGroupCount = preferences.count { it.value.tabGroup == groupId && it.key != key }
-            if (currentGroupCount >= 3) return
-        }
-        updatePreference(key) { preference ->
-            preference.copy(tabGroup = groupId)
-        }
+        normalizePreferences()
+        publish()
+        persist()
     }
 
     fun clearLocalState() {
@@ -325,6 +359,7 @@ object MetaScreenSettingsRepository {
         heroTrailerPlayback = false
         heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
         heroTrailerDelaySeconds = 5
+        heroTrailerBackgroundMode = MetaHeroTrailerBackgroundMode.Black
         heroTrailerSoundEnabled = false
         tabLayout = false
         episodeCardStyle = MetaEpisodeCardStyle.Horizontal
@@ -338,19 +373,21 @@ object MetaScreenSettingsRepository {
         heroTrailerPlayback: Boolean = false,
         heroTrailerPlaybackMode: MetaHeroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero,
         heroTrailerDelaySeconds: Int = 5,
+        heroTrailerBackgroundMode: MetaHeroTrailerBackgroundMode = MetaHeroTrailerBackgroundMode.Black,
         heroTrailerSoundEnabled: Boolean = false,
         tabLayout: Boolean,
         episodeCardStyle: MetaEpisodeCardStyle = MetaEpisodeCardStyle.Horizontal,
         blurUnwatchedEpisodes: Boolean = false,
     ) {
         ensureLoaded()
-        this.cinematicBackground = cinematicBackground
+        this.cinematicBackground = false
         this.heroTrailerPlayback = heroTrailerPlayback
         this.heroTrailerPlaybackMode = heroTrailerPlaybackMode
         this.heroTrailerDelaySeconds = heroTrailerDelaySeconds.coerceIn(0, 15)
+        this.heroTrailerBackgroundMode = heroTrailerBackgroundMode
         this.heroTrailerSoundEnabled = heroTrailerSoundEnabled
-        this.tabLayout = tabLayout
-        this.episodeCardStyle = episodeCardStyle
+        this.tabLayout = false
+        this.episodeCardStyle = MetaEpisodeCardStyle.Horizontal
         this.blurUnwatchedEpisodes = blurUnwatchedEpisodes
         preferences = items.associate { item ->
             item.key to StoredMetaScreenSectionPreference(
@@ -366,9 +403,10 @@ object MetaScreenSettingsRepository {
     }
 
     fun setEnabled(key: MetaScreenSectionKey, enabled: Boolean) {
-        updatePreference(key) { preference ->
-            preference.copy(enabled = enabled)
-        }
+        ensureLoaded()
+        normalizePreferences()
+        publish()
+        persist()
     }
 
     fun resetToDefaults() {
@@ -378,6 +416,7 @@ object MetaScreenSettingsRepository {
         heroTrailerPlayback = false
         heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
         heroTrailerDelaySeconds = 5
+        heroTrailerBackgroundMode = MetaHeroTrailerBackgroundMode.Black
         heroTrailerSoundEnabled = false
         tabLayout = false
         episodeCardStyle = MetaEpisodeCardStyle.Horizontal
@@ -389,17 +428,7 @@ object MetaScreenSettingsRepository {
 
     fun moveByIndex(fromIndex: Int, toIndex: Int) {
         ensureLoaded()
-        val orderedKeys = definitions
-            .sortedBy { definition -> preferences[definition.key]?.order ?: Int.MAX_VALUE }
-            .map { it.key }
-            .toMutableList()
-        if (fromIndex !in orderedKeys.indices || toIndex !in orderedKeys.indices) return
-        if (fromIndex == toIndex) return
-        orderedKeys.add(toIndex, orderedKeys.removeAt(fromIndex))
-        orderedKeys.forEachIndexed { newIndex, sectionKey ->
-            val current = preferences[sectionKey] ?: return@forEachIndexed
-            preferences[sectionKey] = current.copy(order = newIndex)
-        }
+        normalizePreferences()
         publish()
         persist()
     }
@@ -417,16 +446,14 @@ object MetaScreenSettingsRepository {
 
     private fun normalizePreferences() {
         val normalized = mutableMapOf<MetaScreenSectionKey, StoredMetaScreenSectionPreference>()
-        definitions.sortedBy { definition -> preferences[definition.key]?.order ?: Int.MAX_VALUE }
-            .forEachIndexed { index, definition ->
-                val stored = preferences[definition.key]
-                normalized[definition.key] = StoredMetaScreenSectionPreference(
-                    key = definition.key.name,
-                    enabled = stored?.enabled ?: true,
-                    order = index,
-                    tabGroup = stored?.tabGroup,
-                )
-            }
+        definitions.forEachIndexed { index, definition ->
+            normalized[definition.key] = StoredMetaScreenSectionPreference(
+                key = definition.key.name,
+                enabled = true,
+                order = index,
+                tabGroup = null,
+            )
+        }
         preferences = normalized
     }
 
@@ -445,13 +472,14 @@ object MetaScreenSettingsRepository {
                         tabGroup = preference?.tabGroup,
                     )
                 },
-            cinematicBackground = cinematicBackground,
+            cinematicBackground = false,
             heroTrailerPlayback = heroTrailerPlayback,
             heroTrailerPlaybackMode = heroTrailerPlaybackMode,
             heroTrailerDelaySeconds = heroTrailerDelaySeconds,
+            heroTrailerBackgroundMode = heroTrailerBackgroundMode,
             heroTrailerSoundEnabled = heroTrailerSoundEnabled,
-            tabLayout = tabLayout,
-            episodeCardStyle = episodeCardStyle,
+            tabLayout = false,
+            episodeCardStyle = MetaEpisodeCardStyle.Horizontal,
             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
         )
     }
@@ -461,13 +489,14 @@ object MetaScreenSettingsRepository {
             json.encodeToString(
                 StoredMetaScreenSettingsPayload(
                     items = preferences.values.sortedBy { it.order },
-                    cinematicBackground = cinematicBackground,
+                    cinematicBackground = false,
                     heroTrailerPlayback = heroTrailerPlayback,
                     heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.persist(heroTrailerPlaybackMode),
                     heroTrailerDelaySeconds = heroTrailerDelaySeconds,
+                    heroTrailerBackgroundMode = MetaHeroTrailerBackgroundMode.persist(heroTrailerBackgroundMode),
                     heroTrailerSoundEnabled = heroTrailerSoundEnabled,
-                    tabLayout = tabLayout,
-                    episodeCardStyle = MetaEpisodeCardStyle.persist(episodeCardStyle),
+                    tabLayout = false,
+                    episodeCardStyle = MetaEpisodeCardStyle.persist(MetaEpisodeCardStyle.Horizontal),
                     blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                 ),
             ),

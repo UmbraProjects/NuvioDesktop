@@ -97,7 +97,7 @@
     <string name="collections_editor_shape_square">Quadratisch</string>
     <string name="collections_editor_shape_wide">Breit</string>
     <string name="collections_editor_show_all_tab_desc">Alle Kataloge in einem Tab kombinieren</string>
-    <string name="collections_editor_show_all_tab">\"Alle\"-Tab anzeigen</string>
+    <string name="collections_editor_show_all_tab">&quot;Alle&quot;-Tab anzeigen</string>
     <string name="collections_editor_show_gif_when_configured_desc">Wenn verfügbar, wird das konfigurierte GIF anstelle des statischen Covers abgespielt.</string>
     <string name="collections_editor_show_gif_when_configured">GIF anzeigen, wenn konfiguriert</string>
     <string name="collections_editor_source_count">%1$d Quelle(n) · %2$s</string>

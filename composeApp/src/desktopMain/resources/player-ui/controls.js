@@ -1923,6 +1923,21 @@ const heroTrailerDescription = heroTrailerContent.querySelector("#heroTrailerDes
 const heroTrailerMuteIcon = heroTrailerChrome.querySelector("#heroTrailerMuteIcon");
 const heroTrailerVolumeSlider = heroTrailerChrome.querySelector("#heroTrailerVolumeSlider");
 const clampHeroVolume = value => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+// A passive trailer surface must never keep OS keyboard focus. Clicking the WebView2 chrome can
+// still focus it, and Compose can't pull that focus back off a live native child on its own — so
+// once an interaction ends we blur the element and ask native to move OS focus back to the app
+// window (see player_bridge.cpp's reclaimHostKeyboardFocus). Buttons additionally preventDefault on
+// mousedown so they never take focus in the first place (the click still fires); the slider keeps
+// its native drag (which uses pointer capture, not focus) and reclaims once the drag ends.
+function reclaimHeroTrailerFocus() {
+  const active = document.activeElement;
+  if (active && typeof active.blur === "function") active.blur();
+  send("heroTrailerReclaimFocus", 0);
+}
+heroTrailerChrome.querySelectorAll(".hero-trailer-button").forEach(button => {
+  button.addEventListener("mousedown", event => event.preventDefault());
+  button.addEventListener("click", () => reclaimHeroTrailerFocus());
+});
 if (heroTrailerVolumeSlider) {
   const onVolumeInput = event => {
     event.stopPropagation();
@@ -1938,6 +1953,11 @@ if (heroTrailerVolumeSlider) {
   // toggle/dismiss the trailer).
   ["click", "pointerdown", "mousedown"].forEach(type => {
     heroTrailerVolumeSlider.addEventListener(type, event => event.stopPropagation());
+  });
+  // The slider's native drag needs focus while dragging, so reclaim once it ends rather than
+  // fighting the drag mid-gesture.
+  ["pointerup", "lostpointercapture", "change"].forEach(type => {
+    heroTrailerVolumeSlider.addEventListener(type, () => reclaimHeroTrailerFocus());
   });
 }
 let heroTrailerLogoFailed = false;
@@ -2011,6 +2031,23 @@ const applyHeroTrailer = () => {
   // Don't fight the user mid-drag.
   if (heroTrailerVolumeSlider && document.activeElement !== heroTrailerVolumeSlider) {
     const next = String(heroVol);
+    if (heroTrailerVolumeSlider.value !== next) heroTrailerVolumeSlider.value = next;
+  }
+};
+
+// Lightweight volume push for programmatic changes (the [ / ] keyboard shortcuts). Volume is
+// excluded from the controls "structure key" so a slider drag doesn't re-send the whole controls
+// JSON every frame — which means a keyboard volume change never reaches applyHeroTrailer. This
+// setter updates just the slider + mute icon so the overlay reflects [ / ] immediately.
+window.nuvioSetHeroTrailerVolume = function (value) {
+  const vol = clampHeroVolume(value);
+  state.heroTrailerVolume = vol;
+  state.heroTrailerMuted = vol <= 0;
+  if (heroTrailerMuteIcon) {
+    heroTrailerMuteIcon.setAttribute("href", vol <= 0 ? "#icon-volume-mute" : "#icon-volume");
+  }
+  if (heroTrailerVolumeSlider && document.activeElement !== heroTrailerVolumeSlider) {
+    const next = String(vol);
     if (heroTrailerVolumeSlider.value !== next) heroTrailerVolumeSlider.value = next;
   }
 };
@@ -2611,26 +2648,12 @@ root.addEventListener("dblclick", event => {
 });
 
 document.addEventListener("keydown", event => {
-  // WebView is a native child HWND, so keys do not always reach AWT while it owns OS focus.
-  // Forward home navigation through the native event bridge instead of swallowing it.
+  // The hero-trailer surface is passive: it never holds OS keyboard focus (the native container
+  // refuses mouse activation and the WebView2 bounces any focus it grabs back to the Compose UI),
+  // so all navigation is owned by Compose. Don't forward keys through the native bridge (that
+  // parallel path fought Compose's own handling and caused stuck-key bugs) and don't run any of
+  // the full-screen player key logic below for this surface.
   if (isHeroTrailerSurface || state.heroTrailerMode) {
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    const homeCommand = {
-      ArrowUp: "homeKeyUp",
-      ArrowDown: "homeKeyDown",
-      ArrowLeft: "homeKeyLeft",
-      ArrowRight: "homeKeyRight",
-      Enter: "homeKeySelect",
-      NumpadEnter: "homeKeySelect",
-      KeyT: "homeKeyToggleTrailer",
-      Escape: "homeKeyDismiss",
-      KeyS: "homeKeySearch",
-      KeyL: "homeKeyLibrary",
-    }[event.code];
-    if (homeCommand) {
-      event.preventDefault();
-      send(homeCommand, 0);
-    }
     return;
   }
   if (event.key === "Escape" && playbackErrorText()) {

@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import com.nuvio.app.core.ui.navigationKey
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -383,7 +384,8 @@ private fun ImmersiveCollectionContent(
                 false
             }
         }
-        HomeTvKey.Search, HomeTvKey.Library -> false
+        HomeTvKey.ToggleMute, HomeTvKey.VolumeDown, HomeTvKey.VolumeUp,
+        HomeTvKey.TogglePeoplePanel, HomeTvKey.Search, HomeTvKey.Library -> false
     }
     val latestTvKeyHandler = rememberUpdatedState<(HomeTvKey) -> Boolean>(::handleTvKey)
     LaunchedEffect(Unit) {
@@ -420,7 +422,7 @@ private fun ImmersiveCollectionContent(
             }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.key) {
+                when (event.navigationKey()) {
                     Key.Backspace -> {
                         onBack()
                         true
@@ -640,7 +642,8 @@ private fun AdaptiveCollectionContent(
                 false
             }
         }
-        HomeTvKey.Search, HomeTvKey.Library -> false
+        HomeTvKey.ToggleMute, HomeTvKey.VolumeDown, HomeTvKey.VolumeUp,
+        HomeTvKey.TogglePeoplePanel, HomeTvKey.Search, HomeTvKey.Library -> false
     }
     val latestTvKeyHandler = rememberUpdatedState<(HomeTvKey) -> Boolean>(::handleTvKey)
     LaunchedEffect(Unit) {
@@ -666,7 +669,7 @@ private fun AdaptiveCollectionContent(
             }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.key) {
+                when (event.navigationKey()) {
                     Key.Backspace -> { onBack(); true }
                     Key.DirectionDown -> handleTvKey(HomeTvKey.Down)
                     Key.DirectionUp -> handleTvKey(HomeTvKey.Up)

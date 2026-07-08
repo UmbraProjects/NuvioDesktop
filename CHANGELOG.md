@@ -1,5 +1,63 @@
 # Changelog
 
+## 1.9.0 - 2026-07-07
+
+### Added
+
+- **New desktop Settings panel** - Settings now has a proper desktop layout with a persistent category sidebar, top-bar navigation back to Home/Search/Library, active-profile access, a right-side favorites panel, and quicker access to update notes. It should feel much less like a stretched mobile settings list and more like something built for a PC.
+
+- **Settings favorites and sidebar reordering** - right-click a settings heading to pin it to the desktop favorites panel, then jump back to it later without digging through pages. The desktop category list can also be reordered with a deliberate long-press drag, and both favorites and ordering are saved per profile.
+
+- **Keyboard Shortcuts settings** - Settings now includes a dedicated Keyboard Shortcuts page with a reference for navigation and player controls. Rebindable player actions can be changed from there, reset individually or all at once, and stored per profile while fixed keys like arrows, `K`, and `Tab` keep their normal fallback behavior.
+
+- **WASD navigation / TKL mode** - added an optional keyboard-navigation mode for compact keyboards without arrow clusters. When enabled, W/A/S/D move focus through browsing screens and Search moves from `S` to `Q`, while text fields still type normally.
+
+- **Custom theme accent color** - Appearance now has a Custom theme option with a native desktop color picker and saved custom palette values, so the app accent no longer has to come from the fixed theme list.
+
+- **Desktop Addons and Plugins managers** - Addons and Plugins now get denser desktop-specific management views with search, filtering, inline add/install flows, and easier enable/disable/configure/remove actions. Collections was not changed, it's quite a bit of work and I think most people use the website anyway. 
+
+- **Experimental audio passthrough (bitstream)** - added an option in Playback settings to send compressed audio formats (AC3, DTS, E-AC3, TrueHD, DTS-HD) untouched to an AV receiver over HDMI or S-PDIF (desktop only). This needs user testing, I don't have a reciever to verify it works.
+
+- **Detail trailer background modes ("lights out")** - added "Black (lights out)" and "Backdrop" background mode choices for detail-page hero trailers. "Black" fills the screen surround with a flat black background to eliminate distracting themes or gradients, while "Backdrop" dims the artwork to a dark wash.
+
+- **Detail trailer keyboard controls** - added shortcuts for active detail-page trailers: `M` to toggle mute, `[` / `]` to adjust volume, and `P` to toggle the cast/crew People Panel.
+
+### Improved
+
+- **Settings organization** - Playback, Appearance, Home Layout, Meta Screen, Streams, Integrations, Poster Card Style, Continue Watching, Collections, Addons, and Plugins have been reshuffled into cleaner pages with more inline controls and fewer extra bottom sheets where desktop did not need them.
+
+- **Settings search and scrolling** - settings search uses shorter labels, new anchors, and better page routing for the reorganized layout, so deep links land closer to the actual control you searched for.
+
+- **Desktop navigation options** - desktop navigation layout is now a direct choice row in Appearance instead of a separate sheet, and the new settings top bar can show column guides while tuning the desktop settings layout.
+
+- **SDR/HDR color-profile clarity** - Color Profile is now labeled as an SDR color profile, and HDR playback leaves SDR-only color grades neutral unless the video is being tonemapped down to SDR. This avoids crushing HDR shadows with SDR-tuned brightness/contrast offsets.
+
+- **Poster card controls** - Poster Card Style controls are now available directly from Appearance with a reset action, making poster sizing and shape adjustments easier to reach.
+
+- **Profile-scoped settings state** - settings favorites, sidebar order, custom theme values, and player shortcut bindings now reload cleanly when switching profiles.
+
+- **Detail page keyboard focus reclaim** - focus is now automatically reclaimed back to the details screen when a preview trailer finishes or is dismissed, preventing keyboard input from getting lost.
+
+### Fixed
+
+- **External player** - fixed external media players (like VLC, PotPlayer MPC, and MPV) on Windows. The app now queries the registry (`App Paths`) to find player installation paths and launches them in a detached state. This prevents players from displaying black screens or freezing when their OS stdout/stderr pipe buffers fill up.
+
+- **Metadata enrichment races on Search/Library heroes** - suppressed catalog art and metadata transiently on Search and Library hero items until TMDB/TVDB enrichment completes, preventing incorrect or flashing art at startup.
+
+- **Home screen trailer keyboard controls** - added `M` to toggle mute and `[` / `]` to adjust volume for home hero trailers, matching the detail screen behavior and preventing focus issues.
+
+- **Hero trailer keyboard focus stealing** - Home hero trailers no longer install a second global keyboard dispatcher or keep OS focus after interacting with the native video/chrome. This fixes navigation keys disappearing or getting stuck after actions like muting a trailer and then pressing arrows.
+
+- **Hero trailer mute/volume chrome on Home** - the Home hero trailer overlay now handles stop, mute, and volume as trailer-specific controls, keeps the shared trailer audio state in sync, and reflects programmatic volume changes on the overlay slider.
+
+- **HDR playback getting unintended SDR color grading** - HDR passthrough content no longer receives Cinematic/Vivid SDR equalizer offsets, which could make HDR video look too dark or over-processed.
+
+- **Debrid wording** - "Connected Services" labels that specifically meant debrid/cloud-library services now say "Debrid Services", so the Integrations area is less ambiguous.
+
+- **SVP Crash** - if a path was set to another SVP installation this caused an immediate crash, this should be fixed now by ignoring any paths set and forcing the bundled defaults.
+
+- **Misc bugs** - various bugs have been fixed and forgotten.
+
 ## 1.8.0 - 2026-07-06
 
 ### Added

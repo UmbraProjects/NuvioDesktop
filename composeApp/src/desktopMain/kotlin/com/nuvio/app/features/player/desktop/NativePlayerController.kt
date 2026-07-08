@@ -102,6 +102,10 @@ internal class NativePlayerController(
         // the main player applies SVP after fileLoaded, once mpv has resolved a real video
         // stream, and hero trailers should never start the heavy interpolation runtime.
         animeSvpEnabled: Boolean = false,
+        // Applies the user's desktop mpv options (audio passthrough toggle + custom options box).
+        // Only the main player passes true; hero trailers must never bitstream audio to a receiver
+        // or inherit user render tweaks.
+        enableUserMpvOptions: Boolean = false,
     ) {
         if (disposed) return
         // Re-attaching the same stream (surface recreation, RTX/settings toggles) must resume
@@ -128,6 +132,7 @@ internal class NativePlayerController(
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
             nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
             animeSvpFilter = if (animeSvpEnabled && PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled) DesktopAnimeSvp.vapoursynthArgument() else null,
+            extraMpvOptions = if (enableUserMpvOptions) buildDesktopUserMpvOptions() else emptyList(),
             onError = onError,
             controlsPageUrl = NativePlayerBridge.controlsPageUrl + controlsPageUrlSuffix,
             tracePlaybackStart = tracePlaybackStart,
@@ -184,6 +189,7 @@ internal class NativePlayerController(
                             nvidiaRtxSuperResolutionEnabled = pending.nvidiaRtxSuperResolutionEnabled,
                             nvidiaRtxHdrEnabled = pending.nvidiaRtxHdrEnabled,
                             animeSvpFilter = pending.animeSvpFilter,
+                            extraMpvOptions = pending.extraMpvOptions.toTypedArray(),
                             eventSink = eventSink,
                         )
                         if (newHandle == 0L) error("Native player did not return a handle.")
@@ -364,6 +370,17 @@ internal class NativePlayerController(
             "window.nuvioHandleKeyboardPanelKey && window.nuvioHandleKeyboardPanelKey(${code.toJsonString()})",
         )
         return true
+    }
+
+    /** Pushes the hero-trailer volume to the overlay slider/mute icon. Needed because volume is
+     * excluded from the controls structure key (to avoid re-sending the full JSON on every slider
+     * drag), so a programmatic change (the [ / ] shortcuts) wouldn't otherwise reach the overlay. */
+    fun setHeroTrailerVolume(effectiveVolume: Int) {
+        val current = handle.takeIf { it != 0L } ?: return
+        NativePlayerBridge.runJavaScript(
+            current,
+            "window.nuvioSetHeroTrailerVolume && window.nuvioSetHeroTrailerVolume(${effectiveVolume.coerceIn(0, 100)})",
+        )
     }
 
     private fun showVolumePillFromNative() {
@@ -779,10 +796,37 @@ private data class PendingSource(
     val nvidiaRtxSuperResolutionEnabled: Boolean,
     val nvidiaRtxHdrEnabled: Boolean,
     val animeSvpFilter: String?,
+    val extraMpvOptions: List<String> = emptyList(),
     val onError: (String?) -> Unit,
     val controlsPageUrl: String,
     val tracePlaybackStart: Boolean = false,
 )
+
+// Standard bitstream formats to hand untouched to a receiver when passthrough is on. dts-hd
+// covers DTS-HD High Resolution; dts-hd-ma covers DTS-HD Master Audio.
+private const val AUDIO_PASSTHROUGH_SPDIF_CODECS = "ac3,dts,eac3,truehd,dts-hd,dts-hd-ma"
+
+/**
+ * Builds the `key=value` mpv option lines derived from the user's desktop playback settings,
+ * applied (native side) just before mpv_initialize so they override Nuvio's built-in options.
+ * Passthrough is emitted first so a custom `audio-spdif=` line in the options box can still win.
+ */
+private fun buildDesktopUserMpvOptions(): List<String> {
+    val settings = PlayerSettingsRepository.uiState.value
+    return buildList {
+        if (settings.desktopAudioPassthroughEnabled) {
+            add("audio-spdif=$AUDIO_PASSTHROUGH_SPDIF_CODECS")
+            // If the output device can't bitstream (no receiver / shared-mode-only device), the ao
+            // open fails; force the null-audio fallback so video keeps playing (silent) instead of
+            // the failure being able to stall playback start.
+            add("audio-fallback-to-null=yes")
+        }
+        settings.desktopCustomMpvOptions.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains('=') }
+            .forEach { add(it) }
+    }
+}
 
 private fun Map<String, String>.toHeaderLines(): List<String> =
     entries.mapNotNull { (key, value) ->

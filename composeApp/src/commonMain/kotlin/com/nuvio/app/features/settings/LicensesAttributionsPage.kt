@@ -53,7 +53,8 @@ private const val TvdbUrl = "https://thetvdb.com"
 private const val TvdbLogoUrl = "https://artworks.thetvdb.com/banners/images/logo.png"
 private const val SimklUrl = "https://simkl.com"
 private const val SimklLogoUrl = "https://simkl.in/img/simkl_logo_100x100.jpg"
-private const val NuvioRepositoryUrl = "https://github.com/NuvioMedia/NuvioMobile"
+private const val NuvioRepositoryUrl = "https://github.com/NuvioMedia/NuvioDesktop"
+private const val NuvioContributeUrl = "https://tapframe.space/contribute"
 private const val MpvKitUrl = "https://github.com/mpvkit/MPVKit"
 private const val ApacheLicenseUrl = "https://www.apache.org/licenses/LICENSE-2.0"
 
@@ -110,6 +111,11 @@ private fun LicensesAttributionsBody(
             title = stringResource(Res.string.settings_licenses_attributions_section_app),
             isTablet = isTablet,
         ) {
+            AttributionRow(
+                item = nuvioAttributionItem(),
+                isTablet = isTablet,
+            )
+            PlainStackDivider()
             LicenseRow(
                 item = appLicenseItem(),
                 isTablet = isTablet,
@@ -420,6 +426,15 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         link = ImdbDatasetsUrl,
     ),
 )
+
+private fun nuvioAttributionItem(): AttributionItem =
+    AttributionItem(
+        titleRes = Res.string.settings_licenses_attributions_nuvio_team_title,
+        bodyRes = Res.string.settings_licenses_attributions_nuvio_team_body,
+        logo = null,
+        logoText = "N",
+        link = NuvioContributeUrl,
+    )
 
 private fun appLicenseItem(): LicenseItem =
     LicenseItem(

@@ -101,7 +101,7 @@
     <string name="collections_editor_shape_square">Kwadrat</string>
     <string name="collections_editor_shape_wide">Szeroki</string>
     <string name="collections_editor_show_all_tab_desc">Połącz wszystkie katalogi w jednej karcie</string>
-    <string name="collections_editor_show_all_tab">Pokaż kartę \"Wszystko\"</string>
+    <string name="collections_editor_show_all_tab">Pokaż kartę &quot;Wszystko&quot;</string>
     <string name="collections_editor_show_gif_when_configured_desc">Odtwarzaj skonfigurowany GIF zamiast statycznej okładki, gdy jest dostępny.</string>
     <string name="collections_editor_show_gif_when_configured">Pokaż GIF gdy skonfigurowany</string>
     <string name="collections_editor_source_count">%1$d źródeł · %2$s</string>

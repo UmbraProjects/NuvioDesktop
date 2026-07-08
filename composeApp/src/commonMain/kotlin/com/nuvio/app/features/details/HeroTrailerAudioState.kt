@@ -39,4 +39,11 @@ object HeroTrailerAudioState {
             _muted.value = false
         }
     }
+
+    /** Keyboard volume step (the `[` / `]` shortcuts), mirroring the overlay slider: stepping down
+     * to 0 mutes, and any positive step unmutes. The current effective level is 0 while muted. */
+    fun nudgeVolume(delta: Int) {
+        val current = if (_muted.value) 0 else _volume.value
+        setVolume((current + delta).coerceIn(0, 100))
+    }
 }

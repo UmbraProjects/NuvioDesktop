@@ -218,6 +218,7 @@ fun HomeHeroSection(
     heroInfoPriority: String = "wins,gg_wins,festival,pic_noms,gg_noms,emmy_noms,studio,director,trending,cult,foreign,new_release,metacritic,true_story,short_film,mini_series,binge_ready,release_status",
     heroBadgePlacement: HeroBadgePlacement = HeroBadgePlacement.BottomBackdrop,
     heroReleaseStatusUnavailableOnly: Boolean = true,
+    trailersEnabledInCurrentMode: Boolean = true,
     immersiveContentBottomPadding: Dp = IMMERSIVE_HERO_CONTENT_BOTTOM_PADDING,
     onActiveItemChanged: ((MetaPreview) -> Unit)? = null,
     onCastClick: ((HeroCastMember) -> Unit)? = null,
@@ -430,9 +431,10 @@ fun HomeHeroSection(
                     heroEnabled = heroEnabled,
                     heroInfoLines = heroInfoLines,
                     heroInfoPriority = heroInfoPriority,
-                    heroBadgePlacement = heroBadgePlacement,
-                    heroReleaseStatusUnavailableOnly = heroReleaseStatusUnavailableOnly,
-                    immersiveContentBottomPadding = immersiveContentBottomPadding,
+            heroBadgePlacement = heroBadgePlacement,
+            heroReleaseStatusUnavailableOnly = heroReleaseStatusUnavailableOnly,
+            trailersEnabledInCurrentMode = trailersEnabledInCurrentMode,
+            immersiveContentBottomPadding = immersiveContentBottomPadding,
                     ratingsCache = ratingsCache,
                     discoveryCache = discoveryCache,
                     productionCache = productionCache,
@@ -649,6 +651,7 @@ private fun DesktopHomeHeroFrame(
     heroInfoPriority: String,
     heroBadgePlacement: HeroBadgePlacement,
     heroReleaseStatusUnavailableOnly: Boolean,
+    trailersEnabledInCurrentMode: Boolean,
     immersiveContentBottomPadding: Dp,
     ratingsCache: Map<String, List<MetaExternalRating>>,
     discoveryCache: Map<String, List<HeroDiscoveryFact>>,
@@ -663,7 +666,7 @@ private fun DesktopHomeHeroFrame(
     // TV-mode hero trailer (desktop only; mirrors Nuvio TV). The feature applies to the
     // TV-style heroes; auto-play after a delay is opt-in, while the `T` shortcut plays it
     // on demand regardless of the auto-play setting.
-    val tvHeroActive = adaptiveHeroMode || immersiveMode
+    val tvHeroActive = trailersEnabledInCurrentMode && (adaptiveHeroMode || immersiveMode)
     val heroTrailerAutoplayEnabled = tvHeroActive && playerSettings.heroTvTrailerEnabled
     val heroTrailerFocusKey = "${currentItem.type}:${currentItem.id}"
     // Resets the dwell timer on every focus move; false whenever home isn't the active screen.
@@ -771,7 +774,11 @@ private fun DesktopHomeHeroFrame(
             heroTrailerPlaybackRequested = true
         }
     }
-    val heroTrailerMuted = !playerSettings.heroTvTrailerSoundEnabled
+    val heroTrailerAudioMuted by HeroTrailerAudioState.muted.collectAsState()
+    LaunchedEffect(heroTrailerFocusKey, playerSettings.heroTvTrailerSoundEnabled) {
+        HeroTrailerAudioState.setMuted(!playerSettings.heroTvTrailerSoundEnabled)
+    }
+    val heroTrailerMuted = heroTrailerAudioMuted
     val heroTrailerVolume by HeroTrailerAudioState.volume.collectAsState()
     val heroTrailerMounted = tvHeroActive &&
         heroTrailerSource != null &&

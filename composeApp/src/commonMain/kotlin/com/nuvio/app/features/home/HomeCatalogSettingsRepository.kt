@@ -478,6 +478,33 @@ object HomeCatalogSettingsRepository {
         HomeRepository.applyCurrentSettings()
     }
 
+    fun moveToTop(key: String) {
+        ensureLoaded()
+        val allKeys = allOrderedKeys()
+        if (key !in allKeys) return
+
+        val pinnedCollectionKeys = collectionDefinitions
+            .asSequence()
+            .filter { it.isPinnedToTop }
+            .map { it.key }
+            .toSet()
+        if (key in pinnedCollectionKeys) return
+
+        val targetIndex = allKeys.count { it in pinnedCollectionKeys }
+        val fromIndex = allKeys.indexOf(key)
+        if (fromIndex == targetIndex) return
+
+        val orderedKeys = allKeys.toMutableList()
+        orderedKeys.add(targetIndex, orderedKeys.removeAt(fromIndex))
+        orderedKeys.forEachIndexed { index, itemKey ->
+            val current = preferences[itemKey] ?: return@forEachIndexed
+            preferences[itemKey] = current.copy(order = index)
+        }
+        publish()
+        persist()
+        HomeRepository.applyCurrentSettings()
+    }
+
     private fun ensureLoaded() {
         if (hasLoaded) return
         hasLoaded = true
@@ -606,8 +633,12 @@ object HomeCatalogSettingsRepository {
             )
         }
 
+        // Guard against two entries resolving to the same key (e.g. a duplicated collection):
+        // the Home LazyColumn keys rows directly by this key via `item(key = settingsItem.key)`,
+        // and a collision throws "Key … was already used", which crashes Compose Desktop.
         val items = (catalogItems + collectionItems)
             .sortedBy { it.order }
+            .distinctBy { it.key }
 
         _uiState.value = HomeCatalogSettingsUiState(
             heroEnabled = heroEnabled,

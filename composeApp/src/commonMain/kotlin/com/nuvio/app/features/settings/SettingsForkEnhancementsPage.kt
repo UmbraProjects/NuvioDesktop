@@ -29,12 +29,6 @@ import nuvio.composeapp.generated.resources.settings_fork_other_features_note
 import nuvio.composeapp.generated.resources.settings_fork_rtx_hdr_description
 import nuvio.composeapp.generated.resources.settings_fork_simkl_description
 import nuvio.composeapp.generated.resources.settings_fork_tvdb_description
-import nuvio.composeapp.generated.resources.settings_homescreen_hero_ambient_background
-import nuvio.composeapp.generated.resources.settings_homescreen_hero_ambient_background_description
-import nuvio.composeapp.generated.resources.settings_homescreen_adaptive_hero
-import nuvio.composeapp.generated.resources.settings_homescreen_adaptive_hero_description
-import nuvio.composeapp.generated.resources.settings_homescreen_tv_mode
-import nuvio.composeapp.generated.resources.settings_homescreen_tv_mode_description
 import nuvio.composeapp.generated.resources.settings_playback_auto_play_next_episode
 import nuvio.composeapp.generated.resources.settings_playback_default_speed
 import nuvio.composeapp.generated.resources.settings_playback_desktop_anime_auto
@@ -50,8 +44,6 @@ import nuvio.composeapp.generated.resources.settings_playback_desktop_renderer_d
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_delay
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_description
-import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_fullscreen
-import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_fullscreen_description
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_sound
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_sound_description
 import nuvio.composeapp.generated.resources.settings_playback_mouse_move_reveals_controls
@@ -91,10 +83,31 @@ internal fun LazyListScope.forkEnhancementsContent(
         ) {
             SettingsGroup(isTablet = isTablet) {
                 SettingsNavigationRow(
-                    title = stringResource(Res.string.settings_homescreen_adaptive_hero),
-                    description = stringResource(Res.string.settings_homescreen_adaptive_hero_description),
+                    title = "Display Mode",
+                    description = "Basic, Adaptive, Adaptive Ambient, or TV Mode.",
                     isTablet = isTablet,
-                    onClick = { onOpenHomescreen(SettingsScrollAnchor.AdaptiveHero) },
+                    onClick = { onOpenHomescreen(SettingsScrollAnchor.DisplayMode) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_hero_tv_trailer),
+                    description = stringResource(Res.string.settings_playback_hero_tv_trailer_description),
+                    isTablet = isTablet,
+                    onClick = { onOpenHomescreen(SettingsScrollAnchor.AutoPlayTrailer) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
+                    description = "Delay before focused hero trailers start playing.",
+                    isTablet = isTablet,
+                    onClick = { onOpenHomescreen(SettingsScrollAnchor.TrailerDelay) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_hero_tv_trailer_sound),
+                    description = stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description),
+                    isTablet = isTablet,
+                    onClick = { onOpenHomescreen(SettingsScrollAnchor.TrailerSound) },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
@@ -102,20 +115,6 @@ internal fun LazyListScope.forkEnhancementsContent(
                     description = "Manually tune how adaptive hero backdrops crop vertically.",
                     isTablet = isTablet,
                     onClick = { onOpenHomescreen(SettingsScrollAnchor.AdaptiveHeroPosition) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = stringResource(Res.string.settings_homescreen_tv_mode),
-                    description = stringResource(Res.string.settings_homescreen_tv_mode_description),
-                    isTablet = isTablet,
-                    onClick = { onOpenHomescreen(SettingsScrollAnchor.TvMode) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = stringResource(Res.string.settings_homescreen_hero_ambient_background),
-                    description = stringResource(Res.string.settings_homescreen_hero_ambient_background_description),
-                    isTablet = isTablet,
-                    onClick = { onOpenHomescreen(SettingsScrollAnchor.HeroAmbient) },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
@@ -133,34 +132,6 @@ internal fun LazyListScope.forkEnhancementsContent(
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
-                SettingsNavigationRow(
-                    title = stringResource(Res.string.settings_playback_hero_tv_trailer),
-                    description = stringResource(Res.string.settings_playback_hero_tv_trailer_description),
-                    isTablet = isTablet,
-                    onClick = { onOpenPlayback(SettingsScrollAnchor.AutoPlayTrailer) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
-                    description = "Delay before focused hero trailers start playing.",
-                    isTablet = isTablet,
-                    onClick = { onOpenPlayback(SettingsScrollAnchor.TrailerDelay) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = stringResource(Res.string.settings_playback_hero_tv_trailer_sound),
-                    description = stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description),
-                    isTablet = isTablet,
-                    onClick = { onOpenPlayback(SettingsScrollAnchor.TrailerSound) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsNavigationRow(
-                    title = stringResource(Res.string.settings_playback_hero_tv_trailer_fullscreen),
-                    description = stringResource(Res.string.settings_playback_hero_tv_trailer_fullscreen_description),
-                    isTablet = isTablet,
-                    onClick = { onOpenPlayback(SettingsScrollAnchor.TrailerFullscreen) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
                 SettingsNavigationRow(
                     title = stringResource(Res.string.settings_playback_desktop_hdr_mode),
                     description = stringResource(Res.string.settings_fork_hdr_mode_description),

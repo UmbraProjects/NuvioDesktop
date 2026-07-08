@@ -3,7 +3,6 @@ package com.nuvio.app.features.player
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -61,7 +60,6 @@ internal class PlayerScreenRuntime(
     val isSeries: Boolean get() = parentMetaType == "series"
 
     lateinit var scope: CoroutineScope
-    lateinit var hapticFeedback: HapticFeedback
 
     var playerSettingsUiState: PlayerSettingsUiState = PlayerSettingsUiState()
     var p2pSettingsUiState: P2pSettingsUiState = P2pSettingsUiState()
@@ -80,7 +78,6 @@ internal class PlayerScreenRuntime(
     var metrics: PlayerLayoutMetrics = PlayerLayoutMetrics.fromWidth(0.dp)
     var sliderEdgePadding: Dp = 0.dp
     var overlayBottomPadding: Dp = 0.dp
-    var sideGestureSystemEdgeExclusionPx: Float = 0f
     var resizeModeFitLabel: String = ""
     var resizeModeFillLabel: String = ""
     var resizeModeZoomLabel: String = ""
@@ -89,8 +86,6 @@ internal class PlayerScreenRuntime(
     var tbaLabel: String = ""
     var genericUnknownLabel: String = ""
     var parentalGuideLabels: ParentalGuideLabels = ParentalGuideLabels("", "", "", "", "", "", "", "")
-
-    var gestureController: PlayerGestureController? = null
 
     var controlsVisible by mutableStateOf(true)
     var mouseActivitySignal by mutableStateOf(0)
@@ -143,8 +138,6 @@ internal class PlayerScreenRuntime(
     var accumulatedSeekState by mutableStateOf<PlayerAccumulatedSeekState?>(null)
     var initialLoadCompleted by mutableStateOf(false)
     var defaultPlaybackSpeedApplied by mutableStateOf(false)
-    var speedBoostRestoreSpeed by mutableStateOf<Float?>(null)
-    var isHoldToSpeedGestureActive by mutableStateOf(false)
     var initialSeekApplied by mutableStateOf(
         initialPositionMs <= 0L && ((initialProgressFraction ?: 0f) <= 0f),
     )

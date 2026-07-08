@@ -44,11 +44,8 @@ fun snapToAllowedTimeout(value: Int): Int {
 data class PlayerSettingsUiState(
     val showLoadingOverlay: Boolean = true,
     val resizeMode: PlayerResizeMode = PlayerResizeMode.Fit,
-    val holdToSpeedEnabled: Boolean = true,
-    val holdToSpeedValue: Float = 2f,
     val defaultPlaybackSpeed: Float = 1f,
     val mouseMoveRevealsControlsEnabled: Boolean = true,
-    val touchGesturesEnabled: Boolean = true,
     val externalPlayerEnabled: Boolean = false,
     val externalPlayerForwardSubtitles: Boolean = false,
     val externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId(),
@@ -106,10 +103,16 @@ data class PlayerSettingsUiState(
     val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Off,
     val desktopAnimeModeAutoEnabled: Boolean = false,
     val desktopAnimeSvpEnabled: Boolean = false,
+    // Bitstream/passthrough of compressed audio (AC3/DTS/E-AC3/TrueHD/DTS-HD) to a receiver.
+    val desktopAudioPassthroughEnabled: Boolean = false,
+    // Free-form mpv options, one `key=value` per line, applied just before mpv_initialize so a
+    // power user can override any of Nuvio's built-in options.
+    val desktopCustomMpvOptions: String = "",
     val heroTvTrailerEnabled: Boolean = false,
     val heroTvTrailerDelaySeconds: Int = 5,
     val heroTvTrailerSoundEnabled: Boolean = false,
     val heroTvTrailerFullscreen: Boolean = false,
+    val heroTvTrailerSearchEnabled: Boolean = true,
 )
 
 object PlayerSettingsRepository {
@@ -119,11 +122,8 @@ object PlayerSettingsRepository {
     private var hasLoaded = false
     private var showLoadingOverlay = true
     private var resizeMode = PlayerResizeMode.Fit
-    private var holdToSpeedEnabled = true
-    private var holdToSpeedValue = 2f
     private var defaultPlaybackSpeed = 1f
     private var mouseMoveRevealsControlsEnabled = true
-    private var touchGesturesEnabled = true
     private var externalPlayerEnabled = false
     private var externalPlayerForwardSubtitles = false
     private var externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId()
@@ -181,10 +181,13 @@ object PlayerSettingsRepository {
     private var desktopAnimeMode = DesktopAnimeMode.Off
     private var desktopAnimeModeAutoEnabled = false
     private var desktopAnimeSvpEnabled = false
+    private var desktopAudioPassthroughEnabled = false
+    private var desktopCustomMpvOptions = ""
     private var heroTvTrailerEnabled = false
     private var heroTvTrailerDelaySeconds = 5
     private var heroTvTrailerSoundEnabled = false
     private var heroTvTrailerFullscreen = false
+    private var heroTvTrailerSearchEnabled = true
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -199,11 +202,8 @@ object PlayerSettingsRepository {
         hasLoaded = false
         showLoadingOverlay = true
         resizeMode = PlayerResizeMode.Fit
-        holdToSpeedEnabled = true
-        holdToSpeedValue = 2f
         defaultPlaybackSpeed = 1f
         mouseMoveRevealsControlsEnabled = true
-        touchGesturesEnabled = true
         externalPlayerEnabled = false
         externalPlayerForwardSubtitles = false
         externalPlayerId = ExternalPlayerPlatform.defaultPlayerId()
@@ -261,10 +261,13 @@ object PlayerSettingsRepository {
         desktopAnimeMode = DesktopAnimeMode.Off
         desktopAnimeModeAutoEnabled = false
         desktopAnimeSvpEnabled = false
+        desktopAudioPassthroughEnabled = false
+        desktopCustomMpvOptions = ""
         heroTvTrailerEnabled = false
         heroTvTrailerDelaySeconds = 5
         heroTvTrailerSoundEnabled = false
         heroTvTrailerFullscreen = false
+        heroTvTrailerSearchEnabled = true
         publish()
     }
 
@@ -274,11 +277,8 @@ object PlayerSettingsRepository {
         resizeMode = PlayerSettingsStorage.loadResizeMode()
             ?.let { runCatching { PlayerResizeMode.valueOf(it) }.getOrNull() }
             ?: PlayerResizeMode.Fit
-        holdToSpeedEnabled = PlayerSettingsStorage.loadHoldToSpeedEnabled() ?: true
-        holdToSpeedValue = PlayerSettingsStorage.loadHoldToSpeedValue() ?: 2f
         defaultPlaybackSpeed = PlayerSettingsStorage.loadDefaultPlaybackSpeed() ?: 1f
         mouseMoveRevealsControlsEnabled = PlayerSettingsStorage.loadMouseMoveRevealsControlsEnabled() ?: true
-        touchGesturesEnabled = PlayerSettingsStorage.loadTouchGesturesEnabled() ?: true
         externalPlayerEnabled = PlayerSettingsStorage.loadExternalPlayerEnabled() ?: false
         externalPlayerForwardSubtitles = PlayerSettingsStorage.loadExternalPlayerForwardSubtitles() ?: false
         externalPlayerId = PlayerSettingsStorage.loadExternalPlayerId()
@@ -426,11 +426,14 @@ object PlayerSettingsRepository {
             desktopAnimeModeAutoEnabled = PlayerSettingsStorage.loadDesktopAnimeModeAutoEnabled() ?: false
         }
         desktopAnimeSvpEnabled = PlayerSettingsStorage.loadDesktopAnimeSvpEnabled() ?: false
+        desktopAudioPassthroughEnabled = PlayerSettingsStorage.loadDesktopAudioPassthroughEnabled() ?: false
+        desktopCustomMpvOptions = PlayerSettingsStorage.loadDesktopCustomMpvOptions().orEmpty()
         heroTvTrailerEnabled = PlayerSettingsStorage.loadHeroTvTrailerEnabled() ?: false
         heroTvTrailerDelaySeconds = PlayerSettingsStorage.loadHeroTvTrailerDelaySeconds()
             ?.let(::snapToHeroTvTrailerDelay) ?: 5
         heroTvTrailerSoundEnabled = PlayerSettingsStorage.loadHeroTvTrailerSoundEnabled() ?: false
         heroTvTrailerFullscreen = PlayerSettingsStorage.loadHeroTvTrailerFullscreen() ?: false
+        heroTvTrailerSearchEnabled = PlayerSettingsStorage.loadHeroTvTrailerSearchEnabled() ?: true
         publish()
     }
 
@@ -450,23 +453,6 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveResizeMode(mode.name)
     }
 
-    fun setHoldToSpeedEnabled(enabled: Boolean) {
-        ensureLoaded()
-        if (holdToSpeedEnabled == enabled) return
-        holdToSpeedEnabled = enabled
-        publish()
-        PlayerSettingsStorage.saveHoldToSpeedEnabled(enabled)
-    }
-
-    fun setHoldToSpeedValue(speed: Float) {
-        ensureLoaded()
-        val normalized = speed.coerceIn(1f, 4f)
-        if (holdToSpeedValue == normalized) return
-        holdToSpeedValue = normalized
-        publish()
-        PlayerSettingsStorage.saveHoldToSpeedValue(normalized)
-    }
-
     fun setDefaultPlaybackSpeed(speed: Float) {
         ensureLoaded()
         val normalized = speed.coerceIn(0.25f, 4f)
@@ -482,14 +468,6 @@ object PlayerSettingsRepository {
         mouseMoveRevealsControlsEnabled = enabled
         publish()
         PlayerSettingsStorage.saveMouseMoveRevealsControlsEnabled(enabled)
-    }
-
-    fun setTouchGesturesEnabled(enabled: Boolean) {
-        ensureLoaded()
-        if (touchGesturesEnabled == enabled) return
-        touchGesturesEnabled = enabled
-        publish()
-        PlayerSettingsStorage.saveTouchGesturesEnabled(enabled)
     }
 
     fun setExternalPlayerEnabled(enabled: Boolean) {
@@ -966,11 +944,8 @@ object PlayerSettingsRepository {
         _uiState.value = PlayerSettingsUiState(
             showLoadingOverlay = showLoadingOverlay,
             resizeMode = resizeMode,
-            holdToSpeedEnabled = holdToSpeedEnabled,
-            holdToSpeedValue = holdToSpeedValue,
             defaultPlaybackSpeed = defaultPlaybackSpeed,
             mouseMoveRevealsControlsEnabled = mouseMoveRevealsControlsEnabled,
-            touchGesturesEnabled = touchGesturesEnabled,
             externalPlayerEnabled = externalPlayerEnabled,
             externalPlayerForwardSubtitles = externalPlayerForwardSubtitles,
             externalPlayerId = externalPlayerId,
@@ -1028,10 +1003,13 @@ object PlayerSettingsRepository {
             desktopAnimeMode = desktopAnimeMode,
             desktopAnimeModeAutoEnabled = desktopAnimeModeAutoEnabled,
             desktopAnimeSvpEnabled = desktopAnimeSvpEnabled,
+            desktopAudioPassthroughEnabled = desktopAudioPassthroughEnabled,
+            desktopCustomMpvOptions = desktopCustomMpvOptions,
             heroTvTrailerEnabled = heroTvTrailerEnabled,
             heroTvTrailerDelaySeconds = heroTvTrailerDelaySeconds,
             heroTvTrailerSoundEnabled = heroTvTrailerSoundEnabled,
             heroTvTrailerFullscreen = heroTvTrailerFullscreen,
+            heroTvTrailerSearchEnabled = heroTvTrailerSearchEnabled,
         )
     }
 
@@ -1091,6 +1069,22 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveDesktopAnimeSvpEnabled(enabled)
     }
 
+    fun setDesktopAudioPassthroughEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopAudioPassthroughEnabled == enabled) return
+        desktopAudioPassthroughEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopAudioPassthroughEnabled(enabled)
+    }
+
+    fun setDesktopCustomMpvOptions(options: String) {
+        ensureLoaded()
+        if (desktopCustomMpvOptions == options) return
+        desktopCustomMpvOptions = options
+        publish()
+        PlayerSettingsStorage.saveDesktopCustomMpvOptions(options)
+    }
+
     fun setHeroTvTrailerEnabled(enabled: Boolean) {
         ensureLoaded()
         if (heroTvTrailerEnabled == enabled) return
@@ -1122,6 +1116,14 @@ object PlayerSettingsRepository {
         heroTvTrailerFullscreen = enabled
         publish()
         PlayerSettingsStorage.saveHeroTvTrailerFullscreen(enabled)
+    }
+
+    fun setHeroTvTrailerSearchEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (heroTvTrailerSearchEnabled == enabled) return
+        heroTvTrailerSearchEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveHeroTvTrailerSearchEnabled(enabled)
     }
 
     private fun normalizeStreamAutoPlaySource(source: StreamAutoPlaySource): StreamAutoPlaySource {

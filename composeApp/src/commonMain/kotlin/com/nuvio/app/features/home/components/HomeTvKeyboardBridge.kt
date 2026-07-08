@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 /** TV-mode navigation keys, routed independently of which component holds focus. */
-enum class HomeTvKey { Up, Down, Left, Right, Select, ToggleTrailer, Dismiss, Search, Library }
+enum class HomeTvKey { Up, Down, Left, Right, Select, ToggleTrailer, ToggleMute, VolumeDown, VolumeUp, TogglePeoplePanel, Dismiss, Search, Library }
 
 /**
  * Bridges keyboard navigation to the TV-mode home while the native hero-trailer surface

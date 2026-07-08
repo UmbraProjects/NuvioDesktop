@@ -57,6 +57,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import com.nuvio.app.core.ui.navigationKey
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -217,7 +218,7 @@ fun LibraryScreen(
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         val sections = uiState.sections
-                        when (event.key) {
+                        when (event.navigationKey()) {
                             Key.L, Key.H -> { onNavigateToHome?.invoke(); true }
                             Key.DirectionDown -> {
                                 val maxRow = (sections.size - 1).coerceAtLeast(0)

@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import com.nuvio.app.core.ui.navigationKey
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -93,6 +94,7 @@ import com.nuvio.app.features.details.components.DetailCommentsSection
 import com.nuvio.app.features.details.components.DetailCompactMediaSelector
 import com.nuvio.app.features.details.components.DetailFloatingHeader
 import com.nuvio.app.features.details.components.DetailHero
+import com.nuvio.app.features.details.components.DetailHeroPeoplePanelToggleTrigger
 import com.nuvio.app.features.details.components.DetailMetaInfo
 import com.nuvio.app.features.details.components.DetailPosterRailSection
 import com.nuvio.app.features.details.components.DetailProductionSection
@@ -1007,7 +1009,6 @@ fun MetaDetailsScreen(
                     meta.moreLikeThis,
                     hasEpisodes,
                     mergedDetailKeyboardNavigation,
-                    metaScreenSettingsUiState.episodeCardStyle,
                 ) {
                     buildList {
                         if (mergedDetailKeyboardNavigation) {
@@ -1141,7 +1142,7 @@ fun MetaDetailsScreen(
                                                 kind = MetaTvSectionKind.EPISODES,
                                                 lazyItemIndex = lazyItemIndex,
                                                 itemCount = episodes.size,
-                                                isVerticalEpisodeList = metaScreenSettingsUiState.episodeCardStyle == MetaEpisodeCardStyle.List,
+                                                isVerticalEpisodeList = false,
                                                 onEnter = { idx -> episodes.getOrNull(idx)?.let { onEpisodePlayClick(it) } },
                                             ),
                                         )
@@ -1296,6 +1297,28 @@ fun MetaDetailsScreen(
                         onBack()
                         return@handleKey true
                     }
+                    if (key == DetailTvKey.TogglePeoplePanel) {
+                        DetailHeroPeoplePanelToggleTrigger.trigger()
+                        return@handleKey true
+                    }
+                    if (key == DetailTvKey.ToggleMute) {
+                        // Mirror the home hero: M toggles trailer audio while one is playing.
+                        return@handleKey if (heroTrailerSourceUrl != null && !heroTrailerDismissed) {
+                            HeroTrailerAudioState.toggleMuted()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    if (key == DetailTvKey.VolumeDown || key == DetailTvKey.VolumeUp) {
+                        // [ / ] step trailer volume as a keyboard alternative to the overlay slider.
+                        return@handleKey if (heroTrailerSourceUrl != null && !heroTrailerDismissed) {
+                            HeroTrailerAudioState.nudgeVolume(if (key == DetailTvKey.VolumeUp) 5 else -5)
+                            true
+                        } else {
+                            false
+                        }
+                    }
                     if (tvSections.isEmpty()) return@handleKey false
                     val current = tvSections.getOrNull(tvFocus.sectionIndex) ?: return@handleKey false
                     val isVerticalEpisodes = current.kind == MetaTvSectionKind.EPISODES &&
@@ -1412,7 +1435,7 @@ fun MetaDetailsScreen(
                                     }
                                     .onPreviewKeyEvent { event ->
                                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                        val navKey = when (event.key) {
+                                        val navKey = when (event.navigationKey()) {
                                             Key.Escape -> DetailTvKey.Dismiss
                                             Key.Backspace -> DetailTvKey.Back
                                             Key.DirectionDown -> DetailTvKey.Down
@@ -1420,6 +1443,10 @@ fun MetaDetailsScreen(
                                             Key.DirectionRight -> DetailTvKey.Right
                                             Key.DirectionLeft -> DetailTvKey.Left
                                             Key.Enter, Key.NumPadEnter -> DetailTvKey.Select
+                                            Key.P -> DetailTvKey.TogglePeoplePanel
+                                            Key.M -> DetailTvKey.ToggleMute
+                                            Key.LeftBracket -> DetailTvKey.VolumeDown
+                                            Key.RightBracket -> DetailTvKey.VolumeUp
                                             else -> return@onPreviewKeyEvent false
                                         }
                                         handleDetailTvKey(navKey)
@@ -1502,6 +1529,7 @@ fun MetaDetailsScreen(
                                         heroTrailerVolume = heroTrailerVolume,
                                         heroTrailerKeyboardNavigation = detailsKeyboardNavigationEnabled,
                                         heroTrailerPlaybackMode = metaScreenSettingsUiState.heroTrailerPlaybackMode,
+                                        heroTrailerBackgroundMode = metaScreenSettingsUiState.heroTrailerBackgroundMode,
                                         desktopOverlay = useDesktopDetailLayout,
                                         playButtonLabel = playButtonLabel,
                                         isSaved = isSaved,
@@ -1531,6 +1559,9 @@ fun MetaDetailsScreen(
                                         },
                                         onHeroTrailerVolumeChange = { newVolume ->
                                             HeroTrailerAudioState.setVolume(newVolume)
+                                        },
+                                        onHeroTrailerReclaimFocus = {
+                                            try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
                                         },
                                         onHeroTrailerDismiss = dismissHeroTrailerPlayback,
                                         onHeroTrailerReady = {
@@ -1574,7 +1605,7 @@ fun MetaDetailsScreen(
                                             showHeader = false,
                                             preferredSeasonNumber = seriesAction?.seasonNumber,
                                             preferredEpisodeNumber = seriesAction?.episodeNumber,
-                                            episodeCardStyle = metaScreenSettingsUiState.episodeCardStyle,
+                                            episodeCardStyle = MetaEpisodeCardStyle.Horizontal,
                                             progressByVideoId = progressByVideoId,
                                             watchedKeys = watchedUiState.watchedKeys,
                                             episodeRatings = episodeImdbRatings,
@@ -2573,7 +2604,7 @@ private fun ConfiguredMetaSections(
                         showHeader = showHeader,
                         preferredSeasonNumber = preferredEpisodeSeasonNumber,
                         preferredEpisodeNumber = preferredEpisodeNumber,
-                        episodeCardStyle = settings.episodeCardStyle,
+                        episodeCardStyle = MetaEpisodeCardStyle.Horizontal,
                         progressByVideoId = progressByVideoId,
                         watchedKeys = watchedKeys,
                         episodeRatings = episodeImdbRatings,

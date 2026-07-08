@@ -25,7 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -33,10 +35,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.home.components.ContinueWatchingStylePreview
+import com.nuvio.app.features.profiles.ProfileRepository
+import com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import com.nuvio.app.features.watchprogress.ContinueWatchingSortMode
+import com.nuvio.app.features.watchprogress.WatchProgressRepository
+import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.settings_advanced_clear_cw_cache
+import nuvio.composeapp.generated.resources.settings_advanced_clear_cw_cache_done
+import nuvio.composeapp.generated.resources.settings_advanced_clear_cw_cache_subtitle
+import nuvio.composeapp.generated.resources.settings_advanced_section_cache
 import nuvio.composeapp.generated.resources.settings_continue_watching_resume_prompt_description
 import nuvio.composeapp.generated.resources.settings_continue_watching_resume_prompt_title
 import nuvio.composeapp.generated.resources.settings_continue_watching_blur_next_up_description
@@ -172,7 +182,38 @@ internal fun LazyListScope.continueWatchingSettingsContent(
         }
     }
     item {
-        var showSortModeSheet by remember { mutableStateOf(false) }
+        SettingsSection(
+            title = stringResource(Res.string.settings_advanced_section_cache),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                val scope = rememberCoroutineScope()
+                var cleared by rememberSaveable { mutableStateOf(false) }
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_advanced_clear_cw_cache),
+                    description = if (cleared) {
+                        stringResource(Res.string.settings_advanced_clear_cw_cache_done)
+                    } else {
+                        stringResource(Res.string.settings_advanced_clear_cw_cache_subtitle)
+                    },
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("clear-cw-cache")),
+                    onClick = {
+                        if (!cleared) {
+                            ContinueWatchingEnrichmentCache.clearAll()
+                            cleared = true
+                            scope.launch {
+                                WatchProgressRepository.forceSnapshotRefreshFromServer(
+                                    ProfileRepository.activeProfileId,
+                                )
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+    item {
         SettingsSection(
             title = stringResource(Res.string.settings_continue_watching_section_sort_order),
             isTablet = isTablet,
@@ -184,24 +225,24 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                         ContinueWatchingSortMode.STREAMING_STYLE -> Res.string.settings_continue_watching_sort_mode_streaming
                     }
                 )
-                SettingsNavigationRow(
+                SettingsChoiceRow(
                     title = stringResource(Res.string.settings_continue_watching_sort_mode_title),
                     description = currentModeLabel,
+                    options = listOf(
+                        SettingsChoiceOption(
+                            ContinueWatchingSortMode.DEFAULT,
+                            stringResource(Res.string.settings_continue_watching_sort_mode_default),
+                        ),
+                        SettingsChoiceOption(
+                            ContinueWatchingSortMode.STREAMING_STYLE,
+                            stringResource(Res.string.settings_continue_watching_sort_mode_streaming),
+                        ),
+                    ),
+                    selectedValue = sortMode,
                     isTablet = isTablet,
-                    onClick = { showSortModeSheet = true },
+                    onSelected = ContinueWatchingPreferencesRepository::setSortMode,
                 )
             }
-        }
-
-        if (showSortModeSheet) {
-            ContinueWatchingSortModeDialog(
-                currentMode = sortMode,
-                onModeSelected = { mode ->
-                    ContinueWatchingPreferencesRepository.setSortMode(mode)
-                    showSortModeSheet = false
-                },
-                onDismiss = { showSortModeSheet = false },
-            )
         }
     }
 }

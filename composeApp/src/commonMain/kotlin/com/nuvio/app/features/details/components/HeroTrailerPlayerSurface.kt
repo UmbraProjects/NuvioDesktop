@@ -17,4 +17,7 @@ expect fun HeroTrailerPlayerSurface(
     onError: () -> Unit,
     onMuteToggle: () -> Unit = {},
     onVolumeChange: (Int) -> Unit = {},
+    // The native trailer surface never keeps OS focus; if a chrome click transiently focuses its
+    // WebView2, this is invoked so the details screen can reclaim keyboard focus.
+    onReclaimFocus: () -> Unit = {},
 )

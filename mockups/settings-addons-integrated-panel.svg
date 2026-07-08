@@ -1,0 +1,233 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1280" viewBox="0 0 1800 1280">
+  <defs>
+    <style>
+      .bg { fill: #000000; }
+      .line { stroke: #0f4a70; stroke-width: 1; opacity: 0.72; }
+      .soft-line { stroke: #30363a; stroke-width: 1; opacity: 0.82; }
+      .text { fill: #e8ebef; font-family: Inter, Segoe UI, Arial, sans-serif; }
+      .muted { fill: #a3abb4; font-family: Inter, Segoe UI, Arial, sans-serif; }
+      .dim { fill: #7f8993; font-family: Inter, Segoe UI, Arial, sans-serif; }
+      .accent { fill: #2d9cff; }
+      .accent-stroke { stroke: #2d9cff; }
+      .card { fill: #242829; }
+      .row-selected { fill: #142832; stroke: #2d9cff; stroke-width: 1; }
+      .field { fill: #30363a; stroke: #42494e; stroke-width: 1; }
+      .chip { fill: #343a3f; }
+      .chip-on { fill: #3a4146; }
+      .btn { fill: #2d9cff; }
+      .popover { fill: #1d2022; stroke: #3a4146; stroke-width: 1; }
+      .danger { fill: #ff6d9e; }
+      .ok { fill: #40d5d5; }
+      .h1 { font-size: 22px; font-weight: 700; }
+      .h2 { font-size: 18px; font-weight: 700; letter-spacing: 0.4px; }
+      .h3 { font-size: 15px; font-weight: 800; letter-spacing: 1px; }
+      .body { font-size: 16px; font-weight: 500; }
+      .small { font-size: 13px; font-weight: 500; }
+      .tiny { font-size: 12px; font-weight: 700; letter-spacing: 0.8px; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1800" height="1280"/>
+
+  <!-- settings shell -->
+  <line class="line" x1="14" y1="0" x2="14" y2="1280"/>
+  <line class="line" x1="1786" y1="0" x2="1786" y2="1280"/>
+  <line class="line" x1="0" y1="112" x2="1800" y2="112"/>
+  <line class="line" x1="335" y1="112" x2="335" y2="1280"/>
+  <line class="line" x1="1375" y1="112" x2="1375" y2="1280"/>
+
+  <!-- top bar -->
+  <circle cx="82" cy="56" r="24" fill="#c9272f"/>
+  <circle cx="82" cy="51" r="13" fill="#f2c1a0"/>
+  <rect x="70" y="62" width="24" height="14" rx="7" fill="#234760"/>
+  <path d="M156 42 C149 42 145 47 145 54 L145 63 L141 69 L171 69 L167 63 L167 54 C167 47 163 42 156 42 Z" fill="#a3abb4"/>
+  <circle cx="156" cy="75" r="3" fill="#a3abb4"/>
+  <path d="M243 42 L243 60" stroke="#a3abb4" stroke-width="4" stroke-linecap="round"/>
+  <path d="M233 52 C227 61 233 73 243 73 C253 73 259 61 253 52" fill="none" stroke="#a3abb4" stroke-width="4" stroke-linecap="round"/>
+  <rect class="field" x="1400" y="28" width="350" height="60" rx="15"/>
+  <circle cx="1430" cy="57" r="8" fill="none" stroke="#a3abb4" stroke-width="3"/>
+  <line x1="1436" y1="63" x2="1445" y2="72" stroke="#a3abb4" stroke-width="3" stroke-linecap="round"/>
+  <text class="muted body" x="1462" y="64">Search</text>
+
+  <!-- sidebar -->
+  <text class="text h1" x="44" y="165">Categories</text>
+  <g transform="translate(46,200)">
+    <text class="accent body" x="0" y="18">++</text>
+    <text class="text body" x="44" y="18" font-weight="700">Addons</text>
+  </g>
+  <g transform="translate(46,252)">
+    <rect x="0" y="-14" width="22" height="22" rx="3" fill="none" stroke="#aeb6bf" stroke-width="3"/>
+    <text class="muted body" x="44" y="7">Collections</text>
+  </g>
+  <g transform="translate(46,304)">
+    <rect x="0" y="-14" width="22" height="22" rx="3" fill="none" stroke="#aeb6bf" stroke-width="3"/>
+    <text class="muted body" x="44" y="7">Cont Watching</text>
+  </g>
+  <g transform="translate(46,356)">
+    <path d="M0 0 L24 0 M6 -9 L6 9 M18 -9 L18 9" stroke="#aeb6bf" stroke-width="3" stroke-linecap="round"/>
+    <text class="muted body" x="44" y="7">Detail Page</text>
+  </g>
+  <g transform="translate(46,408)">
+    <text class="muted body" x="0" y="7">++</text>
+    <text class="muted body" x="44" y="7">Fork Additions</text>
+  </g>
+  <g transform="translate(46,460)">
+    <circle cx="12" cy="0" r="11" fill="none" stroke="#aeb6bf" stroke-width="3"/>
+    <text class="muted body" x="44" y="7">Home Layout</text>
+  </g>
+  <g transform="translate(46,512)">
+    <path d="M3 0 C3 -6 7 -9 13 -9 L17 -9 M21 0 C21 6 17 9 11 9 L7 9 M11 -9 L7 -9 C1 -9 -3 -6 -3 0 M13 9 L17 9 C23 9 27 6 27 0" fill="none" stroke="#aeb6bf" stroke-width="3" stroke-linecap="round"/>
+    <text class="muted body" x="44" y="7">Integrations</text>
+  </g>
+  <g transform="translate(46,564)">
+    <circle cx="12" cy="-5" r="7" fill="none" stroke="#aeb6bf" stroke-width="3"/>
+    <path d="M0 13 C3 4 21 4 24 13" fill="none" stroke="#aeb6bf" stroke-width="3" stroke-linecap="round"/>
+    <text class="muted body" x="44" y="7">Account</text>
+  </g>
+  <g transform="translate(46,616)">
+    <circle cx="12" cy="0" r="12" fill="none" stroke="#aeb6bf" stroke-width="3"/>
+    <text class="muted body" x="44" y="7">Layout</text>
+  </g>
+  <g transform="translate(46,668)">
+    <path d="M4 -12 L22 0 L4 12 Z" fill="#aeb6bf"/>
+    <text class="muted body" x="44" y="7">Playback</text>
+  </g>
+  <g transform="translate(46,720)">
+    <circle cx="12" cy="0" r="11" fill="none" stroke="#aeb6bf" stroke-width="3"/>
+    <text class="muted body" x="44" y="7">Plugins</text>
+  </g>
+  <g transform="translate(46,772)">
+    <path d="M0 0 L24 0 M6 -9 L6 9 M18 -9 L18 9" stroke="#aeb6bf" stroke-width="3" stroke-linecap="round"/>
+    <text class="muted body" x="44" y="7">Streams</text>
+  </g>
+
+  <!-- main integrated addon manager -->
+  <g transform="translate(382,145)">
+    <text class="muted h3" x="0" y="14">INSTALLED ADDONS</text>
+
+    <!-- toolbar -->
+    <rect class="field" x="0" y="48" width="294" height="38" rx="8"/>
+    <circle cx="22" cy="67" r="7" fill="none" stroke="#a3abb4" stroke-width="2"/>
+    <line x1="27" y1="72" x2="36" y2="81" stroke="#a3abb4" stroke-width="2" stroke-linecap="round"/>
+    <text class="muted small" x="48" y="72">Filter installed addons</text>
+
+    <rect class="chip-on" x="310" y="48" width="78" height="38" rx="8"/>
+    <text class="text small" x="330" y="72" font-weight="700">Active</text>
+    <rect class="chip" x="398" y="48" width="108" height="38" rx="8"/>
+    <text class="muted small" x="422" y="72">Catalogs</text>
+    <rect class="chip" x="516" y="48" width="124" height="38" rx="8"/>
+    <text class="muted small" x="538" y="72">Configurable</text>
+
+    <rect class="btn" x="662" y="48" width="124" height="38" rx="8"/>
+    <path d="M684 57 L684 77 M674 67 L694 67" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+    <text class="text small" x="706" y="72" font-weight="800">Add Addon</text>
+
+    <rect class="chip" x="810" y="48" width="134" height="38" rx="8"/>
+    <text class="muted small" x="834" y="72">Sort: Order</text>
+    <path d="M910 62 L918 70 L926 62" fill="none" stroke="#a3abb4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- open add addon popover -->
+    <path d="M724 94 L734 82 L744 94 Z" fill="#1d2022" stroke="#3a4146" stroke-width="1"/>
+    <rect class="popover" x="564" y="94" width="380" height="118" rx="10"/>
+    <text class="text body" x="588" y="128" font-weight="700">Add addon</text>
+    <rect class="field" x="588" y="146" width="236" height="38" rx="8"/>
+    <text class="muted small" x="606" y="170">Addon manifest URL</text>
+    <rect class="btn" x="836" y="146" width="84" height="38" rx="8" opacity="0.55"/>
+    <text class="text small" x="858" y="170" font-weight="800">Install</text>
+
+    <!-- table panel -->
+    <rect class="card" x="0" y="238" width="944" height="318" rx="10"/>
+    <text class="dim tiny" x="24" y="272">ADDON</text>
+    <text class="dim tiny" x="396" y="272">RESOURCES</text>
+    <text class="dim tiny" x="536" y="272">CATALOGS</text>
+    <text class="dim tiny" x="662" y="272">STATUS</text>
+    <text class="dim tiny" x="766" y="272">ACTIONS</text>
+    <line class="soft-line" x1="24" y1="290" x2="920" y2="290"/>
+
+    <!-- row 1 -->
+    <rect class="row-selected" x="16" y="304" width="912" height="66" rx="8"/>
+    <rect x="34" y="318" width="38" height="38" rx="9" fill="#1b3033"/>
+    <circle cx="53" cy="337" r="12" fill="none" stroke="#40d5d5" stroke-width="3"/>
+    <text class="text body" x="88" y="332" font-weight="800">AIOMetadata</text>
+    <text class="muted small" x="88" y="354">Version 2.7.1</text>
+    <text class="muted body" x="396" y="346">3</text>
+    <text class="muted body" x="536" y="346">432</text>
+    <rect class="chip" x="662" y="322" width="68" height="30" rx="15"/>
+    <text class="text small" x="679" y="342" font-weight="800">Active</text>
+    <g transform="translate(768,322)" stroke="#aeb6bf" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M10 22 L10 4 M10 22 L2 14 M10 22 L18 14"/>
+      <path d="M52 4 L52 22 M52 4 L44 12 M52 4 L60 12" opacity="0.35"/>
+      <path d="M91 10 C95 3 106 4 109 11 M110 4 L110 12 L102 12 M110 20 C106 27 95 26 92 19 M91 26 L91 18 L99 18"/>
+      <path d="M142 22 L162 22 M146 18 L158 6 L164 12 L152 24 L146 24 Z" class="accent-stroke"/>
+      <path d="M194 8 L214 8 M199 8 L201 26 L211 26 L213 8 M202 8 L202 4 L210 4 L210 8" stroke="#ff6d9e"/>
+    </g>
+
+    <!-- row 2 -->
+    <line class="soft-line" x1="24" y1="388" x2="920" y2="388"/>
+    <rect x="34" y="406" width="38" height="38" rx="9" fill="#383d40"/>
+    <text class="text small" x="43" y="430" font-weight="800">AU</text>
+    <text class="text body" x="88" y="420" font-weight="800">AIOUmbra</text>
+    <text class="muted small" x="88" y="442">Version 2.30.3</text>
+    <text class="muted body" x="396" y="434">2</text>
+    <text class="muted body" x="536" y="434">0</text>
+    <rect class="chip" x="662" y="410" width="68" height="30" rx="15"/>
+    <text class="text small" x="679" y="430" font-weight="800">Active</text>
+    <g transform="translate(768,410)" stroke="#aeb6bf" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M10 22 L10 4 M10 22 L2 14 M10 22 L18 14" opacity="0.35"/>
+      <path d="M52 4 L52 22 M52 4 L44 12 M52 4 L60 12"/>
+      <path d="M91 10 C95 3 106 4 109 11 M110 4 L110 12 L102 12 M110 20 C106 27 95 26 92 19 M91 26 L91 18 L99 18"/>
+      <path d="M142 22 L162 22 M146 18 L158 6 L164 12 L152 24 L146 24 Z" class="accent-stroke"/>
+      <path d="M194 8 L214 8 M199 8 L201 26 L211 26 L213 8 M202 8 L202 4 L210 4 L210 8" stroke="#ff6d9e"/>
+    </g>
+
+    <!-- row 3 preview -->
+    <line class="soft-line" x1="24" y1="476" x2="920" y2="476"/>
+    <rect x="34" y="494" width="38" height="38" rx="9" fill="#33383b"/>
+    <text class="muted small" x="43" y="518" font-weight="800">EX</text>
+    <text class="muted body" x="88" y="508" font-weight="700">Example disabled addon</text>
+    <text class="dim small" x="88" y="530">Version 1.4.0</text>
+    <text class="dim body" x="396" y="522">1</text>
+    <text class="dim body" x="536" y="522">14</text>
+    <rect class="chip" x="662" y="498" width="80" height="30" rx="15"/>
+    <text class="dim small" x="677" y="518" font-weight="800">Disabled</text>
+    <g transform="translate(768,498)" stroke="#737c85" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M10 22 L10 4 M10 22 L2 14 M10 22 L18 14"/>
+      <path d="M52 4 L52 22 M52 4 L44 12 M52 4 L60 12"/>
+      <path d="M91 10 C95 3 106 4 109 11 M110 4 L110 12 L102 12 M110 20 C106 27 95 26 92 19 M91 26 L91 18 L99 18"/>
+      <path d="M142 22 L162 22 M146 18 L158 6 L164 12 L152 24 L146 24 Z"/>
+      <path d="M194 8 L214 8 M199 8 L201 26 L211 26 L213 8 M202 8 L202 4 L210 4 L210 8"/>
+    </g>
+  </g>
+
+  <!-- right panel -->
+  <g transform="translate(1405,145)">
+    <text class="text h1" x="0" y="20">Addons at a glance</text>
+    <g transform="translate(0,58)">
+      <circle cx="10" cy="2" r="10" fill="none" stroke="#a3abb4" stroke-width="3"/>
+      <text class="text body" x="46" y="6">Installed</text>
+      <text class="muted small" x="46" y="26">2 active addons</text>
+    </g>
+    <g transform="translate(0,116)">
+      <path d="M0 -7 L20 -7 L20 13 L0 13 Z" fill="none" stroke="#a3abb4" stroke-width="3"/>
+      <text class="text body" x="46" y="6">Catalogs</text>
+      <text class="muted small" x="46" y="26">432 available</text>
+    </g>
+    <g transform="translate(0,174)">
+      <path d="M0 0 L24 0 M6 -9 L6 9 M18 -9 L18 9" stroke="#a3abb4" stroke-width="3" stroke-linecap="round"/>
+      <text class="text body" x="46" y="6">Filters</text>
+      <text class="muted small" x="46" y="26">Active, Catalogs, Configurable</text>
+    </g>
+
+    <text class="text h1" x="0" y="300">Quick Actions</text>
+    <g transform="translate(0,340)">
+      <path d="M12 -10 L12 10 M2 0 L22 0" stroke="#a3abb4" stroke-width="3" stroke-linecap="round"/>
+      <text class="text body" x="46" y="6">Add addon</text>
+      <text class="muted small" x="46" y="26">Open URL popover</text>
+    </g>
+    <g transform="translate(0,398)">
+      <path d="M5 -3 C9 -13 24 -10 26 0 M27 -8 L27 2 L17 2 M27 9 C23 19 8 16 6 6 M5 14 L5 4 L15 4" fill="none" stroke="#a3abb4" stroke-width="3" stroke-linecap="round"/>
+      <text class="text body" x="46" y="6">Refresh all</text>
+      <text class="muted small" x="46" y="26">Update addon data</text>
+    </g>
+  </g>
+</svg>

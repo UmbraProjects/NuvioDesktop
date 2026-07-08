@@ -1,11 +1,8 @@
 package com.nuvio.app.features.settings
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -13,12 +10,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,17 +19,16 @@ import kotlinx.coroutines.flow.asStateFlow
 private const val SettingsScrollAnchorHighlightMillis = 3000L
 
 /**
- * Lets a deep-link (e.g. from the Fork Enhancements overview) request that a specific
- * setting row be scrolled into view when its page opens. A row marks itself with
- * [settingsScrollAnchor]; the navigation requests an anchor id, and the matching row brings
- * itself into view and briefly draws a highlight around itself so it's easy to spot even on
- * short pages that can't scroll it to the top.
+ * Lets a deep-link (e.g. from the Fork Enhancements overview, the settings search, or a pinned
+ * favorite) request that a specific setting be scrolled into view when its page opens. An element
+ * marks itself with [settingsScrollAnchor]; the navigation requests an anchor id, and the matching
+ * element brings itself into view. To highlight itself it briefly tints its own label with the
+ * accent colour (via [rememberSettingsAnchorHighlight]) rather than drawing a box around itself,
+ * so the cue never overlaps neighbouring rows or card corners.
  */
 internal object SettingsScrollAnchor {
-    const val AdaptiveHero = "adaptive_hero"
+    const val DisplayMode = "display_mode"
     const val AdaptiveHeroPosition = "adaptive_hero_position"
-    const val TvMode = "tv_mode"
-    const val HeroAmbient = "hero_ambient"
     const val HeroBadgeCount = "hero_badge_count"
     const val HeroBadgePosition = "hero_badge_position"
     const val HeroBadgeSize = "hero_badge_size"
@@ -48,6 +38,7 @@ internal object SettingsScrollAnchor {
     const val TrailerDelay = "trailer_delay"
     const val TrailerSound = "trailer_sound"
     const val TrailerFullscreen = "trailer_fullscreen"
+    const val TrailerSearch = "trailer_search"
     const val HdrMode = "hdr_mode"
     const val ColorProfile = "color_profile"
     const val DesktopRenderer = "desktop_renderer"
@@ -93,9 +84,19 @@ internal object SettingsScrollAnchor {
     }
 }
 
+/**
+ * The state produced by [rememberSettingsAnchorHighlight]: [modifier] must be applied to the
+ * anchored element so it can be brought into view, and [highlighted] is true for ~3s after the
+ * anchor is requested so the caller can tint its label with the accent colour.
+ */
+internal data class SettingsAnchorHighlight(
+    val highlighted: Boolean,
+    val modifier: Modifier,
+)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun Modifier.settingsScrollAnchor(anchor: String): Modifier {
+internal fun rememberSettingsAnchorHighlight(anchor: String): SettingsAnchorHighlight {
     val requester = remember { BringIntoViewRequester() }
     val requested by SettingsScrollAnchor.requested.collectAsStateWithLifecycle()
     // Bump a local token (and consume the request) without keying the highlight timer on the
@@ -115,33 +116,20 @@ internal fun Modifier.settingsScrollAnchor(anchor: String): Modifier {
         delay(SettingsScrollAnchorHighlightMillis)
         highlighted = false
     }
-    val highlightAlpha by animateFloatAsState(
-        targetValue = if (highlighted) 1f else 0f,
-        animationSpec = tween(durationMillis = if (highlighted) 200 else 600),
-        label = "settings_scroll_anchor_highlight",
+    return SettingsAnchorHighlight(
+        highlighted = highlighted,
+        modifier = Modifier.bringIntoViewRequester(requester),
     )
-    val highlightColor = MaterialTheme.colorScheme.primary
-    return this
-        .bringIntoViewRequester(requester)
-        .drawBehind {
-            if (highlightAlpha <= 0f) return@drawBehind
-            // Draw the highlight inset from the row edges (no layout shift) so it floats
-            // inside the row and never clashes with the group card's rounded corners.
-            val insetX = 8.dp.toPx()
-            val insetY = 5.dp.toPx()
-            val strokeWidth = 2.dp.toPx()
-            drawRoundRect(
-                color = highlightColor.copy(alpha = highlightAlpha),
-                topLeft = Offset(insetX + strokeWidth / 2f, insetY + strokeWidth / 2f),
-                size = Size(
-                    width = size.width - 2f * insetX - strokeWidth,
-                    height = size.height - 2f * insetY - strokeWidth,
-                ),
-                cornerRadius = CornerRadius(10.dp.toPx()),
-                style = Stroke(width = strokeWidth),
-            )
-        }
 }
+
+/**
+ * Marks an element as a scroll anchor. Brings itself into view when its id is requested; the
+ * transient accent highlight is opt-in via [rememberSettingsAnchorHighlight] for callers that
+ * control their own label colour (e.g. [SettingsSection]).
+ */
+@Composable
+internal fun Modifier.settingsScrollAnchor(anchor: String): Modifier =
+    this.then(rememberSettingsAnchorHighlight(anchor).modifier)
 
 @Composable
 internal fun Modifier.settingsSearchAnchors(vararg keys: String): Modifier =

@@ -8,8 +8,8 @@ import org.jetbrains.compose.resources.StringResource
 enum class DesktopNavigationLayout(
     val labelRes: StringResource,
 ) {
-    Sidebar(Res.string.settings_appearance_desktop_navigation_sidebar),
     TopBar(Res.string.settings_appearance_desktop_navigation_top_bar),
+    Sidebar(Res.string.settings_appearance_desktop_navigation_sidebar),
     ;
 
     companion object {

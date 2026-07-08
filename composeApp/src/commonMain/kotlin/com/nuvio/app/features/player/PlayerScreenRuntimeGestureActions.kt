@@ -4,8 +4,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
@@ -15,19 +13,8 @@ import kotlin.math.roundToInt
 internal data class PlayerSurfaceGestureCallbacks(
     val onSurfaceTap: State<(Offset) -> Unit>,
     val onSurfaceDoubleTap: State<(Offset) -> Unit>,
-    val activateHoldToSpeed: State<() -> Unit>,
-    val deactivateHoldToSpeed: State<() -> Unit>,
-    val showHorizontalSeekPreview: State<(Long, Long) -> Unit>,
-    val showBrightnessFeedback: State<(Float) -> Unit>,
-    val showVolumeFeedback: State<(PlayerAudioLevel) -> Unit>,
-    val clearLiveGestureFeedback: State<() -> Unit>,
     val revealLockedOverlay: State<() -> Unit>,
-    val isHoldToSpeedGestureActive: State<Boolean>,
-    val touchGesturesEnabled: State<Boolean>,
     val playerControlsLocked: State<Boolean>,
-    val currentPositionMs: State<Long>,
-    val currentDurationMs: State<Long>,
-    val commitHorizontalSeek: State<(Long) -> Unit>,
 )
 
 internal fun PlayerScreenRuntime.showGestureFeedback(feedback: GestureFeedbackState) {
@@ -41,10 +28,6 @@ internal fun PlayerScreenRuntime.showGestureFeedback(feedback: GestureFeedbackSt
 
 internal fun PlayerScreenRuntime.showGestureMessage(message: String) {
     showGestureFeedback(GestureFeedbackState(message = message))
-}
-
-internal fun PlayerScreenRuntime.clearLiveGestureFeedback() {
-    liveGestureFeedback = null
 }
 
 internal fun PlayerScreenRuntime.revealLockedOverlay() {
@@ -94,41 +77,6 @@ internal fun PlayerScreenRuntime.showSeekFeedback(direction: PlayerSeekDirection
             } else {
                 GestureFeedbackIcon.SeekBackward
             },
-        ),
-    )
-}
-
-internal fun PlayerScreenRuntime.showHorizontalSeekPreview(previewPositionMs: Long, baselinePositionMs: Long) {
-    val deltaMs = previewPositionMs - baselinePositionMs
-    val direction = if (deltaMs < 0L) PlayerSeekDirection.Backward else PlayerSeekDirection.Forward
-    liveGestureFeedback = GestureFeedbackState(
-        message = formatPlaybackTime(previewPositionMs),
-        icon = if (direction == PlayerSeekDirection.Forward) {
-            GestureFeedbackIcon.SeekForward
-        } else {
-            GestureFeedbackIcon.SeekBackward
-        },
-        secondaryMessageRes = if (deltaMs >= 0L) {
-            Res.string.compose_player_seek_delta_forward
-        } else {
-            Res.string.compose_player_seek_delta_backward
-        },
-        secondaryMessageArgs = listOf((abs(deltaMs) / 1000f).roundToInt()),
-        secondaryMessageColor = if (direction == PlayerSeekDirection.Forward) {
-            Color(0xFF6EE7A8)
-        } else {
-            Color(0xFFFF9A76)
-        },
-    )
-}
-
-internal fun PlayerScreenRuntime.showBrightnessFeedback(level: Float) {
-    val percentage = (level.coerceIn(0f, 1f) * 100f).roundToInt()
-    showGestureFeedback(
-        GestureFeedbackState(
-            messageRes = Res.string.compose_player_brightness_level,
-            messageArgs = listOf("$percentage%"),
-            icon = GestureFeedbackIcon.Brightness,
         ),
     )
 }
@@ -205,10 +153,6 @@ private fun PlayerScreenRuntime.applySeekByControlFeedback(
         offsetMs > 0L -> showSeekFeedback(PlayerSeekDirection.Forward, offsetMs)
         offsetMs < 0L -> showSeekFeedback(PlayerSeekDirection.Backward, abs(offsetMs))
     }
-}
-
-internal fun PlayerScreenRuntime.handleDoubleTapSeek(direction: PlayerSeekDirection) {
-    handleDoubleTapSeek(direction, sendToController = true)
 }
 
 internal fun PlayerScreenRuntime.prepareDoubleTapSeekForNativeFallback(direction: PlayerSeekDirection) {
@@ -291,33 +235,6 @@ internal fun PlayerScreenRuntime.adjustPlaybackSpeedStep(direction: Int) {
     showGestureMessage(formatPlaybackSpeedLabel(next))
 }
 
-internal fun PlayerScreenRuntime.activateHoldToSpeed() {
-    if (!playerSettingsUiState.holdToSpeedEnabled) return
-    val controller = playerController ?: return
-    if (speedBoostRestoreSpeed != null) return
-
-    val targetSpeed = playerSettingsUiState.holdToSpeedValue
-    val currentSpeed = playbackSnapshot.playbackSpeed
-    if (abs(currentSpeed - targetSpeed) < 0.01f) return
-
-    isHoldToSpeedGestureActive = true
-    speedBoostRestoreSpeed = currentSpeed
-    controller.setPlaybackSpeed(targetSpeed)
-    liveGestureFeedback = GestureFeedbackState(
-        message = formatPlaybackSpeedLabel(targetSpeed),
-        icon = GestureFeedbackIcon.Speed,
-    )
-    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-}
-
-internal fun PlayerScreenRuntime.deactivateHoldToSpeed() {
-    isHoldToSpeedGestureActive = false
-    val restoreSpeed = speedBoostRestoreSpeed ?: return
-    playerController?.setPlaybackSpeed(restoreSpeed)
-    speedBoostRestoreSpeed = null
-    liveGestureFeedback = null
-}
-
 @Composable
 internal fun PlayerScreenRuntime.rememberSurfaceGestureCallbacks(): PlayerSurfaceGestureCallbacks {
     val onSurfaceTap = rememberUpdatedState { offset: Offset ->
@@ -333,43 +250,17 @@ internal fun PlayerScreenRuntime.rememberSurfaceGestureCallbacks(): PlayerSurfac
             controlsVisible = !controlsVisible
         }
     }
-    val onSurfaceDoubleTap = rememberUpdatedState { offset: Offset ->
+    val onSurfaceDoubleTap = rememberUpdatedState { _: Offset ->
         if (playerControlsLocked) {
             revealLockedOverlay()
             return@rememberUpdatedState
         }
-        if (!playerSettingsUiState.touchGesturesEnabled) {
-            controlsVisible = !controlsVisible
-            return@rememberUpdatedState
-        }
-        when {
-            offset.x < layoutSize.width * PlayerLeftGestureBoundary -> {
-                handleDoubleTapSeek(PlayerSeekDirection.Backward)
-            }
-            offset.x > layoutSize.width * PlayerRightGestureBoundary -> {
-                handleDoubleTapSeek(PlayerSeekDirection.Forward)
-            }
-            else -> controlsVisible = !controlsVisible
-        }
+        controlsVisible = !controlsVisible
     }
     return PlayerSurfaceGestureCallbacks(
         onSurfaceTap = onSurfaceTap,
         onSurfaceDoubleTap = onSurfaceDoubleTap,
-        activateHoldToSpeed = rememberUpdatedState(::activateHoldToSpeed),
-        deactivateHoldToSpeed = rememberUpdatedState(::deactivateHoldToSpeed),
-        showHorizontalSeekPreview = rememberUpdatedState(::showHorizontalSeekPreview),
-        showBrightnessFeedback = rememberUpdatedState(::showBrightnessFeedback),
-        showVolumeFeedback = rememberUpdatedState(::showVolumeFeedback),
-        clearLiveGestureFeedback = rememberUpdatedState(::clearLiveGestureFeedback),
         revealLockedOverlay = rememberUpdatedState(::revealLockedOverlay),
-        isHoldToSpeedGestureActive = rememberUpdatedState(isHoldToSpeedGestureActive),
-        touchGesturesEnabled = rememberUpdatedState(playerSettingsUiState.touchGesturesEnabled),
         playerControlsLocked = rememberUpdatedState(playerControlsLocked),
-        currentPositionMs = rememberUpdatedState(playbackSnapshot.positionMs.coerceAtLeast(0L)),
-        currentDurationMs = rememberUpdatedState(playbackSnapshot.durationMs),
-        commitHorizontalSeek = rememberUpdatedState { targetPositionMs: Long ->
-            playerController?.seekTo(targetPositionMs)
-            scheduleProgressSyncAfterSeek()
-        },
     )
 }

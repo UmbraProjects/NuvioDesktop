@@ -7,16 +7,10 @@ internal expect object PlayerSettingsStorage {
     fun saveShowLoadingOverlay(enabled: Boolean)
     fun loadResizeMode(): String?
     fun saveResizeMode(mode: String)
-    fun loadHoldToSpeedEnabled(): Boolean?
-    fun saveHoldToSpeedEnabled(enabled: Boolean)
-    fun loadHoldToSpeedValue(): Float?
-    fun saveHoldToSpeedValue(speed: Float)
     fun loadDefaultPlaybackSpeed(): Float?
     fun saveDefaultPlaybackSpeed(speed: Float)
     fun loadMouseMoveRevealsControlsEnabled(): Boolean?
     fun saveMouseMoveRevealsControlsEnabled(enabled: Boolean)
-    fun loadTouchGesturesEnabled(): Boolean?
-    fun saveTouchGesturesEnabled(enabled: Boolean)
     fun loadExternalPlayerEnabled(): Boolean?
     fun saveExternalPlayerEnabled(enabled: Boolean)
     fun loadExternalPlayerForwardSubtitles(): Boolean?
@@ -69,6 +63,10 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean)
     fun loadDesktopAnimeSvpEnabled(): Boolean?
     fun saveDesktopAnimeSvpEnabled(enabled: Boolean)
+    fun loadDesktopAudioPassthroughEnabled(): Boolean?
+    fun saveDesktopAudioPassthroughEnabled(enabled: Boolean)
+    fun loadDesktopCustomMpvOptions(): String?
+    fun saveDesktopCustomMpvOptions(options: String)
     fun loadMapDV7ToHevc(): Boolean?
     fun saveMapDV7ToHevc(enabled: Boolean)
     fun loadTunnelingEnabled(): Boolean?
@@ -160,6 +158,8 @@ internal expect object PlayerSettingsStorage {
     fun saveHeroTvTrailerSoundEnabled(enabled: Boolean)
     fun loadHeroTvTrailerFullscreen(): Boolean?
     fun saveHeroTvTrailerFullscreen(enabled: Boolean)
+    fun loadHeroTvTrailerSearchEnabled(): Boolean?
+    fun saveHeroTvTrailerSearchEnabled(enabled: Boolean)
     fun exportToSyncPayload(): JsonObject
     fun replaceFromSyncPayload(payload: JsonObject)
 }

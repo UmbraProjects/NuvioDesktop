@@ -20,6 +20,8 @@ import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.search.SearchHistoryRepository
+import com.nuvio.app.features.settings.SettingsCategoryOrderRepository
+import com.nuvio.app.features.settings.SettingsFavoritesRepository
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
@@ -87,6 +89,8 @@ object ProfileRepository {
         val stored = decodeStoredPayload() ?: return false
         loadedCacheForUserId = stored.userId
         applyStoredPayload(stored)
+        SettingsCategoryOrderRepository.onProfileChanged()
+        SettingsFavoritesRepository.onProfileChanged()
         ThemeSettingsRepository.onProfileChanged()
         return _state.value.profiles.isNotEmpty()
     }
@@ -109,6 +113,8 @@ object ProfileRepository {
         }
 
         applyStoredPayload(stored)
+        SettingsCategoryOrderRepository.onProfileChanged()
+        SettingsFavoritesRepository.onProfileChanged()
     }
 
     fun clearInMemory() {
@@ -170,8 +176,11 @@ object ProfileRepository {
             PluginRepository.onProfileChanged(profileIndex)
         }
         ThemeSettingsRepository.onProfileChanged()
+        SettingsCategoryOrderRepository.onProfileChanged()
+        SettingsFavoritesRepository.onProfileChanged()
         PosterCardStyleRepository.onProfileChanged()
         PlayerSettingsRepository.onProfileChanged()
+        com.nuvio.app.features.player.onPlayerShortcutsProfileChanged()
         StreamBadgeSettingsRepository.onProfileChanged()
         P2pSettingsRepository.onProfileChanged()
         HomeCatalogSettingsRepository.onProfileChanged()

@@ -304,6 +304,56 @@ class AppUpdaterController internal constructor(
         }
     }
 
+    fun showLatestChangelog() {
+        if (!AppFeaturePolicy.inAppUpdaterEnabled || !AppUpdaterPlatform.isSupported) {
+            scope.launch {
+                NuvioToastController.show(getString(Res.string.updates_not_available))
+            }
+            return
+        }
+
+        scope.launch {
+            _uiState.update { state ->
+                state.copy(
+                    isChecking = true,
+                    errorMessage = null,
+                    showUnknownSourcesDialog = false,
+                )
+            }
+
+            AppUpdaterRepository.getLatestChannelUpdate().onSuccess { update ->
+                val remoteNewer = VersionUtils.isRemoteNewer(update.tag, AppVersionConfig.DESKTOP_VERSION_NAME)
+                _uiState.update { state ->
+                    state.copy(
+                        isChecking = false,
+                        update = update,
+                        isUpdateAvailable = remoteNewer,
+                        isDownloading = false,
+                        downloadProgress = null,
+                        downloadedApkPath = state.downloadedApkPath.takeIf { remoteNewer },
+                        showDialog = true,
+                        showUnknownSourcesDialog = false,
+                        errorMessage = null,
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update { state ->
+                    state.copy(
+                        isChecking = false,
+                        isDownloading = false,
+                        downloadProgress = null,
+                        downloadedApkPath = null,
+                        update = null,
+                        isUpdateAvailable = false,
+                        showDialog = true,
+                        showUnknownSourcesDialog = false,
+                        errorMessage = error.message ?: getString(Res.string.updates_check_failed),
+                    )
+                }
+            }
+        }
+    }
+
     fun dismissDialog() {
         _uiState.update { state ->
             state.copy(

@@ -8,6 +8,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.collections_header
 import nuvio.composeapp.generated.resources.compose_settings_category_about
 import nuvio.composeapp.generated.resources.compose_settings_category_general
 import nuvio.composeapp.generated.resources.compose_settings_page_account
@@ -20,6 +21,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_fork_enhanceme
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
+import nuvio.composeapp.generated.resources.compose_settings_page_keyboard_shortcuts
 import nuvio.composeapp.generated.resources.compose_settings_page_licenses_attributions
 import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_ratings
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
@@ -86,6 +88,11 @@ internal enum class SettingsPage(
         category = SettingsCategory.General,
         parentPage = Root,
     ),
+    KeyboardShortcuts(
+        titleRes = Res.string.compose_settings_page_keyboard_shortcuts,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
     Appearance(
         titleRes = Res.string.compose_settings_page_appearance,
         category = SettingsCategory.General,
@@ -136,6 +143,11 @@ internal enum class SettingsPage(
         category = SettingsCategory.General,
         parentPage = Root,
     ),
+    Collections(
+        titleRes = Res.string.collections_header,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
     Integrations(
         titleRes = Res.string.compose_settings_page_integrations,
         category = SettingsCategory.General,
@@ -158,13 +170,13 @@ internal enum class SettingsPage(
     ),
     TraktAuthentication(
         titleRes = Res.string.compose_settings_page_trakt,
-        category = SettingsCategory.Account,
-        parentPage = Root,
+        category = SettingsCategory.General,
+        parentPage = Integrations,
     ),
     SimklAuthentication(
         titleRes = Res.string.compose_settings_page_simkl,
-        category = SettingsCategory.Account,
-        parentPage = Root,
+        category = SettingsCategory.General,
+        parentPage = Integrations,
     ),
 }
 

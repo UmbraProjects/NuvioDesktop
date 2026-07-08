@@ -65,6 +65,24 @@ data class HomeCatalogSection(
 fun HomeCatalogSection.canOpenCatalog(previewLimit: Int): Boolean =
     availableItemCount > previewLimit || hasMore
 
+/**
+ * Guarantees every [HomeCatalogSection.key] in the list is unique by suffixing collisions
+ * (`key`, `key#1`, `key#2`, …). LazyColumn/LazyRow throw "Key … was already used" — which on
+ * Desktop crashes the whole app (the error dialog's OK button closes it) — when two items in the
+ * same list share a key, and two catalogs can legitimately resolve to the same section key: an
+ * addon exposing a catalog twice, two installed addons reporting an identical manifest id, or two
+ * collection tabs sharing a label. Applying this at each data source keeps every consumer safe,
+ * including the TV-mode lists that key items directly rather than via [withDuplicateSafeLazyKeys].
+ */
+fun List<HomeCatalogSection>.ensureUniqueKeys(): List<HomeCatalogSection> {
+    val occurrences = HashMap<String, Int>()
+    return map { section ->
+        val occurrence = occurrences.getOrElse(section.key) { 0 }
+        occurrences[section.key] = occurrence + 1
+        if (occurrence == 0) section else section.copy(key = "${section.key}#$occurrence")
+    }
+}
+
 data class HomeUiState(
     val isLoading: Boolean = false,
     val heroItems: List<MetaPreview> = emptyList(),

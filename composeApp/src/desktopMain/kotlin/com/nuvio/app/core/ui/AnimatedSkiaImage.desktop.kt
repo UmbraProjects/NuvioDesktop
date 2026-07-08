@@ -29,7 +29,6 @@ import org.jetbrains.skia.Paint
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.SamplingMode
 import org.jetbrains.skia.Image as SkiaImage
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.CRC32
 import kotlin.math.roundToInt
@@ -49,16 +48,45 @@ private const val MaxDecodedBytes = 64L * 1024 * 1024
 // Decoding every frame of a GIF is the expensive part (not the network/disk fetch, which Coil
 // already caches). Coil's memory cache can evict the large decoded SkiaAnimatedImage as soon as
 // a tile scrolls offscreen, which made re-decoding happen on every scroll back. Keep decoded
-// animations around for the app's lifetime, keyed by the source bytes, so scrolling back to a
-// tile just replays the already-decoded frames.
-private val decodedImageCache = ConcurrentHashMap<String, SkiaAnimatedImage>()
+// animations around, keyed by the source bytes, so scrolling back to a tile just replays the
+// already-decoded frames.
+//
+// This used to be an unbounded ConcurrentHashMap held for the app's lifetime. Each entry can be
+// up to 64 MB of decoded frames, so a long browsing session over lots of animated art grew heap
+// without bound. Bound it to a byte budget with LRU eviction instead; the worst that eviction
+// costs is a re-decode of a tile the user scrolls back to after a long absence.
+private val decodedImageCache = DecodedImageCache
+
+private object DecodedImageCache {
+    // Generous budget: ~six worst-case (64 MB) entries, far more than a typical viewport of tiles.
+    private const val MAX_BYTES = 384L * 1024 * 1024
+
+    // accessOrder=true makes iteration return least-recently-used first, so eviction is true LRU.
+    private val map = object : LinkedHashMap<String, SkiaAnimatedImage>(16, 0.75f, true) {}
+    private var currentBytes = 0L
+
+    @Synchronized
+    fun get(key: String): SkiaAnimatedImage? = map[key]
+
+    @Synchronized
+    fun put(key: String, image: SkiaAnimatedImage) {
+        map.put(key, image)?.let { currentBytes -= it.size }
+        currentBytes += image.size
+        val iterator = map.entries.iterator()
+        while (currentBytes > MAX_BYTES && map.size > 1 && iterator.hasNext()) {
+            val eldest = iterator.next()
+            iterator.remove()
+            currentBytes -= eldest.value.size
+        }
+    }
+}
 
 internal class AnimatedSkiaImageDecoder(
     private val codec: Codec,
     private val cacheKey: String,
 ) : Decoder {
     override suspend fun decode(): DecodeResult {
-        decodedImageCache[cacheKey]?.let { cached ->
+        decodedImageCache.get(cacheKey)?.let { cached ->
             codec.close()
             return DecodeResult(image = cached, isSampled = true)
         }
@@ -107,7 +135,7 @@ internal class AnimatedSkiaImageDecoder(
             frames = frames,
             frameDurationsMs = durations,
         )
-        decodedImageCache[cacheKey] = image
+        decodedImageCache.put(cacheKey, image)
 
         return DecodeResult(
             image = image,
@@ -136,8 +164,8 @@ internal class AnimatedSkiaImageDecoder(
             val crc = CRC32().apply { update(bytes) }
             val cacheKey = "${bytes.size}:${crc.value}"
 
-            decodedImageCache[cacheKey]?.let {
-                return AnimatedSkiaImageDecoder.cachedHit(cacheKey)
+            decodedImageCache.get(cacheKey)?.let { cached ->
+                return AnimatedSkiaImageDecoder.cachedHit(cached)
             }
 
             val codec = try {
@@ -155,8 +183,10 @@ internal class AnimatedSkiaImageDecoder(
     }
 
     companion object {
-        fun cachedHit(cacheKey: String): Decoder = Decoder {
-            val cached = decodedImageCache.getValue(cacheKey)
+        // Pin the already-decoded image in the closure rather than re-looking it up by key: the
+        // LRU cache can evict between Factory.create() and this decode, and the in-flight request
+        // must still resolve to a valid frame set instead of throwing.
+        fun cachedHit(cached: SkiaAnimatedImage): Decoder = Decoder {
             DecodeResult(image = cached, isSampled = true)
         }
     }

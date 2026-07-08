@@ -56,7 +56,7 @@
     <string name="cd_selected">Dipilih</string>
     <string name="collections_copy_json">Salin JSON</string>
     <string name="collections_count_summary">%1$d koleksi, %2$d folder</string>
-    <string name="collections_delete_message">Hapus \"%1$s\"? Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="collections_delete_message">Hapus &quot;%1$s&quot;? Tindakan ini tidak dapat dibatalkan.</string>
     <string name="collections_delete_title">Hapus Koleksi</string>
     <string name="collections_editor_add_catalog">Tambah Katalog</string>
     <string name="collections_editor_add_folder">Tambah Folder</string>
@@ -101,7 +101,7 @@
     <string name="collections_editor_shape_square">Kotak</string>
     <string name="collections_editor_shape_wide">Lebar</string>
     <string name="collections_editor_show_all_tab_desc">Gabungkan semua katalog ke dalam satu tab</string>
-    <string name="collections_editor_show_all_tab">Tampilkan Tab \"Semua\"</string>
+    <string name="collections_editor_show_all_tab">Tampilkan Tab &quot;Semua&quot;</string>
     <string name="collections_editor_show_gif_when_configured_desc">Putar GIF yang dikonfigurasi sebagai pengganti sampul statis jika tersedia.</string>
     <string name="collections_editor_show_gif_when_configured">Tampilkan GIF Jika Dikonfigurasi</string>
     <string name="collections_editor_source_count">%1$d sumber · %2$s</string>
@@ -1156,7 +1156,7 @@
     <string name="profile_custom_avatar_url">URL avatar kustom</string>
     <string name="profile_custom_avatar_url_description">Tempelkan tautan gambar, atau kosongkan untuk menggunakan katalog avatar bawaan.</string>
     <string name="profile_custom_avatar_url_placeholder">https://example.com/avatar.png</string>
-    <string name="profile_delete_confirm_message">Semua data untuk \"%1$s\" akan dihapus secara permanen.</string>
+    <string name="profile_delete_confirm_message">Semua data untuk &quot;%1$s&quot; akan dihapus secara permanen.</string>
     <string name="profile_delete_title">Hapus Profil</string>
     <string name="profile_edit_add_title">Tambah Profil</string>
     <string name="profile_edit_edit_title">Edit Profil</string>
@@ -1301,11 +1301,11 @@
     <string name="action_resume_episode">Lanjutkan %1$s</string>
     <string name="collections_import_error_empty_json">JSON kosong.</string>
     <string name="collections_import_error_collection_blank_id">Koleksi %1$d memiliki id kosong.</string>
-    <string name="collections_import_error_collection_blank_title">Koleksi \'%1$s\' memiliki judul kosong.</string>
-    <string name="collections_import_error_folder_blank_id">Folder %1$d di \'%2$s\' memiliki id kosong.</string>
-    <string name="collections_import_error_folder_blank_title">Folder \'%1$s\' di \'%2$s\' memiliki judul kosong.</string>
-    <string name="collections_import_error_source_blank_fields">Sumber %1$d di folder \'%2$s\' memiliki kolom kosong.</string>
-    <string name="collections_import_error_trakt_list_id">Sumber %1$d di folder \'%2$s\' tidak memiliki ID daftar Trakt.</string>
+    <string name="collections_import_error_collection_blank_title">Koleksi '%1$s' memiliki judul kosong.</string>
+    <string name="collections_import_error_folder_blank_id">Folder %1$d di '%2$s' memiliki id kosong.</string>
+    <string name="collections_import_error_folder_blank_title">Folder '%1$s' di '%2$s' memiliki judul kosong.</string>
+    <string name="collections_import_error_source_blank_fields">Sumber %1$d di folder '%2$s' memiliki kolom kosong.</string>
+    <string name="collections_import_error_trakt_list_id">Sumber %1$d di folder '%2$s' tidak memiliki ID daftar Trakt.</string>
     <string name="collections_import_error_invalid_json">JSON tidak valid: %1$s</string>
     <string name="collections_folder_addon_not_found">Addon tidak ditemukan: %1$s</string>
     <string name="date_month_january">Januari</string>

@@ -1,33 +1,16 @@
 package com.nuvio.app.features.settings
 
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.ExtraLargePosterCardWidthDp
@@ -39,15 +22,9 @@ import nuvio.composeapp.generated.resources.action_reset
 import nuvio.composeapp.generated.resources.settings_poster_card_radius
 import nuvio.composeapp.generated.resources.settings_poster_card_style
 import nuvio.composeapp.generated.resources.settings_poster_card_width
-import nuvio.composeapp.generated.resources.settings_poster_custom
 import nuvio.composeapp.generated.resources.settings_poster_description
 import nuvio.composeapp.generated.resources.settings_poster_hide_labels
 import nuvio.composeapp.generated.resources.settings_poster_landscape_mode
-import nuvio.composeapp.generated.resources.settings_poster_live_preview
-import nuvio.composeapp.generated.resources.settings_poster_option_with_value
-import nuvio.composeapp.generated.resources.settings_poster_preview_corner_radius
-import nuvio.composeapp.generated.resources.settings_poster_preview_height
-import nuvio.composeapp.generated.resources.settings_poster_preview_width
 import nuvio.composeapp.generated.resources.settings_poster_radius_classic
 import nuvio.composeapp.generated.resources.settings_poster_radius_pill
 import nuvio.composeapp.generated.resources.settings_poster_radius_rounded
@@ -94,9 +71,8 @@ internal fun LazyListScope.posterCustomizationSettingsContent(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PosterCardStyleControls(
+internal fun PosterCardStyleControls(
     isTablet: Boolean,
     widthDp: Int,
     cornerRadiusDp: Int,
@@ -123,225 +99,55 @@ private fun PosterCardStyleControls(
         PresetOption(stringResource(Res.string.settings_poster_radius_rounded), 12),
         PresetOption(stringResource(Res.string.settings_poster_radius_pill), 16),
     )
+    val widthChoiceOptions = widthOptions
+        .takeIf { options -> options.any { it.value == widthDp } }
+        ?: (widthOptions + PresetOption("${widthDp}dp", widthDp))
+    val radiusChoiceOptions = radiusOptions
+        .takeIf { options -> options.any { it.value == cornerRadiusDp } }
+        ?: (radiusOptions + PresetOption("${cornerRadiusDp}dp", cornerRadiusDp))
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = if (isTablet) 20.dp else 16.dp, vertical = if (isTablet) 18.dp else 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(
-            text = stringResource(Res.string.settings_poster_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        PosterCardLivePreview(
-            widthDp = widthDp,
-            cornerRadiusDp = cornerRadiusDp,
-        )
-        PosterStyleOptionRow(
+        SettingsChoiceRow(
             title = stringResource(Res.string.settings_poster_card_width),
+            description = widthChoiceOptions.first { it.value == widthDp }.label,
+            options = widthChoiceOptions.map { SettingsChoiceOption(it.value, it.label) },
             selectedValue = widthDp,
-            options = widthOptions,
+            isTablet = isTablet,
             modifier = Modifier
                 .settingsScrollAnchor(SettingsScrollAnchor.ExtraLargePosters)
                 .settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-width")),
             onSelected = onWidthSelected,
         )
-        PosterStyleOptionRow(
+        SettingsGroupDivider(isTablet = isTablet)
+        SettingsChoiceRow(
             title = stringResource(Res.string.settings_poster_card_radius),
+            description = radiusChoiceOptions.first { it.value == cornerRadiusDp }.label,
+            options = radiusChoiceOptions.map { SettingsChoiceOption(it.value, it.label) },
             selectedValue = cornerRadiusDp,
-            options = radiusOptions,
+            isTablet = isTablet,
             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-radius")),
             onSelected = onCornerRadiusSelected,
         )
-        PosterLandscapeModeToggleRow(
+        SettingsGroupDivider(isTablet = isTablet)
+        SettingsSwitchRow(
+            title = stringResource(Res.string.settings_poster_landscape_mode),
+            description = null,
             checked = catalogLandscapeModeEnabled,
+            isTablet = isTablet,
             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-landscape")),
             onCheckedChange = onCatalogLandscapeModeChange,
         )
-        PosterToggleRow(
+        SettingsGroupDivider(isTablet = isTablet)
+        SettingsSwitchRow(
             title = stringResource(Res.string.settings_poster_hide_labels),
+            description = null,
             checked = hideLabelsEnabled,
+            isTablet = isTablet,
             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-hide-labels")),
             onCheckedChange = onHideLabelsChange,
         )
-    }
-}
-
-@Composable
-private fun PosterLandscapeModeToggleRow(
-    checked: Boolean,
-    modifier: Modifier = Modifier,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    PosterToggleRow(
-        title = stringResource(Res.string.settings_poster_landscape_mode),
-        checked = checked,
-        modifier = modifier,
-        onCheckedChange = onCheckedChange,
-    )
-}
-
-@Composable
-private fun PosterToggleRow(
-    title: String,
-    checked: Boolean,
-    modifier: Modifier = Modifier,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
-        )
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
-            ),
-        )
-    }
-}
-
-@Composable
-private fun PosterCardLivePreview(
-    widthDp: Int,
-    cornerRadiusDp: Int,
-) {
-    val targetHeightDp = (widthDp * 3) / 2
-    val previewFrameWidthDp = 210
-    val previewFrameHeightDp = 315
-    val animatedWidth = animateDpAsState(
-        targetValue = widthDp.dp,
-        animationSpec = tween(durationMillis = 280),
-        label = "posterPreviewWidth",
-    )
-    val animatedHeight = animateDpAsState(
-        targetValue = targetHeightDp.dp,
-        animationSpec = tween(durationMillis = 280),
-        label = "posterPreviewHeight",
-    )
-    val animatedCornerRadius = animateDpAsState(
-        targetValue = cornerRadiusDp.dp,
-        animationSpec = tween(durationMillis = 220),
-        label = "posterPreviewCornerRadius",
-    )
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            text = stringResource(Res.string.settings_poster_live_preview),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold,
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(previewFrameWidthDp.dp)
-                    .height(previewFrameHeightDp.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(animatedWidth.value)
-                        .height(animatedHeight.value)
-                        .clip(RoundedCornerShape(animatedCornerRadius.value))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                            shape = RoundedCornerShape(animatedCornerRadius.value),
-                        ),
-                )
-            }
-
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = stringResource(Res.string.settings_poster_preview_width, widthDp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = stringResource(Res.string.settings_poster_preview_corner_radius, cornerRadiusDp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = stringResource(Res.string.settings_poster_preview_height, targetHeightDp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        Spacer(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        )
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun PosterStyleOptionRow(
-    title: String,
-    selectedValue: Int,
-    options: List<PresetOption>,
-    modifier: Modifier = Modifier,
-    onSelected: (Int) -> Unit,
-) {
-    val selectedLabel = options.firstOrNull { it.value == selectedValue }?.label
-        ?: stringResource(Res.string.settings_poster_custom)
-
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            text = stringResource(Res.string.settings_poster_option_with_value, title, selectedLabel),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold,
-        )
-
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            options.forEach { option ->
-                FilterChip(
-                    selected = option.value == selectedValue,
-                    onClick = { onSelected(option.value) },
-                    label = { Text(option.label) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    ),
-                )
-            }
-        }
     }
 }
 

@@ -14,6 +14,7 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
+import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
@@ -203,6 +204,8 @@ fun PluginsSettingsScreen(
 fun AccountSettingsScreen(
     onBack: () -> Unit,
 ) {
+    val profileState by remember { ProfileRepository.state }.collectAsStateWithLifecycle()
+
     NuvioScreen(
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -214,6 +217,7 @@ fun AccountSettingsScreen(
         }
         accountSettingsContent(
             isTablet = false,
+            rememberLastProfileEnabled = profileState.rememberLastProfileEnabled,
         )
     }
 }

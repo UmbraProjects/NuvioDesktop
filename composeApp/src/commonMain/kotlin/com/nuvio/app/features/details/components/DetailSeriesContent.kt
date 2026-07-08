@@ -68,6 +68,7 @@ import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.core.ui.NuvioShelfItemSlot
 import com.nuvio.app.core.ui.desktopHorizontalListNavigation
+import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaEpisodeCardStyle
@@ -191,6 +192,11 @@ fun DetailSeriesContent(
     }
 
     val seasons = groupedEpisodes.keys.sortedBy(::seasonSortKey)
+    val effectiveEpisodeCardStyle = if (episodeCardStyle == MetaEpisodeCardStyle.List) {
+        MetaEpisodeCardStyle.Horizontal
+    } else {
+        episodeCardStyle
+    }
     val mergeTrailersIntoSelector = compactDesktopLayout && trailers.isNotEmpty() && onTrailerClick != null
     val mergeCollectionIntoSelector = compactDesktopLayout && collectionItems.isNotEmpty() && onCollectionItemClick != null
     val mergeMoreLikeThisIntoSelector = compactDesktopLayout && moreLikeThis.isNotEmpty() && onMoreLikeThisClick != null
@@ -374,7 +380,7 @@ fun DetailSeriesContent(
                         return@Column
                     }
                     val seasonEpisodes = groupedEpisodes.getValue(seasonForContent)
-                    if (episodeCardStyle == MetaEpisodeCardStyle.Horizontal) {
+                    if (effectiveEpisodeCardStyle == MetaEpisodeCardStyle.Horizontal) {
                         EpisodeHorizontalRow(
                             episodes = seasonEpisodes,
                             maxWidthDp = containerWidthDp,
@@ -556,14 +562,6 @@ private fun CompactMediaSelectorTabRow(
             NuvioShelfItemSlot(focused = index == focusedTabIndex) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            if (isSelected) {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                            } else {
-                                Color.Transparent
-                            },
-                        )
                         .clickable { onSelect(tab) }
                         .padding(start = startPadding, end = 14.dp, top = 10.dp, bottom = 10.dp),
                     contentAlignment = Alignment.Center,
@@ -580,8 +578,11 @@ private fun CompactMediaSelectorTabRow(
                             fontSize = 14.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                         ),
+                        // Highlight the active tab with the accent text colour instead of a boxed
+                        // background (the box read as clutter); the shelf-slot scale still gives
+                        // focus feedback, matching how episode thumbnails behave during navigation.
                         color = if (isSelected) {
-                            MaterialTheme.colorScheme.onBackground
+                            MaterialTheme.nuvio.colors.accent
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
@@ -702,14 +703,6 @@ private fun SeasonTextChipScrollRow(
             NuvioShelfItemSlot(focused = index == focusedSeasonIndex) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(sizing.seasonChipRadius))
-                        .background(
-                            if (isSelected) {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                            } else {
-                                Color.Transparent
-                            },
-                        )
                         .combinedClickable(
                             onClick = { onSelect(season) },
                             onLongClick = onSecondaryClick,
@@ -730,7 +723,7 @@ private fun SeasonTextChipScrollRow(
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                         ),
                         color = if (isSelected) {
-                            MaterialTheme.colorScheme.onBackground
+                            MaterialTheme.nuvio.colors.accent
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },

@@ -101,7 +101,7 @@
     <string name="collections_editor_shape_square">Quadrado</string>
     <string name="collections_editor_shape_wide">Panorâmico</string>
     <string name="collections_editor_show_all_tab_desc">Combinar todos os catálogos num único separador</string>
-    <string name="collections_editor_show_all_tab">Mostrar separador \"Tudo\"</string>
+    <string name="collections_editor_show_all_tab">Mostrar separador &quot;Tudo&quot;</string>
     <string name="collections_editor_show_gif_when_configured_desc">Reproduzir o GIF configurado em vez da capa estática, quando disponível.</string>
     <string name="collections_editor_show_gif_when_configured">Mostrar GIF quando configurado</string>
     <string name="collections_editor_source_count">%1$d fonte(s) · %2$s</string>

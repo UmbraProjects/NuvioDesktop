@@ -1,6 +1,7 @@
 package com.nuvio.app.features.settings
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.foundation.lazy.LazyListScope
@@ -9,11 +10,15 @@ import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_ratings
+import nuvio.composeapp.generated.resources.compose_settings_page_simkl
 import nuvio.composeapp.generated.resources.compose_settings_page_tmdb_enrichment
+import nuvio.composeapp.generated.resources.compose_settings_page_trakt
+import nuvio.composeapp.generated.resources.compose_settings_root_trakt_description
 import nuvio.composeapp.generated.resources.settings_integrations_mdblist_description
 import nuvio.composeapp.generated.resources.settings_integrations_debrid_description
 import nuvio.composeapp.generated.resources.settings_integrations_section_title
 import nuvio.composeapp.generated.resources.settings_integrations_tmdb_description
+import nuvio.composeapp.generated.resources.settings_simkl_description
 import org.jetbrains.compose.resources.stringResource
 
 internal fun LazyListScope.integrationsContent(
@@ -23,6 +28,8 @@ internal fun LazyListScope.integrationsContent(
     onTmdbClick: () -> Unit,
     onMdbListClick: () -> Unit,
     onDebridClick: () -> Unit,
+    onTraktClick: () -> Unit,
+    onSimklClick: () -> Unit,
 ) {
     item {
         SettingsSection(
@@ -52,6 +59,22 @@ internal fun LazyListScope.integrationsContent(
                     icon = Icons.Rounded.CloudQueue,
                     isTablet = isTablet,
                     onClick = onDebridClick,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.compose_settings_page_trakt),
+                    description = stringResource(Res.string.compose_settings_root_trakt_description),
+                    iconPainter = integrationLogoPainter(IntegrationLogo.Trakt),
+                    isTablet = isTablet,
+                    onClick = onTraktClick,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.compose_settings_page_simkl),
+                    description = stringResource(Res.string.settings_simkl_description),
+                    icon = Icons.Rounded.Bookmarks,
+                    isTablet = isTablet,
+                    onClick = onSimklClick,
                 )
                 if (isDesktop) {
                     SettingsGroupDivider(isTablet = isTablet)

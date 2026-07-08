@@ -14,9 +14,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
@@ -224,11 +222,10 @@ import com.nuvio.app.features.settings.ContinueWatchingSettingsScreen
 import com.nuvio.app.features.settings.AddonsSettingsScreen
 import com.nuvio.app.features.settings.PluginsSettingsScreen
 import com.nuvio.app.features.settings.AccountSettingsScreen
-import com.nuvio.app.features.settings.DesktopNavigationLayout
 import com.nuvio.app.features.settings.SupportersContributorsSettingsScreen
 import com.nuvio.app.features.settings.LicensesAttributionsSettingsScreen
+import com.nuvio.app.features.settings.DesktopNavigationLayout
 import com.nuvio.app.features.settings.ThemeSettingsRepository
-import com.nuvio.app.features.collection.CollectionManagementScreen
 import com.nuvio.app.features.collection.CollectionEditorScreen
 import com.nuvio.app.features.collection.CollectionEditorRepository
 import com.nuvio.app.features.collection.CollectionRepository
@@ -353,9 +350,6 @@ object LicensesAttributionsSettingsRoute
 object CalendarRoute
 
 @Serializable
-object CollectionsRoute
-
-@Serializable
 data class CollectionEditorRoute(val collectionId: String? = null)
 
 @Serializable
@@ -443,7 +437,6 @@ enum class AppScreenTab {
 }
 
 private val DesktopSidebarCollapsedWidth = 76.dp
-private val DesktopSidebarExpandedWidth = 184.dp
 private val DesktopSidebarExpandedContentWidth = 144.dp
 private val DesktopSidebarIconSlotSize = 36.dp
 
@@ -563,8 +556,9 @@ fun App() {
         ThemeSettingsRepository.ensureLoaded()
         ThemeSettingsRepository.selectedTheme
     }.collectAsStateWithLifecycle()
+    val customTheme by remember { ThemeSettingsRepository.customTheme }.collectAsStateWithLifecycle()
     val amoledEnabled by remember { ThemeSettingsRepository.amoledEnabled }.collectAsStateWithLifecycle()
-    NuvioTheme(appTheme = selectedTheme, amoled = amoledEnabled) {
+    NuvioTheme(appTheme = selectedTheme, customThemePalette = customTheme.palette, amoled = amoledEnabled) {
         LaunchedEffect(Unit) {
             AuthRepository.initialize()
         }
@@ -1664,10 +1658,11 @@ private fun MainAppContent(
                         val isTabletLayout = maxWidth >= 768.dp
                         val useNativeBottomTabs =
                             liquidGlassNativeTabBarSupported && liquidGlassNativeTabBarEnabled && initialHomeReady
-                        val useDesktopSidebar = isDesktop &&
+                        val useDesktopSidebar =
                             isTabletLayout &&
-                            !useNativeBottomTabs &&
-                            desktopNavigationLayout == DesktopNavigationLayout.Sidebar
+                                !useNativeBottomTabs &&
+                                desktopNavigationLayout == DesktopNavigationLayout.Sidebar
+                        val showDesktopSidebar = useDesktopSidebar && selectedTab != AppScreenTab.Settings
                         val useFloatingTopBar = isTabletLayout && !useNativeBottomTabs && !useDesktopSidebar
                         val topChromePadding = if (useFloatingTopBar || selectedTab == AppScreenTab.Search) {
                             val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -1701,7 +1696,7 @@ private fun MainAppContent(
                             containerColor = Color.Transparent,
                             contentWindowInsets = WindowInsets(0),
                             bottomBar = {
-                                if (!isTabletLayout && !useNativeBottomTabs) {
+                                if (!isTabletLayout && !useNativeBottomTabs && selectedTab != AppScreenTab.Settings) {
                                     NuvioNavigationBar {
                                         NavItem(
                                             selected = selectedTab == AppScreenTab.Home,
@@ -1744,7 +1739,7 @@ private fun MainAppContent(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .padding(innerPadding)
-                                            .padding(start = if (useDesktopSidebar) DesktopSidebarCollapsedWidth else 0.dp),
+                                            .padding(start = if (showDesktopSidebar) DesktopSidebarCollapsedWidth else 0.dp),
                                         selectedTab = selectedTab,
                                         topChromePadding = topChromePadding,
                                         searchFocusRequestCount = searchFocusRequestCount,
@@ -1836,7 +1831,14 @@ private fun MainAppContent(
                                         } else {
                                             null
                                         },
-                                        onCollectionsSettingsClick = { navController.navigate(CollectionsRoute) },
+                                        onShowLatestChangelogClick = if (AppFeaturePolicy.inAppUpdaterEnabled) {
+                                            appUpdaterController::showLatestChangelog
+                                        } else {
+                                            null
+                                        },
+                                        onOpenCollectionEditor = { collectionId ->
+                                            navController.navigate(CollectionEditorRoute(collectionId = collectionId))
+                                        },
                                         onFolderClick = { collectionId, folderId ->
                                             navController.navigate(FolderDetailRoute(collectionId = collectionId, folderId = folderId))
                                         },
@@ -1846,13 +1848,14 @@ private fun MainAppContent(
                                         },
                                         onInitialHomeContentRendered = { initialHomeReady = true },
                                         onNavigateToSearch = { openSearchOverlay() },
+                                        onNavigateToSearchTab = { handleRootTabClick(AppScreenTab.Search) },
                                         onNavigateToLibrary = { handleRootTabClick(AppScreenTab.Library) },
                                         onNavigateToHome = { handleRootTabClick(AppScreenTab.Home) },
                                         onNavigateToCalendar = { navController.navigateIfResumed(CalendarRoute) },
                                     )
                                 }
 
-                                if (useDesktopSidebar) {
+                                if (showDesktopSidebar) {
                                     DesktopHoverSidebar(
                                         selectedTab = selectedTab,
                                         onTabSelected = ::handleRootTabClick,
@@ -1860,13 +1863,16 @@ private fun MainAppContent(
                                         onAddProfileRequested = onSwitchProfile,
                                     )
                                 }
-                                if (useFloatingTopBar || selectedTab == AppScreenTab.Search) {
+                                if ((useFloatingTopBar && selectedTab != AppScreenTab.Settings) || selectedTab == AppScreenTab.Search) {
                                     TabletFloatingTopBar(
                                         selectedTab = selectedTab,
                                         onTabSelected = ::handleRootTabClick,
                                         onProfileSelected = onProfileSelected,
                                         onAddProfileRequested = onSwitchProfile,
-                                        dimUntilHovered = selectedTab == AppScreenTab.Home || selectedTab == AppScreenTab.Library || selectedTab == AppScreenTab.Search,
+                                        dimUntilHovered = selectedTab == AppScreenTab.Home ||
+                                            selectedTab == AppScreenTab.Library ||
+                                            selectedTab == AppScreenTab.Search ||
+                                            selectedTab == AppScreenTab.Settings,
                                         searchOverlayActive = searchOverlayActive,
                                         onSearchOverlayOpen = { openSearchOverlay() },
                                         onSearchOverlayDismiss = { dismissSearchOverlay() },
@@ -2990,18 +2996,6 @@ private fun MainAppContent(
                         onBack = onBack,
                     )
                 }
-                composable<CollectionsRoute> { backStackEntry ->
-                    val onBack = rememberGuardedPopBackStack(
-                        navController = navController,
-                        backStackEntry = backStackEntry,
-                    )
-                    CollectionManagementScreen(
-                        onBack = onBack,
-                        onNavigateToEditor = { collectionId ->
-                            navController.navigate(CollectionEditorRoute(collectionId = collectionId))
-                        },
-                    )
-                }
                 composable<CollectionEditorRoute> { backStackEntry ->
                     val route = backStackEntry.toRoute<CollectionEditorRoute>()
                     CollectionEditorScreen(
@@ -3361,7 +3355,6 @@ private fun NavBackStackEntry.toDiscordBrowsingActivity(
             )
         }
         destination.hasRoute<CalendarRoute>() -> browsingActivity("Viewing Calendar")
-        destination.hasRoute<CollectionsRoute>() -> browsingActivity("Viewing Collections")
         destination.hasRoute<CollectionEditorRoute>() -> browsingActivity("Editing Collections")
         destination.hasRoute<FolderDetailRoute>() -> browsingActivity("Viewing a collection")
         destination.hasRoute<HomescreenSettingsRoute>() -> settingsBrowsingActivity("Home Screen")
@@ -3452,12 +3445,14 @@ private fun AppTabHost(
     onSupportersContributorsSettingsClick: () -> Unit = {},
     onLicensesAttributionsSettingsClick: () -> Unit = {},
     onCheckForUpdatesClick: (() -> Unit)? = null,
-    onCollectionsSettingsClick: () -> Unit = {},
+    onShowLatestChangelogClick: (() -> Unit)? = null,
+    onOpenCollectionEditor: (String?) -> Unit = {},
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
     requestedSettingsPageName: String? = null,
     onRequestedSettingsPageConsumed: () -> Unit = {},
     onInitialHomeContentRendered: () -> Unit = {},
     onNavigateToSearch: (() -> Unit)? = null,
+    onNavigateToSearchTab: (() -> Unit)? = null,
     onNavigateToLibrary: (() -> Unit)? = null,
     onNavigateToHome: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
@@ -3545,8 +3540,11 @@ private fun AppTabHost(
                         onSupportersContributorsClick = onSupportersContributorsSettingsClick,
                         onLicensesAttributionsClick = onLicensesAttributionsSettingsClick,
                         onCheckForUpdatesClick = onCheckForUpdatesClick,
-                        onCollectionsClick = onCollectionsSettingsClick,
+                        onShowLatestChangelogClick = onShowLatestChangelogClick,
+                        onOpenCollectionEditor = onOpenCollectionEditor,
                         onNavigateToHome = onNavigateToHome,
+                        onNavigateToSearch = onNavigateToSearchTab,
+                        onNavigateToLibrary = onNavigateToLibrary,
                     )
                 }
             }
@@ -3568,26 +3566,17 @@ private fun DesktopHoverSidebar(
     val avatars by AvatarRepository.avatars.collectAsStateWithLifecycle()
     val activeProfile = profileState.activeProfile
     val activeProfileName = activeProfile?.name ?: stringResource(Res.string.compose_nav_profile)
-    val hoverSource = remember { MutableInteractionSource() }
-    val hovered by hoverSource.collectIsHoveredAsState()
     var profileStackVisible by remember { mutableStateOf(false) }
-    val sidebarExpanded = hovered || profileStackVisible
     val profileTopPadding = statusBarPadding + 18.dp
     fun selectTab(tab: AppScreenTab) {
         profileStackVisible = false
         onTabSelected(tab)
     }
-    val sidebarWidth by animateDpAsState(
-        targetValue = if (sidebarExpanded) DesktopSidebarExpandedWidth else DesktopSidebarCollapsedWidth,
-        animationSpec = tween(durationMillis = 180),
-        label = "desktop_sidebar_width",
-    )
 
     Surface(
         modifier = modifier
-            .width(sidebarWidth)
+            .width(DesktopSidebarCollapsedWidth)
             .fillMaxHeight()
-            .hoverable(hoverSource)
             .zIndex(NuvioTokens.Z.navigation),
         color = tokens.colors.background,
         contentColor = tokens.colors.textPrimary,
@@ -3613,7 +3602,7 @@ private fun DesktopHoverSidebar(
                     profile = activeProfile,
                     avatars = avatars,
                     label = activeProfileName,
-                    expanded = sidebarExpanded,
+                    expanded = false,
                 )
             }
 
@@ -3638,7 +3627,7 @@ private fun DesktopHoverSidebar(
                 DesktopSidebarItem(
                     label = stringResource(Res.string.compose_nav_home),
                     selected = selectedTab == AppScreenTab.Home,
-                    expanded = sidebarExpanded,
+                    expanded = false,
                     onClick = { selectTab(AppScreenTab.Home) },
                 ) { color ->
                     Icon(
@@ -3651,7 +3640,7 @@ private fun DesktopHoverSidebar(
                 DesktopSidebarItem(
                     label = stringResource(Res.string.compose_nav_search),
                     selected = selectedTab == AppScreenTab.Search,
-                    expanded = sidebarExpanded,
+                    expanded = false,
                     onClick = { selectTab(AppScreenTab.Search) },
                 ) { color ->
                     Icon(
@@ -3664,7 +3653,7 @@ private fun DesktopHoverSidebar(
                 DesktopSidebarItem(
                     label = stringResource(Res.string.compose_nav_library),
                     selected = selectedTab == AppScreenTab.Library,
-                    expanded = sidebarExpanded,
+                    expanded = false,
                     onClick = { selectTab(AppScreenTab.Library) },
                 ) { color ->
                     Icon(
@@ -3677,7 +3666,7 @@ private fun DesktopHoverSidebar(
                 DesktopSidebarItem(
                     label = stringResource(Res.string.compose_settings_page_root),
                     selected = selectedTab == AppScreenTab.Settings,
-                    expanded = sidebarExpanded,
+                    expanded = false,
                     onClick = { selectTab(AppScreenTab.Settings) },
                 ) { color ->
                     Icon(

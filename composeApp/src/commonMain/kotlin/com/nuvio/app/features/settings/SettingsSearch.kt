@@ -6,9 +6,18 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
@@ -21,6 +30,7 @@ import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
@@ -30,18 +40,18 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
@@ -53,7 +63,6 @@ import org.jetbrains.compose.resources.stringResource
 internal sealed class SettingsSearchTarget {
     data class Page(val page: SettingsPage, val anchor: String? = null) : SettingsSearchTarget()
     object Downloads : SettingsSearchTarget()
-    object Collections : SettingsSearchTarget()
     object SwitchProfile : SettingsSearchTarget()
     object CheckForUpdates : SettingsSearchTarget()
 }
@@ -108,7 +117,6 @@ internal fun settingsSearchEntries(
     val homeLayoutPage = stringResource(Res.string.compose_settings_page_homescreen)
     val detailPage = stringResource(Res.string.compose_settings_page_meta_screen)
     val continueWatchingPage = stringResource(Res.string.compose_settings_page_continue_watching)
-    val posterStylePage = stringResource(Res.string.compose_settings_page_poster_customization)
     val addonsPage = stringResource(Res.string.compose_settings_page_addons)
     val pluginsPage = stringResource(Res.string.compose_settings_page_plugins)
     val collectionsPage = stringResource(Res.string.collections_header)
@@ -207,7 +215,7 @@ internal fun settingsSearchEntries(
         key = "trakt",
         title = traktPage,
         description = stringResource(Res.string.compose_settings_root_trakt_description),
-        category = accountCategory,
+        category = generalCategory,
         icon = Icons.Rounded.Link,
     )
     addPage(
@@ -263,6 +271,15 @@ internal fun settingsSearchEntries(
         description = stringResource(Res.string.compose_settings_root_integrations_description),
         icon = Icons.Rounded.Link,
     )
+    if (isDesktop) {
+        addPage(
+            page = SettingsPage.KeyboardShortcuts,
+            key = "keyboard-shortcuts",
+            title = stringResource(Res.string.compose_settings_page_keyboard_shortcuts),
+            description = "Hotkeys and key bindings for navigation and the video player.",
+            icon = Icons.Rounded.Keyboard,
+        )
+    }
     if (isDesktop) {
         addRow(
             page = SettingsPage.Integrations,
@@ -404,24 +421,35 @@ internal fun settingsSearchEntries(
         section = stringResource(Res.string.settings_appearance_section_display),
         icon = Icons.Rounded.Language,
     )
+    if (isDesktop) {
+        addRow(
+            page = SettingsPage.Appearance,
+            key = "desktop-navigation",
+            title = stringResource(Res.string.settings_appearance_desktop_navigation),
+            description = "Choose between the top bar and sidebar desktop navigation.",
+            pageLabel = layoutPage,
+            section = stringResource(Res.string.settings_appearance_section_display),
+            icon = Icons.Rounded.Palette,
+        )
+    }
     addRow(
-        page = SettingsPage.Advanced,
+        page = SettingsPage.Account,
         key = "remember-last-profile",
         title = stringResource(Res.string.settings_advanced_remember_last_profile),
         description = stringResource(Res.string.settings_advanced_remember_last_profile_description),
-        pageLabel = advancedPage,
+        pageLabel = accountPage,
         section = stringResource(Res.string.settings_advanced_section_startup),
-        category = advancedCategory,
-        icon = Icons.Rounded.Tune,
+        category = accountCategory,
+        icon = Icons.Rounded.AccountCircle,
     )
     addRow(
-        page = SettingsPage.Advanced,
+        page = SettingsPage.ContinueWatching,
         key = "clear-cw-cache",
         title = stringResource(Res.string.settings_advanced_clear_cw_cache),
         description = stringResource(Res.string.settings_advanced_clear_cw_cache_subtitle),
-        pageLabel = advancedPage,
+        pageLabel = continueWatchingPage,
         section = stringResource(Res.string.settings_advanced_section_cache),
-        category = advancedCategory,
+        category = generalCategory,
         icon = Icons.Rounded.Tune,
     )
     addPage(
@@ -431,14 +459,6 @@ internal fun settingsSearchEntries(
         description = stringResource(Res.string.settings_appearance_continue_watching_description),
         icon = Icons.Rounded.Style,
     )
-    addPage(
-        page = SettingsPage.PosterCustomization,
-        key = "poster-card-style",
-        title = posterStylePage,
-        description = stringResource(Res.string.settings_appearance_poster_customization_description),
-        icon = Icons.Rounded.Tune,
-    )
-
     addPage(
         page = SettingsPage.Addons,
         key = "addons",
@@ -477,14 +497,13 @@ internal fun settingsSearchEntries(
         section = stringResource(Res.string.settings_content_discovery_section_home),
         category = generalCategory,
         icon = Icons.Rounded.CollectionsBookmark,
-        target = SettingsSearchTarget.Collections,
+        target = SettingsSearchTarget.Page(SettingsPage.Collections),
     )
 
     val playbackPlayer = stringResource(Res.string.settings_playback_section_player)
     val playbackSubtitleAudio = stringResource(Res.string.settings_playback_section_subtitle_audio)
     val playbackStreamSelection = stringResource(Res.string.settings_playback_section_stream_selection)
     val playbackStreamAutoPlay = stringResource(Res.string.settings_playback_section_stream_auto_play)
-    val playbackDecoder = stringResource(Res.string.settings_playback_section_decoder)
     val playbackSubtitleRendering = stringResource(Res.string.settings_playback_section_subtitle_rendering)
     val playbackSkipSegments = stringResource(Res.string.settings_playback_section_skip_segments)
     val playbackNextEpisode = stringResource(Res.string.settings_playback_section_next_episode)
@@ -544,17 +563,6 @@ internal fun settingsSearchEntries(
                 "external-player-app",
                 stringResource(Res.string.settings_playback_external_player_app),
             ) else null,
-            PlaybackSearchRow(
-                "hold-to-speed",
-                stringResource(Res.string.settings_playback_hold_to_speed),
-                stringResource(Res.string.settings_playback_hold_to_speed_description),
-            ),
-            PlaybackSearchRow(
-                "touch-gestures",
-                stringResource(Res.string.settings_playback_touch_gestures),
-                stringResource(Res.string.settings_playback_touch_gestures_description),
-            ),
-            PlaybackSearchRow("hold-speed", stringResource(Res.string.settings_playback_hold_speed)),
             if (isDesktop) PlaybackSearchRow(
                 "default-speed",
                 stringResource(Res.string.settings_playback_default_speed),
@@ -605,30 +613,6 @@ internal fun settingsSearchEntries(
                 anchor = SettingsScrollAnchor.AnimeSvp,
             ) else null,
             if (isDesktop) PlaybackSearchRow(
-                "hero-tv-trailer",
-                stringResource(Res.string.settings_playback_hero_tv_trailer),
-                stringResource(Res.string.settings_playback_hero_tv_trailer_description),
-                anchor = SettingsScrollAnchor.AutoPlayTrailer,
-            ) else null,
-            if (isDesktop) PlaybackSearchRow(
-                "hero-tv-trailer-delay",
-                stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
-                "Delay before focused hero trailers start playing.",
-                anchor = SettingsScrollAnchor.TrailerDelay,
-            ) else null,
-            if (isDesktop) PlaybackSearchRow(
-                "hero-tv-trailer-sound",
-                stringResource(Res.string.settings_playback_hero_tv_trailer_sound),
-                stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description),
-                anchor = SettingsScrollAnchor.TrailerSound,
-            ) else null,
-            if (isDesktop) PlaybackSearchRow(
-                "hero-tv-trailer-fullscreen",
-                stringResource(Res.string.settings_playback_hero_tv_trailer_fullscreen),
-                stringResource(Res.string.settings_playback_hero_tv_trailer_fullscreen_description),
-                anchor = SettingsScrollAnchor.TrailerFullscreen,
-            ) else null,
-            if (isDesktop) PlaybackSearchRow(
                 "nvidia-rtx-hdr",
                 stringResource(Res.string.settings_playback_nvidia_rtx_hdr),
                 anchor = SettingsScrollAnchor.RtxHdr,
@@ -676,17 +660,6 @@ internal fun settingsSearchEntries(
         },
     )
     if (!isIos) {
-        addPlaybackRows(
-            addRow = ::addRow,
-            pageLabel = playbackPage,
-            section = playbackDecoder,
-            icon = Icons.Rounded.PlayArrow,
-            rows = listOf(
-            PlaybackSearchRow("decoder-priority", stringResource(Res.string.settings_playback_decoder_priority)),
-            PlaybackSearchRow("dv7-hevc", stringResource(Res.string.settings_playback_map_dv7_to_hevc), stringResource(Res.string.settings_playback_map_dv7_to_hevc_description)),
-            PlaybackSearchRow("tunneled-playback", stringResource(Res.string.settings_playback_tunneled_playback), stringResource(Res.string.settings_playback_tunneled_playback_description)),
-            ),
-        )
         addPlaybackRows(
             addRow = ::addRow,
             pageLabel = playbackPage,
@@ -773,11 +746,11 @@ internal fun settingsSearchEntries(
         PlaybackSearchRow("poster-hide-labels", stringResource(Res.string.settings_poster_hide_labels)),
     ).forEach { row ->
         addRow(
-            page = SettingsPage.PosterCustomization,
+            page = SettingsPage.Appearance,
             key = "poster-${row.key}",
             title = row.title,
             description = row.description,
-            pageLabel = posterStylePage,
+            pageLabel = layoutPage,
             section = posterSection,
             icon = Icons.Rounded.Tune,
             anchor = row.anchor,
@@ -794,10 +767,12 @@ internal fun settingsSearchEntries(
         PlaybackSearchRow("home-hero-release-status", "Only show unavailable release status", "Show release status only for cinema and production titles.", anchor = SettingsScrollAnchor.HeroReleaseStatus),
         PlaybackSearchRow("home-hide-unreleased", stringResource(Res.string.layout_hide_unreleased), stringResource(Res.string.layout_hide_unreleased_sub)),
         PlaybackSearchRow("home-hide-catalog-underline", stringResource(Res.string.settings_homescreen_hide_catalog_underline), stringResource(Res.string.settings_homescreen_hide_catalog_underline_description)),
-        PlaybackSearchRow("home-adaptive-hero", stringResource(Res.string.settings_homescreen_adaptive_hero), stringResource(Res.string.settings_homescreen_adaptive_hero_description), anchor = SettingsScrollAnchor.AdaptiveHero),
+        PlaybackSearchRow("home-display-mode", "Display Mode", "Basic, Adaptive, Adaptive Ambient, or TV Mode.", anchor = SettingsScrollAnchor.DisplayMode),
+        PlaybackSearchRow("home-hero-trailer", stringResource(Res.string.settings_playback_hero_tv_trailer), stringResource(Res.string.settings_playback_hero_tv_trailer_description), anchor = SettingsScrollAnchor.AutoPlayTrailer),
+        PlaybackSearchRow("home-hero-trailer-delay", stringResource(Res.string.settings_playback_hero_tv_trailer_delay), "Delay before focused hero trailers start playing.", anchor = SettingsScrollAnchor.TrailerDelay),
+        PlaybackSearchRow("home-hero-trailer-sound", stringResource(Res.string.settings_playback_hero_tv_trailer_sound), stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description), anchor = SettingsScrollAnchor.TrailerSound),
+        PlaybackSearchRow("home-hero-trailer-search", "Trailers in Search", "Allow focused search results to play hero trailers.", anchor = SettingsScrollAnchor.TrailerSearch),
         PlaybackSearchRow("home-adaptive-hero-position", "Backdrop vertical position", "Manually tune how adaptive hero backdrops crop vertically.", anchor = SettingsScrollAnchor.AdaptiveHeroPosition),
-        PlaybackSearchRow("home-hero-ambient", stringResource(Res.string.settings_homescreen_hero_ambient_background), stringResource(Res.string.settings_homescreen_hero_ambient_background_description), anchor = SettingsScrollAnchor.HeroAmbient),
-        PlaybackSearchRow("home-tv-mode", stringResource(Res.string.settings_homescreen_tv_mode), stringResource(Res.string.settings_homescreen_tv_mode_description), anchor = SettingsScrollAnchor.TvMode),
         PlaybackSearchRow("home-hero-sources", stringResource(Res.string.settings_homescreen_section_hero_sources)),
         PlaybackSearchRow("home-catalogs", stringResource(Res.string.settings_homescreen_section_catalogs)),
     ).forEach { row ->
@@ -815,9 +790,6 @@ internal fun settingsSearchEntries(
 
     val detailAppearanceSection = stringResource(Res.string.settings_meta_section_appearance)
     listOf(
-        PlaybackSearchRow("meta-cinematic", stringResource(Res.string.settings_meta_cinematic_background), stringResource(Res.string.settings_meta_cinematic_background_description)),
-        PlaybackSearchRow("meta-tabs", stringResource(Res.string.settings_meta_tab_layout), stringResource(Res.string.settings_meta_tab_layout_description)),
-        PlaybackSearchRow("meta-episode-cards", stringResource(Res.string.settings_meta_episode_cards), stringResource(Res.string.settings_meta_episode_cards_description)),
         PlaybackSearchRow("meta-blur-episodes", stringResource(Res.string.settings_meta_blur_unwatched_episodes), stringResource(Res.string.settings_meta_blur_unwatched_episodes_description)),
     ).forEach { row ->
         addRow(
@@ -827,29 +799,6 @@ internal fun settingsSearchEntries(
             description = row.description,
             pageLabel = detailPage,
             section = detailAppearanceSection,
-            icon = Icons.Rounded.Tune,
-        )
-    }
-    val detailSectionsSection = stringResource(Res.string.settings_meta_section_sections)
-    listOf(
-        PlaybackSearchRow("meta-overview", stringResource(Res.string.settings_meta_overview), stringResource(Res.string.settings_meta_overview_description)),
-        PlaybackSearchRow("meta-actions", stringResource(Res.string.settings_meta_actions), stringResource(Res.string.settings_meta_actions_description)),
-        PlaybackSearchRow("meta-details", stringResource(Res.string.settings_meta_details), stringResource(Res.string.settings_meta_details_description)),
-        PlaybackSearchRow("meta-trailers", stringResource(Res.string.settings_meta_trailers), stringResource(Res.string.settings_meta_trailers_description)),
-        PlaybackSearchRow("meta-cast", stringResource(Res.string.settings_meta_cast), stringResource(Res.string.settings_meta_cast_description)),
-        PlaybackSearchRow("meta-episodes", stringResource(Res.string.settings_meta_episodes), stringResource(Res.string.settings_meta_episodes_description)),
-        PlaybackSearchRow("meta-production", stringResource(Res.string.settings_meta_production), stringResource(Res.string.settings_meta_production_description)),
-        PlaybackSearchRow("meta-more-like-this", stringResource(Res.string.settings_meta_more_like_this), stringResource(Res.string.settings_meta_more_like_this_description)),
-        PlaybackSearchRow("meta-collection", stringResource(Res.string.settings_meta_collection), stringResource(Res.string.settings_meta_collection_description)),
-        PlaybackSearchRow("meta-comments", stringResource(Res.string.settings_meta_comments), stringResource(Res.string.settings_meta_comments_description)),
-    ).forEach { row ->
-        addRow(
-            page = SettingsPage.MetaScreen,
-            key = row.key,
-            title = row.title,
-            description = row.description,
-            pageLabel = detailPage,
-            section = detailSectionsSection,
             icon = Icons.Rounded.Tune,
         )
     }
@@ -978,7 +927,7 @@ internal fun settingsSearchEntries(
         description = stringResource(Res.string.settings_trakt_intro_description),
         pageLabel = traktPage,
         section = stringResource(Res.string.settings_trakt_authentication),
-        category = accountCategory,
+        category = generalCategory,
         icon = Icons.Rounded.Link,
     )
     listOf(
@@ -995,7 +944,7 @@ internal fun settingsSearchEntries(
             description = row.description,
             pageLabel = traktPage,
             section = stringResource(Res.string.settings_trakt_features),
-            category = accountCategory,
+            category = generalCategory,
             icon = Icons.Rounded.Link,
         )
     }
@@ -1005,7 +954,7 @@ internal fun settingsSearchEntries(
         key = "simkl",
         title = simklPage,
         description = stringResource(Res.string.settings_simkl_description),
-        category = accountCategory,
+        category = generalCategory,
         icon = Icons.Rounded.Link,
     )
     listOf(
@@ -1023,7 +972,7 @@ internal fun settingsSearchEntries(
             description = row.description,
             pageLabel = simklPage,
             section = row.sectionOverride ?: simklPage,
-            category = accountCategory,
+            category = generalCategory,
             icon = Icons.Rounded.Link,
         )
     }
@@ -1113,9 +1062,7 @@ internal fun LazyListScope.settingsSearchRootContent(
     onSearchFocusChange: (Boolean) -> Unit = {},
     onTargetClick: (SettingsSearchTarget) -> Unit,
 ) {
-    // On desktop the search field is always present (no pull-to-reveal gesture, which is a
-    // touch idiom that's nearly impossible to trigger with a mouse wheel).
-    if (isDesktop || showSearchField || query.isNotBlank()) {
+    if (showSearchField || query.isNotBlank()) {
         item(key = "settings-search-field") {
             SettingsSearchRevealItem(animate = animateSearchField && !isDesktop) {
                 SettingsSearchField(
@@ -1127,6 +1074,25 @@ internal fun LazyListScope.settingsSearchRootContent(
         }
     }
 
+    settingsSearchResultsContent(
+        query = query,
+        entries = entries,
+        isTablet = isTablet,
+        onTargetClick = onTargetClick,
+    )
+}
+
+/**
+ * Renders just the search results list (no search field). Extracted from
+ * [settingsSearchRootContent] so the wide desktop content column can show results on any settings
+ * page — not only Root — while the search field itself lives in the top bar.
+ */
+internal fun LazyListScope.settingsSearchResultsContent(
+    query: String,
+    entries: List<SettingsSearchEntry>,
+    isTablet: Boolean,
+    onTargetClick: (SettingsSearchTarget) -> Unit,
+) {
     if (query.isBlank()) return
 
     val results = settingsSearchResults(
@@ -1193,55 +1159,75 @@ private fun SettingsSearchRevealItem(
 }
 
 @Composable
-private fun SettingsSearchField(
+internal fun SettingsSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     onFocusChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
-    OutlinedTextField(
+    val focused = remember { mutableStateOf(false) }
+    BasicTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .onFocusChanged { onFocusChange(it.isFocused) },
-        singleLine = true,
-        shape = tokens.shapes.compactCard,
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Rounded.Search,
-                contentDescription = null,
-                tint = tokens.colors.textMuted,
+            .height(38.dp)
+            .background(tokens.colors.surfaceCard, tokens.shapes.compactCard)
+            .border(
+                width = tokens.borders.hairline,
+                color = if (focused.value) tokens.colors.borderFocus else tokens.colors.borderDefault,
+                shape = tokens.shapes.compactCard,
             )
-        },
-        trailingIcon = if (query.isNotBlank()) {
-            {
-                IconButton(onClick = { onQueryChange("") }) {
+            .onFocusChanged {
+                focused.value = it.isFocused
+                onFocusChange(it.isFocused)
+            },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.colors.textPrimary),
+        cursorBrush = SolidColor(tokens.colors.accent),
+        decorationBox = { innerTextField ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(38.dp)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = null,
+                    tint = tokens.colors.textMuted,
+                    modifier = Modifier.size(20.dp),
+                )
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (query.isBlank()) {
+                        Text(
+                            text = stringResource(Res.string.settings_search_placeholder),
+                            color = tokens.colors.textMuted,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    innerTextField()
+                }
+                if (query.isNotBlank()) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
                         contentDescription = stringResource(Res.string.compose_search_clear),
                         tint = tokens.colors.textMuted,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clickable { onQueryChange("") },
                     )
                 }
             }
-        } else {
-            null
         },
-        placeholder = {
-            Text(
-                text = stringResource(Res.string.settings_search_placeholder),
-                color = tokens.colors.textMuted,
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        },
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = tokens.colors.textPrimary),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = tokens.colors.borderFocus,
-            unfocusedBorderColor = tokens.colors.borderDefault,
-            focusedContainerColor = tokens.colors.surfaceCard,
-            unfocusedContainerColor = tokens.colors.surfaceCard,
-            cursorColor = tokens.colors.accent,
-        ),
     )
 }
 

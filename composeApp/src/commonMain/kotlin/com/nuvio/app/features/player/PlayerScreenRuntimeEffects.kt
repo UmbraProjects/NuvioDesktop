@@ -82,7 +82,6 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         accumulatedSeekResetJob?.cancel()
         accumulatedSeekResetJob = null
         accumulatedSeekState = null
-        speedBoostRestoreSpeed = null
         preferredAudioSelectionApplied = false
         preferredSubtitleSelectionApplied = false
         showSourcesPanel = false

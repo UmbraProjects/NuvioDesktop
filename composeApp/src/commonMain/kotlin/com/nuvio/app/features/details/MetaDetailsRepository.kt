@@ -51,7 +51,14 @@ object MetaDetailsRepository {
     private val _uiState = MutableStateFlow(MetaDetailsUiState())
     val uiState: StateFlow<MetaDetailsUiState> = _uiState.asStateFlow()
     private var activeRequestKey: String? = null
-    private val cachedMetaByRequestKey = mutableMapOf<String, CachedMetaEntry>()
+    // Bounded so a long session of browsing detail pages can't grow this map without limit.
+    // Confined to the Main dispatcher (see `scope`), so a plain insertion-order LinkedHashMap that
+    // drops its eldest entry past the cap is safe — no synchronization needed. 80 entries is far
+    // more detail pages than a user revisits in a session while staying cheap to hold.
+    private val cachedMetaByRequestKey = object : LinkedHashMap<String, CachedMetaEntry>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedMetaEntry>): Boolean =
+            size > 80
+    }
 
     fun load(type: String, id: String) {
         log.d { "load() called — type=$type id=$id" }

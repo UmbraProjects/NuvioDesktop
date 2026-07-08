@@ -25,11 +25,15 @@ import com.nuvio.app.core.auth.ReauthenticationTrigger
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.NuvioSurfaceCard
+import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
 import nuvio.composeapp.generated.resources.compose_auth_sign_in
 import nuvio.composeapp.generated.resources.compose_settings_page_account
+import nuvio.composeapp.generated.resources.settings_advanced_remember_last_profile
+import nuvio.composeapp.generated.resources.settings_advanced_remember_last_profile_description
+import nuvio.composeapp.generated.resources.settings_advanced_section_startup
 import nuvio.composeapp.generated.resources.settings_account_email
 import nuvio.composeapp.generated.resources.settings_account_not_signed_in
 import nuvio.composeapp.generated.resources.settings_account_sign_out
@@ -42,15 +46,20 @@ import org.jetbrains.compose.resources.stringResource
 
 internal fun LazyListScope.accountSettingsContent(
     isTablet: Boolean,
+    rememberLastProfileEnabled: Boolean,
 ) {
     item {
-        AccountSettingsBody(isTablet = isTablet)
+        AccountSettingsBody(
+            isTablet = isTablet,
+            rememberLastProfileEnabled = rememberLastProfileEnabled,
+        )
     }
 }
 
 @Composable
 private fun AccountSettingsBody(
     isTablet: Boolean,
+    rememberLastProfileEnabled: Boolean,
 ) {
     val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -128,6 +137,22 @@ private fun AccountSettingsBody(
                 text = stringResource(Res.string.compose_auth_sign_in),
                 onClick = { ReauthenticationTrigger.trigger() },
             )
+        }
+
+        SettingsSection(
+            title = stringResource(Res.string.settings_advanced_section_startup),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_advanced_remember_last_profile),
+                    description = stringResource(Res.string.settings_advanced_remember_last_profile_description),
+                    checked = rememberLastProfileEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("remember-last-profile")),
+                    onCheckedChange = ProfileRepository::setRememberLastProfileEnabled,
+                )
+            }
         }
     }
 

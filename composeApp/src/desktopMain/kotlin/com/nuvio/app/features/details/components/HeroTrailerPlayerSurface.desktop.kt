@@ -27,10 +27,6 @@ import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
 import com.nuvio.app.features.player.desktop.TRAILER_AUDIO_NORMALIZATION_FILTER
 import kotlinx.coroutines.delay
-import java.awt.KeyEventDispatcher
-import java.awt.KeyboardFocusManager
-import java.awt.event.KeyEvent
-import javax.swing.text.JTextComponent
 
 private val detailHeroTrailerSurfaceLog = Logger.withTag("DetailHeroTrailerSurface")
 
@@ -48,6 +44,7 @@ actual fun HeroTrailerPlayerSurface(
     onError: () -> Unit,
     onMuteToggle: () -> Unit,
     onVolumeChange: (Int) -> Unit,
+    onReclaimFocus: () -> Unit,
 ) {
     val supported = DesktopHostOs.current == DesktopHostOs.WINDOWS ||
         DesktopHostOs.current == DesktopHostOs.MACOS
@@ -56,6 +53,7 @@ actual fun HeroTrailerPlayerSurface(
     val latestOnError = rememberUpdatedState(onError)
     val latestOnMuteToggle = rememberUpdatedState(onMuteToggle)
     val latestOnVolumeChange = rememberUpdatedState(onVolumeChange)
+    val latestOnReclaimFocus = rememberUpdatedState(onReclaimFocus)
     // Effective mpv volume: muting forces silence regardless of the slider position.
     val effectiveVolume = if (muted) 0 else volume.coerceIn(0, 100)
 
@@ -104,41 +102,12 @@ actual fun HeroTrailerPlayerSurface(
         onDispose { controller.dispose() }
     }
 
-    // The native mpv surface can become the AWT focus owner even though the Swing host is
-    // marked non-focusable, which stops the details screen's Compose key handler from seeing
-    // arrow/enter/escape and breaks keyboard navigation while a trailer plays. Route those
-    // keys globally into the details keyboard bridge while this surface is mounted, matching
-    // the home hero trailer surface and the full-screen player.
-    DisposableEffect(keyboardNavigationEnabled) {
-        if (!keyboardNavigationEnabled) {
-            return@DisposableEffect onDispose { }
-        }
-        val dispatcher = KeyEventDispatcher { event ->
-            if (event.id != KeyEvent.KEY_PRESSED) return@KeyEventDispatcher false
-            if (event.isMetaDown || event.isControlDown || event.isAltDown) {
-                return@KeyEventDispatcher false
-            }
-            val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
-            if (focusOwner is JTextComponent) return@KeyEventDispatcher false
-
-            val key = when (event.keyCode) {
-                KeyEvent.VK_UP -> DetailTvKey.Up
-                KeyEvent.VK_DOWN -> DetailTvKey.Down
-                KeyEvent.VK_LEFT -> DetailTvKey.Left
-                KeyEvent.VK_RIGHT -> DetailTvKey.Right
-                KeyEvent.VK_ENTER -> DetailTvKey.Select
-                KeyEvent.VK_ESCAPE -> DetailTvKey.Dismiss
-                KeyEvent.VK_BACK_SPACE -> DetailTvKey.Back
-                else -> return@KeyEventDispatcher false
-            }
-            DetailTvKeyboardBridge.emit(key)
-            event.consume()
-            true
-        }
-        val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
-        focusManager.addKeyEventDispatcher(dispatcher)
-        onDispose { focusManager.removeKeyEventDispatcher(dispatcher) }
-    }
+    // The trailer surface is passive and never holds OS keyboard focus (the native container
+    // refuses mouse activation and the WebView2 bounces any focus it grabs — see player_bridge.cpp),
+    // so the details screen's own Compose key handler stays the sole keyboard owner. The former
+    // global AWT KeyEventDispatcher here is gone: it fought Compose's handling and caused stuck-key
+    // bugs. If a chrome click still focuses the WebView2, the native side fires "heroTrailerFocusEscaped"
+    // and we hand focus straight back (see onEvent below).
 
     DisposableEffect(controller) {
         controller.setControlCallbacks(
@@ -156,28 +125,20 @@ actual fun HeroTrailerPlayerSurface(
                 }
             },
             onEvent = { type, value ->
-                if (type == "heroTrailerVolume") {
-                    latestOnVolumeChange.value(value.toInt().coerceIn(0, 100))
-                    return@setControlCallbacks true
-                }
-                // The controls WebView owns OS focus (native child HWND) and forwards nav keys
-                // as home* commands — the path that actually reaches us when the trailer plays
-                // (AWT never sees them). Route them into the details keyboard bridge. The screen
-                // ignores them when keyboard navigation isn't active.
-                val navKey = when (type) {
-                    "homeKeyUp" -> DetailTvKey.Up
-                    "homeKeyDown" -> DetailTvKey.Down
-                    "homeKeyLeft" -> DetailTvKey.Left
-                    "homeKeyRight" -> DetailTvKey.Right
-                    "homeKeySelect" -> DetailTvKey.Select
-                    "homeKeyDismiss" -> DetailTvKey.Dismiss
-                    else -> null
-                }
-                if (navKey != null) {
-                    DetailTvKeyboardBridge.emit(navKey)
-                    true
-                } else {
-                    false
+                when (type) {
+                    // Overlay volume slider (mouse-driven) — a trailer-specific control.
+                    "heroTrailerVolume" -> {
+                        latestOnVolumeChange.value(value.toInt().coerceIn(0, 100))
+                        true
+                    }
+                    // The WebView2 grabbed OS focus (e.g. a click on the mute/volume chrome).
+                    // Hand keyboard focus back to the details screen so navigation keeps working;
+                    // the trailer surface itself never keeps focus.
+                    "heroTrailerFocusEscaped" -> {
+                        latestOnReclaimFocus.value()
+                        true
+                    }
+                    else -> false
                 }
             },
             onScrubChange = { false },
@@ -238,6 +199,8 @@ actual fun HeroTrailerPlayerSurface(
         )
         controller.setMpvProperty("mute", if (muted) "yes" else "no")
         controller.setMpvProperty("volume", effectiveVolume.toString())
+        // Reflect programmatic ([ / ]) volume changes on the overlay slider immediately.
+        controller.setHeroTrailerVolume(effectiveVolume)
     }
 
     LaunchedEffect(controller, sourceUrl) {

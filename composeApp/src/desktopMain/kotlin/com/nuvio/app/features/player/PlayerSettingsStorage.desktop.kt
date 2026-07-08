@@ -20,11 +20,8 @@ import java.nio.file.Files
 internal actual object PlayerSettingsStorage {
     private const val showLoadingOverlayKey = "show_loading_overlay"
     private const val resizeModeKey = "resize_mode"
-    private const val holdToSpeedEnabledKey = "hold_to_speed_enabled"
-    private const val holdToSpeedValueKey = "hold_to_speed_value"
     private const val defaultPlaybackSpeedKey = "default_playback_speed"
     private const val mouseMoveRevealsControlsEnabledKey = "mouse_move_reveals_controls_enabled"
-    private const val touchGesturesEnabledKey = "touch_gestures_enabled"
     private const val externalPlayerEnabledKey = "external_player_enabled"
     private const val externalPlayerForwardSubtitlesKey = "external_player_forward_subtitles"
     private const val externalPlayerIdKey = "external_player_id"
@@ -91,17 +88,17 @@ internal actual object PlayerSettingsStorage {
     private const val desktopAnimeModeKey = "desktop_anime_mode"
     private const val desktopAnimeModeAutoEnabledKey = "desktop_anime_mode_auto_enabled"
     private const val desktopAnimeSvpEnabledKey = "desktop_anime_svp_enabled"
+    private const val desktopAudioPassthroughEnabledKey = "desktop_audio_passthrough_enabled"
+    private const val desktopCustomMpvOptionsKey = "desktop_custom_mpv_options"
     private const val heroTvTrailerEnabledKey = "hero_tv_trailer_enabled"
     private const val heroTvTrailerDelaySecondsKey = "hero_tv_trailer_delay_seconds"
     private const val heroTvTrailerSoundEnabledKey = "hero_tv_trailer_sound_enabled"
     private const val heroTvTrailerFullscreenKey = "hero_tv_trailer_fullscreen"
+    private const val heroTvTrailerSearchEnabledKey = "hero_tv_trailer_search_enabled"
     private val syncKeys = listOf(
         showLoadingOverlayKey,
         resizeModeKey,
-        holdToSpeedEnabledKey,
-        holdToSpeedValueKey,
         mouseMoveRevealsControlsEnabledKey,
-        touchGesturesEnabledKey,
         externalPlayerEnabledKey,
         externalPlayerForwardSubtitlesKey,
         externalPlayerIdKey,
@@ -163,6 +160,7 @@ internal actual object PlayerSettingsStorage {
         heroTvTrailerDelaySecondsKey,
         heroTvTrailerSoundEnabledKey,
         heroTvTrailerFullscreenKey,
+        heroTvTrailerSearchEnabledKey,
     )
     private val store = DesktopStorage.store("nuvio_player_settings")
     private val hadExistingDesktopPreferences = Files.list(DesktopStorage.rootDir).use { files ->
@@ -173,18 +171,12 @@ internal actual object PlayerSettingsStorage {
     actual fun saveShowLoadingOverlay(enabled: Boolean) = saveBoolean(showLoadingOverlayKey, enabled)
     actual fun loadResizeMode(): String? = loadString(resizeModeKey)
     actual fun saveResizeMode(mode: String) = saveString(resizeModeKey, mode)
-    actual fun loadHoldToSpeedEnabled(): Boolean? = loadBoolean(holdToSpeedEnabledKey)
-    actual fun saveHoldToSpeedEnabled(enabled: Boolean) = saveBoolean(holdToSpeedEnabledKey, enabled)
-    actual fun loadHoldToSpeedValue(): Float? = loadFloat(holdToSpeedValueKey)
-    actual fun saveHoldToSpeedValue(speed: Float) = saveFloat(holdToSpeedValueKey, speed)
     actual fun loadDefaultPlaybackSpeed(): Float? = loadFloat(defaultPlaybackSpeedKey)
     actual fun saveDefaultPlaybackSpeed(speed: Float) = saveFloat(defaultPlaybackSpeedKey, speed)
 
     actual fun loadMouseMoveRevealsControlsEnabled(): Boolean? = loadBoolean(mouseMoveRevealsControlsEnabledKey)
     actual fun saveMouseMoveRevealsControlsEnabled(enabled: Boolean) =
         saveBoolean(mouseMoveRevealsControlsEnabledKey, enabled)
-    actual fun loadTouchGesturesEnabled(): Boolean? = loadBoolean(touchGesturesEnabledKey)
-    actual fun saveTouchGesturesEnabled(enabled: Boolean) = saveBoolean(touchGesturesEnabledKey, enabled)
     actual fun loadExternalPlayerEnabled(): Boolean? = loadBoolean(externalPlayerEnabledKey)
     actual fun saveExternalPlayerEnabled(enabled: Boolean) = saveBoolean(externalPlayerEnabledKey, enabled)
     actual fun loadExternalPlayerForwardSubtitles(): Boolean? = loadBoolean(externalPlayerForwardSubtitlesKey)
@@ -321,6 +313,10 @@ internal actual object PlayerSettingsStorage {
     actual fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean) = saveBoolean(desktopAnimeModeAutoEnabledKey, enabled)
     actual fun loadDesktopAnimeSvpEnabled(): Boolean? = loadBoolean(desktopAnimeSvpEnabledKey)
     actual fun saveDesktopAnimeSvpEnabled(enabled: Boolean) = saveBoolean(desktopAnimeSvpEnabledKey, enabled)
+    actual fun loadDesktopAudioPassthroughEnabled(): Boolean? = loadBoolean(desktopAudioPassthroughEnabledKey)
+    actual fun saveDesktopAudioPassthroughEnabled(enabled: Boolean) = saveBoolean(desktopAudioPassthroughEnabledKey, enabled)
+    actual fun loadDesktopCustomMpvOptions(): String? = loadString(desktopCustomMpvOptionsKey)
+    actual fun saveDesktopCustomMpvOptions(options: String) = saveString(desktopCustomMpvOptionsKey, options)
     actual fun loadHeroTvTrailerEnabled(): Boolean? = loadBoolean(heroTvTrailerEnabledKey)
     actual fun saveHeroTvTrailerEnabled(enabled: Boolean) = saveBoolean(heroTvTrailerEnabledKey, enabled)
     actual fun loadHeroTvTrailerDelaySeconds(): Int? = loadInt(heroTvTrailerDelaySecondsKey)
@@ -329,6 +325,8 @@ internal actual object PlayerSettingsStorage {
     actual fun saveHeroTvTrailerSoundEnabled(enabled: Boolean) = saveBoolean(heroTvTrailerSoundEnabledKey, enabled)
     actual fun loadHeroTvTrailerFullscreen(): Boolean? = loadBoolean(heroTvTrailerFullscreenKey)
     actual fun saveHeroTvTrailerFullscreen(enabled: Boolean) = saveBoolean(heroTvTrailerFullscreenKey, enabled)
+    actual fun loadHeroTvTrailerSearchEnabled(): Boolean? = loadBoolean(heroTvTrailerSearchEnabledKey)
+    actual fun saveHeroTvTrailerSearchEnabled(enabled: Boolean) = saveBoolean(heroTvTrailerSearchEnabledKey, enabled)
 
     private fun scoped(key: String): String = ProfileScopedKey.of(key)
     private fun loadString(key: String): String? = store.getString(scoped(key))
@@ -346,11 +344,8 @@ internal actual object PlayerSettingsStorage {
     actual fun exportToSyncPayload(): JsonObject = buildJsonObject {
         loadShowLoadingOverlay()?.let { put(showLoadingOverlayKey, encodeSyncBoolean(it)) }
         loadResizeMode()?.let { put(resizeModeKey, encodeSyncString(it)) }
-        loadHoldToSpeedEnabled()?.let { put(holdToSpeedEnabledKey, encodeSyncBoolean(it)) }
-        loadHoldToSpeedValue()?.let { put(holdToSpeedValueKey, encodeSyncFloat(it)) }
         loadDefaultPlaybackSpeed()?.let { put(defaultPlaybackSpeedKey, encodeSyncFloat(it)) }
         loadMouseMoveRevealsControlsEnabled()?.let { put(mouseMoveRevealsControlsEnabledKey, encodeSyncBoolean(it)) }
-        loadTouchGesturesEnabled()?.let { put(touchGesturesEnabledKey, encodeSyncBoolean(it)) }
         loadExternalPlayerEnabled()?.let { put(externalPlayerEnabledKey, encodeSyncBoolean(it)) }
         loadExternalPlayerForwardSubtitles()?.let { put(externalPlayerForwardSubtitlesKey, encodeSyncBoolean(it)) }
         loadExternalPlayerId()?.let { put(externalPlayerIdKey, encodeSyncString(it)) }
@@ -412,17 +407,15 @@ internal actual object PlayerSettingsStorage {
         loadHeroTvTrailerDelaySeconds()?.let { put(heroTvTrailerDelaySecondsKey, encodeSyncInt(it)) }
         loadHeroTvTrailerSoundEnabled()?.let { put(heroTvTrailerSoundEnabledKey, encodeSyncBoolean(it)) }
         loadHeroTvTrailerFullscreen()?.let { put(heroTvTrailerFullscreenKey, encodeSyncBoolean(it)) }
+        loadHeroTvTrailerSearchEnabled()?.let { put(heroTvTrailerSearchEnabledKey, encodeSyncBoolean(it)) }
     }
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
         store.removeAll(syncKeys.map(::scoped))
         payload.decodeSyncBoolean(showLoadingOverlayKey)?.let(::saveShowLoadingOverlay)
         payload.decodeSyncString(resizeModeKey)?.let(::saveResizeMode)
-        payload.decodeSyncBoolean(holdToSpeedEnabledKey)?.let(::saveHoldToSpeedEnabled)
-        payload.decodeSyncFloat(holdToSpeedValueKey)?.let(::saveHoldToSpeedValue)
         payload.decodeSyncFloat(defaultPlaybackSpeedKey)?.let(::saveDefaultPlaybackSpeed)
         payload.decodeSyncBoolean(mouseMoveRevealsControlsEnabledKey)?.let(::saveMouseMoveRevealsControlsEnabled)
-        payload.decodeSyncBoolean(touchGesturesEnabledKey)?.let(::saveTouchGesturesEnabled)
         payload.decodeSyncBoolean(externalPlayerEnabledKey)?.let(::saveExternalPlayerEnabled)
         payload.decodeSyncBoolean(externalPlayerForwardSubtitlesKey)?.let(::saveExternalPlayerForwardSubtitles)
         payload.decodeSyncString(externalPlayerIdKey)?.let(::saveExternalPlayerId)
@@ -486,5 +479,6 @@ internal actual object PlayerSettingsStorage {
         payload.decodeSyncInt(heroTvTrailerDelaySecondsKey)?.let(::saveHeroTvTrailerDelaySeconds)
         payload.decodeSyncBoolean(heroTvTrailerSoundEnabledKey)?.let(::saveHeroTvTrailerSoundEnabled)
         payload.decodeSyncBoolean(heroTvTrailerFullscreenKey)?.let(::saveHeroTvTrailerFullscreen)
+        payload.decodeSyncBoolean(heroTvTrailerSearchEnabledKey)?.let(::saveHeroTvTrailerSearchEnabled)
     }
 }
