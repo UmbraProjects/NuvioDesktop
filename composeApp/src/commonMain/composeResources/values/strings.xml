@@ -11,6 +11,7 @@
     <string name="action_next">Next</string>
     <string name="action_ok">OK</string>
     <string name="action_play">Play</string>
+    <string name="action_random_episode">Random episode</string>
     <string name="action_previous">Previous</string>
     <string name="action_remove">Remove</string>
     <string name="action_reorder">Reorder</string>
@@ -915,6 +916,10 @@
     <string name="settings_playback_desktop_anime_auto_desc">Only apply the selected preset when the title is detected as anime. Disable to always apply.</string>
     <string name="settings_playback_desktop_anime_svp">Anime SVP (Interpolation)</string>
     <string name="settings_playback_desktop_anime_svp_desc">Uses VapourSynth to interpolate motion for a smoother experience.</string>
+    <string name="settings_playback_desktop_custom_shader_paths">Shader library</string>
+    <string name="settings_playback_desktop_custom_shader_paths_desc">Add one shader file or folder per line. Folders expose their direct .glsl and .hook files in Anime Enhancements.</string>
+    <string name="settings_playback_desktop_custom_shader_paths_hint">e.g.\nC:\Shaders\Anime4K-Ultra.glsl\nC:\Shaders\MyPack</string>
+    <string name="settings_playback_desktop_custom_shader_paths_warning">Custom shaders run inside mpv&apos;s renderer and can reduce performance or break playback. Pick Off in Anime Enhancements if a shader causes trouble.</string>
     <string name="settings_playback_desktop_audio_passthrough">Audio passthrough (bitstream)</string>
     <string name="settings_playback_desktop_audio_passthrough_desc">Experimental. Send compressed audio (AC3, DTS, E-AC3, TrueHD, DTS-HD) untouched to an AV receiver over HDMI/S-PDIF. Requires a receiver that accepts the bitstream — if you don't have one, leave this off. If a stream won't start playing, turn this off.</string>
     <string name="settings_playback_desktop_custom_mpv_options">Advanced mpv options</string>
@@ -937,8 +942,8 @@
     <string name="settings_fork_tvdb_description">Use your TheTVDB API key for higher quality TV and anime artwork, including backdrops, logos, and episode metadata.</string>
     <string name="settings_fork_other_features">Other Features</string>
     <string name="settings_fork_other_features_note">Search and Library use the same Adaptive Hero / TV Mode layout as Home.\n\nCalendar shows Trakt or SIMKL airings and releases in a month-view poster grid.\n\nImproved mouse navigation adds edge auto-scroll, hold-and-drag fast scrolling, and Shift + mouse wheel support.\n\nVolume boost up to 200% — press Up past 100% in the player.\n\nDrag a video file onto the window to play it locally.\n\nKeyboard shortcuts: C opens the calendar · H returns home · [ / ] adjust playback speed · S cycles subtitles · A cycles audio tracks · O opens the Sources panel · E opens the Episodes panel.</string>
-    <string name="settings_playback_hero_tv_trailer">Auto Play Trailer</string>
-    <string name="settings_playback_hero_tv_trailer_description">With Adaptive Hero or TV Mode, replace the hero artwork with the focused item’s trailer after it stays focused for a few seconds. Press T to play any focused item’s trailer on demand.</string>
+    <string name="settings_playback_hero_tv_trailer">Hero Trailer Playback</string>
+    <string name="settings_playback_hero_tv_trailer_description">Where a focused item’s trailer plays in Adaptive Hero or TV Mode. Press T to play it on demand; set a wait time below to autoplay.</string>
     <string name="settings_playback_hero_tv_trailer_delay">Wait before playing</string>
     <string name="settings_playback_hero_tv_trailer_delay_dialog">Wait before playing</string>
     <string name="settings_playback_hero_tv_trailer_delay_seconds">%1$d seconds</string>

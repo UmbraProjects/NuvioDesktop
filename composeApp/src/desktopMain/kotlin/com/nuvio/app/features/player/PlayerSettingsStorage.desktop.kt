@@ -88,6 +88,9 @@ internal actual object PlayerSettingsStorage {
     private const val desktopAnimeModeKey = "desktop_anime_mode"
     private const val desktopAnimeModeAutoEnabledKey = "desktop_anime_mode_auto_enabled"
     private const val desktopAnimeSvpEnabledKey = "desktop_anime_svp_enabled"
+    private const val desktopCustomShadersEnabledKey = "desktop_custom_shaders_enabled"
+    private const val desktopCustomShaderPathsKey = "desktop_custom_shader_paths"
+    private const val desktopCustomShaderSelectedPathKey = "desktop_custom_shader_selected_path"
     private const val desktopAudioPassthroughEnabledKey = "desktop_audio_passthrough_enabled"
     private const val desktopCustomMpvOptionsKey = "desktop_custom_mpv_options"
     private const val heroTvTrailerEnabledKey = "hero_tv_trailer_enabled"
@@ -313,6 +316,12 @@ internal actual object PlayerSettingsStorage {
     actual fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean) = saveBoolean(desktopAnimeModeAutoEnabledKey, enabled)
     actual fun loadDesktopAnimeSvpEnabled(): Boolean? = loadBoolean(desktopAnimeSvpEnabledKey)
     actual fun saveDesktopAnimeSvpEnabled(enabled: Boolean) = saveBoolean(desktopAnimeSvpEnabledKey, enabled)
+    actual fun loadDesktopCustomShadersEnabled(): Boolean? = loadBoolean(desktopCustomShadersEnabledKey)
+    actual fun saveDesktopCustomShadersEnabled(enabled: Boolean) = saveBoolean(desktopCustomShadersEnabledKey, enabled)
+    actual fun loadDesktopCustomShaderPaths(): String? = loadString(desktopCustomShaderPathsKey)
+    actual fun saveDesktopCustomShaderPaths(paths: String) = saveString(desktopCustomShaderPathsKey, paths)
+    actual fun loadDesktopCustomShaderSelectedPath(): String? = loadString(desktopCustomShaderSelectedPathKey)
+    actual fun saveDesktopCustomShaderSelectedPath(path: String) = saveString(desktopCustomShaderSelectedPathKey, path)
     actual fun loadDesktopAudioPassthroughEnabled(): Boolean? = loadBoolean(desktopAudioPassthroughEnabledKey)
     actual fun saveDesktopAudioPassthroughEnabled(enabled: Boolean) = saveBoolean(desktopAudioPassthroughEnabledKey, enabled)
     actual fun loadDesktopCustomMpvOptions(): String? = loadString(desktopCustomMpvOptionsKey)

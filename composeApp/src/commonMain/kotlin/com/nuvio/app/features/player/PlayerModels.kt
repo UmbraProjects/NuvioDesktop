@@ -51,7 +51,13 @@ data class PlayerLaunch(
     val initialPositionMs: Long = 0L,
     val initialProgressFraction: Float? = null,
     val disableProgressTracking: Boolean = false,
+    val autoPlayMode: PlayerAutoPlayMode = PlayerAutoPlayMode.NextEpisode,
 )
+
+enum class PlayerAutoPlayMode {
+    NextEpisode,
+    RandomEpisode,
+}
 
 object PlayerLaunchStore {
     private var nextLaunchId = 1L
@@ -193,8 +199,8 @@ enum class DesktopRendererApi(val label: String, val description: String, val sk
 
 /**
  * Desktop anime enhancement mode. Ports Stremio-Kai's Anime4K shader pipeline plus anime-tuned
- * scaling/deband. `Auto` applies the Optimized preset only when the title is detected as anime;
- * the named presets force that preset regardless of detection. Cycled in-player with F10.
+ * scaling/deband. The named presets force that preset unless auto-detect is enabled; CustomShader
+ * points at a user-provided shader from the desktop shader library. Cycled in-player with F10.
  */
 enum class DesktopAnimeMode(val label: String, val description: String) {
     Off("Off", "Never apply anime enhancements."),
@@ -207,6 +213,7 @@ enum class DesktopAnimeMode(val label: String, val description: String) {
     ModeBHq("Mode B (HQ)", "Anime4K Mode B — best for already-clean or soft sources. Highest quality, heavier GPU load."),
     ModeCFast("Mode C (Fast)", "Anime4K Mode C — best for noisy or heavily compressed sources. Balanced speed and quality."),
     ModeCHq("Mode C (HQ)", "Anime4K Mode C — best for noisy or heavily compressed sources. Highest quality, heavier GPU load."),
+    CustomShader("Custom Shader", "Use the selected user shader from the desktop shader library."),
 }
 
 /**

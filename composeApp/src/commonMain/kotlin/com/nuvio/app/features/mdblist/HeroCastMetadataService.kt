@@ -179,6 +179,12 @@ object HeroCastMetadataService {
         }.onFailure { error ->
             log.w { "Failed to load hero cast cache: ${error.message}" }
         }
+        // Prune superseded key schemes (older CACHE_VERSIONs are never looked up again) and expired
+        // entries so the shared cache file doesn't grow unbounded. See MdbListMetadataService for the
+        // full rationale; the slimmed map is written back on the next persistCache.
+        val now = LibraryClock.nowEpochMs()
+        val currentPrefix = "$CACHE_VERSION:"
+        loaded.entries.retainAll { (key, entry) -> key.startsWith(currentPrefix) && entry.expiresAtMs > now }
         cache = loaded
         return loaded
     }

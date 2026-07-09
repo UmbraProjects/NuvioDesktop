@@ -11,6 +11,7 @@ import com.nuvio.app.features.player.AudioTrack
 import com.nuvio.app.features.player.DesktopAnimeMode
 import com.nuvio.app.features.player.DesktopBufferPreset
 import com.nuvio.app.features.player.DesktopColorProfile
+import com.nuvio.app.features.player.DesktopCustomShaderCatalog
 import com.nuvio.app.features.player.DesktopHdrMode
 import com.nuvio.app.features.player.ParentalWarning
 import com.nuvio.app.features.player.PlaybackStartTrace
@@ -52,6 +53,14 @@ internal class NativePlayerController(
 ) : PlayerEngineController {
     private companion object {
         val json = Json { ignoreUnknownKeys = true }
+
+        // Last volume the user set on the main player, as a 0..maxVolumeFraction value. Persisted
+        // across native player instances (in memory, for the app session) so that starting a new
+        // episode — which creates a fresh mpv instance that would otherwise default to 100% — keeps
+        // whatever level was last chosen. Only main-player attaches restore this (see restoreVolume);
+        // hero trailers manage their own volume separately.
+        @Volatile
+        var persistedVolumeFraction: Float? = null
     }
 
     @Volatile
@@ -106,6 +115,9 @@ internal class NativePlayerController(
         // Only the main player passes true; hero trailers must never bitstream audio to a receiver
         // or inherit user render tweaks.
         enableUserMpvOptions: Boolean = false,
+        // Re-applies the last user-set volume ([persistedVolumeFraction]) once the fresh mpv
+        // instance exists, so volume carries over between episodes. Only the main player passes true.
+        restoreVolume: Boolean = false,
     ) {
         if (disposed) return
         // Re-attaching the same stream (surface recreation, RTX/settings toggles) must resume
@@ -136,6 +148,7 @@ internal class NativePlayerController(
             onError = onError,
             controlsPageUrl = NativePlayerBridge.controlsPageUrl + controlsPageUrlSuffix,
             tracePlaybackStart = tracePlaybackStart,
+            restoreVolume = restoreVolume,
         )
         pendingSource = pending
         host.onPeerReady = { attachPending() }
@@ -217,6 +230,15 @@ internal class NativePlayerController(
                         return@synchronized
                     }
                     if (pending.tracePlaybackStart) PlaybackStartTrace.mark("nativeCreateReturned")
+                    // Carry the last-set volume onto the fresh mpv instance so a new episode doesn't
+                    // reset to 100%. The mpv `volume` property is settable before the file finishes
+                    // loading, so applying it here (rather than waiting for fileLoaded) avoids an
+                    // audible full-volume blip at the start of the next episode.
+                    if (pending.restoreVolume) {
+                        persistedVolumeFraction?.let { fraction ->
+                            NativePlayerBridge.setVolume(newHandle, fraction.coerceIn(0f, maxVolumeFraction) * 100f)
+                        }
+                    }
                     synchronized(pendingMpvProperties) {
                         pendingMpvProperties.forEach { (key, value) ->
                             NativePlayerBridge.setMpvProperty(newHandle, key, value)
@@ -327,10 +349,37 @@ internal class NativePlayerController(
     }
 
     fun cycleDesktopAnimeMode() {
-        val modes = DesktopAnimeMode.entries
-        val current = PlayerSettingsRepository.uiState.value.desktopAnimeMode
-        val next = modes[(modes.indexOf(current) + 1) % modes.size]
-        PlayerSettingsRepository.setDesktopAnimeMode(next)
+        data class AnimeCycleChoice(
+            val mode: DesktopAnimeMode,
+            val customShaderPath: String = "",
+            val label: String = mode.label,
+        )
+
+        val settings = PlayerSettingsRepository.uiState.value
+        val customShaders = DesktopCustomShaderCatalog.availableShaders(settings.desktopCustomShaderPaths)
+        val choices = DesktopAnimeMode.entries
+            .filter { it != DesktopAnimeMode.CustomShader }
+            .map { AnimeCycleChoice(mode = it) } +
+            customShaders.map { shader ->
+                AnimeCycleChoice(
+                    mode = DesktopAnimeMode.CustomShader,
+                    customShaderPath = shader.path,
+                    label = shader.fileName,
+                )
+            }
+        val currentIndex = choices.indexOfFirst { choice ->
+            if (settings.desktopAnimeMode == DesktopAnimeMode.CustomShader) {
+                choice.mode == DesktopAnimeMode.CustomShader &&
+                    choice.customShaderPath == settings.desktopCustomShaderSelectedPath
+            } else {
+                choice.mode == settings.desktopAnimeMode
+            }
+        }
+        val next = choices[((currentIndex.takeIf { it >= 0 } ?: -1) + 1) % choices.size]
+        if (next.mode == DesktopAnimeMode.CustomShader) {
+            PlayerSettingsRepository.setDesktopCustomShaderSelectedPath(next.customShaderPath)
+        }
+        PlayerSettingsRepository.setDesktopAnimeMode(next.mode)
         showPresetPill("Anime", next.label)
     }
 
@@ -429,7 +478,17 @@ internal class NativePlayerController(
             }
             else -> {
                 if (type == "fileLoaded") {
-                    handle.takeIf { it != 0L }?.let(::applyPendingSubtitleConfiguration)
+                    handle.takeIf { it != 0L }?.let { current ->
+                        applyPendingSubtitleConfiguration(current)
+                        // Align the overlay's tracked volume with mpv's real (possibly restored)
+                        // volume now that the controls page is definitely loaded, so the on-screen
+                        // percentage matches after a volume-carrying episode change.
+                        val volumePercent = NativePlayerBridge.volume(current).toInt().coerceIn(0, 200)
+                        NativePlayerBridge.runJavaScript(
+                            current,
+                            "window.nuvioSyncVolume && window.nuvioSyncVolume($volumePercent)",
+                        )
+                    }
                 }
                 val eventHandled = onEvent(type, value)
                 if (eventHandled) return
@@ -608,6 +667,7 @@ internal class NativePlayerController(
     override fun setVolume(fraction: Float): PlayerAudioLevel? {
         val current = handle.takeIf { it != 0L } ?: return null
         val clamped = fraction.coerceIn(0f, maxVolumeFraction)
+        persistedVolumeFraction = clamped
         NativePlayerBridge.setVolume(current, clamped * 100f)
         if (clamped > 0f && NativePlayerBridge.isMuted(current)) {
             NativePlayerBridge.setMute(current, false)
@@ -800,6 +860,7 @@ private data class PendingSource(
     val onError: (String?) -> Unit,
     val controlsPageUrl: String,
     val tracePlaybackStart: Boolean = false,
+    val restoreVolume: Boolean = false,
 )
 
 // Standard bitstream formats to hand untouched to a receiver when passthrough is on. dts-hd

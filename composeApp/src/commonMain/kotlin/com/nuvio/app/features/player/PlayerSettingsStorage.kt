@@ -63,6 +63,12 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean)
     fun loadDesktopAnimeSvpEnabled(): Boolean?
     fun saveDesktopAnimeSvpEnabled(enabled: Boolean)
+    fun loadDesktopCustomShadersEnabled(): Boolean?
+    fun saveDesktopCustomShadersEnabled(enabled: Boolean)
+    fun loadDesktopCustomShaderPaths(): String?
+    fun saveDesktopCustomShaderPaths(paths: String)
+    fun loadDesktopCustomShaderSelectedPath(): String?
+    fun saveDesktopCustomShaderSelectedPath(path: String)
     fun loadDesktopAudioPassthroughEnabled(): Boolean?
     fun saveDesktopAudioPassthroughEnabled(enabled: Boolean)
     fun loadDesktopCustomMpvOptions(): String?

@@ -39,6 +39,7 @@ fun PlayerScreen(
     initialPositionMs: Long = 0L,
     initialProgressFraction: Float? = null,
     disableProgressTracking: Boolean = false,
+    autoPlayMode: PlayerAutoPlayMode = PlayerAutoPlayMode.NextEpisode,
 ) {
     PlayerScreenContent(
         PlayerScreenArgs(
@@ -76,6 +77,7 @@ fun PlayerScreen(
             initialPositionMs = initialPositionMs,
             initialProgressFraction = initialProgressFraction,
             disableProgressTracking = disableProgressTracking,
+            autoPlayMode = autoPlayMode,
         )
     )
 }

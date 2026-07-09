@@ -296,7 +296,11 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(stream: StreamItem, episo
         switchToP2pEpisodeStream(stream, episode)
         return
     }
-    val url = stream.playableDirectUrl ?: return
+    val url = stream.playableDirectUrl ?: run {
+        BingeAdvanceLog.i { "switchToEpisodeStream aborted: stream has no playableDirectUrl (addon=${stream.addonName})" }
+        return
+    }
+    BingeAdvanceLog.i { "switchToEpisodeStream setting activeSourceUrl for S${episode.season}E${episode.episode} — desktop attach should follow" }
     resetEpisodePanelAndNextEpisodeState()
     flushWatchProgress()
     stopActiveP2pStream()
@@ -326,7 +330,7 @@ internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: Downloa
         fallbackVideoId = episode.id,
     )
     val resolvedVideoId = episode.id.takeIf { it.isNotBlank() } ?: fallbackVideoId
-    val epEntry = WatchProgressRepository.progressForVideo(resolvedVideoId)
+    val epEntry = if (disableProgressTracking) null else WatchProgressRepository.progressForVideo(resolvedVideoId)
         ?.takeIf { !it.isCompleted }
     val epResumeFraction = epEntry?.progressPercent
         ?.takeIf { it > 0f }
@@ -364,7 +368,13 @@ internal fun PlayerScreenRuntime.playNextEpisode() {
     // permanently disabled for the rest of the session.
     val nextVideoId = nextEpisodeInfo?.videoId
     val nextVideo = nextVideoId?.let { id -> playerMetaVideos.firstOrNull { video -> video.id == id } }
-    if (nextVideo == null || nextEpisodeInfo?.hasAired != true) return
+    BingeAdvanceLog.i {
+        "playNextEpisode nextVideoId=$nextVideoId resolved=${nextVideo != null} hasAired=${nextEpisodeInfo?.hasAired}"
+    }
+    if (nextVideo == null || nextEpisodeInfo?.hasAired != true) {
+        BingeAdvanceLog.i { "playNextEpisode early return (no next video or not aired) — latch NOT engaged" }
+        return
+    }
 
     // Engage the advance latch for every path (auto and manual) so a stale end-of-file can't
     // trigger a second advance and skip an episode. Cleared once the new episode is playing.
@@ -438,6 +448,7 @@ private fun PlayerScreenRuntime.resetEpisodePanelAndNextEpisodeState() {
 }
 
 private fun PlayerScreenRuntime.resolveEpisodeResume(epVideoId: String, episode: MetaVideo): EpisodeResume {
+    if (disableProgressTracking) return EpisodeResume(positionMs = 0L, fraction = null)
     val epResumeVideoId = buildPlaybackVideoId(
         parentMetaId = parentMetaId,
         seasonNumber = episode.season,

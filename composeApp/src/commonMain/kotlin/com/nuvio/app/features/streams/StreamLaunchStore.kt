@@ -1,5 +1,7 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.features.player.PlayerAutoPlayMode
+
 data class StreamLaunch(
     val type: String,
     val videoId: String,
@@ -20,6 +22,8 @@ data class StreamLaunch(
     val resumeProgressFraction: Float? = null,
     val manualSelection: Boolean = false,
     val startFromBeginning: Boolean = false,
+    val disableProgressTracking: Boolean = false,
+    val autoPlayMode: PlayerAutoPlayMode = PlayerAutoPlayMode.NextEpisode,
 )
 
 object StreamLaunchStore {

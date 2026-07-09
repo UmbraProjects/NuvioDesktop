@@ -2122,6 +2122,14 @@ window.nuvioShowVolumePill = percentage => {
   showVolumePill();
 };
 
+// Silently align the overlay's tracked volume with mpv's actual volume, without flashing the pill.
+// Each episode spins up a fresh mpv instance whose volume is restored from the previous episode
+// (e.g. 0%), but this page reloads with localVolume defaulting to 100 — so the next keyboard nudge
+// would render "105%" instead of "5%". Native pushes the real value on fileLoaded to keep them synced.
+window.nuvioSyncVolume = percentage => {
+  localVolume = Math.max(0, Math.min(200, Number(percentage) || 0));
+};
+
 const presetPill = document.getElementById("presetPill");
 const presetPillTitle = document.getElementById("presetPillTitle");
 const presetPillValue = document.getElementById("presetPillValue");

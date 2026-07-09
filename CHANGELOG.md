@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.9.1 - 2026-07-09
+
+### Added
+
+- **Custom shader library / external MPV shaders** - added a Shader Library configuration under Playback Settings to register custom `.glsl` or `.hook` shader files/directories. Once configured, custom shaders can be selected as the Anime Enhancement mode and cycled in-player using the `F10` hotkey.
+- **Random episode rewatch mode** - added a Random Episode action to series detail pages for comfort shows where sequence does not matter. Random rewatches start from the beginning, skip progress/scrobbling, avoid specials by default, and keep autoplay picking random main-season episodes instead of the next sequential one.
+
+### Improved
+
+- **Atomic preferences and cache storage** - shifted preferences and cache persistence to write to a temporary sibling file and atomically swap it in. This prevents mid-write app crashes from corrupting settings or clearing large cached files like MDBList/cast metadata.
+- **Next-episode autoplay reliability** - forced a fresh fetch when loading autoplay streams, preventing binge mode from stalling on stale/empty cached results. Added a dedicated `BingeAdvance` logging pipeline and window-state listeners to diagnose background compose recomposition pauses during minimization.
+- **Persistent player volume** - player volume now carries over cleanly between episodes within the same viewing session, resolving the issue where fresh player instances would default to 100% volume and cause audio spikes or display incorrect volume levels in the overlay.
+- **Autoplay delay & manual trailers** - reshaped hero trailer playback options to control delay and autoplay under a unified setting. Setting the delay to "Manual" (0 seconds) disables autoplay while keeping manual trailer playback active (using the `T` key) in hero or full-screen modes.
+- **Adaptive hero fallback backdrops** - when no hero catalogs are selected, Adaptive Hero and ambient backdrops now seed their content from the top browsing rows. This guarantees the background artwork adjusts to focused items instead of remaining blank.
+- **Cleaner detail metadata layout** - blank and non-positive runtime values are now fully filtered out of detail-page metadata, preventing orphaned bullet separators from showing up next to missing values.
+
+### Fixed
+
+- **Metadata cache bloat** - implemented active cleanup of expired entries and legacy key schemes in MDBList ratings and cast caches, preventing database files from growing unbounded.
+
 ## 1.9.0 - 2026-07-07
 
 ### Added

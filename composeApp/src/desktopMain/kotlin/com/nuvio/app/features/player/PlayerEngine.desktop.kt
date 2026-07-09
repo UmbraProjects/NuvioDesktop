@@ -26,6 +26,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.player.desktop.DesktopAnimeShaders
 import com.nuvio.app.features.player.desktop.DesktopAnimeSvp
+import com.nuvio.app.features.player.desktop.DesktopCustomShaders
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.DesktopPlayerLaunchShield
 import com.nuvio.app.features.player.desktop.NativePlayerController
@@ -283,6 +284,11 @@ private fun NativePlayerSurface(
         }
         delay(16L)
         PlaybackStartTrace.mark("playerAttach")
+        // Logged so a binge/next-episode stall can be diagnosed: if the common layer reports it
+        // set a new activeSourceUrl (see BingeAdvance "switchToEpisodeStream" log) but this line
+        // never follows while the window is minimized, that confirms the attach is waiting on a
+        // paused recomposition rather than something in stream selection.
+        BingeAdvanceLog.i { "desktop attach firing sourceUrl=${sourceUrl.takeLast(48)}" }
         controller.attach(
             tracePlaybackStart = true,
             sourceUrl = sourceUrl,
@@ -293,6 +299,7 @@ private fun NativePlayerSurface(
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
             nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
             enableUserMpvOptions = true,
+            restoreVolume = true,
             onError = { message -> latestOnError.value(message) },
         )
     }
@@ -363,6 +370,8 @@ private fun NativePlayerSurface(
                     nvidiaRtxSuperResolutionEnabled = settings.nvidiaRtxSuperResolutionEnabled,
                     nvidiaRtxSuperResolutionScale = vsrScale,
                     nvidiaRtxHdrEnabled = settings.nvidiaRtxHdrEnabled,
+                    customShaderPaths = settings.desktopCustomShaderPaths,
+                    customShaderSelectedPath = settings.desktopCustomShaderSelectedPath,
                 )
             }
     }
@@ -502,9 +511,20 @@ private fun applyDesktopAnimeProfile(
     nvidiaRtxSuperResolutionEnabled: Boolean = false,
     nvidiaRtxSuperResolutionScale: Double? = null,
     nvidiaRtxHdrEnabled: Boolean = false,
+    customShaderPaths: String = "",
+    customShaderSelectedPath: String = "",
 ) {
+    val customShaderChain = if (mode == DesktopAnimeMode.CustomShader && !(autoEnabled && !isAnime)) {
+        DesktopCustomShaders.shaderChain(
+            pathsText = customShaderPaths,
+            selectedPath = customShaderSelectedPath,
+        )
+    } else {
+        ""
+    }
     val effectivePreset = when {
         mode == DesktopAnimeMode.Off -> null
+        mode == DesktopAnimeMode.CustomShader -> null
         autoEnabled && !isAnime -> null
         else -> mode
     }
@@ -533,13 +553,32 @@ private fun applyDesktopAnimeProfile(
 
     // If Anime4k is forced via F10 (effectivePreset != null) OR if it's auto-detected (isAnime),
     // we consider this video to be Anime for the purposes of SVP interpolation.
-    val isEffectivelyAnime = isAnime || effectivePreset != null
+    val isEffectivelyAnime = isAnime || effectivePreset != null || customShaderChain.isNotEmpty()
 
     val svpFilter = if (isEffectivelyAnime && animeSvpEnabled) {
         DesktopAnimeSvp.vapoursynthArgument()
     } else null
     val svpActive = svpFilter != null
     applyDesktopSvpRuntimeProfile(controller, svpActive)
+
+    if (customShaderChain.isNotEmpty()) {
+        controller.setMpvProperty("scale", "ewa_lanczos")
+        controller.setMpvProperty("cscale", "ewa_lanczos")
+        controller.setMpvProperty("scale-blur", "1.05")
+        controller.setMpvProperty("deband-threshold", "45")
+        controller.setMpvProperty("deband-grain", "20")
+        controller.setMpvProperty("glsl-shaders", customShaderChain)
+
+        if (svpActive) {
+            controller.setMpvProperty("hwdec", "d3d11va-copy")
+        } else {
+            controller.setMpvProperty("hwdec", "d3d11va")
+        }
+
+        controller.setMpvProperty("vf", listOfNotNull(svpFilter).joinToString(","))
+        controller.forceVideoRedraw()
+        return
+    }
 
     if (effectivePreset == null) {
         // Restore the bridge's baseline live-action rendering (see startMpv in player_bridge.cpp).
@@ -571,8 +610,7 @@ private fun applyDesktopAnimeProfile(
     controller.setMpvProperty("deband-threshold", "45")
     controller.setMpvProperty("deband-grain", "20")
 
-    val shaderChain = DesktopAnimeShaders.shaderChain(effectivePreset)
-    controller.setMpvProperty("glsl-shaders", shaderChain)
+    controller.setMpvProperty("glsl-shaders", DesktopAnimeShaders.shaderChain(effectivePreset))
 
     // hqdn3d temporal/spatial denoise (Kai's standard anime VF). Skipped on HDR to avoid the heavier
     // filter chain fighting the tonemap path, matching Kai's denoise removal for HDR anime.

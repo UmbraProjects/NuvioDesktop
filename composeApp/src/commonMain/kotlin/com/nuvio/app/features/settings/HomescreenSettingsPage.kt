@@ -61,7 +61,6 @@ import nuvio.composeapp.generated.resources.layout_hide_unreleased
 import nuvio.composeapp.generated.resources.layout_hide_unreleased_sub
 import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback_area_fullscreen
 import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback_area_hero
-import nuvio.composeapp.generated.resources.settings_meta_none
 import nuvio.composeapp.generated.resources.settings_homescreen_empty_message
 import nuvio.composeapp.generated.resources.settings_homescreen_empty_title
 import nuvio.composeapp.generated.resources.settings_homescreen_hide_catalog_underline
@@ -116,10 +115,18 @@ internal fun LazyListScope.homescreenSettingsContent(
                 heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
                 tvModeEnabled = tvModeEnabled,
             )
-            val selectedHeroTrailerArea = when {
-                !playerSettings.heroTvTrailerEnabled -> HomeHeroTrailerPlaybackArea.Off
-                playerSettings.heroTvTrailerFullscreen -> HomeHeroTrailerPlaybackArea.Fullscreen
-                else -> HomeHeroTrailerPlaybackArea.Hero
+            // Where the trailer plays is independent of whether it autoplays: the area selector only
+            // sets heroTvTrailerFullscreen, so manual (T) playback can be full screen without turning
+            // autoplay on. Autoplay lives entirely in the wait selector below (0 == Manual).
+            val selectedHeroTrailerArea = if (playerSettings.heroTvTrailerFullscreen) {
+                HomeHeroTrailerPlaybackArea.Fullscreen
+            } else {
+                HomeHeroTrailerPlaybackArea.Hero
+            }
+            val selectedHeroTrailerWait = if (playerSettings.heroTvTrailerEnabled) {
+                playerSettings.heroTvTrailerDelaySeconds
+            } else {
+                0
             }
             SettingsSection(
                 title = "Display Mode",
@@ -141,7 +148,6 @@ internal fun LazyListScope.homescreenSettingsContent(
                         title = stringResource(Res.string.settings_playback_hero_tv_trailer),
                         description = stringResource(Res.string.settings_playback_hero_tv_trailer_description),
                         options = listOf(
-                            SettingsChoiceOption(HomeHeroTrailerPlaybackArea.Off, stringResource(Res.string.settings_meta_none)),
                             SettingsChoiceOption(HomeHeroTrailerPlaybackArea.Hero, stringResource(Res.string.settings_meta_hero_trailer_playback_area_hero)),
                             SettingsChoiceOption(HomeHeroTrailerPlaybackArea.Fullscreen, stringResource(Res.string.settings_meta_hero_trailer_playback_area_fullscreen)),
                         ),
@@ -150,60 +156,64 @@ internal fun LazyListScope.homescreenSettingsContent(
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AutoPlayTrailer),
                         onSelected = { area ->
-                            when (area) {
-                                HomeHeroTrailerPlaybackArea.Off -> PlayerSettingsRepository.setHeroTvTrailerEnabled(false)
-                                HomeHeroTrailerPlaybackArea.Hero -> {
-                                    PlayerSettingsRepository.setHeroTvTrailerEnabled(true)
-                                    PlayerSettingsRepository.setHeroTvTrailerFullscreen(false)
-                                }
-                                HomeHeroTrailerPlaybackArea.Fullscreen -> {
-                                    PlayerSettingsRepository.setHeroTvTrailerEnabled(true)
-                                    PlayerSettingsRepository.setHeroTvTrailerFullscreen(true)
-                                }
-                            }
+                            PlayerSettingsRepository.setHeroTvTrailerFullscreen(
+                                area == HomeHeroTrailerPlaybackArea.Fullscreen,
+                            )
                         },
                     )
-                    if (playerSettings.heroTvTrailerEnabled) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsChoiceRow(
-                            title = stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
-                            description = stringResource(
+                    SettingsGroupDivider(isTablet = isTablet)
+                    // "Wait before playing" now doubles as the autoplay switch: Manual (0) means the
+                    // trailer only plays on the T shortcut; a positive value autoplays after that delay.
+                    SettingsChoiceRow(
+                        title = stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
+                        description = if (selectedHeroTrailerWait <= 0) {
+                            "Manual"
+                        } else {
+                            stringResource(
                                 Res.string.settings_playback_hero_tv_trailer_delay_seconds,
-                                playerSettings.heroTvTrailerDelaySeconds,
-                            ),
-                            options = HERO_TV_TRAILER_DELAY_VALUES.map { seconds ->
+                                selectedHeroTrailerWait,
+                            )
+                        },
+                        options = listOf(SettingsChoiceOption(0, "Manual")) +
+                            HERO_TV_TRAILER_DELAY_VALUES.map { seconds ->
                                 SettingsChoiceOption(
                                     seconds,
                                     stringResource(Res.string.settings_playback_hero_tv_trailer_delay_seconds, seconds),
                                 )
                             },
-                            selectedValue = playerSettings.heroTvTrailerDelaySeconds,
-                            enabled = heroEnabled,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerDelay),
-                            onSelected = PlayerSettingsRepository::setHeroTvTrailerDelaySeconds,
-                        )
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_playback_hero_tv_trailer_sound),
-                            description = stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description),
-                            checked = playerSettings.heroTvTrailerSoundEnabled,
-                            enabled = heroEnabled,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerSound),
-                            onCheckedChange = PlayerSettingsRepository::setHeroTvTrailerSoundEnabled,
-                        )
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSwitchRow(
-                            title = "Trailers in Search",
-                            description = "Allow focused search results to play hero trailers.",
-                            checked = playerSettings.heroTvTrailerSearchEnabled,
-                            enabled = heroEnabled,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerSearch),
-                            onCheckedChange = PlayerSettingsRepository::setHeroTvTrailerSearchEnabled,
-                        )
-                    }
+                        selectedValue = selectedHeroTrailerWait,
+                        enabled = heroEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerDelay),
+                        onSelected = { seconds ->
+                            if (seconds <= 0) {
+                                PlayerSettingsRepository.setHeroTvTrailerEnabled(false)
+                            } else {
+                                PlayerSettingsRepository.setHeroTvTrailerEnabled(true)
+                                PlayerSettingsRepository.setHeroTvTrailerDelaySeconds(seconds)
+                            }
+                        },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_hero_tv_trailer_sound),
+                        description = stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description),
+                        checked = playerSettings.heroTvTrailerSoundEnabled,
+                        enabled = heroEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerSound),
+                        onCheckedChange = PlayerSettingsRepository::setHeroTvTrailerSoundEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = "Trailers in Search",
+                        description = "Allow focused search results to play hero trailers.",
+                        checked = playerSettings.heroTvTrailerSearchEnabled,
+                        enabled = heroEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TrailerSearch),
+                        onCheckedChange = PlayerSettingsRepository::setHeroTvTrailerSearchEnabled,
+                    )
                 }
             }
         }
@@ -393,7 +403,6 @@ internal enum class HomeDisplayMode {
 }
 
 private enum class HomeHeroTrailerPlaybackArea {
-    Off,
     Hero,
     Fullscreen,
 }

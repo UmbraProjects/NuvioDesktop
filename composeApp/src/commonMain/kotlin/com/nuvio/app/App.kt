@@ -189,6 +189,7 @@ import com.nuvio.app.features.library.toMetaPreview
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
 import com.nuvio.app.features.p2p.P2pConsentDialog
 import com.nuvio.app.features.p2p.P2pSettingsRepository
+import com.nuvio.app.features.player.PlayerAutoPlayMode
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.LocalFileDrop
 import com.nuvio.app.features.player.PlayerLaunchStore
@@ -1385,6 +1386,8 @@ private fun MainAppContent(
             startFromBeginning: Boolean,
             watchProgressSource: String? = null,
             streamVideoId: String? = null,
+            disableProgressTracking: Boolean = false,
+            autoPlayMode: PlayerAutoPlayMode = PlayerAutoPlayMode.NextEpisode,
         ) {
             val targetResumePositionMs = if (startFromBeginning) 0L else (resumePositionMs ?: 0L)
             val targetResumeProgressFraction = if (startFromBeginning) null else resumeProgressFraction
@@ -1422,6 +1425,8 @@ private fun MainAppContent(
                             watchProgressSource = watchProgressSource,
                             initialPositionMs = targetResumePositionMs,
                             initialProgressFraction = targetResumeProgressFraction,
+                            disableProgressTracking = disableProgressTracking,
+                            autoPlayMode = autoPlayMode,
                         )
                     if (playerSettingsUiState.externalPlayerEnabled) {
                         coroutineScope.launch { openExternalPlayback(playerLaunch) }
@@ -1454,6 +1459,8 @@ private fun MainAppContent(
                     resumeProgressFraction = targetResumeProgressFraction,
                     manualSelection = manualSelection,
                     startFromBeginning = startFromBeginning,
+                    disableProgressTracking = disableProgressTracking,
+                    autoPlayMode = autoPlayMode,
                 ),
             )
             navController.navigate(
@@ -1504,6 +1511,31 @@ private fun MainAppContent(
                     resumeProgressFraction = null,
                     manualSelection = true,
                     startFromBeginning = false,
+                )
+            }
+
+        val onPlayRandomEpisode: (String, String, String, String, String, String?, String?, String?, Int?, Int?, String?, String?, String?) -> Unit =
+            { type, videoId, parentMetaId, parentMetaType, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail, pauseDescription ->
+                launchPlaybackWithDownloadPreference(
+                    type = type,
+                    videoId = videoId,
+                    parentMetaId = parentMetaId,
+                    parentMetaType = parentMetaType,
+                    title = title,
+                    logo = logo,
+                    poster = poster,
+                    background = background,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    episodeTitle = episodeTitle,
+                    episodeThumbnail = episodeThumbnail,
+                    pauseDescription = pauseDescription,
+                    resumePositionMs = null,
+                    resumeProgressFraction = null,
+                    manualSelection = false,
+                    startFromBeginning = true,
+                    disableProgressTracking = true,
+                    autoPlayMode = PlayerAutoPlayMode.RandomEpisode,
                 )
             }
 
@@ -1911,6 +1943,7 @@ private fun MainAppContent(
                         onBack = onBackFromDetail,
                         onPlay = onPlay,
                         onPlayManually = onPlayManually,
+                        onPlayRandomEpisode = onPlayRandomEpisode,
                         onPlayTrailer = { trailerLaunch ->
                             if (playerSettingsUiState.externalPlayerEnabled) {
                                 coroutineScope.launch { openExternalPlayback(trailerLaunch) }
@@ -2220,6 +2253,8 @@ private fun MainAppContent(
                             torrentTrackers = stream.p2pTrackers,
                             initialPositionMs = resolvedResumePositionMs ?: 0L,
                             initialProgressFraction = resolvedResumeProgressFraction,
+                            disableProgressTracking = launch.disableProgressTracking,
+                            autoPlayMode = launch.autoPlayMode,
                         )
 
                         val launchId = PlayerLaunchStore.put(playerLaunch)
@@ -2337,6 +2372,8 @@ private fun MainAppContent(
                                     watchProgressSource = launch.watchProgressSource,
                                     initialPositionMs = launch.resumePositionMs ?: 0L,
                                     initialProgressFraction = launch.resumeProgressFraction,
+                                    disableProgressTracking = launch.disableProgressTracking,
+                                    autoPlayMode = launch.autoPlayMode,
                                 )
                             if (playerSettings.externalPlayerEnabled) {
                                 openExternalPlayback(playerLaunch)
@@ -2475,6 +2512,8 @@ private fun MainAppContent(
                                 watchProgressSource = launch.watchProgressSource,
                                 initialPositionMs = launch.resumePositionMs ?: 0L,
                                 initialProgressFraction = launch.resumeProgressFraction,
+                                disableProgressTracking = launch.disableProgressTracking,
+                                autoPlayMode = launch.autoPlayMode,
                             )
                         if (playerSettings.externalPlayerEnabled) {
                             openExternalPlayback(playerLaunch)
@@ -2603,6 +2642,8 @@ private fun MainAppContent(
                             watchProgressSource = launch.watchProgressSource,
                             initialPositionMs = resolvedResumePositionMs ?: 0L,
                             initialProgressFraction = resolvedResumeProgressFraction,
+                            disableProgressTracking = launch.disableProgressTracking,
+                            autoPlayMode = launch.autoPlayMode,
                         )
 
                         if (!forceInternal && (forceExternal || playerSettings.externalPlayerEnabled)) {
@@ -2773,6 +2814,7 @@ private fun MainAppContent(
                         initialPositionMs = launch.initialPositionMs,
                         initialProgressFraction = launch.initialProgressFraction,
                         disableProgressTracking = launch.disableProgressTracking,
+                        autoPlayMode = launch.autoPlayMode,
                         onBack = {
                             ResumePromptRepository.markPlayerExitedNormally()
                             PlayerLaunchStore.remove(route.launchId)

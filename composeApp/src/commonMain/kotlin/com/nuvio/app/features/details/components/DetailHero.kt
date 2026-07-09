@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CheckCircleOutline
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -109,6 +110,7 @@ fun DetailHero(
     actionsFocused: Boolean = false,
     onPrimaryPlayClick: () -> Unit = {},
     onPrimaryPlayLongClick: (() -> Unit)? = null,
+    onRandomEpisodeClick: (() -> Unit)? = null,
     onSaveClick: () -> Unit = {},
     onSaveLongClick: (() -> Unit)? = null,
     onWatchedClick: () -> Unit = {},
@@ -320,6 +322,7 @@ fun DetailHero(
                         actionsFocused = actionsFocused,
                         onPrimaryPlayClick = onPrimaryPlayClick,
                         onPrimaryPlayLongClick = onPrimaryPlayLongClick,
+                        onRandomEpisodeClick = onRandomEpisodeClick,
                         onSaveClick = onSaveClick,
                         onSaveLongClick = onSaveLongClick,
                         onWatchedClick = onWatchedClick,
@@ -410,6 +413,7 @@ private fun DetailDesktopHeroOverlay(
     actionsFocused: Boolean,
     onPrimaryPlayClick: () -> Unit,
     onPrimaryPlayLongClick: (() -> Unit)?,
+    onRandomEpisodeClick: (() -> Unit)?,
     onSaveClick: () -> Unit,
     onSaveLongClick: (() -> Unit)?,
     onWatchedClick: () -> Unit,
@@ -500,7 +504,14 @@ private fun DetailDesktopHeroOverlay(
                         .padding(top = 328.dp)
                         .width(headingWidth),
                     playLabel = playButtonLabel,
-                    secondaryActions = listOf(
+                    secondaryActions = listOfNotNull(
+                        onRandomEpisodeClick?.let { playRandom ->
+                            DetailSecondaryAction(
+                                label = stringResource(Res.string.action_random_episode),
+                                icon = Icons.Default.PlayArrow,
+                                onClick = playRandom,
+                            )
+                        },
                         DetailSecondaryAction(
                             label = if (isWatched) {
                                 stringResource(Res.string.hero_mark_unwatched)
@@ -832,6 +843,9 @@ private fun DetailHeroMetadataRow(
         languageBadge?.let { add(it) }
         countryBadge?.let { add(it) }
     }
+        // Drop any blank entry so the bullet separators (drawn between items) never end up
+        // orphaned next to an empty value.
+        .filter { it.isNotBlank() }
     if (items.isEmpty()) return
 
     Row(

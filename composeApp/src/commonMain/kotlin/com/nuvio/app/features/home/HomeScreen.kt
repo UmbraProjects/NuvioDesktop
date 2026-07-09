@@ -347,20 +347,45 @@ fun HomeScreen(
     }
 
     // Base hero items from the mode — no genre/description/releaseInfo for library/search items yet.
-    val baseHeroItems: List<MetaPreview> = remember(displayMode, contentMode, searchQuery, homeUiState.heroItems, effectiveSections, tmdbImageModeOn) {
+    val baseHeroItems: List<MetaPreview> = remember(
+        displayMode,
+        contentMode,
+        searchQuery,
+        homeUiState.heroItems,
+        effectiveSections,
+        tmdbImageModeOn,
+        homeSettingsUiState.adaptiveHeroEnabled,
+        homeSettingsUiState.tvModeEnabled,
+        homeSettingsUiState.heroAmbientBackgroundEnabled,
+    ) {
         // In non-Addon hero-image modes, suppress the catalog's art/metadata on Search/Library
         // hero items so TMDB/TVDB enrichment doesn't visibly replace it ~1s later. Hero-only:
         // baseHeroItems is a separate list from the results grid (which reads effectiveSections).
         fun List<MetaPreview>.suppressingCatalogHero() =
             if (tmdbImageModeOn) map(MetaPreview::asPendingHeroPreview) else this
+        // Seed the hero from the visible rows (what you're currently browsing), used by Search,
+        // Library, and — as a fallback — Normal mode's content-following desktop backdrop modes.
+        fun currentlyViewingHeroSeed() =
+            effectiveSections.take(2).flatMap { it.items.take(8) }.distinctBy { "${it.type}:${it.id}" }
+                .suppressingCatalogHero()
         when (displayMode) {
-            is HomeContentMode.Normal -> homeUiState.heroItems
+            is HomeContentMode.Normal -> homeUiState.heroItems.ifEmpty {
+                // Adaptive Hero, TV Mode, and the ambient backdrop follow the item you're browsing,
+                // so they must keep working even when no catalog is opted into the hero carousel
+                // (hero catalogs = 0). Seed from the visible rows so the backdrop still has content
+                // and can adapt to the focused item. The plain fixed hero is left intentionally
+                // empty in that case — with no hero catalogs selected there's nothing to rotate.
+                val desktopBackdropModeActive = isDesktop && (
+                    homeSettingsUiState.adaptiveHeroEnabled ||
+                        homeSettingsUiState.tvModeEnabled ||
+                        homeSettingsUiState.heroAmbientBackgroundEnabled
+                    )
+                if (desktopBackdropModeActive) currentlyViewingHeroSeed() else emptyList()
+            }
             is HomeContentMode.Search ->
                 effectiveSections.flatMap { it.items }.distinctBy { "${it.type}:${it.id}" }.take(8)
                     .suppressingCatalogHero()
-            else ->
-                effectiveSections.take(2).flatMap { it.items.take(8) }.distinctBy { "${it.type}:${it.id}" }
-                    .suppressingCatalogHero()
+            else -> currentlyViewingHeroSeed()
         }
     }
 

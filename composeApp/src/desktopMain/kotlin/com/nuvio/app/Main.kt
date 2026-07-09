@@ -49,9 +49,11 @@ import java.awt.KeyEventDispatcher
 import java.awt.KeyboardFocusManager
 import com.nuvio.app.features.player.LocalFileDrop
 import java.awt.Toolkit
+import java.awt.Frame
 import java.awt.event.AWTEventListener
 import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
+import java.awt.event.WindowStateListener
 import javax.swing.JComponent
 
 /** Equivalent to [KeyEvent.VK_BROWSER_BACK] (0xA6); referenced by code to avoid relying on JDK version-specific constants. */
@@ -188,9 +190,24 @@ fun main() {
                         DesktopNavigationGestureBridge.requestBack()
                     }
                 }
+                // Diagnostic: minimize/restore fires on the AWT thread regardless of Compose's
+                // render state, so these timestamps can be lined up against the BingeAdvance logs to
+                // confirm whether binge auto-advance stalls specifically while the window is iconified
+                // (a paused frame clock stops recomposition, which the advance path currently rides on).
+                val windowStateListener = WindowStateListener { event ->
+                    val wasIconified = event.oldState and Frame.ICONIFIED != 0
+                    val isIconified = event.newState and Frame.ICONIFIED != 0
+                    if (wasIconified != isIconified) {
+                        com.nuvio.app.features.player.BingeAdvanceLog.i {
+                            if (isIconified) "window minimized" else "window restored"
+                        }
+                    }
+                }
+                window.addWindowStateListener(windowStateListener)
                 KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(backNavigationDispatcher)
                 Toolkit.getDefaultToolkit().addAWTEventListener(mouseBackButtonListener, AWTEvent.MOUSE_EVENT_MASK)
                 onDispose {
+                    window.removeWindowStateListener(windowStateListener)
                     KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(backNavigationDispatcher)
                     Toolkit.getDefaultToolkit().removeAWTEventListener(mouseBackButtonListener)
                     uninstallFullscreenShortcuts()

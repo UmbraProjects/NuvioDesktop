@@ -5,7 +5,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import co.touchlab.kermit.Logger
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.discord.DiscordPresenceSettingsRepository
 import com.nuvio.app.features.discord.DiscordRichPresenceActivity
 import com.nuvio.app.features.discord.DiscordRichPresenceController
@@ -26,6 +28,7 @@ import com.nuvio.app.isDesktop
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 
@@ -499,10 +502,11 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         }
         val curSeason = activeSeasonNumber ?: return@LaunchedEffect
         val curEpisode = activeEpisodeNumber ?: return@LaunchedEffect
-        val nextVideo = PlayerNextEpisodeRules.resolveNextEpisode(
+        val nextVideo = resolveAutoPlayEpisode(
             videos = playerMetaVideos,
             currentSeason = curSeason,
             currentEpisode = curEpisode,
+            mode = autoPlayMode,
         )
         val nextSeason = nextVideo?.season
         val nextEpisode = nextVideo?.episode
@@ -546,11 +550,16 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         )
         if (shouldShow && !showNextEpisodeCard) {
             showNextEpisodeCard = true
-            if (
-                playerSettingsUiState.streamAutoPlayNextEpisodeEnabled &&
+            val willTrigger = playerSettingsUiState.streamAutoPlayNextEpisodeEnabled &&
                 nextEpisodeInfo?.hasAired == true &&
                 !nextEpisodeAdvanceInProgress
-            ) {
+            BingeAdvanceLog.i {
+                "threshold reached pos=${playbackSnapshot.positionMs} dur=${playbackSnapshot.durationMs} " +
+                    "autoPlayEnabled=${playerSettingsUiState.streamAutoPlayNextEpisodeEnabled} " +
+                    "hasAired=${nextEpisodeInfo?.hasAired} advanceInProgress=$nextEpisodeAdvanceInProgress " +
+                    "-> triggering=$willTrigger"
+            }
+            if (willTrigger) {
                 nextEpisodeAdvanceInProgress = true
                 playNextEpisode()
             }
@@ -566,11 +575,15 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             // end-of-file — which lingers while the next stream loads — from advancing twice and
             // skipping an episode. This effect also re-runs when nextEpisodeInfo changes to the
             // following episode, which is exactly the path that produced the skip.
-            if (
-                nextEpisodeInfo?.hasAired == true &&
+            val willTrigger = nextEpisodeInfo?.hasAired == true &&
                 nextEpisodeAutoPlayJob?.isActive != true &&
                 !nextEpisodeAdvanceInProgress
-            ) {
+            BingeAdvanceLog.i {
+                "end-of-file fallback hasAired=${nextEpisodeInfo?.hasAired} " +
+                    "jobActive=${nextEpisodeAutoPlayJob?.isActive} advanceInProgress=$nextEpisodeAdvanceInProgress " +
+                    "-> triggering=$willTrigger"
+            }
+            if (willTrigger) {
                 nextEpisodeAdvanceInProgress = true
                 playNextEpisode()
             }
@@ -584,6 +597,9 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         playbackSnapshot.positionMs >= NEXT_EPISODE_ADVANCE_RESET_POSITION_MS,
     ) {
         if (!playbackSnapshot.isEnded && playbackSnapshot.positionMs >= NEXT_EPISODE_ADVANCE_RESET_POSITION_MS) {
+            if (nextEpisodeAdvanceInProgress) {
+                BingeAdvanceLog.i { "advance latch released (next episode playing) pos=${playbackSnapshot.positionMs}" }
+            }
             nextEpisodeAdvanceInProgress = false
         }
     }
@@ -597,11 +613,49 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
     LaunchedEffect(nextEpisodeAdvanceInProgress) {
         if (!nextEpisodeAdvanceInProgress) return@LaunchedEffect
         delay(NEXT_EPISODE_ADVANCE_LATCH_SAFETY_TIMEOUT_MS)
+        BingeAdvanceLog.i { "advance latch force-released after safety timeout (advance likely bailed out)" }
         nextEpisodeAdvanceInProgress = false
     }
 }
 
 private const val NEXT_EPISODE_ADVANCE_LATCH_SAFETY_TIMEOUT_MS = 150_000L
+
+// Diagnostic logging for the next-episode / binge auto-advance path. Reports of it silently not
+// firing (notably while the window is minimized, which pauses Compose recomposition and can stall
+// these snapshot-keyed effects) are hard to reproduce, so this traces every link in the chain —
+// threshold detection, the end-of-file fallback, the advance latch, and the actual advance call —
+// to pinpoint exactly where a stall happens the next time it's observed. Purely observational.
+internal val BingeAdvanceLog = Logger.withTag("BingeAdvance")
+
+private fun resolveAutoPlayEpisode(
+    videos: List<MetaVideo>,
+    currentSeason: Int?,
+    currentEpisode: Int?,
+    mode: PlayerAutoPlayMode,
+): MetaVideo? {
+    if (mode != PlayerAutoPlayMode.RandomEpisode) {
+        return PlayerNextEpisodeRules.resolveNextEpisode(
+            videos = videos,
+            currentSeason = currentSeason,
+            currentEpisode = currentEpisode,
+        )
+    }
+
+    val airedEpisodes = videos
+        .filter { video ->
+            video.episode?.let { it > 0 } == true &&
+                PlayerNextEpisodeRules.hasEpisodeAired(video.released)
+        }
+    val mainSeasonEpisodes = airedEpisodes.filter { video ->
+        video.season?.let { it > 0 } == true
+    }
+    val randomPool = mainSeasonEpisodes.ifEmpty { airedEpisodes }
+    val candidates = randomPool.filterNot { video ->
+        video.season == currentSeason && video.episode == currentEpisode
+    }.ifEmpty { randomPool }
+
+    return candidates.randomOrNull(Random.Default)
+}
 
 internal fun PlayerScreenRuntime.removeFailedStreamFromCache() {
     val currentVideoId = activeVideoId ?: return

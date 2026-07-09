@@ -57,6 +57,7 @@ internal class PlayerScreenRuntime(
     val initialPositionMs: Long get() = args.initialPositionMs
     val initialProgressFraction: Float? get() = args.initialProgressFraction
     val disableProgressTracking: Boolean get() = args.disableProgressTracking
+    val autoPlayMode: PlayerAutoPlayMode get() = args.autoPlayMode
     val isSeries: Boolean get() = parentMetaType == "series"
 
     lateinit var scope: CoroutineScope

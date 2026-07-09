@@ -206,6 +206,14 @@ object MdbListMetadataService {
         }.onFailure { error ->
             log.w { "Failed to load MDBList ratings cache: ${error.message}" }
         }
+        // Drop entries from superseded key schemes (older CACHE_VERSIONs never matched a lookup, so
+        // they only ever accumulated) and anything already past its TTL. This keeps the on-disk blob
+        // from growing without bound — it's rewritten in full on every fetch, so an oversized file is
+        // both slow and a wider window for a mid-write crash to corrupt the whole cache. The slimmed
+        // map is written back by the next persistCache (on the next cache miss).
+        val now = LibraryClock.nowEpochMs()
+        val currentPrefix = "v$CACHE_VERSION:"
+        loaded.entries.retainAll { (key, entry) -> key.startsWith(currentPrefix) && entry.expiresAtMs > now }
         cache = loaded
         return loaded
     }

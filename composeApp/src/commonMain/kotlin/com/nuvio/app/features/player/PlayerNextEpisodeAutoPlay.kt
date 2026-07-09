@@ -92,12 +92,21 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     }
 
     return launch {
+        // forceRefresh is essential here. Without it, loadEpisodeStreams dedups against the last
+        // request key + current state: if this episode was already loaded into a terminal EMPTY
+        // state earlier (e.g. a transient no-streams result from opening it in the episodes panel,
+        // or a prior binge attempt), the guard skips the fetch entirely and the collector below
+        // immediately sees "no streams, not loading" → falls back to manual selection and binge
+        // silently stalls. Forcing a fresh fetch guarantees the search actually runs. (Diagnosed
+        // from BingeAdvance logs: "autoplay search finished ... selected=false" with no stream
+        // fetch logged at all.)
         PlayerStreamsRepository.loadEpisodeStreams(
             type = type,
             videoId = nextVideo.id,
             parentMetaId = parentMetaId,
             season = nextVideo.season,
             episode = nextVideo.episode,
+            forceRefresh = true,
         )
 
         val installedAddonNames = AddonRepository.uiState.value.addons
@@ -271,6 +280,10 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
 
         onSearchingChanged(false)
         val selected = selectedStream
+        BingeAdvanceLog.i {
+            "autoplay search finished for S${nextVideo.season}E${nextVideo.episode} " +
+                "selected=${selected != null} source=${selected?.addonName ?: "<none, manual selection>"}"
+        }
         if (selected != null) {
             onSourceNameChanged(selected.addonName)
             if (skipSourceCountdown) {

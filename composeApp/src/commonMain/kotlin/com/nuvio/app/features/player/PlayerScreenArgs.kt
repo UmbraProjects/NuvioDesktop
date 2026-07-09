@@ -36,8 +36,8 @@ internal data class PlayerScreenArgs(
     val torrentTrackers: List<String>,
     val initialPositionMs: Long,
     val initialProgressFraction: Float?,
-    // When true, this playback is ephemeral (e.g. a trailer): no watch-progress
-    // persistence, no Trakt scrobbling, no next-episode autoplay. Prevents a trailer
-    // played through the full player from polluting the real title's continue-watching.
+    // When true, this playback is ephemeral (e.g. a trailer or random rewatch):
+    // no watch-progress persistence and no Trakt/Simkl scrobbling.
     val disableProgressTracking: Boolean = false,
+    val autoPlayMode: PlayerAutoPlayMode = PlayerAutoPlayMode.NextEpisode,
 )

@@ -61,6 +61,8 @@ import com.nuvio.app.features.player.AudioLanguageOption
 import com.nuvio.app.features.player.AvailableLanguageOptions
 import com.nuvio.app.features.player.DesktopAnimeMode
 import com.nuvio.app.features.player.DesktopBufferPreset
+import com.nuvio.app.features.player.DesktopCustomShaderCatalog
+import com.nuvio.app.features.player.DesktopCustomShaderOption
 import com.nuvio.app.features.player.DesktopRendererApi
 import com.nuvio.app.features.player.DesktopColorProfile
 import com.nuvio.app.features.player.DesktopHdrMode
@@ -245,6 +247,45 @@ private data class SubtitleColorOption(
     val label: String,
 )
 
+private sealed interface DesktopAnimeEnhancementChoice {
+    val label: String
+    val description: String
+
+    data class BuiltIn(val mode: DesktopAnimeMode) : DesktopAnimeEnhancementChoice {
+        override val label: String = mode.label
+        override val description: String = mode.description
+    }
+
+    data class Custom(val shader: DesktopCustomShaderOption) : DesktopAnimeEnhancementChoice {
+        override val label: String = shader.fileName
+        override val description: String = "Custom shader: ${shader.path}"
+    }
+}
+
+private val desktopAnimeBuiltInModes: List<DesktopAnimeMode>
+    get() = DesktopAnimeMode.entries.filter { it != DesktopAnimeMode.CustomShader }
+
+private fun desktopAnimeEnhancementChoices(
+    customShaders: List<DesktopCustomShaderOption>,
+): List<DesktopAnimeEnhancementChoice> =
+    desktopAnimeBuiltInModes.map { DesktopAnimeEnhancementChoice.BuiltIn(it) } +
+        customShaders.map { DesktopAnimeEnhancementChoice.Custom(it) }
+
+private fun selectedDesktopAnimeEnhancementChoice(
+    mode: DesktopAnimeMode,
+    selectedCustomShaderPath: String,
+    choices: List<DesktopAnimeEnhancementChoice>,
+): DesktopAnimeEnhancementChoice {
+    if (mode == DesktopAnimeMode.CustomShader) {
+        choices.filterIsInstance<DesktopAnimeEnhancementChoice.Custom>()
+            .firstOrNull { it.shader.path == selectedCustomShaderPath }
+            ?.let { return it }
+    }
+    return choices.filterIsInstance<DesktopAnimeEnhancementChoice.BuiltIn>()
+        .firstOrNull { it.mode == mode }
+        ?: DesktopAnimeEnhancementChoice.BuiltIn(DesktopAnimeMode.Off)
+}
+
 @Composable
 private fun subtitleTextColorOptions(): List<SubtitleColorOption> =
     listOf(
@@ -420,7 +461,6 @@ private fun PlaybackSettingsSection(
     var showDesktopColorProfileDialog by remember { mutableStateOf(false) }
     var showDesktopBufferPresetDialog by remember { mutableStateOf(false) }
     var showDesktopRendererApiDialog by remember { mutableStateOf(false) }
-    var showDesktopAnimeModeDialog by remember { mutableStateOf(false) }
     var showAutoPlayModeDialog by remember { mutableStateOf(false) }
     var showAutoPlaySourceDialog by remember { mutableStateOf(false) }
     var showAutoPlayAddonSelectionDialog by remember { mutableStateOf(false) }
@@ -597,15 +637,36 @@ private fun PlaybackSettingsSection(
                         onMoreOptionsClick = { showDesktopBufferPresetDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
+                    var showCustomShaderPathsDialog by remember { mutableStateOf(false) }
+                    val shaderPathsNotSet = stringResource(Res.string.settings_playback_not_set)
+                    val customShaderOptions = DesktopCustomShaderCatalog.availableShaders(
+                        autoPlayPlayerSettings.desktopCustomShaderPaths,
+                    )
+                    val animeEnhancementChoices = desktopAnimeEnhancementChoices(customShaderOptions)
+                    val selectedAnimeEnhancementChoice = selectedDesktopAnimeEnhancementChoice(
+                        mode = autoPlayPlayerSettings.desktopAnimeMode,
+                        selectedCustomShaderPath = autoPlayPlayerSettings.desktopCustomShaderSelectedPath,
+                        choices = animeEnhancementChoices,
+                    )
                     SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_desktop_anime_mode),
-                        description = autoPlayPlayerSettings.desktopAnimeMode.description,
-                        options = DesktopAnimeMode.entries.map { SettingsChoiceOption(it, it.label) },
-                        selectedValue = autoPlayPlayerSettings.desktopAnimeMode,
+                        description = selectedAnimeEnhancementChoice.description,
+                        options = animeEnhancementChoices.map { choice ->
+                            SettingsChoiceOption(choice, choice.label)
+                        },
+                        selectedValue = selectedAnimeEnhancementChoice,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeEnhancements),
-                        onSelected = PlayerSettingsRepository::setDesktopAnimeMode,
-                        onMoreOptionsClick = { showDesktopAnimeModeDialog = true },
+                        onSelected = { choice ->
+                            when (choice) {
+                                is DesktopAnimeEnhancementChoice.BuiltIn ->
+                                    PlayerSettingsRepository.setDesktopAnimeMode(choice.mode)
+                                is DesktopAnimeEnhancementChoice.Custom -> {
+                                    PlayerSettingsRepository.setDesktopCustomShaderSelectedPath(choice.shader.path)
+                                    PlayerSettingsRepository.setDesktopAnimeMode(DesktopAnimeMode.CustomShader)
+                                }
+                            }
+                        },
                     )
                     if (autoPlayPlayerSettings.desktopAnimeMode != DesktopAnimeMode.Off) {
                         SettingsGroupDivider(isTablet = isTablet)
@@ -625,6 +686,28 @@ private fun PlaybackSettingsSection(
                             isTablet = isTablet,
                             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvp),
                             onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_playback_desktop_custom_shader_paths),
+                        description = autoPlayPlayerSettings.desktopCustomShaderPaths
+                            .lineSequence()
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() && !it.startsWith("#") }
+                            .joinToString("  |  ")
+                            .ifBlank { shaderPathsNotSet },
+                        isTablet = isTablet,
+                        onClick = { showCustomShaderPathsDialog = true },
+                    )
+                    if (showCustomShaderPathsDialog) {
+                        CustomShaderPathsDialog(
+                            initialValue = autoPlayPlayerSettings.desktopCustomShaderPaths,
+                            onSave = {
+                                PlayerSettingsRepository.setDesktopCustomShaderPaths(it)
+                                showCustomShaderPathsDialog = false
+                            },
+                            onDismiss = { showCustomShaderPathsDialog = false },
                         )
                     }
                     SettingsGroupDivider(isTablet = isTablet)
@@ -1637,21 +1720,6 @@ private fun PlaybackSettingsSection(
                 showDesktopRendererApiDialog = false
             },
             onDismiss = { showDesktopRendererApiDialog = false },
-        )
-    }
-
-    if (showDesktopAnimeModeDialog) {
-        IosEnumSelectionDialog(
-            title = stringResource(Res.string.settings_playback_desktop_anime_mode_dialog),
-            options = DesktopAnimeMode.entries,
-            selected = autoPlayPlayerSettings.desktopAnimeMode,
-            label = { it.label },
-            description = { it.description },
-            onSelect = {
-                PlayerSettingsRepository.setDesktopAnimeMode(it)
-                showDesktopAnimeModeDialog = false
-            },
-            onDismiss = { showDesktopAnimeModeDialog = false },
         )
     }
 
@@ -3015,6 +3083,86 @@ private fun CustomMpvOptionsDialog(
                     horizontalArrangement = Arrangement.End,
                 ) {
                     TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
+                    TextButton(onClick = { onSave(value.trim()) }) { Text(stringResource(Res.string.action_save)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun CustomShaderPathsDialog(
+    initialValue: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var value by remember { mutableStateOf(initialValue) }
+
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.settings_playback_desktop_custom_shader_paths),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(Res.string.settings_playback_desktop_custom_shader_paths_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                ) {
+                    BasicTextField(
+                        value = value,
+                        onValueChange = { value = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 136.dp)
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        singleLine = false,
+                        decorationBox = { inner ->
+                            if (value.isEmpty()) {
+                                Text(
+                                    text = stringResource(Res.string.settings_playback_desktop_custom_shader_paths_hint),
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                )
+                            }
+                            inner()
+                        },
+                    )
+                }
+                Text(
+                    text = stringResource(Res.string.settings_playback_desktop_custom_shader_paths_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
+                    TextButton(onClick = { value = "" }) { Text(stringResource(Res.string.action_clear)) }
                     TextButton(onClick = { onSave(value.trim()) }) { Text(stringResource(Res.string.action_save)) }
                 }
             }

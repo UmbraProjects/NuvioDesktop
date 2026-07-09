@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.nio.file.StandardCopyOption
 import java.util.Comparator
 import java.util.Locale
 import java.util.Properties
@@ -150,8 +151,29 @@ internal object DesktopStorage {
 
         private fun persist() {
             Files.createDirectories(file.parent)
-            Files.newOutputStream(file).use { output ->
-                properties.store(output, "Nuvio desktop preferences")
+            // Write to a sibling temp file and atomically swap it in, rather than truncating the
+            // real file and writing in place. The old in-place write left a window where a crash
+            // (the app has intermittent silent CTDs) or kill mid-write would leave a half-written,
+            // unparseable file — on next launch that store would silently reset to empty, which for
+            // the large MDBList ratings/cast cache meant losing the whole cache and refetching
+            // everything. With the swap, an interrupted write only ever leaves a stale .tmp; the
+            // real file stays intact and complete.
+            val tmp = file.resolveSibling("${file.fileName}.tmp")
+            runCatching {
+                Files.newOutputStream(tmp).use { output ->
+                    properties.store(output, "Nuvio desktop preferences")
+                }
+                runCatching {
+                    Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE)
+                }.recoverCatching {
+                    // Rare: some filesystems reject ATOMIC_MOVE onto an existing target. A plain
+                    // replace still swaps in a fully-written temp file, so the destination is never
+                    // left half-written the way the old truncate-in-place write could.
+                    Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING)
+                }.getOrThrow()
+            }.onFailure { error ->
+                runCatching { Files.deleteIfExists(tmp) }
+                throw error
             }
         }
     }

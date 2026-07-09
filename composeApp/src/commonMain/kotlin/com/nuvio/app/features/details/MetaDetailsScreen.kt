@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CheckCircleOutline
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
@@ -114,6 +115,7 @@ import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.toLibraryItem
 import com.nuvio.app.features.player.AnimeContentCache
 import com.nuvio.app.features.player.PlayerLaunch
+import com.nuvio.app.features.player.skip.PlayerNextEpisodeRules
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.streams.StreamAutoPlayPolicy
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
@@ -146,6 +148,7 @@ import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+import kotlin.random.Random
 
 @Composable
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalComposeUiApi::class)
@@ -155,6 +158,7 @@ fun MetaDetailsScreen(
     onBack: () -> Unit,
     onPlay: ((type: String, videoId: String, parentMetaId: String, parentMetaType: String, title: String, logo: String?, poster: String?, background: String?, seasonNumber: Int?, episodeNumber: Int?, episodeTitle: String?, episodeThumbnail: String?, pauseDescription: String?, resumePositionMs: Long?) -> Unit)? = null,
     onPlayManually: ((type: String, videoId: String, parentMetaId: String, parentMetaType: String, title: String, logo: String?, poster: String?, background: String?, seasonNumber: Int?, episodeNumber: Int?, episodeTitle: String?, episodeThumbnail: String?, pauseDescription: String?, resumePositionMs: Long?) -> Unit)? = null,
+    onPlayRandomEpisode: ((type: String, videoId: String, parentMetaId: String, parentMetaType: String, title: String, logo: String?, poster: String?, background: String?, seasonNumber: Int?, episodeNumber: Int?, episodeTitle: String?, episodeThumbnail: String?, pauseDescription: String?) -> Unit)? = null,
     onOpenMeta: ((MetaPreview) -> Unit)? = null,
     onPlayTrailer: ((PlayerLaunch) -> Unit)? = null,
     onCastClick: ((MetaPerson, String?) -> Unit)? = null,
@@ -888,6 +892,46 @@ fun MetaDetailsScreen(
                         savedProgress?.lastPositionMs,
                     )
                 }
+                val onRandomEpisodeClick: (() -> Unit)? = onPlayRandomEpisode
+                    ?.takeIf { meta.type == "series" || hasEpisodes }
+                    ?.let { playRandomEpisode ->
+                        randomClick@{
+                            val airedEpisodes = meta.sortedPlayableEpisodes()
+                                .filter { video ->
+                                    video.effectiveEpisodeNumber()?.let { it > 0 } == true &&
+                                        PlayerNextEpisodeRules.hasEpisodeAired(video.released)
+                                }
+                            val randomEpisode = airedEpisodes
+                                .filter { video -> video.effectiveSeasonNumber()?.let { it > 0 } == true }
+                                .ifEmpty { airedEpisodes }
+                                .randomOrNull(Random.Default)
+                                ?: return@randomClick
+                            val season = randomEpisode.effectiveSeasonNumber()
+                            val episode = randomEpisode.effectiveEpisodeNumber()
+                            val playbackVideoId = buildPlaybackVideoId(
+                                parentMetaId = meta.id,
+                                seasonNumber = season,
+                                episodeNumber = episode,
+                                fallbackVideoId = randomEpisode.id,
+                            )
+                            val streamVideoId = randomEpisode.streamVideoIdForPlayback(meta.id, playbackVideoId)
+                            playRandomEpisode(
+                                meta.type,
+                                streamVideoId,
+                                meta.id,
+                                meta.type,
+                                meta.name,
+                                meta.logo,
+                                meta.poster,
+                                meta.background,
+                                season,
+                                episode,
+                                randomEpisode.title,
+                                randomEpisode.thumbnail,
+                                randomEpisode.overview,
+                            )
+                        }
+                    }
                 val listState = rememberLazyListState()
 
                 val adaptiveHeroEnabled = homeSettingsUiState.adaptiveHeroEnabled && isDesktop && !metaScreenSettingsUiState.tabLayout
@@ -1549,6 +1593,7 @@ fun MetaDetailsScreen(
                                         actionsFocused = tvFocusInfo.actionsFocused,
                                         onPrimaryPlayClick = onPrimaryPlayClick,
                                         onPrimaryPlayLongClick = onPrimaryPlayLongClick,
+                                        onRandomEpisodeClick = onRandomEpisodeClick,
                                         onSaveClick = toggleSaved,
                                         onSaveLongClick = openLibraryListPicker,
                                         onWatchedClick = toggleWatched,
@@ -1679,6 +1724,7 @@ fun MetaDetailsScreen(
                                 isWatched = isWatched,
                                 onPrimaryPlayClick = onPrimaryPlayClick,
                                 onPrimaryPlayLongClick = onPrimaryPlayLongClick,
+                                onRandomEpisodeClick = onRandomEpisodeClick,
                                 onSaveClick = toggleSaved,
                                 onSaveLongClick = openLibraryListPicker,
                                 onWatchedClick = toggleWatched,
@@ -2178,6 +2224,7 @@ private fun LazyListScope.configuredMetaSectionItems(
     isWatched: Boolean,
     onPrimaryPlayClick: () -> Unit,
     onPrimaryPlayLongClick: (() -> Unit)?,
+    onRandomEpisodeClick: (() -> Unit)?,
     onSaveClick: () -> Unit,
     onSaveLongClick: (() -> Unit)?,
     onWatchedClick: () -> Unit,
@@ -2258,6 +2305,7 @@ private fun LazyListScope.configuredMetaSectionItems(
                     isWatched = isWatched,
                     onPrimaryPlayClick = onPrimaryPlayClick,
                     onPrimaryPlayLongClick = onPrimaryPlayLongClick,
+                    onRandomEpisodeClick = onRandomEpisodeClick,
                     onSaveClick = onSaveClick,
                     onSaveLongClick = onSaveLongClick,
                     onWatchedClick = onWatchedClick,
@@ -2450,6 +2498,7 @@ private fun ConfiguredMetaSections(
     isWatched: Boolean,
     onPrimaryPlayClick: () -> Unit,
     onPrimaryPlayLongClick: (() -> Unit)?,
+    onRandomEpisodeClick: (() -> Unit)?,
     onSaveClick: () -> Unit,
     onSaveLongClick: (() -> Unit)?,
     onWatchedClick: () -> Unit,
@@ -2517,7 +2566,14 @@ private fun ConfiguredMetaSections(
             MetaScreenSectionKey.ACTIONS -> {
                 DetailActionButtons(
                     playLabel = playButtonLabel,
-                    secondaryActions = listOf(
+                    secondaryActions = listOfNotNull(
+                        onRandomEpisodeClick?.let { playRandom ->
+                            DetailSecondaryAction(
+                                label = stringResource(Res.string.action_random_episode),
+                                icon = Icons.Default.PlayArrow,
+                                onClick = playRandom,
+                            )
+                        },
                         DetailSecondaryAction(
                             label = if (isWatched) {
                                 stringResource(Res.string.hero_mark_unwatched)

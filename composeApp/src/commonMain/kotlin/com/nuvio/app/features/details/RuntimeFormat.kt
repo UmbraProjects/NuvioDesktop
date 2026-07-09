@@ -15,7 +15,10 @@ private val digitsOnlyRegex = Regex("""^\s*(\d+)\s*$""")
 internal fun formatRuntimeForDisplay(rawRuntime: String?): String? {
     val normalized = rawRuntime?.trim()?.takeIf { it.isNotBlank() } ?: return null
     val totalMinutes = parseRuntimeMinutes(normalized) ?: return normalized
-    return formatRuntimeFromMinutes(totalMinutes)
+    // formatRuntimeFromMinutes returns "" for a non-positive runtime (e.g. a "0"/"0 min" value from
+    // an addon). Collapse that to null so callers treat it as "no runtime" instead of rendering an
+    // empty chip (which shows up as a stray bullet separator with nothing beside it).
+    return formatRuntimeFromMinutes(totalMinutes).takeIf { it.isNotBlank() }
 }
 
 internal fun formatRuntimeFromMinutes(totalMinutes: Int): String {

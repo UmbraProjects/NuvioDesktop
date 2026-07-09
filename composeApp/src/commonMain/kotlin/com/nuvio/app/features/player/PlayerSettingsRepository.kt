@@ -103,6 +103,8 @@ data class PlayerSettingsUiState(
     val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Off,
     val desktopAnimeModeAutoEnabled: Boolean = false,
     val desktopAnimeSvpEnabled: Boolean = false,
+    val desktopCustomShaderPaths: String = "",
+    val desktopCustomShaderSelectedPath: String = "",
     // Bitstream/passthrough of compressed audio (AC3/DTS/E-AC3/TrueHD/DTS-HD) to a receiver.
     val desktopAudioPassthroughEnabled: Boolean = false,
     // Free-form mpv options, one `key=value` per line, applied just before mpv_initialize so a
@@ -181,6 +183,8 @@ object PlayerSettingsRepository {
     private var desktopAnimeMode = DesktopAnimeMode.Off
     private var desktopAnimeModeAutoEnabled = false
     private var desktopAnimeSvpEnabled = false
+    private var desktopCustomShaderPaths = ""
+    private var desktopCustomShaderSelectedPath = ""
     private var desktopAudioPassthroughEnabled = false
     private var desktopCustomMpvOptions = ""
     private var heroTvTrailerEnabled = false
@@ -261,6 +265,8 @@ object PlayerSettingsRepository {
         desktopAnimeMode = DesktopAnimeMode.Off
         desktopAnimeModeAutoEnabled = false
         desktopAnimeSvpEnabled = false
+        desktopCustomShaderPaths = ""
+        desktopCustomShaderSelectedPath = ""
         desktopAudioPassthroughEnabled = false
         desktopCustomMpvOptions = ""
         heroTvTrailerEnabled = false
@@ -426,6 +432,16 @@ object PlayerSettingsRepository {
             desktopAnimeModeAutoEnabled = PlayerSettingsStorage.loadDesktopAnimeModeAutoEnabled() ?: false
         }
         desktopAnimeSvpEnabled = PlayerSettingsStorage.loadDesktopAnimeSvpEnabled() ?: false
+        desktopCustomShaderPaths = PlayerSettingsStorage.loadDesktopCustomShaderPaths().orEmpty()
+        desktopCustomShaderSelectedPath = PlayerSettingsStorage.loadDesktopCustomShaderSelectedPath().orEmpty()
+        val legacyCustomShadersEnabled = PlayerSettingsStorage.loadDesktopCustomShadersEnabled() ?: false
+        if (legacyCustomShadersEnabled &&
+            desktopCustomShaderPaths.isNotBlank() &&
+            desktopAnimeMode != DesktopAnimeMode.CustomShader
+        ) {
+            desktopAnimeMode = DesktopAnimeMode.CustomShader
+            PlayerSettingsStorage.saveDesktopAnimeMode(DesktopAnimeMode.CustomShader.name)
+        }
         desktopAudioPassthroughEnabled = PlayerSettingsStorage.loadDesktopAudioPassthroughEnabled() ?: false
         desktopCustomMpvOptions = PlayerSettingsStorage.loadDesktopCustomMpvOptions().orEmpty()
         heroTvTrailerEnabled = PlayerSettingsStorage.loadHeroTvTrailerEnabled() ?: false
@@ -1003,6 +1019,8 @@ object PlayerSettingsRepository {
             desktopAnimeMode = desktopAnimeMode,
             desktopAnimeModeAutoEnabled = desktopAnimeModeAutoEnabled,
             desktopAnimeSvpEnabled = desktopAnimeSvpEnabled,
+            desktopCustomShaderPaths = desktopCustomShaderPaths,
+            desktopCustomShaderSelectedPath = desktopCustomShaderSelectedPath,
             desktopAudioPassthroughEnabled = desktopAudioPassthroughEnabled,
             desktopCustomMpvOptions = desktopCustomMpvOptions,
             heroTvTrailerEnabled = heroTvTrailerEnabled,
@@ -1067,6 +1085,24 @@ object PlayerSettingsRepository {
         desktopAnimeSvpEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopAnimeSvpEnabled(enabled)
+    }
+
+    fun setDesktopCustomShaderPaths(paths: String) {
+        ensureLoaded()
+        val normalized = paths.trim()
+        if (desktopCustomShaderPaths == normalized) return
+        desktopCustomShaderPaths = normalized
+        publish()
+        PlayerSettingsStorage.saveDesktopCustomShaderPaths(normalized)
+    }
+
+    fun setDesktopCustomShaderSelectedPath(path: String) {
+        ensureLoaded()
+        val normalized = path.trim()
+        if (desktopCustomShaderSelectedPath == normalized) return
+        desktopCustomShaderSelectedPath = normalized
+        publish()
+        PlayerSettingsStorage.saveDesktopCustomShaderSelectedPath(normalized)
     }
 
     fun setDesktopAudioPassthroughEnabled(enabled: Boolean) {
