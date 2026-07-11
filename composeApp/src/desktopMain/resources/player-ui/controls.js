@@ -10,6 +10,9 @@ const isHeroTrailerSurface = (() => {
 
 const root = document.getElementById("playerRoot");
 const seek = document.getElementById("seek");
+const timeline = document.getElementById("timeline");
+const chapterMarkers = document.getElementById("chapterMarkers");
+const chapterTooltip = document.getElementById("chapterTooltip");
 const positionLabel = document.getElementById("position");
 const durationLabel = document.getElementById("duration");
 const bufferingStatus = document.getElementById("bufferingStatus");
@@ -277,6 +280,7 @@ let state = {
   showExternalPlayer: false,
   durationMs: 0,
   positionMs: 0,
+  chapters: [],
   audioTracks: [],
   subtitleTracks: [],
   sourceIsLoading: false,
@@ -570,6 +574,61 @@ const setProgress = (positionMs, durationMs) => {
   seek.style.setProperty("--buffered", `${bufferedPercent}%`);
   positionLabel.textContent = formatTime(positionMs);
   durationLabel.textContent = formatTime(durationMs);
+};
+
+let chapterMarkersSignature = "";
+const normalizedChapters = () => (Array.isArray(state.chapters) ? state.chapters : [])
+  .map(chapter => ({
+    startTime: Number(chapter?.startTime),
+    title: String(chapter?.title || "").trim(),
+  }))
+  .filter(chapter => Number.isFinite(chapter.startTime) && chapter.startTime >= 0 && chapter.title)
+  .sort((a, b) => a.startTime - b.startTime);
+
+const renderChapterMarkers = durationMs => {
+  const chapters = normalizedChapters();
+  const signature = `${Math.round(durationMs)}:${chapters.map(chapter => `${chapter.startTime}:${chapter.title}`).join("|")}`;
+  if (signature === chapterMarkersSignature) return;
+  chapterMarkersSignature = signature;
+  chapterMarkers.textContent = "";
+  if (durationMs <= 0) return;
+  chapters.forEach(chapter => {
+    if (chapter.startTime <= 0 || chapter.startTime * 1000 >= durationMs) return;
+    const marker = document.createElement("span");
+    marker.className = "chapter-marker";
+    marker.style.left = `${Math.max(0, Math.min(100, chapter.startTime * 1000 / durationMs * 100))}%`;
+    chapterMarkers.appendChild(marker);
+  });
+};
+
+const hideChapterTooltip = () => {
+  chapterTooltip.hidden = true;
+  chapterTooltip.textContent = "";
+};
+
+const showChapterTooltipAt = event => {
+  const durationMs = Math.max(0, Number(state.durationMs) || 0);
+  const chapters = normalizedChapters();
+  if (durationMs <= 0 || chapters.length === 0) return hideChapterTooltip();
+  const rect = seek.getBoundingClientRect();
+  if (rect.width <= 0) return hideChapterTooltip();
+  const progress = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  const positionSeconds = durationMs / 1000 * progress;
+  let chapter = null;
+  for (let index = 0; index < chapters.length; index += 1) {
+    const candidate = chapters[index];
+    const nextStart = chapters[index + 1]?.startTime ?? Number.POSITIVE_INFINITY;
+    if (positionSeconds >= candidate.startTime && positionSeconds < nextStart) {
+      chapter = candidate;
+      break;
+    }
+  }
+  if (!chapter) return hideChapterTooltip();
+  const timelineRect = timeline.getBoundingClientRect();
+  const left = Math.max(4, Math.min(96, (event.clientX - timelineRect.left) / timelineRect.width * 100));
+  chapterTooltip.textContent = chapter.title;
+  chapterTooltip.style.left = `${left}%`;
+  chapterTooltip.hidden = false;
 };
 
 const setText = (element, text) => {
@@ -1877,6 +1936,7 @@ const renderChrome = () => {
   videoSettingsButton.setAttribute("aria-label", state.videoSettingsLabel || "Video settings");
   seek.disabled = Boolean(state.isLocked);
   setProgress(positionMs, durationMs);
+  renderChapterMarkers(durationMs);
   if (showError) {
     skipPrompt.classList.remove("visible", "show-progress");
     skipPrompt.setAttribute("aria-hidden", "true");
@@ -2581,6 +2641,9 @@ seek.addEventListener("change", () => {
   state.positionMs = scrubPositionMs;
   render();
 });
+
+timeline.addEventListener("pointermove", showChapterTooltipAt);
+timeline.addEventListener("pointerleave", hideChapterTooltip);
 
 window.playerUpdate = update => {
   const durationMs = Math.round((Number(update.duration) || 0) * 1000);

@@ -64,6 +64,7 @@ import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
+import com.nuvio.app.core.ui.smoothVerticalWheelScroll
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.rememberMouseActivityState
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
@@ -72,6 +73,7 @@ import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.toMetaPreview
+import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.search.SearchRepository
 import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.cloud.CloudLibraryRepository
@@ -191,6 +193,7 @@ fun HomeScreen(
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
+    onLocalLibraryPosterClick: ((MetaPreview) -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
@@ -235,6 +238,17 @@ fun HomeScreen(
         }
     }
     val libraryUiState by LibraryRepository.uiState.collectAsStateWithLifecycle()
+    val posterClickHandler: ((MetaPreview) -> Unit)? = if (contentMode is HomeContentMode.Library) {
+        { preview ->
+            if (LocalLibraryRepository.itemsForContentId(preview.id).isNotEmpty()) {
+                onLocalLibraryPosterClick?.invoke(preview) ?: onPosterClick?.invoke(preview)
+            } else {
+                onPosterClick?.invoke(preview)
+            }
+        }
+    } else {
+        onPosterClick
+    }
 
     val platformContext = LocalPlatformContext.current
     val imageLoader = SingletonImageLoader.get(platformContext)
@@ -1282,7 +1296,7 @@ fun HomeScreen(
         effectiveSections,
         onContinueWatchingClick,
         onFolderClick,
-        onPosterClick,
+        posterClickHandler,
     ) {
         buildList {
             if (isShowingHomeContent && continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
@@ -1339,7 +1353,7 @@ fun HomeScreen(
                                 itemCount = entries.size,
                                 metaItems = entries,
                                 onEnter = { index ->
-                                    entries.getOrNull(index)?.let { onPosterClick?.invoke(it) }
+                                    entries.getOrNull(index)?.let { posterClickHandler?.invoke(it) }
                                 },
                                 onLoadMore = if (section.paginates) {
                                     { HomeRepository.loadMoreCatalogRow(section.key) }
@@ -1369,7 +1383,7 @@ fun HomeScreen(
                             itemCount = entries.size,
                             metaItems = entries,
                             onEnter = { index ->
-                                entries.getOrNull(index)?.let { onPosterClick?.invoke(it) }
+                                entries.getOrNull(index)?.let { posterClickHandler?.invoke(it) }
                             },
                             onRightAtEnd = null,
                         ),
@@ -1475,7 +1489,7 @@ fun HomeScreen(
         }
         HomeTvKey.Select -> {
             if (heroFocusable && tvFocus.sectionIndex == 0) {
-                effectiveHeroItems.getOrNull(tvFocus.itemIndex)?.let { onPosterClick?.invoke(it) }
+                effectiveHeroItems.getOrNull(tvFocus.itemIndex)?.let { posterClickHandler?.invoke(it) }
             } else {
                 tvRows.getOrNull(tvRowIndexForSection(tvFocus.sectionIndex))
                     ?.onEnter
@@ -1632,6 +1646,13 @@ fun HomeScreen(
             .let { enriched -> displayedFocusedItem = enriched }
     }
     val tvFocusedHeroItem = displayedFocusedItem
+    // The Basic home hero is a static rotation through the user's 1–2 chosen hero catalogs; it
+    // must NOT retarget to whatever poster is focused — that "follow the focused object" behaviour
+    // belongs to Adaptive/Adaptive Ambient and TV Mode. Search and Library always preview the
+    // focused result (their whole point), so they keep following focus regardless of hero mode.
+    val heroFollowsFocusedItem =
+        displayMode !is HomeContentMode.Normal || adaptiveHeroEnabled || tvModeEnabled
+    val heroFocusedItem = if (heroFollowsFocusedItem) tvFocusedHeroItem else null
     // Prefetch for Search and Library: warm only the first few metadata targets per row.
     // next section in full. Search/library sets are small (20–50 items) so this is cheap.
     // Home is excluded — the addon handles it in real-time.
@@ -1840,7 +1861,7 @@ fun HomeScreen(
                                 }
                                 Key.Enter, Key.NumPadEnter -> {
                                     if (heroFocusable && tvFocus.sectionIndex == 0) {
-                                        effectiveHeroItems.getOrNull(tvFocus.itemIndex)?.let { onPosterClick?.invoke(it) }
+                                        effectiveHeroItems.getOrNull(tvFocus.itemIndex)?.let { posterClickHandler?.invoke(it) }
                                     } else {
                                         tvRows.getOrNull(tvRowIndexForSection(tvFocus.sectionIndex))
                                             ?.onEnter
@@ -1942,7 +1963,7 @@ fun HomeScreen(
                 viewportHeightDp = maxHeight.value,
                 mobileBelowSectionHeightHintDp = mobileHeroBelowSectionHeightHint?.value,
                 preferDesktopLayout = true,
-                heightMultiplier = 1.25f,
+                heightMultiplier = homeSettingsUiState.adaptiveHeroHeightMultiplier,
             )
         } else {
             null
@@ -1956,6 +1977,7 @@ fun HomeScreen(
                     viewportHeight = maxHeight,
                     mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
                     sectionPadding = if (isDesktop) homeSectionPadding else null,
+                    heightOverride = adaptiveHeroLayout?.heroHeight,
                 )
 
                 effectiveHeroItems.isNotEmpty() -> HomeHeroSection(
@@ -1965,14 +1987,14 @@ fun HomeScreen(
                     mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
                     sectionPadding = if (isDesktop && !tvModeEnabled) homeSectionPadding else null,
                     listState = heroListState,
-                    focusedItem = tvFocusedHeroItem,
+                    focusedItem = heroFocusedItem,
                     metadataPrefetchItems = immersiveMetadataPrefetchItems,
                     // Fill the viewport for a full-screen trailer (TV Mode already does this);
                     // pairs with the expanded hero container in the Adaptive Hero branch.
-                    heightOverride = if (tvModeEnabled || heroTrailerFullscreenActive) {
-                        maxHeight
-                    } else {
-                        null
+                    heightOverride = when {
+                        tvModeEnabled || heroTrailerFullscreenActive -> maxHeight
+                        adaptiveHeroLayout != null -> adaptiveHeroLayout.heroHeight
+                        else -> null
                     },
                     roundedBottomCorners =
                         !heroAmbientBackgroundEnabled && !tvModeEnabled,
@@ -1990,7 +2012,7 @@ fun HomeScreen(
                     onCastClick = onCastClick,
                     onItemClick = { item ->
                         if (item.type != COLLECTION_HERO_TYPE) {
-                            onPosterClick?.invoke(item)
+                            posterClickHandler?.invoke(item)
                         }
                     },
                     onHeroTrailerSurfaceDisposed = {
@@ -2228,7 +2250,7 @@ fun HomeScreen(
                                         },
                                         isLoadingMore = section.isLoadingMore,
                                         watchedKeys = watchedUiState.watchedKeys,
-                                        onPosterClick = onPosterClick,
+                                        onPosterClick = posterClickHandler,
                                         onPosterLongClick = onPosterLongClick,
                                     )
                                 }
@@ -2263,7 +2285,7 @@ fun HomeScreen(
                                     onLoadMore = null,
                                     isLoadingMore = false,
                                     watchedKeys = watchedUiState.watchedKeys,
-                                    onPosterClick = onPosterClick,
+                                    onPosterClick = posterClickHandler,
                                     onPosterLongClick = onPosterLongClick,
                                 )
                             }
@@ -2362,7 +2384,7 @@ fun HomeScreen(
                                         },
                                         isLoadingMore = section.isLoadingMore,
                                         watchedKeys = watchedUiState.watchedKeys,
-                                        onPosterClick = onPosterClick,
+                                        onPosterClick = posterClickHandler,
                                         onPosterLongClick = onPosterLongClick,
                                         onViewAllClick = if (
                                             !section.paginates &&
@@ -2384,7 +2406,12 @@ fun HomeScreen(
             val heroLayout = adaptiveHeroLayout
             Box(modifier = Modifier.fillMaxSize()) {
                 NuvioScreen(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .smoothVerticalWheelScroll(
+                            state = currentListState,
+                            enabled = isDesktop && homeSettingsUiState.smoothScrollingEnabled,
+                        ),
                     horizontalPadding = 0.dp,
                     topPadding = 0.dp,
                     backgroundColor = if (heroAmbientBackgroundEnabled) Color.Transparent else null,
@@ -2406,7 +2433,12 @@ fun HomeScreen(
             }
         } else {
             NuvioScreen(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .smoothVerticalWheelScroll(
+                        state = currentListState,
+                        enabled = isDesktop && homeSettingsUiState.smoothScrollingEnabled,
+                    ),
                 horizontalPadding = 0.dp,
                 topPadding = when {
                     showHeroSlot -> 0.dp

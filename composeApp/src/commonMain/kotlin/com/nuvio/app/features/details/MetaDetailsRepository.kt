@@ -51,6 +51,9 @@ object MetaDetailsRepository {
     private val _uiState = MutableStateFlow(MetaDetailsUiState())
     val uiState: StateFlow<MetaDetailsUiState> = _uiState.asStateFlow()
     private var activeRequestKey: String? = null
+    // Local files are a playback preference of the catalog entry used to reach this detail page,
+    // not a global replacement for streams from search, home, or related-content pages.
+    private var activeLocalStreamsAllowed = false
     // Bounded so a long session of browsing detail pages can't grow this map without limit.
     // Confined to the Main dispatcher (see `scope`), so a plain insertion-order LinkedHashMap that
     // drops its eldest entry past the cap is safe — no synchronization needed. 80 entries is far
@@ -60,9 +63,22 @@ object MetaDetailsRepository {
             size > 80
     }
 
-    fun load(type: String, id: String) {
+    fun load(type: String, id: String, preferLocalStreams: Boolean = false) {
         log.d { "load() called — type=$type id=$id" }
         val requestKey = "$type:$id"
+        activeLocalStreamsAllowed = preferLocalStreams
+
+        // Unmatched local-library items have no addon meta; serve a synthesized one so the details
+        // page still opens and plays the local file(s). (Matched items use their real tt/tmdb meta.)
+        if (id.startsWith("local:")) {
+            val synthetic = com.nuvio.app.features.locallibrary.LocalLibraryRepository.syntheticMetaFor(id)
+            if (synthetic != null) {
+                _uiState.value = MetaDetailsUiState(meta = synthetic)
+                activeRequestKey = requestKey
+                return
+            }
+        }
+
         val currentState = _uiState.value
         val mdbListSettings = MdbListSettingsRepository.snapshot()
         val metaScreenSettingsFingerprint = buildMetaScreenSettingsFingerprint(mdbListSettings)
@@ -766,8 +782,31 @@ object MetaDetailsRepository {
     }
 
    
+    fun prefersLocalStreams(): Boolean = activeLocalStreamsAllowed
+
     fun findEmbeddedStreams(videoId: String): List<com.nuvio.app.features.streams.StreamItem> {
         val meta = _uiState.value.meta ?: return emptyList()
+        val addonStreams = findAddonEmbeddedStreams(meta, videoId)
+            .filterNot { it.streamType == "local" }
+        if (addonStreams.isNotEmpty()) return addonStreams
+        return emptyList()
+    }
+
+    /** Local files are a supplemental stream group unless the detail page explicitly prefers them. */
+    fun findLocalStreams(videoId: String): List<com.nuvio.app.features.streams.StreamItem> {
+        val meta = _uiState.value.meta ?: return emptyList()
+        val embeddedLocalStreams = findAddonEmbeddedStreams(meta, videoId)
+            .filter { it.streamType == "local" }
+        if (embeddedLocalStreams.isNotEmpty()) return embeddedLocalStreams
+        // Matched local-library items have real (addon) meta with no embedded streams; overlay the
+        // local file(s) here so the whole streams → player → scrobble pipeline can serve them.
+        return com.nuvio.app.features.locallibrary.LocalLibraryRepository.localStreamsFor(meta.id, videoId)
+    }
+
+    private fun findAddonEmbeddedStreams(
+        meta: MetaDetails,
+        videoId: String,
+    ): List<com.nuvio.app.features.streams.StreamItem> {
         val videosWithStreams = meta.videos.filter { it.streams.isNotEmpty() }
         if (videosWithStreams.isEmpty()) return emptyList()
 

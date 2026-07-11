@@ -32,6 +32,7 @@ import org.jetbrains.compose.resources.getString
 import kotlinx.coroutines.launch
 
 object StreamsRepository {
+    private const val LOCAL_LIBRARY_GROUP_ID = "local-library"
     private val log = Logger.withTag("StreamsRepo")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _uiState = MutableStateFlow(StreamsUiState())
@@ -134,6 +135,9 @@ object StreamsRepository {
         val playerSettings = PlayerSettingsRepository.uiState.value
         val debridSettings = DebridSettingsRepository.snapshot()
         val streamBadgeRules = StreamBadgeSettingsRepository.snapshot()
+        val localStreams = MetaDetailsRepository.findLocalStreams(effectiveVideoId)
+        val preferLocalStreams = MetaDetailsRepository.prefersLocalStreams()
+        val includeLocalInPicker = localStreams.isNotEmpty() && !preferLocalStreams
         val autoPlayMode = playerSettings.streamAutoPlayMode
         val isAutoPlayEnabled = !manualSelection && autoPlayMode != StreamAutoPlayMode.MANUAL &&
             !(autoPlayMode == StreamAutoPlayMode.REGEX_MATCH &&
@@ -152,7 +156,9 @@ object StreamsRepository {
         val bingeGroupDirectFlow = !manualSelection &&
             persistedBingeGroup != null &&
             autoPlayMode == StreamAutoPlayMode.MANUAL
-        val isDirectAutoPlayFlow = isAutoPlayEnabled || bingeGroupDirectFlow
+        // A local file reached from Home/Search is an additional source, not a silent override
+        // for add-on streams. Keep the picker open so the user can choose between them.
+        val isDirectAutoPlayFlow = !includeLocalInPicker && (isAutoPlayEnabled || bingeGroupDirectFlow)
 
         if (isDirectAutoPlayFlow) {
             _uiState.value = StreamsUiState(
@@ -163,23 +169,34 @@ object StreamsRepository {
         }
 
         val embeddedStreams = MetaDetailsRepository.findEmbeddedStreams(effectiveVideoId)
-        if (embeddedStreams.isNotEmpty()) {
-            log.d { "Using ${embeddedStreams.size} embedded streams for type=$type id=$effectiveVideoId" }
+        val directStreams = when {
+            preferLocalStreams && localStreams.isNotEmpty() -> localStreams
+            embeddedStreams.isNotEmpty() -> embeddedStreams
+            else -> emptyList()
+        }
+        if (directStreams.isNotEmpty()) {
+            log.d { "Using ${directStreams.size} direct streams for type=$type id=$effectiveVideoId" }
             val group = AddonStreamGroup(
-                addonName = embeddedStreams.first().addonName,
+                addonName = directStreams.first().addonName,
                 addonId = "embedded",
-                streams = embeddedStreams,
+                streams = directStreams,
                 isLoading = false,
             )
             val presentedGroup = StreamBadgePresentation.apply(
                 groups = listOf(group),
                 rules = streamBadgeRules,
             ).firstOrNull() ?: group
+            // When there's a single option (e.g. a local-library file), there's nothing to choose —
+            // play it immediately regardless of the auto-play-vs-select preference.
+            val soloStream = directStreams.singleOrNull()?.takeIf { !manualSelection }
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
                 groups = listOf(presentedGroup),
                 activeAddonIds = setOf("embedded"),
                 isAnyLoading = false,
+                autoPlayStream = soloStream,
+                isDirectAutoPlayFlow = soloStream != null,
+                showDirectAutoPlayOverlay = soloStream != null,
             )
             return
         }
@@ -196,6 +213,10 @@ object StreamsRepository {
         )
 
         if (installedAddons.isEmpty() && pluginProviderGroups.isEmpty()) {
+            if (includeLocalInPicker) {
+                _uiState.value = localOnlyStreamsState(requestToken, localStreams, streamBadgeRules)
+                return
+            }
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
                 isAnyLoading = false,
@@ -225,6 +246,10 @@ object StreamsRepository {
         log.d { "Found ${streamAddons.size} addons for stream type=$type id=$effectiveVideoId" }
 
         if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty()) {
+            if (includeLocalInPicker) {
+                _uiState.value = localOnlyStreamsState(requestToken, localStreams, streamBadgeRules)
+                return
+            }
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
                 isAnyLoading = false,
@@ -235,21 +260,37 @@ object StreamsRepository {
 
         // Initialise loading placeholders
         val installedAddonOrder = streamAddons.map { it.addonName }
-        val initialGroups = StreamAutoPlaySelector.orderAddonStreams(streamAddons.map { addon ->
+        val initialGroups = StreamAutoPlaySelector.orderAddonStreams(
+            groups = buildList {
+                if (includeLocalInPicker) {
+                    add(
+                        AddonStreamGroup(
+                            addonName = localStreams.first().addonName,
+                            addonId = LOCAL_LIBRARY_GROUP_ID,
+                            streams = localStreams,
+                            isLoading = false,
+                        ),
+                    )
+                }
+                addAll(streamAddons.map { addon ->
             AddonStreamGroup(
                 addonName = addon.addonName,
                 addonId = addon.addonId,
                 streams = emptyList(),
                 isLoading = true,
             )
-        } + pluginProviderGroups.map { providerGroup ->
+                })
+                addAll(pluginProviderGroups.map { providerGroup ->
             AddonStreamGroup(
                 addonName = providerGroup.addonName,
                 addonId = providerGroup.addonId,
                 streams = emptyList(),
                 isLoading = true,
             )
-        }, installedAddonOrder)
+                })
+            },
+            installedOrder = installedAddonOrder,
+        )
         val isInitiallyLoading = initialGroups.any { it.isLoading }
         _uiState.value = StreamsUiState(
             requestToken = requestToken,
@@ -289,7 +330,9 @@ object StreamsRepository {
             fun autoSelectOnResponse() {
                 if (!isDirectAutoPlayFlow || autoSelectTriggered) return
                 if (!timeoutElapsed && persistedBingeGroup == null) return
-                val allStreams = _uiState.value.groups.flatMap { it.streams }
+                val allStreams = _uiState.value.groups
+                    .filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID }
+                    .flatMap { it.streams }
                 if (allStreams.isEmpty()) return
                 val selected = StreamAutoPlaySelector.selectAutoPlayStream(
                     streams = allStreams,
@@ -391,7 +434,9 @@ object StreamsRepository {
                             delay(60_000L)
                             if (!autoSelectTriggered) {
                                 autoSelectTriggered = true
-                                val allStreams = _uiState.value.groups.flatMap { it.streams }
+                                val allStreams = _uiState.value.groups
+                                    .filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID }
+                                    .flatMap { it.streams }
                                 if (allStreams.isNotEmpty()) {
                                     val selected = StreamAutoPlaySelector.selectAutoPlayStream(
                                         streams = allStreams,
@@ -429,7 +474,9 @@ object StreamsRepository {
                         delay(timeoutSeconds * 1_000L)
                         timeoutElapsed = true
                         if (!autoSelectTriggered) {
-                            val allStreams = _uiState.value.groups.flatMap { it.streams }
+                            val allStreams = _uiState.value.groups
+                                .filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID }
+                                .flatMap { it.streams }
                             if (allStreams.isNotEmpty()) {
                                 val evaluation = StreamAutoPlaySelector.evaluateAutoPlayStream(
                                     streams = allStreams,
@@ -649,7 +696,9 @@ object StreamsRepository {
             // All addons finished — run final auto-select if not yet triggered
             if (isDirectAutoPlayFlow && !autoSelectTriggered) {
                 autoSelectTriggered = true
-                val allStreams = _uiState.value.groups.flatMap { it.streams }
+                val allStreams = _uiState.value.groups
+                    .filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID }
+                    .flatMap { it.streams }
                 val evaluation = StreamAutoPlaySelector.evaluateAutoPlayStream(
                     streams = allStreams,
                     mode = autoPlayMode,
@@ -742,6 +791,29 @@ object StreamsRepository {
                 )
             }
         }
+    }
+
+    private fun localOnlyStreamsState(
+        requestToken: String,
+        localStreams: List<StreamItem>,
+        badgeRules: StreamBadgeRules,
+    ): StreamsUiState {
+        val group = AddonStreamGroup(
+            addonName = localStreams.first().addonName,
+            addonId = LOCAL_LIBRARY_GROUP_ID,
+            streams = localStreams,
+            isLoading = false,
+        )
+        val presentedGroup = StreamBadgePresentation.apply(
+            groups = listOf(group),
+            rules = badgeRules,
+        ).firstOrNull() ?: group
+        return StreamsUiState(
+            requestToken = requestToken,
+            groups = listOf(presentedGroup),
+            activeAddonIds = setOf(LOCAL_LIBRARY_GROUP_ID),
+            isAnyLoading = false,
+        )
     }
 
     fun clear() {

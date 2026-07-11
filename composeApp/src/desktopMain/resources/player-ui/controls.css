@@ -1373,11 +1373,13 @@ button:disabled {
 }
 
 .scrub {
+  position: absolute;
+  inset: 0 14px;
   width: calc(100% - 28px);
   height: var(--slider-touch);
   transform: scaleY(var(--slider-scale));
   transform-origin: center;
-  margin: 0 14px;
+  margin: 0;
   appearance: none;
   background: transparent;
 }
@@ -1410,6 +1412,50 @@ button:disabled {
 .scrub:active::-webkit-slider-thumb {
   transform: scale(1.18);
   box-shadow: 0 0 0 6px rgba(255, 255, 255, .16);
+}
+
+.timeline {
+  position: relative;
+  width: 100%;
+  height: var(--slider-touch);
+}
+
+.chapter-markers {
+  position: absolute;
+  inset: 0 14px;
+  pointer-events: none;
+}
+
+.chapter-marker {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(to bottom, rgba(255,255,255,.96), rgba(191,191,191,.82));
+  box-shadow: 0 0 4px rgba(0,0,0,.6);
+  transform: translate(-50%, -50%);
+}
+
+.chapter-tooltip {
+  position: absolute;
+  z-index: 2;
+  bottom: calc(100% + 7px);
+  max-width: min(280px, 55vw);
+  padding: 6px 9px;
+  border: 1px solid rgba(220,220,220,.55);
+  border-radius: 7px;
+  background: rgba(18,18,18,.92);
+  color: rgba(255,255,255,.96);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  pointer-events: none;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 4px 16px rgba(0,0,0,.36);
 }
 
 .time-row {

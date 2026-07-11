@@ -197,6 +197,10 @@ internal data class HomeHeroLayout(
     val contentVerticalPadding: Dp,
     val bottomFadeHeight: Dp,
     val logoWidthFraction: Float,
+    // How much the hero was scaled past its natural height by the adaptive Hero-height slider
+    // (1f = natural). Drives logo size and content placement so they grow/shrink with the hero
+    // instead of staying pinned to the un-scaled base metrics.
+    val heroHeightScale: Float = 1f,
 )
 
 @Composable
@@ -255,7 +259,18 @@ fun HomeHeroSection(
             mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
             preferDesktopLayout = isDesktop,
         )
-        val layout = heightOverride?.let { baseLayout.copy(heroHeight = it) } ?: baseLayout
+        val layout = heightOverride?.let { override ->
+            // The override carries the adaptive Hero-height slider result; recover the multiplier
+            // relative to the natural base height so the logo and content placement scale with it.
+            // Only the Adaptive (non-immersive) hero should scale — TV Mode / full-screen trailer
+            // overrides blow the hero up to the whole viewport and must not drag the logo along.
+            val scale = if (adaptiveHeroMode && !immersiveMode && baseLayout.heroHeight > 0.dp) {
+                (override / baseLayout.heroHeight).coerceIn(0.5f, 2.5f)
+            } else {
+                baseLayout.heroHeightScale
+            }
+            baseLayout.copy(heroHeight = override, heroHeightScale = scale)
+        } ?: baseLayout
         val heroWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
         val heroHeightPx = with(LocalDensity.current) { layout.heroHeight.toPx() }
         val scrollOffsetPx by remember(listState, heroHeightPx) {
@@ -325,7 +340,9 @@ fun HomeHeroSection(
         val ratingsCache = remember { mutableStateMapOf<String, List<MetaExternalRating>>() }
         val discoveryCache = remember { mutableStateMapOf<String, List<HeroDiscoveryFact>>() }
         val productionCache = remember { mutableStateMapOf<String, List<HeroProductionCredit>>() }
-        val discoveryPriority = remember(heroInfoPriority) { normalizeHeroDiscoveryPriority(heroInfoPriority) }
+        val discoveryPriority = remember(heroInfoPriority) {
+            HeroDiscoveryMetadataService.normalizePriority(heroInfoPriority)
+        }
         // Keep warming all nearby metadata, but put what the user can see first and avoid
         // flooding the add-on/TMDB/image hosts with dozens of simultaneous cold requests.
         val metadataTargets = (listOf(displayCurrentItemWithCast) + metadataPrefetchItems + displayItemsWithCast)
@@ -1050,7 +1067,7 @@ private fun DesktopHomeHeroFrame(
                     val discoveryKey = "$itemKey:heroDiscoveryV${HeroDiscoveryMetadataService.CACHE_VERSION}"
                     val facts = discoveryCache[discoveryKey].orEmpty()
                     if (facts.isNotEmpty()) {
-                        HeroDiscoveryMedalStrip(
+                        HeroDiscoveryBadgeStrip(
                             facts = facts,
                             maxCount = heroInfoLines,
                             placement = heroBadgePlacement,
@@ -1065,7 +1082,10 @@ private fun DesktopHomeHeroFrame(
             }
         }
 
-        if (!adaptiveHeroMode) {
+        // Page dots belong to the Basic hero only. Adaptive/Ambient hide them; TV mode (immersive)
+        // is full-height, so a BottomStart indicator would land at the screen bottom behind the
+        // content rows — exclude it there too.
+        if (!adaptiveHeroMode && !immersiveMode) {
             HeroPageIndicatorRow(
                 itemCount = pageIndicatorCount,
                 pagerState = pagerState,
@@ -1136,7 +1156,10 @@ private fun immersiveHeroContentOffsetY(heroHeight: Dp): Dp =
 // without drifting as content height changes between items. Kept fairly high since this mode's
 // hero is short and the content otherwise leaves a lot of empty space below.
 private fun adaptiveHeroContentTopBaseline(heroHeight: Dp): Dp =
-    (heroHeight * 0.12f).coerceIn(36.dp, 96.dp)
+    // heroHeight already carries the Hero-height slider multiplier, so this baseline naturally
+    // drifts down as the hero grows — keeping the content block visually placed within the taller
+    // backdrop rather than clustered at the top. Raised cap lets that continue at large sizes.
+    (heroHeight * 0.12f).coerceIn(36.dp, 140.dp)
 
 @Composable
 private fun HeroPageIndicatorRow(
@@ -1905,19 +1928,26 @@ private fun HomeHeroRatingsRow(item: MetaPreview, ratingsCache: Map<String, List
     }
 }
 
-private fun desktopHeroLogoWidthFraction(layout: HomeHeroLayout): Float =
-    when {
+private fun desktopHeroLogoWidthFraction(layout: HomeHeroLayout): Float {
+    val base = when {
         layout.contentMaxWidth >= 640.dp -> 0.74f
         layout.contentMaxWidth >= 520.dp -> 0.74f
         else -> 0.8f
     }
+    // Widen the logo only partially with the hero-height scale — the slot height (below) carries
+    // most of the growth, and a full-rate width bump would run a wide logo off the content column.
+    val scaled = base * (1f + (layout.heroHeightScale - 1f) * 0.6f)
+    return scaled.coerceIn(0.4f, 0.95f)
+}
 
-private fun desktopHeroLogoSlotHeight(layout: HomeHeroLayout): Dp =
-    when {
+private fun desktopHeroLogoSlotHeight(layout: HomeHeroLayout): Dp {
+    val base = when {
         layout.contentMaxWidth >= 640.dp -> 156.dp
         layout.contentMaxWidth >= 520.dp -> 136.dp
         else -> 104.dp
     }
+    return (base * layout.heroHeightScale).coerceIn(88.dp, 240.dp)
+}
 
 private fun compactHeroMetaParts(item: MetaPreview): List<String> =
     buildList {
@@ -1989,6 +2019,7 @@ internal fun homeHeroLayout(
             contentVerticalPadding = 22.dp,
             bottomFadeHeight = 190.dp,
             logoWidthFraction = 0.58f,
+            heroHeightScale = heightMultiplier,
         )
         maxWidthDp >= 840f -> HomeHeroLayout(
             isTablet = true,
@@ -1999,6 +2030,7 @@ internal fun homeHeroLayout(
             contentVerticalPadding = 20.dp,
             bottomFadeHeight = 180.dp,
             logoWidthFraction = 0.56f,
+            heroHeightScale = heightMultiplier,
         )
         maxWidthDp >= 600f -> HomeHeroLayout(
             isTablet = true,
@@ -2009,6 +2041,7 @@ internal fun homeHeroLayout(
             contentVerticalPadding = 18.dp,
             bottomFadeHeight = 170.dp,
             logoWidthFraction = 0.54f,
+            heroHeightScale = heightMultiplier,
         )
         preferDesktopLayout -> HomeHeroLayout(
             isTablet = true,
@@ -2019,6 +2052,7 @@ internal fun homeHeroLayout(
             contentVerticalPadding = 18.dp,
             bottomFadeHeight = 150.dp,
             logoWidthFraction = 0.64f,
+            heroHeightScale = heightMultiplier,
         )
         else -> HomeHeroLayout(
             isTablet = false,
@@ -2033,6 +2067,7 @@ internal fun homeHeroLayout(
             contentVerticalPadding = 16.dp,
             bottomFadeHeight = 220.dp,
             logoWidthFraction = 0.62f,
+            heroHeightScale = heightMultiplier,
         )
     }
 
@@ -2201,30 +2236,8 @@ private fun HeroBadgePlacement.heroDiscoveryMedalAlignment(): Alignment =
         HeroBadgePlacement.TopRightVertical -> Alignment.TopEnd
     }
 
-private fun normalizeHeroDiscoveryPriority(priority: String): List<String> {
-    val slots = priority
-        .split(',')
-        .map(String::trim)
-        .filter(String::isNotBlank)
-        .toMutableList()
-    if ("emmy_noms" !in slots) {
-        val insertIndex = slots.indexOf("gg_noms").takeIf { it >= 0 }
-            ?.let { it + 1 }
-            ?: slots.indexOf("pic_noms").takeIf { it >= 0 }?.let { it + 1 }
-            ?: slots.size
-        slots.add(insertIndex, "emmy_noms")
-    }
-    // Migration: the single "structural" slot was split into three distinct badges.
-    val structuralIndex = slots.indexOf("structural")
-    if (structuralIndex >= 0) {
-        slots.removeAt(structuralIndex)
-        slots.addAll(structuralIndex, listOf("short_film", "mini_series", "binge_ready"))
-    }
-    return slots
-}
-
 @Composable
-private fun HeroDiscoveryMedalStrip(
+internal fun HeroDiscoveryBadgeStrip(
     facts: List<HeroDiscoveryFact>,
     maxCount: Int,
     placement: HeroBadgePlacement,

@@ -172,7 +172,7 @@ private fun DiscordRichPresenceActivity.toDiscordActivity(): JsonObject {
         return buildJsonObject {
             put("details", truncateDiscordText(titleText))
             subtitleText?.let { put("state", truncateDiscordText(it)) }
-            put("assets", discordPresenceAssets())
+            put("assets", discordPresenceAssets(titleText, imageUrl))
         }
     }
 
@@ -191,9 +191,18 @@ private fun DiscordRichPresenceActivity.toDiscordActivity(): JsonObject {
     }
 
     return buildJsonObject {
+        // Watching activities render start + end as a media progress bar in Discord clients.
+        // Newer clients also honour the per-activity name; older RPC clients retain the
+        // application name configured for this client ID and still show the title in details.
+        put("type", DISCORD_ACTIVITY_TYPE_WATCHING)
+        put("name", truncateDiscordText(titleText))
         put("details", if (isPlaying) truncateDiscordText(titleText) else truncateDiscordText("Paused: $titleText"))
-        subtitleText?.let { put("state", truncateDiscordText(it)) }
-        put("assets", discordPresenceAssets())
+        val progressText = discordProgressText(positionMs, durationMs)
+        listOfNotNull(subtitleText, progressText)
+            .joinToString(" · ")
+            .takeIf { it.isNotBlank() }
+            ?.let { put("state", truncateDiscordText(it)) }
+        put("assets", discordPresenceAssets(titleText, imageUrl))
         if (startEpochSeconds != null && endEpochSeconds != null && endEpochSeconds > startEpochSeconds) {
             put(
                 "timestamps",
@@ -206,17 +215,42 @@ private fun DiscordRichPresenceActivity.toDiscordActivity(): JsonObject {
     }
 }
 
-private fun discordPresenceAssets(): JsonObject =
+private fun discordPresenceAssets(title: String, imageUrl: String?): JsonObject =
     buildJsonObject {
-        put("large_image", DISCORD_LARGE_IMAGE_KEY)
-        put("large_text", "Nuvio")
+        val externalImage = imageUrl
+            ?.trim()
+            ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+        put("large_image", externalImage ?: DISCORD_LARGE_IMAGE_KEY)
+        put("large_text", truncateDiscordText(if (externalImage != null) title else "Nuvio"))
+        if (externalImage != null) {
+            put("small_image", DISCORD_LARGE_IMAGE_KEY)
+            put("small_text", "Nuvio")
+        }
     }
+
+private fun discordProgressText(positionMs: Long, durationMs: Long): String? {
+    if (durationMs <= 0L) return null
+    return "${formatDiscordDuration(positionMs.coerceIn(0L, durationMs))} / ${formatDiscordDuration(durationMs)}"
+}
+
+private fun formatDiscordDuration(valueMs: Long): String {
+    val totalSeconds = valueMs.coerceAtLeast(0L) / 1000L
+    val hours = totalSeconds / 3600L
+    val minutes = (totalSeconds % 3600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        "$hours:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
+    } else {
+        "$minutes:${seconds.toString().padStart(2, '0')}"
+    }
+}
 
 private fun DiscordRichPresenceActivity.toPayloadKey(): String =
     listOf(
         type.name,
         title.trim(),
         subtitle.orEmpty().trim(),
+        imageUrl.orEmpty().trim(),
         isPlaying.toString(),
         (positionMs.coerceAtLeast(0L) / 15_000L).toString(),
         durationMs.coerceAtLeast(0L).toString(),
@@ -228,6 +262,7 @@ private fun truncateDiscordText(value: String): String =
 
 private const val OPCODE_HANDSHAKE = 0
 private const val OPCODE_FRAME = 1
+private const val DISCORD_ACTIVITY_TYPE_WATCHING = 3
 private const val DISCORD_TEXT_LIMIT = 128
 private const val DISCORD_APPLICATION_ID = "1522129829363843195"
 private const val DISCORD_LARGE_IMAGE_KEY = "nuvio_logo"

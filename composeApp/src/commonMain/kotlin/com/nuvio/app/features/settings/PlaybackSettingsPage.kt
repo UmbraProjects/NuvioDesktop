@@ -802,6 +802,18 @@ private fun PlaybackSettingsSection(
                     isTablet = isTablet,
                     onClick = { showSecondarySubtitleDialog = true },
                 )
+                if (isDesktop) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_dual_subtitles),
+                        description = stringResource(Res.string.settings_playback_dual_subtitles_description),
+                        checked = autoPlayPlayerSettings.dualSubtitlesEnabled,
+                        enabled = otherSubtitleOptionsEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("dual-subtitles")),
+                        onCheckedChange = PlayerSettingsRepository::setDualSubtitlesEnabled,
+                    )
+                }
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_playback_subtitle_use_forced),

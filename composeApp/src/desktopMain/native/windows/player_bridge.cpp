@@ -1371,6 +1371,24 @@ public:
         return tracksJsonForType("sub");
     }
 
+    std::string chaptersJson() {
+        long long count = int64Property("chapter-list/count", 0);
+        std::ostringstream json;
+        json << "[";
+        bool first = true;
+        for (long long index = 0; index < count; index++) {
+            std::string prefix = "chapter-list/" + std::to_string(index);
+            double startTime = doubleProperty((prefix + "/time").c_str(), -1.0);
+            if (!std::isfinite(startTime) || startTime < 0.0) continue;
+            if (!first) json << ",";
+            first = false;
+            json << "{\"startTime\":" << startTime
+                 << ",\"title\":\"" << jsonEscape(trim(stringProperty((prefix + "/title").c_str()))) << "\"}";
+        }
+        json << "]";
+        return json.str();
+    }
+
     void selectAudioTrackId(int trackId) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
@@ -2690,6 +2708,7 @@ private:
 
     std::string tracksJsonForType(const std::string &wantedType) {
         long long count = int64Property("track-list/count", 0);
+        long long primarySubtitleId = wantedType == "sub" ? int64Property("sid", -1) : -1;
         std::ostringstream json;
         json << "[";
         int logicalIndex = 0;
@@ -2706,7 +2725,12 @@ private:
             std::string decoderDescription = trackStringAtIndex(index, "decoder-desc");
             std::string channels = trackStringAtIndex(index, "demux-channels");
             long long channelCount = int64Property((prefix + "/demux-channel-count").c_str(), 0);
-            bool selected = flagProperty((prefix + "/selected").c_str(), false);
+            // mpv marks both sid and secondary-sid tracks as selected. The app's existing
+            // selected flag represents the primary/bottom track, so compare against sid
+            // directly once dual subtitles are active.
+            bool selected = wantedType == "sub"
+                ? trackId == primarySubtitleId
+                : flagProperty((prefix + "/selected").c_str(), false);
             bool forced = flagProperty((prefix + "/forced").c_str(), false);
             std::string label = formatTrackTitle(type, logicalIndex, title, language, codec, decoderDescription, channels, (int)channelCount);
 
@@ -3145,6 +3169,12 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_subtitleTracksJson(JNIEnv *env, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
     return newJavaStringUtf8(env, player ? player->subtitleTracksJson() : "[]");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_chaptersJson(JNIEnv *env, jobject, jlong handle) {
+    auto player = playerFromHandle(handle);
+    return newJavaStringUtf8(env, player ? player->chaptersJson() : "[]");
 }
 
 extern "C" JNIEXPORT void JNICALL

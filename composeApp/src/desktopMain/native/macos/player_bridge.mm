@@ -82,6 +82,7 @@
 - (BOOL)isEnded;
 - (NSString *)audioTracksJson;
 - (NSString *)subtitleTracksJson;
+- (NSString *)chaptersJson;
 - (void)selectAudioTrackId:(int)trackId;
 - (void)selectSubtitleTrackId:(int)trackId;
 - (void)addSubtitleUrl:(NSString *)url;
@@ -1908,6 +1909,24 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     return [self tracksJsonForType:@"sub"];
 }
 
+- (NSString *)chaptersJson {
+    if (!_mpv) return @"[]";
+    NSMutableArray<NSDictionary *> *chapters = [NSMutableArray array];
+    long long count = [self int64Property:"chapter-list/count" fallback:0];
+    for (long long index = 0; index < count; index++) {
+        NSString *prefix = [NSString stringWithFormat:@"chapter-list/%lld", index];
+        NSString *timeKey = [prefix stringByAppendingString:@"/time"];
+        double startTime = [self doubleProperty:timeKey.UTF8String fallback:-1.0];
+        if (!std::isfinite(startTime) || startTime < 0.0) continue;
+        NSString *titleKey = [prefix stringByAppendingString:@"/title"];
+        NSString *title = [[self stringProperty:titleKey.UTF8String fallback:@""]
+            stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        [chapters addObject:@{ @"startTime": @(startTime), @"title": title ?: @"" }];
+    }
+    NSData *data = [NSJSONSerialization dataWithJSONObject:chapters options:0 error:nil];
+    return data ? ([[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"[]") : @"[]";
+}
+
 - (void)selectAudioTrackId:(int)trackId {
     if (!_mpv) return;
     int64_t id = trackId;
@@ -2054,6 +2073,9 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     if (!_mpv) return @"[]";
     NSMutableArray<NSDictionary *> *tracks = [NSMutableArray array];
     long long count = [self int64Property:"track-list/count" fallback:0];
+    long long primarySubtitleId = [wantedType isEqualToString:@"sub"]
+        ? [self int64Property:"sid" fallback:-1]
+        : -1;
     int logicalIndex = 0;
 
     for (long long index = 0; index < count; index++) {
@@ -2070,7 +2092,11 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
         NSString *decoderDescription = [self trackStringAtIndex:index field:@"decoder-desc"];
         NSString *channels = [self trackStringAtIndex:index field:@"demux-channels"];
         long long channelCount = [self int64Property:[[prefix stringByAppendingString:@"/demux-channel-count"] UTF8String] fallback:0];
-        BOOL selected = [self flagProperty:[[prefix stringByAppendingString:@"/selected"] UTF8String] fallback:NO];
+        // mpv reports both sid and secondary-sid tracks as selected; expose only the
+        // primary/bottom track through the existing selected flag.
+        BOOL selected = [wantedType isEqualToString:@"sub"]
+            ? trackId == primarySubtitleId
+            : [self flagProperty:[[prefix stringByAppendingString:@"/selected"] UTF8String] fallback:NO];
         BOOL forced = [self flagProperty:[[prefix stringByAppendingString:@"/forced"] UTF8String] fallback:NO];
         NSString *label = [self formatTrackTitleWithType:type
                                                    index:logicalIndex
@@ -2568,6 +2594,18 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_subtitleTracksJson
     if (handle == 0) return env->NewStringUTF("[]");
     MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
     NSString *json = [player subtitleTracksJson] ?: @"[]";
+    return env->NewStringUTF(json.UTF8String);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_chaptersJson(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle
+) {
+    if (handle == 0) return env->NewStringUTF("[]");
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    NSString *json = [player chaptersJson] ?: @"[]";
     return env->NewStringUTF(json.UTF8String);
 }
 

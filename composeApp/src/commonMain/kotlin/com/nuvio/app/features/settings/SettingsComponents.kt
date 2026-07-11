@@ -469,7 +469,7 @@ internal fun SettingsNavigationRow(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .padding(end = 12.dp)
+                .padding(end = if (isTablet) 40.dp else 12.dp)
                 .widthIn(max = if (isTablet) 560.dp else Dp.Unspecified),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -625,7 +625,7 @@ internal fun SettingsSwitchRow(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(end = 12.dp)
+                .padding(end = if (isTablet) 40.dp else 12.dp)
                 .widthIn(max = if (isTablet) 560.dp else Dp.Unspecified)
                 .alpha(if (enabled) NuvioTokens.Opacity.visible else tokens.opacity.medium),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -913,7 +913,13 @@ private fun SettingsRowText(
 ) {
     val tokens = MaterialTheme.nuvio
     Column(
-        modifier = modifier.widthIn(max = if (isTablet) 560.dp else Dp.Unspecified),
+        // Inset the text on the trailing side so long descriptions wrap with a comfortable gap
+        // before the selector. Padding (not widthIn) is used deliberately: callers wrap this in
+        // Modifier.weight(1f), whose default fill=true forces the column to its full slot width and
+        // ignores widthIn — but padding always shrinks the content.
+        modifier = modifier
+            .widthIn(max = if (isTablet) 560.dp else Dp.Unspecified)
+            .padding(end = if (isTablet) 28.dp else 0.dp),
         verticalArrangement = Arrangement.spacedBy(if (isTablet) 2.dp else 4.dp),
     ) {
         Text(
@@ -968,7 +974,7 @@ internal fun HomescreenCatalogRow(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(end = 12.dp)
+                    .padding(end = if (isTablet) 40.dp else 12.dp)
                     .then(if (isTablet) Modifier.widthIn(max = 560.dp) else Modifier),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {

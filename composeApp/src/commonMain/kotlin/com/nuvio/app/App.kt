@@ -292,7 +292,11 @@ import org.jetbrains.compose.resources.stringResource
 object TabsRoute
 
 @Serializable
-data class DetailRoute(val type: String, val id: String)
+data class DetailRoute(
+    val type: String,
+    val id: String,
+    val preferLocalStreams: Boolean = false,
+)
 
 @Serializable
 data class PersonDetailRoute(
@@ -1796,7 +1800,14 @@ private fun MainAppContent(
                                             selectedPosterActionTarget = PosterActionTarget(preview = meta)
                                         },
                                         onLibraryPosterClick = { item ->
-                                            navController.navigateIfResumed(DetailRoute(type = item.type, id = item.id))
+                                            navController.navigateIfResumed(
+                                                DetailRoute(type = item.type, id = item.id, preferLocalStreams = true),
+                                            )
+                                        },
+                                        onLocalLibraryPosterClick = { meta ->
+                                            navController.navigateIfResumed(
+                                                DetailRoute(type = meta.type, id = meta.id, preferLocalStreams = true),
+                                            )
                                         },
                                         onLibraryPosterLongClick = { item, section ->
                                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1940,6 +1951,7 @@ private fun MainAppContent(
                     MetaDetailsScreen(
                         type = route.type,
                         id = route.id,
+                        preferLocalStreams = route.preferLocalStreams,
                         onBack = onBackFromDetail,
                         onPlay = onPlay,
                         onPlayManually = onPlayManually,
@@ -3470,6 +3482,7 @@ private fun AppTabHost(
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     onLibraryPosterClick: ((LibraryItem) -> Unit)? = null,
+    onLocalLibraryPosterClick: ((MetaPreview) -> Unit)? = null,
     onLibraryPosterLongClick: ((LibraryItem, LibrarySection) -> Unit)? = null,
     onLibrarySectionViewAllClick: ((LibrarySection) -> Unit)? = null,
     onCloudFilePlay: ((CloudLibraryItem, CloudLibraryFile) -> Unit)? = null,
@@ -3551,6 +3564,7 @@ private fun AppTabHost(
                             }
                         },
                         onPosterLongClick = onPosterLongClick,
+                        onLocalLibraryPosterClick = onLocalLibraryPosterClick,
                         onContinueWatchingClick = if (!isSearch && !isLib) onContinueWatchingClick else null,
                         onContinueWatchingLongPress = if (!isSearch && !isLib) onContinueWatchingLongPress else null,
                         onFolderClick = if (!isSearch && !isLib) onFolderClick else null,

@@ -19,6 +19,7 @@ import com.nuvio.app.features.player.PlayerAudioLevel
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.PlayerEngineController
+import com.nuvio.app.features.player.PlayerChapter
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.player.PlayerResizeMode
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -733,6 +734,25 @@ internal class NativePlayerController(
         applyPendingSubtitleConfiguration(current)
     }
 
+    override fun selectSecondarySubtitleTrack(index: Int) {
+        val current = handle.takeIf { it != 0L } ?: return
+        if (index < 0) {
+            NativePlayerBridge.setMpvProperty(current, "secondary-sid", "no")
+            return
+        }
+        val trackId = resolveTrackId(index, decodeTracks { NativePlayerBridge.subtitleTracksJson(it) }) ?: return
+        NativePlayerBridge.setMpvProperty(current, "secondary-sid", trackId.toString())
+        NativePlayerBridge.setMpvProperty(current, "secondary-sub-pos", "10")
+    }
+
+    override fun getChapters(): List<PlayerChapter> {
+        val current = handle.takeIf { it != 0L } ?: return emptyList()
+        return runCatching {
+            json.decodeFromString<List<NativeMpvChapter>>(NativePlayerBridge.chaptersJson(current))
+                .map { chapter -> PlayerChapter(chapter.startTime, chapter.title) }
+        }.getOrDefault(emptyList())
+    }
+
     override fun setSubtitleUri(url: String) {
         handle.takeIf { it != 0L }?.let { current ->
             NativePlayerBridge.addSubtitleUrl(current, url)
@@ -801,6 +821,12 @@ private data class NativeMpvTrack(
     val language: String = "",
     val selected: Boolean = false,
     val forced: Boolean = false,
+)
+
+@Serializable
+private data class NativeMpvChapter(
+    val startTime: Double = -1.0,
+    val title: String = "",
 )
 
 private fun resolveTrackId(index: Int, tracks: List<NativeMpvTrack>): Int? =
@@ -1173,6 +1199,8 @@ private fun PlayerControlsState.toControlsJson(): String =
         append(',')
         appendJsonField("positionMs", positionMs)
         append(',')
+        appendJsonArrayField("chapters", chapters) { appendChapterJson(it) }
+        append(',')
         appendJsonField("sourceIsLoading", sourceIsLoading)
         append(',')
         appendJsonArrayField("sourceFilters", sourceFilters) { appendFilterItemJson(it) }
@@ -1274,6 +1302,18 @@ private fun StringBuilder.appendJsonField(name: String, value: Boolean) {
 
 private fun StringBuilder.appendJsonField(name: String, value: Long) {
     append('"').append(name).append("\":").append(value)
+}
+
+private fun StringBuilder.appendJsonField(name: String, value: Double) {
+    append('"').append(name).append("\":").append(value)
+}
+
+private fun StringBuilder.appendChapterJson(chapter: PlayerChapter) {
+    append('{')
+    appendJsonField("startTime", chapter.startTime)
+    append(',')
+    appendJsonField("title", chapter.title)
+    append('}')
 }
 
 private fun StringBuilder.appendJsonField(name: String, value: Float?) {

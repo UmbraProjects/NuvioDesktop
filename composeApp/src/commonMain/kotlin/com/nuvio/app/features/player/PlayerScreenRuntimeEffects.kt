@@ -17,6 +17,8 @@ import com.nuvio.app.features.p2p.P2pStreamRequest
 import com.nuvio.app.features.p2p.P2pStreamingEngine
 import com.nuvio.app.features.p2p.P2pStreamingState
 import com.nuvio.app.features.player.skip.NextEpisodeInfo
+import com.nuvio.app.features.player.skip.ChapterSkipDetector
+import com.nuvio.app.features.player.skip.mergeCommunityAndChapterSkipIntervals
 import com.nuvio.app.features.player.skip.PlayerNextEpisodeRules
 import com.nuvio.app.features.player.skip.SkipIntroRepository
 import com.nuvio.app.features.streams.BingeGroupCacheRepository
@@ -87,6 +89,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         accumulatedSeekState = null
         preferredAudioSelectionApplied = false
         preferredSubtitleSelectionApplied = false
+        secondarySubtitleSelectionApplied = false
         showSourcesPanel = false
         showEpisodesPanel = false
         episodeStreamsPanelState = EpisodeStreamsPanelState()
@@ -174,6 +177,17 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         playerController?.applySubtitleStyle(subtitleStyle)
     }
 
+    LaunchedEffect(
+        playerController,
+        playerSettingsUiState.dualSubtitlesEnabled,
+        playerSettingsUiState.secondaryPreferredSubtitleLanguage,
+    ) {
+        secondarySubtitleSelectionApplied = false
+        if (playerController != null && !playbackSnapshot.isLoading) {
+            refreshTracks()
+        }
+    }
+
     LaunchedEffect(activeSourceUrl, addonSubtitleFetchKey, playerSettingsUiState.addonSubtitleStartupMode) {
         val fetchKey = addonSubtitleFetchKey ?: return@LaunchedEffect
         if (playerSettingsUiState.addonSubtitleStartupMode == AddonSubtitleStartupMode.FAST_STARTUP) {
@@ -195,17 +209,24 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         playbackSnapshot.isLoading,
         preferredAudioSelectionApplied,
         preferredSubtitleSelectionApplied,
+        secondarySubtitleSelectionApplied,
     ) {
         if (playerController == null || playbackSnapshot.isLoading) {
             return@LaunchedEffect
         }
-        if (preferredAudioSelectionApplied && preferredSubtitleSelectionApplied) {
+        if (preferredAudioSelectionApplied &&
+            preferredSubtitleSelectionApplied &&
+            secondarySubtitleSelectionApplied
+        ) {
             return@LaunchedEffect
         }
 
         repeat(10) {
             refreshTracks()
-            if (preferredAudioSelectionApplied && preferredSubtitleSelectionApplied) {
+            if (preferredAudioSelectionApplied &&
+                preferredSubtitleSelectionApplied &&
+                secondarySubtitleSelectionApplied
+            ) {
                 return@LaunchedEffect
             }
             delay(300)
@@ -289,6 +310,9 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
         activeSeasonNumber,
         activeEpisodeNumber,
         activeEpisodeTitle,
+        poster,
+        activeEpisodeThumbnail,
+        background,
         playbackSnapshot.isLoading,
         playbackSnapshot.isPlaying,
         playbackSnapshot.isEnded,
@@ -312,6 +336,7 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
                 DiscordRichPresenceActivity(
                     title = "Starting stream",
                     subtitle = presenceTitle,
+                    imageUrl = discordPresenceImageUrl(),
                     type = DiscordRichPresenceActivityType.Browsing,
                 ),
             )
@@ -327,6 +352,7 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
             DiscordRichPresenceActivity(
                 title = presenceTitle,
                 subtitle = discordPresenceSubtitle(),
+                imageUrl = discordPresenceImageUrl(),
                 type = DiscordRichPresenceActivityType.Playback,
                 isPlaying = playbackSnapshot.isPlaying,
                 positionMs = playbackSnapshot.positionMs.coerceAtLeast(0L),
@@ -342,6 +368,13 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
         }
     }
 }
+
+private fun PlayerScreenRuntime.discordPresenceImageUrl(): String? =
+    listOf(poster, activeEpisodeThumbnail, background)
+        .firstOrNull { url ->
+            url?.trim()?.let { it.startsWith("https://") || it.startsWith("http://") } == true
+        }
+        ?.trim()
 
 private fun PlayerScreenRuntime.discordPresenceSubtitle(): String? {
     val episodeNumber = activeEpisodeNumber
@@ -458,6 +491,9 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
 
     LaunchedEffect(activeVideoId, activeSeasonNumber, activeEpisodeNumber) {
         skipIntervals = emptyList()
+        playerChapters = emptyList()
+        communitySkipIntervals = emptyList()
+        chapterSkipIntervals = emptyList()
         activeSkipInterval = null
         skipIntervalDismissed = false
         showNextEpisodeCard = false
@@ -476,8 +512,34 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                 season = season,
                 episode = episode,
             )
-            skipIntervals = intervals
+            communitySkipIntervals = intervals
+            skipIntervals = mergeCommunityAndChapterSkipIntervals(
+                communityIntervals = intervals,
+                chapterIntervals = chapterSkipIntervals,
+            )
         }
+    }
+
+    LaunchedEffect(
+        activeVideoId,
+        activeSourceIdentityKey,
+        playerController,
+        playerControllerSourceUrl,
+        playbackSnapshot.durationMs,
+    ) {
+        if (playbackSnapshot.durationMs <= 0L) return@LaunchedEffect
+        if (playerControllerSourceUrl != activeSourceUrl) return@LaunchedEffect
+        val chapters = playerController?.getChapters().orEmpty()
+        playerChapters = chapters
+        val intervals = ChapterSkipDetector.findIntervals(
+            chapters = chapters,
+            durationSeconds = playbackSnapshot.durationMs / 1000.0,
+        )
+        chapterSkipIntervals = intervals
+        skipIntervals = mergeCommunityAndChapterSkipIntervals(
+            communityIntervals = communitySkipIntervals,
+            chapterIntervals = intervals,
+        )
     }
 
     LaunchedEffect(playbackSnapshot.positionMs, skipIntervals) {

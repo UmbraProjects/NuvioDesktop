@@ -1,19 +1,53 @@
 # Changelog
 
+## 1.10.0 - 2026-07-10
+
+### Added
+
+- **Local Library support** - point Nuvio at folders on your PC to scan and play local movies and TV shows. Local titles integrate directly into the Library alongside Trakt/SIMKL (offering Movies/Shows rows in Basic layout or custom colored rows in Advanced layout). Local files also appear in the player's source selector, with solo local sources bypassing the picker to play immediately. Features automatic TMDB matching and manual fix-matching via search or IMDb/TMDB ID overrides.
+
+- **Dual Subtitles (Desktop)** - play primary and secondary subtitle tracks simultaneously, displaying the secondary language at the top of the player overlay while keeping the primary track at the bottom.
+
+- **Interactive Chapter Markers & Tooltips** - added visible chapter marker ticks on the seek timeline. Hovering over a timeline segment displays a tooltip with the current chapter's title.
+
+- **Chapter-based Auto-skip Fallback** - introduced a parser that scans embedded chapters in file/stream headers to detect intro/outro segments (like `Opening` or `Credits`) and prompts to skip them as a fallback when community-sourced timings are missing.
+
+- **Adjustable Hero Height** - added a "Hero height" slider under Home Layout settings to scale the Adaptive Hero banner size from 75% to 175%. Title logos and text layout dynamically scale to match the chosen height.
+
+- **Smooth Mouse Wheel Scrolling** - added a "Smooth scrolling" setting to vertically glide through home catalog lists with eased mouse-wheel animation rather than rigid, immediate jumps.
+
+- **Detail page Discovery Badges** - added a toggle settings switch under the Meta settings page to hide or show award, festival, and critic badges at the top of media information pages.
+
+### Improved
+
+- **Rich Discord Rich Presence** - enhanced the Discord Rich Presence integration to display media artwork (TMDB posters) directly in the activity state, render a progress duration indicator (e.g. `24:15 / 45:00`), and set the activity type properly to "Watching" with media titles mapped to the asset tooltips.
+
+- **Unified AppData directory & migration** - unified application folders under a single Local AppData path (`NuvioHTPC` instead of `Nuvio`). An automatic migration script seamlessly moves existing preferences, cache data, custom badges, and files from legacy paths (including roaming folders) to the new unified path on startup. This is intended to prevent clashes with the official version or any other forks that could exist at some point.
+
+- **Scrobble-stop CW sync** - added a short delay after playback stops before refreshing remote Continue Watching catalogs, giving SIMKL and Trakt servers a grace period to process the scrobble-stop before the local list is refreshed.
+
+- **Adaptive Hero layout details** - hid basic paging indicator dots in Adaptive, Ambient, and TV modes where a sliding carousel is not used.
+
 ## 1.9.1 - 2026-07-09
 
 ### Added
 
 - **Custom shader library / external MPV shaders** - added a Shader Library configuration under Playback Settings to register custom `.glsl` or `.hook` shader files/directories. Once configured, custom shaders can be selected as the Anime Enhancement mode and cycled in-player using the `F10` hotkey.
+
 - **Random episode rewatch mode** - added a Random Episode action to series detail pages for comfort shows where sequence does not matter. Random rewatches start from the beginning, skip progress/scrobbling, avoid specials by default, and keep autoplay picking random main-season episodes instead of the next sequential one.
 
 ### Improved
 
 - **Atomic preferences and cache storage** - shifted preferences and cache persistence to write to a temporary sibling file and atomically swap it in. This prevents mid-write app crashes from corrupting settings or clearing large cached files like MDBList/cast metadata.
+
 - **Next-episode autoplay reliability** - forced a fresh fetch when loading autoplay streams, preventing binge mode from stalling on stale/empty cached results. Added a dedicated `BingeAdvance` logging pipeline and window-state listeners to diagnose background compose recomposition pauses during minimization.
+
 - **Persistent player volume** - player volume now carries over cleanly between episodes within the same viewing session, resolving the issue where fresh player instances would default to 100% volume and cause audio spikes or display incorrect volume levels in the overlay.
+
 - **Autoplay delay & manual trailers** - reshaped hero trailer playback options to control delay and autoplay under a unified setting. Setting the delay to "Manual" (0 seconds) disables autoplay while keeping manual trailer playback active (using the `T` key) in hero or full-screen modes.
+
 - **Adaptive hero fallback backdrops** - when no hero catalogs are selected, Adaptive Hero and ambient backdrops now seed their content from the top browsing rows. This guarantees the background artwork adjusts to focused items instead of remaining blank.
+
 - **Cleaner detail metadata layout** - blank and non-positive runtime values are now fully filtered out of detail-page metadata, preventing orphaned bullet separators from showing up next to missing values.
 
 ### Fixed

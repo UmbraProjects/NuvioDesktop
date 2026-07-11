@@ -73,6 +73,8 @@ import nuvio.composeapp.generated.resources.settings_meta_comments
 import nuvio.composeapp.generated.resources.settings_meta_comments_description
 import nuvio.composeapp.generated.resources.settings_meta_details
 import nuvio.composeapp.generated.resources.settings_meta_details_description
+import nuvio.composeapp.generated.resources.settings_meta_discovery_badges
+import nuvio.composeapp.generated.resources.settings_meta_discovery_badges_description
 import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback
 import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback_area
 import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback_area_fullscreen
@@ -218,6 +220,15 @@ internal fun LazyListScope.metaScreenSettingsContent(
                     }
                     SettingsGroupDivider(isTablet = isTablet)
                 }
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_meta_discovery_badges),
+                    description = stringResource(Res.string.settings_meta_discovery_badges_description),
+                    checked = uiState.discoveryBadgesEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-discovery-badges")),
+                    onCheckedChange = MetaScreenSettingsRepository::setDiscoveryBadgesEnabled,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_meta_blur_unwatched_episodes),
                     description = stringResource(Res.string.settings_meta_blur_unwatched_episodes_description),

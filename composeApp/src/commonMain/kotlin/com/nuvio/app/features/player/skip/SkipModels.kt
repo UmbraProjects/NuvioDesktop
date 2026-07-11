@@ -10,6 +10,30 @@ data class SkipInterval(
     val provider: String,
 )
 
+/**
+ * Community timings take precedence for their own kind of segment, while chapter timings fill
+ * gaps (for example a community intro with a chapter-provided outro).
+ */
+internal fun mergeCommunityAndChapterSkipIntervals(
+    communityIntervals: List<SkipInterval>,
+    chapterIntervals: List<SkipInterval>,
+): List<SkipInterval> {
+    val coveredKinds = communityIntervals.mapTo(mutableSetOf()) { interval ->
+        interval.type.skipIntervalKind()
+    }
+    return (communityIntervals + chapterIntervals.filter { interval ->
+        interval.type.skipIntervalKind() !in coveredKinds
+    })
+        .distinctBy { interval -> Triple(interval.startTime, interval.endTime, interval.type) }
+        .sortedBy(SkipInterval::startTime)
+}
+
+private fun String.skipIntervalKind(): String = when (lowercase()) {
+    "intro", "op", "mixed-op" -> "intro"
+    "outro", "ed", "mixed-ed", "credits" -> "outro"
+    else -> this
+}
+
 data class NextEpisodeInfo(
     val videoId: String,
     val season: Int,

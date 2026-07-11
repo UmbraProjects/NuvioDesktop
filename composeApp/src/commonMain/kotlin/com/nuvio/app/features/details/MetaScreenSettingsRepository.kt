@@ -43,6 +43,7 @@ data class MetaScreenSectionItem(
 data class MetaScreenSettingsUiState(
     val items: List<MetaScreenSectionItem> = emptyList(),
     val cinematicBackground: Boolean = false,
+    val discoveryBadgesEnabled: Boolean = true,
     val heroTrailerPlayback: Boolean = false,
     val heroTrailerPlaybackMode: MetaHeroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero,
     val heroTrailerDelaySeconds: Int = 5,
@@ -133,6 +134,8 @@ private data class StoredMetaScreenSectionPreference(
 private data class StoredMetaScreenSettingsPayload(
     val items: List<StoredMetaScreenSectionPreference> = emptyList(),
     val cinematicBackground: Boolean = false,
+    @SerialName("discovery_badges_enabled")
+    val discoveryBadgesEnabled: Boolean = true,
     @SerialName("hero_trailer_playback")
     val heroTrailerPlayback: Boolean = false,
     @SerialName("hero_trailer_playback_mode")
@@ -221,6 +224,7 @@ object MetaScreenSettingsRepository {
     private var hasLoaded = false
     private var preferences: MutableMap<MetaScreenSectionKey, StoredMetaScreenSectionPreference> = mutableMapOf()
     private var cinematicBackground: Boolean = false
+    private var discoveryBadgesEnabled: Boolean = true
     private var heroTrailerPlayback: Boolean = false
     private var heroTrailerPlaybackMode: MetaHeroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
     private var heroTrailerDelaySeconds: Int = 5
@@ -242,6 +246,7 @@ object MetaScreenSettingsRepository {
             }.getOrNull()
             if (parsed != null) {
                 cinematicBackground = false
+                discoveryBadgesEnabled = parsed.discoveryBadgesEnabled
                 heroTrailerPlayback = parsed.heroTrailerPlayback
                 heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.parse(parsed.heroTrailerPlaybackMode)
                     ?: MetaHeroTrailerPlaybackMode.Hero
@@ -268,6 +273,7 @@ object MetaScreenSettingsRepository {
         hasLoaded = false
         preferences.clear()
         cinematicBackground = false
+        discoveryBadgesEnabled = true
         heroTrailerPlayback = false
         heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
         heroTrailerDelaySeconds = 5
@@ -283,6 +289,13 @@ object MetaScreenSettingsRepository {
     fun setCinematicBackground(enabled: Boolean) {
         ensureLoaded()
         cinematicBackground = false
+        publish()
+        persist()
+    }
+
+    fun setDiscoveryBadgesEnabled(enabled: Boolean) {
+        ensureLoaded()
+        discoveryBadgesEnabled = enabled
         publish()
         persist()
     }
@@ -356,6 +369,7 @@ object MetaScreenSettingsRepository {
         hasLoaded = false
         preferences.clear()
         cinematicBackground = false
+        discoveryBadgesEnabled = true
         heroTrailerPlayback = false
         heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
         heroTrailerDelaySeconds = 5
@@ -370,6 +384,7 @@ object MetaScreenSettingsRepository {
     internal fun applyFromSync(
         items: List<MetaScreenSectionItem>,
         cinematicBackground: Boolean,
+        discoveryBadgesEnabled: Boolean = true,
         heroTrailerPlayback: Boolean = false,
         heroTrailerPlaybackMode: MetaHeroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero,
         heroTrailerDelaySeconds: Int = 5,
@@ -381,6 +396,7 @@ object MetaScreenSettingsRepository {
     ) {
         ensureLoaded()
         this.cinematicBackground = false
+        this.discoveryBadgesEnabled = discoveryBadgesEnabled
         this.heroTrailerPlayback = heroTrailerPlayback
         this.heroTrailerPlaybackMode = heroTrailerPlaybackMode
         this.heroTrailerDelaySeconds = heroTrailerDelaySeconds.coerceIn(0, 15)
@@ -413,6 +429,7 @@ object MetaScreenSettingsRepository {
         ensureLoaded()
         preferences.clear()
         cinematicBackground = false
+        discoveryBadgesEnabled = true
         heroTrailerPlayback = false
         heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
         heroTrailerDelaySeconds = 5
@@ -473,6 +490,7 @@ object MetaScreenSettingsRepository {
                     )
                 },
             cinematicBackground = false,
+            discoveryBadgesEnabled = discoveryBadgesEnabled,
             heroTrailerPlayback = heroTrailerPlayback,
             heroTrailerPlaybackMode = heroTrailerPlaybackMode,
             heroTrailerDelaySeconds = heroTrailerDelaySeconds,
@@ -490,6 +508,7 @@ object MetaScreenSettingsRepository {
                 StoredMetaScreenSettingsPayload(
                     items = preferences.values.sortedBy { it.order },
                     cinematicBackground = false,
+                    discoveryBadgesEnabled = discoveryBadgesEnabled,
                     heroTrailerPlayback = heroTrailerPlayback,
                     heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.persist(heroTrailerPlaybackMode),
                     heroTrailerDelaySeconds = heroTrailerDelaySeconds,

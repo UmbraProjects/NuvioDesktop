@@ -17,6 +17,28 @@ import kotlinx.coroutines.sync.withLock
 object HeroDiscoveryMetadataService {
     const val CACHE_VERSION = 15
 
+    internal fun normalizePriority(priority: String): List<String> {
+        val slots = priority
+            .split(',')
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toMutableList()
+        if ("emmy_noms" !in slots) {
+            val insertIndex = slots.indexOf("gg_noms").takeIf { it >= 0 }
+                ?.let { it + 1 }
+                ?: slots.indexOf("pic_noms").takeIf { it >= 0 }?.let { it + 1 }
+                ?: slots.size
+            slots.add(insertIndex, "emmy_noms")
+        }
+        // Migration: the single "structural" slot was split into three distinct badges.
+        val structuralIndex = slots.indexOf("structural")
+        if (structuralIndex >= 0) {
+            slots.removeAt(structuralIndex)
+            slots.addAll(structuralIndex, listOf("short_film", "mini_series", "binge_ready"))
+        }
+        return slots
+    }
+
     private val log = Logger.withTag("HeroDiscovery")
     private val cacheMutex = Mutex()
     private val inFlightRequests = mutableMapOf<String, CompletableDeferred<List<HeroDiscoveryFact>>>()

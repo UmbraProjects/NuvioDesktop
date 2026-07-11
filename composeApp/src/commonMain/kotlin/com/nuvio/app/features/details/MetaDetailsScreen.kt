@@ -109,6 +109,8 @@ import com.nuvio.app.features.details.components.SeasonWatchedActionSheet
 import com.nuvio.app.features.details.components.TrailerPlayerPopup
 import com.nuvio.app.features.details.components.rememberMetaDetailsTvFocusState
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.home.HeroDiscoveryFact
+import com.nuvio.app.features.home.HeroDiscoveryMetadataService
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.isDesktop
 import com.nuvio.app.features.library.LibraryRepository
@@ -155,6 +157,7 @@ import kotlin.random.Random
 fun MetaDetailsScreen(
     type: String,
     id: String,
+    preferLocalStreams: Boolean = false,
     onBack: () -> Unit,
     onPlay: ((type: String, videoId: String, parentMetaId: String, parentMetaType: String, title: String, logo: String?, poster: String?, background: String?, seasonNumber: Int?, episodeNumber: Int?, episodeTitle: String?, episodeThumbnail: String?, pauseDescription: String?, resumePositionMs: Long?) -> Unit)? = null,
     onPlayManually: ((type: String, videoId: String, parentMetaId: String, parentMetaType: String, title: String, logo: String?, poster: String?, background: String?, seasonNumber: Int?, episodeNumber: Int?, episodeTitle: String?, episodeThumbnail: String?, pauseDescription: String?, resumePositionMs: Long?) -> Unit)? = null,
@@ -227,6 +230,7 @@ fun MetaDetailsScreen(
     var pickerError by remember(type, id) { mutableStateOf<String?>(null) }
     var episodeImdbRatings by remember(type, id) { mutableStateOf<Map<Pair<Int, Int>, Double>>(emptyMap()) }
     var deferredMetaWorkAllowed by remember(type, id) { mutableStateOf(false) }
+    var heroDiscoveryFacts by remember(type, id) { mutableStateOf<List<HeroDiscoveryFact>>(emptyList()) }
 
     val shouldShowComments = commentsEnabled &&
         traktAuthUiState.mode == TraktConnectionMode.CONNECTED &&
@@ -239,6 +243,33 @@ fun MetaDetailsScreen(
             delay(250)
             deferredMetaWorkAllowed = true
         }
+    }
+
+    LaunchedEffect(
+        displayedMeta?.id,
+        deferredMetaWorkAllowed,
+        metaScreenSettingsUiState.discoveryBadgesEnabled,
+        homeSettingsUiState.heroInfoLines,
+        homeSettingsUiState.heroInfoPriority,
+        homeSettingsUiState.heroReleaseStatusUnavailableOnly,
+        HeroDiscoveryMetadataService.CACHE_VERSION,
+    ) {
+        heroDiscoveryFacts = emptyList()
+        val meta = displayedMeta ?: return@LaunchedEffect
+        if (!deferredMetaWorkAllowed ||
+            !metaScreenSettingsUiState.discoveryBadgesEnabled ||
+            homeSettingsUiState.heroInfoLines <= 0
+        ) {
+            return@LaunchedEffect
+        }
+        heroDiscoveryFacts = HeroDiscoveryMetadataService.fetch(
+            type = meta.type,
+            id = meta.id,
+            priority = HeroDiscoveryMetadataService.normalizePriority(
+                homeSettingsUiState.heroInfoPriority,
+            ),
+            releaseStatusUnavailableOnly = homeSettingsUiState.heroReleaseStatusUnavailableOnly,
+        )
     }
 
     LaunchedEffect(displayedMeta?.id, shouldShowComments, deferredMetaWorkAllowed) {
@@ -288,16 +319,17 @@ fun MetaDetailsScreen(
         )
     }
 
-    LaunchedEffect(type, id, displayedMeta, uiState.isLoading, autoLoadAttempted) {
+    LaunchedEffect(type, id, preferLocalStreams, displayedMeta, uiState.isLoading, autoLoadAttempted) {
         if (!autoLoadAttempted && displayedMeta == null && !uiState.isLoading) {
             autoLoadAttempted = true
-            MetaDetailsRepository.load(type, id)
+            MetaDetailsRepository.load(type, id, preferLocalStreams)
         }
     }
 
     LaunchedEffect(
         type,
         id,
+        preferLocalStreams,
         displayedMeta?.id,
         uiState.isLoading,
         traktSettingsUiState.moreLikeThisSource,
@@ -307,11 +339,11 @@ fun MetaDetailsScreen(
         tmdbSettingsUiState.language,
     ) {
         if (displayedMeta != null && !uiState.isLoading) {
-            MetaDetailsRepository.load(type, id)
+            MetaDetailsRepository.load(type, id, preferLocalStreams)
         }
     }
 
-    LaunchedEffect(networkStatusUiState.condition, displayedMeta, uiState.isLoading, type, id) {
+    LaunchedEffect(networkStatusUiState.condition, displayedMeta, uiState.isLoading, type, id, preferLocalStreams) {
         when (networkStatusUiState.condition) {
             NetworkCondition.NoInternet,
             NetworkCondition.ServersUnreachable,
@@ -323,7 +355,7 @@ fun MetaDetailsScreen(
                 if (!observedOfflineState) return@LaunchedEffect
                 observedOfflineState = false
                 if (displayedMeta == null && !uiState.isLoading) {
-                    MetaDetailsRepository.load(type, id)
+                    MetaDetailsRepository.load(type, id, preferLocalStreams)
                 }
             }
 
@@ -372,7 +404,7 @@ fun MetaDetailsScreen(
                     Button(
                         onClick = {
                             NetworkStatusRepository.requestRefresh(force = true)
-                            MetaDetailsRepository.load(type, id)
+                            MetaDetailsRepository.load(type, id, preferLocalStreams)
                         },
                     ) {
                         Text(stringResource(Res.string.action_retry))
@@ -1575,6 +1607,16 @@ fun MetaDetailsScreen(
                                         heroTrailerPlaybackMode = metaScreenSettingsUiState.heroTrailerPlaybackMode,
                                         heroTrailerBackgroundMode = metaScreenSettingsUiState.heroTrailerBackgroundMode,
                                         desktopOverlay = useDesktopDetailLayout,
+                                        discoveryFacts = if (metaScreenSettingsUiState.discoveryBadgesEnabled) {
+                                            heroDiscoveryFacts
+                                        } else {
+                                            emptyList()
+                                        },
+                                        maxDiscoveryBadges = if (metaScreenSettingsUiState.discoveryBadgesEnabled) {
+                                            homeSettingsUiState.heroInfoLines
+                                        } else {
+                                            0
+                                        },
                                         playButtonLabel = playButtonLabel,
                                         isSaved = isSaved,
                                         isWatched = isWatched,

@@ -26,6 +26,9 @@ private const val HERO_BADGE_SCALE_MAX = 2.5f
 private const val ADAPTIVE_HERO_VERTICAL_BIAS_MIN = -1f
 private const val ADAPTIVE_HERO_VERTICAL_BIAS_MAX = 1f
 private const val ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT = -0.58f
+private const val ADAPTIVE_HERO_HEIGHT_MULTIPLIER_MIN = 0.75f
+private const val ADAPTIVE_HERO_HEIGHT_MULTIPLIER_MAX = 1.75f
+private const val ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT = 1.25f
 
 data class HomeCatalogSettingsItem(
     val key: String,
@@ -56,8 +59,10 @@ data class HomeCatalogSettingsUiState(
     val hideCatalogUnderline: Boolean = false,
     val adaptiveHeroEnabled: Boolean = false,
     val adaptiveHeroVerticalBias: Float = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT,
+    val adaptiveHeroHeightMultiplier: Float = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT,
     val heroAmbientBackgroundEnabled: Boolean = false,
     val tvModeEnabled: Boolean = false,
+    val smoothScrollingEnabled: Boolean = true,
     val items: List<HomeCatalogSettingsItem> = emptyList(),
 ) {
     val signature: String
@@ -82,9 +87,13 @@ data class HomeCatalogSettingsUiState(
             append('|')
             append(adaptiveHeroVerticalBias)
             append('|')
+            append(adaptiveHeroHeightMultiplier)
+            append('|')
             append(heroAmbientBackgroundEnabled)
             append('|')
             append(tvModeEnabled)
+            append('|')
+            append(smoothScrollingEnabled)
             append('|')
             append(
                 items.joinToString(separator = "|") { item ->
@@ -112,6 +121,7 @@ internal data class HomeCatalogSettingsSnapshot(
     val hideCatalogUnderline: Boolean,
     val adaptiveHeroEnabled: Boolean,
     val adaptiveHeroVerticalBias: Float,
+    val adaptiveHeroHeightMultiplier: Float,
     val heroAmbientBackgroundEnabled: Boolean,
     val tvModeEnabled: Boolean,
     val preferences: Map<String, HomeCatalogPreference>,
@@ -151,9 +161,11 @@ private data class StoredHomeCatalogSettingsPayload(
     @SerialName("tvModeEnabled")
     val adaptiveHeroEnabled: Boolean = false,
     val adaptiveHeroVerticalBias: Float = -0.58f,
+    val adaptiveHeroHeightMultiplier: Float = 1.25f,
     val heroAmbientBackgroundEnabled: Boolean = false,
     @SerialName("immersiveCatalogModeEnabled")
     val tvModeEnabled: Boolean = false,
+    val smoothScrollingEnabled: Boolean = true,
     val items: List<StoredHomeCatalogPreference> = emptyList(),
 )
 
@@ -182,8 +194,10 @@ object HomeCatalogSettingsRepository {
     private var hideCatalogUnderline = false
     private var adaptiveHeroEnabled = false
     private var adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+    private var adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
     private var heroAmbientBackgroundEnabled = false
     private var tvModeEnabled = false
+    private var smoothScrollingEnabled = true
 
     fun onProfileChanged() {
         hasLoaded = false
@@ -198,8 +212,10 @@ object HomeCatalogSettingsRepository {
         hideCatalogUnderline = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+        adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
+        smoothScrollingEnabled = true
         definitions = emptyList()
         collectionDefinitions = emptyList()
         lastSyncedCatalogKeys = null
@@ -222,8 +238,10 @@ object HomeCatalogSettingsRepository {
         hideCatalogUnderline = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+        adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
+        smoothScrollingEnabled = true
         _uiState.value = HomeCatalogSettingsUiState()
     }
 
@@ -277,6 +295,7 @@ object HomeCatalogSettingsRepository {
             hideCatalogUnderline = hideCatalogUnderline,
             adaptiveHeroEnabled = adaptiveHeroEnabled,
             adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
+            adaptiveHeroHeightMultiplier = adaptiveHeroHeightMultiplier,
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
             preferences = preferences.mapValues { (_, value) ->
@@ -377,6 +396,15 @@ object HomeCatalogSettingsRepository {
         persist()
     }
 
+    fun setAdaptiveHeroHeightMultiplier(multiplier: Float) {
+        ensureLoaded()
+        val normalized = normalizeAdaptiveHeroHeightMultiplier(multiplier)
+        if (adaptiveHeroHeightMultiplier == normalized) return
+        adaptiveHeroHeightMultiplier = normalized
+        publish()
+        persist()
+    }
+
     fun setHeroAmbientBackgroundEnabled(enabled: Boolean) {
         ensureLoaded()
         val next = enabled && !tvModeEnabled
@@ -394,6 +422,14 @@ object HomeCatalogSettingsRepository {
             adaptiveHeroEnabled = false
             heroAmbientBackgroundEnabled = false
         }
+        publish()
+        persist()
+    }
+
+    fun setSmoothScrollingEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (smoothScrollingEnabled == enabled) return
+        smoothScrollingEnabled = enabled
         publish()
         persist()
     }
@@ -444,8 +480,10 @@ object HomeCatalogSettingsRepository {
         hideCatalogUnderline = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+        adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
+        smoothScrollingEnabled = true
         preferences.clear()
         normalizePreferences()
         publish()
@@ -527,8 +565,10 @@ object HomeCatalogSettingsRepository {
             hideCatalogUnderline = parsedPayload.hideCatalogUnderline
             adaptiveHeroEnabled = parsedPayload.adaptiveHeroEnabled
             adaptiveHeroVerticalBias = normalizeAdaptiveHeroVerticalBias(parsedPayload.adaptiveHeroVerticalBias)
+            adaptiveHeroHeightMultiplier = normalizeAdaptiveHeroHeightMultiplier(parsedPayload.adaptiveHeroHeightMultiplier)
             heroAmbientBackgroundEnabled = parsedPayload.heroAmbientBackgroundEnabled
             tvModeEnabled = parsedPayload.tvModeEnabled
+            smoothScrollingEnabled = parsedPayload.smoothScrollingEnabled
             normalizeHeroModes()
             preferences = parsedPayload.items.associateBy { it.key }.toMutableMap()
             publish()
@@ -654,8 +694,10 @@ object HomeCatalogSettingsRepository {
             hideCatalogUnderline = hideCatalogUnderline || tvModeEnabled,
             adaptiveHeroEnabled = adaptiveHeroEnabled,
             adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
+            adaptiveHeroHeightMultiplier = adaptiveHeroHeightMultiplier,
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
+            smoothScrollingEnabled = smoothScrollingEnabled,
             items = items,
         )
     }
@@ -678,6 +720,10 @@ object HomeCatalogSettingsRepository {
     private fun normalizeAdaptiveHeroVerticalBias(bias: Float): Float =
         if (bias.isNaN()) ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
         else bias.coerceIn(ADAPTIVE_HERO_VERTICAL_BIAS_MIN, ADAPTIVE_HERO_VERTICAL_BIAS_MAX)
+
+    private fun normalizeAdaptiveHeroHeightMultiplier(multiplier: Float): Float =
+        if (multiplier.isNaN()) ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
+        else multiplier.coerceIn(ADAPTIVE_HERO_HEIGHT_MULTIPLIER_MIN, ADAPTIVE_HERO_HEIGHT_MULTIPLIER_MAX)
 
     private fun normalizeHeroInfoPriority(priority: String): String {
         val slots = priority
@@ -709,8 +755,10 @@ object HomeCatalogSettingsRepository {
                     hideCatalogUnderline = hideCatalogUnderline,
                     adaptiveHeroEnabled = adaptiveHeroEnabled,
                     adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
+                    adaptiveHeroHeightMultiplier = adaptiveHeroHeightMultiplier,
                     heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
                     tvModeEnabled = tvModeEnabled,
+                    smoothScrollingEnabled = smoothScrollingEnabled,
                     items = preferences.values.sortedBy { it.order },
                 ),
             ),

@@ -67,6 +67,7 @@ fun HomeSkeletonHero(
     viewportHeight: Dp? = null,
     mobileBelowSectionHeightHint: Dp? = null,
     sectionPadding: Dp? = null,
+    heightOverride: Dp? = null,
 ) {
     val brush = rememberHomeSkeletonBrush()
 
@@ -75,12 +76,13 @@ fun HomeSkeletonHero(
             .fillMaxWidth()
             .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
     ) {
-        val layout = homeHeroLayout(
+        val baseLayout = homeHeroLayout(
             maxWidthDp = maxWidth.value,
             viewportHeightDp = viewportHeight?.value,
             mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
             preferDesktopLayout = isDesktop,
         )
+        val layout = heightOverride?.let { baseLayout.copy(heroHeight = it) } ?: baseLayout
         val containerWidth = maxWidth
         val contentHorizontalPadding = sectionPadding ?: layout.contentHorizontalPadding
 

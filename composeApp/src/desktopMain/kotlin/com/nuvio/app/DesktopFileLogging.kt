@@ -1,5 +1,6 @@
 package com.nuvio.app
 
+import com.nuvio.app.core.storage.DesktopStorage
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -45,12 +46,7 @@ fun configureDesktopFileLogging() {
 }
 
 private fun desktopLogDirectory(): File {
-    val localAppData = System.getenv("LOCALAPPDATA")?.takeIf(String::isNotBlank)
-    return if (localAppData != null) {
-        File(localAppData, "Nuvio/logs")
-    } else {
-        File(System.getProperty("user.home"), ".nuvio/logs")
-    }
+    return DesktopStorage.rootDir.resolve("logs").toFile()
 }
 
 private class TeeOutputStream(

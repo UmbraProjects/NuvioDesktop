@@ -37,6 +37,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +55,7 @@ private const val WATCH_PROGRESS_STARTUP_METADATA_GRACE_MS = 1_200L
 private const val WATCH_PROGRESS_DELTA_PAGE_SIZE = 900
 private const val WATCH_PROGRESS_DELTA_OPERATION_UPSERT = "upsert"
 private const val WATCH_PROGRESS_DELTA_OPERATION_DELETE = "delete"
+private const val WATCH_PROGRESS_REMOTE_STOP_REFRESH_DELAY_MS = 2_500L
 
 private data class RemoteMetadataResolutionResult(
     val key: Pair<String, String>,
@@ -780,12 +782,29 @@ object WatchProgressRepository {
     ) {
         ensureLoaded()
         upsert(session = session, snapshot = snapshot, persist = true, syncRemote = syncRemote)
-        // After playback ends, refresh SIMKL so the newly saved session appears in CW.
-        // Small delay lets SIMKL's server process the scrobble stop before we re-fetch.
-        if (shouldUseSimklProgress()) {
-            syncScope.launch {
-                kotlinx.coroutines.delay(2_500)
+        refreshContinueWatchingAfterPlaybackStops()
+    }
+
+    /**
+     * The local entry is published synchronously by [upsert]. Remote Continue Watching sources
+     * need a short grace period for their stop scrobble to be processed before their canonical
+     * list is read again.
+     */
+    fun refreshContinueWatchingAfterPlaybackStops() {
+        ensureLoaded()
+        when {
+            shouldUseSimklProgress() -> syncScope.launch {
+                delay(WATCH_PROGRESS_REMOTE_STOP_REFRESH_DELAY_MS)
                 SimklProgressRepository.refreshAsync()
+            }
+
+            shouldUseTraktProgress() -> syncScope.launch {
+                delay(WATCH_PROGRESS_REMOTE_STOP_REFRESH_DELAY_MS)
+                runCatching { TraktProgressRepository.refreshNow() }
+                    .onFailure { error ->
+                        if (error is CancellationException) throw error
+                        log.w { "Failed to refresh Trakt Continue Watching after playback stopped: ${error.message}" }
+                    }
             }
         }
     }

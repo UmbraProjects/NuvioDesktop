@@ -56,6 +56,7 @@ internal object NativePlayerBridge {
     external fun isMuted(handle: Long): Boolean
     external fun audioTracksJson(handle: Long): String
     external fun subtitleTracksJson(handle: Long): String
+    external fun chaptersJson(handle: Long): String
     external fun selectAudioTrack(handle: Long, trackId: Int)
     external fun selectSubtitleTrack(handle: Long, trackId: Int)
     external fun addSubtitleUrl(handle: Long, url: String)

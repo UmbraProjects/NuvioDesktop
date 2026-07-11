@@ -8,6 +8,7 @@ internal enum class DiscordRichPresenceActivityType {
 internal data class DiscordRichPresenceActivity(
     val title: String,
     val subtitle: String? = null,
+    val imageUrl: String? = null,
     val type: DiscordRichPresenceActivityType = DiscordRichPresenceActivityType.Playback,
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,

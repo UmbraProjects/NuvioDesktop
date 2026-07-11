@@ -21,8 +21,14 @@ interface PlayerEngineController {
     val maxVolumeFraction: Float get() = 1f
     fun getAudioTracks(): List<AudioTrack>
     fun getSubtitleTracks(): List<SubtitleTrack>
+    /**
+     * Chapters supplied by the currently playing media. Most sources do not provide these, so
+     * platform players that cannot expose chapters simply retain the empty default.
+     */
+    fun getChapters(): List<PlayerChapter> = emptyList()
     fun selectAudioTrack(index: Int)
     fun selectSubtitleTrack(index: Int)
+    fun selectSecondarySubtitleTrack(index: Int) {}
     fun setSubtitleUri(url: String)
     fun clearExternalSubtitle()
     fun clearExternalSubtitleAndSelect(trackIndex: Int)
@@ -30,6 +36,11 @@ interface PlayerEngineController {
     fun setSubtitleDelayMs(delayMs: Int) {}
     fun configureIosVideoOutput(settings: PlayerSettingsUiState) {}
 }
+
+data class PlayerChapter(
+    val startTime: Double,
+    val title: String,
+)
 
 enum class PlayerControlsAction {
     ToggleChrome,
@@ -176,6 +187,7 @@ data class PlayerControlsState(
     val showExternalPlayer: Boolean = false,
     val durationMs: Long = 0L,
     val positionMs: Long = 0L,
+    val chapters: List<PlayerChapter> = emptyList(),
     val sourceIsLoading: Boolean = false,
     val sourceFilters: List<PlayerControlFilterItem> = emptyList(),
     val sourceItems: List<PlayerControlSourceItem> = emptyList(),

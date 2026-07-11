@@ -110,6 +110,7 @@ internal fun LazyListScope.homescreenSettingsContent(
     if (isDesktop) {
         item {
             val playerSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
+            val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
             val currentMode = homeDisplayModeOf(
                 adaptiveHeroEnabled = adaptiveHeroEnabled,
                 heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
@@ -142,6 +143,17 @@ internal fun LazyListScope.homescreenSettingsContent(
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.DisplayMode),
                         onSelected = { it.applyTo() },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = "Smooth scrolling",
+                        description = "Ease mouse-wheel scrolling in Basic and Adaptive modes. " +
+                            "TV Mode still jumps one catalog per scroll.",
+                        checked = homeSettings.smoothScrollingEnabled,
+                        enabled = currentMode != HomeDisplayMode.TvMode,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("home-smooth-scrolling")),
+                        onCheckedChange = HomeCatalogSettingsRepository::setSmoothScrollingEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsChoiceRow(
@@ -315,6 +327,12 @@ internal fun LazyListScope.homescreenSettingsContent(
                         enabled = heroEnabled && adaptiveHeroEnabled && !tvModeEnabled,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHeroPosition),
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    AdaptiveHeroHeightRow(
+                        enabled = heroEnabled && adaptiveHeroEnabled && !tvModeEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHeroHeight),
                     )
                 }
             }
@@ -518,6 +536,65 @@ private fun Float.formatAdaptiveHeroVerticalBias(): String {
     val wholeAndFraction = abs(hundredths)
     return "$sign${wholeAndFraction / 100}.${(wholeAndFraction % 100).toString().padStart(2, '0')}"
 }
+
+@Composable
+private fun AdaptiveHeroHeightRow(
+    enabled: Boolean,
+    isTablet: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val settings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+    var sliderValue by remember(settings.adaptiveHeroHeightMultiplier) {
+        mutableFloatStateOf(settings.adaptiveHeroHeightMultiplier)
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .alpha(if (enabled) 1f else 0.55f),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = "Hero height",
+                style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = "Set how much of the window the adaptive hero occupies.",
+                style = if (isTablet) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(
+            modifier = Modifier.width(if (isTablet) 210.dp else 260.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SettingsModernSlider(
+                value = sliderValue,
+                onValueChange = { if (enabled) sliderValue = it },
+                onValueChangeFinished = {
+                    if (enabled) HomeCatalogSettingsRepository.setAdaptiveHeroHeightMultiplier(sliderValue)
+                },
+                enabled = enabled,
+                valueRange = 0.75f..1.75f,
+                modifier = Modifier.weight(1f),
+            )
+            ValueBox(text = sliderValue.formatAdaptiveHeroHeight(), modifier = Modifier.width(48.dp))
+        }
+    }
+}
+
+private fun Float.formatAdaptiveHeroHeight(): String =
+    "${(this * 100).roundToInt()}%"
 
 private fun Int.heroBadgeCountLabel(): String =
     when (this) {

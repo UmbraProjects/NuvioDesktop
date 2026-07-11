@@ -3,6 +3,7 @@ package com.nuvio.app.features.library
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
+import com.nuvio.app.features.locallibrary.LocalMediaItem
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import kotlinx.serialization.Serializable
 
@@ -26,6 +27,9 @@ data class LibraryItem(
     val imdbId: String? = null,
     val tmdbId: Int? = null,
     val traktId: Int? = null,
+    // Bumped when the user asks to refresh this item's poster; appended as a URL fragment so the
+    // image loader re-requests even the poster-service (PostersPlus/RPDB) URL, which is keyed by id.
+    val posterRefreshToken: Long? = null,
     val savedAtEpochMs: Long,
 )
 
@@ -86,14 +90,28 @@ fun MetaPreview.toLibraryItem(savedAtEpochMs: Long): LibraryItem =
         savedAtEpochMs = savedAtEpochMs,
     )
 
+fun LocalMediaItem.toLibraryItem(): LibraryItem =
+    LibraryItem(
+        id = contentId,
+        type = contentType,
+        name = title,
+        poster = poster,
+        posterShape = PosterShape.Poster,
+        imdbId = imdbId,
+        tmdbId = tmdbId,
+        posterRefreshToken = posterRefreshToken,
+        savedAtEpochMs = 0L,
+    )
+
 fun LibraryItem.toMetaPreview(): MetaPreview {
-    val resolvedPoster = resolveLibraryPosterUrl(id = id, type = type, fallback = poster)
+    val resolvedPoster = resolveLibraryPosterUrl(id = id, type = type, fallback = poster, refreshToken = posterRefreshToken)
+    val resolvedFallback = poster.withPosterRefreshToken(posterRefreshToken)
     return MetaPreview(
         id = id,
         type = type,
         name = name,
         poster = resolvedPoster,
-        posterFallback = if (resolvedPoster != poster) poster else null,
+        posterFallback = if (resolvedPoster != resolvedFallback) resolvedFallback else null,
         banner = if (imdbId != null) "https://images.metahub.space/background/medium/$imdbId/img" else banner,
         logo = if (imdbId != null) "https://images.metahub.space/logo/medium/$imdbId/img" else logo,
         posterShape = posterShape,
@@ -114,18 +132,29 @@ fun LibraryItem.toMetaPreview(): MetaPreview {
  * Whichever id the item lacks is substituted as empty (the service template decides what it
  * needs); if the item has no usable IMDb/TMDB id at all, the original poster is kept.
  */
-private fun resolveLibraryPosterUrl(id: String, type: String, fallback: String?): String? {
+private fun resolveLibraryPosterUrl(id: String, type: String, fallback: String?, refreshToken: Long?): String? {
     val settings = TmdbSettingsRepository.snapshot()
-    if (!settings.libraryPosterEnabled) return fallback
+    if (!settings.libraryPosterEnabled) return fallback.withPosterRefreshToken(refreshToken)
     val template = settings.libraryPosterUrlTemplate
-    if (template.isBlank()) return fallback
+    if (template.isBlank()) return fallback.withPosterRefreshToken(refreshToken)
 
     val imdbId = id.takeIf { it.startsWith("tt") }.orEmpty()
     val tmdbId = if (id.startsWith("tmdb:")) id.removePrefix("tmdb:").substringBefore(":") else ""
-    if (imdbId.isBlank() && tmdbId.isBlank()) return fallback
+    if (imdbId.isBlank() && tmdbId.isBlank()) return fallback.withPosterRefreshToken(refreshToken)
 
     return template
         .replace("{imdb_id}", imdbId)
         .replace("{tmdb_id}", tmdbId)
         .replace("{type}", type)
+        .withPosterRefreshToken(refreshToken)
+}
+
+/**
+ * Appends the poster refresh token as a URL fragment. The fragment changes the image-loader cache
+ * key (forcing a fresh request) but is stripped by the HTTP client, so the server — including a
+ * poster service like PostersPlus — still receives a valid URL.
+ */
+private fun String?.withPosterRefreshToken(refreshToken: Long?): String? {
+    if (this.isNullOrBlank() || refreshToken == null || this.contains("#")) return this
+    return "$this#v=$refreshToken"
 }

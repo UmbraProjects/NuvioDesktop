@@ -110,10 +110,5 @@ actual object AppUpdaterPlatform {
 }
 
 private fun portableUpdatesDirectory(): File {
-    val localAppData = System.getenv("LOCALAPPDATA")?.takeIf(String::isNotBlank)
-    return if (localAppData != null) {
-        File(localAppData, "Nuvio/updates")
-    } else {
-        File(System.getProperty("user.home"), "AppData/Local/Nuvio/updates")
-    }
+    return DesktopStorage.rootDir.resolve("updates").toFile()
 }

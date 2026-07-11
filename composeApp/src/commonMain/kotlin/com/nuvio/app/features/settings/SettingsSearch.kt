@@ -624,11 +624,16 @@ internal fun settingsSearchEntries(
         pageLabel = playbackPage,
         section = playbackSubtitleAudio,
         icon = Icons.Rounded.PlayArrow,
-        rows = listOf(
+        rows = listOfNotNull(
             PlaybackSearchRow("preferred-audio", stringResource(Res.string.settings_playback_preferred_audio_language)),
             PlaybackSearchRow("secondary-audio", stringResource(Res.string.settings_playback_secondary_audio_language)),
             PlaybackSearchRow("preferred-subtitles", stringResource(Res.string.settings_playback_preferred_subtitle_language)),
             PlaybackSearchRow("secondary-subtitles", stringResource(Res.string.settings_playback_secondary_subtitle_language)),
+            if (isDesktop) PlaybackSearchRow(
+                "dual-subtitles",
+                stringResource(Res.string.settings_playback_dual_subtitles),
+                stringResource(Res.string.settings_playback_dual_subtitles_description),
+            ) else null,
         ),
     )
     addPlaybackRows(
@@ -773,6 +778,7 @@ internal fun settingsSearchEntries(
         PlaybackSearchRow("home-hero-trailer-sound", stringResource(Res.string.settings_playback_hero_tv_trailer_sound), stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description), anchor = SettingsScrollAnchor.TrailerSound),
         PlaybackSearchRow("home-hero-trailer-search", "Trailers in Search", "Allow focused search results to play hero trailers.", anchor = SettingsScrollAnchor.TrailerSearch),
         PlaybackSearchRow("home-adaptive-hero-position", "Backdrop vertical position", "Manually tune how adaptive hero backdrops crop vertically.", anchor = SettingsScrollAnchor.AdaptiveHeroPosition),
+        PlaybackSearchRow("home-adaptive-hero-height", "Hero height", "Set how much of the window the adaptive hero occupies.", anchor = SettingsScrollAnchor.AdaptiveHeroHeight),
         PlaybackSearchRow("home-hero-sources", stringResource(Res.string.settings_homescreen_section_hero_sources)),
         PlaybackSearchRow("home-catalogs", stringResource(Res.string.settings_homescreen_section_catalogs)),
     ).forEach { row ->
@@ -790,6 +796,7 @@ internal fun settingsSearchEntries(
 
     val detailAppearanceSection = stringResource(Res.string.settings_meta_section_appearance)
     listOf(
+        PlaybackSearchRow("meta-discovery-badges", stringResource(Res.string.settings_meta_discovery_badges), stringResource(Res.string.settings_meta_discovery_badges_description)),
         PlaybackSearchRow("meta-blur-episodes", stringResource(Res.string.settings_meta_blur_unwatched_episodes), stringResource(Res.string.settings_meta_blur_unwatched_episodes_description)),
     ).forEach { row ->
         addRow(

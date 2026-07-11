@@ -63,6 +63,9 @@ import com.nuvio.app.features.details.MetaHeroTrailerPlaybackMode
 import com.nuvio.app.features.details.MetaPerson
 import com.nuvio.app.features.details.formatMetaReleaseLineForDetails
 import com.nuvio.app.features.details.formatRuntimeForDisplay
+import com.nuvio.app.features.home.HeroBadgePlacement
+import com.nuvio.app.features.home.HeroDiscoveryFact
+import com.nuvio.app.features.home.components.HeroDiscoveryBadgeStrip
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -98,6 +101,8 @@ fun DetailHero(
     heroTrailerPlaybackMode: MetaHeroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero,
     heroTrailerBackgroundMode: MetaHeroTrailerBackgroundMode = MetaHeroTrailerBackgroundMode.Black,
     desktopOverlay: Boolean = false,
+    discoveryFacts: List<HeroDiscoveryFact> = emptyList(),
+    maxDiscoveryBadges: Int = 0,
     playButtonLabel: String = stringResource(Res.string.action_play),
     isSaved: Boolean = false,
     isWatched: Boolean = false,
@@ -387,6 +392,25 @@ fun DetailHero(
                         onVolumeChange = onHeroTrailerVolumeChange,
                         onReclaimFocus = onHeroTrailerReclaimFocus,
                     )
+                }
+
+                if (discoveryFacts.isNotEmpty() && maxDiscoveryBadges > 0) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(
+                                top = WindowInsets.statusBars
+                                    .asPaddingValues()
+                                    .calculateTopPadding() + 16.dp,
+                            ),
+                        contentAlignment = Alignment.TopCenter,
+                    ) {
+                        HeroDiscoveryBadgeStrip(
+                            facts = discoveryFacts,
+                            maxCount = maxDiscoveryBadges,
+                            placement = HeroBadgePlacement.TopRightHorizontal,
+                        )
+                    }
                 }
 
             }

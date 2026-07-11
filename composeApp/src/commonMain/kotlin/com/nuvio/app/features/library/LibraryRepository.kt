@@ -10,6 +10,9 @@ import com.nuvio.app.features.cloud.CloudLibraryItem
 import com.nuvio.app.features.cloud.CloudLibraryRepository
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.home.PosterShape
+import com.nuvio.app.features.locallibrary.LocalFolderType
+import com.nuvio.app.features.locallibrary.LocalLibraryRepository
+import com.nuvio.app.features.locallibrary.LocalMediaItem
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.simkl.SimklAuthRepository
 import com.nuvio.app.features.simkl.SimklLibraryRepository
@@ -159,6 +162,11 @@ object LibraryRepository {
                 publish()
             }
         }
+        syncScope.launch {
+            LocalLibraryRepository.uiState.collectLatest {
+                publish()
+            }
+        }
     }
 
     fun ensureLoaded() {
@@ -169,6 +177,7 @@ object LibraryRepository {
         SimklAuthRepository.ensureLoaded()
         SimklLibraryRepository.ensureLoaded()
         CloudLibraryRepository.ensureLoaded()
+        LocalLibraryRepository.ensureLoaded()
         if (hasLoaded) return
         loadFromDisk(ProfileRepository.activeProfileId)
         if (isSimklLibrarySourceActive()) {
@@ -187,6 +196,7 @@ object LibraryRepository {
         isPullingNuvioSyncFromServer = false
         hasCompletedInitialNuvioSyncPull = false
         TraktSettingsRepository.onProfileChanged()
+        LocalLibraryRepository.onProfileChanged(profileId)
         loadFromDisk(profileId)
         TraktAuthRepository.onProfileChanged()
         TraktLibraryRepository.onProfileChanged()
@@ -464,6 +474,7 @@ object LibraryRepository {
                 if (s.movies.isNotEmpty()) add(LibrarySection("simkl_movies", "My Movies", s.movies))
                 if (s.anime.isNotEmpty()) add(LibrarySection("simkl_anime", "My Anime", s.anime))
                 addAll(cloudLibrarySections())
+                addAll(localLibrarySections())
             }
             _uiState.value = LibraryUiState(
                 sourceMode = LibrarySourceMode.SIMKL,
@@ -493,7 +504,7 @@ object LibraryRepository {
                 }
             }
 
-            val sectionsWithCloud = sections + cloudLibrarySections()
+            val sectionsWithCloud = sections + cloudLibrarySections() + localLibrarySections()
 
             _uiState.value = LibraryUiState(
                 sourceMode = LibrarySourceMode.TRAKT,
@@ -533,6 +544,36 @@ object LibraryRepository {
         )
 
         startPrefetch(sectionsWithCloud)
+    }
+
+    private fun localLibrarySections(): List<LibrarySection> {
+        val state = LocalLibraryRepository.uiState.value
+        if (!state.isLoaded || state.items.isEmpty()) return emptyList()
+
+        if (state.mode == com.nuvio.app.features.locallibrary.LocalLibraryMode.ADVANCED) {
+            return buildList {
+                // One section per catalog, in the user's order.
+                state.sortedCatalogs.forEach { catalog ->
+                    val items = state.itemsInCatalog(catalog.id)
+                    if (items.isNotEmpty()) {
+                        add(LibrarySection("locallibrary_catalog_${catalog.id}", catalog.name, items.map(LocalMediaItem::toLibraryItem)))
+                    }
+                }
+                // Anything the user hasn't filed yet.
+                state.itemsInCatalog(null).takeIf { it.isNotEmpty() }?.let {
+                    add(LibrarySection("locallibrary_unsorted", "Local (Unsorted)", it.map(LocalMediaItem::toLibraryItem)))
+                }
+            }
+        }
+
+        return buildList {
+            state.movies.takeIf { it.isNotEmpty() }?.let {
+                add(LibrarySection("locallibrary_movie", "Local Movies", it.map(LocalMediaItem::toLibraryItem)))
+            }
+            state.series.takeIf { it.isNotEmpty() }?.let {
+                add(LibrarySection("locallibrary_series", "Local Shows", it.map(LocalMediaItem::toLibraryItem)))
+            }
+        }
     }
 
     private fun cloudLibrarySections(): List<LibrarySection> {

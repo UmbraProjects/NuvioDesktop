@@ -92,18 +92,18 @@ Nuvio HTPC can show hero info badges for awards, festivals, critic signals, rele
 You can extend the studio/director list and override the bundled badge images without touching the code. Create this folder first:
 
 ```text
-%LOCALAPPDATA%\Nuvio\Badges
+%LOCALAPPDATA%\NuvioHTPC\Badges
 ```
 
 For most Windows users this expands to:
 
 ```text
-C:\Users\<you>\AppData\Local\Nuvio\Badges
+C:\Users\<you>\AppData\Local\NuvioHTPC\Badges
 ```
 
 ### Custom `hero_discovery.json`
 
-Place a file named `hero_discovery.json` in `%LOCALAPPDATA%\Nuvio\Badges`.
+Place a file named `hero_discovery.json` in `%LOCALAPPDATA%\NuvioHTPC\Badges`.
 
 Example:
 

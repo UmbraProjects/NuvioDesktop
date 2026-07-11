@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.ViewColumn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -163,6 +164,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_plugins
 import nuvio.composeapp.generated.resources.compose_settings_page_poster_customization
 import nuvio.composeapp.generated.resources.compose_settings_page_root
 import nuvio.composeapp.generated.resources.compose_settings_page_streams
+import nuvio.composeapp.generated.resources.compose_settings_page_local_library
 import nuvio.composeapp.generated.resources.compose_settings_page_simkl
 import nuvio.composeapp.generated.resources.compose_settings_page_tmdb_enrichment
 import nuvio.composeapp.generated.resources.compose_settings_page_trakt
@@ -211,6 +213,9 @@ fun SettingsScreen(
 ) {
     val homeKeyFocusRequester = remember { FocusRequester() }
     var settingsSearchHasFocus by remember { mutableStateOf(false) }
+    // Any editable field on the page (e.g. a Local Library catalog name) suppresses the shortcut so
+    // typing "H" doesn't jump to Home. The search bar keeps its own flag for the same reason.
+    val textInputActive by SettingsTextInputTracker.active.collectAsStateWithLifecycle()
     // H returns to the home tab. onKeyEvent (bubble phase) so settings text fields,
     // which consume their own keystrokes, are never disrupted.
     val homeKeyModifier = if (isDesktop && onNavigateToHome != null) {
@@ -218,7 +223,7 @@ fun SettingsScreen(
             .focusRequester(homeKeyFocusRequester)
             .focusable()
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.H && !settingsSearchHasFocus) {
+                if (event.type == KeyEventType.KeyDown && event.key == Key.H && !settingsSearchHasFocus && !textInputActive) {
                     onNavigateToHome(); true
                 } else {
                     false
@@ -357,6 +362,9 @@ fun SettingsScreen(
         val previousPage = page.desktopBackPage()
 
         LaunchedEffect(page) {
+            // Leaving a page drops any text-input shortcut lock, so a field left focused (e.g. a
+            // catalog name box) can't keep navigation shortcuts suppressed on the next page.
+            SettingsTextInputTracker.reset()
             if (!page.isEnabledByFeaturePolicy()) {
                 currentPage = SettingsPage.Addons.name
             }
@@ -725,6 +733,7 @@ private fun MobileSettingsScreen(
                             onPlaybackClick = { onPageChange(SettingsPage.Playback) },
                             onForkEnhancementsClick = { onPageChange(SettingsPage.ForkEnhancements) },
                             onStreamsClick = { onPageChange(SettingsPage.Streams) },
+                            onLocalLibraryClick = { onPageChange(SettingsPage.LocalLibrary) },
                             onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                             onAdvancedClick = { onPageChange(SettingsPage.Advanced) },
                             onNotificationsClick = { onPageChange(SettingsPage.Notifications) },
@@ -808,6 +817,9 @@ private fun MobileSettingsScreen(
                     libassRenderType = libassRenderType,
                 )
                 SettingsPage.Streams -> streamsSettingsContent(
+                    isTablet = false,
+                )
+                SettingsPage.LocalLibrary -> localLibraryContent(
                     isTablet = false,
                 )
                 SettingsPage.KeyboardShortcuts -> keyboardShortcutsContent(
@@ -1280,6 +1292,7 @@ private fun TabletSettingsScreen(
                                 onPlaybackClick = { openInlinePage(SettingsPage.Playback) },
                                 onForkEnhancementsClick = { openInlinePage(SettingsPage.ForkEnhancements) },
                                 onStreamsClick = { openInlinePage(SettingsPage.Streams) },
+                                onLocalLibraryClick = { openInlinePage(SettingsPage.LocalLibrary) },
                                 onAppearanceClick = { openInlinePage(SettingsPage.Appearance) },
                                 onAdvancedClick = { openInlinePage(SettingsPage.Advanced) },
                                 onNotificationsClick = { openInlinePage(SettingsPage.Notifications) },
@@ -1367,6 +1380,9 @@ private fun TabletSettingsScreen(
                         libassRenderType = libassRenderType,
                     )
                     SettingsPage.Streams -> streamsSettingsContent(
+                        isTablet = true,
+                    )
+                    SettingsPage.LocalLibrary -> localLibraryContent(
                         isTablet = true,
                     )
                     SettingsPage.KeyboardShortcuts -> keyboardShortcutsContent(
@@ -1580,6 +1596,11 @@ private fun desktopSettingsSidebarItems(): List<DesktopSettingsSidebarItem> = li
         page = SettingsPage.Streams,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.compose_settings_page_local_library),
+        icon = Icons.Rounded.VideoLibrary,
+        page = SettingsPage.LocalLibrary,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_keyboard_shortcuts),
         icon = Icons.Rounded.Keyboard,
         page = SettingsPage.KeyboardShortcuts,
@@ -1603,6 +1624,7 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.Homescreen -> SettingsPage.Homescreen
     SettingsPage.Plugins -> SettingsPage.Plugins
     SettingsPage.Streams -> SettingsPage.Streams
+    SettingsPage.LocalLibrary -> SettingsPage.LocalLibrary
     SettingsPage.KeyboardShortcuts -> SettingsPage.KeyboardShortcuts
     SettingsPage.LicensesAttributions -> SettingsPage.LicensesAttributions
     SettingsPage.Account -> SettingsPage.Account

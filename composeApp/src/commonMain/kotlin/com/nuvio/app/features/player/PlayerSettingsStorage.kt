@@ -25,6 +25,8 @@ internal expect object PlayerSettingsStorage {
     fun savePreferredSubtitleLanguage(language: String)
     fun loadSecondaryPreferredSubtitleLanguage(): String?
     fun saveSecondaryPreferredSubtitleLanguage(language: String?)
+    fun loadDualSubtitlesEnabled(): Boolean?
+    fun saveDualSubtitlesEnabled(enabled: Boolean)
     fun loadSubtitleTextColor(): String?
     fun saveSubtitleTextColor(colorHex: String)
     fun loadSubtitleBackgroundColor(): String?

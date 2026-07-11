@@ -275,6 +275,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         showExternalPlayer = args.onOpenInExternalPlayer != null,
         durationMs = playbackSnapshot.durationMs,
         positionMs = displayedPositionMs,
+        chapters = playerChapters,
         sourceIsLoading = sourceStreamsState.isAnyLoading,
         sourceFilters = sourceFilters,
         sourceItems = sourceItems,
@@ -765,6 +766,8 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             } else {
                 playerController?.selectSubtitleTrack(index)
             }
+            secondarySubtitleSelectionApplied = false
+            applySecondarySubtitleSelectionIfNeeded()
         }
         "fetchAddonSubtitles" -> fetchAddonSubtitlesForActiveItem()
         "selectAddonSubtitle" -> {
@@ -774,6 +777,8 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             useCustomSubtitles = true
             persistAddonSubtitlePreference(addon)
             playerController?.setSubtitleUri(addon.url)
+            secondarySubtitleSelectionApplied = false
+            applySecondarySubtitleSelectionIfNeeded()
         }
         "subtitleDelayDelta" -> setSubtitleDelay((subtitleDelayMs + value.toInt()).coerceIn(SUBTITLE_DELAY_MIN_MS, SUBTITLE_DELAY_MAX_MS))
         "subtitleDelayReset" -> setSubtitleDelay(0)
@@ -1334,6 +1339,8 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
             } else {
                 playerController?.selectSubtitleTrack(index)
             }
+            secondarySubtitleSelectionApplied = false
+            applySecondarySubtitleSelectionIfNeeded()
         },
         onAddonSubtitleSelected = { addon ->
             selectedAddonSubtitleId = addon.id
@@ -1341,6 +1348,8 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
             useCustomSubtitles = true
             persistAddonSubtitlePreference(addon)
             playerController?.setSubtitleUri(addon.url)
+            secondarySubtitleSelectionApplied = false
+            applySecondarySubtitleSelectionIfNeeded()
         },
         onFetchAddonSubtitles = { fetchAddonSubtitlesForActiveItem() },
         onSubtitleStyleChanged = PlayerSettingsRepository::setSubtitleStyle,

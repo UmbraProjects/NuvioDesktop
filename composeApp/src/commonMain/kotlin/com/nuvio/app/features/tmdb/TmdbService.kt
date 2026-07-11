@@ -349,6 +349,59 @@ object TmdbService {
         return fetch<TmdbExternalIdsResponse>(endpoint = endpoint, apiKey = apiKey)?.tvdbId
     }
 
+    /**
+     * Free-text TMDB search used by the local-library match/fix flow.
+     *
+     * [mediaType] "movie" or "tv" targets the matching search endpoint; anything else queries
+     * both. [year] is passed as a hint (primary_release_year / first_air_date_year) but never
+     * required, so a slightly-off folder year still returns candidates.
+     */
+    suspend fun searchTitles(query: String, mediaType: String? = null, year: Int? = null): List<TmdbSearchResult> {
+        val apiKey = currentApiKey() ?: return emptyList()
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return emptyList()
+
+        val normalized = mediaType?.let { normalizeMediaType(it) }
+        val movieResults = if (normalized == null || normalized == "movie") {
+            fetch<TmdbSearchResponse>(
+                endpoint = "search/movie",
+                apiKey = apiKey,
+                query = buildMap {
+                    put("query", trimmed)
+                    put("include_adult", "false")
+                    year?.let { put("primary_release_year", it.toString()) }
+                },
+            )?.results.orEmpty().map { it.withMediaType("movie") }
+        } else emptyList()
+
+        val tvResults = if (normalized == null || normalized == "tv") {
+            fetch<TmdbSearchResponse>(
+                endpoint = "search/tv",
+                apiKey = apiKey,
+                query = buildMap {
+                    put("query", trimmed)
+                    put("include_adult", "false")
+                    year?.let { put("first_air_date_year", it.toString()) }
+                },
+            )?.results.orEmpty().map { it.withMediaType("tv") }
+        } else emptyList()
+
+        return (movieResults + tvResults)
+            .filter { it.id > 0 }
+            .sortedByDescending { it.popularity }
+    }
+
+    fun tmdbImageUrl(path: String?, size: String = "w500"): String? =
+        path?.takeIf { it.isNotBlank() }?.let { "https://image.tmdb.org/t/p/$size$it" }
+
+    /** Poster URL for a TMDB id, used when a match was made by id (no poster path in hand). */
+    suspend fun fetchPosterUrl(tmdbId: Int, mediaType: String, size: String = "w500"): String? {
+        val apiKey = currentApiKey() ?: return null
+        val endpoint = if (normalizeMediaType(mediaType) == "tv") "tv/$tmdbId" else "movie/$tmdbId"
+        val body = fetch<TmdbPosterResponse>(endpoint = endpoint, apiKey = apiKey) ?: return null
+        return tmdbImageUrl(body.posterPath, size)
+    }
+
     private fun currentApiKey(): String? =
         TmdbSettingsRepository.snapshot().apiKey.trim().takeIf(String::isNotBlank)
 
@@ -414,6 +467,40 @@ private data class TmdbReleaseStatusDate(
 private data class TmdbTrendingResponse(
     val results: List<TmdbTrendingItem> = emptyList(),
 )
+
+@Serializable
+private data class TmdbSearchResponse(
+    val results: List<TmdbSearchResult> = emptyList(),
+)
+
+@Serializable
+private data class TmdbPosterResponse(
+    @SerialName("poster_path") val posterPath: String? = null,
+)
+
+@Serializable
+data class TmdbSearchResult(
+    val id: Int = 0,
+    val title: String? = null,
+    val name: String? = null,
+    val overview: String? = null,
+    @SerialName("poster_path") val posterPath: String? = null,
+    @SerialName("release_date") val releaseDate: String? = null,
+    @SerialName("first_air_date") val firstAirDate: String? = null,
+    val popularity: Double = 0.0,
+    @SerialName("media_type") val mediaType: String? = null,
+) {
+    val displayTitle: String
+        get() = (title ?: name).orEmpty()
+
+    val year: Int?
+        get() = (releaseDate ?: firstAirDate)?.take(4)?.toIntOrNull()
+
+    val isTv: Boolean
+        get() = mediaType.equals("tv", ignoreCase = true)
+
+    internal fun withMediaType(value: String): TmdbSearchResult = copy(mediaType = value)
+}
 
 @Serializable
 private data class TmdbTrendingItem(

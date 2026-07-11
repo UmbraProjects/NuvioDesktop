@@ -9,6 +9,7 @@ import java.nio.file.StandardCopyOption
 import java.util.Comparator
 import java.util.Locale
 import java.util.Properties
+import java.util.UUID
 import kotlin.io.path.exists
 
 internal object DesktopStorage {
@@ -16,7 +17,7 @@ internal object DesktopStorage {
     private val stores = mutableMapOf<String, Store>()
 
     val rootDir: Path by lazy {
-        resolveAppDataDir().also { Files.createDirectories(it) }
+        resolveAppDataDir()
     }
 
     fun store(name: String): Store = synchronized(stores) {
@@ -50,15 +51,68 @@ internal object DesktopStorage {
     private fun resolveAppDataDir(): Path {
         val osName = System.getProperty("os.name").orEmpty().lowercase(Locale.ROOT)
         val userHome = Paths.get(System.getProperty("user.home").orEmpty())
-        return when {
-            osName.contains("mac") -> userHome.resolve("Library/Application Support/Nuvio")
-            osName.contains("win") -> {
-                val appData = System.getenv("APPDATA")?.takeIf { it.isNotBlank() }
-                (appData?.let(Paths::get) ?: userHome.resolve("AppData/Roaming")).resolve("Nuvio")
+        if (!osName.contains("win")) {
+            val parent = if (osName.contains("mac")) {
+                userHome.resolve("Library/Application Support")
+            } else {
+                System.getenv("XDG_CONFIG_HOME")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(Paths::get)
+                    ?: userHome.resolve(".config")
             }
-            else -> {
-                val xdgConfig = System.getenv("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() }
-                (xdgConfig?.let(Paths::get) ?: userHome.resolve(".config")).resolve("nuvio")
+            val destination = parent.resolve(if (osName.contains("mac")) "NuvioHTPC" else "nuviohtpc")
+            migrateLegacyDirectories(destination, parent.resolve(if (osName.contains("mac")) "Nuvio" else "nuvio"))
+            return destination
+        }
+
+        val localAppData = System.getenv("LOCALAPPDATA")
+            ?.takeIf { it.isNotBlank() }
+            ?.let(Paths::get)
+            ?: userHome.resolve("AppData/Local")
+        val destination = localAppData.resolve("NuvioHTPC")
+        if (destination.exists()) return destination
+
+        // Nuvio Desktop stored preferences in roaming AppData while its logs, custom badges,
+        // and updater files lived in Local AppData. Nuvio HTPC uses a single Local AppData
+        // directory, so bring both old locations forward once before creating any new files.
+        val roamingNuvio = System.getenv("APPDATA")
+            ?.takeIf { it.isNotBlank() }
+            ?.let(Paths::get)
+            ?.resolve("Nuvio")
+            ?: userHome.resolve("AppData/Roaming/Nuvio")
+        val localNuvio = localAppData.resolve("Nuvio")
+        migrateLegacyDirectories(destination, roamingNuvio, localNuvio)
+        return destination
+    }
+
+    private fun migrateLegacyDirectories(destination: Path, vararg sources: Path) {
+        synchronized(stores) {
+            if (destination.exists()) return
+            val staging = destination.resolveSibling("${destination.fileName}.migrating-${UUID.randomUUID()}")
+            try {
+                Files.createDirectories(staging)
+                sources
+                    .filter { it.exists() && it != destination }
+                    .forEach { source ->
+                        Files.walk(source).use { paths ->
+                            paths.forEach { current ->
+                                val target = staging.resolve(source.relativize(current).toString())
+                                if (Files.isDirectory(current)) {
+                                    Files.createDirectories(target)
+                                } else if (!target.exists()) {
+                                    Files.createDirectories(target.parent)
+                                    Files.copy(current, target)
+                                }
+                            }
+                        }
+                    }
+                runCatching { Files.move(staging, destination, StandardCopyOption.ATOMIC_MOVE) }
+                    .getOrElse { Files.move(staging, destination) }
+            } catch (error: Exception) {
+                // Migration problems must not block startup; the original Nuvio folders remain
+                // untouched and the app starts with a fresh destination instead.
+                System.err.println("Unable to migrate Nuvio data to $destination: ${error.message}")
+                Files.createDirectories(destination)
             }
         }
     }

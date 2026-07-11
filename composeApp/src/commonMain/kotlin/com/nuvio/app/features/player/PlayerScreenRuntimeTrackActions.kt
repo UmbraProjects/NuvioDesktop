@@ -1,5 +1,7 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.isDesktop
+
 internal val PlayerScreenRuntime.subtitleStyle: SubtitleStyleState
     get() = playerSettingsUiState.subtitleStyle
 
@@ -176,7 +178,11 @@ internal fun PlayerScreenRuntime.refreshTracks() {
             } else {
                 playerSettingsUiState.preferredSubtitleLanguage
             },
-            secondaryPreferredSubtitleLanguage = playerSettingsUiState.secondaryPreferredSubtitleLanguage,
+            secondaryPreferredSubtitleLanguage = if (playerSettingsUiState.dualSubtitlesEnabled) {
+                null
+            } else {
+                playerSettingsUiState.secondaryPreferredSubtitleLanguage
+            },
             deviceLanguages = DeviceLanguagePreferences.preferredLanguageCodes(),
         )
 
@@ -214,6 +220,38 @@ internal fun PlayerScreenRuntime.refreshTracks() {
             preferredSubtitleSelectionApplied = true
         }
     }
+
+    applySecondarySubtitleSelectionIfNeeded()
+}
+
+internal fun PlayerScreenRuntime.applySecondarySubtitleSelectionIfNeeded() {
+    if (secondarySubtitleSelectionApplied) return
+    val controller = playerController ?: return
+    val secondaryLanguage = normalizeLanguageCode(playerSettingsUiState.secondaryPreferredSubtitleLanguage)
+    val hasPrimarySubtitle = selectedSubtitleIndex >= 0 || useCustomSubtitles || subtitleTracks.any { it.isSelected }
+
+    if (!isDesktop ||
+        !playerSettingsUiState.dualSubtitlesEnabled ||
+        secondaryLanguage == null ||
+        secondaryLanguage == SubtitleLanguageOption.NONE ||
+        !hasPrimarySubtitle
+    ) {
+        controller.selectSecondarySubtitleTrack(-1)
+        secondarySubtitleSelectionApplied = true
+        return
+    }
+
+    if (subtitleTracks.isEmpty()) return
+    val candidates = subtitleTracks.filterNot { track ->
+        !useCustomSubtitles && track.index == selectedSubtitleIndex
+    }
+    val candidatePosition = findPreferredSubtitleTrackIndex(
+        tracks = candidates,
+        targets = listOf(secondaryLanguage),
+    )
+    val secondaryTrack = candidates.getOrNull(candidatePosition)
+    controller.selectSecondarySubtitleTrack(secondaryTrack?.index ?: -1)
+    secondarySubtitleSelectionApplied = true
 }
 
 internal fun PlayerScreenRuntime.cycleAudioTrackFromKeyboard() {
@@ -264,6 +302,8 @@ internal fun PlayerScreenRuntime.cycleSubtitleTrackFromKeyboard() {
         } else {
             playerController?.selectSubtitleTrack(track.index)
         }
+        secondarySubtitleSelectionApplied = false
+        applySecondarySubtitleSelectionIfNeeded()
         showGestureMessage("Subtitles: ${track.label.ifBlank { track.language ?: "Track ${track.index + 1}" }}")
     } else {
         val subtitle = addons[nextPosition - subtitleTracks.size]
@@ -272,6 +312,8 @@ internal fun PlayerScreenRuntime.cycleSubtitleTrackFromKeyboard() {
         useCustomSubtitles = true
         persistAddonSubtitlePreference(subtitle)
         playerController?.setSubtitleUri(subtitle.url)
+        secondarySubtitleSelectionApplied = false
+        applySecondarySubtitleSelectionIfNeeded()
         showGestureMessage("Subtitles: ${subtitle.display.ifBlank { subtitle.language }}")
     }
 }

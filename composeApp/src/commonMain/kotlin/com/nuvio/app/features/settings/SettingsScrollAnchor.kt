@@ -29,6 +29,7 @@ private const val SettingsScrollAnchorHighlightMillis = 3000L
 internal object SettingsScrollAnchor {
     const val DisplayMode = "display_mode"
     const val AdaptiveHeroPosition = "adaptive_hero_position"
+    const val AdaptiveHeroHeight = "adaptive_hero_height"
     const val HeroBadgeCount = "hero_badge_count"
     const val HeroBadgePosition = "hero_badge_position"
     const val HeroBadgeSize = "hero_badge_size"

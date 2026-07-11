@@ -22,6 +22,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_continue_watch
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
 import nuvio.composeapp.generated.resources.compose_settings_page_keyboard_shortcuts
+import nuvio.composeapp.generated.resources.compose_settings_page_local_library
 import nuvio.composeapp.generated.resources.compose_settings_page_licenses_attributions
 import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_ratings
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
@@ -85,6 +86,11 @@ internal enum class SettingsPage(
     ),
     Streams(
         titleRes = Res.string.compose_settings_page_streams,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
+    LocalLibrary(
+        titleRes = Res.string.compose_settings_page_local_library,
         category = SettingsCategory.General,
         parentPage = Root,
     ),

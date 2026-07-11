@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.core.storage.DesktopStorage
 import java.io.File
 
 private val BadgeFileExtensions = setOf("png", "jpg", "jpeg", "webp")
@@ -34,21 +35,7 @@ private fun resolveBundledBadgeCacheDirectory(): File =
     File(System.getProperty("java.io.tmpdir"), "nuvio-bundled-badges")
 
 private fun resolveBadgeDirectory(): File {
-    val localAppData = System.getenv("LOCALAPPDATA")
-        ?.takeIf(String::isNotBlank)
-        ?.let(::File)
-    if (localAppData != null) {
-        return File(localAppData, "Nuvio/Badges")
-    }
-
-    val appDataLocal = System.getenv("APPDATA")
-        ?.takeIf(String::isNotBlank)
-        ?.let(::File)
-        ?.parentFile
-        ?.resolve("Local/Nuvio/Badges")
-    if (appDataLocal != null) return appDataLocal
-
-    return File(System.getProperty("user.home"), "AppData/Local/Nuvio/Badges")
+    return DesktopStorage.rootDir.resolve("Badges").toFile()
 }
 
 private fun customBadgeAliases(label: String, category: String): Set<String> =
