@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.snapshotFlow
@@ -145,6 +146,7 @@ import com.nuvio.app.features.home.components.HomeCollectionRowSection
 import com.nuvio.app.features.home.components.HomeTvFocusState
 import com.nuvio.app.features.home.components.HomeTvRow
 import com.nuvio.app.features.home.components.homeHeroLayout
+import com.nuvio.app.features.home.components.homeTvLazyScrollTarget
 import androidx.compose.foundation.lazy.LazyListState
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import kotlinx.coroutines.Dispatchers
@@ -1417,6 +1419,9 @@ fun HomeScreen(
         }
     }
     val tvCoroutineScope = rememberCoroutineScope()
+    // Updated from BoxWithConstraints once the adaptive layout is known. Keyboard handling lives
+    // outside that scope, so retain the current configured hero height here for scroll targets.
+    var adaptiveHeroScrollClearancePx by remember { mutableStateOf(0) }
     val mouseActivity = rememberMouseActivityState()
     // Seed from the session-scoped holder so the immersive home layout returns to the
     // catalog row the user was on (e.g. after visiting the details screen) instead of
@@ -1580,14 +1585,23 @@ fun HomeScreen(
     fun tvRowIndexForSection(sectionIndex: Int): Int =
         if (heroFocusable) sectionIndex - 1 else sectionIndex
 
-    fun tvLazyItemIndexForSection(sectionIndex: Int): Int {
-        if (heroFocusable && sectionIndex == 0) return 0
-        return tvRowIndexForSection(sectionIndex).coerceAtLeast(0)
-    }
-
     fun tvItemCountForSection(sectionIndex: Int): Int {
         if (heroFocusable && sectionIndex == 0) return effectiveHeroItems.size
         return tvRows.getOrNull(tvRowIndexForSection(sectionIndex))?.itemCount ?: 0
+    }
+
+    fun scrollToFocusedTvSection() {
+        val target = homeTvLazyScrollTarget(
+            sectionIndex = tvFocus.sectionIndex,
+            heroFocusable = heroFocusable,
+            adaptiveHeroHeightPx = adaptiveHeroScrollClearancePx,
+        )
+        tvCoroutineScope.launch {
+            currentListState.animateScrollToItem(
+                index = target.itemIndex,
+                scrollOffset = target.scrollOffset,
+            )
+        }
     }
 
     fun syncImmersiveTvFocusSection() {
@@ -1625,9 +1639,7 @@ fun HomeScreen(
             }
             tvFocus.itemIndex = tvFocus.itemIndex
                 .coerceIn(0, (tvItemCountForSection(tvFocus.sectionIndex) - 1).coerceAtLeast(0))
-            if (!tvModeEnabled) tvCoroutineScope.launch {
-                currentListState.animateScrollToItem(tvLazyItemIndexForSection(tvFocus.sectionIndex))
-            }
+            if (!tvModeEnabled) scrollToFocusedTvSection()
             true
         }
         HomeTvKey.Up -> {
@@ -1640,9 +1652,7 @@ fun HomeScreen(
             }
             tvFocus.itemIndex = tvFocus.itemIndex
                 .coerceIn(0, (tvItemCountForSection(tvFocus.sectionIndex) - 1).coerceAtLeast(0))
-            if (!tvModeEnabled) tvCoroutineScope.launch {
-                currentListState.animateScrollToItem(tvLazyItemIndexForSection(tvFocus.sectionIndex))
-            }
+            if (!tvModeEnabled) scrollToFocusedTvSection()
             true
         }
         HomeTvKey.Right -> {
@@ -2084,9 +2094,7 @@ fun HomeScreen(
                                     }
                                     tvFocus.itemIndex = tvFocus.itemIndex
                                         .coerceIn(0, (tvItemCountForSection(tvFocus.sectionIndex) - 1).coerceAtLeast(0))
-                                    if (!tvModeEnabled) tvCoroutineScope.launch {
-                                        currentListState.animateScrollToItem(tvLazyItemIndexForSection(tvFocus.sectionIndex))
-                                    }
+                                    if (!tvModeEnabled) scrollToFocusedTvSection()
                                     true
                                 }
                                 Key.DirectionUp -> {
@@ -2099,9 +2107,7 @@ fun HomeScreen(
                                     }
                                     tvFocus.itemIndex = tvFocus.itemIndex
                                         .coerceIn(0, (tvItemCountForSection(tvFocus.sectionIndex) - 1).coerceAtLeast(0))
-                                    if (!tvModeEnabled) tvCoroutineScope.launch {
-                                        currentListState.animateScrollToItem(tvLazyItemIndexForSection(tvFocus.sectionIndex))
-                                    }
+                                    if (!tvModeEnabled) scrollToFocusedTvSection()
                                     true
                                 }
                                 Key.DirectionRight -> handleHomeTvKey(HomeTvKey.Right)
@@ -2207,6 +2213,13 @@ fun HomeScreen(
             )
         } else {
             null
+        }
+        val density = LocalDensity.current
+        val adaptiveHeroHeightPx = adaptiveHeroLayout?.let { layout ->
+            with(density) { layout.heroHeight.roundToPx() }
+        } ?: 0
+        SideEffect {
+            adaptiveHeroScrollClearancePx = adaptiveHeroHeightPx
         }
         val leadingOverlaySpacerHeight = adaptiveHeroLayout?.heroHeight ?: defaultChromeSpacerHeight
 

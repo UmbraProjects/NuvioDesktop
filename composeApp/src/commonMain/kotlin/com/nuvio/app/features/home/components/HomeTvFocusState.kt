@@ -26,6 +26,39 @@ internal class HomeTvRow(
 )
 
 /**
+ * Maps a logical TV-focus section to the lazy-list position used for keyboard scrolling.
+ *
+ * Adaptive mode renders the hero as a fixed overlay and reserves its space with a leading lazy
+ * item. The focused row therefore needs both the extra item-index shift and a negative scroll
+ * offset that leaves it below the overlay. Keeping the measured/configured hero height in the
+ * target prevents larger hero-height settings from covering the focused row.
+ */
+internal data class HomeTvLazyScrollTarget(
+    val itemIndex: Int,
+    val scrollOffset: Int,
+)
+
+internal fun homeTvLazyScrollTarget(
+    sectionIndex: Int,
+    heroFocusable: Boolean,
+    adaptiveHeroHeightPx: Int,
+): HomeTvLazyScrollTarget {
+    if (heroFocusable && sectionIndex == 0) {
+        return HomeTvLazyScrollTarget(itemIndex = 0, scrollOffset = 0)
+    }
+
+    val rowIndex = (sectionIndex - if (heroFocusable) 1 else 0).coerceAtLeast(0)
+    return if (adaptiveHeroHeightPx > 0) {
+        HomeTvLazyScrollTarget(
+            itemIndex = rowIndex + 1,
+            scrollOffset = -adaptiveHeroHeightPx,
+        )
+    } else {
+        HomeTvLazyScrollTarget(itemIndex = rowIndex, scrollOffset = 0)
+    }
+}
+
+/**
  * Tracks D-pad-style focus position for TV Mode on the home screen.
  *
  * [sectionIndex] is 0 for the hero and 1..N for the rows rendered below it

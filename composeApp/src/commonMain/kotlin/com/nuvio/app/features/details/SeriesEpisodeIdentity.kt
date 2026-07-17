@@ -1,6 +1,23 @@
 package com.nuvio.app.features.details
 
+import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
+
+/**
+ * Progress entries are keyed by the video id the player actually used — for native-anime
+ * episodes that is the addon's own id (`kitsu:123:76`), not the synthesized
+ * `<parent>:<season>:<episode>` form. Check both shapes so completion state renders (and can be
+ * cleared) regardless of which one recorded the progress.
+ */
+internal fun Map<String, WatchProgressEntry>.progressForEpisodeVideo(
+    builtVideoId: String,
+    rawVideoId: String?,
+): WatchProgressEntry? {
+    this[builtVideoId]?.let { return it }
+    val raw = rawVideoId?.trim().orEmpty()
+    if (raw.isEmpty() || raw == builtVideoId) return null
+    return this[raw]
+}
 
 /**
  * Coordinates used while an episode is playing.

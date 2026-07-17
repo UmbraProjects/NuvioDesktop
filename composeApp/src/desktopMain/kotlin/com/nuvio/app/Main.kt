@@ -35,6 +35,7 @@ import java.awt.dnd.DropTargetDragEvent
 import java.awt.dnd.DropTargetDropEvent
 import com.nuvio.app.core.ui.DesktopNavigationGestureBridge
 import com.nuvio.app.core.ui.DesktopBackRequestSource
+import com.nuvio.app.features.p2p.P2pStreamingEngine
 import com.nuvio.app.features.player.DesktopRendererApi
 import com.nuvio.app.features.player.PlatformPlayerSurface
 import com.nuvio.app.features.player.PlayerSettingsStorage
@@ -178,7 +179,10 @@ fun main() {
         val isWindowsHost = remember { DesktopHostOs.current == DesktopHostOs.WINDOWS }
 
         Window(
-            onCloseRequest = ::exitApplication,
+            onCloseRequest = {
+                P2pStreamingEngine.shutdown()
+                exitApplication()
+            },
             title = if (smokePlayerUrl == null) "Nuvio" else "Nuvio Player Smoke",
             state = windowState,
             icon = painterResource(NuvioDesktopIconPath),

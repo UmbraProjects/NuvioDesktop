@@ -59,6 +59,7 @@ import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.playbackEpisodeNumber
 import com.nuvio.app.features.details.playbackSeasonNumber
+import com.nuvio.app.features.details.progressForEpisodeVideo
 import com.nuvio.app.features.details.resolveSeriesEpisodePosition
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.streams.StreamCard
@@ -339,7 +340,8 @@ private fun EpisodesListSubView(
                         episodeNumber = episode.playbackEpisodeNumber(),
                         fallbackVideoId = episode.id,
                     )
-                    val isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
+                    val isWatched = progressByVideoId.progressForEpisodeVideo(episodeVideoId, episode.id)
+                        ?.isEffectivelyCompleted == true ||
                         WatchingState.isEpisodeWatched(
                             watchedKeys = watchedKeys,
                             metaType = parentMetaType,

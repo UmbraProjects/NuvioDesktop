@@ -148,6 +148,10 @@ internal class PlayerScreenRuntime(
     // player session starts from the persisted default.
     var sessionPlaybackSpeed by mutableStateOf(1f)
     var lastTrustedPlaybackPositionMs by mutableStateOf(0L)
+    // Last snapshot with a real duration and position for the CURRENT video. Teardown can hand
+    // flushWatchProgress a zeroed placeholder; this is the fallback so an exit near the end still
+    // records the final position (and its completion cascade) instead of being dropped.
+    var lastMeaningfulPlaybackSnapshot by mutableStateOf<PlayerPlaybackSnapshot?>(null)
     var playerController by mutableStateOf<PlayerEngineController?>(null)
     var playerControllerSourceUrl by mutableStateOf<String?>(null)
     var errorMessage by mutableStateOf<String?>(null)

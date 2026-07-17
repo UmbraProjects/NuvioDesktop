@@ -490,6 +490,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     ) {
                         lastTrustedPlaybackPositionMs = snapshot.positionMs
                     }
+                    if (!snapshot.isLoading && snapshot.durationMs > 0L && snapshot.positionMs >= 1_000L) {
+                        lastMeaningfulPlaybackSnapshot = snapshot
+                    }
                     playbackSnapshot = snapshot
                     if (!snapshot.isLoading) initialLoadCompleted = true
                     if (!snapshot.isLoading && !defaultPlaybackSpeedApplied && !isProviderDiagnosticVideoPlayback) {

@@ -5,6 +5,50 @@ import kotlin.test.assertEquals
 
 class HomeTvFocusStateTest {
     @Test
+    fun adaptiveScrollTargetsFocusedRowBelowConfiguredHero() {
+        assertEquals(
+            HomeTvLazyScrollTarget(itemIndex = 1, scrollOffset = -330),
+            homeTvLazyScrollTarget(
+                sectionIndex = 1,
+                heroFocusable = true,
+                adaptiveHeroHeightPx = 330,
+            ),
+        )
+        assertEquals(
+            HomeTvLazyScrollTarget(itemIndex = 3, scrollOffset = -770),
+            homeTvLazyScrollTarget(
+                sectionIndex = 3,
+                heroFocusable = true,
+                adaptiveHeroHeightPx = 770,
+            ),
+        )
+    }
+
+    @Test
+    fun adaptiveHeroTargetReturnsToTopWithoutClearance() {
+        assertEquals(
+            HomeTvLazyScrollTarget(itemIndex = 0, scrollOffset = 0),
+            homeTvLazyScrollTarget(
+                sectionIndex = 0,
+                heroFocusable = true,
+                adaptiveHeroHeightPx = 770,
+            ),
+        )
+    }
+
+    @Test
+    fun nonAdaptiveScrollTargetPreservesExistingRowMapping() {
+        assertEquals(
+            HomeTvLazyScrollTarget(itemIndex = 2, scrollOffset = 0),
+            homeTvLazyScrollTarget(
+                sectionIndex = 3,
+                heroFocusable = true,
+                adaptiveHeroHeightPx = 0,
+            ),
+        )
+    }
+
+    @Test
     fun restoredItemIsReportedWhenRestoredSectionBecomesActive() {
         val changes = mutableListOf<Pair<Int, Int>>()
         val focus = HomeTvFocusState { section, item -> changes += section to item }

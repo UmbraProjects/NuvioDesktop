@@ -11,9 +11,11 @@ import com.nuvio.app.features.watching.sync.SupabaseWatchedSyncAdapter
 import com.nuvio.app.features.watching.sync.TraktWatchedSyncAdapter
 import com.nuvio.app.features.watching.sync.WatchedDeltaEvent
 import com.nuvio.app.features.watching.sync.WatchedSyncAdapter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -178,7 +180,27 @@ object WatchedRepository {
         pullStartedEpochMs: Long,
     ) {
         if (!deltaInitialized) {
-            val cursorBeforeSnapshot = syncAdapter.getDeltaCursor(profileId) ?: return
+            // Mirror the watch-progress repository: a missing/failing delta cursor must not leave
+            // the local state unsynced forever — fall back to a full snapshot pull instead.
+            val cursorBeforeSnapshot = try {
+                syncAdapter.getDeltaCursor(profileId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                log.w { "Watched delta cursor unavailable, falling back to full pull: ${error.message}" }
+                null
+            }
+            if (cursorBeforeSnapshot == null) {
+                pullFullFromAdapter(
+                    adapter = syncAdapter,
+                    profileId = profileId,
+                    localBeforePull = localBeforePull,
+                    lastPushEpochMs = lastPushEpochMs,
+                    pullStartedEpochMs = pullStartedEpochMs,
+                    resetDeltaState = true,
+                )
+                return
+            }
             pullFullFromAdapter(
                 adapter = syncAdapter,
                 profileId = profileId,
@@ -197,11 +219,26 @@ object WatchedRepository {
         var changed = false
 
         while (true) {
-            val events = syncAdapter.pullDelta(
-                profileId = profileId,
-                sinceEventId = cursor,
-                limit = watchedItemsDeltaPageSize,
-            )
+            val events = try {
+                syncAdapter.pullDelta(
+                    profileId = profileId,
+                    sinceEventId = cursor,
+                    limit = watchedItemsDeltaPageSize,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                log.w { "Watched delta pull unavailable, falling back to full pull: ${error.message}" }
+                pullFullFromAdapter(
+                    adapter = syncAdapter,
+                    profileId = profileId,
+                    localBeforePull = localBeforePull,
+                    lastPushEpochMs = lastPushEpochMs,
+                    pullStartedEpochMs = pullStartedEpochMs,
+                    resetDeltaState = true,
+                )
+                return
+            }
             if (events.isEmpty()) break
 
             applyWatchedDeltaEvents(
@@ -468,11 +505,32 @@ object WatchedRepository {
             return true
         }
 
-        syncAdapter.push(profileId = profileId, items = items)
+        // Retry only the Supabase upsert (idempotent); re-pushing Trakt history would add
+        // duplicate plays.
+        withSyncRetry("Watched items push") {
+            syncAdapter.push(profileId = profileId, items = items)
+        }
         if (shouldMirrorToTrakt) {
             TraktWatchedSyncAdapter.push(profileId = profileId, items = items)
         }
         return true
+    }
+
+    private suspend fun <T> withSyncRetry(description: String, block: suspend () -> T): T {
+        val retryDelaysMs = longArrayOf(2_000L, 5_000L)
+        var attempt = 0
+        while (true) {
+            try {
+                return block()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                if (attempt >= retryDelaysMs.size) throw error
+                log.w { "$description failed (attempt ${attempt + 1}/${retryDelaysMs.size + 1}), retrying: ${error.message}" }
+                delay(retryDelaysMs[attempt])
+                attempt += 1
+            }
+        }
     }
 
     private suspend fun deleteFromActiveTargets(

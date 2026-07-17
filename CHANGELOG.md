@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.11.1 - 2026-07-17
+
+### Added
+
+- **Merged Upstream P2P** - P2P flag's been switched on, the server bundled (same as upstream uses) and it should now work.
+- **Native Crash Diagnostics** - packaged Windows builds now capture the JVM's native crash report and minidump (faulting module and stack) when the app terminates unexpectedly, and automatically file them alongside `nuvio.log` under `%LOCALAPPDATA%\NuvioHTPC\logs` on the next launch, so silent crash-to-desktop reports can be diagnosed straight from a normal log bundle without hunting through system folders.
+
+### Improved
+
+- **Plugin Stability** - capped how many plugin scrapers execute at the same time so loading streams with a large plugin set no longer spins up dozens of JavaScript engine instances at once - a suspected cause of rare silent crashes during stream loading. Addon-only setups are unaffected.
+
+### Fixed
+
+- **Keyboard Navigation on Adaptive Mode** - could cause the posters to get stuck behind the hero.
+- **Anime Mapping** - should now properly map for CW and local library.
+
 ## 1.11.0 - 2026-07-17
 
 ### Added

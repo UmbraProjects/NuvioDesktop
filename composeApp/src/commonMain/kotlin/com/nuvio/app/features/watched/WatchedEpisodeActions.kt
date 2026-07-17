@@ -92,6 +92,17 @@ fun MetaDetails.episodePlaybackId(video: MetaVideo): String =
         fallbackVideoId = video.id,
     )
 
+/**
+ * Every video id shape a progress entry for this episode may be keyed under. Playback stores
+ * entries by the id the player actually used — for native-anime episodes that is the addon's own
+ * id (`kitsu:123:76`) rather than the synthesized `<parent>:<season>:<episode>` form — so clears
+ * and lookups must cover both or stale progress survives a manual watched mark.
+ */
+fun MetaDetails.episodePlaybackIds(video: MetaVideo): List<String> =
+    listOf(episodePlaybackId(video), video.id.trim())
+        .filter { it.isNotBlank() }
+        .distinct()
+
 private fun MetaVideo.toDomainReleasedEpisode(): WatchingReleasedEpisode =
     WatchingReleasedEpisode(
         videoId = id,

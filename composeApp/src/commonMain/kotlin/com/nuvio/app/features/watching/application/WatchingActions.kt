@@ -6,7 +6,7 @@ import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.watched.WatchedItem
 import com.nuvio.app.features.watched.WatchedRepository
-import com.nuvio.app.features.watched.episodePlaybackId
+import com.nuvio.app.features.watched.episodePlaybackIds
 import com.nuvio.app.features.watched.releasedMainSeasonEpisodes
 import com.nuvio.app.features.watched.toEpisodeWatchedItem
 import com.nuvio.app.features.watched.toSeriesWatchedItem
@@ -58,7 +58,7 @@ object WatchingActions {
         } else {
             WatchedRepository.markWatched(seriesItems)
             WatchProgressRepository.clearProgress(
-                releasedMainEpisodes.map(meta::episodePlaybackId),
+                releasedMainEpisodes.flatMap(meta::episodePlaybackIds),
             )
         }
     }
@@ -73,7 +73,7 @@ object WatchingActions {
             WatchedRepository.unmarkWatched(watchedItem)
         } else {
             WatchedRepository.markWatched(watchedItem)
-            WatchProgressRepository.clearProgress(meta.episodePlaybackId(episode))
+            WatchProgressRepository.clearProgress(meta.episodePlaybackIds(episode))
         }
         reconcileSeriesWatchedState(meta)
     }
@@ -112,7 +112,9 @@ object WatchingActions {
             meta = meta,
             todayIsoDate = todayIsoDate,
             isEpisodeCompleted = { episode ->
-                WatchProgressRepository.progressForVideo(meta.episodePlaybackId(episode))?.isCompleted == true
+                meta.episodePlaybackIds(episode).any { videoId ->
+                    WatchProgressRepository.progressForVideo(videoId)?.isCompleted == true
+                }
             },
         )
     }
@@ -155,7 +157,7 @@ object WatchingActions {
             WatchedRepository.unmarkWatched(watchedItems)
         } else {
             WatchedRepository.markWatched(watchedItems)
-            WatchProgressRepository.clearProgress(episodes.map(meta::episodePlaybackId))
+            WatchProgressRepository.clearProgress(episodes.flatMap(meta::episodePlaybackIds))
         }
         reconcileSeriesWatchedState(meta)
     }

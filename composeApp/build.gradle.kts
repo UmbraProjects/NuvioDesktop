@@ -931,6 +931,20 @@ compose.desktop {
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.awt.windows=ALL-UNNAMED",
+            // Native-crash diagnostics (chasing the silent, log-less CTD on plugin users —
+            // suspected QuickJS/JNI access violation). On an EXCEPTION_ACCESS_VIOLATION the
+            // HotSpot handler writes an hs_err_pid<pid>.log naming the faulting native module,
+            // and CreateCoredumpOnCrash drops a .mdmp with the native stack beside it. Pinned to
+            // C:\Users\Public (always exists + world-writable, so it survives an install under
+            // Program Files) with %p to avoid PID collisions — ErrorFile is a static startup flag
+            // that can't expand %LOCALAPPDATA% into the per-user log dir, so on the next launch
+            // relocateNativeCrashArtifacts() in DesktopFileLogging.kt moves these files into
+            // %LOCALAPPDATA%\NuvioHTPC\logs beside nuvio.log. Windows-only; harmless if empty.
+            // NOTE: this does NOT catch abort()/fast-fail exits (e.g. a QuickJS assert) which
+            // bypass the SEH handler — those need WER LocalDumps. No -Xrs is set, so the handler
+            // stays installed.
+            if (isWindowsHost) "-XX:ErrorFile=C:/Users/Public/nuvio_hs_err_pid%p.log" else null,
+            if (isWindowsHost) "-XX:+CreateCoredumpOnCrash" else null,
             smokePlayerUrl?.takeIf { it.isNotBlank() }?.let { "-Dnuvio.desktop.smokePlayerUrl=$it" },
         )
 

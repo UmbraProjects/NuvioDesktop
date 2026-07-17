@@ -1042,6 +1042,15 @@ object WatchProgressRepository {
             session.parentMetaId
         }
 
+        // Record native-anime episodes in the entry-relative coordinate space the details page
+        // checks against; the session may carry franchise numbering depending on entry point.
+        val (resolvedSeasonNumber, resolvedEpisodeNumber) = resolveNativeAnimeEpisodeCoordinates(
+            parentMetaId = session.parentMetaId,
+            videoId = session.videoId,
+            seasonNumber = session.seasonNumber,
+            episodeNumber = session.episodeNumber,
+        )
+
         val entry = WatchProgressEntry(
             contentType = session.contentType,
             parentMetaId = effectiveParentMetaId,
@@ -1051,8 +1060,8 @@ object WatchProgressRepository {
             logo = session.logo,
             poster = session.poster,
             background = session.background,
-            seasonNumber = session.seasonNumber,
-            episodeNumber = session.episodeNumber,
+            seasonNumber = resolvedSeasonNumber,
+            episodeNumber = resolvedEpisodeNumber,
             episodeTitle = session.episodeTitle,
             episodeThumbnail = session.episodeThumbnail,
             lastPositionMs = if (isCompleted && durationMs > 0L) durationMs else positionMs,
@@ -1106,10 +1115,31 @@ object WatchProgressRepository {
         syncScope.launch {
             runCatching {
                 val profileId = ProfileRepository.activeProfileId
-                syncAdapter.push(profileId = profileId, entries = listOf(entry))
+                withSyncRetry("Watch progress scrobble push") {
+                    syncAdapter.push(profileId = profileId, entries = listOf(entry))
+                }
                 recordSuccessfulPush(profileId = profileId, entries = listOf(entry))
             }.onFailure { e ->
                 log.e(e) { "Failed to push watch progress scrobble" }
+            }
+        }
+    }
+
+    // The sync_push_* RPCs intermittently hit the client request timeout; a completion scrobble
+    // dropped here never reaches other devices, so retry briefly before giving up.
+    private suspend fun <T> withSyncRetry(description: String, block: suspend () -> T): T {
+        val retryDelaysMs = longArrayOf(2_000L, 5_000L)
+        var attempt = 0
+        while (true) {
+            try {
+                return block()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                if (attempt >= retryDelaysMs.size) throw error
+                log.w { "$description failed (attempt ${attempt + 1}/${retryDelaysMs.size + 1}), retrying: ${error.message}" }
+                delay(retryDelaysMs[attempt])
+                attempt += 1
             }
         }
     }

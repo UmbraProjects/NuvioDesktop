@@ -2216,7 +2216,7 @@ private fun isEpisodeWatchedForActions(
         episodeNumber = episode.effectiveEpisodeNumber(),
         fallbackVideoId = episode.id,
     )
-    return progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
+    return progressByVideoId.progressForEpisodeVideo(episodeVideoId, episode.id)?.isEffectivelyCompleted == true ||
         WatchingState.isEpisodeWatched(
             watchedKeys = watchedKeys,
             metaType = meta.type,

@@ -81,6 +81,7 @@ import com.nuvio.app.features.details.effectiveSeasonNumber
 import com.nuvio.app.features.details.formatRuntimeFromMinutes
 import com.nuvio.app.features.details.metaVideoSeasonEpisodeComparator
 import com.nuvio.app.features.details.normalizeSeasonNumber
+import com.nuvio.app.features.details.progressForEpisodeVideo
 import com.nuvio.app.features.details.seasonSortKey
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
@@ -415,13 +416,15 @@ fun DetailSeriesContent(
                                     episodeNumber = episode.effectiveEpisodeNumber(),
                                     fallbackVideoId = episode.id,
                                 )
+                                val episodeProgressEntry =
+                                    progressByVideoId.progressForEpisodeVideo(episodeVideoId, episode.id)
                                 NuvioShelfItemSlot(focused = index == focusedEpisodeIndex) {
                                     EpisodeListCard(
                                         video = episode,
                                         fallbackImage = meta.background ?: meta.poster,
-                                        progressEntry = progressByVideoId[episodeVideoId],
+                                        progressEntry = episodeProgressEntry,
                                         imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
-                                        isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
+                                        isWatched = episodeProgressEntry?.isEffectivelyCompleted == true ||
                                             WatchingState.isEpisodeWatched(
                                                 watchedKeys = watchedKeys,
                                                 metaType = meta.type,
@@ -967,13 +970,14 @@ private fun EpisodeHorizontalRow(
                 episodeNumber = episode.effectiveEpisodeNumber(),
                 fallbackVideoId = episode.id,
             )
+            val episodeProgressEntry = progressByVideoId.progressForEpisodeVideo(episodeVideoId, episode.id)
             NuvioShelfItemSlot(focused = index == focusedEpisodeIndex) {
                 EpisodeHorizontalCard(
                     video = episode,
                     fallbackImage = fallbackImage,
-                    progressEntry = progressByVideoId[episodeVideoId],
+                    progressEntry = episodeProgressEntry,
                     imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
-                    isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
+                    isWatched = episodeProgressEntry?.isEffectivelyCompleted == true ||
                         WatchingState.isEpisodeWatched(
                             watchedKeys = watchedKeys,
                             metaType = metaType,

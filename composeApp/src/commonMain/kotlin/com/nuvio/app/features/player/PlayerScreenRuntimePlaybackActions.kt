@@ -61,6 +61,9 @@ internal fun PlayerScreenRuntime.resetIdentityStateIfNeeded() {
     val videoIdentity = "$identity:$activeVideoId:$activeSeasonNumber:$activeEpisodeNumber"
     if (lastResetVideoIdentity != videoIdentity) {
         lastResetVideoIdentity = videoIdentity
+        // The fallback flush snapshot belongs to the previous video; carrying it across an episode
+        // or source switch would flush the old position onto the new item.
+        lastMeaningfulPlaybackSnapshot = null
         hasRequestedScrobbleStartForCurrentItem = false
         scrobbleStartRequestGeneration = 0L
         pendingScrobbleStartAfterSeek = false
@@ -300,7 +303,12 @@ internal suspend fun PlayerScreenRuntime.resolveParentalGuideImdbId(): String? {
 
 internal fun PlayerScreenRuntime.flushWatchProgress() {
     if (progressTrackingDisabled) return
+    // Teardown can zero the live snapshot before the flush runs; fall back to the last meaningful
+    // sample of the current video so the final position (and its completion) is not dropped.
     val snapshot = playbackSnapshot.progressSnapshotForFlush(
+        initialPositionMs = activeInitialPositionMs,
+        initialProgressFraction = activeInitialProgressFraction,
+    ) ?: lastMeaningfulPlaybackSnapshot?.progressSnapshotForFlush(
         initialPositionMs = activeInitialPositionMs,
         initialProgressFraction = activeInitialProgressFraction,
     ) ?: run {

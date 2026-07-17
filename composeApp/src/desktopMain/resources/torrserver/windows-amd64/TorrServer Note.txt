@@ -1,0 +1,7 @@
+The desktop P2P engine (P2pStreamingEngine.desktop.kt) loads it from the
+classpath resource /torrserver/windows-amd64/TorrServer.exe and extracts it to
+a temp dir at runtime. Override at dev time with -Dnuvio.torrserver.binary=<abs path>
+or the NUVIO_TORRSERVER_BINARY env var.
+
+Source: https://github.com/YouROK/TorrServer  (TorrServer-windows-amd64.exe -> rename to TorrServer.exe)
+The .exe itself is gitignored so it is not committed into history.

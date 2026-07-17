@@ -266,6 +266,74 @@ class WatchProgressRulesTest {
     }
 
     @Test
+    fun `native anime coordinates trust the entry-relative video id over franchise session coords`() {
+        // Franchise-numbered launch surface (S16E64) with the kitsu entry's 2-part absolute id.
+        assertEquals(
+            1 to 76,
+            resolveNativeAnimeEpisodeCoordinates(
+                parentMetaId = "kitsu:7850",
+                videoId = "kitsu:7850:76",
+                seasonNumber = 16,
+                episodeNumber = 64,
+            ),
+        )
+        // 3-part native id carries its own season/episode.
+        assertEquals(
+            0 to 5,
+            resolveNativeAnimeEpisodeCoordinates(
+                parentMetaId = "kitsu:7850",
+                videoId = "kitsu:7850:0:5",
+                seasonNumber = 17,
+                episodeNumber = 2,
+            ),
+        )
+        // Session coords that already match stay unchanged.
+        assertEquals(
+            1 to 77,
+            resolveNativeAnimeEpisodeCoordinates(
+                parentMetaId = "kitsu:7850",
+                videoId = "kitsu:7850:77",
+                seasonNumber = 1,
+                episodeNumber = 77,
+            ),
+        )
+    }
+
+    @Test
+    fun `native anime coordinates leave foreign ids and non-anime parents untouched`() {
+        // Video id under a franchise-mapped sibling entry: its numbers are not this parent's space.
+        assertEquals(
+            17 to 1,
+            resolveNativeAnimeEpisodeCoordinates(
+                parentMetaId = "kitsu:7850",
+                videoId = "kitsu:11367:1",
+                seasonNumber = 17,
+                episodeNumber = 1,
+            ),
+        )
+        // Non-anime parents keep the session coordinates.
+        assertEquals(
+            3 to 24,
+            resolveNativeAnimeEpisodeCoordinates(
+                parentMetaId = "tt0108778",
+                videoId = "tt0108778:3:24",
+                seasonNumber = 3,
+                episodeNumber = 24,
+            ),
+        )
+        // Malformed suffixes fall back to the session coordinates.
+        assertEquals(
+            2 to 9,
+            resolveNativeAnimeEpisodeCoordinates(
+                parentMetaId = "kitsu:7850",
+                videoId = "kitsu:7850:extra:1:2",
+                seasonNumber = 2,
+                episodeNumber = 9,
+            ),
+        )
+    }
+
+    @Test
     fun `parseReleaseDateToEpochMs handles ISO and date-only formats`() {
         val t1 = parseReleaseDateToEpochMs("2026-05-24T15:00:00Z")
         assertEquals(1779634800000L, t1)

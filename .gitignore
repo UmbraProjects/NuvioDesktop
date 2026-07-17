@@ -30,3 +30,6 @@ scripts/scrape_android_compose_animation_docs.py
 tools
 AGENTS.md
 /app/
+
+# TorrServer P2P binary (bundled at build/package time, not committed)
+composeApp/src/desktopMain/resources/torrserver/windows-amd64/TorrServer.exe

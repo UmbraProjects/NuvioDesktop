@@ -11,6 +11,8 @@ import com.fleeksoft.ksoup.select.Elements
 import com.nuvio.app.features.addons.httpRequestRaw
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -28,6 +30,17 @@ import org.jetbrains.compose.resources.getString
 import kotlin.random.Random
 
 private const val PLUGIN_TIMEOUT_MS = 60_000L
+
+// Caps how many QuickJS native runtimes can be alive at once. Each executePlugin /
+// getPluginSettingsLayout call stands up its own native (JNI) QuickJS runtime; stream
+// loading fans every enabled scraper out concurrently with no throttle, so a heavy
+// plugin set can spin up 15-30+ native runtimes at the same time. That concurrency is
+// the prime suspect for the silent, log-less native crashes seen only on plugin users
+// (addon users never touch QuickJS). Bounding it keeps native memory/thread pressure in
+// check and shrinks the timeout/cancellation teardown race window. Tunable: drop toward
+// 1 to test the hypothesis more aggressively, raise for more scrape parallelism.
+private const val MAX_CONCURRENT_PLUGINS = 4
+
 private const val MAX_FETCH_BODY_CHARS = 1024 * 1024
 private const val MAX_FETCH_HEADER_VALUE_CHARS = 8 * 1024
 private const val FETCH_TRUNCATION_SUFFIX = "\n...[truncated]"
@@ -53,6 +66,9 @@ internal object PluginRuntime {
         ignoreUnknownKeys = true
     }
 
+    // Bounds concurrent QuickJS native runtimes across all callers (see MAX_CONCURRENT_PLUGINS).
+    private val nativeRuntimeSemaphore = Semaphore(MAX_CONCURRENT_PLUGINS)
+
     private val containsRegex = Regex(""":contains\([\"']([^\"']+)[\"']\)""")
 
     suspend fun executePlugin(
@@ -64,16 +80,20 @@ internal object PluginRuntime {
         scraperId: String,
         scraperSettings: Map<String, Any> = emptyMap(),
     ): List<PluginRuntimeResult> = withContext(Dispatchers.Default) {
-        withTimeout(PLUGIN_TIMEOUT_MS) {
-            executePluginInternal(
-                code = code,
-                tmdbId = tmdbId,
-                mediaType = mediaType,
-                season = season,
-                episode = episode,
-                scraperId = scraperId,
-                scraperSettings = scraperSettings,
-            )
+        // Acquire the permit outside withTimeout so time spent queuing for a native
+        // runtime slot does not count against the plugin's execution budget.
+        nativeRuntimeSemaphore.withPermit {
+            withTimeout(PLUGIN_TIMEOUT_MS) {
+                executePluginInternal(
+                    code = code,
+                    tmdbId = tmdbId,
+                    mediaType = mediaType,
+                    season = season,
+                    episode = episode,
+                    scraperId = scraperId,
+                    scraperSettings = scraperSettings,
+                )
+            }
         }
     }
 
@@ -81,47 +101,49 @@ internal object PluginRuntime {
         code: String,
         scraperId: String,
     ): String? = withContext(Dispatchers.Default) {
-        withTimeout(PLUGIN_TIMEOUT_MS) {
-            var layoutJson: String? = null
-            quickJs(Dispatchers.Default) {
-                define("console") {
-                    function("log") { null }
-                    function("error") { null }
-                    function("warn") { null }
-                    function("info") { null }
-                    function("debug") { null }
-                }
-                function("__capture_settings_result") { args ->
-                    layoutJson = args.getOrNull(0)?.toString()
-                    null
-                }
+        nativeRuntimeSemaphore.withPermit {
+            withTimeout(PLUGIN_TIMEOUT_MS) {
+                var layoutJson: String? = null
+                quickJs(Dispatchers.Default) {
+                    define("console") {
+                        function("log") { null }
+                        function("error") { null }
+                        function("warn") { null }
+                        function("info") { null }
+                        function("debug") { null }
+                    }
+                    function("__capture_settings_result") { args ->
+                        layoutJson = args.getOrNull(0)?.toString()
+                        null
+                    }
 
-                evaluate<Any?>(buildPolyfillCode(scraperId, "{}"))
-                evaluate<Any?>(
-                    """
-                        var module = { exports: {} };
-                        var exports = module.exports;
-                        (function() {
-                            $code
-                        })();
-                    """.trimIndent(),
-                )
-                evaluate<Any?>(
-                    """
-                        (async function() {
-                            try {
-                                var onSettings = module.exports.onSettings || globalThis.onSettings;
-                                var layout = typeof onSettings === 'function' ? await onSettings() : [];
-                                __capture_settings_result(JSON.stringify(layout || []));
-                            } catch (e) {
-                                console.error("onSettings error:", e);
-                                __capture_settings_result("[]");
-                            }
-                        })();
-                    """.trimIndent(),
-                )
+                    evaluate<Any?>(buildPolyfillCode(scraperId, "{}"))
+                    evaluate<Any?>(
+                        """
+                            var module = { exports: {} };
+                            var exports = module.exports;
+                            (function() {
+                                $code
+                            })();
+                        """.trimIndent(),
+                    )
+                    evaluate<Any?>(
+                        """
+                            (async function() {
+                                try {
+                                    var onSettings = module.exports.onSettings || globalThis.onSettings;
+                                    var layout = typeof onSettings === 'function' ? await onSettings() : [];
+                                    __capture_settings_result(JSON.stringify(layout || []));
+                                } catch (e) {
+                                    console.error("onSettings error:", e);
+                                    __capture_settings_result("[]");
+                                }
+                            })();
+                        """.trimIndent(),
+                    )
+                }
+                layoutJson
             }
-            layoutJson
         }
     }
 
