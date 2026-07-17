@@ -908,9 +908,13 @@ private fun detailHeroHeight(
     if (!isTablet) {
         (maxWidth * 1.33f).coerceIn(420.dp, 760.dp)
     } else if (desktopOverlay) {
-        viewportHeight
-            .takeIf { it > 0.dp }
-            ?: minOf(maxWidth * 9f / 16f, 940.dp).coerceAtLeast(620.dp)
+        // The desktop overlay uses intentional fixed vertical lanes down to the episode rail.
+        // A scaled app can expose a viewport shorter than those lanes; retain the designed canvas
+        // height and let the details list scroll rather than collapsing the lanes into each other.
+        maxOf(
+            viewportHeight.takeIf { it > 0.dp } ?: 0.dp,
+            1080.dp,
+        )
     } else {
         val viewportLimit = viewportHeight
             .takeIf { it > 0.dp }

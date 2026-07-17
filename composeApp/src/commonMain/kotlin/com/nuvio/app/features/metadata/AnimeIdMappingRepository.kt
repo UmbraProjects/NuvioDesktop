@@ -48,6 +48,61 @@ internal data class AnimeIdMapping(
     val tmdbEpisodeOffset: Int? = null,
 )
 
+internal enum class AnimeMappingCoordinateSystem {
+    TMDB,
+    TVDB,
+    AUTO,
+}
+
+internal fun animeMappingCoordinateSystemFor(id: String?): AnimeMappingCoordinateSystem = when {
+    id?.startsWith("tmdb:", ignoreCase = true) == true -> AnimeMappingCoordinateSystem.TMDB
+    id?.startsWith("tvdb:", ignoreCase = true) == true -> AnimeMappingCoordinateSystem.TVDB
+    else -> AnimeMappingCoordinateSystem.AUTO
+}
+
+/** Pure coordinate selection, kept separate from the resource index so edge cases are testable. */
+internal fun selectAnimeMappingByCoordinates(
+    candidates: List<AnimeIdMapping>,
+    season: Int,
+    episode: Int?,
+    coordinateSystem: AnimeMappingCoordinateSystem,
+    preferredOnTie: AnimeIdMapping? = null,
+): AnimeIdMapping? {
+    data class Coordinate(
+        val mapping: AnimeIdMapping,
+        val offset: Int,
+    )
+
+    fun AnimeIdMapping.coordinates(system: AnimeMappingCoordinateSystem): List<Pair<Int, Int>> {
+        val hasNoExplicitSeason = tmdbSeason == null && tvdbSeason == null
+        val tmdb = tmdbSeason?.let { it to (tmdbEpisodeOffset ?: 0) }
+            ?: if (hasNoExplicitSeason) 1 to (tmdbEpisodeOffset ?: tvdbEpisodeOffset ?: 0) else null
+        val tvdb = tvdbSeason?.let { it to (tvdbEpisodeOffset ?: 0) }
+            ?: if (hasNoExplicitSeason) 1 to (tvdbEpisodeOffset ?: tmdbEpisodeOffset ?: 0) else null
+        return when (system) {
+            AnimeMappingCoordinateSystem.TMDB -> listOfNotNull(tmdb)
+            AnimeMappingCoordinateSystem.TVDB -> listOfNotNull(tvdb)
+            AnimeMappingCoordinateSystem.AUTO -> listOfNotNull(tmdb, tvdb).distinct()
+        }
+    }
+
+    val matching = candidates.flatMap { mapping ->
+        mapping.coordinates(coordinateSystem)
+            .filter { (candidateSeason, offset) ->
+                candidateSeason == season && (episode == null || offset < episode)
+            }
+            .map { (_, offset) -> Coordinate(mapping, offset) }
+    }
+    if (matching.isEmpty()) return null
+
+    // With an episode, the split whose offset most closely precedes it owns that episode.
+    // Without one, choose the season's first split rather than a later cour.
+    val targetOffset = if (episode != null) matching.maxOf { it.offset } else matching.minOf { it.offset }
+    val finalists = matching.filter { it.offset == targetOffset }.map { it.mapping }.distinct()
+    if (finalists.size == 1) return finalists.first()
+    return preferredOnTie?.takeIf { it in finalists }
+}
+
 internal object AnimeIdMappingRepository {
     private data class Index(
         val byAnidb: Map<Int, AnimeIdMapping>,
@@ -99,18 +154,24 @@ internal object AnimeIdMappingRepository {
      * several entries via episode_offset (an entry covers episodes offset+1 and up). Returns
      * null when no sibling with native anime ids matches — callers keep the base entry.
      */
-    fun franchiseEntryFor(base: AnimeIdMapping, season: Int, episode: Int): AnimeIdMapping? {
+    fun franchiseEntryFor(
+        base: AnimeIdMapping,
+        season: Int,
+        episode: Int,
+        coordinateSystem: AnimeMappingCoordinateSystem = AnimeMappingCoordinateSystem.AUTO,
+    ): AnimeIdMapping? {
         val index = loadIndex()
-        val siblings = base.tvdbId?.let { index.byTvdb[it] }
-            ?: base.tmdbTvId?.let { index.byTmdbTv[it] }
-            ?: return null
-        return siblings
-            .filter { entry ->
-                (entry.tvdbSeason == season || entry.tmdbSeason == season) &&
-                    entry.hasNativeAnimeId() &&
-                    entry.franchiseEpisodeOffset() < episode
-            }
-            .maxByOrNull { it.franchiseEpisodeOffset() }
+        val siblings = buildList {
+            base.tvdbId?.let { id -> addAll(index.byTvdb[id].orEmpty()) }
+            base.tmdbTvId?.let { id -> addAll(index.byTmdbTv[id].orEmpty()) }
+        }.distinct()
+        return selectAnimeMappingByCoordinates(
+            candidates = siblings.filter { entry -> entry.hasNativeAnimeId() },
+            season = season,
+            episode = episode,
+            coordinateSystem = coordinateSystem,
+            preferredOnTie = base,
+        )
     }
 
     private fun AnimeIdMapping.hasNativeAnimeId(): Boolean =
@@ -137,35 +198,39 @@ internal object AnimeIdMappingRepository {
         return null
     }
 
-    private fun AnimeIdMapping.franchiseEpisodeOffset(): Int =
-        tvdbEpisodeOffset ?: tmdbEpisodeOffset ?: 0
-
     private fun List<AnimeIdMapping>.selectBest(ids: ResolvedMediaIds): AnimeIdMapping? {
         if (isEmpty()) return null
         if (size == 1) return first()
         val titleSlug = ids.sourceTitle?.toSlug()
+        val coordinateSystem = animeMappingCoordinateSystemFor(ids.sourceId)
+        val coordinateMatch = ids.sourceSeasonNumber?.let { sourceSeason ->
+            selectAnimeMappingByCoordinates(
+                candidates = this,
+                season = sourceSeason,
+                episode = ids.sourceEpisodeNumber,
+                coordinateSystem = coordinateSystem,
+            )
+        }
+        if (ids.sourceEpisodeNumber != null) {
+            coordinateMatch?.let { return it }
+        }
         if ((ids.sourceSeasonNumber ?: 0) > 1) {
-            ids.sourceSeasonNumber?.let { sourceSeason ->
-                firstOrNull { mapping ->
-                    mapping.tmdbSeason == sourceSeason || mapping.tvdbSeason == sourceSeason
-                }?.let { return it }
-            }
+            coordinateMatch?.let { return it }
         }
         if (!titleSlug.isNullOrBlank()) {
             firstOrNull { mapping -> mapping.animePlanetId?.equals(titleSlug, ignoreCase = true) == true }?.let { return it }
         }
-        ids.sourceSeasonNumber?.let { sourceSeason ->
-            firstOrNull { mapping ->
-                mapping.tmdbSeason == sourceSeason || mapping.tvdbSeason == sourceSeason
-            }?.let { return it }
-        }
+        coordinateMatch?.let { return it }
         if (!titleSlug.isNullOrBlank()) {
-            firstOrNull { mapping ->
+            filter { mapping ->
                 val slug = mapping.animePlanetId.orEmpty()
                 slug.isNotBlank() && (slug.contains(titleSlug, ignoreCase = true) || titleSlug.contains(slug, ignoreCase = true))
-            }?.let { return it }
+            }.singleOrNull()?.let { return it }
         }
-        return first()
+        // A franchise-level IMDb/TMDB/TVDB id can legitimately map to dozens of anime entries.
+        // Returning the JSON's first row when neither title nor coordinates disambiguate it is
+        // data-order dependent and can silently turn episode 61 into entry/episode 1.
+        return null
     }
 
     // anime-list-mini.json is ~6 MB / 42k entries; parsing it takes long enough to jank the

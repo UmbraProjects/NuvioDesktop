@@ -56,6 +56,58 @@ class FilenameParserTest {
     }
 
     @Test
+    fun parsesAnimeAbsoluteEpisodeWithDashDelimiter() {
+        val parsed = FilenameParser.parseEpisode("[SubsPlease] Frieren - 12 (1080p) [A1B2C3D4].mkv", isAnime = true)
+        assertNull(parsed.season)
+        assertEquals(12, parsed.episode)
+    }
+
+    @Test
+    fun parsesAnimeHighAbsoluteEpisode() {
+        val parsed = FilenameParser.parseEpisode("[Erai-raws] One Piece - 1075 [1080p][Multiple Subtitle].mkv", isAnime = true)
+        assertNull(parsed.season)
+        assertEquals(1075, parsed.episode)
+    }
+
+    @Test
+    fun animeSxxExxKeepsSeasonAndEpisode() {
+        // Explicit SxxExx is kept verbatim for anime too — LocalAnimeEpisodeMatcher translates
+        // between franchise season/episode and per-entry absolute numbering at play time.
+        val parsed = FilenameParser.parseEpisode("Sword Art Online S02E01 [1080p].mkv", isAnime = true)
+        assertEquals(2, parsed.season)
+        assertEquals(1, parsed.episode)
+
+        val nominalS1 = FilenameParser.parseEpisode("Bleach S01E120 [1080p].mkv", isAnime = true)
+        assertEquals(1, nominalS1.season)
+        assertEquals(120, nominalS1.episode)
+    }
+
+    @Test
+    fun animeBareEpisodeTakesSeasonFromFolder() {
+        val parsed = FilenameParser.parseEpisode(
+            "[Group] Show - 05 [1080p].mkv",
+            seasonFolderName = "Season 02",
+            isAnime = true,
+        )
+        assertEquals(2, parsed.season)
+        assertEquals(5, parsed.episode)
+    }
+
+    @Test
+    fun animeParsingIgnoresResolutionDigits() {
+        // The 1080 in "1080p" must not be read as the episode when a real episode marker exists.
+        val parsed = FilenameParser.parseEpisode("[Group] Jujutsu Kaisen - 05 [1080p][HEVC].mkv", isAnime = true)
+        assertEquals(5, parsed.episode)
+    }
+
+    @Test
+    fun nonAnimeEpisodeUnaffectedByAnimeFlag() {
+        val parsed = FilenameParser.parseEpisode("Breaking Bad - S02E05 - Breakage.mkv")
+        assertEquals(2, parsed.season)
+        assertEquals(5, parsed.episode)
+    }
+
+    @Test
     fun normalizeKeyIsStable() {
         assertEquals(
             FilenameParser.normalizeKey("The Matrix", 1999),

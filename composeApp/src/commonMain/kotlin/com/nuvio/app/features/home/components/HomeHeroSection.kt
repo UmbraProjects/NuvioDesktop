@@ -36,6 +36,12 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -44,6 +50,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.settings.DesktopNavigationLayout
+import com.nuvio.app.features.settings.ThemeSettingsRepository
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -224,6 +232,11 @@ fun HomeHeroSection(
     heroReleaseStatusUnavailableOnly: Boolean = true,
     trailersEnabledInCurrentMode: Boolean = true,
     immersiveContentBottomPadding: Dp = IMMERSIVE_HERO_CONTENT_BOTTOM_PADDING,
+    resumePromptItemKey: String? = null,
+    resumePromptLabel: String = "",
+    resumePromptActionLabel: String = "",
+    onResumePromptAction: (() -> Unit)? = null,
+    onResumePromptDismiss: (() -> Unit)? = null,
     onActiveItemChanged: ((MetaPreview) -> Unit)? = null,
     onCastClick: ((HeroCastMember) -> Unit)? = null,
     onItemClick: ((MetaPreview) -> Unit)? = null,
@@ -451,7 +464,12 @@ fun HomeHeroSection(
             heroBadgePlacement = heroBadgePlacement,
             heroReleaseStatusUnavailableOnly = heroReleaseStatusUnavailableOnly,
             trailersEnabledInCurrentMode = trailersEnabledInCurrentMode,
-            immersiveContentBottomPadding = immersiveContentBottomPadding,
+                    immersiveContentBottomPadding = immersiveContentBottomPadding,
+                    resumePromptItemKey = resumePromptItemKey,
+                    resumePromptLabel = resumePromptLabel,
+                    resumePromptActionLabel = resumePromptActionLabel,
+                    onResumePromptAction = onResumePromptAction,
+                    onResumePromptDismiss = onResumePromptDismiss,
                     ratingsCache = ratingsCache,
                     discoveryCache = discoveryCache,
                     productionCache = productionCache,
@@ -670,6 +688,11 @@ private fun DesktopHomeHeroFrame(
     heroReleaseStatusUnavailableOnly: Boolean,
     trailersEnabledInCurrentMode: Boolean,
     immersiveContentBottomPadding: Dp,
+    resumePromptItemKey: String?,
+    resumePromptLabel: String,
+    resumePromptActionLabel: String,
+    onResumePromptAction: (() -> Unit)?,
+    onResumePromptDismiss: (() -> Unit)?,
     ratingsCache: Map<String, List<MetaExternalRating>>,
     discoveryCache: Map<String, List<HeroDiscoveryFact>>,
     productionCache: Map<String, List<HeroProductionCredit>>,
@@ -815,6 +838,20 @@ private fun DesktopHomeHeroFrame(
         currentItem.description?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
     }
     val heroTrailerFullscreen = playerSettings.heroTvTrailerFullscreen
+    // The heavyweight native trailer surface paints over the Compose navbar. When the trailer is
+    // full-bleed in the hero (not fullscreen — nobody navigates during a fullscreen trailer), tell
+    // the overlay which edge the navbar sits on so moving the pointer there dismisses the trailer
+    // and uncovers it. TV/immersive and adaptive-hero both cover the top/left chrome.
+    val desktopNavLayout by ThemeSettingsRepository.desktopNavigationLayout.collectAsState()
+    val heroTrailerNavDismissEdge = when {
+        heroTrailerFullscreen -> "none"
+        desktopNavLayout == DesktopNavigationLayout.Sidebar -> "left"
+        else -> "top"
+    }
+    // The overlay surface tracks the hero, so the dismiss band is a fraction of that surface. TV
+    // mode's hero fills the viewport (a modest fraction is a small top slice); the adaptive hero is
+    // a compact, resizable strip where the same fraction would swallow it, so keep it much tighter.
+    val heroTrailerNavDismissBandFraction = if (immersiveMode) 0.22f else 0.12f
     // Expose visibility so the home key handler can map Escape to "dismiss trailer".
     LaunchedEffect(heroTrailerVisible) {
         HomeHeroTrailerManualTrigger.setActive(heroTrailerVisible)
@@ -914,8 +951,17 @@ private fun DesktopHomeHeroFrame(
                             .fillMaxHeight()
                             .fillMaxWidth()
                     },
+                    navDismissEdge = heroTrailerNavDismissEdge,
+                    navDismissBandFraction = heroTrailerNavDismissBandFraction,
                     onReady = { heroTrailerSurfaceReady = true },
                     onEnded = {
+                        heroTrailerSurfaceReady = false
+                        heroTrailerPlaybackRequested = false
+                        heroTrailerFinished = true
+                    },
+                    // Pointer reached the navbar edge: stop the trailer so the navbar is usable.
+                    // Stays stopped (heroTrailerFinished) until focus moves to another hero item.
+                    onNavChromeDismiss = {
                         heroTrailerSurfaceReady = false
                         heroTrailerPlaybackRequested = false
                         heroTrailerFinished = true
@@ -1044,6 +1090,14 @@ private fun DesktopHomeHeroFrame(
                             production = if (adaptiveHeroMode) productionCache["${items[layer.page].type}:${items[layer.page].id}"].orEmpty() else emptyList(),
                             peoplePanelTab = peoplePanelTab,
                             allowProductionHotkeySwap = adaptiveHeroMode,
+                            resumePromptLabel = if ("${items[layer.page].type}:${items[layer.page].id}" == resumePromptItemKey) {
+                                resumePromptLabel
+                            } else {
+                                null
+                            },
+                            resumePromptActionLabel = resumePromptActionLabel,
+                            onResumePromptAction = onResumePromptAction,
+                            onResumePromptDismiss = onResumePromptDismiss,
                             onItemClick = onItemClick?.let { handler ->
                                 { _ -> handler(currentItem) }
                             },
@@ -1334,6 +1388,10 @@ private fun DesktopHeroContentBlock(
     production: List<HeroProductionCredit> = emptyList(),
     peoplePanelTab: HeroPeoplePanelTab = HeroPeoplePanelTab.Starring,
     allowProductionHotkeySwap: Boolean = false,
+    resumePromptLabel: String? = null,
+    resumePromptActionLabel: String = "",
+    onResumePromptAction: (() -> Unit)? = null,
+    onResumePromptDismiss: (() -> Unit)? = null,
     onItemClick: ((MetaPreview) -> Unit)?,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -1449,6 +1507,27 @@ private fun DesktopHeroContentBlock(
                 maxLines = 5,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+
+        if (!resumePromptLabel.isNullOrBlank() && onResumePromptAction != null) {
+            Spacer(modifier = Modifier.height(18.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = onResumePromptAction) {
+                    Icon(
+                        imageVector = Icons.Rounded.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(resumePromptActionLabel)
+                }
+                if (onResumePromptDismiss != null) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = onResumePromptDismiss) {
+                        Text(stringResource(Res.string.action_close))
+                    }
+                }
+            }
         }
     }
 }

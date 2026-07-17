@@ -532,7 +532,7 @@ object LibraryRepository {
             }
             .sortedBy { it.displayTitle }
 
-        val sectionsWithCloud = sections + cloudLibrarySections()
+        val sectionsWithCloud = sections + cloudLibrarySections() + localLibrarySections()
 
         _uiState.value = LibraryUiState(
             sourceMode = LibrarySourceMode.LOCAL,
@@ -572,6 +572,12 @@ object LibraryRepository {
             }
             state.series.takeIf { it.isNotEmpty() }?.let {
                 add(LibrarySection("locallibrary_series", "Local Shows", it.map(LocalMediaItem::toLibraryItem)))
+            }
+            state.animeMovies.takeIf { it.isNotEmpty() }?.let {
+                add(LibrarySection("locallibrary_anime_movie", "Local Anime Movies", it.map(LocalMediaItem::toLibraryItem)))
+            }
+            state.animeSeries.takeIf { it.isNotEmpty() }?.let {
+                add(LibrarySection("locallibrary_anime_series", "Local Anime Series", it.map(LocalMediaItem::toLibraryItem)))
             }
         }
     }

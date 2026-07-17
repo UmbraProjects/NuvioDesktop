@@ -53,12 +53,14 @@ private const val TvdbUrl = "https://thetvdb.com"
 private const val TvdbLogoUrl = "https://artworks.thetvdb.com/banners/images/logo.png"
 private const val SimklUrl = "https://simkl.com"
 private const val SimklLogoUrl = "https://simkl.in/img/simkl_logo_100x100.jpg"
+private const val KitsuUrl = "https://kitsu.io"
 private const val NuvioRepositoryUrl = "https://github.com/NuvioMedia/NuvioDesktop"
 private const val NuvioContributeUrl = "https://tapframe.space/contribute"
 private const val MpvKitUrl = "https://github.com/mpvkit/MPVKit"
 private const val ApacheLicenseUrl = "https://www.apache.org/licenses/LICENSE-2.0"
 
 private data class AttributionItem(
+    val searchKey: String,
     val titleRes: StringResource,
     val bodyRes: StringResource,
     val logo: IntegrationLogo?,
@@ -68,6 +70,7 @@ private data class AttributionItem(
 )
 
 private data class LicenseItem(
+    val searchKey: String,
     val titleRes: StringResource,
     val bodyRes: StringResource,
     val licenseRes: StringResource,
@@ -186,6 +189,7 @@ private fun AttributionRow(
         body = stringResource(item.bodyRes),
         link = item.link,
         isTablet = isTablet,
+        searchKey = item.searchKey,
         leading = when {
             item.logo != null -> item.logo.let { logo ->
                 {
@@ -238,6 +242,7 @@ private fun LicenseRow(
         body = body,
         link = item.link,
         isTablet = isTablet,
+        searchKey = item.searchKey,
         onOpen = { uriHandler.openUri(item.link) },
     )
 }
@@ -248,6 +253,7 @@ private fun LinkedPlainRow(
     body: String,
     link: String,
     isTablet: Boolean,
+    searchKey: String,
     leading: (@Composable () -> Unit)? = null,
     onOpen: () -> Unit,
 ) {
@@ -256,6 +262,7 @@ private fun LinkedPlainRow(
 
     Row(
         modifier = Modifier
+            .settingsScrollAnchor(SettingsScrollAnchor.searchKey(searchKey))
             .fillMaxWidth()
             .clickable(onClick = onOpen)
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
@@ -368,18 +375,21 @@ private fun PlainStackDivider() {
 
 private fun attributionItems(): List<AttributionItem> = listOf(
     AttributionItem(
+        searchKey = "tmdb-attribution",
         titleRes = Res.string.settings_licenses_attributions_tmdb_title,
         bodyRes = Res.string.settings_licenses_attributions_tmdb_body,
         logo = IntegrationLogo.Tmdb,
         link = TmdbUrl,
     ),
     AttributionItem(
+        searchKey = "trakt-attribution",
         titleRes = Res.string.settings_licenses_attributions_trakt_title,
         bodyRes = Res.string.settings_licenses_attributions_trakt_body,
         logo = IntegrationLogo.Trakt,
         link = TraktUrl,
     ),
     AttributionItem(
+        searchKey = "premiumize-attribution",
         titleRes = Res.string.settings_licenses_attributions_premiumize_title,
         bodyRes = Res.string.settings_licenses_attributions_premiumize_body,
         logo = null,
@@ -387,6 +397,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         link = PremiumizeUrl,
     ),
     AttributionItem(
+        searchKey = "torbox-attribution",
         titleRes = Res.string.settings_licenses_attributions_torbox_title,
         bodyRes = Res.string.settings_licenses_attributions_torbox_body,
         logo = null,
@@ -394,18 +405,21 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         link = TorboxUrl,
     ),
     AttributionItem(
+        searchKey = "mdblist-attribution",
         titleRes = Res.string.settings_licenses_attributions_mdblist_title,
         bodyRes = Res.string.settings_licenses_attributions_mdblist_body,
         logo = IntegrationLogo.MdbList,
         link = MdbListUrl,
     ),
     AttributionItem(
+        searchKey = "introdb-attribution",
         titleRes = Res.string.settings_licenses_attributions_introdb_title,
         bodyRes = Res.string.settings_licenses_attributions_introdb_body,
         logo = IntegrationLogo.IntroDb,
         link = IntroDbUrl,
     ),
     AttributionItem(
+        searchKey = "tvdb-attribution",
         titleRes = Res.string.settings_licenses_attributions_tvdb_title,
         bodyRes = Res.string.settings_licenses_attributions_tvdb_body,
         logo = null,
@@ -413,6 +427,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         link = TvdbUrl,
     ),
     AttributionItem(
+        searchKey = "simkl-attribution",
         titleRes = Res.string.settings_licenses_attributions_simkl_title,
         bodyRes = Res.string.settings_licenses_attributions_simkl_body,
         logo = null,
@@ -420,6 +435,15 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         link = SimklUrl,
     ),
     AttributionItem(
+        searchKey = "kitsu-attribution",
+        titleRes = Res.string.settings_licenses_attributions_kitsu_title,
+        bodyRes = Res.string.settings_licenses_attributions_kitsu_body,
+        logo = null,
+        logoText = "Kitsu",
+        link = KitsuUrl,
+    ),
+    AttributionItem(
+        searchKey = "imdb-datasets",
         titleRes = Res.string.settings_licenses_attributions_imdb_title,
         bodyRes = Res.string.settings_licenses_attributions_imdb_body,
         logo = null,
@@ -429,6 +453,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
 
 private fun nuvioAttributionItem(): AttributionItem =
     AttributionItem(
+        searchKey = "nuvio-team",
         titleRes = Res.string.settings_licenses_attributions_nuvio_team_title,
         bodyRes = Res.string.settings_licenses_attributions_nuvio_team_body,
         logo = null,
@@ -438,6 +463,7 @@ private fun nuvioAttributionItem(): AttributionItem =
 
 private fun appLicenseItem(): LicenseItem =
     LicenseItem(
+        searchKey = "nuvio-license",
         titleRes = Res.string.settings_licenses_attributions_nuvio_title,
         bodyRes = Res.string.settings_licenses_attributions_nuvio_body,
         licenseRes = Res.string.settings_licenses_attributions_nuvio_license,
@@ -447,6 +473,7 @@ private fun appLicenseItem(): LicenseItem =
 private fun platformLicenseItem(): LicenseItem =
     if (isIos) {
         LicenseItem(
+            searchKey = "mpvkit-license",
             titleRes = Res.string.settings_licenses_attributions_mpvkit_title,
             bodyRes = Res.string.settings_licenses_attributions_mpvkit_body,
             licenseRes = Res.string.settings_licenses_attributions_mpvkit_license,
@@ -454,6 +481,7 @@ private fun platformLicenseItem(): LicenseItem =
         )
     } else {
         LicenseItem(
+            searchKey = "exoplayer-license",
             titleRes = Res.string.settings_licenses_attributions_exoplayer_title,
             bodyRes = Res.string.settings_licenses_attributions_exoplayer_body,
             licenseRes = Res.string.settings_licenses_attributions_exoplayer_license,

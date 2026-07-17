@@ -3,6 +3,8 @@ package com.nuvio.app.features.home.components
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -27,6 +29,7 @@ fun HomeCatalogRowSection(
     sectionPadding: Dp? = null,
     basePosterWidthDpOverride: Int? = null,
     focusedItemIndex: Int? = null,
+    rowState: LazyListState? = null,
     onHoverItem: ((Int) -> Unit)? = null,
     isKeyboardNavigation: Boolean = false,
     onViewAllClick: (() -> Unit)? = null,
@@ -35,6 +38,7 @@ fun HomeCatalogRowSection(
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
+    val effectiveRowState = rowState ?: rememberLazyListState()
     if (sectionPadding != null) {
         HomeCatalogRowSectionContent(
             section = section,
@@ -44,6 +48,7 @@ fun HomeCatalogRowSection(
             sectionPadding = sectionPadding,
             basePosterWidthDpOverride = basePosterWidthDpOverride,
             focusedItemIndex = focusedItemIndex,
+            rowState = effectiveRowState,
             onHoverItem = onHoverItem,
             isKeyboardNavigation = isKeyboardNavigation,
             onViewAllClick = onViewAllClick,
@@ -62,6 +67,7 @@ fun HomeCatalogRowSection(
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
                 basePosterWidthDpOverride = basePosterWidthDpOverride,
                 focusedItemIndex = focusedItemIndex,
+                rowState = effectiveRowState,
                 onHoverItem = onHoverItem,
                 onViewAllClick = onViewAllClick,
                 onLoadMore = onLoadMore,
@@ -83,6 +89,7 @@ private fun HomeCatalogRowSectionContent(
     sectionPadding: Dp,
     basePosterWidthDpOverride: Int?,
     focusedItemIndex: Int?,
+    rowState: LazyListState,
     onHoverItem: ((Int) -> Unit)?,
     onViewAllClick: (() -> Unit)?,
     onLoadMore: (() -> Unit)?,
@@ -112,6 +119,7 @@ private fun HomeCatalogRowSectionContent(
         isKeyboardNavigation = isKeyboardNavigation,
         viewAllPillSize = NuvioViewAllPillSize.Compact,
         key = { item -> item.stableKey() },
+        rowState = rowState,
     ) { item ->
         HomePosterCard(
             item = item,

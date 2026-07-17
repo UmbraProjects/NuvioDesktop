@@ -19,6 +19,16 @@ data class PlayerRoute(
     val launchId: Long,
 )
 
+enum class PlayerSourceAffinity {
+    Local,
+    Stream;
+
+    companion object {
+        fun fromInitialStreamType(streamType: String?): PlayerSourceAffinity =
+            if (streamType.equals("local", ignoreCase = true)) Local else Stream
+    }
+}
+
 data class PlayerLaunch(
     val title: String,
     val sourceUrl: String,
@@ -26,6 +36,7 @@ data class PlayerLaunch(
     val sourceHeaders: Map<String, String> = emptyMap(),
     val sourceResponseHeaders: Map<String, String> = emptyMap(),
     val streamType: String? = null,
+    val sourceAffinity: PlayerSourceAffinity = PlayerSourceAffinity.fromInitialStreamType(streamType),
     val logo: String? = null,
     val poster: String? = null,
     val background: String? = null,
@@ -35,6 +46,7 @@ data class PlayerLaunch(
     val episodeThumbnail: String? = null,
     val streamTitle: String,
     val streamSubtitle: String? = null,
+    val sourceIdentityKey: String? = null,
     val bingeGroup: String? = null,
     val pauseDescription: String? = null,
     val providerName: String,
@@ -181,6 +193,13 @@ enum class DesktopBufferPreset(val label: String, val description: String) {
     Resilient("Resilient", "Uses a large buffer for unstable or high-latency connections."),
 }
 
+enum class DesktopMpvConfigMode(val label: String, val description: String) {
+    Off("Off", "Use Nuvio's mpv configuration and ignore the custom options below."),
+    Add("Add", "Add custom options only when Nuvio has not already configured that option."),
+    Replace("Replace", "Custom options override matching Nuvio options; unspecified options keep Nuvio defaults."),
+    Full("Full", "Use only the custom configuration plus the options required to embed mpv in Nuvio."),
+}
+
 /**
  * Graphics backend the desktop app UI (Compose/Skiko) renders with. Not the video player —
  * mpv always uses Direct3D 11. Applied to `skiko.renderApi` at startup, so a change only takes
@@ -199,8 +218,9 @@ enum class DesktopRendererApi(val label: String, val description: String, val sk
 
 /**
  * Desktop anime enhancement mode. Ports Stremio-Kai's Anime4K shader pipeline plus anime-tuned
- * scaling/deband. The named presets force that preset unless auto-detect is enabled; CustomShader
- * points at a user-provided shader from the desktop shader library. Cycled in-player with F10.
+ * scaling/deband. The persisted preset only auto-applies to detected anime (and only while
+ * "Auto-apply to Anime" is on); CustomShader points at a user-provided shader from the desktop
+ * shader library. F10 cycles a session-scoped force instead — see [DesktopAnimeSessionOverride].
  */
 enum class DesktopAnimeMode(val label: String, val description: String) {
     Off("Off", "Never apply anime enhancements."),
@@ -215,6 +235,19 @@ enum class DesktopAnimeMode(val label: String, val description: String) {
     ModeCHq("Mode C (HQ)", "Anime4K Mode C — best for noisy or heavily compressed sources. Highest quality, heavier GPU load."),
     CustomShader("Custom Shader", "Use the selected user shader from the desktop shader library."),
 }
+
+/**
+ * An in-player force of the anime enhancement preset (F10 cycle / shader context menu). Lives only
+ * in memory for the current playback session: it survives episode changes (binge-watching an
+ * undetected anime shouldn't need re-forcing every episode) and is cleared when the player closes,
+ * at which point behaviour falls back to the persisted "Auto-apply to Anime" gate.
+ */
+data class DesktopAnimeSessionOverride(
+    val mode: DesktopAnimeMode,
+    val customShaderPath: String = "",
+    // Display label for pills/HUD: the preset label, or the shader file name for CustomShader.
+    val label: String = mode.label,
+)
 
 /**
  * Heuristic anime detection from metadata genres. Nuvio Desktop has no online anime database

@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,7 +37,9 @@ import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.ui.NuvioDropdownChip
 import com.nuvio.app.core.ui.NuvioDropdownOption
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
+import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.core.ui.NuvioPosterWatchedOverlay
+import com.nuvio.app.core.ui.PosterLabelWidthFraction
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.features.home.MetaPreview
@@ -261,19 +264,31 @@ private fun DiscoverPosterTile(
             NuvioPosterWatchedOverlay(isWatched = isWatched)
         }
         if (!hideLabels) {
-            Text(
-                text = item.name,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(PosterLabelWidthFraction)
+                    .align(Alignment.CenterHorizontally),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                NuvioPosterHoverTooltip(title = item.name) {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             val detail = item.releaseInfo?.let { formatReleaseDateForDisplay(it) }
             if (detail != null) {
                 Text(
                     text = detail,
+                    modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

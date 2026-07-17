@@ -1,5 +1,11 @@
 package com.nuvio.app.features.search
 
+import com.nuvio.app.features.player.AppShortcutAction
+import com.nuvio.app.features.player.appShortcutMatches
+
+import coil3.SingletonImageLoader
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.ui.NuvioInputField
+import com.nuvio.app.core.ui.navigationKey
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.NuvioScreenHeader
@@ -68,6 +75,7 @@ import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
 import com.nuvio.app.features.home.components.HomeSkeletonRow
+import com.nuvio.app.features.settings.trackSettingsTextFocus
 import com.nuvio.app.features.watched.WatchedRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -148,6 +156,28 @@ fun SearchScreen(
     val recentSearches by SearchHistoryRepository.uiState.collectAsStateWithLifecycle()
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
     val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
+
+    // The result the user wants is almost always in the first item or two, so warm the image
+    // cache for the top couple of results of each content type (movie, series, …) the moment a
+    // section streams in. Enqueuing these first puts them ahead of every other visible poster in
+    // Coil's fetch queue, so the artwork that matters resolves first.
+    val platformContext = LocalPlatformContext.current
+    val imageLoader = SingletonImageLoader.get(platformContext)
+    LaunchedEffect(uiState.sections) {
+        val prefetchedTypes = HashSet<String>()
+        uiState.sections.forEach { section ->
+            val sectionType = section.items.firstOrNull()?.type ?: return@forEach
+            if (!prefetchedTypes.add(sectionType)) return@forEach
+            section.items.take(2).forEach { preview ->
+                (preview.poster ?: preview.posterFallback)
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { url ->
+                        imageLoader.enqueue(ImageRequest.Builder(platformContext).data(url).build())
+                    }
+            }
+        }
+    }
+
     var query by rememberSaveable { mutableStateOf("") }
     var lastRequestedQuery by rememberSaveable { mutableStateOf<String?>(null) }
     var observedOfflineState by remember { mutableStateOf(false) }
@@ -277,14 +307,15 @@ fun SearchScreen(
                         .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         val sections = uiState.sections
+                        val navKey = event.navigationKey()
                         when {
-                            !isInRowNav && event.key == Key.DirectionDown && sections.isNotEmpty() -> {
+                            !isInRowNav && navKey == Key.DirectionDown && sections.isNotEmpty() -> {
                                 isInRowNav = true
                                 focusedRowIndex = 0
                                 focusedItemIndex = 0
                                 true
                             }
-                            isInRowNav -> when (event.key) {
+                            isInRowNav -> when (navKey) {
                                 Key.DirectionUp -> {
                                     if (focusedRowIndex > 0) {
                                         focusedRowIndex--
@@ -322,7 +353,10 @@ fun SearchScreen(
                                         ?.let { onPosterClick?.invoke(it) }
                                     true
                                 }
-                                Key.S, Key.H -> {
+                                event.key.takeIf {
+                                    appShortcutMatches(AppShortcutAction.OpenSearch, event) ||
+                                        appShortcutMatches(AppShortcutAction.GoHome, event)
+                                } -> {
                                     onNavigateToHome?.invoke()
                                     true
                                 }
@@ -386,6 +420,10 @@ fun SearchScreen(
                             readOnly = suppressSearchActivationKey,
                             modifier = Modifier
                                 .focusRequester(searchBarFocusRequester)
+                                // Compose text fields can leave ordinary desktop key-down events
+                                // unconsumed after editing. Register focus with the app shortcut
+                                // guard so shortcut letters remain search text.
+                                .trackSettingsTextFocus()
                                 .onPreviewKeyEvent { event ->
                                     if (suppressSearchActivationKey && event.key == Key.S) {
                                         if (event.type == KeyEventType.KeyUp) {

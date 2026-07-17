@@ -27,7 +27,8 @@ interface PlayerEngineController {
      */
     fun getChapters(): List<PlayerChapter> = emptyList()
     fun selectAudioTrack(index: Int)
-    fun selectSubtitleTrack(index: Int)
+    /** Returns false when the platform has not published/resolved the requested native track yet. */
+    fun selectSubtitleTrack(index: Int): Boolean
     fun selectSecondarySubtitleTrack(index: Int) {}
     fun setSubtitleUri(url: String)
     fun clearExternalSubtitle()
@@ -35,6 +36,21 @@ interface PlayerEngineController {
     fun applySubtitleStyle(style: SubtitleStyleState) {}
     fun setSubtitleDelayMs(delayMs: Int) {}
     fun configureIosVideoOutput(settings: PlayerSettingsUiState) {}
+
+    /**
+     * Toggles a live playback-diagnostics overlay (codec, resolution, fps, dropped frames, hwdec,
+     * cache, A/V sync…). Only the desktop mpv engine implements it; other platforms no-op.
+     */
+    fun setDiagnosticsOverlayEnabled(enabled: Boolean) {}
+    /** Shows a short, non-blocking notification over the player when the platform supports it. */
+    fun showTransientMessage(title: String, value: String) {}
+
+    /**
+     * Like [showTransientMessage], but survives an imminent source switch: the message is held
+     * and shown on the replacement player's overlay once it attaches. Platforms whose overlay
+     * outlives a source change may treat it as [showTransientMessage]; others no-op.
+     */
+    fun showTransientMessageAfterNextAttach(title: String, value: String) {}
 }
 
 data class PlayerChapter(
@@ -62,6 +78,7 @@ enum class PlayerControlsAction {
     SubmitIntro,
     LockToggle,
     VideoSettings,
+    PictureInPicture,
     HeroTrailerMute,
     DoubleTapSeekBack,
     DoubleTapSeekForward,
@@ -91,6 +108,12 @@ data class PlayerControlsState(
     val unlockLabel: String = "Unlock player controls",
     val submitIntroLabel: String = "Submit Intro",
     val videoSettingsLabel: String = "Video settings",
+    val pictureInPictureLabel: String = "Picture in picture",
+    val pictureInPictureActive: Boolean = false,
+    val desktopHdrModeLabel: String = "Auto",
+    val desktopColorProfileLabel: String = "Neutral",
+    val desktopAnimeModeLabel: String = "Off",
+    val desktopAnimeSvpEnabled: Boolean = false,
     val tapToUnlockLabel: String = "Tap to unlock",
     val playbackErrorTitle: String = "Playback error",
     val playbackErrorMessage: String = "",
@@ -134,6 +157,7 @@ data class PlayerControlsState(
     val loadingSubtitleLinesLabel: String = "Loading subtitle lines...",
     val fontSizeLabel: String = "Font Size",
     val outlineLabel: String = "Outline",
+    val shadowLabel: String = "Shadow",
     val boldLabel: String = "Bold",
     val bottomOffsetLabel: String = "Bottom Offset",
     val colorLabel: String = "Color",
@@ -160,6 +184,10 @@ data class PlayerControlsState(
     val lockedOverlayVisible: Boolean = false,
     val controlsVisible: Boolean = true,
     val mouseMoveRevealsControlsEnabled: Boolean = false,
+    val legacyHudEnabled: Boolean = false,
+    val alwaysShowClock: Boolean = false,
+    val playbackSpeedFineIncrementsEnabled: Boolean = false,
+    val uiScalePercent: Int = 0,
     val parentalWarnings: List<ParentalWarning> = emptyList(),
     val showParentalGuide: Boolean = false,
     val showOpeningOverlay: Boolean = false,
@@ -189,6 +217,7 @@ data class PlayerControlsState(
     val positionMs: Long = 0L,
     val chapters: List<PlayerChapter> = emptyList(),
     val sourceIsLoading: Boolean = false,
+    val sourceBadgePlacement: String = "bottom",
     val sourceFilters: List<PlayerControlFilterItem> = emptyList(),
     val sourceItems: List<PlayerControlSourceItem> = emptyList(),
     val episodeItems: List<PlayerControlEpisodeItem> = emptyList(),
@@ -206,6 +235,13 @@ data class PlayerControlsState(
     val showP2pConsent: Boolean = false,
     val subtitleActiveTab: String = "BuiltIn",
     val addonSubtitleItems: List<PlayerControlAddonSubtitleItem> = emptyList(),
+    /**
+     * Desktop only: when true the overlay renders [builtInSubtitleItems] instead of the native
+     * built-in track list, so "Show Only Preferred Languages" filters embedded tracks as well.
+     * False leaves the overlay on its live native list (default, unfiltered behaviour).
+     */
+    val builtInSubtitleFilterActive: Boolean = false,
+    val builtInSubtitleItems: List<PlayerControlBuiltInSubtitleItem> = emptyList(),
     val isLoadingAddonSubtitles: Boolean = false,
     val selectedAddonSubtitleId: String = "",
     val useCustomSubtitles: Boolean = false,
@@ -233,6 +269,22 @@ data class PlayerControlsState(
     val heroTrailerMuted: Boolean = true,
     /** Desktop only: hero-trailer volume (0..100) reflected by the overlay volume slider. */
     val heroTrailerVolume: Int = 0,
+    /**
+     * Desktop only: which screen edge holds the navigation chrome while a home hero trailer plays
+     * ("top" for the floating top bar, "left" for the sidebar, "none" to disable). The heavyweight
+     * native video surface paints over the Compose navbar, so when the pointer enters this edge
+     * band the overlay tells Kotlin to dismiss the trailer, uncovering the navbar.
+     */
+    val heroTrailerNavDismissEdge: String = "none",
+    /**
+     * Desktop only: the top nav-dismiss band height as a fraction of the trailer surface height.
+     * The overlay surface matches the hero region, so a fraction scales with the hero size — the
+     * small (and user-resizable) adaptive hero needs a tighter band than TV mode's full-viewport
+     * hero, or moving onto the strip at all trips the dismiss.
+     */
+    val heroTrailerNavDismissBandFraction: Float = 0.22f,
+    /** Desktop only: reflects the stream-failover setting in the player context-menu toggle. */
+    val streamFailoverEnabled: Boolean = false,
 )
 
 data class PlayerControlFilterItem(
@@ -255,8 +307,17 @@ data class PlayerControlSourceItem(
     val label: String = "",
     val subtitle: String = "",
     val addonName: String = "",
+    val badges: List<PlayerControlStreamBadge> = emptyList(),
     val isCurrent: Boolean = false,
     val isEnabled: Boolean = true,
+)
+
+data class PlayerControlStreamBadge(
+    val name: String = "",
+    val imageUrl: String = "",
+    val backgroundColor: String = "",
+    val textColor: String = "",
+    val borderColor: String = "",
 )
 
 data class PlayerControlEpisodeItem(
@@ -278,6 +339,18 @@ data class PlayerControlAddonSubtitleItem(
     val display: String = "",
     val languageLabel: String = "",
     val addonName: String = "",
+    val isSelected: Boolean = false,
+)
+
+/**
+ * A built-in (embedded) subtitle track as shown in the desktop native-controls overlay. The
+ * overlay normally reads built-in tracks straight from the native player, but when the user turns
+ * on "Show Only Preferred Languages" the app pushes this pre-filtered list so the setting applies
+ * to built-in tracks too. [index] is the native track index used to select the track.
+ */
+data class PlayerControlBuiltInSubtitleItem(
+    val index: Int = 0,
+    val label: String = "",
     val isSelected: Boolean = false,
 )
 
@@ -330,6 +403,8 @@ expect fun PlatformPlayerSurface(
     playWhenReady: Boolean = true,
     resizeMode: PlayerResizeMode = PlayerResizeMode.Fit,
     initialPositionMs: Long = 0L,
+    initialProgressFraction: Float? = null,
+    initialPlaybackSpeed: Float = 1f,
     useNativeController: Boolean = false,
     playerControlsState: PlayerControlsState = PlayerControlsState(),
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean = { false },

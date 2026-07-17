@@ -83,17 +83,55 @@ internal object SimklProgressRepository {
         _uiState.value = SimklProgressUiState()
     }
 
-    fun enrichEntry(videoId: String, poster: String?, background: String?, episodeTitle: String?, episodeThumbnail: String?) {
+    fun enrichEntry(
+        videoId: String,
+        poster: String?,
+        background: String?,
+        episodeTitle: String?,
+        episodeThumbnail: String?,
+        seasonNumber: Int? = null,
+        episodeNumber: Int? = null,
+    ) {
         val current = _uiState.value.entries.toMutableList()
         val idx = current.indexOfFirst { it.videoId == videoId }
         if (idx == -1) return
-        current[idx] = current[idx].copy(
+        val oldEntry = current[idx]
+        val resolvedSeason = seasonNumber ?: oldEntry.seasonNumber
+        val resolvedEpisode = episodeNumber ?: oldEntry.episodeNumber
+        val resolvedVideoId = if (resolvedSeason != null && resolvedEpisode != null) {
+            "${oldEntry.parentMetaId}:$resolvedSeason:$resolvedEpisode"
+        } else {
+            oldEntry.videoId
+        }
+        current[idx] = oldEntry.copy(
+            videoId = resolvedVideoId,
+            seasonNumber = resolvedSeason,
+            episodeNumber = resolvedEpisode,
             poster = poster?.takeIf { it.isNotBlank() } ?: current[idx].poster,
             background = background?.takeIf { it.isNotBlank() } ?: current[idx].background,
             episodeTitle = episodeTitle?.takeIf { it.isNotBlank() } ?: current[idx].episodeTitle,
             episodeThumbnail = episodeThumbnail?.takeIf { it.isNotBlank() } ?: current[idx].episodeThumbnail,
         )
+        if (resolvedVideoId != videoId) {
+            sessionIdByVideoId.remove(videoId)?.let { sessionIdByVideoId[resolvedVideoId] = it }
+        }
         _uiState.value = _uiState.value.copy(entries = current)
+    }
+
+    /**
+     * Publish player progress immediately instead of leaving Continue Watching stale until SIMKL's
+     * delayed post-scrobble refresh completes. The canonical refresh still replaces this snapshot.
+     */
+    fun applyOptimisticProgress(entry: WatchProgressEntry) {
+        if (!SimklAuthRepository.isAuthenticated.value) return
+        val current = _uiState.value.entries.associateBy { it.videoId }.toMutableMap()
+        val existing = current[entry.videoId]
+        if (existing == null || entry.lastUpdatedEpochMs >= existing.lastUpdatedEpochMs) {
+            current[entry.videoId] = entry
+        }
+        _uiState.value = _uiState.value.copy(
+            entries = current.values.sortedByDescending { it.lastUpdatedEpochMs },
+        )
     }
 
     fun applyOptimisticRemoval(videoId: String) {
@@ -174,10 +212,15 @@ internal object SimklProgressRepository {
         playbackVideoIds: Set<String>,
     ): WatchProgressEntry? {
         val marker = lastWatched?.takeIf { it.isNotBlank() } ?: return null
-        val (season, episode) = parseSimklEpisodeMarker(marker) ?: return null
-        if (season == 0) return null // specials
+        val (rawSeason, rawEpisode) = parseSimklEpisodeMarker(marker) ?: return null
         val isAnime = anime != null
         val s = show ?: anime ?: return null
+        val (season, episode) = if (isAnime) {
+            s.ids.toCanonicalAnimeEpisode(rawSeason, rawEpisode)
+        } else {
+            rawSeason to rawEpisode
+        }
+        if (season == 0) return null // specials
         val showId = (if (isAnime) s.ids.toBestAnimeContentId() else s.ids.toBestContentId()) ?: return null
         val videoId = "$showId:$season:$episode"
         // Skip if this exact episode is already an active playback session — the in-progress
@@ -251,8 +294,13 @@ internal object SimklProgressRepository {
                 val isAnime = anime != null
                 val s = show ?: anime ?: return null
                 val ep = episode ?: return null
-                val season = ep.season ?: return null
-                val number = ep.number ?: return null
+                val rawSeason = ep.season ?: return null
+                val rawNumber = ep.number ?: return null
+                val (season, number) = if (isAnime) {
+                    s.ids.toCanonicalAnimeEpisode(rawSeason, rawNumber)
+                } else {
+                    rawSeason to rawNumber
+                }
                 val showId = (if (isAnime) s.ids.toBestAnimeContentId() else s.ids.toBestContentId()) ?: return null
                 val videoId = "$showId:$season:$number"
                 val cachedMeta = MetaDetailsRepository.peek("series", showId)

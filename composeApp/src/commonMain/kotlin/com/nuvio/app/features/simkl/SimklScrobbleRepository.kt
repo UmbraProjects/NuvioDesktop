@@ -89,8 +89,9 @@ internal object SimklScrobbleRepository {
             isAnimeHint = isAnime || normalizedType == "anime",
         )
         val resolvedIsAnime = isAnime || resolvedIds.isAnime
-        val ids = resolvedIds.toSimklIds()
+        val enrichedIds = resolvedIds.toSimklIds()
             .let { if (resolvedIsAnime) enrichAnimeIdsForSimkl(it) else it }
+        val ids = resolvedIds.idsForSimklScrobble(enrichedIds, resolvedIsAnime)
 
         return if (
             isEpisodeType &&
@@ -200,6 +201,32 @@ internal object SimklScrobbleRepository {
         @SerialName("al") val anilist: Int? = null,
         val anidb: Int? = null,
     )
+
+    /**
+     * A franchise-numbered anime request can fail to map to one unambiguous anime-list entry
+     * (long-running franchises such as Pokemon span several TVDB seasons inside one native entry).
+     * In that case the native ids retained from the opened/adjacent entry are actively harmful:
+     * pairing that entry's SIMKL id with a franchise season produces an episode that cannot exist.
+     * Keep only franchise ids and let SIMKL's seasonal-anime mapping translate the TVDB/TMDB S/E.
+     */
+    internal fun ResolvedMediaIds.idsForSimklScrobble(
+        ids: SimklIds,
+        isAnime: Boolean,
+    ): SimklIds = if (
+        isAnime &&
+        franchiseNumbering &&
+        nativeMappingCoversFranchiseEpisode == false
+    ) {
+        ids.copy(
+            simkl = null,
+            mal = null,
+            kitsu = null,
+            anilist = null,
+            anidb = null,
+        )
+    } else {
+        ids
+    }
 
     @Serializable
     private data class SimklMovieBody(val title: String?, val ids: SimklIds)

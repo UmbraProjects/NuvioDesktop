@@ -38,6 +38,7 @@ data class DiscoverCatalogOption(
 )
 
 data class DiscoverUiState(
+    val availableCatalogs: List<DiscoverCatalogOption> = emptyList(),
     val typeOptions: List<String> = emptyList(),
     val selectedType: String? = null,
     val catalogOptions: List<DiscoverCatalogOption> = emptyList(),

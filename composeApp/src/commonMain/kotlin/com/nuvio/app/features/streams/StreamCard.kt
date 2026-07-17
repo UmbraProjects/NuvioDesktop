@@ -71,11 +71,15 @@ internal fun StreamCard(
                 spotColor = Color.Black.copy(alpha = 0.04f),
             )
             .clip(cardShape)
-            .background(
+            // Opaque-enough dark scrim so the light card text stays legible even when the card sits
+            // over a busy, blurred backdrop (the near-transparent white tint used previously washed
+            // out against bright artwork). The current-item highlight is layered on top of it.
+            .background(Color.Black.copy(alpha = 0.42f))
+            .then(
                 if (isCurrent) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
                 } else {
-                    Color.White.copy(alpha = 0.05f)
+                    Modifier
                 },
             )
             .then(

@@ -1,5 +1,8 @@
 package com.nuvio.app.features.calendar
 
+import com.nuvio.app.features.player.AppShortcutAction
+import com.nuvio.app.features.player.appShortcutMatches
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -210,7 +213,8 @@ fun CalendarScreen(
                 if (selectedDay != null) return@onPreviewKeyEvent false
                 val navKey = event.navigationKey()
                 when {
-                    event.key == Key.C || event.key == Key.H -> {
+                    appShortcutMatches(AppShortcutAction.OpenCalendar, event) ||
+                        appShortcutMatches(AppShortcutAction.GoHome, event) -> {
                         navigatingAway = true
                         onNavigateHome?.invoke(); true
                     }
@@ -228,7 +232,7 @@ fun CalendarScreen(
                     navKey == Key.DirectionDown -> {
                         focusedDay = (focusedDay + 7).coerceAtMost(totalDays); true
                     }
-                    event.key == Key.Enter || event.key == Key.NumPadEnter -> {
+                    navKey == Key.Enter || navKey == Key.NumPadEnter -> {
                         val key = dateKey(displayYear, displayMonth, focusedDay)
                         openDay(key, uiState.entriesByDate[key].orEmpty())
                         true
@@ -606,7 +610,7 @@ private fun CalendarDayDialog(
                 .focusable()
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    when (event.key) {
+                    when (event.navigationKey()) {
                         Key.DirectionUp -> {
                             focusedRow = (focusedRow - 1).coerceAtLeast(0); true
                         }

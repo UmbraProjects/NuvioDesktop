@@ -246,7 +246,9 @@ actual fun HeroTrailerPlayerSurface(
                 } else {
                     Modifier.align(Alignment.BottomEnd).requiredSize(1.dp)
                 },
-                background = Color.Transparent,
+                // Avoid exposing the interop container's default peer colour for a frame while
+                // the native child is resized between its full and parked 1px states.
+                background = Color.Black,
             )
         }
     }

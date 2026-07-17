@@ -1,0 +1,22 @@
+diff --git a/mingw-w64-ffmpeg/PKGBUILD b/mingw-w64-ffmpeg/PKGBUILD
+index 0d7e79d..c822c33 100644
+--- a/mingw-w64-ffmpeg/PKGBUILD
++++ b/mingw-w64-ffmpeg/PKGBUILD
+@@ -62,9 +62,6 @@ depends=("${MINGW_PACKAGE_PREFIX}-aom"
+          $([[ "${CARCH}" == "i686" ]] || echo "${MINGW_PACKAGE_PREFIX}-shaderc")
+          "${MINGW_PACKAGE_PREFIX}-vid.stab"
+          "${MINGW_PACKAGE_PREFIX}-vulkan"
+-         $([[ "${CARCH}" == "i686" ]] || echo \
+-           "${MINGW_PACKAGE_PREFIX}-ggml" \
+-           "${MINGW_PACKAGE_PREFIX}-whisper.cpp")
+          "${MINGW_PACKAGE_PREFIX}-libx264"
+          "${MINGW_PACKAGE_PREFIX}-x265"
+          "${MINGW_PACKAGE_PREFIX}-xvidcore"
+@@ -181,7 +178,6 @@ build() {
+        --enable-librsvg
+        --enable-libsvtav1
+        --enable-libshaderc
+-       --enable-whisper
+     )
+   fi
+

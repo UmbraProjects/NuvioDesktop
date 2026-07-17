@@ -5,15 +5,25 @@ internal enum class DiscordRichPresenceActivityType {
     Browsing,
 }
 
+internal enum class DiscordRichPresenceImageFit {
+    Cover,
+    Contain,
+}
+
 internal data class DiscordRichPresenceActivity(
     val title: String,
     val subtitle: String? = null,
+    val episodeLabel: String? = null,
+    val episodeTitle: String? = null,
     val imageUrl: String? = null,
+    val imageFit: DiscordRichPresenceImageFit = DiscordRichPresenceImageFit.Cover,
     val type: DiscordRichPresenceActivityType = DiscordRichPresenceActivityType.Playback,
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
-    val playbackSpeed: Float = 1f,
+    // Bumped periodically while paused so the platform re-pushes and re-anchors the (otherwise
+    // live) progress bar to the frozen position instead of letting it creep toward the end.
+    val refreshNonce: Long = 0L,
 )
 
 internal object DiscordRichPresenceController {
@@ -36,10 +46,12 @@ internal object DiscordRichPresenceController {
 
     private fun publish() {
         DiscordPresenceSettingsRepository.ensureLoaded()
-        if (!DiscordPresenceSettingsRepository.uiState.value.enabled) {
+        if (DiscordPresenceSettingsRepository.uiState.value.mode == DiscordPresenceMode.Disabled) {
             DiscordRichPresencePlatform.update(null)
             return
         }
+        // In Watching mode the browsing activity is never populated (the UI layer only sets it
+        // in Full), so preferring playback then browsing yields the correct behaviour for both.
         DiscordRichPresencePlatform.update(playbackActivity ?: browsingActivity)
     }
 }

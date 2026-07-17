@@ -1,18 +1,30 @@
 package com.nuvio.app.features.player.desktop
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.build.AppVersionConfig
+import com.nuvio.app.core.storage.DesktopStorage
 import java.io.File
 import java.nio.file.Files
-import java.util.concurrent.atomic.AtomicBoolean
+import java.nio.file.StandardCopyOption
+import java.util.UUID
 
 private val log = Logger.withTag("NativePlayerBridge")
+
+internal fun findPackagedNativeRuntime(
+    platform: DesktopHostOs,
+    javaHome: File?,
+    requiredFiles: List<String>,
+): File? {
+    if (platform != DesktopHostOs.WINDOWS) return null
+    val installDir = javaHome?.parentFile?.takeIf { it.isDirectory } ?: return null
+    return installDir.takeIf { dir -> requiredFiles.all { dir.resolve(it).isFile } }
+}
 
 internal fun interface NativePlayerEventSink {
     fun onPlayerEvent(type: String, value: Double)
 }
 
 internal object NativePlayerBridge {
-    private val preloadStarted = AtomicBoolean(false)
     private var loadedRuntimeDir: File? = null
 
     init {
@@ -26,9 +38,11 @@ internal object NativePlayerBridge {
         headerLines: Array<String>,
         playWhenReady: Boolean,
         initialPositionMs: Long,
+        initialProgressFraction: Double,
         controlsPageUrl: String,
         nvidiaRtxSuperResolutionEnabled: Boolean,
         nvidiaRtxHdrEnabled: Boolean,
+        isAnimeContent: Boolean,
         animeSvpFilter: String?,
         extraMpvOptions: Array<String>,
         eventSink: NativePlayerEventSink,
@@ -37,8 +51,10 @@ internal object NativePlayerBridge {
     external fun dispose(handle: Long)
     external fun updateControls(handle: Long, controlsJson: String)
     external fun runJavaScript(handle: Long, script: String)
+    external fun requestSeekThumbnail(handle: Long, positionMs: Long)
     external fun setCursorHidden(handle: Long, hidden: Boolean)
     external fun setPaused(handle: Long, paused: Boolean)
+    external fun completeSvpStartupProfile(handle: Long)
     external fun seekTo(handle: Long, positionMs: Long)
     external fun seekBy(handle: Long, offsetMs: Long)
     external fun setSpeed(handle: Long, speed: Float)
@@ -58,7 +74,7 @@ internal object NativePlayerBridge {
     external fun subtitleTracksJson(handle: Long): String
     external fun chaptersJson(handle: Long): String
     external fun selectAudioTrack(handle: Long, trackId: Int)
-    external fun selectSubtitleTrack(handle: Long, trackId: Int)
+    external fun selectSubtitleTrack(handle: Long, trackId: Int): Boolean
     external fun addSubtitleUrl(handle: Long, url: String)
     external fun clearExternalSubtitles(handle: Long)
     external fun clearExternalSubtitlesAndSelect(handle: Long, trackId: Int)
@@ -71,6 +87,12 @@ internal object NativePlayerBridge {
     )
 
     external fun setBorderlessFullscreen(windowHwnd: Long, enabled: Boolean)
+    external fun setBorderlessFullscreenSuspended(windowHwnd: Long, suspended: Boolean)
+    external fun setCompactPlayerWindow(windowHwnd: Long, enabled: Boolean)
+    external fun beginCompactPlayerWindowMove(windowHwnd: Long)
+    external fun beginCompactPlayerWindowResize(windowHwnd: Long, edge: Int)
+    external fun updateCompactPlayerWindowInteraction(windowHwnd: Long)
+    external fun endCompactPlayerWindowInteraction(windowHwnd: Long)
 
     external fun setSubtitleDelayMs(handle: Long, delayMs: Int)
     external fun applySubtitleStyle(
@@ -85,9 +107,8 @@ internal object NativePlayerBridge {
         fontName: String,
     )
     external fun setMpvProperty(handle: Long, key: String, value: String)
+    external fun toggleStatsOverlay(handle: Long)
     external fun forceVideoRedraw(handle: Long)
-    external fun warmupWebView2(controlsPageUrl: String): Boolean
-    external fun shutdownWebView2Warmup()
 
     val controlsPageUrl: String by lazy { controlsPageAssets.url }
     private val controlsPageAssets: ControlsPageAssets by lazy { exportControlsPageAssets() }
@@ -98,31 +119,6 @@ internal object NativePlayerBridge {
      * first real bridge call happens to land (historically the AWT event thread).
      */
     fun ensureNativeLibraryLoaded() = Unit
-
-    fun preloadAsync() {
-        if (!preloadStarted.compareAndSet(false, true)) return
-        Thread {
-            val controlsPage = runCatching { controlsPageAssets }
-                .getOrNull()
-                ?: return@Thread
-            if (DesktopHostOs.current == DesktopHostOs.WINDOWS) {
-                runCatching { warmupWebView2(controlsPage.url) }
-            }
-        }.apply {
-            name = "nuvio-native-player-preload"
-            isDaemon = true
-            start()
-        }
-        if (DesktopHostOs.current == DesktopHostOs.WINDOWS) {
-            Runtime.getRuntime().addShutdownHook(
-                Thread {
-                    runCatching { shutdownWebView2Warmup() }
-                }.apply {
-                    name = "nuvio-webview2-warmup-shutdown"
-                }
-            )
-        }
-    }
 
     private fun loadNativeLibrary() {
         val platform = DesktopHostOs.current
@@ -139,43 +135,56 @@ internal object NativePlayerBridge {
             return
         }
 
-        // On Windows, dependent DLLs (libmpv, ffmpeg, etc.) are only resolved from the
-        // directory the host executable was launched from, the system directories, or
-        // PATH - not from the directory of the loaded DLL itself. For a packaged
-        // jpackage app image, that's the app's install directory (parent of java.home).
-        // Extract the native bridge and its runtime DLLs there once so dependency
-        // resolution works without any PATH setup.
-        appInstallDir(platform)?.let { installDir ->
-            if (extractBundledNativeLibraryIfNeeded(platformDir, libraryName, installDir)) {
-                extractPythonLibIfNeeded(platformDir, installDir)
-                loadedRuntimeDir = installDir
-                System.load(installDir.resolve(libraryName).absolutePath)
-                return
-            }
+        // A packaged Windows app ships the complete native runtime beside Nuvio.exe. Read it
+        // directly even when the installation directory is read-only (for example Program Files).
+        // Requiring canWrite() here used to ignore a perfectly valid packaged runtime and fall
+        // through to extracting a randomly named DLL under %TEMP%.
+        packagedRuntimeDir(platform, platformDir, libraryName)?.let { runtimeDir ->
+            loadedRuntimeDir = runtimeDir
+            System.load(runtimeDir.resolve(libraryName).absolutePath)
+            return
         }
 
-        val resource = "/native/$platformDir/$libraryName"
-        val input = NativePlayerBridge::class.java.getResourceAsStream(resource)
-            ?: error("Missing bundled native player bridge: $resource")
-        val dir = File(System.getProperty("java.io.tmpdir"), "native-player-bridge").apply { mkdirs() }
-        val suffix = libraryName.substringAfter("player_bridge", ".dylib")
-        val file = Files.createTempFile(dir.toPath(), "player-bridge-", suffix).toFile()
-        file.deleteOnExit()
-        extractBundledRuntimeResources(platformDir, dir)
-        input.use { source ->
-            file.outputStream().use { target -> source.copyTo(target) }
+        // Release builds must never create executable files at runtime. A deliberately incomplete
+        // development layout can opt into the legacy extraction fallback explicitly.
+        val extractionEnabled = System.getProperty("nuvio.nativeRuntimeExtractionEnabled")
+            ?.equals("true", ignoreCase = true) == true
+        check(extractionEnabled) {
+            "The packaged native player runtime is incomplete. Reinstall Nuvio or, for a local " +
+                "development layout only, pass -Dnuvio.nativeRuntimeExtractionEnabled=true."
         }
-        loadedRuntimeDir = dir
-        System.load(file.absolutePath)
+        val runtimeDir = userRuntimeDir(platformDir)
+        if (extractBundledNativeLibraryIfNeeded(platformDir, libraryName, runtimeDir)) {
+            extractPythonLibIfNeeded(platformDir, runtimeDir)
+            loadedRuntimeDir = runtimeDir
+            System.load(runtimeDir.resolve(libraryName).absolutePath)
+            return
+        }
+        error("Unable to prepare the bundled native player runtime in $runtimeDir")
     }
 
     internal fun runtimeDllDir(): File? = loadedRuntimeDir
 
-    internal fun appInstallDir(platform: DesktopHostOs): File? {
-        if (platform != DesktopHostOs.WINDOWS) return null
-        val javaHome = System.getProperty("java.home")?.takeIf { it.isNotBlank() }?.let(::File) ?: return null
-        val installDir = javaHome.parentFile ?: return null
-        return installDir.takeIf { it.isDirectory && it.canWrite() }
+    private fun packagedRuntimeDir(
+        platform: DesktopHostOs,
+        platformDir: String,
+        libraryName: String,
+    ): File? {
+        val requiredFiles = listOf(libraryName) + bundledRuntimeResourceNames(platformDir)
+        val javaHome = System.getProperty("java.home")?.takeIf { it.isNotBlank() }?.let(::File)
+        return findPackagedNativeRuntime(platform, javaHome, requiredFiles)
+    }
+
+    private fun userRuntimeDir(platformDir: String): File {
+        val version = AppVersionConfig.DESKTOP_VERSION_NAME
+            .ifBlank { "dev" }
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        return DesktopStorage.rootDir
+            .resolve("runtime")
+            .resolve(version)
+            .resolve(platformDir)
+            .toFile()
+            .apply { mkdirs() }
     }
 
     private fun extractBundledNativeLibraryIfNeeded(platformDir: String, libraryName: String, dir: File): Boolean {
@@ -246,24 +255,25 @@ internal object NativePlayerBridge {
     private fun copyResourceTo(resource: String, target: File) {
         val input = NativePlayerBridge::class.java.getResourceAsStream(resource)
             ?: error("Missing bundled native resource: $resource")
-        input.use { source ->
-            target.outputStream().use { output -> source.copyTo(output) }
-        }
-    }
-
-    private fun extractBundledRuntimeResources(platformDir: String, dir: File) {
-        val runtimeNames = bundledRuntimeResourceNames(platformDir)
-        runtimeNames.forEach { name ->
-            val resource = "/native/$platformDir/$name"
-            val input = NativePlayerBridge::class.java.getResourceAsStream(resource) ?: return@forEach
-            val target = dir.resolve(name)
+        target.parentFile?.mkdirs()
+        val staging = target.resolveSibling("${target.name}.part-${UUID.randomUUID()}")
+        try {
             input.use { source ->
-                target.outputStream().use { output -> source.copyTo(output) }
+                staging.outputStream().use { output -> source.copyTo(output) }
             }
-            target.deleteOnExit()
+            runCatching {
+                Files.move(
+                    staging.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            }.recoverCatching {
+                Files.move(staging.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }.getOrThrow()
+        } finally {
+            runCatching { Files.deleteIfExists(staging.toPath()) }
         }
-        aliasVapourSynthScriptLibrary(dir)
-        dir.resolve("vsscript.dll").deleteOnExit()
     }
 
     private fun bundledRuntimeResourceNames(platformDir: String): List<String> {
@@ -409,29 +419,7 @@ internal object NativePlayerBridge {
     )
 }
 
-internal fun preloadNativePlayerBridgeAsync() {
-    if (DesktopHostOs.current == DesktopHostOs.MACOS || DesktopHostOs.current == DesktopHostOs.WINDOWS) {
-        NativePlayerBridge.preloadAsync()
-    }
-}
-
 /** Blocks until the native bridge library is loaded (concurrent callers wait on class init). */
 internal fun ensureNativePlayerBridgeLoaded() {
     NativePlayerBridge.ensureNativeLibraryLoaded()
-}
-
-/**
- * Starts loading the native bridge library on a background daemon thread. Called from `main()`
- * before the Compose window is created so the load overlaps UI startup and the startup
- * borderless-fullscreen swap never pays it on the AWT event thread.
- */
-internal fun warmNativePlayerBridgeLoadAsync() {
-    if (DesktopHostOs.current != DesktopHostOs.MACOS && DesktopHostOs.current != DesktopHostOs.WINDOWS) return
-    Thread {
-        runCatching { ensureNativePlayerBridgeLoaded() }
-    }.apply {
-        name = "nuvio-native-bridge-load-warmup"
-        isDaemon = true
-        start()
-    }
 }

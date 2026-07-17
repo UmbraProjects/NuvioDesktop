@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -125,6 +126,8 @@ fun PluginsSettingsPageContent(
 
     var testingScraperId by remember { mutableStateOf<String?>(null) }
     val testResults = remember { mutableStateMapOf<String, List<PluginRuntimeResult>>() }
+    var configuringScraper by remember { mutableStateOf<PluginScraper?>(null) }
+    var configuringLayout by remember { mutableStateOf<String?>(null) }
 
     val sortedRepos = remember(uiState.repositories) {
         uiState.repositories.sortedBy { it.name.lowercase() }
@@ -168,6 +171,14 @@ fun PluginsSettingsPageContent(
             }
         }
     }
+    val openScraperSettings: (PluginScraper) -> Unit = { scraper ->
+        coroutineScope.launch {
+            PluginRuntime.getPluginSettingsLayout(scraper.code, scraper.id)?.let { layout ->
+                configuringScraper = scraper
+                configuringLayout = layout
+            }
+        }
+    }
 
     if (isDesktop) {
         DesktopPluginsManager(
@@ -185,8 +196,20 @@ fun PluginsSettingsPageContent(
                 message = null
             },
             onInstallRepository = installRepository,
+            onConfigureScraper = openScraperSettings,
             modifier = modifier,
         )
+        if (configuringScraper != null && configuringLayout != null) {
+            PluginSettingsDialog(
+                scraperId = configuringScraper!!.id,
+                scraperName = configuringScraper!!.name,
+                layoutJson = configuringLayout!!,
+                onDismiss = {
+                    configuringScraper = null
+                    configuringLayout = null
+                },
+            )
+        }
         return
     }
 
@@ -455,11 +478,22 @@ fun PluginsSettingsPageContent(
                                 )
                             }
                         }
-                        Switch(
-                            checked = scraper.enabled,
-                            onCheckedChange = { PluginRepository.toggleScraper(scraper.id, it) },
-                            enabled = scraper.manifestEnabled,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (scraper.hasSettings) {
+                                IconButton(onClick = { openScraperSettings(scraper) }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Settings,
+                                        contentDescription = "Provider settings",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = scraper.enabled,
+                                onCheckedChange = { PluginRepository.toggleScraper(scraper.id, it) },
+                                enabled = scraper.manifestEnabled,
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -548,6 +582,18 @@ fun PluginsSettingsPageContent(
             }
         }
     }
+
+    if (configuringScraper != null && configuringLayout != null) {
+        PluginSettingsDialog(
+            scraperId = configuringScraper!!.id,
+            scraperName = configuringScraper!!.name,
+            layoutJson = configuringLayout!!,
+            onDismiss = {
+                configuringScraper = null
+                configuringLayout = null
+            },
+        )
+    }
 }
 
 @Composable
@@ -563,6 +609,7 @@ private fun DesktopPluginsManager(
     repoFallbackLabel: String,
     onRepositoryUrlChange: (String) -> Unit,
     onInstallRepository: () -> Unit,
+    onConfigureScraper: (PluginScraper) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -673,6 +720,7 @@ private fun DesktopPluginsManager(
                 repositoryNameByUrl = repositoryNameByUrl,
                 repoFallbackLabel = repoFallbackLabel,
                 hasTmdbApiKey = hasTmdbApiKey,
+                onConfigureScraper = onConfigureScraper,
             )
         }
     }
@@ -926,6 +974,7 @@ private fun DesktopPluginProvidersTable(
     repositoryNameByUrl: Map<String, String>,
     repoFallbackLabel: String,
     hasTmdbApiKey: Boolean,
+    onConfigureScraper: (PluginScraper) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
     Surface(
@@ -951,6 +1000,7 @@ private fun DesktopPluginProvidersTable(
                     DesktopPluginProviderRow(
                         scraper = scraper,
                         repositoryName = repositoryName,
+                        onConfigure = onConfigureScraper,
                     )
                     if (index != scrapers.lastIndex) {
                         HorizontalDivider(color = tokens.colors.borderDefault.copy(alpha = 0.72f))
@@ -983,7 +1033,7 @@ private fun DesktopPluginProvidersHeader(
             maxLines = 1,
         )
         DesktopPluginDotSetting(
-            label = "Enabled",
+            label = if (uiState.pluginsEnabled) "Enabled" else "Disabled",
             active = uiState.pluginsEnabled,
             onClick = { PluginRepository.setPluginsEnabled(!uiState.pluginsEnabled) },
         )
@@ -1118,6 +1168,7 @@ private fun DesktopPluginRepositoryRow(repo: PluginRepositoryItem) {
 private fun DesktopPluginProviderRow(
     scraper: PluginScraper,
     repositoryName: String,
+    onConfigure: (PluginScraper) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
     Column {
@@ -1188,6 +1239,16 @@ private fun DesktopPluginProviderRow(
                     null
                 },
             )
+            if (scraper.hasSettings) {
+                DesktopPluginActionCluster(modifier = Modifier.width(44.dp)) {
+                    DesktopPluginActionButton(
+                        icon = Icons.Rounded.Settings,
+                        contentDescription = "Provider settings",
+                        tint = tokens.colors.accent,
+                        onClick = { onConfigure(scraper) },
+                    )
+                }
+            }
         }
     }
 }

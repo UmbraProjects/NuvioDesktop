@@ -3,8 +3,8 @@ package com.nuvio.app.features.player
 import kotlinx.coroutines.flow.SharedFlow
 
 /**
- * Carries drag-and-drop file URIs from the OS into the player navigation path.
- * Desktop actual: attaches an AWT DropTarget to the window and emits file:// URIs.
+ * Carries directly opened media from the desktop shell into player navigation: dropped local
+ * paths and HTTP(S) stream URLs pasted outside playback.
  * Android/iOS actuals: no-op stubs (feature is desktop-only).
  */
 expect object LocalFileDrop {

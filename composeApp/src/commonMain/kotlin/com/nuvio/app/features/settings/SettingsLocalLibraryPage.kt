@@ -78,6 +78,8 @@ import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_local_library_add_catalog
 import nuvio.composeapp.generated.resources.settings_local_library_add_movie_folder
+import nuvio.composeapp.generated.resources.settings_local_library_add_anime_movie_folder
+import nuvio.composeapp.generated.resources.settings_local_library_add_anime_tv_folder
 import nuvio.composeapp.generated.resources.settings_local_library_add_tv_folder
 import nuvio.composeapp.generated.resources.settings_local_library_apply
 import nuvio.composeapp.generated.resources.settings_local_library_cancel
@@ -98,6 +100,7 @@ import nuvio.composeapp.generated.resources.settings_local_library_mode_title
 import nuvio.composeapp.generated.resources.settings_local_library_new_catalog_hint
 import nuvio.composeapp.generated.resources.settings_local_library_no_results
 import nuvio.composeapp.generated.resources.settings_local_library_not_matched
+import nuvio.composeapp.generated.resources.settings_local_library_not_matched_detail
 import nuvio.composeapp.generated.resources.settings_local_library_paste_id_hint
 import nuvio.composeapp.generated.resources.settings_local_library_remove
 import nuvio.composeapp.generated.resources.settings_local_library_rename
@@ -105,8 +108,12 @@ import nuvio.composeapp.generated.resources.settings_local_library_rescan
 import nuvio.composeapp.generated.resources.settings_local_library_reset_poster
 import nuvio.composeapp.generated.resources.settings_local_library_save
 import nuvio.composeapp.generated.resources.settings_local_library_search_hint
+import nuvio.composeapp.generated.resources.settings_local_library_search_kitsu_hint
 import nuvio.composeapp.generated.resources.settings_local_library_section_movies
+import nuvio.composeapp.generated.resources.settings_local_library_section_anime_movies
+import nuvio.composeapp.generated.resources.settings_local_library_section_anime_series
 import nuvio.composeapp.generated.resources.settings_local_library_section_tv
+import nuvio.composeapp.generated.resources.settings_local_library_type_anime
 import nuvio.composeapp.generated.resources.settings_local_library_type_movies
 import nuvio.composeapp.generated.resources.settings_local_library_type_tv
 import nuvio.composeapp.generated.resources.settings_local_library_unsorted
@@ -162,9 +169,9 @@ private fun LocalLibraryFoldersSection(isTablet: Boolean) {
 
     LaunchedEffect(Unit) { LocalLibraryRepository.ensureLoaded() }
 
-    fun addFolder(type: LocalFolderType) {
+    fun addFolder(type: LocalFolderType, isAnime: Boolean = false) {
         scope.launch {
-            LocalDirectoryPicker.pick()?.let { path -> LocalLibraryRepository.addFolder(path, type) }
+            LocalDirectoryPicker.pick()?.let { path -> LocalLibraryRepository.addFolder(path, type, isAnime) }
         }
     }
 
@@ -178,19 +185,33 @@ private fun LocalLibraryFoldersSection(isTablet: Boolean) {
         },
     ) {
         SettingsGroup(isTablet = isTablet) {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                OutlinedButton(onClick = { addFolder(LocalFolderType.MOVIES) }) {
-                    Icon(Icons.Rounded.Movie, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(Res.string.settings_local_library_add_movie_folder))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = { addFolder(LocalFolderType.MOVIES) }) {
+                        Icon(Icons.Rounded.Movie, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(Res.string.settings_local_library_add_movie_folder))
+                    }
+                    OutlinedButton(onClick = { addFolder(LocalFolderType.SERIES) }) {
+                        Icon(Icons.Rounded.Tv, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(Res.string.settings_local_library_add_tv_folder))
+                    }
                 }
-                OutlinedButton(onClick = { addFolder(LocalFolderType.SERIES) }) {
-                    Icon(Icons.Rounded.Tv, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(Res.string.settings_local_library_add_tv_folder))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = { addFolder(LocalFolderType.MOVIES, isAnime = true) }) {
+                        Icon(Icons.Rounded.Movie, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(Res.string.settings_local_library_add_anime_movie_folder))
+                    }
+                    OutlinedButton(onClick = { addFolder(LocalFolderType.SERIES, isAnime = true) }) {
+                        Icon(Icons.Rounded.Tv, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(Res.string.settings_local_library_add_anime_tv_folder))
+                    }
                 }
             }
 
@@ -253,11 +274,14 @@ private fun LocalFolderRow(folder: LocalFolder, itemCount: Int, onRemove: () -> 
             )
         }
         Spacer(Modifier.width(8.dp))
+        val animePrefix = if (folder.isAnime) stringResource(Res.string.settings_local_library_type_anime) + " " else ""
+        val typeLabel = stringResource(
+            if (folder.type == LocalFolderType.SERIES) Res.string.settings_local_library_type_tv
+            else Res.string.settings_local_library_type_movies,
+        )
+        val countLabel = stringResource(Res.string.settings_local_library_items_count, itemCount)
         Text(
-            text = stringResource(
-                if (folder.type == LocalFolderType.SERIES) Res.string.settings_local_library_type_tv
-                else Res.string.settings_local_library_type_movies,
-            ) + " · " + stringResource(Res.string.settings_local_library_items_count, itemCount),
+            text = "$animePrefix$typeLabel · $countLabel",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -464,22 +488,73 @@ private fun LocalLibraryTitlesSection(isTablet: Boolean) {
         if (advanced && state.catalogs.isNotEmpty()) {
             CatalogFilterRow(state = state, selected = filter, onSelect = { filter = it })
         }
-        LocalTitlesGrid(
-            titleRes = Res.string.settings_local_library_section_movies,
-            items = visible.filter { it.type == LocalFolderType.MOVIES }.sortedBy { it.title.lowercase() },
-            state = state,
-            isTablet = isTablet,
-            cardWidth = cardWidth,
-            onFix = { fixItem = it },
-        )
-        LocalTitlesGrid(
-            titleRes = Res.string.settings_local_library_section_tv,
-            items = visible.filter { it.type == LocalFolderType.SERIES }.sortedBy { it.title.lowercase() },
-            state = state,
-            isTablet = isTablet,
-            cardWidth = cardWidth,
-            onFix = { fixItem = it },
-        )
+        if (advanced) {
+            LocalTitlesGrid(
+                titleRes = Res.string.settings_local_library_section_movies,
+                items = visible.filter { it.type == LocalFolderType.MOVIES && !it.isAnime }.sortedBy { it.title.lowercase() },
+                state = state,
+                isTablet = isTablet,
+                cardWidth = cardWidth,
+                onFix = { fixItem = it },
+            )
+            LocalTitlesGrid(
+                titleRes = Res.string.settings_local_library_section_tv,
+                items = visible.filter { it.type == LocalFolderType.SERIES && !it.isAnime }.sortedBy { it.title.lowercase() },
+                state = state,
+                isTablet = isTablet,
+                cardWidth = cardWidth,
+                onFix = { fixItem = it },
+            )
+            LocalTitlesGrid(
+                titleRes = Res.string.settings_local_library_section_anime_movies,
+                items = visible.filter { it.type == LocalFolderType.MOVIES && it.isAnime }.sortedBy { it.title.lowercase() },
+                state = state,
+                isTablet = isTablet,
+                cardWidth = cardWidth,
+                onFix = { fixItem = it },
+            )
+            LocalTitlesGrid(
+                titleRes = Res.string.settings_local_library_section_anime_series,
+                items = visible.filter { it.type == LocalFolderType.SERIES && it.isAnime }.sortedBy { it.title.lowercase() },
+                state = state,
+                isTablet = isTablet,
+                cardWidth = cardWidth,
+                onFix = { fixItem = it },
+            )
+        } else {
+            LocalTitlesGrid(
+                titleRes = Res.string.settings_local_library_section_movies,
+                items = state.movies,
+                state = state,
+                isTablet = isTablet,
+                cardWidth = cardWidth,
+                onFix = { fixItem = it },
+            )
+            LocalTitlesGrid(
+                titleRes = Res.string.settings_local_library_section_tv,
+                items = state.series,
+                state = state,
+                isTablet = isTablet,
+                cardWidth = cardWidth,
+                onFix = { fixItem = it },
+            )
+            LocalTitlesGrid(
+                titleRes = Res.string.settings_local_library_section_anime_movies,
+                items = state.animeMovies,
+                state = state,
+                isTablet = isTablet,
+                cardWidth = cardWidth,
+                onFix = { fixItem = it },
+            )
+            LocalTitlesGrid(
+                titleRes = Res.string.settings_local_library_section_anime_series,
+                items = state.animeSeries,
+                state = state,
+                isTablet = isTablet,
+                cardWidth = cardWidth,
+                onFix = { fixItem = it },
+            )
+        }
     }
 
     fixItem?.let { item ->
@@ -701,12 +776,16 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
     var results by remember { mutableStateOf<List<LocalMatchCandidate>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
     var hasSearched by remember { mutableStateOf(false) }
+    val searchHint = stringResource(
+        if (item.isAnime) Res.string.settings_local_library_search_kitsu_hint
+        else Res.string.settings_local_library_search_hint,
+    )
 
     fun runSearch() {
         scope.launch {
             isSearching = true
             hasSearched = true
-            results = LocalMatcher.search(query, item.type)
+            results = LocalMatcher.search(query, item.type, item.isAnime)
             isSearching = false
         }
     }
@@ -722,7 +801,7 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
                     text = if (item.isMatched) {
                         stringResource(Res.string.settings_local_library_current_match, item.contentId)
                     } else {
-                        stringResource(Res.string.settings_local_library_not_matched)
+                        stringResource(Res.string.settings_local_library_not_matched_detail)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (item.isMatched) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
@@ -731,12 +810,12 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text(stringResource(Res.string.settings_local_library_search_hint)) },
+                    label = { Text(searchHint) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
                     trailingIcon = {
                         IconButton(onClick = { runSearch() }) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = stringResource(Res.string.settings_local_library_search_hint))
+                            Icon(Icons.Rounded.Refresh, contentDescription = searchHint)
                         }
                     },
                 )
@@ -754,8 +833,14 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
                             results.forEach { candidate ->
                                 LocalMatchCandidateRow(candidate) {
                                     scope.launch {
-                                        val resolved = LocalMatcher.applyTmdbId(item, candidate.tmdbId, LocalMatchState.MANUAL)
-                                            .copy(poster = candidate.poster ?: item.poster)
+                                        val resolved = when {
+                                            candidate.kitsuId != null ->
+                                                LocalMatcher.applyKitsuId(item, candidate.kitsuId, candidate.poster, LocalMatchState.MANUAL)
+                                            candidate.tmdbId != null ->
+                                                LocalMatcher.applyTmdbId(item, candidate.tmdbId, LocalMatchState.MANUAL)
+                                                    .copy(poster = candidate.poster ?: item.poster)
+                                            else -> item
+                                        }
                                         LocalLibraryRepository.applyManualMatch(item, resolved)
                                         onDismiss()
                                     }

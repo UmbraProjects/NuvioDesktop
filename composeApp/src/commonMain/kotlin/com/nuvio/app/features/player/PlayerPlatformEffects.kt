@@ -23,6 +23,8 @@ expect fun EnterImmersivePlayerMode(keepScreenAwake: Boolean)
 
 @Composable
 expect fun ManagePlayerPictureInPicture(
+    isActive: Boolean,
+    onActiveChange: (Boolean) -> Unit,
     isPlaying: Boolean,
     playerSize: IntSize,
 )

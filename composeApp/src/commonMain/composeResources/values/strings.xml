@@ -302,6 +302,7 @@
     <string name="collections_tab_all">All</string>
     <string name="collections_your_collections">Your Collections</string>
     <string name="compose_about_based_on_version_format">Based on Nuvio %1$s</string>
+    <string name="compose_about_open_logs_folder">Open logs folder</string>
     <string name="compose_about_made_with">Made with ❤️ by Tapframe and friends</string>
     <string name="compose_about_version_format">Version %1$s (%2$s)</string>
     <string name="compose_action_off">Off</string>
@@ -336,6 +337,7 @@
     <string name="compose_player_bottom_offset">Bottom Offset</string>
     <string name="compose_player_capture_line">Capture</string>
     <string name="compose_player_close">Close player</string>
+    <string name="compose_player_picture_in_picture">Picture in picture</string>
     <string name="compose_player_color">Color</string>
     <string name="compose_player_currently_playing">Currently playing</string>
     <string name="compose_player_episode_code_episode_only">E%1$d</string>
@@ -351,6 +353,7 @@
     <string name="compose_player_no_streams_found">No streams found</string>
     <string name="compose_player_none">None</string>
     <string name="compose_player_outline">Outline</string>
+    <string name="compose_player_shadow">Shadow</string>
     <string name="compose_player_outline_color">Outline Color</string>
     <string name="compose_player_panel_episodes">Episodes</string>
     <string name="compose_player_panel_sources">Sources</string>
@@ -429,10 +432,13 @@
     <string name="settings_local_library_folders_title">Folders</string>
     <string name="settings_local_library_add_movie_folder">Add movie folder</string>
     <string name="settings_local_library_add_tv_folder">Add TV folder</string>
+    <string name="settings_local_library_add_anime_movie_folder">Add anime movie folder</string>
+    <string name="settings_local_library_add_anime_tv_folder">Add anime series folder</string>
     <string name="settings_local_library_empty">No folders yet. Add a movie or TV folder to get started.</string>
     <string name="settings_local_library_scanning">Scanning…</string>
     <string name="settings_local_library_type_movies">Movies</string>
     <string name="settings_local_library_type_tv">TV</string>
+    <string name="settings_local_library_type_anime">Anime</string>
     <string name="settings_local_library_items_count">%1$d titles</string>
     <string name="settings_local_library_unmatched_count">%1$d need matching</string>
     <string name="settings_local_library_remove">Remove</string>
@@ -440,9 +446,11 @@
     <string name="settings_local_library_fix_match">Fix match</string>
     <string name="settings_local_library_titles_title">Titles</string>
     <string name="settings_local_library_matched">Matched</string>
-    <string name="settings_local_library_not_matched">Not matched — won't scrobble</string>
+    <string name="settings_local_library_not_matched">Not matched</string>
+    <string name="settings_local_library_not_matched_detail">Not matched — won't scrobble</string>
     <string name="settings_local_library_match_dialog_title">Match “%1$s”</string>
     <string name="settings_local_library_search_hint">Search TMDB</string>
+    <string name="settings_local_library_search_kitsu_hint">Search Kitsu</string>
     <string name="settings_local_library_paste_id_hint">Or paste an IMDb or TMDB id</string>
     <string name="settings_local_library_apply">Apply</string>
     <string name="settings_local_library_cancel">Cancel</string>
@@ -467,6 +475,8 @@
     <string name="settings_local_library_current_match">Currently: %1$s</string>
     <string name="settings_local_library_section_movies">Movies</string>
     <string name="settings_local_library_section_tv">TV Shows</string>
+    <string name="settings_local_library_section_anime_movies">Anime Movies</string>
+    <string name="settings_local_library_section_anime_series">Anime Series</string>
     <string name="settings_local_library_color">Colour</string>
     <string name="compose_settings_page_supporters_contributors">Supporters &amp; Contributors</string>
     <string name="compose_settings_page_tmdb_enrichment">TMDB Enrichment</string>
@@ -520,6 +530,9 @@
     <string name="settings_search_results_section">RESULTS</string>
     <string name="settings_advanced_section_startup">STARTUP</string>
     <string name="settings_advanced_section_cache">CACHE</string>
+    <string name="settings_updates_section">UPDATES</string>
+    <string name="settings_updates_auto_install">Install updates automatically</string>
+    <string name="settings_updates_auto_install_description">Apply downloaded updates in place and restart Nuvio, instead of opening the archive to extract yourself.</string>
     <string name="settings_advanced_remember_last_profile">Remember Last Profile</string>
     <string name="settings_advanced_remember_last_profile_description">Remember last selected profile at startup</string>
     <string name="settings_advanced_clear_cw_cache">Clear Continue Watching Cache</string>
@@ -551,6 +564,8 @@
     <string name="settings_licenses_attributions_tvdb_body">Nuvio HTPC uses the TheTVDB API for TV series and anime metadata, episode information, artwork including backdrops and logos, and cast data. This product uses the TVDB API but is not endorsed or certified by TVDB.</string>
     <string name="settings_licenses_attributions_simkl_title">SIMKL</string>
     <string name="settings_licenses_attributions_simkl_body">Nuvio HTPC connects to SIMKL for account authentication, scrobbling watch progress, library sync, and calendar data for tracked shows and movies. Nuvio HTPC is not affiliated with or endorsed by SIMKL.</string>
+    <string name="settings_licenses_attributions_kitsu_title">Kitsu</string>
+    <string name="settings_licenses_attributions_kitsu_body">Nuvio HTPC uses the Kitsu.io API to search and match local anime files, and for per-season anime artwork. Nuvio HTPC is not affiliated with or endorsed by Kitsu.</string>
     <string name="settings_licenses_attributions_mpvkit_title">MPVKit</string>
     <string name="settings_licenses_attributions_mpvkit_body">Used for playback on iOS builds.</string>
     <string name="settings_licenses_attributions_mpvkit_license">MPVKit source alone is licensed under LGPL v3.0. MPVKit bundles, including libmpv and FFmpeg libraries, are also licensed under LGPL v3.0.</string>
@@ -562,6 +577,7 @@
     <string name="action_donate">Donate</string>
     <string name="cw_action_go_to_details">Go to details</string>
     <string name="cw_action_remove">Remove</string>
+    <string name="cw_action_resync">Resync Continue Watching</string>
     <string name="cw_action_start_from_beginning">Start from beginning</string>
     <string name="detail_btn_play">Play</string>
     <string name="detail_comments_badge_rating">%1$d/10</string>
@@ -946,6 +962,18 @@
     <string name="settings_playback_default_speed">Default Speed</string>
     <string name="settings_playback_mouse_move_reveals_controls">Show Controls on Mouse Move</string>
     <string name="settings_playback_mouse_move_reveals_controls_description">Moving the mouse over the player brings up the playback controls.</string>
+    <string name="settings_playback_legacy_hud">Legacy Player HUD</string>
+    <string name="settings_playback_legacy_hud_description">Use the former mobile-style playback controls while keeping the current desktop panels.</string>
+    <string name="settings_playback_always_show_clock">Always Show Playback Clock</string>
+    <string name="settings_playback_always_show_clock_description">Keep the clock visible in the top-right corner when the player controls fade out.</string>
+    <string name="settings_playback_fine_speed_increments">Fine Speed Increments</string>
+    <string name="settings_playback_fine_speed_increments_description">Step playback speed by 0.1 with the speed button and shortcuts, instead of jumping between presets (1x, 1.25x, 1.5x, 2x, 3x, 4x).</string>
+    <string name="settings_playback_desktop_verbose_mpv_logging">Verbose MPV Logging</string>
+    <string name="settings_playback_desktop_verbose_mpv_logging_desc">Write mpv&apos;s full debug log to logs/mpv-verbose.log for troubleshooting. Leave off unless diagnosing a playback problem — it grows quickly.</string>
+    <string name="settings_playback_ui_scale">Player UI Scale</string>
+    <string name="settings_appearance_app_ui_scale">App UI Scale</string>
+    <string name="settings_appearance_app_ui_scale_details">Also Apply to Details Screen</string>
+    <string name="settings_appearance_app_ui_scale_details_description">Scale media details with the rest of the app. Disable this to keep details at their original layout size.</string>
     <string name="settings_playback_desktop_hdr_mode">HDR Mode</string>
     <string name="settings_playback_desktop_hdr_mode_description">Controls how HDR content is handled on your display.</string>
     <string name="settings_playback_desktop_hdr_mode_dialog">HDR Mode</string>
@@ -957,10 +985,10 @@
     <string name="settings_playback_desktop_renderer">Interface Renderer</string>
     <string name="settings_playback_desktop_renderer_dialog">Interface Renderer — restart to apply</string>
     <string name="settings_playback_desktop_anime_mode">Anime Enhancements</string>
-    <string name="settings_playback_desktop_anime_mode_description">Applies Anime4K shaders and anime-tuned scaling for sharper animation. Toggle in the player with F10.</string>
+    <string name="settings_playback_desktop_anime_mode_description">Anime4K shaders and anime-tuned scaling for sharper animation. Auto-applies to detected anime when enabled below; F10 in the player forces a preset for the current session only.</string>
     <string name="settings_playback_desktop_anime_mode_dialog">Anime Enhancements</string>
     <string name="settings_playback_desktop_anime_auto">Auto-apply to Anime</string>
-    <string name="settings_playback_desktop_anime_auto_desc">Only apply the selected preset when the title is detected as anime. Disable to always apply.</string>
+    <string name="settings_playback_desktop_anime_auto_desc">Apply the selected preset automatically when the title is detected as anime. When off, enhancements never apply on their own — F10 in the player forces them for that playback session.</string>
     <string name="settings_playback_desktop_anime_svp">Anime SVP (Interpolation)</string>
     <string name="settings_playback_desktop_anime_svp_desc">Uses VapourSynth to interpolate motion for a smoother experience.</string>
     <string name="settings_playback_desktop_custom_shader_paths">Shader library</string>
@@ -969,7 +997,7 @@
     <string name="settings_playback_desktop_custom_shader_paths_warning">Custom shaders run inside mpv&apos;s renderer and can reduce performance or break playback. Pick Off in Anime Enhancements if a shader causes trouble.</string>
     <string name="settings_playback_desktop_audio_passthrough">Audio passthrough (bitstream)</string>
     <string name="settings_playback_desktop_audio_passthrough_desc">Experimental. Send compressed audio (AC3, DTS, E-AC3, TrueHD, DTS-HD) untouched to an AV receiver over HDMI/S-PDIF. Requires a receiver that accepts the bitstream — if you don't have one, leave this off. If a stream won't start playing, turn this off.</string>
-    <string name="settings_playback_desktop_custom_mpv_options">Advanced mpv options</string>
+    <string name="settings_playback_desktop_custom_mpv_options">MPV Options</string>
     <string name="settings_playback_desktop_custom_mpv_options_desc">One option per line as key=value. Applied on top of Nuvio's defaults; invalid options are ignored.</string>
     <string name="settings_playback_desktop_custom_mpv_options_hint">e.g.\nprofile=gpu-hq\ndeband=no</string>
     <string name="compose_settings_page_fork_enhancements">Fork Enhancements</string>
@@ -1066,6 +1094,11 @@
     <string name="settings_playback_section_skip_segments">SKIP SEGMENTS</string>
     <string name="settings_playback_section_stream_auto_play">STREAM AUTO-PLAY</string>
     <string name="settings_playback_section_stream_selection">STREAM SELECTION</string>
+    <string name="settings_playback_stream_failover">Automatic Stream Failover</string>
+    <string name="settings_playback_stream_failover_description">Try the next source when playback fails or a stream does not start.</string>
+    <string name="settings_playback_stream_failover_timeout">Failover Start Timeout</string>
+    <string name="settings_playback_stream_failover_timeout_description">How long to wait for a stream to start before trying the next source.</string>
+    <string name="settings_playback_stream_failover_timeout_seconds">%1$d seconds</string>
     <string name="settings_playback_section_subtitle_audio">SUBTITLE AND AUDIO</string>
     <string name="settings_playback_section_subtitle_rendering">SUBTITLE RENDERING</string>
     <string name="settings_playback_selected_count">%1$d selected</string>
@@ -1078,6 +1111,8 @@
     <string name="settings_playback_subtitle_outline">Outline</string>
     <string name="settings_playback_subtitle_outline_color">Outline Color</string>
     <string name="settings_playback_subtitle_outline_description">Draw a border around subtitle text.</string>
+    <string name="settings_playback_subtitle_shadow">Shadow</string>
+    <string name="settings_playback_subtitle_shadow_description">Cast a soft drop shadow behind subtitle text.</string>
     <string name="settings_playback_subtitle_show_preferred_only">Show Only Preferred Languages</string>
     <string name="settings_playback_subtitle_show_preferred_only_description">Only show subtitles matching your preferred subtitle languages.</string>
     <string name="settings_playback_subtitle_size">Subtitle Size</string>
@@ -1438,10 +1473,12 @@
     <string name="profile_who_is_watching">Who&apos;s watching?</string>
     <string name="provider_downloaded">Downloaded</string>
     <string name="resume_prompt_action">Resume</string>
+    <string name="resume_prompt_question">Continue Watching?</string>
     <string name="streams_active_scrapers">Active scrapers</string>
     <string name="streams_checking_more_addons">Checking more addons…</string>
     <string name="streams_copy_link">Copy stream link</string>
     <string name="streams_download_file">Download file</string>
+    <string name="streams_browser_download_failed">Couldn&apos;t open the download in your browser.</string>
     <string name="streams_open_external_player">Open in external player</string>
     <string name="streams_open_internal_player">Open in internal player</string>
     <string name="streams_empty_load_failed_message">The installed stream addons failed to return a valid stream response.</string>
@@ -1492,6 +1529,7 @@
     <string name="updates_not_available">In-app updates are not available on this build.</string>
     <string name="updates_preparing_download">Preparing download</string>
     <string name="updates_release_notes">Release notes</string>
+    <string name="updates_restarting">Restarting to apply update…</string>
     <string name="updates_title_allow_installs">Allow installs to continue</string>
     <string name="updates_title_available">Update available</string>
     <string name="updates_title_status">Update status</string>
@@ -1953,6 +1991,10 @@
     <string name="network_request_failed_http">Request failed with HTTP %1$d</string>
     <string name="player_addon_subtitle_display_format">%1$s (%2$s)</string>
     <string name="player_error_mpv_unavailable">MPV player engine not available. Please rebuild the app.</string>
+    <string name="player_error_playback_failed">Playback failed</string>
+    <string name="player_error_debrid_rate_limited">Debrid Rate Limited</string>
+    <string name="player_failover_trying_next">Stream failed — trying next source</string>
+    <string name="player_failover_stream_timed_out">Stream timed out</string>
     <string name="player_error_unable_to_play_stream">Unable to play this stream.</string>
     <string name="plugins_badge_disabled">Plugins disabled</string>
     <string name="plugins_badge_enabled">Enabled</string>

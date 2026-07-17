@@ -60,6 +60,9 @@ import nuvio.composeapp.generated.resources.settings_appearance_app_language
 import nuvio.composeapp.generated.resources.settings_appearance_app_language_sheet_title
 import nuvio.composeapp.generated.resources.settings_appearance_amoled_black
 import nuvio.composeapp.generated.resources.settings_appearance_amoled_description
+import nuvio.composeapp.generated.resources.settings_appearance_app_ui_scale
+import nuvio.composeapp.generated.resources.settings_appearance_app_ui_scale_details
+import nuvio.composeapp.generated.resources.settings_appearance_app_ui_scale_details_description
 import nuvio.composeapp.generated.resources.settings_appearance_liquid_glass
 import nuvio.composeapp.generated.resources.settings_appearance_liquid_glass_description
 import nuvio.composeapp.generated.resources.settings_appearance_desktop_navigation
@@ -83,6 +86,10 @@ internal fun LazyListScope.appearanceSettingsContent(
     onLiquidGlassNativeTabBarToggle: (Boolean) -> Unit,
     desktopNavigationLayout: DesktopNavigationLayout = DesktopNavigationLayout.Default,
     onDesktopNavigationLayoutSelected: (DesktopNavigationLayout) -> Unit = {},
+    desktopAppUiScalePercent: Int = 0,
+    onDesktopAppUiScalePercentChange: (Int) -> Unit = {},
+    desktopAppUiScaleAppliesToDetails: Boolean = true,
+    onDesktopAppUiScaleAppliesToDetailsChange: (Boolean) -> Unit = {},
     selectedAppLanguage: AppLanguage,
     onAppLanguageSelected: (AppLanguage) -> Unit,
     posterCardStyleUiState: PosterCardStyleUiState,
@@ -178,6 +185,25 @@ internal fun LazyListScope.appearanceSettingsContent(
                     )
                 }
                 if (isDesktop) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSliderRow(
+                        title = stringResource(Res.string.settings_appearance_app_ui_scale),
+                        value = desktopAppUiScalePercent,
+                        valueText = "${if (desktopAppUiScalePercent > 0) "+" else ""}$desktopAppUiScalePercent%",
+                        valueRange = -25..25,
+                        step = 5,
+                        isTablet = isTablet,
+                        onValueChange = onDesktopAppUiScalePercentChange,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_appearance_app_ui_scale_details),
+                        description = stringResource(Res.string.settings_appearance_app_ui_scale_details_description),
+                        checked = desktopAppUiScaleAppliesToDetails,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("app-ui-scale-details")),
+                        onCheckedChange = onDesktopAppUiScaleAppliesToDetailsChange,
+                    )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsChoiceRow(
                         title = stringResource(Res.string.settings_appearance_desktop_navigation),

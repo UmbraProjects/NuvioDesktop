@@ -45,7 +45,18 @@ actual fun ensurePlayerShortcutBindingsLoaded() = PlayerShortcutsRepository.ensu
 
 actual fun resetAllPlayerShortcuts() = PlayerShortcutsRepository.resetAll()
 
-actual fun onPlayerShortcutsProfileChanged() = PlayerShortcutsRepository.onProfileChanged()
+actual fun onPlayerShortcutsProfileChanged() {
+    PlayerShortcutsRepository.onProfileChanged()
+    AppShortcutsRepository.onProfileChanged()
+}
+
+actual fun appShortcutKeyLabels(): StateFlow<Map<AppShortcutAction, String>> = AppShortcutsRepository.keyLabels
+actual fun ensureAppShortcutBindingsLoaded() = AppShortcutsRepository.ensureLoaded()
+actual fun resetAllAppShortcuts() = AppShortcutsRepository.resetAll()
+actual fun appShortcutMatches(action: AppShortcutAction, event: androidx.compose.ui.input.key.KeyEvent): Boolean {
+    AppShortcutsRepository.ensureLoaded()
+    return event.key.nativeKeyCode == AppShortcutsRepository.keyCode(action)
+}
 
 /**
  * Human-readable label for an AWT [KeyEvent] `VK_` key code, tuned for the shortcuts reference:
@@ -67,7 +78,6 @@ internal fun playerShortcutKeyCodeLabel(keyCode: Int): String = when (keyCode) {
 // handled separately (cancels the capture).
 private val ReservedKeyCodes = setOf(
     KeyEvent.VK_LEFT, KeyEvent.VK_RIGHT, KeyEvent.VK_UP, KeyEvent.VK_DOWN,
-    KeyEvent.VK_ENTER, KeyEvent.VK_TAB, KeyEvent.VK_K,
 )
 
 // Pure modifier presses are ignored so the capture keeps listening for a real key.
@@ -169,6 +179,68 @@ actual fun PlayerShortcutRebindDialog(action: PlayerShortcutAction, onDismiss: (
                     TextButton(onClick = onDismiss) {
                         Text(text = "Cancel", maxLines = 1)
                     }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+actual fun AppShortcutRebindDialog(action: AppShortcutAction, onDismiss: () -> Unit) {
+    val tokens = MaterialTheme.nuvio
+    val focusRequester = remember { FocusRequester() }
+    var error by remember { mutableStateOf<String?>(null) }
+    val currentLabel = playerShortcutKeyCodeLabel(AppShortcutsRepository.keyCode(action))
+    LaunchedEffect(action) { runCatching { focusRequester.requestFocus() } }
+
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        Surface(shape = tokens.shapes.dialog, color = tokens.colors.surfaceDialog) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(tokens.spacing.dialogPadding)
+                    .focusRequester(focusRequester)
+                    .focusable()
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent true
+                        val vk = event.key.nativeKeyCode
+                        when {
+                            vk == KeyEvent.VK_ESCAPE -> onDismiss()
+                            vk in ModifierKeyCodes -> Unit
+                            event.isCtrlPressed || event.isAltPressed || event.isMetaPressed ->
+                                error = "Modifier combos aren't supported — press a single key."
+                            vk in ReservedKeyCodes ->
+                                error = "${playerShortcutKeyCodeLabel(vk)} is reserved for directional navigation."
+                            else -> {
+                                val existing = AppShortcutsRepository.actionForKeyCode(vk)
+                                if (existing != null && existing != action) {
+                                    error = "${playerShortcutKeyCodeLabel(vk)} is already assigned to ${existing.displayName}."
+                                } else {
+                                    AppShortcutsRepository.setBinding(action, vk)
+                                    onDismiss()
+                                }
+                            }
+                        }
+                        true
+                    },
+                verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
+            ) {
+                Text(action.displayName, style = MaterialTheme.typography.titleLarge, color = tokens.colors.textPrimary)
+                Text(
+                    "Currently bound to $currentLabel. Press a new key to rebind.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = tokens.colors.textSecondary,
+                )
+                error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = tokens.colors.danger) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap, Alignment.End),
+                ) {
+                    TextButton(onClick = { AppShortcutsRepository.resetToDefault(action); onDismiss() }) {
+                        Text("Reset to default")
+                    }
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
                 }
             }
         }

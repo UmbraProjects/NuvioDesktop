@@ -26,9 +26,17 @@ expect fun HomeHeroTrailerSurface(
     meta: String,
     description: String,
     modifier: Modifier,
+    // Which screen edge holds the navigation chrome ("top"/"left"/"none"). When the pointer enters
+    // that edge band over the trailer, [onNavChromeDismiss] fires so the caller can stop the trailer
+    // and uncover the navbar the heavyweight video surface would otherwise paint over.
+    navDismissEdge: String = "none",
+    // Top nav-dismiss band height as a fraction of the surface height. Smaller for the compact,
+    // resizable adaptive hero than for TV mode's full-viewport hero.
+    navDismissBandFraction: Float = 0.22f,
     onReady: () -> Unit,
     onEnded: () -> Unit,
     onError: () -> Unit,
+    onNavChromeDismiss: () -> Unit = {},
     onVolumeChange: (Int) -> Unit = {},
     // Called when this surface leaves composition — including when the default (non-adaptive,
     // non-TV) home layout scrolls the hero out of the LazyColumn's viewport and Compose

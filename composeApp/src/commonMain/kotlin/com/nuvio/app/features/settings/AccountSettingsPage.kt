@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +27,7 @@ import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.features.profiles.ProfileRepository
+import com.nuvio.app.features.updater.AppUpdaterPlatform
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
@@ -42,6 +44,9 @@ import nuvio.composeapp.generated.resources.settings_account_sign_out_confirm_ti
 import nuvio.composeapp.generated.resources.settings_account_status
 import nuvio.composeapp.generated.resources.settings_account_status_anonymous
 import nuvio.composeapp.generated.resources.settings_account_status_signed_in
+import nuvio.composeapp.generated.resources.settings_updates_auto_install
+import nuvio.composeapp.generated.resources.settings_updates_auto_install_description
+import nuvio.composeapp.generated.resources.settings_updates_section
 import org.jetbrains.compose.resources.stringResource
 
 internal fun LazyListScope.accountSettingsContent(
@@ -66,7 +71,9 @@ private fun AccountSettingsBody(
     var showSignOutConfirm by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        NuvioSurfaceCard {
+        NuvioSurfaceCard(
+            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("account-status")),
+        ) {
             Text(
                 text = stringResource(Res.string.compose_settings_page_account),
                 style = MaterialTheme.typography.titleLarge,
@@ -130,6 +137,7 @@ private fun AccountSettingsBody(
         if (authState is AuthState.Authenticated) {
             NuvioPrimaryButton(
                 text = stringResource(Res.string.settings_account_sign_out),
+                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("account-sign-out")),
                 onClick = { showSignOutConfirm = true },
             )
         } else {
@@ -152,6 +160,32 @@ private fun AccountSettingsBody(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("remember-last-profile")),
                     onCheckedChange = ProfileRepository::setRememberLastProfileEnabled,
                 )
+            }
+        }
+
+        if (AppUpdaterPlatform.isSupported) {
+            SettingsSection(
+                title = stringResource(Res.string.settings_updates_section),
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
+                    var autoInstall by rememberSaveable {
+                        mutableStateOf(AppUpdaterPlatform.isInPlaceUpdateEnabled())
+                    }
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_updates_auto_install),
+                        description = stringResource(Res.string.settings_updates_auto_install_description),
+                        checked = autoInstall,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("auto-install-updates"),
+                        ),
+                        onCheckedChange = { value ->
+                            autoInstall = value
+                            AppUpdaterPlatform.setInPlaceUpdateEnabled(value)
+                        },
+                    )
+                }
             }
         }
     }

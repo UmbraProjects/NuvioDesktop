@@ -50,6 +50,7 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -61,7 +62,9 @@ import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.ui.NuvioBackButton
+import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.core.ui.NuvioPosterWatchedOverlay
+import com.nuvio.app.core.ui.PosterLabelWidthFraction
 import com.nuvio.app.core.ui.NuvioShelfItemSlot
 import com.nuvio.app.core.ui.rememberMouseActivityState
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
@@ -222,13 +225,13 @@ fun CatalogScreen(
                             }
                             .onPreviewKeyEvent { event ->
                                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                if (event.key == Key.Backspace) {
-                                    onBack()
-                                    return@onPreviewKeyEvent true
-                                }
                                 if (uiState.items.isEmpty()) return@onPreviewKeyEvent false
                                 val lastIndex = uiState.items.size - 1
                                 when (event.navigationKey()) {
+                                    Key.Backspace -> {
+                                        onBack()
+                                        true
+                                    }
                                     Key.DirectionRight -> {
                                         mouseActivity.onKeyboardNavigation()
                                         focusedItemIndex = (focusedItemIndex + 1).coerceAtMost(lastIndex)
@@ -405,19 +408,31 @@ private fun CatalogPosterTile(
             NuvioPosterWatchedOverlay(isWatched = isWatched)
         }
         if (!hideLabels) {
-            Text(
-                text = item.name,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(PosterLabelWidthFraction)
+                    .align(Alignment.CenterHorizontally),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                NuvioPosterHoverTooltip(title = item.name) {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             val detail = item.releaseInfo?.let { formatReleaseDateForDisplay(it) }
             if (detail != null) {
                 Text(
                     text = detail,
+                    modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

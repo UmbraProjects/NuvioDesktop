@@ -30,7 +30,7 @@ internal fun parseTraktContentIds(contentId: String?): TraktExternalIds {
         return TraktExternalIds(tvdb = raw.substringAfter(':').substringBefore(':').toIntOrNull())
     }
 
-    if (raw.startsWith("mal:", ignoreCase = true)) {
+    if (raw.startsWith("mal:", ignoreCase = true) || raw.startsWith("myanimelist:", ignoreCase = true)) {
         return TraktExternalIds(mal = raw.substringAfter(':').substringBefore(':').toIntOrNull())
     }
 

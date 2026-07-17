@@ -67,6 +67,9 @@ data class AppUpdate(
     val assetName: String,
     val assetUrl: String,
     val assetSizeBytes: Long?,
+    // Expected SHA-256 (lowercase hex) of the asset, from the GitHub API's `digest` field. Null
+    // for assets uploaded before GitHub started publishing digests — verification is then skipped.
+    val assetSha256: String? = null,
 )
 
 data class AppUpdaterUiState(
@@ -99,7 +102,16 @@ internal data class GitHubAssetDto(
     @SerialName("browser_download_url") val browserDownloadUrl: String,
     val size: Long? = null,
     @SerialName("content_type") val contentType: String? = null,
-)
+    // GitHub publishes this as e.g. "sha256:1a2b…"; absent on older assets.
+    val digest: String? = null,
+) {
+    /** The lowercase SHA-256 hex from [digest], or null when GitHub didn't provide one. */
+    fun sha256Hex(): String? {
+        val value = digest?.trim()?.lowercase() ?: return null
+        if (!value.startsWith("sha256:")) return null
+        return value.removePrefix("sha256:").takeIf { it.matches(Regex("[0-9a-f]{64}")) }
+    }
+}
 
 private val appUpdaterJson = Json {
     ignoreUnknownKeys = true
@@ -181,6 +193,7 @@ private object AppUpdaterRepository {
             assetName = asset.name,
             assetUrl = asset.browserDownloadUrl,
             assetSizeBytes = asset.size,
+            assetSha256 = asset.sha256Hex(),
         )
     }
 
@@ -385,6 +398,7 @@ class AppUpdaterController internal constructor(
             AppUpdaterPlatform.downloadApk(
                 assetUrl = update.assetUrl,
                 assetName = update.assetName,
+                expectedSha256 = update.assetSha256,
             ) { downloadedBytes, totalBytes ->
                 val progress = if (totalBytes != null && totalBytes > 0L) {
                     (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
@@ -423,8 +437,13 @@ class AppUpdaterController internal constructor(
             return
         }
 
-        AppUpdaterPlatform.installDownloadedApk(apkPath).onSuccess {
+        AppUpdaterPlatform.installDownloadedApk(apkPath).onSuccess { outcome ->
             _uiState.update { state -> state.copy(showUnknownSourcesDialog = false) }
+            if (outcome == UpdateInstallOutcome.RESTARTING) {
+                scope.launch {
+                    NuvioToastController.show(getString(Res.string.updates_restarting))
+                }
+            }
         }.onFailure { error ->
             scope.launch {
                 val fallbackMessage = error.message ?: getString(Res.string.updates_install_failed)

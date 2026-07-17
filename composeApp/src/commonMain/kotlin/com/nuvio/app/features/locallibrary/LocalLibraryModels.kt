@@ -11,6 +11,10 @@ data class LocalFolder(
     val id: String,
     val path: String,
     val type: LocalFolderType,
+    // Anime is an orthogonal flag rather than a LocalFolderType value on purpose: the movie/series
+    // axis drives scanning, grouping and TMDB media-type, and dozens of call sites branch on it.
+    // isAnime only changes how the title is *matched* (Kitsu first) and how episodes are numbered.
+    val isAnime: Boolean = false,
     val label: String? = null,
     val addedAtEpochMs: Long = 0,
 ) {
@@ -84,10 +88,15 @@ data class LocalMediaItem(
     val key: String,
     val folderId: String,
     val type: LocalFolderType,
+    val isAnime: Boolean = false,
     val title: String,
     val year: Int? = null,
     val imdbId: String? = null,
     val tmdbId: Int? = null,
+    // Native anime ids. When present these take priority in [contentId] so the item flows through
+    // the app's existing anime pipeline (absolute-episode stream ids, Kitsu/MAL scrobbling).
+    val kitsuId: Int? = null,
+    val malId: Int? = null,
     val poster: String? = null,
     val background: String? = null,
     val matchState: LocalMatchState = LocalMatchState.UNMATCHED,
@@ -96,16 +105,46 @@ data class LocalMediaItem(
     val files: List<LocalMediaFile> = emptyList(),
 ) {
     val isMatched: Boolean
-        get() = !imdbId.isNullOrBlank() || tmdbId != null
+        get() = !imdbId.isNullOrBlank() || tmdbId != null || kitsuId != null || malId != null
+
+    /**
+     * The `prefix:id` base of the item's native anime id (kitsu/mal), or null when it has none.
+     * Anime episodes are addressed as `kitsu:<id>:<absoluteEpisode>` off this base.
+     */
+    val animeNativeBase: String?
+        get() = when {
+            kitsuId != null -> "kitsu:$kitsuId"
+            malId != null -> "mal:$malId"
+            else -> null
+        }
 
     /** Stremio-style content id used everywhere else in the app (library, details, scrobble). */
     val contentId: String
-        get() = imdbId?.takeIf { it.isNotBlank() }
+        get() = animeNativeBase
+            ?: imdbId?.takeIf { it.isNotBlank() }
             ?: tmdbId?.let { "tmdb:$it" }
             ?: "$LOCAL_ID_PREFIX$key"
 
     val contentType: String
         get() = if (type == LocalFolderType.SERIES) "series" else "movie"
+
+    /**
+     * Whether [videoId] addresses THIS title — one of its own ids in any namespace it carries,
+     * or an episode id derived from one (`<base>:season:episode` / `<base>:episode`). Stream
+     * lookups receive video ids from whatever meta screen happens to be active; without this
+     * check a stale or franchise-level meta can pull an unrelated title's local file into the
+     * stream list (e.g. an anime movie answering a live-action show's episode id).
+     */
+    fun ownsVideoId(videoId: String): Boolean {
+        val bases = buildList {
+            add("$LOCAL_ID_PREFIX$key")
+            imdbId?.takeIf { it.isNotBlank() }?.let { add(it) }
+            tmdbId?.let { add("tmdb:$it") }
+            kitsuId?.let { add("kitsu:$it") }
+            malId?.let { add("mal:$it") }
+        }
+        return bases.any { base -> videoId == base || videoId.startsWith("$base:") }
+    }
 
     val displayYear: String?
         get() = year?.takeIf { it in 1870..2100 }?.toString()
@@ -123,6 +162,8 @@ data class LocalMatchOverride(
     val key: String,
     val imdbId: String? = null,
     val tmdbId: Int? = null,
+    val kitsuId: Int? = null,
+    val malId: Int? = null,
     val title: String? = null,
     val poster: String? = null,
     val background: String? = null,
@@ -130,9 +171,13 @@ data class LocalMatchOverride(
     val matchState: LocalMatchState = LocalMatchState.MANUAL,
 )
 
-/** A candidate returned by the TMDB text search used in the Fix-match dialog. */
+/**
+ * A candidate returned by the Fix-match dialog's text search. Anime items search Kitsu (so
+ * [kitsuId] is set and [tmdbId] is null); everything else searches TMDB.
+ */
 data class LocalMatchCandidate(
-    val tmdbId: Int,
+    val tmdbId: Int? = null,
+    val kitsuId: Int? = null,
     val type: LocalFolderType,
     val title: String,
     val year: Int? = null,
@@ -154,11 +199,19 @@ data class LocalLibraryUiState(
 
     fun itemsInCatalog(catalogId: String?): List<LocalMediaItem> =
         items.filter { it.catalogId == catalogId }.sortedBy { it.title.lowercase() }
+
+    // Basic-mode buckets: anime gets its own movie/series sections, mirroring the plain ones.
     val movies: List<LocalMediaItem>
-        get() = items.filter { it.type == LocalFolderType.MOVIES }.sortedBy { it.title.lowercase() }
+        get() = items.filter { it.type == LocalFolderType.MOVIES && !it.isAnime }.sortedBy { it.title.lowercase() }
 
     val series: List<LocalMediaItem>
-        get() = items.filter { it.type == LocalFolderType.SERIES }.sortedBy { it.title.lowercase() }
+        get() = items.filter { it.type == LocalFolderType.SERIES && !it.isAnime }.sortedBy { it.title.lowercase() }
+
+    val animeMovies: List<LocalMediaItem>
+        get() = items.filter { it.type == LocalFolderType.MOVIES && it.isAnime }.sortedBy { it.title.lowercase() }
+
+    val animeSeries: List<LocalMediaItem>
+        get() = items.filter { it.type == LocalFolderType.SERIES && it.isAnime }.sortedBy { it.title.lowercase() }
 
     val unmatchedCount: Int
         get() = items.count { !it.isMatched }

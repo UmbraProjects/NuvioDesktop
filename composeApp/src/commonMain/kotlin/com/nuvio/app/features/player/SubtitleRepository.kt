@@ -43,7 +43,7 @@ object SubtitleRepository {
 
     private var activeFetchJob: Job? = null
 
-    fun fetchAddonSubtitles(type: String, videoId: String) {
+    fun fetchAddonSubtitles(type: String, videoId: String): Job {
         activeFetchJob?.cancel()
         activeFetchJob = scope.launch {
             val requestType = canonicalSubtitleType(type)
@@ -109,6 +109,7 @@ object SubtitleRepository {
             }
             _isLoading.value = false
         }
+        return activeFetchJob!!
     }
 
     fun clear() {

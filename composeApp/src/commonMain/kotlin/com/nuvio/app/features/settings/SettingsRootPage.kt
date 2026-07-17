@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
@@ -27,9 +28,12 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
 import com.nuvio.app.core.build.AppVersionPolicy
+import com.nuvio.app.core.ui.platformOpenLogsDirectory
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_about_based_on_version_format
+import nuvio.composeapp.generated.resources.compose_about_open_logs_folder
 import nuvio.composeapp.generated.resources.compose_about_made_with
 import nuvio.composeapp.generated.resources.compose_about_version_format
 import nuvio.composeapp.generated.resources.collections_header
@@ -376,6 +380,16 @@ internal fun LazyListScope.settingsRootContent(
                     textAlign = TextAlign.Center,
                 )
             }
+            Text(
+                text = stringResource(Res.string.compose_about_open_logs_folder),
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clickable { platformOpenLogsDirectory() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

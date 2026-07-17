@@ -11,6 +11,7 @@ import com.nuvio.app.features.debrid.DebridStreamPresentation
 import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
 import com.nuvio.app.features.debrid.LocalDebridAvailabilityService
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.PluginsUiState
@@ -20,6 +21,7 @@ import com.nuvio.app.features.streams.InstalledStreamAddonTarget
 import com.nuvio.app.features.streams.StreamAutoPlaySelector
 import com.nuvio.app.features.streams.StreamBadgePresentation
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
+import com.nuvio.app.features.streams.filterForRequestedEpisode
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamLoadCompletion
 import com.nuvio.app.features.streams.StreamParser
@@ -95,6 +97,7 @@ object PlayerStreamsRepository {
         title: String? = null,
         season: Int? = null,
         episode: Int? = null,
+        sourceAffinity: PlayerSourceAffinity = PlayerSourceAffinity.Stream,
         forceRefresh: Boolean = false,
     ) {
         fetchStreams(
@@ -104,6 +107,7 @@ object PlayerStreamsRepository {
             title = title,
             season = season,
             episode = episode,
+            sourceAffinity = sourceAffinity,
             forceRefresh = forceRefresh,
             stateFlow = _episodeStreamsState,
             requestKeyHolder = { episodeStreamsRequestKey },
@@ -141,6 +145,7 @@ object PlayerStreamsRepository {
         title: String?,
         season: Int?,
         episode: Int?,
+        sourceAffinity: PlayerSourceAffinity = PlayerSourceAffinity.Stream,
         forceRefresh: Boolean,
         stateFlow: MutableStateFlow<StreamsUiState>,
         requestKeyHolder: () -> String?,
@@ -166,7 +171,7 @@ object PlayerStreamsRepository {
         } else {
             PluginsUiState(pluginsEnabled = false)
         }
-        val requestKey = "$type::$effectiveVideoId::$effectiveSeason::$effectiveEpisode::pluginsGrouped=${pluginUiState.groupStreamsByRepository}"
+        val requestKey = "$type::$effectiveVideoId::$effectiveSeason::$effectiveEpisode::affinity=$sourceAffinity::pluginsGrouped=${pluginUiState.groupStreamsByRepository}"
         val current = stateFlow.value
         if (
             !forceRefresh &&
@@ -181,24 +186,58 @@ object PlayerStreamsRepository {
         stateFlow.value = StreamsUiState()
 
         val streamBadgeRules = StreamBadgeSettingsRepository.snapshot()
-        val embeddedStreams = MetaDetailsRepository.findEmbeddedStreams(effectiveVideoId)
-        if (embeddedStreams.isNotEmpty()) {
-            log.d { "Using ${embeddedStreams.size} embedded streams for type=$type id=$effectiveVideoId" }
-            val group = AddonStreamGroup(
-                addonName = embeddedStreams.first().addonName,
-                addonId = "embedded",
-                streams = embeddedStreams,
-                isLoading = false,
-            )
+
+        fun singleGroupState(group: AddonStreamGroup): StreamsUiState {
             val presentedGroup = StreamBadgePresentation.apply(
                 groups = listOf(group),
                 rules = streamBadgeRules,
             ).firstOrNull() ?: group
-            stateFlow.value = StreamsUiState(
+            return StreamsUiState(
                 groups = listOf(presentedGroup),
-                activeAddonIds = setOf("embedded"),
+                activeAddonIds = setOf(group.addonId),
                 isAnyLoading = false,
             )
+        }
+
+        val embeddedStreams = MetaDetailsRepository.findEmbeddedStreams(effectiveVideoId)
+        if (embeddedStreams.isNotEmpty()) {
+            log.d { "Using ${embeddedStreams.size} embedded streams for type=$type id=$effectiveVideoId" }
+            stateFlow.value = singleGroupState(
+                AddonStreamGroup(
+                    addonName = embeddedStreams.first().addonName,
+                    addonId = "embedded",
+                    streams = embeddedStreams,
+                    isLoading = false,
+                ),
+            )
+            return
+        }
+
+        // Local-library files for this episode. The lookup is video-id-keyed (safe against a
+        // stale details meta), and we try the raw id too — the resolver may have converted an
+        // anime id into a form the mapping knows but the local item does not, or vice versa.
+        val localStreams = LocalLibraryRepository.localStreamsFor(parentMetaId ?: videoId, effectiveVideoId)
+            .ifEmpty {
+                if (videoId != effectiveVideoId) {
+                    LocalLibraryRepository.localStreamsFor(parentMetaId ?: videoId, videoId)
+                } else {
+                    emptyList()
+                }
+            }
+        val localGroup = localStreams.takeIf { it.isNotEmpty() }?.let { streams ->
+            AddonStreamGroup(
+                addonName = streams.first().addonName,
+                addonId = "locallibrary",
+                streams = streams,
+                isLoading = false,
+            )
+        }
+        // A local-library playback session (opened via the library) stays local across episode
+        // switches and next-episode auto-play — mirror StreamsRepository's local-first behaviour
+        // instead of scraping addons for a file that is already on disk.
+        if (localGroup != null && sourceAffinity == PlayerSourceAffinity.Local) {
+            log.d { "Using ${localGroup.streams.size} local file(s) for type=$type id=$effectiveVideoId" }
+            stateFlow.value = singleGroupState(localGroup)
             return
         }
 
@@ -217,10 +256,15 @@ object PlayerStreamsRepository {
         )
 
         if (installedAddons.isEmpty() && pluginProviderGroups.isEmpty()) {
-            stateFlow.value = StreamsUiState(
-                isAnyLoading = false,
-                emptyStateReason = com.nuvio.app.features.streams.StreamsEmptyStateReason.NoAddonsInstalled,
-            )
+            // No scrapers at all — a local file is still a valid (and the only) source.
+            if (localGroup != null) {
+                stateFlow.value = singleGroupState(localGroup)
+            } else {
+                stateFlow.value = StreamsUiState(
+                    isAnyLoading = false,
+                    emptyStateReason = com.nuvio.app.features.streams.StreamsEmptyStateReason.NoAddonsInstalled,
+                )
+            }
             return
         }
 
@@ -243,15 +287,21 @@ object PlayerStreamsRepository {
             }
 
         if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty()) {
-            stateFlow.value = StreamsUiState(
-                isAnyLoading = false,
-                emptyStateReason = com.nuvio.app.features.streams.StreamsEmptyStateReason.NoCompatibleAddons,
-            )
+            if (localGroup != null) {
+                stateFlow.value = singleGroupState(localGroup)
+            } else {
+                stateFlow.value = StreamsUiState(
+                    isAnyLoading = false,
+                    emptyStateReason = com.nuvio.app.features.streams.StreamsEmptyStateReason.NoCompatibleAddons,
+                )
+            }
             return
         }
 
         val installedAddonOrder = streamAddons.map { it.addonName }
-        val initialGroups = StreamAutoPlaySelector.orderAddonStreams(streamAddons.map { addon ->
+        // The local file rides along as an already-loaded group next to the addon results, so
+        // episode switching still offers it even when scrapers are also in play.
+        val initialGroups = listOfNotNull(localGroup) + StreamAutoPlaySelector.orderAddonStreams(streamAddons.map { addon ->
             AddonStreamGroup(
                 addonName = addon.addonName,
                 addonId = addon.addonId,
@@ -366,6 +416,13 @@ object PlayerStreamsRepository {
                             addonName = displayName,
                             addonId = addon.addonId,
                             addonLogo = addon.manifest.logoUrl,
+                        ).filterForRequestedEpisode(
+                            season = effectiveSeason,
+                            episode = effectiveEpisode,
+                            episodeTitlesByCoordinate = MetaDetailsRepository.episodeTitlesByCoordinate(
+                                type = type,
+                                id = parentMetaId ?: videoId,
+                            ),
                         )
                     }.fold(
                         onSuccess = { streams ->

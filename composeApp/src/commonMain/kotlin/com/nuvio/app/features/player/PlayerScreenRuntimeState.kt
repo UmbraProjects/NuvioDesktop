@@ -32,6 +32,7 @@ internal class PlayerScreenRuntime(
     val sourceHeaders: Map<String, String> get() = args.sourceHeaders
     val sourceResponseHeaders: Map<String, String> get() = args.sourceResponseHeaders
     val streamType: String? get() = args.streamType
+    val sourceAffinity: PlayerSourceAffinity get() = args.sourceAffinity
     val providerName: String get() = args.providerName
     val streamTitle: String get() = args.streamTitle
     val streamSubtitle: String? get() = args.streamSubtitle
@@ -57,6 +58,15 @@ internal class PlayerScreenRuntime(
     val initialPositionMs: Long get() = args.initialPositionMs
     val initialProgressFraction: Float? get() = args.initialProgressFraction
     val disableProgressTracking: Boolean get() = args.disableProgressTracking
+    val isProviderDiagnosticVideoPlayback: Boolean
+        get() = activeSourceUrl == providerDiagnosticVideoSourceUrl
+    val isProviderDiagnosticProbePending: Boolean
+        get() = activeSourceUrl == providerDiagnosticProbePendingSourceUrl
+    val progressTrackingDisabled: Boolean
+        get() = disableProgressTracking ||
+            playbackSourceFailureActive ||
+            isProviderDiagnosticVideoPlayback ||
+            isProviderDiagnosticProbePending
     val autoPlayMode: PlayerAutoPlayMode get() = args.autoPlayMode
     val isSeries: Boolean get() = parentMetaType == "series"
 
@@ -90,8 +100,16 @@ internal class PlayerScreenRuntime(
 
     var controlsVisible by mutableStateOf(true)
     var mouseActivitySignal by mutableStateOf(0)
+    var nativeChromeInteractionActive by mutableStateOf(false)
     var playerControlsLocked by mutableStateOf(false)
     var activeSourceUrl by mutableStateOf(sourceUrl)
+    var providerDiagnosticVideoSourceUrl by mutableStateOf(
+        sourceUrl.takeIf(::isExplicitProviderDiagnosticVideoUrl),
+    )
+    var providerDiagnosticProbePendingSourceUrl by mutableStateOf(
+        sourceUrl.takeIf(::isProviderPlaybackEndpoint),
+    )
+    var providerDiagnosticRecoveryAttemptedSourceUrl by mutableStateOf<String?>(null)
     var activeSourceAudioUrl by mutableStateOf(sourceAudioUrl)
     var activeSourceHeaders by mutableStateOf(sanitizePlaybackHeaders(sourceHeaders))
     var activeSourceResponseHeaders by mutableStateOf(sanitizePlaybackResponseHeaders(sourceResponseHeaders))
@@ -102,7 +120,7 @@ internal class PlayerScreenRuntime(
     var activeTorrentTrackers by mutableStateOf(torrentTrackers)
     var p2pResolvedSourceUrl by mutableStateOf<String?>(null)
     var activeSourceIdentityKey by mutableStateOf(
-        torrentInfoHash?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { hash ->
+        args.sourceIdentityKey ?: torrentInfoHash?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { hash ->
             "torrent:$hash:${torrentFileIdx ?: -1}"
         } ?: sourceUrl.trim().takeIf { it.isNotBlank() }?.let { url -> "url:$url" },
     )
@@ -116,19 +134,29 @@ internal class PlayerScreenRuntime(
     var activeEpisodeNumber by mutableStateOf(episodeNumber)
     var activeEpisodeTitle by mutableStateOf(episodeTitle)
     var activeEpisodeThumbnail by mutableStateOf(episodeThumbnail)
+    var activePauseDescription by mutableStateOf(pauseDescription)
     var activeVideoId by mutableStateOf(videoId)
     var activeInitialPositionMs by mutableStateOf(initialPositionMs)
     var activeInitialProgressFraction by mutableStateOf(initialProgressFraction)
     var shouldPlay by mutableStateOf(true)
+    var playbackEndExitRequested by mutableStateOf(false)
     var resizeMode by mutableStateOf(playerSettingsUiState.resizeMode)
+    var pictureInPictureActive by mutableStateOf(false)
     var layoutSize by mutableStateOf(IntSize.Zero)
     var playbackSnapshot by mutableStateOf(PlayerPlaybackSnapshot())
+    // Player-instance scoped: a user speed change survives episode/source replacement but a new
+    // player session starts from the persisted default.
+    var sessionPlaybackSpeed by mutableStateOf(1f)
+    var lastTrustedPlaybackPositionMs by mutableStateOf(0L)
     var playerController by mutableStateOf<PlayerEngineController?>(null)
     var playerControllerSourceUrl by mutableStateOf<String?>(null)
     var errorMessage by mutableStateOf<String?>(null)
+    var playbackFailureExitRequested by mutableStateOf(false)
+    var playbackSourceFailureActive by mutableStateOf(false)
     var isScrubbingTimeline by mutableStateOf(false)
     var scrubbingPositionMs by mutableStateOf<Long?>(null)
     var pausedOverlayVisible by mutableStateOf(false)
+    var pausedOverlayInteractionSignal by mutableStateOf(0)
     var gestureFeedback by mutableStateOf<GestureFeedbackState?>(null)
     var liveGestureFeedback by mutableStateOf<GestureFeedbackState?>(null)
     var renderedGestureFeedback by mutableStateOf<GestureFeedbackState?>(null)
@@ -176,6 +204,13 @@ internal class PlayerScreenRuntime(
     var playbackStartedForParentalGuide by mutableStateOf(false)
     var nextEpisodeInfo by mutableStateOf<NextEpisodeInfo?>(null)
     var showNextEpisodeCard by mutableStateOf(false)
+    // Set while a user-initiated episode switch (next-episode button or episode selector) is
+    // loading streams in the background, so the next-episode card can double as "we heard you,
+    // loading…" feedback. Holds the episode being switched to — which is NOT necessarily the
+    // sequential next episode — and is cleared once the switch resolves (plays, falls back to the
+    // manual stream list, or is dismissed). Distinct from showNextEpisodeCard, which the
+    // end-of-episode threshold/EOF logic owns.
+    var manualEpisodeSwitchInfo by mutableStateOf<NextEpisodeInfo?>(null)
     var nextEpisodeAutoPlaySearching by mutableStateOf(false)
     var nextEpisodeAutoPlaySourceName by mutableStateOf<String?>(null)
     var nextEpisodeAutoPlayCountdown by mutableStateOf<Int?>(null)
@@ -185,6 +220,7 @@ internal class PlayerScreenRuntime(
     // stale end-of-file (which lingers while the next stream loads — common with MPV + slow addons)
     // from triggering a SECOND advance and skipping an episode.
     var nextEpisodeAdvanceInProgress by mutableStateOf(false)
+    var nextEpisodeThresholdStableSamples by mutableStateOf(0)
     var pendingP2pSwitch by mutableStateOf<PendingPlayerP2pSwitch?>(null)
     var credentialRefreshJob by mutableStateOf<Job?>(null)
     var credentialRefreshAttemptedSourceUrl by mutableStateOf<String?>(null)
@@ -200,9 +236,14 @@ internal class PlayerScreenRuntime(
     var useCustomSubtitles by mutableStateOf(false)
     var preferredAudioSelectionApplied by mutableStateOf(false)
     var preferredSubtitleSelectionApplied by mutableStateOf(false)
+    // A native subtitle selection is only reflected in the UI after the refreshed mpv track
+    // list reports it selected. This prevents a command issued during file startup from leaving
+    // a stale checkmark when mpv has not accepted/applied the track yet.
+    var pendingSubtitleSelectionIndex by mutableStateOf<Int?>(null)
     var secondarySubtitleSelectionApplied by mutableStateOf(false)
     var activeSubtitleTab by mutableStateOf(SubtitleTab.BuiltIn)
     var autoFetchedAddonSubtitlesForKey by mutableStateOf<String?>(null)
+    var completedAutoAddonSubtitleFetchForKey by mutableStateOf<String?>(null)
     var trackPreferenceRestoreApplied by mutableStateOf(false)
     var subtitleDelayMs by mutableStateOf(0)
     var subtitleAutoSyncState by mutableStateOf(SubtitleAutoSyncUiState())
@@ -210,4 +251,13 @@ internal class PlayerScreenRuntime(
     var lastSyncedSettingsResizeMode: PlayerResizeMode? = null
     var lastResetPlaybackIdentity: String? = null
     var lastResetVideoIdentity: String? = null
+
+    // Stream failover: identity keys of sources already tried (and failed) for the current item, so
+    // failover walks down the list without re-trying the same dead stream. Cleared on manual source
+    // pick, episode change, and sustained successful playback. [failoverInProgress] guards against a
+    // second failover firing (e.g. error + watchdog together) and tells switchToSource not to clear
+    // the tried-set when the swap is failover-initiated rather than user-initiated.
+    val failoverTriedIdentityKeys: MutableSet<String> = mutableSetOf()
+    var failoverInProgress by mutableStateOf(false)
+    var failoverJob: Job? = null
 }

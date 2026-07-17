@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +34,7 @@ import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.cw_action_go_to_details
 import nuvio.composeapp.generated.resources.cw_action_remove
+import nuvio.composeapp.generated.resources.cw_action_resync
 import nuvio.composeapp.generated.resources.cw_action_start_from_beginning
 import nuvio.composeapp.generated.resources.play_manually
 import org.jetbrains.compose.resources.stringResource
@@ -47,6 +49,7 @@ fun NuvioContinueWatchingActionSheet(
     onOpenDetails: () -> Unit,
     onStartFromBeginning: (() -> Unit)? = null,
     onPlayManually: (() -> Unit)? = null,
+    onResync: () -> Unit,
     onRemove: () -> Unit,
 ) {
     if (item == null) return
@@ -99,6 +102,12 @@ fun NuvioContinueWatchingActionSheet(
                     onClick = { dismissAfter(onStartFromBeginning) },
                 )
             }
+            NuvioBottomSheetDivider()
+            NuvioBottomSheetActionRow(
+                icon = Icons.Default.Refresh,
+                title = stringResource(Res.string.cw_action_resync),
+                onClick = { dismissAfter(onResync) },
+            )
             NuvioBottomSheetDivider()
             NuvioBottomSheetActionRow(
                 icon = Icons.Default.DeleteOutline,

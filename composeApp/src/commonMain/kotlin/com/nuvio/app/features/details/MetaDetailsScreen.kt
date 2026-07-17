@@ -119,6 +119,8 @@ import com.nuvio.app.features.player.AnimeContentCache
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.skip.PlayerNextEpisodeRules
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.player.AppShortcutAction
+import com.nuvio.app.features.player.appShortcutMatches
 import com.nuvio.app.features.streams.StreamAutoPlayPolicy
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.tmdb.TmdbService
@@ -509,21 +511,18 @@ fun MetaDetailsScreen(
                     )
                 }
                 val seriesActionVideo = remember(seriesAction, meta.id, meta.videos) {
-                    val action = seriesAction ?: return@remember null
-                    meta.videos.firstOrNull { video ->
-                        if (action.seasonNumber != null && action.episodeNumber != null) {
-                            video.effectiveSeasonNumber() == action.seasonNumber &&
-                                video.effectiveEpisodeNumber() == action.episodeNumber
-                        } else {
-                            buildPlaybackVideoId(
-                                parentMetaId = meta.id,
-                                seasonNumber = video.effectiveSeasonNumber(),
-                                episodeNumber = video.effectiveEpisodeNumber(),
-                                fallbackVideoId = video.id,
-                            ) == action.videoId || video.id == action.videoId
-                        }
-                    }
+                    meta.resolveSeriesActionVideo(seriesAction)
                 }
+                val preferredSeriesEpisode = remember(
+                    seriesAction,
+                    watchProgressUiState.entries,
+                    meta.id,
+                    meta.videos,
+                ) {
+                    meta.preferredSeriesEpisode(seriesAction, watchProgressUiState.entries)
+                }
+                val preferredSeriesSeasonNumber = preferredSeriesEpisode?.effectiveSeasonNumber()
+                val preferredSeriesEpisodeNumber = preferredSeriesEpisode?.effectiveEpisodeNumber()
                 val seriesPauseDescription = remember(seriesActionVideo) {
                     seriesActionVideo?.overview
                 }
@@ -778,7 +777,27 @@ fun MetaDetailsScreen(
                         else -> playText
                     }
                 }
+                val dropTrailerForPlaybackNavigation: () -> Unit = {
+                    // Native video surfaces can remain visually above Compose content for the
+                    // frame in which navigation begins. Remove the trailer source first so the
+                    // MPV host is disposed before the streams/player destination is presented.
+                    isLeavingDetails = true
+                    trailerRequestToken += 1
+                    selectedTrailer = null
+                    trailerPlaybackSource = null
+                    trailerLoading = false
+                    trailerErrorMessage = null
+                    heroTrailerReady = false
+                    heroTrailerAutoplayReady = false
+                    heroTrailerManualPlayback = false
+                    heroTrailerDismissed = true
+                    heroTrailerFinished = true
+                    heroTrailerPlaybackSource = null
+                }
                 val onPrimaryPlayClick: () -> Unit = {
+                    if (onPlay != null) {
+                        dropTrailerForPlaybackNavigation()
+                    }
                     when {
                         (meta.type == "series" || hasEpisodes) && seriesAction != null -> {
                             onPlay?.invoke(
@@ -825,6 +844,7 @@ fun MetaDetailsScreen(
                     ?.takeIf { showManualPlayOption }
                     ?.let { manualPlay ->
                         {
+                            dropTrailerForPlaybackNavigation()
                             when {
                                 (meta.type == "series" || hasEpisodes) && seriesAction != null -> {
                                     manualPlay(
@@ -867,6 +887,9 @@ fun MetaDetailsScreen(
                         }
                     }
                 val onEpisodePlayClick: (MetaVideo) -> Unit = { video ->
+                    if (onPlay != null) {
+                        dropTrailerForPlaybackNavigation()
+                    }
                     val season = video.effectiveSeasonNumber()
                     val episode = video.effectiveEpisodeNumber()
                     val playbackVideoId = buildPlaybackVideoId(
@@ -896,6 +919,9 @@ fun MetaDetailsScreen(
                     )
                 }
                 val onEpisodeManualPlayClick: (MetaVideo) -> Unit = { video ->
+                    if (onPlayManually != null) {
+                        dropTrailerForPlaybackNavigation()
+                    }
                     val season = video.effectiveSeasonNumber()
                     val episode = video.effectiveEpisodeNumber()
                     val playbackVideoId = buildPlaybackVideoId(
@@ -938,6 +964,7 @@ fun MetaDetailsScreen(
                                 .ifEmpty { airedEpisodes }
                                 .randomOrNull(Random.Default)
                                 ?: return@randomClick
+                            dropTrailerForPlaybackNavigation()
                             val season = randomEpisode.effectiveSeasonNumber()
                             val episode = randomEpisode.effectiveEpisodeNumber()
                             val playbackVideoId = buildPlaybackVideoId(
@@ -990,8 +1017,8 @@ fun MetaDetailsScreen(
                 val seasonsForTv = remember(groupedEpisodesForTv) {
                     groupedEpisodesForTv.keys.sortedBy(::seasonSortKey)
                 }
-                val defaultSeasonForTv = remember(seasonsForTv, seriesAction) {
-                    seriesAction?.seasonNumber
+                val defaultSeasonForTv = remember(seasonsForTv, preferredSeriesSeasonNumber) {
+                    preferredSeriesSeasonNumber
                         ?.let(::normalizeSeasonNumber)
                         ?.takeIf { it in groupedEpisodesForTv }
                         ?: seasonsForTv.firstOrNull()
@@ -1156,16 +1183,6 @@ fun MetaDetailsScreen(
                                         )
                                     }
                                 }
-                            }
-                            if (comments.isNotEmpty() && MetaScreenSectionKey.COMMENTS in visibleSectionKeys) {
-                                add(
-                                    MetaTvSection(
-                                        kind = MetaTvSectionKind.COMMENTS,
-                                        lazyItemIndex = 1,
-                                        itemCount = comments.size,
-                                        onEnter = { idx -> comments.getOrNull(idx)?.let { selectedComment = it } },
-                                    ),
-                                )
                             }
                             return@buildList
                         }
@@ -1349,7 +1366,10 @@ fun MetaDetailsScreen(
                     heroTrailerAutoplayReady &&
                     !isLeavingDetails &&
                     !heroTrailerDismissed &&
-                    (heroHeightPx == 0 || detailScrollOffsetPx <= thresholdPx)
+                    // The bounded trailer occupies the same right-hand space as the selector
+                    // once the scaled hero scrolls. Park it and reveal the backdrop until the
+                    // viewport returns to the top.
+                    detailScrollOffsetPx <= 0f
                 val headerProgress by animateFloatAsState(
                     targetValue = headerTarget,
                     animationSpec = tween(
@@ -1421,11 +1441,21 @@ fun MetaDetailsScreen(
                                     tvFocus.coerceItemIndex(next.itemCount)
                                 }
                                 tvCoroutineScope.launch {
-                                    val targetIndex = if (next.kind == MetaTvSectionKind.ACTIONS) 0 else next.lazyItemIndex
-                                    listState.animateScrollToItem(
-                                        index = targetIndex,
-                                        scrollOffset = -with(density) { 96.dp.roundToPx() },
-                                    )
+                                    if (mergedDetailKeyboardNavigation) {
+                                        // All desktop overlay lanes live inside lazy item 0. Pan
+                                        // that item itself: actions belong at the top, while the
+                                        // merged selector/episode lanes belong at the bottom.
+                                        listState.animateScrollToItem(
+                                            index = 0,
+                                            scrollOffset = if (next.kind == MetaTvSectionKind.ACTIONS) 0 else heroHeightPx,
+                                        )
+                                    } else {
+                                        val targetIndex = if (next.kind == MetaTvSectionKind.ACTIONS) 0 else next.lazyItemIndex
+                                        listState.animateScrollToItem(
+                                            index = targetIndex,
+                                            scrollOffset = -with(density) { 96.dp.roundToPx() },
+                                        )
+                                    }
                                 }
                             }
                             true
@@ -1459,11 +1489,18 @@ fun MetaDetailsScreen(
                                     tvFocus.coerceItemIndex(next.itemCount)
                                 }
                                 tvCoroutineScope.launch {
-                                    val targetIndex = if (next.kind == MetaTvSectionKind.ACTIONS) 0 else next.lazyItemIndex
-                                    listState.animateScrollToItem(
-                                        index = targetIndex,
-                                        scrollOffset = -with(density) { 96.dp.roundToPx() },
-                                    )
+                                    if (mergedDetailKeyboardNavigation) {
+                                        listState.animateScrollToItem(
+                                            index = 0,
+                                            scrollOffset = if (next.kind == MetaTvSectionKind.ACTIONS) 0 else heroHeightPx,
+                                        )
+                                    } else {
+                                        val targetIndex = if (next.kind == MetaTvSectionKind.ACTIONS) 0 else next.lazyItemIndex
+                                        listState.animateScrollToItem(
+                                            index = targetIndex,
+                                            scrollOffset = -with(density) { 96.dp.roundToPx() },
+                                        )
+                                    }
                                 }
                             }
                             true
@@ -1511,6 +1548,12 @@ fun MetaDetailsScreen(
                                     }
                                     .onPreviewKeyEvent { event ->
                                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                        if (appShortcutMatches(AppShortcutAction.TogglePeoplePanel, event)) {
+                                            return@onPreviewKeyEvent handleDetailTvKey(DetailTvKey.TogglePeoplePanel)
+                                        }
+                                        if (appShortcutMatches(AppShortcutAction.ToggleTrailerMute, event)) {
+                                            return@onPreviewKeyEvent handleDetailTvKey(DetailTvKey.ToggleMute)
+                                        }
                                         val navKey = when (event.navigationKey()) {
                                             Key.Escape -> DetailTvKey.Dismiss
                                             Key.Backspace -> DetailTvKey.Back
@@ -1519,8 +1562,6 @@ fun MetaDetailsScreen(
                                             Key.DirectionRight -> DetailTvKey.Right
                                             Key.DirectionLeft -> DetailTvKey.Left
                                             Key.Enter, Key.NumPadEnter -> DetailTvKey.Select
-                                            Key.P -> DetailTvKey.TogglePeoplePanel
-                                            Key.M -> DetailTvKey.ToggleMute
                                             Key.LeftBracket -> DetailTvKey.VolumeDown
                                             Key.RightBracket -> DetailTvKey.VolumeUp
                                             else -> return@onPreviewKeyEvent false
@@ -1582,7 +1623,10 @@ fun MetaDetailsScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .zIndex(1f),
-                            userScrollEnabled = !useDesktopDetailLayout,
+                            // App UI scaling reduces the logical viewport. Keep the desktop hero's
+                            // designed 1080dp canvas scrollable when it no longer fits instead of
+                            // forcing its fixed-position hero sections to overlap one another.
+                            userScrollEnabled = !useDesktopDetailLayout || viewportHeight < 1080.dp,
                         ) {
                             item(key = "detail-hero") {
                                 val enabledHeroSections = metaScreenSettingsUiState.items
@@ -1599,7 +1643,7 @@ fun MetaDetailsScreen(
                                         onHeightChanged = { heroHeightPx = it },
                                         heroTrailerSourceUrl = heroTrailerSourceUrl,
                                         heroTrailerSourceAudioUrl = heroTrailerSourceAudioUrl,
-                                        heroTrailerReady = heroTrailerReady,
+                                        heroTrailerReady = heroTrailerReady && heroTrailerPlayWhenReady,
                                         heroTrailerPlayWhenReady = heroTrailerPlayWhenReady,
                                         heroTrailerMuted = heroTrailerMuted,
                                         heroTrailerVolume = heroTrailerVolume,
@@ -1686,12 +1730,16 @@ fun MetaDetailsScreen(
                                             modifier = Modifier
                                                 .align(Alignment.BottomStart)
                                                 .fillMaxWidth()
-                                                .padding(start = 64.dp, end = 64.dp, bottom = 42.dp)
-                                                .height(300.dp)
+                                                // The compact selector's measured content is about
+                                                // 263dp tall. Keep a little focus/bottom breathing
+                                                // room without exposing a large empty tail when the
+                                                // scaled 1080dp hero canvas is scrolled to its end.
+                                                .padding(start = 64.dp, end = 64.dp, bottom = 30.dp)
+                                                .height(276.dp)
                                                 .zIndex(2f),
                                             showHeader = false,
-                                            preferredSeasonNumber = seriesAction?.seasonNumber,
-                                            preferredEpisodeNumber = seriesAction?.episodeNumber,
+                                            preferredSeasonNumber = preferredSeriesSeasonNumber,
+                                            preferredEpisodeNumber = preferredSeriesEpisodeNumber,
                                             episodeCardStyle = MetaEpisodeCardStyle.Horizontal,
                                             progressByVideoId = progressByVideoId,
                                             watchedKeys = watchedUiState.watchedKeys,
@@ -1737,8 +1785,8 @@ fun MetaDetailsScreen(
                                             modifier = Modifier
                                                 .align(Alignment.BottomStart)
                                                 .fillMaxWidth()
-                                                .padding(start = 64.dp, end = 64.dp, bottom = 42.dp)
-                                                .height(300.dp)
+                                                .padding(start = 64.dp, end = 64.dp, bottom = 30.dp)
+                                                .height(276.dp)
                                                 .zIndex(2f),
                                             selectedTabKey = currentMergedSelector,
                                             focusedTabIndex = tvFocusInfo.focusedSeasonIndex,
@@ -1754,7 +1802,13 @@ fun MetaDetailsScreen(
                                 }
                             }
 
-                            configuredMetaSectionItems(
+                            // The desktop overlay is the complete details design: its enabled
+                            // sections are already composed inside the hero. The legacy
+                            // comments-only tail used to be unreachable while vertical scrolling
+                            // was disabled; do not append it (or its spacer) now that scaled
+                            // viewports may scroll the hero canvas.
+                            if (!useDesktopDetailLayout) {
+                                configuredMetaSectionItems(
                                 settings = metaScreenSettingsUiState,
                                 meta = meta,
                                 isTablet = isTablet,
@@ -1771,8 +1825,8 @@ fun MetaDetailsScreen(
                                 onSaveLongClick = openLibraryListPicker,
                                 onWatchedClick = toggleWatched,
                                 showManualPlayOption = showManualPlayOption,
-                                preferredEpisodeSeasonNumber = seriesAction?.seasonNumber,
-                                preferredEpisodeNumber = seriesAction?.episodeNumber,
+                                preferredEpisodeSeasonNumber = preferredSeriesSeasonNumber,
+                                preferredEpisodeNumber = preferredSeriesEpisodeNumber,
                                 hasProductionSection = hasProductionSection,
                                 hasTrailersSection = hasTrailersSection,
                                 hasEpisodes = hasEpisodes,
@@ -1833,10 +1887,11 @@ fun MetaDetailsScreen(
                                 tvFocus = tvFocusInfo,
                                 externalSelectedSeason = currentSeasonForTv,
                                 onSeasonSelected = { season -> selectedSeasonForTv = season },
-                            )
+                                )
 
-                            item(key = "detail-bottom-spacer") {
-                                Spacer(modifier = Modifier.height(nuvioSafeBottomPadding(32.dp)))
+                                item(key = "detail-bottom-spacer") {
+                                    Spacer(modifier = Modifier.height(nuvioSafeBottomPadding(32.dp)))
+                                }
                             }
                         }
 

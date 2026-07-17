@@ -3,6 +3,7 @@ package com.nuvio.app.features.locallibrary
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.kitsu.KitsuService
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.tmdb.TmdbService
@@ -96,16 +97,17 @@ object LocalLibraryRepository {
         publish(isScanning = false)
     }
 
-    fun addFolder(path: String, type: LocalFolderType, label: String? = null) {
+    fun addFolder(path: String, type: LocalFolderType, isAnime: Boolean = false, label: String? = null) {
         ensureLoaded()
         val normalizedPath = path.trim().trimEnd('/', '\\')
         if (normalizedPath.isBlank()) return
-        if (folders.any { it.path.equals(normalizedPath, ignoreCase = true) && it.type == type }) return
+        if (folders.any { it.path.equals(normalizedPath, ignoreCase = true) && it.type == type && it.isAnime == isAnime }) return
 
         val folder = LocalFolder(
             id = "folder-${TraktPlatformClock.nowEpochMs()}-${Random.nextInt(0, 1_000_000)}",
             path = normalizedPath,
             type = type,
+            isAnime = isAnime,
             label = label?.takeIf { it.isNotBlank() },
             addedAtEpochMs = TraktPlatformClock.nowEpochMs(),
         )
@@ -152,6 +154,8 @@ object LocalLibraryRepository {
                     item.copy(
                         imdbId = cached.imdbId,
                         tmdbId = cached.tmdbId,
+                        kitsuId = cached.kitsuId,
+                        malId = cached.malId,
                         poster = cached.poster ?: item.poster,
                         background = cached.background ?: item.background,
                         posterRefreshToken = cached.posterRefreshToken,
@@ -191,6 +195,8 @@ object LocalLibraryRepository {
             key = item.key,
             imdbId = resolved.imdbId,
             tmdbId = resolved.tmdbId,
+            kitsuId = resolved.kitsuId,
+            malId = resolved.malId,
             title = resolved.title.takeIf { it != item.title },
             poster = resolved.poster,
             background = resolved.background,
@@ -207,7 +213,7 @@ object LocalLibraryRepository {
         val override = LocalMatchOverride(key = item.key, matchState = LocalMatchState.UNMATCHED)
         overridesByKey = overridesByKey + (item.key to override)
         persistOverrides()
-        updateItem(item.copy(imdbId = null, tmdbId = null, matchState = LocalMatchState.UNMATCHED))
+        updateItem(item.copy(imdbId = null, tmdbId = null, kitsuId = null, malId = null, matchState = LocalMatchState.UNMATCHED))
         persistCache()
     }
 
@@ -225,6 +231,7 @@ object LocalLibraryRepository {
             // configured, otherwise this fallback), so a stale cached poster is discarded.
             val fresh = item.tmdbId
                 ?.let { id -> runCatching { TmdbService.fetchPosterUrl(id, item.contentType) }.getOrNull() }
+                ?: item.kitsuId?.let { id -> runCatching { KitsuService.fetchPosterUrl(id) }.getOrNull() }
             val token = TraktPlatformClock.nowEpochMs()
             overridesByKey[item.key]?.let { existing ->
                 overridesByKey = overridesByKey + (item.key to existing.copy(poster = fresh, posterRefreshToken = token))
@@ -255,15 +262,17 @@ object LocalLibraryRepository {
         val stamp = TraktPlatformClock.nowEpochMs()
         val moviesCatalog = LocalCatalog(id = "cat-$stamp-movies", name = "Movies", order = 0, color = 0xFF29B6F6)
         val showsCatalog = LocalCatalog(id = "cat-$stamp-shows", name = "Shows", order = 1, color = 0xFFAB47BC)
-        val hasMovies = itemsByKey.values.any { it.type == LocalFolderType.MOVIES }
-        val hasShows = itemsByKey.values.any { it.type == LocalFolderType.SERIES }
-        catalogs = buildList {
-            if (hasMovies) add(moviesCatalog)
-            if (hasShows) add(showsCatalog)
+        val animeMoviesCatalog = LocalCatalog(id = "cat-$stamp-anime-movies", name = "Anime Movies", order = 2, color = 0xFFEC407A)
+        val animeSeriesCatalog = LocalCatalog(id = "cat-$stamp-anime-series", name = "Anime Series", order = 3, color = 0xFFFF7043)
+        fun catalogFor(item: LocalMediaItem): LocalCatalog = when {
+            item.isAnime && item.type == LocalFolderType.SERIES -> animeSeriesCatalog
+            item.isAnime -> animeMoviesCatalog
+            item.type == LocalFolderType.SERIES -> showsCatalog
+            else -> moviesCatalog
         }
-        assignmentsByKey = itemsByKey.values.associate { item ->
-            item.key to if (item.type == LocalFolderType.SERIES) showsCatalog.id else moviesCatalog.id
-        }
+        val seeded = listOf(moviesCatalog, showsCatalog, animeMoviesCatalog, animeSeriesCatalog)
+        catalogs = seeded.filter { catalog -> itemsByKey.values.any { catalogFor(it).id == catalog.id } }
+        assignmentsByKey = itemsByKey.values.associate { item -> item.key to catalogFor(item).id }
     }
 
     fun setCatalogColor(catalogId: String, color: Long?) {
@@ -330,27 +339,78 @@ object LocalLibraryRepository {
         itemsByKey.values.filter { item ->
             item.contentId == metaId ||
                 (!item.imdbId.isNullOrBlank() && item.imdbId == metaId) ||
-                (item.tmdbId != null && metaId == "tmdb:${item.tmdbId}")
+                (item.tmdbId != null && metaId == "tmdb:${item.tmdbId}") ||
+                // A franchise's other seasons are separate kitsu/mal entries; the anime-list
+                // mapping links them, so the item also surfaces on sibling-season anime pages.
+                LocalAnimeEpisodeMatcher.matchesFranchiseMeta(item, metaId)
         }
 
     /**
-     * Local file streams for a content id + video id, used by MetaDetailsRepository to serve
-     * local playback through the normal embedded-stream path (so scrobbling/progress just work).
+     * Local file streams for a content id + video id, used to serve local playback through the
+     * normal embedded-stream path (so scrobbling/progress just work).
+     *
+     * With a concrete [videoId] every branch below requires the id to belong to the item (its
+     * own ids, or its anime franchise via the mapping), so ALL items are safe candidates. That
+     * frees the lookup from needing the right [contentId]: continue-watching from Home, the
+     * player's episode panel and next-episode auto-play all ask by video id at moments when no
+     * matching details meta is loaded.
      */
-    fun localStreamsFor(contentId: String, videoId: String?): List<StreamItem> {
-        val items = itemsForContentId(contentId)
+    fun localStreamsFor(contentId: String?, videoId: String?): List<StreamItem> {
+        val items = when {
+            videoId != null -> itemsByKey.values.toList()
+            contentId != null -> itemsForContentId(contentId)
+            else -> emptyList()
+        }
         if (items.isEmpty()) return emptyList()
-        val coords = videoId?.let(::parseSeasonEpisode)
         return items.flatMap { item ->
             when {
-                item.type == LocalFolderType.MOVIES -> item.files.map { it.toStreamItem() }
-                coords != null -> item.files
-                    .filter { it.season == coords.first && it.episode == coords.second }
-                    .map { it.toStreamItem() }
-                item.files.size == 1 -> item.files.map { it.toStreamItem() }
-                else -> emptyList()
+                // A movie's file is only served for the movie's OWN id. It must never answer an
+                // `<id>:season:episode` request: movies used to answer any video id, which let a
+                // stale meta — or the movie surfacing on its franchise's series page — play the
+                // movie file in place of an episode (or of a different show entirely).
+                item.type == LocalFolderType.MOVIES ->
+                    if (videoId == null || item.ownsVideoId(videoId)) {
+                        item.files.map { it.toStreamItem() }
+                    } else {
+                        emptyList()
+                    }
+                // Anime video ids mix coordinate spaces (`kitsu:id:ep` is entry-relative,
+                // `tt…:s:e` is franchise season/episode) and so do local file names; the matcher
+                // converts between them through the anime-list mapping and rejects ids that
+                // belong to neither this item nor its franchise.
+                item.isAnime -> {
+                    val matched = videoId?.let { LocalAnimeEpisodeMatcher.matchFiles(item, it) }
+                    when {
+                        matched != null -> matched.map { it.toStreamItem() }
+                        (videoId == null || item.ownsVideoId(videoId)) && item.files.size == 1 ->
+                            item.files.map { it.toStreamItem() }
+                        else -> emptyList()
+                    }
+                }
+                else -> {
+                    val coords = videoId?.takeIf { item.ownsVideoId(it) }?.let(::parseSeasonEpisode)
+                    when {
+                        coords != null -> item.files
+                            .filter { it.season == coords.first && it.episode == coords.second }
+                            .map { it.toStreamItem() }
+                        (videoId == null || item.ownsVideoId(videoId)) && item.files.size == 1 ->
+                            item.files.map { it.toStreamItem() }
+                        else -> emptyList()
+                    }
+                }
             }
         }
+    }
+
+    /**
+     * The video id for one episode [file]. Absolute-numbered anime files keep the native
+     * `<contentId>:absoluteEpisode` form so they flow through the app's absolute-episode anime
+     * handling; anything with a real season (including season-named anime files) keeps the
+     * `<contentId>:season:episode` shape.
+     */
+    private fun LocalMediaItem.episodeVideoId(file: LocalMediaFile): String = when {
+        isAnime && file.season == null -> "$contentId:${file.episode ?: 1}"
+        else -> "$contentId:${file.season ?: 1}:${file.episode ?: 1}"
     }
 
     /** A minimal MetaDetails for an unmatched `local:` id so the details page still opens/plays. */
@@ -370,8 +430,13 @@ object LocalLibraryRepository {
             )
             LocalFolderType.SERIES -> item.files.map { file ->
                 MetaVideo(
-                    id = "${item.contentId}:${file.season ?: 1}:${file.episode ?: 1}",
-                    title = file.season?.let { s -> file.episode?.let { e -> "S$s E$e" } } ?: file.fileName,
+                    id = item.episodeVideoId(file),
+                    title = when {
+                        file.season != null && file.episode != null -> "S${file.season} E${file.episode}"
+                        // Absolute-numbered anime (no season parsed from the file name).
+                        item.isAnime && file.episode != null -> "Episode ${file.episode}"
+                        else -> file.fileName
+                    },
                     season = file.season,
                     episode = file.episode,
                     streams = listOf(file.toStreamItem()),
@@ -394,6 +459,8 @@ object LocalLibraryRepository {
         return item.copy(
             imdbId = override.imdbId,
             tmdbId = override.tmdbId,
+            kitsuId = override.kitsuId,
+            malId = override.malId,
             title = override.title ?: item.title,
             poster = override.poster ?: item.poster,
             background = override.background ?: item.background,

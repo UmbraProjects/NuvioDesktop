@@ -9,7 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
-import com.nuvio.app.desktopDisplaySizePx
+import com.nuvio.app.desktopDisplayMetrics
 import com.nuvio.app.isDesktop
 
 /**
@@ -24,11 +24,15 @@ import com.nuvio.app.isDesktop
  */
 val LocalNuvioBaseDensity = compositionLocalOf { Density(1f) }
 
+/** The adaptive viewport density before the user's optional app UI scale is applied. */
+val LocalNuvioViewportDensity = compositionLocalOf { Density(1f) }
+
 val LocalNuvioDesktopCompactWindow = compositionLocalOf { false }
 
 @Composable
 fun NuvioDesktopViewportDensityScaler(
     modifier: Modifier = Modifier,
+    uiScalePercent: Int = 0,
     content: @Composable () -> Unit,
 ) {
     if (!isDesktop) {
@@ -39,35 +43,74 @@ fun NuvioDesktopViewportDensityScaler(
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val baseDensity = LocalDensity.current
-        val displaySizePx = remember { desktopDisplaySizePx() }
-        val useCompactWindowLayout = remember(maxWidth, maxHeight, baseDensity, displaySizePx) {
-            val displaySize = displaySizePx ?: return@remember false
+        val ambientDensity = LocalDensity.current
+        // This is snapshot-backed on desktop. Moving the host window to another monitor causes a
+        // recomposition even if the Compose window itself kept exactly the same dimensions.
+        val displayMetrics = desktopDisplayMetrics()
+        val baseDensity = remember(ambientDensity, displayMetrics) {
+            Density(
+                density = displayMetrics?.density ?: ambientDensity.density,
+                fontScale = ambientDensity.fontScale,
+            )
+        }
+        // BoxWithConstraints was measured using the density supplied by Compose Desktop. Convert
+        // its dimensions to the newly detected monitor density as well, since AWT and Compose can
+        // observe a per-monitor DPI transition one frame apart on Windows.
+        val viewportWidthDp = maxWidth.value * ambientDensity.density / baseDensity.density
+        val viewportHeightDp = maxHeight.value * ambientDensity.density / baseDensity.density
+        val useCompactWindowLayout = remember(viewportWidthDp, viewportHeightDp, baseDensity, displayMetrics) {
+            val displaySize = displayMetrics?.sizePx ?: return@remember false
             val displayWidthDp = displaySize.width / baseDensity.density
             val displayHeightDp = displaySize.height / baseDensity.density
-            maxWidth.value < displayWidthDp * NUVIO_DESKTOP_COMPACT_WINDOW_FRACTION ||
-                maxHeight.value < displayHeightDp * NUVIO_DESKTOP_COMPACT_WINDOW_FRACTION
+            viewportWidthDp < displayWidthDp * NUVIO_DESKTOP_COMPACT_WINDOW_FRACTION ||
+                viewportHeightDp < displayHeightDp * NUVIO_DESKTOP_COMPACT_WINDOW_FRACTION
         }
-        val viewportScale = remember(maxWidth, maxHeight, useCompactWindowLayout) {
+        val viewportScale = remember(viewportWidthDp, viewportHeightDp, useCompactWindowLayout, baseDensity, displayMetrics) {
             if (useCompactWindowLayout) {
                 1f
             } else {
+                // Never let a windowed viewport render below the scale it would get at fullscreen
+                // (capped at the 1.0 reference). Without this floor, a window between the compact
+                // threshold and full display size renders a proportionally shrunken miniature of
+                // the fullscreen layout — on a high-DPI display that is up to a 2x size drop the
+                // moment a dragged window crosses the compact boundary, and it only recovers at
+                // exactly fullscreen. Flooring keeps intermediate window sizes at normal UI size
+                // (they reveal less content instead) and makes the compact hand-off continuous.
+                val fullscreenScale = displayMetrics?.sizePx?.let { displaySize ->
+                    minOf(
+                        displaySize.width / baseDensity.density / NUVIO_DESKTOP_REFERENCE_WIDTH_DP,
+                        displaySize.height / baseDensity.density / NUVIO_DESKTOP_REFERENCE_HEIGHT_DP,
+                    )
+                }
+                val minScale = fullscreenScale
+                    ?.coerceIn(NUVIO_DESKTOP_MIN_VIEWPORT_SCALE, 1f)
+                    ?: NUVIO_DESKTOP_MIN_VIEWPORT_SCALE
                 minOf(
-                    maxWidth.value / NUVIO_DESKTOP_REFERENCE_WIDTH_DP,
-                    maxHeight.value / NUVIO_DESKTOP_REFERENCE_HEIGHT_DP,
-                ).coerceIn(NUVIO_DESKTOP_MIN_VIEWPORT_SCALE, NUVIO_DESKTOP_MAX_VIEWPORT_SCALE)
+                    viewportWidthDp / NUVIO_DESKTOP_REFERENCE_WIDTH_DP,
+                    viewportHeightDp / NUVIO_DESKTOP_REFERENCE_HEIGHT_DP,
+                ).coerceIn(minScale, NUVIO_DESKTOP_MAX_VIEWPORT_SCALE)
             }
         }
-        val scaledDensity = remember(baseDensity, viewportScale) {
+        val userScale = remember(uiScalePercent) {
+            1f + uiScalePercent.coerceIn(-25, 25) / 100f
+        }
+        val viewportDensity = remember(baseDensity, viewportScale) {
             Density(
                 density = baseDensity.density * viewportScale,
                 fontScale = baseDensity.fontScale,
+            )
+        }
+        val scaledDensity = remember(viewportDensity, userScale) {
+            Density(
+                density = viewportDensity.density * userScale,
+                fontScale = viewportDensity.fontScale,
             )
         }
 
         CompositionLocalProvider(
             LocalDensity provides scaledDensity,
             LocalNuvioBaseDensity provides baseDensity,
+            LocalNuvioViewportDensity provides viewportDensity,
             LocalNuvioDesktopCompactWindow provides useCompactWindowLayout,
         ) {
             content()

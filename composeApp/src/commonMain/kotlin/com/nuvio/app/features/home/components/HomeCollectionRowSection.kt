@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -44,11 +46,13 @@ fun HomeCollectionRowSection(
     basePosterWidthDpOverride: Int? = null,
     animateGifs: Boolean = true,
     focusedItemIndex: Int? = null,
+    rowState: LazyListState? = null,
     onHoverItem: ((Int) -> Unit)? = null,
     isKeyboardNavigation: Boolean = false,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
 ) {
     if (collection.folders.isEmpty()) return
+    val effectiveRowState = rowState ?: rememberLazyListState()
 
     if (sectionPadding != null) {
         HomeCollectionRowSectionContent(
@@ -58,6 +62,7 @@ fun HomeCollectionRowSection(
             basePosterWidthDpOverride = basePosterWidthDpOverride,
             animateGifs = animateGifs,
             focusedItemIndex = focusedItemIndex,
+            rowState = effectiveRowState,
             onHoverItem = onHoverItem,
             isKeyboardNavigation = isKeyboardNavigation,
             onFolderClick = onFolderClick,
@@ -71,6 +76,7 @@ fun HomeCollectionRowSection(
                 basePosterWidthDpOverride = basePosterWidthDpOverride,
                 animateGifs = animateGifs,
                 focusedItemIndex = focusedItemIndex,
+                rowState = effectiveRowState,
                 onHoverItem = onHoverItem,
                 isKeyboardNavigation = isKeyboardNavigation,
                 onFolderClick = onFolderClick,
@@ -87,6 +93,7 @@ private fun HomeCollectionRowSectionContent(
     basePosterWidthDpOverride: Int?,
     animateGifs: Boolean,
     focusedItemIndex: Int?,
+    rowState: LazyListState,
     onHoverItem: ((Int) -> Unit)?,
     isKeyboardNavigation: Boolean,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)?,
@@ -107,6 +114,7 @@ private fun HomeCollectionRowSectionContent(
         onHoverItem = onHoverItem,
         isKeyboardNavigation = isKeyboardNavigation,
         key = { folder -> "collection_${collection.id}_folder_${folder.id}" },
+        rowState = rowState,
     ) { folder ->
         CollectionFolderCard(
             folder = folder,

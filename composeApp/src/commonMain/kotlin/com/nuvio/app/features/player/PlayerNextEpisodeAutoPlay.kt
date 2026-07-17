@@ -4,6 +4,8 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.details.playbackEpisodeNumber
+import com.nuvio.app.features.details.playbackSeasonNumber
 import com.nuvio.app.features.downloads.DownloadItem
 import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.player.skip.NextEpisodeInfo
@@ -19,6 +21,20 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
+internal fun eligibleAutoPlayStreams(
+    streams: List<StreamItem>,
+    sourceAffinity: PlayerSourceAffinity,
+): List<StreamItem> = when (sourceAffinity) {
+    PlayerSourceAffinity.Local -> streams
+    PlayerSourceAffinity.Stream -> streams.filterNot { it.streamType.equals("local", ignoreCase = true) }
+}
+
+internal fun shouldReuseNextEpisodeBingeGroup(
+    sourceAffinity: PlayerSourceAffinity,
+    reuseEnabled: Boolean,
+    preferenceEnabled: Boolean,
+): Boolean = sourceAffinity == PlayerSourceAffinity.Stream && reuseEnabled && preferenceEnabled
+
 internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     previousJob: Job?,
     nextEpisodeInfo: NextEpisodeInfo?,
@@ -27,6 +43,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     parentMetaType: String,
     contentType: String?,
     settings: PlayerSettingsUiState,
+    sourceAffinity: PlayerSourceAffinity,
     currentStreamBingeGroup: String?,
     onDownloadedEpisodeSelected: (DownloadItem, MetaVideo) -> Unit,
     onEpisodeStreamSelected: (StreamItem, MetaVideo) -> Unit,
@@ -40,11 +57,13 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     val nextVideoId = nextEpisodeInfo?.videoId ?: return null
     val nextVideo = allEpisodes.firstOrNull { video -> video.id == nextVideoId } ?: return null
     if (nextEpisodeInfo.hasAired != true) return null
+    val nextSeasonNumber = nextVideo.playbackSeasonNumber()
+    val nextEpisodeNumber = nextVideo.playbackEpisodeNumber()
 
     val downloadedNextEpisode = DownloadsRepository.findPlayableDownload(
         parentMetaId = parentMetaId,
-        seasonNumber = nextVideo.season,
-        episodeNumber = nextVideo.episode,
+        seasonNumber = nextSeasonNumber,
+        episodeNumber = nextEpisodeNumber,
         videoId = nextVideo.id,
     )
     if (downloadedNextEpisode != null) {
@@ -58,34 +77,40 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     onCountdownChanged(null)
 
     val type = contentType ?: parentMetaType
-    val shouldAutoSelectInManualMode = settings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL
+    val shouldUseFirstAvailable = sourceAffinity == PlayerSourceAffinity.Local ||
+        settings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL
 
-    val effectiveMode = if (shouldAutoSelectInManualMode) {
+    val effectiveMode = if (shouldUseFirstAvailable) {
         StreamAutoPlayMode.FIRST_STREAM
     } else {
         settings.streamAutoPlayMode
     }
-    val effectiveSource = if (shouldAutoSelectInManualMode) {
+    val effectiveSource = if (shouldUseFirstAvailable) {
         StreamAutoPlaySource.ALL_SOURCES
     } else {
         settings.streamAutoPlaySource
     }
-    val effectiveSelectedAddons = if (shouldAutoSelectInManualMode) {
+    val effectiveSelectedAddons = if (shouldUseFirstAvailable) {
         emptySet()
     } else {
         settings.streamAutoPlaySelectedAddons
     }
-    val effectiveSelectedPlugins = if (shouldAutoSelectInManualMode) {
+    val effectiveSelectedPlugins = if (shouldUseFirstAvailable) {
         emptySet()
     } else {
         settings.streamAutoPlaySelectedPlugins
     }
-    val effectiveRegex = if (shouldAutoSelectInManualMode) {
+    val effectiveRegex = if (shouldUseFirstAvailable) {
         ""
     } else {
         settings.streamAutoPlayRegex
     }
-    val preferredBingeGroup = if (settings.streamAutoPlayPreferBingeGroup) {
+    val shouldReuseBingeGroup = shouldReuseNextEpisodeBingeGroup(
+        sourceAffinity = sourceAffinity,
+        reuseEnabled = settings.streamAutoPlayReuseBingeGroup,
+        preferenceEnabled = settings.streamAutoPlayPreferBingeGroup,
+    )
+    val preferredBingeGroup = if (shouldReuseBingeGroup) {
         currentStreamBingeGroup
     } else {
         null
@@ -104,8 +129,9 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
             type = type,
             videoId = nextVideo.id,
             parentMetaId = parentMetaId,
-            season = nextVideo.season,
-            episode = nextVideo.episode,
+            season = nextSeasonNumber,
+            episode = nextEpisodeNumber,
+            sourceAffinity = sourceAffinity,
             forceRefresh = true,
         )
 
@@ -148,7 +174,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 selectedAddons = effectiveSelectedAddons,
                 selectedPlugins = effectiveSelectedPlugins,
                 preferredBingeGroup = preferredBingeGroup,
-                preferBingeGroupInSelection = settings.streamAutoPlayPreferBingeGroup,
+                preferBingeGroupInSelection = shouldReuseBingeGroup,
                 bingeGroupOnly = false,
                 debridEnabled = debridSettings.canResolvePlayableLinks,
                 activeResolverProviderId = debridSettings.activeResolverProviderId,
@@ -164,7 +190,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 selectedAddons = effectiveSelectedAddons,
                 selectedPlugins = effectiveSelectedPlugins,
                 preferredBingeGroup = preferredBingeGroup,
-                preferBingeGroupInSelection = settings.streamAutoPlayPreferBingeGroup,
+                preferBingeGroupInSelection = shouldReuseBingeGroup,
                 bingeGroupOnly = false,
                 debridEnabled = debridSettings.canResolvePlayableLinks,
                 activeResolverProviderId = debridSettings.activeResolverProviderId,
@@ -172,7 +198,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
         }
 
         fun tryBingeGroupOnly(streams: List<StreamItem>): StreamItem? {
-            if (preferredBingeGroup == null || !settings.streamAutoPlayPreferBingeGroup) return null
+            if (preferredBingeGroup == null || !shouldReuseBingeGroup) return null
             return StreamAutoPlaySelector.selectAutoPlayStream(
                 streams = streams,
                 mode = effectiveMode,
@@ -193,7 +219,10 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
             PlayerStreamsRepository.episodeStreamsState.collectLatest { state ->
                 if (state.groups.isEmpty() && state.isAnyLoading) return@collectLatest
 
-                val allStreams = state.groups.flatMap { it.streams }
+                val allStreams = eligibleAutoPlayStreams(
+                    streams = state.groups.flatMap { it.streams },
+                    sourceAffinity = sourceAffinity,
+                )
 
                 if (autoSelectTriggered) {
                     // Already resolved.
@@ -232,37 +261,56 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
         val isBoundedTimeout = timeoutSeconds in 1..30
 
         if (isBoundedTimeout) {
-            delay(timeoutMs)
-            timeoutElapsed = true
-            if (!autoSelectTriggered) {
-                val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
-                if (allStreams.isNotEmpty()) {
-                    val candidate = trySelectStream(allStreams)
-                    if (candidate != null) {
-                        selectStream(candidate)
-                    }
-                }
-            }
-            if (selectedStream != null) {
-                innerJob.cancel()
-            } else if (PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }.isNotEmpty()) {
-                innerJob.cancel()
-                finishWithoutSelection()
-            } else {
-                val completed = withTimeoutOrNull(timeoutMs) { autoSelectSettled.await() }
-                innerJob.cancel()
-                if (completed == null && !autoSelectTriggered) {
-                    val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
+            // A local-affinity load publishes its terminal local group synchronously. Await the
+            // collector first so that result starts immediately; the old unconditional delay made
+            // even an already-found on-disk episode wait for the full online-stream timeout.
+            val settledBeforeTimeout = withTimeoutOrNull(timeoutMs) {
+                autoSelectSettled.await()
+            } != null
+            if (!settledBeforeTimeout) {
+                timeoutElapsed = true
+                if (!autoSelectTriggered) {
+                    val allStreams = eligibleAutoPlayStreams(
+                        PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams },
+                        sourceAffinity,
+                    )
                     if (allStreams.isNotEmpty()) {
-                        selectedStream = trySelectStream(allStreams)
+                        val candidate = trySelectStream(allStreams)
+                        if (candidate != null) {
+                            selectStream(candidate)
+                        } else {
+                            finishWithoutSelection()
+                        }
                     }
-                    finishWithoutSelection()
+                }
+                if (!autoSelectTriggered) {
+                    // Once the configured selection delay has elapsed, keep listening for a
+                    // bounded seven-second grace period. The collector is now in timeoutElapsed
+                    // mode, so the first eligible addon response selects immediately rather than
+                    // making every search pay the full grace period.
+                    val completed = withTimeoutOrNull(NEXT_EPISODE_ADDON_GRACE_MS) {
+                        autoSelectSettled.await()
+                    }
+                    if (completed == null && !autoSelectTriggered) {
+                        val allStreams = eligibleAutoPlayStreams(
+                            PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams },
+                            sourceAffinity,
+                        )
+                        if (allStreams.isNotEmpty()) {
+                            selectedStream = trySelectStream(allStreams)
+                        }
+                        finishWithoutSelection()
+                    }
                 }
             }
+            innerJob.cancel()
         } else {
             timeoutElapsed = true
             if (!autoSelectTriggered) {
-                val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
+                val allStreams = eligibleAutoPlayStreams(
+                    PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams },
+                    sourceAffinity,
+                )
                 if (allStreams.isNotEmpty()) {
                     trySelectStream(allStreams)?.let(::selectStream)
                 }
@@ -270,7 +318,10 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
             val completed = withTimeoutOrNull(NEXT_EPISODE_HARD_TIMEOUT_MS) { autoSelectSettled.await() }
             innerJob.cancel()
             if (completed == null && !autoSelectTriggered) {
-                val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
+                val allStreams = eligibleAutoPlayStreams(
+                    PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams },
+                    sourceAffinity,
+                )
                 if (allStreams.isNotEmpty()) {
                     selectedStream = trySelectStream(allStreams)
                 }
@@ -281,12 +332,12 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
         onSearchingChanged(false)
         val selected = selectedStream
         BingeAdvanceLog.i {
-            "autoplay search finished for S${nextVideo.season}E${nextVideo.episode} " +
+            "autoplay search finished for S${nextSeasonNumber}E${nextEpisodeNumber} " +
                 "selected=${selected != null} source=${selected?.addonName ?: "<none, manual selection>"}"
         }
         if (selected != null) {
             onSourceNameChanged(selected.addonName)
-            if (skipSourceCountdown) {
+            if (skipSourceCountdown || sourceAffinity == PlayerSourceAffinity.Local) {
                 onCountdownChanged(null)
             } else {
                 for (i in 3 downTo 1) {
@@ -304,3 +355,5 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
         }
     }
 }
+
+private const val NEXT_EPISODE_ADDON_GRACE_MS = 7_000L

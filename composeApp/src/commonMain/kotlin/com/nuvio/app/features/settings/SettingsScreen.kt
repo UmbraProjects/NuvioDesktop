@@ -82,6 +82,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -89,6 +91,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.build.AppVersionConfig
 import com.nuvio.app.core.ui.AppTheme
 import com.nuvio.app.core.ui.labelRes
 import com.nuvio.app.core.ui.LocalNuvioBottomNavigationOverlayPadding
@@ -99,6 +102,7 @@ import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.core.ui.isLiquidGlassNativeTabBarSupported
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.platformExitApp
+import com.nuvio.app.core.ui.platformOpenLogsDirectory
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
@@ -142,6 +146,7 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesUiState
 import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.collections_header
+import nuvio.composeapp.generated.resources.compose_about_open_logs_folder
 import nuvio.composeapp.generated.resources.compose_nav_home
 import nuvio.composeapp.generated.resources.compose_nav_library
 import nuvio.composeapp.generated.resources.compose_nav_search
@@ -183,6 +188,9 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 private val SettingsSearchRevealThreshold = 28.dp
 private const val SettingsSearchRevealAnimationMillis = 240L
 private const val SettingsSearchRevealHapticDelayMillis = 90L
+// Placeholder GitHub target for the sidebar footer link — no dedicated Nuvio HTPC repo exists yet.
+private const val NuvioHtpcRepoUrl = "https://github.com/UmbraProjects/NuvioDesktop"
+
 private val DesktopSettingsSidebarWidth = 244.dp
 private val DesktopSettingsMainColumnWidth = 775.dp
 private val DesktopSettingsContextPanelWidth = 300.dp
@@ -258,6 +266,12 @@ fun SettingsScreen(
         }.collectAsStateWithLifecycle()
         val desktopNavigationLayout by remember {
             ThemeSettingsRepository.desktopNavigationLayout
+        }.collectAsStateWithLifecycle()
+        val desktopAppUiScalePercent by remember {
+            ThemeSettingsRepository.desktopAppUiScalePercent
+        }.collectAsStateWithLifecycle()
+        val desktopAppUiScaleAppliesToDetails by remember {
+            ThemeSettingsRepository.desktopAppUiScaleAppliesToDetails
         }.collectAsStateWithLifecycle()
         val liquidGlassNativeTabBarSupported = remember { isLiquidGlassNativeTabBarSupported() }
         val selectedAppLanguage by remember { ThemeSettingsRepository.selectedAppLanguage }.collectAsStateWithLifecycle()
@@ -360,6 +374,22 @@ fun SettingsScreen(
         val scrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
         val page = remember(currentPage) { SettingsPage.valueOf(currentPage) }
         val previousPage = page.desktopBackPage()
+        val pendingSettingsAnchor by SettingsScrollAnchor.requested.collectAsStateWithLifecycle()
+        val pendingTitleHighlight by SettingsScrollAnchor.titleHighlight.collectAsStateWithLifecycle()
+
+        // A result whose row is absent on this platform must not remain armed indefinitely and
+        // unexpectedly scroll some later page. Mounted destination rows normally consume it on
+        // their first frame; this only expires unresolved requests.
+        LaunchedEffect(pendingSettingsAnchor) {
+            val request = pendingSettingsAnchor ?: return@LaunchedEffect
+            delay(1_500L)
+            SettingsScrollAnchor.expire(request.sequence)
+        }
+        LaunchedEffect(pendingTitleHighlight) {
+            val highlight = pendingTitleHighlight ?: return@LaunchedEffect
+            delay(3_000L)
+            SettingsScrollAnchor.expireTitleHighlight(highlight.sequence)
+        }
 
         LaunchedEffect(page) {
             // Leaving a page drops any text-input shortcut lock, so a field left focused (e.g. a
@@ -431,6 +461,10 @@ fun SettingsScreen(
                 onLiquidGlassNativeTabBarToggle = ThemeSettingsRepository::setLiquidGlassNativeTabBar,
                 desktopNavigationLayout = desktopNavigationLayout,
                 onDesktopNavigationLayoutSelected = ThemeSettingsRepository::setDesktopNavigationLayout,
+                desktopAppUiScalePercent = desktopAppUiScalePercent,
+                onDesktopAppUiScalePercentChange = ThemeSettingsRepository::setDesktopAppUiScalePercent,
+                desktopAppUiScaleAppliesToDetails = desktopAppUiScaleAppliesToDetails,
+                onDesktopAppUiScaleAppliesToDetailsChange = ThemeSettingsRepository::setDesktopAppUiScaleAppliesToDetails,
                 desktopColumnGuidesVisible = desktopColumnGuidesVisible,
                 onDesktopColumnGuidesVisibleChange = ThemeSettingsRepository::setDesktopColumnGuidesVisible,
                 selectedAppLanguage = selectedAppLanguage,
@@ -503,6 +537,10 @@ fun SettingsScreen(
                 onLiquidGlassNativeTabBarToggle = ThemeSettingsRepository::setLiquidGlassNativeTabBar,
                 desktopNavigationLayout = desktopNavigationLayout,
                 onDesktopNavigationLayoutSelected = ThemeSettingsRepository::setDesktopNavigationLayout,
+                desktopAppUiScalePercent = desktopAppUiScalePercent,
+                onDesktopAppUiScalePercentChange = ThemeSettingsRepository::setDesktopAppUiScalePercent,
+                desktopAppUiScaleAppliesToDetails = desktopAppUiScaleAppliesToDetails,
+                onDesktopAppUiScaleAppliesToDetailsChange = ThemeSettingsRepository::setDesktopAppUiScaleAppliesToDetails,
                 selectedAppLanguage = selectedAppLanguage,
                 onAppLanguageSelected = ThemeSettingsRepository::setAppLanguage,
                 episodeReleaseNotificationsUiState = episodeReleaseNotificationsUiState,
@@ -579,6 +617,10 @@ private fun MobileSettingsScreen(
     onLiquidGlassNativeTabBarToggle: (Boolean) -> Unit,
     desktopNavigationLayout: DesktopNavigationLayout,
     onDesktopNavigationLayoutSelected: (DesktopNavigationLayout) -> Unit,
+    desktopAppUiScalePercent: Int,
+    onDesktopAppUiScalePercentChange: (Int) -> Unit,
+    desktopAppUiScaleAppliesToDetails: Boolean,
+    onDesktopAppUiScaleAppliesToDetailsChange: (Boolean) -> Unit,
     selectedAppLanguage: AppLanguage,
     onAppLanguageSelected: (AppLanguage) -> Unit,
     episodeReleaseNotificationsUiState: EpisodeReleaseNotificationsUiState,
@@ -626,8 +668,10 @@ private fun MobileSettingsScreen(
     onSettingsSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     val saveableStateHolder = rememberSaveableStateHolder()
+    // Search belongs to the settings screen, not to an individual destination. Keeping this
+    // outside the per-page SaveableStateProvider makes the top-bar search one global index.
+    var settingsSearchQuery by rememberSaveable { mutableStateOf("") }
     saveableStateHolder.SaveableStateProvider(page.name) {
-        var settingsSearchQuery by rememberSaveable { mutableStateOf("") }
         var rootSearchVisible by rememberSaveable { mutableStateOf(isDesktop) }
         var rootSearchRevealAnimating by rememberSaveable { mutableStateOf(false) }
         val listState = rememberLazyListState()
@@ -656,6 +700,9 @@ private fun MobileSettingsScreen(
         )
 
         fun openSearchTarget(target: SettingsSearchTarget) {
+            // Remove the results layer before mounting the destination. Otherwise it can keep
+            // covering the page whose row is waiting to consume the requested scroll anchor.
+            settingsSearchQuery = ""
             when (target) {
                 is SettingsSearchTarget.Page -> {
                     target.anchor?.let(SettingsScrollAnchor::request)
@@ -837,6 +884,10 @@ private fun MobileSettingsScreen(
                     onLiquidGlassNativeTabBarToggle = onLiquidGlassNativeTabBarToggle,
                     desktopNavigationLayout = desktopNavigationLayout,
                     onDesktopNavigationLayoutSelected = onDesktopNavigationLayoutSelected,
+                    desktopAppUiScalePercent = desktopAppUiScalePercent,
+                    onDesktopAppUiScalePercentChange = onDesktopAppUiScalePercentChange,
+                    desktopAppUiScaleAppliesToDetails = desktopAppUiScaleAppliesToDetails,
+                    onDesktopAppUiScaleAppliesToDetailsChange = onDesktopAppUiScaleAppliesToDetailsChange,
                     selectedAppLanguage = selectedAppLanguage,
                     onAppLanguageSelected = onAppLanguageSelected,
                     posterCardStyleUiState = posterCardStyleUiState,
@@ -906,7 +957,7 @@ private fun MobileSettingsScreen(
                 SettingsPage.Integrations -> integrationsContent(
                     isTablet = false,
                     discordPresenceSettings = discordPresenceSettings,
-                    onDiscordPresenceEnabledChange = DiscordPresenceSettingsRepository::setEnabled,
+                    onDiscordPresenceModeChange = DiscordPresenceSettingsRepository::setMode,
                     onTmdbClick = { onPageChange(SettingsPage.TmdbEnrichment) },
                     onMdbListClick = { onPageChange(SettingsPage.MdbListRatings) },
                     onDebridClick = { onPageChange(SettingsPage.Debrid) },
@@ -1017,6 +1068,10 @@ private fun TabletSettingsScreen(
     onLiquidGlassNativeTabBarToggle: (Boolean) -> Unit,
     desktopNavigationLayout: DesktopNavigationLayout,
     onDesktopNavigationLayoutSelected: (DesktopNavigationLayout) -> Unit,
+    desktopAppUiScalePercent: Int,
+    onDesktopAppUiScalePercentChange: (Int) -> Unit,
+    desktopAppUiScaleAppliesToDetails: Boolean,
+    onDesktopAppUiScaleAppliesToDetailsChange: (Boolean) -> Unit,
     desktopColumnGuidesVisible: Boolean,
     onDesktopColumnGuidesVisibleChange: (Boolean) -> Unit,
     selectedAppLanguage: AppLanguage,
@@ -1071,6 +1126,9 @@ private fun TabletSettingsScreen(
     val saveableStateHolder = rememberSaveableStateHolder()
     val activeSidebarPage = remember(page) { page.desktopSidebarPage() }
     val profileState by remember { ProfileRepository.state }.collectAsStateWithLifecycle()
+    // A single desktop top bar must also have a single query when the selected settings page
+    // changes. Per-page query state caused result clicks to reopen stale result lists.
+    var settingsSearchQuery by rememberSaveable { mutableStateOf("") }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -1084,7 +1142,6 @@ private fun TabletSettingsScreen(
         val contentWidth = shellWidth - DesktopSettingsSidebarWidth
 
         saveableStateHolder.SaveableStateProvider(page.name) {
-            var settingsSearchQuery by rememberSaveable { mutableStateOf("") }
             var rootSearchVisible by rememberSaveable { mutableStateOf(false) }
             var rootSearchRevealAnimating by rememberSaveable { mutableStateOf(false) }
             val hapticFeedback = LocalHapticFeedback.current
@@ -1099,6 +1156,7 @@ private fun TabletSettingsScreen(
             )
 
             fun openSearchTarget(target: SettingsSearchTarget) {
+                settingsSearchQuery = ""
                 when (target) {
                     is SettingsSearchTarget.Page -> {
                         if (target.page.isEnabledByFeaturePolicy()) {
@@ -1206,13 +1264,16 @@ private fun TabletSettingsScreen(
                     val orderedSidebarItems = remember(sidebarItems, categoryOrder) {
                         orderDesktopSettingsSidebarItems(sidebarItems, categoryOrder)
                     }
-                    DesktopPanelSection(title = "Categories") {
-                        DesktopSettingsSidebarList(
-                            items = orderedSidebarItems,
-                            activeSidebarPage = activeSidebarPage,
-                            onPageChange = ::openInlinePage,
-                        )
+                    Box(modifier = Modifier.weight(1f)) {
+                        DesktopPanelSection(title = "Categories") {
+                            DesktopSettingsSidebarList(
+                                items = orderedSidebarItems,
+                                activeSidebarPage = activeSidebarPage,
+                                onPageChange = ::openInlinePage,
+                            )
+                        }
                     }
+                    DesktopSettingsSidebarFooter()
                 }
                 if (desktopColumnGuidesVisible) {
                     Box(
@@ -1400,6 +1461,10 @@ private fun TabletSettingsScreen(
                         onLiquidGlassNativeTabBarToggle = onLiquidGlassNativeTabBarToggle,
                         desktopNavigationLayout = desktopNavigationLayout,
                         onDesktopNavigationLayoutSelected = onDesktopNavigationLayoutSelected,
+                        desktopAppUiScalePercent = desktopAppUiScalePercent,
+                        onDesktopAppUiScalePercentChange = onDesktopAppUiScalePercentChange,
+                        desktopAppUiScaleAppliesToDetails = desktopAppUiScaleAppliesToDetails,
+                        onDesktopAppUiScaleAppliesToDetailsChange = onDesktopAppUiScaleAppliesToDetailsChange,
                         selectedAppLanguage = selectedAppLanguage,
                         onAppLanguageSelected = onAppLanguageSelected,
                         posterCardStyleUiState = posterCardStyleUiState,
@@ -1469,7 +1534,7 @@ private fun TabletSettingsScreen(
                     SettingsPage.Integrations -> integrationsContent(
                         isTablet = true,
                         discordPresenceSettings = discordPresenceSettings,
-                        onDiscordPresenceEnabledChange = DiscordPresenceSettingsRepository::setEnabled,
+                        onDiscordPresenceModeChange = DiscordPresenceSettingsRepository::setMode,
                         onTmdbClick = { onPageChange(SettingsPage.TmdbEnrichment) },
                         onMdbListClick = { onPageChange(SettingsPage.MdbListRatings) },
                         onDebridClick = { onPageChange(SettingsPage.Debrid) },
@@ -2090,6 +2155,40 @@ private fun DesktopPanelSection(
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             content()
         }
+    }
+}
+
+@Composable
+private fun DesktopSettingsSidebarFooter() {
+    val tokens = MaterialTheme.nuvio
+    val uriHandler = LocalUriHandler.current
+    Column(
+        modifier = Modifier.padding(top = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = "Nuvio HTPC",
+            style = MaterialTheme.typography.bodySmall,
+            color = tokens.colors.accent,
+            fontWeight = FontWeight.Medium,
+            textDecoration = TextDecoration.Underline,
+            modifier = Modifier.clickable {
+                runCatching { uriHandler.openUri(NuvioHtpcRepoUrl) }
+            },
+        )
+        Text(
+            text = "Build: ${AppVersionConfig.DESKTOP_VERSION_NAME} (${AppVersionConfig.DESKTOP_VERSION_CODE})",
+            style = MaterialTheme.typography.bodySmall,
+            color = tokens.colors.textMuted,
+        )
+        Text(
+            text = stringResource(Res.string.compose_about_open_logs_folder),
+            style = MaterialTheme.typography.bodySmall,
+            color = tokens.colors.accent,
+            fontWeight = FontWeight.Medium,
+            textDecoration = TextDecoration.Underline,
+            modifier = Modifier.clickable { platformOpenLogsDirectory() },
+        )
     }
 }
 

@@ -126,6 +126,29 @@ private fun SimklMediaIds.animeListEntry(): AnimeIdMapping? =
     )
 
 /**
+ * Converts an episode coordinate scoped to a SIMKL anime entry back into the franchise numbering
+ * used by details metadata. SIMKL anime entries report season 1 even when the corresponding entry
+ * is TVDB/TMDB season 2+ (and split cours additionally carry an episode offset).
+ */
+internal fun SimklMediaIds.toCanonicalAnimeEpisode(
+    season: Int,
+    episode: Int,
+): Pair<Int, Int> {
+    if (season != 1) return season to episode
+    // This is a SIMKL response, so its own entry id is the strongest discriminator. Some payloads
+    // also contain a franchise-level Kitsu/MAL id that would otherwise select the wrong sibling.
+    val mapping = simkl?.let { simklId ->
+        AnimeIdMappingRepository.entryForNativeIds(simkl = simklId)
+    } ?: animeListEntry() ?: return season to episode
+    val mappedSeason = mapping.tvdbSeason ?: mapping.tmdbSeason ?: return season to episode
+    val offset = when {
+        mapping.tvdbSeason != null -> mapping.tvdbEpisodeOffset
+        else -> mapping.tmdbEpisodeOffset
+    } ?: 0
+    return mappedSeason to (episode + offset)
+}
+
+/**
  * True when these ids belong to a known anime entry. SIMKL delivers anime movies under the
  * plain `movie` node in some payloads (no `anime` node), where the non-anime id preference
  * (imdb first) trusts SIMKL's imdb — which is unreliable for anime and can point at a

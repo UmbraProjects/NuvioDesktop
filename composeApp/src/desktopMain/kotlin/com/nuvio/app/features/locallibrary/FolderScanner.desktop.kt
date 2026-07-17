@@ -67,6 +67,7 @@ internal actual object FolderScanner {
             key = "${folder.id}:${FilenameParser.normalizeKey(title, parsed.year)}",
             folderId = folder.id,
             type = LocalFolderType.MOVIES,
+            isAnime = folder.isAnime,
             title = title,
             year = parsed.year,
             files = listOf(LocalMediaFile(path = file.absolutePath)),
@@ -79,7 +80,7 @@ internal actual object FolderScanner {
         val files = episodeFiles
             .map { file ->
                 val seasonFolderName = file.parentFile?.name
-                val episode = FilenameParser.parseEpisode(file.name, seasonFolderName)
+                val episode = FilenameParser.parseEpisode(file.name, seasonFolderName, isAnime = folder.isAnime)
                 LocalMediaFile(path = file.absolutePath, season = episode.season, episode = episode.episode)
             }
             .sortedWith(compareBy({ it.season ?: Int.MAX_VALUE }, { it.episode ?: Int.MAX_VALUE }, { it.fileName }))
@@ -87,6 +88,7 @@ internal actual object FolderScanner {
             key = "${folder.id}:${FilenameParser.normalizeKey(title, null)}",
             folderId = folder.id,
             type = LocalFolderType.SERIES,
+            isAnime = folder.isAnime,
             title = title,
             year = parsed.year,
             files = files,

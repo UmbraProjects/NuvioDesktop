@@ -1,6 +1,27 @@
 /* __NUVIO_PLAYER_FONT_FACES__ */
 
 :root {
+  /* Combined HUD scale multiplier, set from JS (updateViewportUiScale in controls.js). It folds
+   * two factors: the user's UI-scale knob (desktopUiScalePercent setting, -50%..+50%) and the
+   * resolution auto-scale that anchors the authored sizes to a 1920x1080 CSS reference viewport
+   * and scales the whole HUD down proportionally on smaller logical viewports (e.g. 1080p =>
+   * 960x540 CSS). Applied as a plain multiplier on every player dimension — see the
+   * calc(var(--user-scale) * …) wrappers on the token blocks and the seek thumbnail. The auto-scale
+   * half is inert in PiP. 1 = no change. For the HUD chrome + context menu + seek thumbnail it is a pure size
+   * MULTIPLIER (never a CSS zoom/transform): those two overlays are positioned by JS that mixes
+   * event.clientX with offsetWidth, and CSS zoom scales offsetWidth/left inconsistently with
+   * clientX (verified empirically), which would misplace them — so only their computed sizes
+   * change and the coordinate space stays untransformed. The modal pickers (.track-panel) are
+   * grid-centered with no viewport-coordinate JS, so they use `zoom` (safe there — grid centering
+   * accounts for the zoomed size) to scale the whole panel and its contents in one rule. */
+  --user-scale: 1;
+  /* User scale capped by the effective CSS viewport (which already reflects OS desktop scaling).
+   * Panels and popup menus use this so 125% UI scale cannot push them off a short display. */
+  --panel-scale: 1;
+  /* Transient feedback such as playback speed and volume is centred and can safely scale as one
+   * unit. JS derives this from the live viewport and the user's player UI scale. */
+  --feedback-scale: 1;
+  --feedback-hidden-scale: .85;
   --hp: 20px;
   --vp: 16px;
   --title: 18px;
@@ -8,10 +29,11 @@
   --meta: 12px;
   --center-gap: 56px;
   --center-lift: 10px;
-  --slider-bottom: 16px;
+  --slider-bottom: 10px;
   --slider-touch: 22px;
   --slider-scale: .82;
   --overlay-bottom: calc(var(--slider-bottom) + var(--slider-touch) + 98px);
+  --control-row-height: 58px;
   --time: 12px;
   --header-icon: 20px;
   --header-button: 36px;
@@ -47,7 +69,7 @@
     --meta: 12px;
     --center-gap: 72px;
     --center-lift: 14px;
-    --slider-bottom: 20px;
+    --slider-bottom: 12px;
     --slider-touch: 24px;
     --slider-scale: .78;
     --time: 12px;
@@ -56,7 +78,7 @@
     --side-pad: 12px;
     --side-icon: 30px;
     --play-pad: 15px;
-    --play-icon: 38px;
+  --play-icon: 38px;
   }
 }
 
@@ -69,7 +91,7 @@
     --meta: 13px;
     --center-gap: 88px;
     --center-lift: 18px;
-    --slider-bottom: 24px;
+    --slider-bottom: 14px;
     --slider-touch: 26px;
     --slider-scale: .74;
     --time: 13px;
@@ -78,7 +100,7 @@
     --side-pad: 13px;
     --side-icon: 32px;
     --play-pad: 16px;
-    --play-icon: 42px;
+  --play-icon: 42px;
   }
 }
 
@@ -91,7 +113,7 @@
     --meta: 14px;
     --center-gap: 112px;
     --center-lift: 24px;
-    --slider-bottom: 28px;
+    --slider-bottom: 16px;
     --slider-touch: 28px;
     --slider-scale: .72;
     --time: 14px;
@@ -148,12 +170,180 @@ button:disabled {
   outline: none;
 }
 
+/* Native-feeling cascading player menu. It is rendered in the controls WebView so every
+ * command follows the same bridge path as the visible controls and keyboard shortcuts. */
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: calc(var(--panel-scale) * clamp(196px, 15vw, 238px));
+  max-width: calc(var(--panel-scale) * clamp(264px, 20vw, 320px));
+  padding: calc(var(--panel-scale) * clamp(4px, .38vw, 6px));
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 4px;
+  background: rgba(47, 47, 47, .98);
+  color: rgba(255, 255, 255, .92);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .52), 0 2px 7px rgba(0, 0, 0, .35);
+  font-size: calc(var(--panel-scale) * clamp(11.5px, .88vw, 14px));
+  line-height: 1.25;
+  user-select: none;
+}
+
+.context-menu[hidden] {
+  display: none;
+}
+
+.context-menu-group {
+  position: relative;
+  margin: 0;
+  padding: 0;
+}
+
+.context-menu > .context-menu-group + .context-menu-group {
+  margin-top: 2px;
+}
+
+.context-menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--panel-scale) * clamp(13px, 1.13vw, 18px));
+  width: 100%;
+  min-height: calc(var(--panel-scale) * clamp(28px, 2.13vw, 34px));
+  padding: calc(var(--panel-scale) * clamp(5.5px, .44vw, 7px)) calc(var(--panel-scale) * clamp(8px, .63vw, 10px));
+  border-radius: 2px;
+  text-align: left;
+  white-space: nowrap;
+  color: inherit;
+}
+
+.context-menu-item:hover,
+.context-menu-item:focus-visible {
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+  outline: none;
+}
+
+.context-menu-item .context-menu-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.context-menu-item .context-menu-shortcut,
+.context-menu-item .context-menu-arrow {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: rgba(255, 255, 255, .62);
+  font-size: calc(var(--panel-scale) * clamp(10px, .75vw, 12px));
+}
+
+.context-menu-item .context-menu-swatch {
+  flex: 0 0 auto;
+  width: calc(var(--panel-scale) * clamp(11.5px, .88vw, 14px));
+  height: calc(var(--panel-scale) * clamp(11.5px, .88vw, 14px));
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, .45);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .35);
+}
+
+.context-menu-item .context-menu-state {
+  flex: 0 0 auto;
+  min-width: calc(var(--panel-scale) * clamp(23px, 1.75vw, 28px));
+  color: rgba(255, 255, 255, .62);
+  font-size: calc(var(--panel-scale) * clamp(10px, .75vw, 12px));
+  text-align: right;
+}
+
+/* Flyouts that flip to leaf lists get a capped height (set inline by positionSubmenu); keep the
+   scrollbar unobtrusive so a long track/colour list stays usable near a screen edge. */
+.context-menu-submenu {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .35) transparent;
+}
+.context-menu-submenu::-webkit-scrollbar {
+  width: 8px;
+}
+.context-menu-submenu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .28);
+  border-radius: 4px;
+}
+
+.context-menu-item .context-menu-state.is-on {
+  color: #fff;
+  font-weight: 700;
+}
+
+.context-menu-empty {
+  padding: 9px 10px;
+  color: rgba(255, 255, 255, .56);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.context-menu-item:hover .context-menu-shortcut,
+.context-menu-item:hover .context-menu-arrow {
+  color: rgba(255, 255, 255, .86);
+}
+
+.context-menu-submenu {
+  position: absolute;
+  top: -7px;
+  left: calc(100% + 4px);
+  min-width: calc(var(--panel-scale) * clamp(196px, 15vw, 238px));
+  max-width: calc(var(--panel-scale) * clamp(264px, 20vw, 320px));
+  padding: calc(var(--panel-scale) * clamp(4px, .38vw, 6px));
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 4px;
+  background: rgba(47, 47, 47, .98);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .52), 0 2px 7px rgba(0, 0, 0, .35);
+  visibility: hidden;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 100ms ease, transform 100ms ease, visibility 100ms;
+}
+
+.context-menu-group:hover > .context-menu-submenu,
+.context-menu-group:focus-within > .context-menu-submenu {
+  visibility: visible;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.context-menu.context-menu-left .context-menu-submenu {
+  left: auto;
+  right: calc(100% + 4px);
+  transform: translateX(4px);
+}
+
+.context-menu.context-menu-left .context-menu-group:hover > .context-menu-submenu,
+.context-menu.context-menu-left .context-menu-group:focus-within > .context-menu-submenu {
+  transform: translateX(0);
+}
+
+@media (max-width: 760px) {
+  .context-menu {
+    min-width: calc(var(--panel-scale) * 196px);
+    font-size: calc(var(--panel-scale) * 13px);
+  }
+  .context-menu-submenu {
+    left: auto;
+    right: calc(100% + 4px);
+    transform: translateX(4px);
+  }
+  .context-menu-group:hover > .context-menu-submenu,
+  .context-menu-group:focus-within > .context-menu-submenu {
+    transform: translateX(0);
+  }
+}
+
 .top-gradient,
 .bottom-gradient,
 .metadata,
 .parental-guide,
 .skip-prompt,
 .next-episode-card,
+.episode-notch,
 .header-actions,
 .center-controls,
 .progress {
@@ -166,6 +356,7 @@ button:disabled {
 .player.native-resizing .parental-guide,
 .player.native-resizing .skip-prompt,
 .player.native-resizing .next-episode-card,
+.player.native-resizing .episode-notch,
 .player.native-resizing .header-actions,
 .player.native-resizing .center-controls,
 .player.native-resizing .progress,
@@ -179,9 +370,14 @@ button:disabled {
   cursor: none;
 }
 
+/* Keep the header's layout available for an always-visible clock without letting its otherwise
+   hidden band consume clicks across the top of the video. */
+.player.chrome-hidden .header { pointer-events: none; }
+
 .player.chrome-hidden .top-gradient,
 .player.chrome-hidden .bottom-gradient,
 .player.chrome-hidden .metadata,
+.player.chrome-hidden .episode-notch,
 .player.chrome-hidden .header-actions,
 .player.chrome-hidden .center-controls,
 .player.chrome-hidden .progress,
@@ -189,6 +385,11 @@ button:disabled {
 .player.locked .parental-guide,
 .player.locked .header-actions,
 .player.locked .center-controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.player.mpv-diagnostics .metadata {
   opacity: 0;
   pointer-events: none;
 }
@@ -205,23 +406,6 @@ button:disabled {
   opacity: 0;
   pointer-events: none;
   transition: none !important;
-}
-
-.player.error-active .top-gradient,
-.player.error-active .bottom-gradient,
-.player.error-active .metadata,
-.player.error-active .parental-guide,
-.player.error-active .pause-metadata-overlay,
-.player.error-active .skip-prompt,
-.player.error-active .next-episode-card,
-.player.error-active .gesture-pill,
-.player.error-active .header-actions,
-.player.error-active .center-controls,
-.player.error-active .progress,
-.player.error-active .locked-overlay,
-.player.error-active .modal-layer {
-  opacity: 0;
-  pointer-events: none;
 }
 
 .player.locked.locked-visible .bottom-gradient,
@@ -341,11 +525,11 @@ button:disabled {
 
 .header {
   position: absolute;
-  top: calc(var(--slider-bottom) + env(safe-area-inset-top));
+  top: calc(var(--vp) + env(safe-area-inset-top));
   left: var(--hp);
   right: var(--hp);
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: flex-start;
   gap: 18px;
 }
@@ -356,7 +540,7 @@ button:disabled {
   flex-direction: column;
   gap: 0;
   opacity: 1;
-  padding: 0 14px 10px;
+  padding: 0;
 }
 
 .title {
@@ -514,7 +698,7 @@ button:disabled {
   color: #fff;
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, -50%) scale(.85);
+  transform: translate(-50%, -50%) scale(var(--feedback-hidden-scale));
   transition:
     opacity 200ms ease,
     transform 200ms var(--ease-out);
@@ -522,13 +706,15 @@ button:disabled {
 
 .gesture-pill.visible {
   opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
+  transform: translate(-50%, -50%) scale(var(--feedback-scale));
 }
 
 .gesture-pill svg {
   width: 26px;
   height: 26px;
   flex: 0 0 auto;
+  /* Same high-volume glyph as the inline control; don't clip its outer wave. */
+  overflow: visible;
 }
 
 .gesture-pill-label {
@@ -556,6 +742,26 @@ button:disabled {
 .preset-pill-value {
   font-size: 18px;
   font-weight: 700;
+}
+
+.control-tooltip {
+  position: absolute;
+  z-index: 40;
+  max-width: 220px;
+  padding: 6px 9px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 4px;
+  background: rgba(20,20,23,.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: rgba(255,255,255,.94);
+  box-shadow: 0 8px 22px rgba(0,0,0,.34);
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 650;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
 }
 
 .skip-prompt {
@@ -786,15 +992,74 @@ button:disabled {
   will-change: transform;
 }
 
-.header-button:hover,
-.locked-button:hover {
-  background: rgba(255, 255, 255, .14);
+.player.legacy-hud .header-button:hover,
+.player.legacy-hud .locked-button:hover {
+  background: var(--theme-selected-surface-hover);
+  transform: translateZ(0) scale(1.06);
+  box-shadow:
+    0 0 0 1px var(--theme-selected-ring),
+    0 0 18px var(--theme-selected-ring),
+    inset 0 0 12px rgba(255, 255, 255, .06);
 }
 
-.side-control:hover,
-.play-control:hover,
-.action:hover {
-  background: rgba(255, 255, 255, .12);
+.header-button.selected {
+  background: rgba(255, 255, 255, .22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .35);
+}
+
+.player.legacy-hud .header-button.selected:hover {
+  background: var(--theme-selected-surface-hover);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, .35),
+    0 0 18px var(--theme-selected-ring);
+}
+
+.player.legacy-hud .side-control:hover,
+.player.legacy-hud .play-control:hover,
+.player.legacy-hud .action:hover {
+  background: var(--theme-selected-surface-hover);
+  transform: translateZ(0) scale(1.06);
+  box-shadow:
+    0 0 0 1px var(--theme-selected-ring),
+    0 0 18px var(--theme-selected-ring),
+    inset 0 0 12px rgba(255, 255, 255, .06);
+}
+
+.player.legacy-hud .play-control:hover {
+  transform: translateZ(0) scale(1.1);
+}
+
+/* Desktop HUD hover polish lives on the glyph, not its circular hit target. The restrained
+   brightness lift and two-stage shadow read as a soft icon shine without adding a pill/ring. */
+.header-button svg,
+.locked-button svg,
+.side-control svg,
+.play-control svg,
+.action svg {
+  transform: translateZ(0);
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    filter var(--motion-standard) ease;
+}
+
+.player:not(.legacy-hud) .header-button:hover,
+.player:not(.legacy-hud) .locked-button:hover,
+.player:not(.legacy-hud) .side-control:hover,
+.player:not(.legacy-hud) .play-control:hover,
+.player:not(.legacy-hud) .action:hover {
+  transform: translateZ(0);
+}
+
+.player:not(.legacy-hud) .header-button:hover svg,
+.player:not(.legacy-hud) .locked-button:hover svg,
+.player:not(.legacy-hud) .side-control:hover svg,
+.player:not(.legacy-hud) .play-control:hover svg,
+.player:not(.legacy-hud) .action:hover svg {
+  transform: translateZ(0) scale(1.035);
+  filter:
+    brightness(1.18)
+    drop-shadow(0 0 3px rgba(255, 255, 255, .4))
+    drop-shadow(0 0 6px var(--theme-selected-ring));
 }
 
 .header-button:active,
@@ -823,13 +1088,10 @@ button:disabled {
 }
 
 .center-controls {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, calc(-50% - var(--center-lift)));
   display: flex;
   align-items: center;
-  gap: var(--center-gap);
+  justify-content: center;
+  gap: 10px;
 }
 
 .center-status {
@@ -865,61 +1127,67 @@ button:disabled {
 
 .playback-error {
   position: absolute;
-  inset: 0;
+  left: 50%;
+  bottom: calc(var(--overlay-bottom) + env(safe-area-inset-bottom));
   z-index: 20;
-  display: grid;
-  place-items: center;
-  padding: 32px;
-  background: rgba(0, 0, 0, .9);
+  width: min(560px, calc(100% - (var(--hp) * 2)));
   opacity: 0;
   pointer-events: none;
-  transition: opacity 180ms ease;
+  transform: translate(-50%, 10px);
+  transition: opacity 180ms ease, transform 180ms var(--ease-out);
 }
 
 .playback-error.visible {
   opacity: 1;
-  pointer-events: auto;
+  transform: translate(-50%, 0);
 }
 
 .playback-error-content {
-  width: min(560px, 100%);
+  width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 16px;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 12px;
+  background: rgba(22, 22, 25, .92);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .48);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  pointer-events: auto;
 }
 
 .playback-error-title {
   margin: 0;
   color: #fff;
-  font-size: clamp(32px, 4vw, 42px);
-  line-height: 1.1;
+  font-size: 17px;
+  line-height: 22px;
   font-weight: 700;
 }
 
 .playback-error-message {
-  max-width: 560px;
+  max-width: 100%;
   margin: 0;
   color: rgba(255, 255, 255, .72);
-  font-size: 18px;
-  line-height: 24px;
+  font-size: 13px;
+  line-height: 18px;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 
 .playback-error-action {
-  width: min(260px, 100%);
-  min-width: 180px;
-  margin-top: 4px;
-  padding: 12px 20px;
-  border-radius: 12px;
+  align-self: flex-end;
+  min-width: 92px;
+  margin-top: 2px;
+  padding: 8px 14px;
+  border-radius: 8px;
   background: var(--theme-accent);
   color: var(--theme-on-accent);
-  font-size: 18px;
-  line-height: 24px;
+  font-size: 13px;
+  line-height: 18px;
   font-weight: 700;
   text-align: center;
 }
@@ -964,7 +1232,7 @@ button:disabled {
     40px
     calc(var(--hp) + env(safe-area-inset-right))
     120px
-    calc(var(--hp) + env(safe-area-inset-left));
+    calc(var(--hp) + env(safe-area-inset-left) + 48px);
 }
 
 .pause-kicker {
@@ -1308,7 +1576,11 @@ button:disabled {
 }
 
 .play-control {
-  padding: var(--play-pad);
+  width: 48px;
+  height: 48px;
+  padding: 10px;
+  border: 0;
+  background: transparent;
 }
 
 .side-control svg {
@@ -1317,8 +1589,8 @@ button:disabled {
 }
 
 .play-control svg {
-  width: var(--play-icon);
-  height: var(--play-icon);
+  width: 30px;
+  height: 30px;
 }
 
 .progress {
@@ -1414,6 +1686,64 @@ button:disabled {
   box-shadow: 0 0 0 6px rgba(255, 255, 255, .16);
 }
 
+.desktop-control-row {
+  position: relative;
+  min-height: var(--control-row-height);
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto minmax(140px, 1fr);
+  align-items: center;
+  gap: 18px;
+}
+
+.time-cluster {
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeline-time {
+  min-width: 5ch;
+  color: rgba(255,255,255,.78);
+  font-size: var(--time);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timeline-time-current { text-align: left; }
+.timeline-time-duration { text-align: right; }
+
+.episode-notch {
+  position: absolute;
+  z-index: 12;
+  top: calc(var(--vp) + env(safe-area-inset-top));
+  right: 0;
+  width: 42px;
+  height: 86px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,.18);
+  border-right: 0;
+  border-radius: 16px 0 0 16px;
+  background: rgba(12,12,14,.72);
+  backdrop-filter: blur(18px);
+  transform: none;
+  transition: width 180ms var(--ease-out), background-color 180ms ease;
+}
+
+.episode-notch svg { width: 21px; height: 21px; flex: 0 0 auto; }
+.episode-notch span { width: 0; overflow: hidden; opacity: 0; white-space: nowrap; font-size: 12px; font-weight: 700; transition: width 180ms var(--ease-out), opacity 120ms ease; }
+.episode-notch:hover { width: 116px; gap: 9px; background: transparent; }
+.episode-notch:hover span { width: 58px; opacity: 1; }
+
 .timeline {
   position: relative;
   width: 100%;
@@ -1430,7 +1760,7 @@ button:disabled {
   position: absolute;
   top: 50%;
   width: 2px;
-  height: 12px;
+  height: 8px;
   border-radius: 2px;
   background: linear-gradient(to bottom, rgba(255,255,255,.96), rgba(191,191,191,.82));
   box-shadow: 0 0 4px rgba(0,0,0,.6);
@@ -1458,6 +1788,58 @@ button:disabled {
   box-shadow: 0 4px 16px rgba(0,0,0,.36);
 }
 
+.seek-thumbnail {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(100% + 10px);
+  width: calc(var(--user-scale) * 224px);
+  overflow: visible;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 6px;
+  background: rgba(15,15,18,.92);
+  box-shadow: 0 12px 34px rgba(0,0,0,.48);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.seek-thumbnail img {
+  display: block;
+  width: calc(var(--user-scale) * 224px);
+  height: calc(var(--user-scale) * 126px);
+  object-fit: cover;
+  border-radius: 6px;
+  background: rgba(255,255,255,.045);
+}
+.seek-thumbnail img:not([src]) { visibility: hidden; }
+.seek-thumbnail-time {
+  position: absolute;
+  right: 7px;
+  bottom: 6px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: rgba(0,0,0,.76);
+  color: #fff;
+  font-size: calc(var(--user-scale) * 11px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.seek-thumbnail-chapter {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  max-width: calc(100% - 18px);
+  overflow: hidden;
+  padding: 4px 7px;
+  border-radius: 3px;
+  background: rgba(0,0,0,.72);
+  color: #fff;
+  font-size: calc(var(--user-scale) * 11px);
+  line-height: 1.2;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translate(-50%, -100%);
+}
+
 .time-row {
   display: flex;
   justify-content: space-between;
@@ -1478,7 +1860,7 @@ button:disabled {
 
 .action-row {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   min-width: 0;
 }
 
@@ -1493,6 +1875,88 @@ button:disabled {
   border-radius: 24px;
   background: rgba(0, 0, 0, .5);
   overflow: hidden;
+}
+
+.desktop-control-row .action { padding: 10px; }
+.desktop-control-row .action span { display: none; }
+#episodesButton { display: none !important; }
+
+.desktop-control-row .action svg { width: 24px; height: 24px; }
+
+
+
+/* Panel visibility and final desktop sizing. */
+.player.chrome-hidden .source-notch {
+  opacity: 0;
+  pointer-events: none;
+}
+#subtitleModal .auto-sync-card > .style-row {
+  justify-content: flex-start;
+  gap: 10px;
+}
+#subtitleModal #autoSyncStatus {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: 8px;
+}
+#subtitleModal .auto-sync-card > .style-row .panel-actions { margin-left: auto; }
+
+#subtitleModal .auto-sync-card {
+  min-height: 0;
+  gap: 0;
+  padding: 8px 4px 4px;
+}
+#subtitleModal #autoSyncCueList:empty { display: none; }
+.speed-control { position: relative; display: flex; align-items: center; }
+.speed-control .action { position: relative; z-index: 1; }
+#speedPicker {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 5px);
+  bottom: auto;
+  width: 112px;
+  height: 20px;
+  opacity: 0;
+  pointer-events: none;
+  accent-color: var(--theme-focus);
+  transition: opacity 160ms ease, transform 160ms var(--ease-out);
+  transform: translateY(5px);
+}
+#speedPicker.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.episode-skip svg { width: 28px; height: 28px; }
+
+#episodesModal {
+  place-items: start center;
+  padding: calc(var(--vp) + 46px) 0 0;
+  background-color: rgba(0,0,0,.28);
+}
+
+#episodesModal .track-panel.wide {
+  width: min(1120px, 92vw);
+  height: min(360px, 48vh);
+  max-height: none;
+  border-radius: 0 0 20px 20px;
+  transform: translateY(-18px);
+}
+
+#episodesModal.modal-visible .track-panel.wide { transform: translateY(0); }
+#episodesModal.modal-closing .track-panel.wide { transform: translateY(-18px); }
+#episodesModal .track-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(270px, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+#episodesModal .track-row.episode-row { height: 100%; min-height: 0; flex-direction: column; align-items: stretch; }
+#episodesModal .episode-thumb { width: 100%; height: 132px; }
+
+@media (max-width: 760px) {
+  .desktop-control-row { grid-template-columns: 1fr auto; }
+  .time-cluster { display: none; }
+  .desktop-control-row .action:nth-child(-n+2) { display: none; }
+  #episodesModal .track-panel.wide { width: 100vw; height: min(420px, 62vh); }
 }
 
 .action {
@@ -1545,6 +2009,10 @@ button:disabled {
 }
 
 .track-panel {
+  /* Modal pickers scale as a self-contained unit. `zoom` is safe here (unlike on the JS-positioned
+   * context menu / seek thumbnail): the panel is centered by the parent grid, which accounts for
+   * the zoomed size, and nothing inside mixes viewport event coords with element geometry. */
+  zoom: var(--panel-scale);
   width: min(90vw, 420px);
   max-height: min(90vh, 600px);
   display: flex;
@@ -1841,15 +2309,31 @@ button:disabled {
   padding: 12px;
 }
 
+#autoSyncCueList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  /* Keep the centered-on-nearest scroll position stable while rows lazy-render. */
+  overscroll-behavior: contain;
+}
+
 .sync-cue {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   width: 100%;
+  flex: 0 0 auto;
   padding: 8px;
   border-radius: 8px;
   background: rgba(255, 255, 255, .08);
   text-align: left;
+}
+
+.sync-cue.nearest {
+  background: rgba(255, 255, 255, .18);
+  box-shadow: inset 0 0 0 1px var(--theme-focus);
 }
 
 .sync-time {
@@ -1933,6 +2417,21 @@ button:disabled {
   justify-content: flex-start;
   min-height: 72px;
 }
+
+/* Episode rows use a wide, information-dense desktop card instead of the compact mobile list. */
+#episodesModal .track-list { gap: 8px; padding: 8px 22px 24px; }
+#episodesModal .track-row.episode-row {
+  min-height: 102px;
+  padding: 10px;
+  border-radius: 14px;
+  gap: 14px;
+}
+#episodesModal .episode-thumb { width: 148px; height: 82px; border-radius: 10px; }
+#episodesModal .episode-name { font-size: 15px; }
+#episodesModal .episode-overview { -webkit-line-clamp: 3; font-size: 12px; }
+#episodesModal .episode-code { font-size: 11px; }
+#episodesModal .track-row.episode-row { flex-direction: column; align-items: stretch; }
+#episodesModal .episode-thumb { width: 100%; height: 132px; }
 
 .track-row.source-row {
   min-height: 0;
@@ -2426,4 +2925,1337 @@ svg {
 
 .player.hero-trailer-active > *:not(#heroTrailerFade):not(#heroTrailerContent):not(#heroTrailerChrome) {
   display: none !important;
+}
+
+/* Desktop player transport: every control occupies the same visual rhythm. */
+.center-controls { gap: 14px; }
+.side-control,
+.play-control {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+}
+.side-control svg,
+.play-control svg,
+.episode-skip svg { width: 30px; height: 30px; }
+
+/* Keep the speed selector directly underneath its trigger. */
+#speedPicker {
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, 5px);
+}
+#speedPicker.visible { transform: translate(-50%, 0); }
+
+/* The top episode selector uses the media-details horizontal rail treatment. */
+.player.episode-panel-open .header .metadata,
+.player.episode-panel-open .header-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#episodesModal {
+  padding: 0;
+  background: rgba(0, 0, 0, .42);
+}
+#episodesModal .track-panel.wide {
+  width: 100%;
+  height: min(332px, 44vh);
+  border: 0;
+  border-radius: 0 0 18px 18px;
+  background: rgba(24, 24, 27, .98);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .45);
+}
+#episodesModal .track-header-row { padding: 12px 22px 8px; }
+#episodesModal .track-title { font-size: 15px; }
+#episodesModal .filter-row {
+  min-height: 34px;
+  padding: 0 22px 8px;
+  overflow: hidden;
+}
+#episodesModal .filter-chip {
+  min-height: 30px;
+  padding: 5px 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(255,255,255,.62);
+  font-size: 13px;
+}
+#episodesModal .filter-chip.selected {
+  background: transparent;
+  color: var(--theme-focus);
+}
+#episodesModal .track-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(280px, 1fr);
+  grid-template-rows: 1fr;
+  gap: 14px;
+  padding: 0 22px 16px;
+  overflow: auto hidden;
+  scrollbar-width: none;
+  cursor: grab;
+  scroll-behavior: auto;
+}
+#episodesModal .track-list::-webkit-scrollbar { display: none; }
+#episodesModal .track-list.is-dragging { cursor: grabbing; scroll-behavior: auto; }
+#episodesModal .track-row.episode-row {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 14px;
+  background: rgba(255,255,255,.05);
+}
+#episodesModal .episode-thumb { width: 100%; height: 132px; border-radius: 0; }
+#episodesModal .episode-copy { gap: 5px; padding: 10px 12px 12px; }
+#episodesModal .episode-row-top { justify-content: space-between; }
+#episodesModal .episode-name { font-size: 14px; }
+#episodesModal .episode-overview { -webkit-line-clamp: 2; }
+
+/* Match DetailSeriesContent's compact desktop EpisodeHorizontalCard. */
+#episodeListView > .track-header-row { display: none; }
+#episodesModal .track-panel.wide { height: min(292px, 42vh); }
+#episodesModal .filter-row {
+  gap: 28px;
+  height: 48px;
+  min-height: 48px;
+  align-items: center;
+  padding: 0 14px;
+}
+#episodesModal .filter-chip {
+  min-height: 48px;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+#episodesModal .track-list {
+  grid-auto-columns: 330px;
+  gap: 14px;
+  padding: 8px 14px 14px;
+}
+#episodesModal .track-row.episode-row {
+  position: relative;
+  height: 216px;
+  border-radius: 12px;
+  isolation: isolate;
+}
+#episodesModal .track-row.episode-row::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.10) 38%, rgba(0,0,0,.48) 68%, rgba(0,0,0,.84) 100%);
+}
+#episodesModal .episode-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+#episodesModal .episode-row-top {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  padding: 12px;
+  pointer-events: none;
+}
+#episodesModal .episode-row-top .status-chip { margin-left: auto; }
+#episodesModal .episode-code,
+#episodesModal .status-chip {
+  background: rgba(0,0,0,.62);
+  color: rgba(255,255,255,.92);
+}
+#episodesModal .episode-copy {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  gap: 6px;
+  padding: 14px;
+  pointer-events: none;
+}
+#episodesModal .episode-name {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 19px;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+#episodesModal .episode-overview {
+  color: rgba(255,255,255,.86);
+  font-size: 11px;
+  line-height: 15px;
+  -webkit-line-clamp: 2;
+}
+#episodesModal .track-row.episode-row.selected {
+  box-shadow: inset 0 0 0 2px var(--theme-focus);
+}
+#episodesModal .track-row.episode-row.keyboard-focused {
+  transform: scale(1.025);
+  box-shadow: inset 0 0 0 2px var(--theme-focus), 0 10px 28px rgba(0,0,0,.32);
+}
+.seek-control svg { width: 32px; height: 32px; }
+
+/* Final player polish: glass episode rail, compact copy, and top-edge notch. */
+.episode-notch {
+  top: 0;
+  left: 50%;
+  right: auto;
+  width: 160px;
+  height: 42px;
+  gap: 8px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-top: 0;
+  border-radius: 0 0 16px 16px;
+  background: rgba(15,15,18,.42);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  transform: translateX(-50%);
+}
+.episode-notch span { width: 82px; opacity: 1; }
+.episode-notch:hover { width: 160px; background: rgba(15,15,18,.42); }
+
+#episodesModal .track-panel.wide {
+  background: rgba(20,20,23,.48);
+  border-bottom: 1px solid rgba(255,255,255,.14);
+  backdrop-filter: blur(30px) saturate(1.35);
+  -webkit-backdrop-filter: blur(30px) saturate(1.35);
+}
+#episodesModal .episode-overview {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2 !important;
+  max-height: 30px;
+}
+
+.player-volume-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  margin-left: 0;
+  min-height: 32px;
+  padding: 0;
+}
+.player-volume-control .player-volume {
+  width: 98px;
+  margin: 0;
+  background: #fff;
+}
+.player-volume-icon {
+  width: 24px;
+  height: 24px;
+  color: #fff;
+  fill: currentColor;
+  flex: 0 0 auto;
+  /* The high-volume glyph's outermost wave extends just past the 24-unit box;
+     let it paint outside its viewport instead of clipping the third arc. */
+  overflow: visible;
+}
+/* The clip also happens at the symbol's own viewport, so it must opt out too. */
+#icon-volume-high { overflow: visible; }
+.player-volume-control .player-volume::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: #fff;
+}
+.player-volume-control .player-volume::-webkit-slider-thumb {
+  margin-top: -5px;
+  background: #fff;
+}
+
+/* Playback speed is discrete again; the old range control is intentionally removed. */
+.speed-control,
+#speedPicker { display: none !important; }
+
+#episodesModal .track-list {
+  touch-action: none;
+  overscroll-behavior-x: contain;
+}
+#episodesModal .episode-thumb img {
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* A subtle top-edge reveal replaces the labelled episode notch. */
+.episode-notch {
+  top: 0;
+  left: 50%;
+  width: 190px;
+  height: 32px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transform: translateX(-50%);
+}
+.episode-notch svg,
+.episode-notch span { display: none; }
+.episode-notch::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 118px;
+  height: 8px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: linear-gradient(to bottom, rgba(255,255,255,.14), rgba(255,255,255,.045));
+  box-shadow: 0 4px 14px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.10);
+  opacity: .72;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  transform: translateX(-50%);
+  transition: width 180ms var(--ease-out), opacity 180ms ease, box-shadow 180ms ease;
+}
+.episode-notch:hover { width: 190px; background: transparent; }
+.episode-notch:hover::after {
+  width: 136px;
+  opacity: .92;
+  box-shadow: 0 5px 16px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.16);
+}
+
+/* Desktop clock replaces the mobile lock and close buttons. */
+#lockButton,
+#backButton { display: none !important; }
+.header-actions { margin-right: 220px; }
+.player-clock {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  color: #fff;
+  transition: opacity 160ms ease;
+}
+.player-clock-time {
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+.player-end-time {
+  color: rgba(255,255,255,.72);
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.player-end-time:hover { color: #fff; }
+.player.chrome-hidden .player-clock,
+.player.locked .player-clock,
+.player.episode-panel-open .player-clock {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Indicators disappear while their corresponding desktop panel owns the edge. */
+.player.episode-panel-open .episode-notch,
+.player.source-panel-open .source-notch {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.source-notch {
+  position: absolute;
+  z-index: 12;
+  top: 50%;
+  right: 0;
+  width: 32px;
+  height: 190px;
+  border: 0;
+  background: transparent;
+  transform: translateY(-50%);
+}
+.source-notch svg,
+.source-notch span { display: none; }
+.source-notch::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 8px;
+  height: 118px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  background: linear-gradient(to left, rgba(255,255,255,.14), rgba(255,255,255,.045));
+  box-shadow: -4px 0 14px rgba(0,0,0,.24), inset 1px 0 0 rgba(255,255,255,.10);
+  opacity: .72;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  transform: translateY(-50%);
+  transition: height 180ms var(--ease-out), opacity 180ms ease, box-shadow 180ms ease;
+}
+.source-notch:hover::after {
+  height: 136px;
+  opacity: .92;
+  box-shadow: -5px 0 16px rgba(0,0,0,.28), inset 1px 0 0 rgba(255,255,255,.16);
+}
+#sourcesButton { display: none !important; }
+
+/* Keep desktop sheets visually separated from the video beneath them. */
+#episodesModal .track-panel.wide { border-radius: 0 0 18px 18px; }
+#audioModal,
+#subtitleModal,
+#sourceModal {
+  padding: clamp(10px, 3.5vmin, 38px);
+  background: rgba(0,0,0,.42);
+}
+#audioModal .track-panel,
+#subtitleModal .track-panel,
+#sourceModal .track-panel {
+  width: min(760px, 76vw);
+  height: min(680px, 78vh);
+  max-height: none;
+  border-radius: 0;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(22,23,28,.94);
+  backdrop-filter: blur(26px) saturate(1.2);
+  -webkit-backdrop-filter: blur(26px) saturate(1.2);
+  box-shadow: 0 24px 80px rgba(0,0,0,.56);
+  border-radius: 18px;
+}
+#sourceModal .track-panel.wide { width: min(92vw, 760px); }
+#audioModal .track-header,
+#subtitleModal .track-header,
+#sourceModal .track-header-row {
+  min-height: 54px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  font-size: 16px;
+}
+#audioModal .track-list,
+#subtitleModal .track-list,
+#sourceModal .track-list { padding: 14px 18px 18px; gap: 4px; }
+#audioModal .track-row,
+#subtitleModal .track-row,
+#sourceModal .track-row {
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+}
+#audioModal .track-row:hover,
+#subtitleModal .track-row:hover,
+#sourceModal .track-row:hover {
+  background: rgba(255,255,255,.07);
+  border-color: rgba(255,255,255,.08);
+}
+#audioModal .track-row.selected,
+#subtitleModal .track-row.selected,
+#sourceModal .track-row.selected {
+  background: var(--theme-selected-surface);
+  border-color: var(--theme-selected-ring);
+}
+#subtitleModal .subtitle-tabs,
+#sourceModal .filter-row {
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+#subtitleModal .subtitle-tab,
+#sourceModal .filter-chip,
+#sourceModal .panel-button {
+  border-radius: 4px;
+}
+
+/* Dense desktop refinements for tracks, settings, badges, and scrollbars. */
+#subtitleModal .track-header { text-align: center; }
+#subtitleModal .style-panel { padding: 0 18px 18px; }
+#subtitleModal .style-card {
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+#subtitleModal .style-row,
+#subtitleModal .swatch-section,
+#subtitleModal .auto-sync-card {
+  min-height: 48px;
+  padding: 10px 4px;
+  border: 0;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  border-radius: 0;
+  background: transparent;
+}
+#subtitleModal .auto-sync-card { gap: 10px; }
+#subtitleModal .round-step,
+#subtitleModal .panel-button,
+#subtitleModal .style-select {
+  border-radius: 4px;
+  background: rgba(255,255,255,.06);
+}
+
+.source-row .stream-name,
+.source-row .stream-subtitle,
+.source-row .stream-addon {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.stream-badges {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 34%;
+  margin-left: auto;
+  padding-top: 1px;
+}
+.stream-badge {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 7px;
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 4px;
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.84);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.stream-badge img {
+  display: block;
+  max-width: 62px;
+  max-height: 20px;
+  object-fit: contain;
+}
+
+.track-list,
+.style-panel {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.24) transparent;
+}
+.track-list::-webkit-scrollbar,
+.style-panel::-webkit-scrollbar { width: 5px; height: 5px; }
+.track-list::-webkit-scrollbar-track,
+.style-panel::-webkit-scrollbar-track { background: transparent; }
+.track-list::-webkit-scrollbar-thumb,
+.style-panel::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255,255,255,.22);
+}
+.track-list::-webkit-scrollbar-thumb:hover,
+.style-panel::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.38); }
+
+#audioModal .track-panel {
+  width: min(520px, 70vw);
+  height: auto;
+  max-height: min(70vh, 520px);
+}
+#audioModal .track-list { flex: 0 1 auto; }
+
+.desktop-control-row .action { padding: 8px; }
+.desktop-control-row .action svg { width: 22px; height: 22px; }
+.action-row { gap: 2px; }
+
+/* Final spacing and compact subtitle/source layout.
+ * Keep the complete timeline/control cluster visibly clear of the window edge. This value is
+ * derived only from the controls viewport, never the decoded video/output resolution. The prior
+ * late 4px override defeated the responsive 16–28px tokens above and made the HUD appear to jump
+ * down when a newly-created WebView picked up that newer stylesheet. */
+:root {
+  --slider-bottom: calc(var(--user-scale) * 28px);
+}
+#episodesModal .filter-row { padding-inline: 28px; }
+#episodesModal .track-list { padding: 10px 28px 18px; }
+
+#subtitleModal .track-panel { width: min(620px, 68vw); }
+.delay-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.icon-reset-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+.icon-reset-button svg { width: 17px; height: 17px; }
+#subtitleModal .auto-sync-card > .style-row {
+  min-height: 34px;
+  padding: 0 0 5px;
+  border-bottom: 0;
+}
+#subtitleModal #autoSyncStatus {
+  display: block;
+  color: rgba(255,255,255,.52);
+  font-size: 11px;
+  line-height: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-row .stream-badges {
+  max-width: 100%;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin: 3px 0 0;
+  padding: 0;
+}
+.stream-addon-inline {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  color: rgba(255,255,255,.58);
+  font-size: 12px;
+  line-height: 1.3;
+  font-style: italic;
+  text-align: right;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.track-list::-webkit-scrollbar,
+.style-panel::-webkit-scrollbar { width: 4px; height: 4px; }
+
+/* Match the stream selector's STREAM badge metrics exactly. */
+.stream-badge {
+  height: 20px;
+  min-height: 20px;
+  padding: 2px 3px;
+}
+.stream-badge img {
+  width: auto;
+  min-width: 34px;
+  max-width: 92px;
+  height: 16px;
+  max-height: 16px;
+}
+
+/* Compact the episode shelf while retaining focus-scale breathing room. */
+#episodesModal .filter-row { padding: 4px 20px 0; }
+#episodesModal .track-list { padding: 9px 20px 15px; }
+#episodesModal .track-panel.wide { height: min(270px, 40vh); }
+#episodesModal .track-row.episode-row { height: 194px; }
+
+/* Remove provider/source metadata from the player title block. */
+.header .meta-row { display: none !important; }
+
+#subtitleModal .style-select {
+  width: 140px;
+  max-width: 140px;
+  height: 32px;
+  padding-block: 4px;
+}
+
+/* Ten percent larger than the preceding 22px desktop action glyphs. */
+.desktop-control-row .action svg { width: 24px; height: 24px; }
+
+/* Optional legacy HUD: retain the former mobile control composition while all modal panels
+   continue to use the current desktop implementations. Kept last so iterative desktop rules
+   cannot silently override the selected legacy layout. */
+/* The header follows the desktop layout: title/episode anchored top-left inside .header,
+   the clock shown top-right with its end-time doubling as the close button (so the mobile
+   X/back and lock buttons stay hidden — see the base #backButton/#lockButton rules). Only
+   the notches, an unused mobile edge affordance, are hidden. This keeps legacy on the same
+   header rules as desktop instead of maintaining a separate top-bar composition. */
+.player.legacy-hud .episode-notch,
+.player.legacy-hud .source-notch { display: none; }
+/* The former mobile composition had no centre play/seek cluster (tap-to-toggle);
+   keep the redesigned centre controls hidden here rather than floating mid-screen. */
+.player.legacy-hud .center-controls { display: none; }
+.player.legacy-hud .desktop-control-row {
+  display: flex;
+  justify-content: center;
+  min-height: 54px;
+}
+.player.legacy-hud .time-cluster,
+.player.legacy-hud .desktop-preset-action { display: none; }
+.player.legacy-hud .action-row {
+  gap: 0;
+  margin-inline: auto;
+  padding: 2px 4px;
+  border: 1px solid rgba(255,255,255,.20);
+  border-radius: 24px;
+  background: rgba(0,0,0,.50);
+}
+.player.legacy-hud .desktop-control-row .action {
+  gap: 6px;
+  padding: 8px 10px;
+}
+.player.legacy-hud .desktop-control-row .action span { display: block; }
+.player.legacy-hud #sourcesButton,
+.player.legacy-hud #episodesButton { display: flex !important; }
+.player.legacy-hud .timeline-time {
+  padding: 4px 9px;
+  border: 1px solid rgba(255,255,255,.20);
+  border-radius: 12px;
+  background: rgba(0,0,0,.50);
+  color: #fff;
+}
+
+/* Desktop HUD sizing. These are the authored sizes at the 1920x1080 CSS reference viewport (a 4K
+   desktop, which normalizes to that after the native 192-DPI zoom baseline). --user-scale carries
+   both the user's -25%..+25% preference AND the JS resolution auto-scale (updateViewportUiScale),
+   so the chrome stays the same fraction of the frame on smaller logical viewports (e.g. 1080p =>
+   960x540 CSS) instead of ballooning. Previously these were clamp(min, Nvw, max) values that
+   pinned to `max` at the reference but rode raw `vw` on a 1080p viewport, making the HUD ~1.2-1.4x
+   larger there at the same slider value. */
+:root {
+  --hp: calc(var(--user-scale) * 32px);
+  --vp: calc(var(--user-scale) * 26px);
+  --title: calc(var(--user-scale) * 30px);
+  --episode: calc(var(--user-scale) * 17px);
+  --meta: calc(var(--user-scale) * 15px);
+  --center-gap: calc(var(--user-scale) * 118px);
+  --center-lift: calc(var(--user-scale) * 26px);
+  --slider-touch: calc(var(--user-scale) * 30px);
+  --time: calc(var(--user-scale) * 15px);
+  --header-icon: calc(var(--user-scale) * 25px);
+  --header-button: calc(var(--user-scale) * 42px);
+  --side-pad: calc(var(--user-scale) * 15px);
+  --side-icon: calc(var(--user-scale) * 36px);
+  --play-pad: calc(var(--user-scale) * 19px);
+  --play-icon: calc(var(--user-scale) * 48px);
+}
+
+.player-clock-time { font-size: calc(var(--user-scale) * 24px); }
+.desktop-control-row .action { padding: calc(var(--user-scale) * 10px); }
+.desktop-control-row .action svg {
+  width: calc(var(--user-scale) * 26px);
+  height: calc(var(--user-scale) * 26px);
+}
+.center-controls { gap: calc(var(--user-scale) * 32px); }
+.player-volume-control { width: calc(var(--user-scale) * 190px); }
+
+/* The legacy HUD is intentionally 25% more compact than the desktop HUD. Keep its sizing
+   isolated here so the fluid desktop rules above cannot scale the former mobile controls up. */
+.player.legacy-hud {
+  --hp: calc(var(--user-scale) * 24px);
+  --vp: calc(var(--user-scale) * 20px);
+  --title: calc(var(--user-scale) * 22.5px);
+  --episode: calc(var(--user-scale) * 12.75px);
+  --meta: calc(var(--user-scale) * 11.25px);
+  --time: calc(var(--user-scale) * 11.25px);
+  --header-icon: calc(var(--user-scale) * 18.75px);
+  --header-button: calc(var(--user-scale) * 31.5px);
+  /* Lift the whole timeline + control cluster off the bottom edge (desktop sits it ~4px up).
+     The control cluster sits ~20px up (lower than the earlier 34px so the buttons return toward
+     the bottom); the seek bar is then pushed a further step up via .timeline-row margin below,
+     opening a gap between the scrubber and the button row. */
+  --slider-bottom: calc(var(--user-scale) * 20px);
+}
+.player.legacy-hud .timeline-row {
+  margin-bottom: calc(var(--user-scale) * 16px);
+}
+.player.clock-always-visible .player-clock,
+.player.legacy-hud.clock-always-visible .player-clock {
+  display: flex;
+  opacity: 1;
+  pointer-events: none;
+}
+.player.clock-always-visible .player-end-time { pointer-events: auto; }
+/* Keep the clock visible (and above the pause overlay's z-index:6) while the pause metadata card
+   is showing, so it no longer vanishes with the rest of the chrome. */
+.player.pause-overlay-visible .player-clock {
+  display: flex;
+  opacity: 1;
+  pointer-events: none;
+  z-index: 7;
+}
+.player.pause-overlay-visible .player-end-time { pointer-events: auto; }
+.player.legacy-hud .desktop-control-row { min-height: calc(var(--user-scale) * 41px); }
+.player.legacy-hud .action-row {
+  padding: calc(var(--user-scale) * 2px) calc(var(--user-scale) * 3px);
+  border-radius: 18px;
+}
+.player.legacy-hud .desktop-control-row .action {
+  gap: calc(var(--user-scale) * 4.5px);
+  padding: calc(var(--user-scale) * 6px) calc(var(--user-scale) * 7.5px);
+}
+.player.legacy-hud .desktop-control-row .action svg {
+  width: calc(var(--user-scale) * 19.5px);
+  height: calc(var(--user-scale) * 19.5px);
+}
+.player.legacy-hud .desktop-control-row .action span { font-size: calc(var(--user-scale) * 9px); }
+.player.legacy-hud .timeline-time {
+  padding: calc(var(--user-scale) * 3px) calc(var(--user-scale) * 7px);
+  border-radius: calc(var(--user-scale) * 9px);
+}
+
+/* Complete Player UI Scale coverage.
+   Panels and context menus use --panel-scale because they also need a viewport-fit ceiling.
+   Everything below is part of the free-positioned HUD, where individual dimensions must scale
+   instead of applying CSS zoom (zoom would desynchronise JS pointer/tooltip coordinates). */
+.top-gradient { height: calc(var(--user-scale) * 160px); }
+.bottom-gradient { height: calc(var(--user-scale) * 220px); }
+.header { gap: calc(var(--user-scale) * 18px); }
+.episode { margin-top: calc(var(--user-scale) * 4px); }
+.header-actions {
+  gap: calc(var(--user-scale) * 10px);
+  margin-right: calc(var(--user-scale) * 220px);
+}
+.player-clock { gap: calc(var(--user-scale) * 3px); }
+.player-end-time { font-size: calc(var(--user-scale) * 12px); }
+
+.parental-guide-line {
+  width: calc(var(--user-scale) * 3px);
+  border-radius: calc(var(--user-scale) * 1px);
+}
+.parental-guide-list {
+  gap: calc(var(--user-scale) * 2px);
+  padding-left: calc(var(--user-scale) * 10px);
+}
+.parental-guide-row { height: calc(var(--user-scale) * 18px); }
+.parental-guide-label,
+.parental-guide-separator,
+.parental-guide-severity {
+  font-size: calc(var(--user-scale) * 11px);
+  line-height: calc(var(--user-scale) * 18px);
+}
+
+.control-tooltip {
+  max-width: calc(var(--user-scale) * 220px);
+  padding: calc(var(--user-scale) * 6px) calc(var(--user-scale) * 9px);
+  border-radius: calc(var(--user-scale) * 4px);
+  font-size: calc(var(--user-scale) * 11px);
+}
+
+.skip-prompt { border-radius: calc(var(--user-scale) * 16px); }
+.skip-prompt-row {
+  padding: calc(var(--user-scale) * 12px) calc(var(--user-scale) * 18px);
+}
+.skip-prompt svg {
+  width: calc(var(--user-scale) * 20px);
+  height: calc(var(--user-scale) * 20px);
+}
+.skip-prompt-label {
+  padding-left: calc(var(--user-scale) * 8px);
+  font-size: calc(var(--user-scale) * 14px);
+}
+.skip-progress-track {
+  height: calc(var(--user-scale) * 3px);
+  border-radius: 0 0 calc(var(--user-scale) * 16px) calc(var(--user-scale) * 16px);
+}
+
+.next-episode-card {
+  width: min(calc(var(--user-scale) * 292px), calc(100vw - (var(--hp) * 2)));
+  padding: calc(var(--user-scale) * 8px) calc(var(--user-scale) * 9px);
+  border-radius: calc(var(--user-scale) * 16px);
+}
+.next-episode-thumb {
+  width: calc(var(--user-scale) * 78px);
+  height: calc(var(--user-scale) * 44px);
+  border-radius: calc(var(--user-scale) * 9px);
+}
+.next-episode-copy { padding-left: calc(var(--user-scale) * 8px); }
+.next-episode-header,
+.next-episode-status { font-size: calc(var(--user-scale) * 10px); }
+.next-episode-title {
+  margin-top: calc(var(--user-scale) * 2px);
+  font-size: calc(var(--user-scale) * 12px);
+}
+.next-episode-status { margin-top: calc(var(--user-scale) * 2px); }
+.next-episode-action {
+  gap: calc(var(--user-scale) * 3px);
+  margin-left: calc(var(--user-scale) * 4px);
+  padding: calc(var(--user-scale) * 5px) calc(var(--user-scale) * 8px);
+  font-size: calc(var(--user-scale) * 11px);
+}
+.next-episode-action svg {
+  width: calc(var(--user-scale) * 13px);
+  height: calc(var(--user-scale) * 13px);
+}
+
+.center-status {
+  width: calc(var(--user-scale) * 48px);
+  height: calc(var(--user-scale) * 48px);
+}
+.center-spinner {
+  width: calc(var(--user-scale) * 42px);
+  height: calc(var(--user-scale) * 42px);
+  border-width: calc(var(--user-scale) * 3px);
+}
+
+.playback-error {
+  width: min(calc(var(--user-scale) * 560px), calc(100% - (var(--hp) * 2)));
+}
+.playback-error-content {
+  gap: calc(var(--user-scale) * 8px);
+  padding: calc(var(--user-scale) * 14px) calc(var(--user-scale) * 16px);
+  border-radius: calc(var(--user-scale) * 12px);
+}
+.playback-error-title {
+  font-size: calc(var(--user-scale) * 17px);
+  line-height: calc(var(--user-scale) * 22px);
+}
+.playback-error-message {
+  font-size: calc(var(--user-scale) * 13px);
+  line-height: calc(var(--user-scale) * 18px);
+}
+.playback-error-action {
+  min-width: calc(var(--user-scale) * 92px);
+  margin-top: calc(var(--user-scale) * 2px);
+  padding: calc(var(--user-scale) * 8px) calc(var(--user-scale) * 14px);
+  border-radius: calc(var(--user-scale) * 8px);
+  font-size: calc(var(--user-scale) * 13px);
+  line-height: calc(var(--user-scale) * 18px);
+}
+
+.pause-metadata-content {
+  padding:
+    calc(var(--user-scale) * 40px)
+    calc(var(--hp) + env(safe-area-inset-right))
+    calc(var(--user-scale) * 120px)
+    calc(var(--hp) + env(safe-area-inset-left) + calc(var(--user-scale) * 48px));
+}
+.pause-kicker,
+.pause-episode-info { font-size: calc(var(--user-scale) * 18px); }
+.pause-logo {
+  width: min(calc(var(--user-scale) * 360px), 62vw);
+  height: calc(var(--user-scale) * 96px);
+  margin-top: calc(var(--user-scale) * 12px);
+}
+.pause-title {
+  margin-top: calc(var(--user-scale) * 12px);
+  font-size: max(calc(var(--title) * 1.8), calc(var(--user-scale) * 32px));
+}
+.pause-episode-info { margin-top: calc(var(--user-scale) * 8px); }
+.pause-episode-title {
+  margin-top: calc(var(--user-scale) * 12px);
+  font-size: calc(var(--user-scale) * 22px);
+}
+.pause-description {
+  margin-top: calc(var(--user-scale) * 16px);
+  font-size: calc(var(--user-scale) * 18px);
+  line-height: calc(var(--user-scale) * 24px);
+}
+
+.play-control {
+  width: calc(var(--user-scale) * 48px);
+  height: calc(var(--user-scale) * 48px);
+  padding: calc(var(--user-scale) * 10px);
+}
+.play-control svg {
+  /* Preserve the original centre-control proportion. --play-icon is intended for the larger
+     mobile-style token set and makes the desktop pause bars overpower adjacent controls. */
+  width: calc(var(--user-scale) * 30px);
+  height: calc(var(--user-scale) * 30px);
+}
+.seek-control svg,
+.episode-skip svg {
+  width: var(--side-icon);
+  height: var(--side-icon);
+}
+.locked-content { gap: calc(var(--user-scale) * 12px); }
+.locked-button {
+  width: calc(var(--user-scale) * 78px);
+  height: calc(var(--user-scale) * 78px);
+}
+.locked-button svg {
+  width: calc(var(--user-scale) * 34px);
+  height: calc(var(--user-scale) * 34px);
+}
+.locked-label { font-size: calc(var(--user-scale) * 15px); }
+
+.scrub {
+  inset-inline: calc(var(--user-scale) * 14px);
+  width: calc(100% - (var(--user-scale) * 28px));
+}
+.scrub::-webkit-slider-runnable-track { height: calc(var(--user-scale) * 3px); }
+.scrub::-webkit-slider-thumb {
+  width: calc(var(--user-scale) * 9px);
+  height: calc(var(--user-scale) * 9px);
+  margin-top: calc(var(--user-scale) * -3px);
+  border: 0;
+  background: rgba(255, 255, 255, .96);
+  box-shadow:
+    0 0 0 calc(var(--user-scale) * .5px) rgba(0, 0, 0, .34),
+    0 calc(var(--user-scale) * 1px) calc(var(--user-scale) * 3px) rgba(0, 0, 0, .36);
+  transform: scale(1);
+  transition:
+    transform 130ms var(--ease-out),
+    box-shadow 130ms ease,
+    background-color 130ms ease;
+}
+.scrub:hover::-webkit-slider-thumb { transform: scale(1.22); }
+.scrub:active::-webkit-slider-thumb {
+  background: #fff;
+  transform: scale(1.38);
+  box-shadow:
+    0 0 0 calc(var(--user-scale) * 3px) rgba(255, 255, 255, .14),
+    0 calc(var(--user-scale) * 1px) calc(var(--user-scale) * 4px) rgba(0, 0, 0, .42);
+}
+.desktop-control-row {
+  min-height: calc(var(--user-scale) * 58px);
+  grid-template-columns:
+    minmax(calc(var(--user-scale) * 140px), 1fr)
+    auto
+    minmax(calc(var(--user-scale) * 140px), 1fr);
+  gap: calc(var(--user-scale) * 18px);
+  /* Balance the visible control row between the seek line and the viewport edge. This compensates
+     for the responsive bottom inset without moving the seek/timeline cluster itself. */
+  transform: translateY(calc(var(--user-scale) * 7px));
+}
+.time-cluster { padding-left: calc(var(--user-scale) * 14px); }
+.timeline-row { gap: calc(var(--user-scale) * 8px); }
+.chapter-markers { inset-inline: calc(var(--user-scale) * 14px); }
+.chapter-marker {
+  width: calc(var(--user-scale) * 2px);
+  height: calc(var(--user-scale) * 8px);
+}
+.chapter-tooltip {
+  bottom: calc(100% + (var(--user-scale) * 7px));
+  max-width: min(calc(var(--user-scale) * 280px), 55vw);
+  padding: calc(var(--user-scale) * 6px) calc(var(--user-scale) * 9px);
+  border-radius: calc(var(--user-scale) * 7px);
+  font-size: calc(var(--user-scale) * 12px);
+}
+.seek-thumbnail-time {
+  right: calc(var(--user-scale) * 7px);
+  bottom: calc(var(--user-scale) * 6px);
+  padding: calc(var(--user-scale) * 3px) calc(var(--user-scale) * 6px);
+}
+.seek-thumbnail-chapter {
+  top: calc(var(--user-scale) * -8px);
+  padding: calc(var(--user-scale) * 4px) calc(var(--user-scale) * 7px);
+}
+.action-row { gap: calc(var(--user-scale) * 2px); }
+.player-volume-control {
+  gap: calc(var(--user-scale) * 18px);
+  min-height: calc(var(--user-scale) * 32px);
+}
+.player-volume-control .player-volume { width: calc(var(--user-scale) * 98px); }
+.player-volume-icon {
+  width: calc(var(--user-scale) * 24px);
+  height: calc(var(--user-scale) * 24px);
+}
+
+.episode-notch {
+  width: calc(var(--user-scale) * 190px);
+  height: calc(var(--user-scale) * 32px);
+}
+.episode-notch::after {
+  width: calc(var(--user-scale) * 118px);
+  height: calc(var(--user-scale) * 8px);
+  border-radius: 0 0 calc(var(--user-scale) * 8px) calc(var(--user-scale) * 8px);
+}
+.episode-notch:hover { width: calc(var(--user-scale) * 190px); }
+.episode-notch:hover::after { width: calc(var(--user-scale) * 136px); }
+.source-notch {
+  width: calc(var(--user-scale) * 32px);
+  height: calc(var(--user-scale) * 190px);
+}
+.source-notch::after {
+  width: calc(var(--user-scale) * 8px);
+  height: calc(var(--user-scale) * 118px);
+  border-radius: calc(var(--user-scale) * 8px) 0 0 calc(var(--user-scale) * 8px);
+}
+.source-notch:hover::after { height: calc(var(--user-scale) * 136px); }
+
+.opening-back {
+  top: calc(calc(var(--user-scale) * 20px) + env(safe-area-inset-top));
+  right: calc(var(--hp) + calc(var(--user-scale) * 20px));
+  width: calc(var(--user-scale) * 44px);
+  height: calc(var(--user-scale) * 44px);
+}
+.opening-back svg {
+  width: calc(var(--user-scale) * 24px);
+  height: calc(var(--user-scale) * 24px);
+}
+.opening-content {
+  width: min(100%, calc(var(--user-scale) * 720px));
+  min-height: calc(var(--user-scale) * 260px);
+  padding: calc(var(--user-scale) * 24px);
+}
+.opening-logo-slot,
+.opening-logo-fill {
+  width: calc(var(--user-scale) * 300px);
+  max-width: min(78vw, calc(var(--user-scale) * 300px));
+  height: calc(var(--user-scale) * 180px);
+}
+.opening-title {
+  max-width: min(84vw, calc(var(--user-scale) * 680px));
+  font-size: calc(var(--user-scale) * 42px);
+}
+.opening-spinner {
+  width: calc(var(--user-scale) * 54px);
+  height: calc(var(--user-scale) * 54px);
+  border-width: calc(var(--user-scale) * 3px);
+}
+.opening-status {
+  min-height: calc(var(--user-scale) * 40px);
+  margin-top: calc(var(--user-scale) * 16px);
+  font-size: calc(var(--user-scale) * 13px);
+}
+.opening-status span { max-width: min(84vw, calc(var(--user-scale) * 620px)); }
+.opening-progress-track {
+  width: calc(var(--user-scale) * 240px);
+  height: calc(var(--user-scale) * 4px);
+  margin-top: calc(var(--user-scale) * 10px);
+}
+
+.context-menu-empty {
+  padding: calc(var(--panel-scale) * 9px) calc(var(--panel-scale) * 10px);
+  font-size: calc(var(--panel-scale) * 12px);
+}
+.context-menu-submenu::-webkit-scrollbar { width: calc(var(--panel-scale) * 8px); }
+
+/* PiP is intentionally video-only. Hovering reveals one compact escape hatch and nothing else. */
+.pip-exit-button,
+.pip-play-button {
+  position: absolute;
+  z-index: 200;
+  top: 10px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .24);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .72);
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 140ms ease, transform 140ms var(--ease-out), background-color 140ms ease;
+}
+.pip-play-button { right: 52px; }
+.pip-exit-button svg,
+.pip-play-button svg { width: 20px; height: 20px; }
+.pip-exit-button:hover,
+.pip-play-button:hover { background: rgba(0, 0, 0, .92); }
+.player:not(.pip-active) .pip-exit-button,
+.player:not(.pip-active) .pip-play-button { display: none; }
+.player.pip-active > :not(.pip-exit-button):not(.pip-play-button):not(.pip-resize-handle):not(.pip-seek) {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.player.pip-active:hover .pip-exit-button,
+.player.pip-active:hover .pip-play-button,
+.player.pip-active .pip-exit-button:focus-visible,
+.player.pip-active .pip-play-button:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.player.pip-active { cursor: move; }
+.player.pip-active .pip-exit-button,
+.player.pip-active .pip-play-button { cursor: pointer; }
+
+/* Minimal seek bar for PiP: bottom-anchored, revealed with the escape-hatch buttons on hover, and
+   sized in viewport units so it stays proportional as the (reshapeable) window shrinks or grows. */
+.pip-seek {
+  position: absolute;
+  z-index: 200;
+  left: clamp(8px, 3.5%, 16px);
+  right: clamp(8px, 3.5%, 16px);
+  bottom: clamp(7px, 3.5%, 16px);
+  height: clamp(14px, 4.5vw, 22px);
+  display: none;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 140ms ease, transform 140ms var(--ease-out);
+}
+.player.pip-active .pip-seek { display: flex; }
+.player.pip-active:hover .pip-seek,
+.player.pip-active .pip-seek:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.pip-scrub {
+  width: 100%;
+  height: clamp(12px, 4vw, 20px);
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.pip-scrub::-webkit-slider-runnable-track {
+  height: clamp(3px, 1.4vw, 6px);
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      to right,
+      var(--theme-timeline-fill) 0 var(--progress, 0%),
+      var(--theme-timeline-buffered, rgba(255, 255, 255, .45)) var(--progress, 0%) var(--buffered, 0%),
+      var(--theme-timeline-track) var(--buffered, 0%) 100%);
+}
+.pip-scrub::-webkit-slider-thumb {
+  appearance: none;
+  width: clamp(10px, 3.4vw, 15px);
+  height: clamp(10px, 3.4vw, 15px);
+  margin-top: calc(clamp(3px, 1.4vw, 6px) / 2 - clamp(10px, 3.4vw, 15px) / 2);
+  border-radius: 999px;
+  background: var(--theme-control-foreground);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
+}
+.pip-scrub:active::-webkit-slider-thumb { transform: scale(1.15); }
+
+.pip-resize-handle {
+  position: absolute;
+  z-index: 190;
+  display: none;
+}
+.player.pip-active .pip-resize-handle { display: block; }
+.pip-resize-n, .pip-resize-s { left: 12px; right: 12px; height: 7px; }
+.pip-resize-e, .pip-resize-w { top: 12px; bottom: 12px; width: 7px; }
+.pip-resize-n { top: 0; cursor: n-resize; }
+.pip-resize-s { bottom: 0; cursor: s-resize; }
+.pip-resize-e { right: 0; cursor: e-resize; }
+.pip-resize-w { left: 0; cursor: w-resize; }
+.pip-resize-ne, .pip-resize-se, .pip-resize-sw, .pip-resize-nw { width: 14px; height: 14px; }
+.pip-resize-ne { top: 0; right: 0; cursor: ne-resize; }
+.pip-resize-se { right: 0; bottom: 0; cursor: se-resize; }
+.pip-resize-sw { bottom: 0; left: 0; cursor: sw-resize; }
+.pip-resize-nw { top: 0; left: 0; cursor: nw-resize; }
+
+/* Preserve the full-size 330x216 episode cards while scaling both axes together for genuinely
+   narrow windows. Height-aware caps keep the rail usable without clipping its absolute overlays. */
+#episodesModal .track-panel.wide {
+  width: 100%;
+  height: min(clamp(206px, calc(14.7vw + 76px), 270px), calc(100vh - 4px));
+}
+#episodesModal .filter-row {
+  height: clamp(36px, 8vh, 48px);
+  min-height: clamp(36px, 8vh, 48px);
+  gap: clamp(14px, 2vw, 28px);
+}
+#episodesModal .filter-chip {
+  min-height: clamp(36px, 8vh, 48px);
+  font-size: clamp(11px, min(1.1vw, 2.8vh), 15px);
+}
+#episodesModal .track-list {
+  grid-auto-columns: clamp(220px, 25vw, 330px);
+  gap: clamp(10px, 1.1vw, 14px);
+  padding: clamp(6px, 1vh, 8px) clamp(10px, 1.1vw, 22px) clamp(10px, 1.5vh, 14px);
+}
+#episodesModal .track-row.episode-row {
+  width: auto;
+  height: min(clamp(130px, 14.7vw, 194px), calc(100vh - 76px));
+  min-height: 120px;
+}
+#episodesModal .episode-thumb {
+  inset: 0;
+  height: 100%;
+}
+#episodesModal .episode-copy { padding: clamp(8px, .9vw, 14px); }
+#episodesModal .episode-name { font-size: clamp(12px, 1vw, 15px); }
+#episodesModal .episode-overview { font-size: clamp(9px, .8vw, 12px); }
+
+/* Final responsive overrides that must follow the compact PiP and episode-rail rules above. */
+@media (max-height: 419px) {
+  .pause-metadata-content { padding-top: calc(var(--user-scale) * 24px); }
+}
+@media (max-height: 339px) {
+  .pause-metadata-content { padding-bottom: calc(var(--user-scale) * 24px); }
+  .pause-logo { height: calc(var(--user-scale) * 48px); }
+}
+
+.pip-exit-button,
+.pip-play-button {
+  top: calc(var(--user-scale) * 10px);
+  right: calc(var(--user-scale) * 10px);
+  width: calc(var(--user-scale) * 34px);
+  height: calc(var(--user-scale) * 34px);
+  border-radius: calc(var(--user-scale) * 6px);
+}
+.pip-play-button { right: calc(var(--user-scale) * 52px); }
+.pip-exit-button svg,
+.pip-play-button svg {
+  width: calc(var(--user-scale) * 20px);
+  height: calc(var(--user-scale) * 20px);
+}
+.pip-seek {
+  left: clamp(calc(var(--user-scale) * 8px), 3.5%, calc(var(--user-scale) * 16px));
+  right: clamp(calc(var(--user-scale) * 8px), 3.5%, calc(var(--user-scale) * 16px));
+  bottom: clamp(calc(var(--user-scale) * 7px), 3.5%, calc(var(--user-scale) * 16px));
+  height: calc(var(--user-scale) * clamp(14px, 4.5vw, 22px));
+}
+.pip-scrub { height: calc(var(--user-scale) * clamp(12px, 4vw, 20px)); }
+.pip-scrub::-webkit-slider-runnable-track {
+  height: calc(var(--user-scale) * clamp(3px, 1.4vw, 6px));
+}
+.pip-scrub::-webkit-slider-thumb {
+  width: calc(var(--user-scale) * clamp(10px, 3.4vw, 15px));
+  height: calc(var(--user-scale) * clamp(10px, 3.4vw, 15px));
+  margin-top: calc(
+    calc(var(--user-scale) * clamp(3px, 1.4vw, 6px)) / 2 -
+    calc(var(--user-scale) * clamp(10px, 3.4vw, 15px)) / 2
+  );
+}
+.pip-resize-n,
+.pip-resize-s {
+  left: calc(var(--user-scale) * 12px);
+  right: calc(var(--user-scale) * 12px);
+  height: calc(var(--user-scale) * 7px);
+}
+.pip-resize-e,
+.pip-resize-w {
+  top: calc(var(--user-scale) * 12px);
+  bottom: calc(var(--user-scale) * 12px);
+  width: calc(var(--user-scale) * 7px);
+}
+.pip-resize-ne,
+.pip-resize-se,
+.pip-resize-sw,
+.pip-resize-nw {
+  width: calc(var(--user-scale) * 14px);
+  height: calc(var(--user-scale) * 14px);
+}
+
+.player-volume-control .player-volume::-webkit-slider-runnable-track {
+  height: calc(var(--user-scale) * 3px);
+}
+.player-volume-control .player-volume::-webkit-slider-thumb {
+  width: calc(var(--user-scale) * 13px);
+  height: calc(var(--user-scale) * 13px);
+  margin-top: calc(var(--user-scale) * -5px);
+}
+
+/* The passive trailer chrome shares the playback WebView and therefore the same slider. */
+#heroTrailerChrome {
+  top: calc(calc(var(--user-scale) * 28px) + env(safe-area-inset-top));
+  right: calc(calc(var(--user-scale) * 28px) + env(safe-area-inset-right));
+  gap: calc(var(--user-scale) * 8px);
+  padding: calc(var(--user-scale) * 6px);
+}
+.hero-trailer-button {
+  width: calc(var(--user-scale) * 36px);
+  height: calc(var(--user-scale) * 36px);
+}
+.hero-trailer-button svg {
+  width: calc(var(--user-scale) * 20px);
+  height: calc(var(--user-scale) * 20px);
+}
+.hero-trailer-volume {
+  width: calc(var(--user-scale) * 96px);
+  height: calc(var(--user-scale) * 4px);
+  margin: 0 calc(var(--user-scale) * 10px) 0 calc(var(--user-scale) * 2px);
+}
+.hero-trailer-volume::-webkit-slider-thumb {
+  width: calc(var(--user-scale) * 13px);
+  height: calc(var(--user-scale) * 13px);
 }

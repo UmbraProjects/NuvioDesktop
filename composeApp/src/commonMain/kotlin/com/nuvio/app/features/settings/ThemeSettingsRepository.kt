@@ -47,6 +47,12 @@ object ThemeSettingsRepository {
     private val _desktopNavigationLayout = MutableStateFlow(DesktopNavigationLayout.Default)
     val desktopNavigationLayout: StateFlow<DesktopNavigationLayout> = _desktopNavigationLayout.asStateFlow()
 
+    private val _desktopAppUiScalePercent = MutableStateFlow(0)
+    val desktopAppUiScalePercent: StateFlow<Int> = _desktopAppUiScalePercent.asStateFlow()
+
+    private val _desktopAppUiScaleAppliesToDetails = MutableStateFlow(true)
+    val desktopAppUiScaleAppliesToDetails: StateFlow<Boolean> = _desktopAppUiScaleAppliesToDetails.asStateFlow()
+
     private val _selectedAppLanguage = MutableStateFlow(AppLanguage.ENGLISH)
     val selectedAppLanguage: StateFlow<AppLanguage> = _selectedAppLanguage.asStateFlow()
 
@@ -71,6 +77,8 @@ object ThemeSettingsRepository {
         _wasdNavigationEnabled.value = false
         WasdNavigation.enabled = false
         _desktopNavigationLayout.value = DesktopNavigationLayout.Default
+        _desktopAppUiScalePercent.value = 0
+        _desktopAppUiScaleAppliesToDetails.value = true
         NativeTabBridge.publishAccentColor(ThemeColors.White.nativeAccentHex)
         NativeTabBridge.publishLiquidGlassEnabled(false)
         _selectedAppLanguage.value = AppLanguage.ENGLISH
@@ -115,6 +123,10 @@ object ThemeSettingsRepository {
         _desktopNavigationLayout.value = DesktopNavigationLayout.fromName(
             ThemeSettingsStorage.loadDesktopNavigationLayout(),
         )
+        _desktopAppUiScalePercent.value =
+            ThemeSettingsStorage.loadDesktopAppUiScalePercent()?.coerceIn(-25, 25) ?: 0
+        _desktopAppUiScaleAppliesToDetails.value =
+            ThemeSettingsStorage.loadDesktopAppUiScaleAppliesToDetails() ?: true
         val appLanguage = AppLanguage.fromCode(ThemeSettingsStorage.loadSelectedAppLanguage())
         ThemeSettingsStorage.applySelectedAppLanguage(appLanguage.code)
         _selectedAppLanguage.value = appLanguage
@@ -212,6 +224,21 @@ object ThemeSettingsRepository {
         if (_desktopNavigationLayout.value == layout) return
         _desktopNavigationLayout.value = layout
         ThemeSettingsStorage.saveDesktopNavigationLayout(layout.name)
+    }
+
+    fun setDesktopAppUiScalePercent(percent: Int) {
+        ensureLoaded()
+        val clamped = percent.coerceIn(-25, 25)
+        if (_desktopAppUiScalePercent.value == clamped) return
+        _desktopAppUiScalePercent.value = clamped
+        ThemeSettingsStorage.saveDesktopAppUiScalePercent(clamped)
+    }
+
+    fun setDesktopAppUiScaleAppliesToDetails(enabled: Boolean) {
+        ensureLoaded()
+        if (_desktopAppUiScaleAppliesToDetails.value == enabled) return
+        _desktopAppUiScaleAppliesToDetails.value = enabled
+        ThemeSettingsStorage.saveDesktopAppUiScaleAppliesToDetails(enabled)
     }
 
     fun setAppLanguage(language: AppLanguage) {

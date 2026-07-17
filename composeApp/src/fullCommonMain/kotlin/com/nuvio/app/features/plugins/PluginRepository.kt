@@ -338,7 +338,7 @@ actual object PluginRepository {
                 season = season,
                 episode = episode,
                 scraperId = scraper.id,
-                scraperSettings = emptyMap(),
+                scraperSettings = loadScraperSettings(scraper.id),
             )
         }
     }
@@ -392,6 +392,7 @@ actual object PluginRepository {
                         supportedTypes = info.supportedTypes,
                         enabled = enabled,
                         manifestEnabled = info.enabled,
+                        hasSettings = info.hasSettings,
                         logo = info.logo,
                         contentLanguage = info.contentLanguage ?: emptyList(),
                         formats = info.formats ?: info.supportedFormats,
@@ -485,6 +486,7 @@ actual object PluginRepository {
                     supportedTypes = scraper.supportedTypes,
                     enabled = scraper.enabled,
                     manifestEnabled = scraper.manifestEnabled,
+                    hasSettings = scraper.hasSettings,
                     logo = scraper.logo,
                     contentLanguage = scraper.contentLanguage,
                     formats = scraper.formats,
@@ -552,6 +554,7 @@ actual object PluginRepository {
                         supportedTypes = it.supportedTypes,
                         enabled = it.enabled,
                         manifestEnabled = it.manifestEnabled,
+                        hasSettings = it.hasSettings,
                         logo = it.logo,
                         contentLanguage = it.contentLanguage,
                         formats = it.formats,
@@ -564,6 +567,14 @@ actual object PluginRepository {
 
     private fun dedupeManifestUrls(urls: List<String>): List<String> =
         urls.map(::ensureManifestSuffix).distinct()
+
+    private fun loadScraperSettings(scraperId: String): Map<String, Any> {
+        val raw = PluginStorage.loadScraperSettings(scraperId)?.trim().orEmpty()
+        if (raw.isBlank()) return emptyMap()
+        val element = runCatching { json.parseToJsonElement(raw) }.getOrNull() as? kotlinx.serialization.json.JsonObject
+            ?: return emptyMap()
+        return element.mapValues { (_, value) -> value }
+    }
 
     private fun ensureManifestSuffix(url: String): String {
         val path = url.substringBefore("?").trimEnd('/')

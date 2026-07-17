@@ -32,15 +32,36 @@ internal class HomeTvRow(
  * (continue watching, then catalog/collection shelves, in emission order).
  * [itemIndex] is the focused position within the focused row's shelf.
  */
-internal class HomeTvFocusState {
-    var sectionIndex by mutableStateOf(0)
+internal class HomeTvFocusState(
+    private val onPositionChanged: ((sectionIndex: Int, itemIndex: Int) -> Unit)? = null,
+) {
+    private var currentSectionIndex by mutableStateOf(0)
+    var sectionIndex: Int
+        get() = currentSectionIndex
+        set(value) {
+            currentSectionIndex = value
+            onPositionChanged?.invoke(value, itemIndices[value] ?: 0)
+        }
     private val itemIndices = mutableStateMapOf<Int, Int>()
 
     var itemIndex: Int
         get() = itemIndices[sectionIndex] ?: 0
         set(value) {
             itemIndices[sectionIndex] = value
+            onPositionChanged?.invoke(sectionIndex, value)
         }
+
+    /** Reads the stored focus position for an arbitrary section (0 if never focused). */
+    fun itemIndexForSection(section: Int): Int = itemIndices[section] ?: 0
+
+    /**
+     * Pre-loads a section's focus position without moving [sectionIndex]. Used to restore the
+     * within-row (horizontal) position on return from another screen while leaving the initial
+     * section focus (e.g. the hero on a fresh launch) untouched.
+     */
+    fun restoreItemIndex(section: Int, index: Int) {
+        itemIndices[section] = index
+    }
 
     fun moveSection(delta: Int, sectionCount: Int) {
         if (sectionCount <= 0) return

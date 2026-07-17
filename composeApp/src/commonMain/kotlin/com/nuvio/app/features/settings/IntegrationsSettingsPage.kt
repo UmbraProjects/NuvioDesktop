@@ -3,8 +3,8 @@ package com.nuvio.app.features.settings
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.CloudQueue
-import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.foundation.lazy.LazyListScope
+import com.nuvio.app.features.discord.DiscordPresenceMode
 import com.nuvio.app.features.discord.DiscordPresenceSettings
 import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
@@ -24,7 +24,7 @@ import org.jetbrains.compose.resources.stringResource
 internal fun LazyListScope.integrationsContent(
     isTablet: Boolean,
     discordPresenceSettings: DiscordPresenceSettings,
-    onDiscordPresenceEnabledChange: (Boolean) -> Unit,
+    onDiscordPresenceModeChange: (DiscordPresenceMode) -> Unit,
     onTmdbClick: () -> Unit,
     onMdbListClick: () -> Unit,
     onDebridClick: () -> Unit,
@@ -78,14 +78,19 @@ internal fun LazyListScope.integrationsContent(
                 )
                 if (isDesktop) {
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
+                    SettingsChoiceRow(
                         title = "Discord Rich Presence",
-                        description = "Show the title and episode you are watching on your Discord profile using Nuvio's app identity.",
-                        checked = discordPresenceSettings.enabled,
-                        icon = Icons.Rounded.SportsEsports,
+                        description = "Show what you are doing in Nuvio on your Discord profile. " +
+                            "Watching shares only active playback; Full also shares browsing, library, and viewing.",
+                        options = listOf(
+                            SettingsChoiceOption(DiscordPresenceMode.Disabled, "Disabled"),
+                            SettingsChoiceOption(DiscordPresenceMode.Watching, "Watching"),
+                            SettingsChoiceOption(DiscordPresenceMode.Full, "Full"),
+                        ),
+                        selectedValue = discordPresenceSettings.mode,
                         isTablet = isTablet,
                         modifier = androidx.compose.ui.Modifier.settingsScrollAnchor(SettingsScrollAnchor.DiscordPresence),
-                        onCheckedChange = onDiscordPresenceEnabledChange,
+                        onSelected = onDiscordPresenceModeChange,
                     )
                 }
             }

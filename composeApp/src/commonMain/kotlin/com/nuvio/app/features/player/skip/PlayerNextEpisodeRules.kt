@@ -1,6 +1,8 @@
 package com.nuvio.app.features.player.skip
 
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.details.resolveSeriesEpisodePosition
+import com.nuvio.app.features.details.sortedPlaybackEpisodePositions
 
 object PlayerNextEpisodeRules {
 
@@ -8,20 +10,50 @@ object PlayerNextEpisodeRules {
         videos: List<MetaVideo>,
         currentSeason: Int?,
         currentEpisode: Int?,
+        currentVideoId: String? = null,
+        parentMetaId: String? = null,
     ): MetaVideo? {
-        if (currentSeason == null || currentEpisode == null) return null
-        val sortedEpisodes = videos
-            .filter { it.season != null && it.episode != null }
-            .sortedWith(
-                compareBy<MetaVideo> { it.season ?: Int.MAX_VALUE }
-                    .thenBy { it.episode ?: Int.MAX_VALUE }
-            )
-
-        val currentIndex = sortedEpisodes.indexOfFirst {
-            it.season == currentSeason && it.episode == currentEpisode
-        }
+        val current = videos.resolveSeriesEpisodePosition(
+            parentMetaId = parentMetaId,
+            videoId = currentVideoId,
+            seasonNumber = currentSeason,
+            episodeNumber = currentEpisode,
+        ) ?: return null
+        val sortedEpisodes = videos.sortedPlaybackEpisodePositions()
+        val currentIndex = sortedEpisodes.indexOfFirst { position -> position.video == current.video }
         if (currentIndex < 0) return null
-        return sortedEpisodes.getOrNull(currentIndex + 1)
+        return sortedEpisodes
+            .drop(currentIndex + 1)
+            .firstOrNull { candidate ->
+                // Never roll from a regular episode into a specials bucket at the end of a run.
+                current.seasonNumber <= 0 || candidate.seasonNumber > 0
+            }
+            ?.video
+    }
+
+    fun resolvePreviousEpisode(
+        videos: List<MetaVideo>,
+        currentSeason: Int?,
+        currentEpisode: Int?,
+        currentVideoId: String? = null,
+        parentMetaId: String? = null,
+    ): MetaVideo? {
+        val current = videos.resolveSeriesEpisodePosition(
+            parentMetaId = parentMetaId,
+            videoId = currentVideoId,
+            seasonNumber = currentSeason,
+            episodeNumber = currentEpisode,
+        ) ?: return null
+        val sortedEpisodes = videos.sortedPlaybackEpisodePositions()
+        val currentIndex = sortedEpisodes.indexOfFirst { position -> position.video == current.video }
+        if (currentIndex <= 0) return null
+        return sortedEpisodes
+            .take(currentIndex)
+            .asReversed()
+            .firstOrNull { candidate ->
+                current.seasonNumber <= 0 || candidate.seasonNumber > 0
+            }
+            ?.video
     }
 
     fun shouldShowNextEpisodeCard(

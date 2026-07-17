@@ -31,10 +31,15 @@ import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.player.PlayerShortcutAction
+import com.nuvio.app.features.player.AppShortcutAction
+import com.nuvio.app.features.player.AppShortcutRebindDialog
 import com.nuvio.app.features.player.PlayerShortcutRebindDialog
 import com.nuvio.app.features.player.ensurePlayerShortcutBindingsLoaded
 import com.nuvio.app.features.player.playerShortcutKeyLabels
 import com.nuvio.app.features.player.resetAllPlayerShortcuts
+import com.nuvio.app.features.player.appShortcutKeyLabels
+import com.nuvio.app.features.player.ensureAppShortcutBindingsLoaded
+import com.nuvio.app.features.player.resetAllAppShortcuts
 
 /**
  * Read-only reference of every desktop keyboard shortcut, and the single authoritative inventory
@@ -53,25 +58,16 @@ private data class Shortcut(
     // Each inner list is one "chord slot" rendered as key-caps; multiple slots are shown as
     // interchangeable alternatives separated by a muted slash (e.g. Space / K).
     val keys: List<List<String>>,
+    val appAction: AppShortcutAction? = null,
 )
 
 private fun key(vararg alternatives: String): List<List<String>> =
     alternatives.map { listOf(it) }
 
-private fun navigationShortcuts(wasdEnabled: Boolean): List<Shortcut> = listOf(
-    Shortcut("Go to Home", key("H")),
-    Shortcut("Open Search", key(if (wasdEnabled) "Q" else "S")),
-    Shortcut("Open Library (toggle back to Home)", key("L")),
-    Shortcut("Open Calendar", key("C")),
-    Shortcut("Play / dismiss focused trailer", key("T")),
-    Shortcut("Toggle trailer mute", key("M")),
-    Shortcut("Swap Starring / Production in hero", key("P")),
-    Shortcut("Toggle fullscreen / windowed", key("F11")),
-    Shortcut("Move focus", if (wasdEnabled) key("W", "A", "S", "D") else key("↑", "↓", "←", "→")),
-    Shortcut("Select / open focused item", key("Enter")),
-    Shortcut("Go back", key("Backspace")),
-    Shortcut("Close / dismiss overlay", key("Esc")),
-)
+private fun navigationShortcuts(labels: Map<AppShortcutAction, String>): List<Shortcut> =
+    AppShortcutAction.entries.map { action ->
+        Shortcut(action.displayName, key(labels[action] ?: "—"), appAction = action)
+    }
 
 /**
  * A player shortcut row. When [action] is set, the primary key renders live from the current
@@ -92,7 +88,9 @@ private fun PlayerRowSpec.toShortcut(labels: Map<PlayerShortcutAction, String>):
 
 private val playerRowSections: List<Pair<String, List<PlayerRowSpec>>> = listOf(
     "Player · Playback" to listOf(
-        PlayerRowSpec(PlayerShortcutAction.PlayPause.displayName, PlayerShortcutAction.PlayPause, extraKeys = listOf("K")),
+        PlayerRowSpec(PlayerShortcutAction.PlayPause.displayName, PlayerShortcutAction.PlayPause),
+        PlayerRowSpec(PlayerShortcutAction.AlternatePlayPause.displayName, PlayerShortcutAction.AlternatePlayPause),
+        PlayerRowSpec(PlayerShortcutAction.ToggleMute.displayName, PlayerShortcutAction.ToggleMute),
         PlayerRowSpec(PlayerShortcutAction.SeekBackward.displayName, PlayerShortcutAction.SeekBackward, extraKeys = listOf("←")),
         PlayerRowSpec(PlayerShortcutAction.SeekForward.displayName, PlayerShortcutAction.SeekForward, extraKeys = listOf("→")),
         PlayerRowSpec(PlayerShortcutAction.SpeedUp.displayName, PlayerShortcutAction.SpeedUp),
@@ -106,13 +104,14 @@ private val playerRowSections: List<Pair<String, List<PlayerRowSpec>>> = listOf(
         PlayerRowSpec(PlayerShortcutAction.OpenSources.displayName, PlayerShortcutAction.OpenSources),
         PlayerRowSpec(PlayerShortcutAction.OpenEpisodes.displayName, PlayerShortcutAction.OpenEpisodes),
         PlayerRowSpec(PlayerShortcutAction.CycleZoom.displayName, PlayerShortcutAction.CycleZoom),
-        PlayerRowSpec("Skip intro / outro (while prompt is shown)", null, fixedKeys = listOf("Tab")),
+        PlayerRowSpec(PlayerShortcutAction.SkipInterval.displayName, PlayerShortcutAction.SkipInterval),
     ),
     "Player · Video Enhancement" to listOf(
         PlayerRowSpec(PlayerShortcutAction.CycleSvp.displayName, PlayerShortcutAction.CycleSvp),
         PlayerRowSpec(PlayerShortcutAction.CycleHdr.displayName, PlayerShortcutAction.CycleHdr),
         PlayerRowSpec(PlayerShortcutAction.CycleColorProfile.displayName, PlayerShortcutAction.CycleColorProfile),
         PlayerRowSpec(PlayerShortcutAction.CycleAnime.displayName, PlayerShortcutAction.CycleAnime),
+        PlayerRowSpec(PlayerShortcutAction.ToggleMpvDiagnostics.displayName, PlayerShortcutAction.ToggleMpvDiagnostics),
     ),
 )
 
@@ -134,22 +133,44 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
     }
 
     item(key = "keyboard-shortcuts-navigation") {
+        LaunchedEffect(Unit) { ensureAppShortcutBindingsLoaded() }
         val wasdEnabled by ThemeSettingsRepository.wasdNavigationEnabled.collectAsState()
+        val appLabels by appShortcutKeyLabels().collectAsState()
+        var rebindingApp by remember { mutableStateOf<AppShortcutAction?>(null) }
         SettingsSection(title = "Navigation", isTablet = isTablet) {
             SettingsGroup(isTablet = isTablet) {
-                SettingsSwitchRow(
-                    title = "WASD navigation (TKL mode)",
-                    description = "Use W/A/S/D like the arrow keys for browsing; Search moves to Q. " +
-                        "For keyboards without an arrow cluster. Doesn't apply while typing (e.g. Search).",
-                    checked = wasdEnabled,
+                SettingsChoiceRow(
+                    title = "Move focus",
+                    description = null,
+                    options = listOf(
+                        SettingsChoiceOption(false, "Arrows"),
+                        SettingsChoiceOption(true, "WASD"),
+                    ),
+                    selectedValue = wasdEnabled,
                     isTablet = isTablet,
-                    onCheckedChange = { ThemeSettingsRepository.setWasdNavigationEnabled(it) },
+                    flushContent = true,
+                    onSelected = { enabled ->
+                        ThemeSettingsRepository.setWasdNavigationEnabled(enabled)
+                        ensureAppShortcutBindingsLoaded()
+                    },
                 )
-                navigationShortcuts(wasdEnabled).forEach { shortcut ->
+                navigationShortcuts(appLabels).forEach { shortcut ->
                     SettingsGroupDivider(isTablet = isTablet)
-                    ShortcutRow(shortcut = shortcut, isTablet = isTablet)
+                    ShortcutRow(
+                        shortcut = shortcut,
+                        isTablet = isTablet,
+                        onRebind = shortcut.appAction?.let { action -> { rebindingApp = action } },
+                    )
                 }
             }
+        }
+        Text(
+            text = "Reset navigation shortcuts to defaults",
+            color = MaterialTheme.nuvio.colors.accent,
+            modifier = Modifier.clickable { resetAllAppShortcuts() }.padding(NuvioTokens.Space.s12),
+        )
+        rebindingApp?.let { action ->
+            AppShortcutRebindDialog(action, onDismiss = { rebindingApp = null })
         }
     }
 

@@ -9,10 +9,16 @@ const isHeroTrailerSurface = (() => {
 })();
 
 const root = document.getElementById("playerRoot");
+const contextMenu = document.getElementById("contextMenu");
 const seek = document.getElementById("seek");
+const pipSeek = document.getElementById("pipSeek");
 const timeline = document.getElementById("timeline");
 const chapterMarkers = document.getElementById("chapterMarkers");
 const chapterTooltip = document.getElementById("chapterTooltip");
+const seekThumbnail = document.getElementById("seekThumbnail");
+const seekThumbnailImage = document.getElementById("seekThumbnailImage");
+const seekThumbnailChapter = document.getElementById("seekThumbnailChapter");
+const seekThumbnailTime = document.getElementById("seekThumbnailTime");
 const positionLabel = document.getElementById("position");
 const durationLabel = document.getElementById("duration");
 const bufferingStatus = document.getElementById("bufferingStatus");
@@ -37,6 +43,11 @@ const streamTitle = document.getElementById("streamTitle");
 const providerName = document.getElementById("providerName");
 const resizeLabel = document.getElementById("resizeLabel");
 const speedLabel = document.getElementById("speedLabel");
+const speedButton = document.getElementById("speedButton");
+const playerVolumeSlider = document.getElementById("playerVolumeSlider");
+const playerVolumeIcon = document.getElementById("playerVolumeIcon");
+const controlTooltip = document.getElementById("controlTooltip");
+const actionRow = document.querySelector(".action-row");
 const subtitlesLabel = document.getElementById("subtitlesLabel");
 const audioLabel = document.getElementById("audioLabel");
 const sourcesLabel = document.getElementById("sourcesLabel");
@@ -44,7 +55,14 @@ const episodesLabel = document.getElementById("episodesLabel");
 const submitIntroButton = document.getElementById("submitIntroButton");
 const lockButton = document.getElementById("lockButton");
 const videoSettingsButton = document.getElementById("videoSettingsButton");
+const pictureInPictureButton = document.getElementById("pictureInPictureButton");
+const pictureInPictureExitButton = document.getElementById("pictureInPictureExitButton");
+const pictureInPicturePlayButton = document.getElementById("pictureInPicturePlayButton");
+const pictureInPictureToggleIcon = document.getElementById("pictureInPictureToggleIcon");
+const pictureInPictureResizeHandles = document.querySelectorAll("[data-pip-resize]");
 const backButton = document.getElementById("backButton");
+const playerClockTime = document.getElementById("playerClockTime");
+const playerEndTime = document.getElementById("playerEndTime");
 const openingOverlay = document.getElementById("openingOverlay");
 const openingArtwork = document.getElementById("openingArtwork");
 const openingBackButton = document.getElementById("openingBackButton");
@@ -75,9 +93,13 @@ const nextEpisodeStatus = document.getElementById("nextEpisodeStatus");
 const nextEpisodeAction = document.getElementById("nextEpisodeAction");
 const sourcesButton = document.getElementById("sourcesButton");
 const episodesButton = document.getElementById("episodesButton");
+const episodeNotch = document.getElementById("episodeNotch");
+const episodeNotchLabel = document.getElementById("episodeNotchLabel");
+const sourceNotch = document.getElementById("sourceNotch");
 const lockedLabel = document.getElementById("lockedLabel");
 const audioModal = document.getElementById("audioModal");
 const subtitleModal = document.getElementById("subtitleModal");
+const audioPanel = audioModal ? audioModal.querySelector(".track-panel") : null;
 const audioTrackList = document.getElementById("audioTrackList");
 const subtitleTrackList = document.getElementById("subtitleTrackList");
 const subtitlePanelTitle = document.getElementById("subtitlePanelTitle");
@@ -103,6 +125,8 @@ const fontSizePlus = document.getElementById("fontSizePlus");
 const fontFamilySelect = document.getElementById("fontFamilySelect");
 const outlineLabel = document.getElementById("outlineLabel");
 const outlineToggle = document.getElementById("outlineToggle");
+const shadowLabel = document.getElementById("shadowLabel");
+const shadowToggle = document.getElementById("shadowToggle");
 const boldLabel = document.getElementById("boldLabel");
 const boldToggle = document.getElementById("boldToggle");
 const bottomOffsetLabel = document.getElementById("bottomOffsetLabel");
@@ -119,6 +143,7 @@ const outlineColorLabel = document.getElementById("outlineColorLabel");
 const outlineColorSwatches = document.getElementById("outlineColorSwatches");
 const subtitleStyleReset = document.getElementById("subtitleStyleReset");
 const sourceModal = document.getElementById("sourceModal");
+const sourcePanel = sourceModal ? sourceModal.querySelector(".track-panel") : null;
 const sourcePanelTitle = document.getElementById("sourcePanelTitle");
 const sourceReloadButton = document.getElementById("sourceReloadButton");
 const sourceCloseButton = document.getElementById("sourceCloseButton");
@@ -172,6 +197,7 @@ let state = {
   pauseOverlayDescription: "",
   resizeModeLabel: "Fit",
   playbackSpeedLabel: "1x",
+  playbackSpeedFineIncrementsEnabled: false,
   subtitlesLabel: "Subs",
   audioLabel: "Audio",
   sourcesLabel: "Sources",
@@ -184,6 +210,12 @@ let state = {
   unlockLabel: "Unlock player controls",
   submitIntroLabel: "Submit Intro",
   videoSettingsLabel: "Video settings",
+  pictureInPictureLabel: "Picture in picture",
+  pictureInPictureActive: false,
+  desktopHdrModeLabel: "Auto",
+  desktopColorProfileLabel: "Neutral",
+  desktopAnimeModeLabel: "Off",
+  desktopAnimeSvpEnabled: false,
   tapToUnlockLabel: "Tap to unlock",
   playbackErrorTitle: "Playback error",
   playbackErrorMessage: "",
@@ -227,6 +259,7 @@ let state = {
   loadingSubtitleLinesLabel: "Loading subtitle lines...",
   fontSizeLabel: "Font Size",
   outlineLabel: "Outline",
+  shadowLabel: "Shadow",
   boldLabel: "Bold",
   bottomOffsetLabel: "Bottom Offset",
   colorLabel: "Color",
@@ -253,6 +286,11 @@ let state = {
   lockedOverlayVisible: false,
   controlsVisible: true,
   mouseMoveRevealsControlsEnabled: false,
+  legacyHudEnabled: false,
+  alwaysShowClock: false,
+  appFullscreenKeyCode: 122,
+  playerShortcutKeyCodes: {},
+  uiScalePercent: 0,
   parentalWarnings: [],
   showParentalGuide: false,
   showOpeningOverlay: false,
@@ -284,6 +322,7 @@ let state = {
   audioTracks: [],
   subtitleTracks: [],
   sourceIsLoading: false,
+  sourceBadgePlacement: "bottom",
   sourceFilters: [],
   sourceItems: [],
   episodeItems: [],
@@ -301,6 +340,10 @@ let state = {
   showP2pConsent: false,
   subtitleActiveTab: "BuiltIn",
   addonSubtitleItems: [],
+  // When true, render the app-pushed (preferred-language-filtered) built-in list instead of the
+  // live native track list, so "Show Only Preferred Languages" applies to embedded subs too.
+  builtInSubtitleFilterActive: false,
+  builtInSubtitleItems: [],
   isLoadingAddonSubtitles: false,
   selectedAddonSubtitleId: "",
   useCustomSubtitles: false,
@@ -344,6 +387,8 @@ let keyboardEpisodeIndex = 0;
 let keyboardEpisodeStreamIndex = 0;
 let keyboardEpisodeShowingStreams = false;
 let episodeListRenderKey = "";
+let episodeFocusPositionKey = "";
+const episodeArtworkPreloads = new Map();
 let submitIntroDraft = {
   segmentType: "intro",
   startTime: "00:00",
@@ -369,11 +414,55 @@ let chromeInteractionLastNotedAt = 0;
 let isChromePointerInside = false;
 let isChromePointerDown = false;
 let isChromeFocusInside = false;
+let hostChromeInteractionActive = false;
 let nativeViewportTimer = 0;
+
+// User UI-scale knob (desktopUiScalePercent, -50..+50). Native player hosts apply it as browser
+// page zoom so viewport reflow, media queries, text, spacing, and pointer coordinates scale as one.
+// The CSS scale variables remain at 1 for legacy measurement sites.
+let appliedUiScalePercent = null;
+let appliedCombinedUserScale = null;
+// Cache the last emitted scale-variable signature. renderChrome calls applyUserUiScale on every
+// state push (including position ticks), so guard the setProperty writes behind a change check to
+// avoid needless style invalidation when nothing scale-related moved.
+let appliedScaleSignature = "";
+function applyUserUiScale(percent) {
+  const nextPercent = Math.max(-50, Math.min(50, Math.round(Number(percent) || 0)));
+  if (nextPercent !== appliedUiScalePercent) {
+    appliedUiScalePercent = nextPercent;
+    send("setControlsUiScalePercent", nextPercent);
+  }
+  updateViewportUiScale();
+}
+
+function updateViewportUiScale() {
+  const userScale = 1;
+  // The native WebView zoom is now the only scale. Keeping these multipliers neutral avoids the
+  // old double-scaling path while preserving the variables consumed throughout the stylesheet.
+  const autoScale = 1;
+  const combined = userScale * autoScale;
+
+  const panelScale = 1;
+
+  const feedbackViewportScale = 1;
+  const feedbackScale = feedbackViewportScale * userScale;
+
+  const signature = `${combined}|${panelScale}|${feedbackScale}`;
+  if (signature === appliedScaleSignature) return;
+  appliedScaleSignature = signature;
+  appliedCombinedUserScale = combined;
+
+  const rootStyle = document.documentElement.style;
+  rootStyle.setProperty("--user-scale", String(combined));
+  rootStyle.setProperty("--panel-scale", String(panelScale));
+  rootStyle.setProperty("--feedback-scale", String(feedbackScale));
+  rootStyle.setProperty("--feedback-hidden-scale", String(feedbackScale * 0.85));
+}
+
 const prefersReducedMotion = window.matchMedia &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const modalTransitionMs = prefersReducedMotion ? 1 : 240;
-const chromeAutoHideDelayMs = 3500;
+const chromeAutoHideDelayMs = 5500;
 const chromeActivityThrottleMs = 300;
 const chromeInteractionSelector = [
   "button",
@@ -381,6 +470,11 @@ const chromeInteractionSelector = [
   "textarea",
   "select",
   "[contenteditable='true']",
+  // The whole top band counts as chrome so clicks on the title/metadata/empty header space don't
+  // fall through to the video surface (toggling playback or, on a double-click, fullscreen).
+  // .metadata is position:fixed in the legacy HUD but is still a DOM descendant of .header.
+  ".header",
+  ".metadata",
   ".header-actions",
   ".center-controls",
   ".progress",
@@ -572,6 +666,11 @@ const setProgress = (positionMs, durationMs) => {
     ? Math.max(percent, Math.min(100, bufferedMs / durationMs * 100))
     : 0;
   seek.style.setProperty("--buffered", `${bufferedPercent}%`);
+  if (pipSeek) {
+    pipSeek.value = seek.value;
+    pipSeek.style.setProperty("--progress", `${percent}%`);
+    pipSeek.style.setProperty("--buffered", `${bufferedPercent}%`);
+  }
   positionLabel.textContent = formatTime(positionMs);
   durationLabel.textContent = formatTime(durationMs);
 };
@@ -584,6 +683,13 @@ const normalizedChapters = () => (Array.isArray(state.chapters) ? state.chapters
   }))
   .filter(chapter => Number.isFinite(chapter.startTime) && chapter.startTime >= 0 && chapter.title)
   .sort((a, b) => a.startTime - b.startTime);
+
+// A single chapter conveys no navigational meaning, so only surface chapter names
+// (seek-preview label and hover tooltip) when the file actually has multiple chapters.
+const displayChapters = () => {
+  const chapters = normalizedChapters();
+  return chapters.length > 1 ? chapters : [];
+};
 
 const renderChapterMarkers = durationMs => {
   const chapters = normalizedChapters();
@@ -606,9 +712,68 @@ const hideChapterTooltip = () => {
   chapterTooltip.textContent = "";
 };
 
+const seekThumbnailCache = new Map();
+let seekThumbnailRequestTimer = 0;
+let pendingSeekThumbnailPosition = -1;
+
+const hideSeekThumbnail = () => {
+  window.clearTimeout(seekThumbnailRequestTimer);
+  seekThumbnailRequestTimer = 0;
+  pendingSeekThumbnailPosition = -1;
+  seekThumbnail.hidden = true;
+};
+
+const showSeekThumbnailAt = event => {
+  const durationMs = Math.max(0, Number(state.durationMs) || 0);
+  const rect = seek.getBoundingClientRect();
+  if (durationMs <= 0 || rect.width <= 0) return hideSeekThumbnail();
+  const progress = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  const exactPositionMs = Math.round(durationMs * progress);
+  const thumbnailPositionMs = Math.round(exactPositionMs / 5000) * 5000;
+  const localX = Math.max(112, Math.min(rect.width - 112, event.clientX - rect.left));
+  seekThumbnail.style.left = `${rect.left - timeline.getBoundingClientRect().left + localX}px`;
+  seekThumbnailTime.textContent = formatTime(exactPositionMs);
+  const positionSeconds = exactPositionMs / 1000;
+  const chapters = displayChapters();
+  const chapter = chapters.find((candidate, index) => {
+    const nextStart = chapters[index + 1]?.startTime ?? Number.POSITIVE_INFINITY;
+    return positionSeconds >= candidate.startTime && positionSeconds < nextStart;
+  });
+  seekThumbnailChapter.textContent = chapter?.title || "";
+  seekThumbnailChapter.hidden = !chapter;
+  const cached = seekThumbnailCache.get(thumbnailPositionMs);
+  if (cached) {
+    seekThumbnailImage.src = cached;
+    seekThumbnail.hidden = false;
+    return;
+  }
+  seekThumbnailImage.removeAttribute("src");
+  seekThumbnail.hidden = false;
+  if (pendingSeekThumbnailPosition === thumbnailPositionMs) return;
+  pendingSeekThumbnailPosition = thumbnailPositionMs;
+  window.clearTimeout(seekThumbnailRequestTimer);
+  seekThumbnailRequestTimer = window.setTimeout(() => {
+    send("seekThumbnail", thumbnailPositionMs);
+  }, 24);
+};
+
+window.nuvioSeekThumbnailReady = (positionMs, dataUrl) => {
+  const position = Number(positionMs) || 0;
+  const url = String(dataUrl || "");
+  if (!url) return;
+  seekThumbnailCache.set(position, url);
+  while (seekThumbnailCache.size > 36) {
+    seekThumbnailCache.delete(seekThumbnailCache.keys().next().value);
+  }
+  if (pendingSeekThumbnailPosition === position) {
+    seekThumbnailImage.src = url;
+    seekThumbnail.hidden = false;
+  }
+};
+
 const showChapterTooltipAt = event => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
-  const chapters = normalizedChapters();
+  const chapters = displayChapters();
   if (durationMs <= 0 || chapters.length === 0) return hideChapterTooltip();
   const rect = seek.getBoundingClientRect();
   if (rect.width <= 0) return hideChapterTooltip();
@@ -634,6 +799,28 @@ const showChapterTooltipAt = event => {
 const setText = (element, text) => {
   element.textContent = text || "";
   element.hidden = !text;
+};
+
+const normalizeEpisodeDisplayText = value => {
+  const text = String(value || "").trim();
+  let firstCode = null;
+  const cleaned = text.replace(
+    /(?:S(?:eason)?\s*0*(\d+)\s*E(?:pisode)?\s*0*(\d+)|0*(\d+)\s*x\s*0*(\d+))/gi,
+    (match, seasonA, episodeA, seasonB, episodeB) => {
+      const code = `${Number(seasonA || seasonB)}:${Number(episodeA || episodeB)}`;
+      if (!firstCode) {
+        firstCode = code;
+        return match;
+      }
+      return code === firstCode ? "" : match;
+    },
+  );
+  return cleaned
+    .replace(/([•·|\-])\s*([•·|\-])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([•·|])/g, " $1")
+    .replace(/([•·|])\s*$/g, "")
+    .trim();
 };
 
 const setVisible = (element, visible) => {
@@ -670,6 +857,14 @@ const setImageSource = (element, source) => {
       if (element.getAttribute("src") !== url) return;
       element.removeAttribute("data-loaded-src");
       setImageVisualState(element, "error");
+      if (element.closest(".episode-thumb") && element.getAttribute("data-retried-src") !== url) {
+        element.setAttribute("data-retried-src", url);
+        window.setTimeout(() => {
+          if (element.getAttribute("src") !== url) return;
+          element.removeAttribute("src");
+          setImageSource(element, url);
+        }, 700);
+      }
     };
     element.setAttribute("src", url);
     if (element.complete && element.naturalWidth > 0) {
@@ -712,7 +907,7 @@ const renderPauseMetadataOverlay = showOpening => {
 
   const logoUrl = setImageSource(pauseLogo, state.pauseOverlayLogo);
   const titleText = String(state.title || "").trim();
-  const episodeInfo = String(state.pauseOverlayEpisodeInfo || state.providerName || "").trim();
+  const episodeInfo = String(state.pauseOverlayEpisodeInfo || "").trim();
   const episodeTitleText = String(state.pauseOverlayEpisodeTitle || "").trim();
   const descriptionText = String(state.pauseOverlayDescription || "").trim();
   const showOverlay = Boolean(
@@ -735,6 +930,16 @@ const renderPauseMetadataOverlay = showOpening => {
   pauseDescription.hidden = !descriptionText;
   pauseMetadataOverlay.classList.toggle("visible", showOverlay);
   pauseMetadataOverlay.setAttribute("aria-hidden", showOverlay ? "false" : "true");
+  // The clock is part of the chrome that hides when the pause overlay appears; flag the overlay so
+  // CSS keeps the clock (top-right) visible above it instead of fading out with everything else.
+  root.classList.toggle("pause-overlay-visible", showOverlay);
+};
+
+const suppressPauseMetadataForPlaybackInteraction = () => {
+  resetPauseMetadataTimer();
+  pauseMetadataOverlay.classList.remove("visible");
+  pauseMetadataOverlay.setAttribute("aria-hidden", "true");
+  root.classList.remove("pause-overlay-visible");
 };
 
 const normalizedOpeningProgress = () => {
@@ -744,9 +949,9 @@ const normalizedOpeningProgress = () => {
 
 const playbackErrorText = () => String(state.playbackErrorMessage || "").trim();
 
-const rangePositionMs = () => {
+const rangePositionMs = (input = seek) => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
-  return durationMs > 0 ? Math.round(durationMs * Number(seek.value) / 1000) : 0;
+  return durationMs > 0 ? Math.round(durationMs * Number(input.value) / 1000) : 0;
 };
 
 const modalByName = {
@@ -839,6 +1044,646 @@ const openPlayerModal = modal => {
   renderChrome();
 };
 
+const parsedPlaybackSpeed = () => {
+  const parsed = Number.parseFloat(String(state.playbackSpeedLabel || "1").replace(/[^0-9.]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 1;
+};
+
+const playbackSpeedMenuItem = (speed, fineSpeeds = []) => ({
+  label: `${speed.toFixed(1).replace(/\.0$/, "")}x`,
+  action: `speed:${speed.toFixed(1)}`,
+  selectedField: "playbackSpeedValue",
+  selectedValue: speed.toFixed(1),
+  ...(fineSpeeds.length > 0 ? {
+    children: fineSpeeds.map(fineSpeed => ({
+      label: `${fineSpeed.toFixed(1).replace(/\.0$/, "")}x`,
+      action: `speed:${fineSpeed.toFixed(1)}`,
+      selectedField: "playbackSpeedValue",
+      selectedValue: fineSpeed.toFixed(1),
+    })),
+  } : {}),
+});
+
+// Standard half-step speeds are immediate click targets. Hovering opens only the nearby tenths,
+// avoiding the former range-of-ranges spiderweb while retaining precise control when wanted.
+const playbackSpeedMenuItems = [
+  playbackSpeedMenuItem(1.0, [1.1, 1.2, 1.3, 1.4]),
+  playbackSpeedMenuItem(1.5, [1.6, 1.7, 1.8, 1.9]),
+  playbackSpeedMenuItem(2.0, [2.1, 2.2, 2.3, 2.4]),
+  playbackSpeedMenuItem(2.5, [2.6, 2.7, 2.8, 2.9]),
+  playbackSpeedMenuItem(3.0, [3.1, 3.2, 3.3, 3.4]),
+  playbackSpeedMenuItem(3.5, [3.6, 3.7, 3.8, 3.9]),
+  playbackSpeedMenuItem(4.0),
+];
+
+// Player HUD UI-scale presets (-50..+50%, matching the Playback settings slider). Exposed in the
+// right-click menu for quick testing; each preset checkmarks against the live uiScalePercent and
+// the two nudge rows step by the same 5% as the slider.
+const uiScalePresetItems = [{ label: "Increase (+5%)", action: "uiScaleDelta:5" },
+  { label: "Decrease (−5%)", action: "uiScaleDelta:-5" }];
+for (let pct = 50; pct >= -50; pct -= 10) {
+  uiScalePresetItems.push({
+    label: pct === 0 ? "Default (0%)" : `${pct > 0 ? "+" : ""}${pct}%`,
+    action: `uiScaleSet:${pct}`,
+    selectedField: "uiScalePercentValue",
+    selectedValue: String(pct),
+  });
+}
+
+const contextMenuItems = [
+  {
+    label: "Playback",
+    children: [
+      { label: "Play / Pause", action: "send:toggle", shortcut: "K" },
+      { label: "Seek back 10 seconds", action: "send:seekBack", shortcut: "←" },
+      { label: "Seek forward 10 seconds", action: "send:seekForward", shortcut: "→" },
+      { label: "Playback speed", children: playbackSpeedMenuItems },
+      { label: "Previous episode", action: "send:previousEpisode" },
+      { label: "Next episode", action: "send:nextEpisode" },
+      { label: "Picture in picture", action: "send:pictureInPicture" },
+    ],
+  },
+  {
+    label: "Subtitles",
+    children: [
+      { label: "Built-in", dynamicKey: "subtitleTracks", children: [] },
+      { label: "Addon", dynamicKey: "addonSubtitles", children: [] },
+      {
+        label: "Style",
+        children: [
+          { label: "Outline", action: "subtitleStyle:outline", toggleKey: "outlineEnabled" },
+          { label: "Shadow", action: "subtitleStyle:shadow", toggleKey: "shadowEnabled" },
+          { label: "Bold", action: "subtitleStyle:bold", toggleKey: "bold" },
+          { label: "Font", dynamicKey: "fontFamilies", children: [] },
+          { label: "Text color", dynamicKey: "subtitleColors", children: [] },
+          { label: "Outline color", dynamicKey: "outlineColors", children: [] },
+          { label: "Font size", children: [
+            { label: "Increase", action: "send:subtitleFontSizeDelta:2" },
+            { label: "Decrease", action: "send:subtitleFontSizeDelta:-2" },
+          ] },
+          { label: "Bottom offset", children: [
+            { label: "Increase", action: "send:subtitleBottomOffsetDelta:5" },
+            { label: "Decrease", action: "send:subtitleBottomOffsetDelta:-5" },
+          ] },
+          { label: "Text opacity", children: [
+            { label: "Increase", action: "subtitleOpacity:10" },
+            { label: "Decrease", action: "subtitleOpacity:-10" },
+          ] },
+          { label: "Open style panel", action: "subtitleTab:2" },
+          { label: "Reset style defaults", action: "send:subtitleStyleReset" },
+        ],
+      },
+      // Auto sync needs its full card (status text + cue list) to be usable, so the menu
+      // entry opens the style panel where it lives instead of firing blind Reload/Capture.
+      { label: "Auto sync", action: "subtitleTab:2" },
+      { label: "Subtitle delay", children: [
+        { label: "Increase", action: "send:subtitleDelayDelta:100" },
+        { label: "Decrease", action: "send:subtitleDelayDelta:-100" },
+        { label: "Reset", action: "send:subtitleDelayReset" },
+      ] },
+    ],
+  },
+  {
+    label: "Audio",
+    children: [
+      { label: "Audio tracks", dynamicKey: "audioTracks", children: [] },
+      { label: "Mute", action: "send:keyboardToggleMute", toggleKey: "localMuted" },
+    ],
+  },
+  {
+    label: "Video",
+    children: [
+      { label: "Aspect ratio", children: [
+        { label: "Fit", action: "resizeMode:0", selectedField: "resizeModeLabel" },
+        { label: "Fill", action: "resizeMode:1", selectedField: "resizeModeLabel" },
+        { label: "Zoom", action: "resizeMode:2", selectedField: "resizeModeLabel" },
+      ] },
+      { label: "Video settings", children: [
+        { label: "Auto", action: "send:selectDesktopHdrMode:0", selectedField: "desktopHdrModeLabel" },
+        { label: "Always Tonemap", action: "send:selectDesktopHdrMode:1", selectedField: "desktopHdrModeLabel" },
+        { label: "Always Passthrough", action: "send:selectDesktopHdrMode:2", selectedField: "desktopHdrModeLabel" },
+      ] },
+      { label: "Color profile", children: [
+        { label: "Neutral", action: "send:selectDesktopColorProfile:0", selectedField: "desktopColorProfileLabel" },
+        { label: "Cinematic", action: "send:selectDesktopColorProfile:1", selectedField: "desktopColorProfileLabel" },
+        { label: "Vivid", action: "send:selectDesktopColorProfile:2", selectedField: "desktopColorProfileLabel" },
+      ] },
+      { label: "Anime shader", dynamicKey: "animeShaders", children: [] },
+      { label: "SVP interpolation", action: "send:keyboardCycleAnimeSvp", toggleKey: "desktopAnimeSvpEnabled" },
+      { label: "Advanced (mpv)", dynamicKey: "mpvOptions", children: [] },
+      { label: "UI scale", children: uiScalePresetItems },
+    ],
+  },
+  {
+    label: "Tools",
+    children: [
+      { label: "Sources", action: "modal:sources" },
+      { label: "Episodes", action: "modal:episodes" },
+      { label: "Submit intro / outro", action: "modal:submitIntro" },
+    ],
+  },
+  {
+    label: "Window",
+    children: [
+      { label: "Fullscreen", action: "send:toggleFullscreen", shortcut: "F11" },
+      { label: "Close playback", action: "send:back", shortcut: "Esc" },
+    ],
+  },
+  { label: "Copy stream link", action: "copyStreamUrl" },
+  { label: "Stream failover", action: "toggleStreamFailover", toggleKey: "streamFailoverEnabled" },
+  { label: "MPV diagnostics", action: "toggleMpvDiagnostics", toggleKey: "mpvDiagnosticsEnabled" },
+  { label: "Close menu after selecting", action: "toggleCloseOnSelect", toggleKey: "closeMenuOnSelect" },
+];
+
+let contextMenuOpen = false;
+let consumeContextMenuDismissalClick = false;
+let contextMenuDismissalClickTimer = 0;
+let localVolume = 100;
+let localMuted = false;
+let mpvDiagnosticsEnabled = false;
+const contextMenuDynamicSubmenus = new Map();
+
+// Single toggle path for the MPV diagnostics overlay: used by the context-menu entry and
+// invoked directly from Kotlin for the rebindable keyboard shortcut, so the menu indicator,
+// chrome class, pill, and the Kotlin-side stats overlay all stay in sync.
+window.nuvioToggleMpvDiagnostics = () => {
+  mpvDiagnosticsEnabled = !mpvDiagnosticsEnabled;
+  renderChrome();
+  refreshContextMenuIndicators();
+  window.nuvioShowPresetPill("MPV diagnostics", mpvDiagnosticsEnabled ? "On" : "Off");
+  send("toggleMpvDiagnostics", mpvDiagnosticsEnabled ? 1 : 0);
+};
+
+// When false, selecting an in-menu adjustment (toggle, colour, size, track…) keeps the
+// context menu open so several tweaks can be made without re-opening it each time.
+// Actions that navigate to another surface (a modal, fullscreen, closing playback) always
+// close the menu regardless of this preference. Persisted so the choice survives restarts.
+let closeMenuOnSelect = (() => {
+  try {
+    return window.localStorage.getItem("nuvioContextMenuCloseOnSelect") !== "false";
+  } catch (error) {
+    return true;
+  }
+})();
+
+const setCloseMenuOnSelect = value => {
+  closeMenuOnSelect = Boolean(value);
+  try {
+    window.localStorage.setItem("nuvioContextMenuCloseOnSelect", closeMenuOnSelect ? "true" : "false");
+  } catch (error) {
+    /* storage unavailable — keep the in-memory value */
+  }
+};
+
+const contextMenuValue = key => {
+  if (key === "localMuted") return localMuted;
+  if (key === "mpvDiagnosticsEnabled") return mpvDiagnosticsEnabled;
+  if (key === "closeMenuOnSelect") return closeMenuOnSelect;
+  if (key === "uiScalePercentValue") return String(Number(state.uiScalePercent) || 0);
+  if (key === "playbackSpeedValue") return parsedPlaybackSpeed().toFixed(1);
+  if (key === "outlineEnabled" || key === "shadowEnabled" || key === "bold") {
+    return Boolean(state.subtitleStyle && state.subtitleStyle[key]);
+  }
+  return state[key];
+};
+
+// Immediately reflects a menu selection in local state so the indicator updates without waiting
+// for the value to round-trip back from the player (which may be stalled while paused).
+const applyOptimisticContextSelection = button => {
+  const selectedField = button.dataset.selectedField;
+  if (selectedField) {
+    state = { ...state, [selectedField]: button.dataset.selectedValue };
+    return;
+  }
+  const toggleKey = button.dataset.toggleKey;
+  if (!toggleKey || toggleKey === "closeMenuOnSelect") return;
+  if (toggleKey === "localMuted") {
+    localMuted = !localMuted;
+  } else if (toggleKey === "outlineEnabled" || toggleKey === "shadowEnabled" || toggleKey === "bold") {
+    const style = { ...(state.subtitleStyle || {}) };
+    style[toggleKey] = !style[toggleKey];
+    state = { ...state, subtitleStyle: style };
+  } else {
+    state = { ...state, [toggleKey]: !contextMenuValue(toggleKey) };
+  }
+};
+
+const refreshContextMenuIndicators = () => {
+  if (!contextMenu) return;
+  contextMenu.querySelectorAll(".context-menu-item[data-toggle-key], .context-menu-item[data-selected-field]")
+    .forEach(button => {
+      const toggleKey = button.dataset.toggleKey;
+      const selectedField = button.dataset.selectedField;
+      const indicator = button.querySelector(".context-menu-state");
+      if (!indicator) return;
+      if (toggleKey) {
+        const enabled = Boolean(contextMenuValue(toggleKey));
+        indicator.textContent = enabled ? (state.onLabel || "On") : (state.offLabel || "Off");
+        indicator.classList.toggle("is-on", enabled);
+      } else if (selectedField) {
+        indicator.textContent = contextMenuValue(selectedField) === button.dataset.selectedValue ? "✓" : "";
+      }
+    });
+};
+
+const setContextMenuDynamicItems = (key, items) => {
+  const submenu = contextMenuDynamicSubmenus.get(key);
+  if (!submenu) return;
+  submenu.textContent = "";
+  const normalized = Array.isArray(items) ? items : [];
+  const entries = key === "subtitleTracks"
+    ? [{
+        label: state.noneLabel || "None",
+        action: "send:selectBuiltInSubtitleTrack:-1",
+        selected: !normalized.some(item => Boolean(item.selected)),
+      }, ...normalized]
+    : normalized;
+  buildContextMenu(entries.map((item, index) => ({
+    label: String(item.label || item.display || item.languageLabel || item.title || "Option"),
+    action: item.action || (key === "subtitleTracks"
+      ? `send:selectBuiltInSubtitleTrack:${Number(item.index ?? index)}`
+      : key === "addonSubtitles"
+        ? `send:selectAddonSubtitle:${index}`
+          : key === "audioTracks"
+          ? `send:selectAudioTrack:${Number(item.index ?? index)}`
+          : key === "fontFamilies"
+            ? `send:subtitleFontIndex:${index}`
+            : key === "subtitleColors"
+              ? `send:subtitleTextColor:${index}`
+              : key === "outlineColors"
+                ? `send:subtitleOutlineColor:${index}`
+          : `send:selectAnimeShader:${index}`),
+    selected: Boolean(item.selected),
+    swatch: item.swatch,
+  })), submenu);
+  if (normalized.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "context-menu-empty";
+    empty.textContent = key === "addonSubtitles" ? "No addon subtitles loaded" : "No tracks available";
+    submenu.appendChild(empty);
+  }
+  refreshContextMenuIndicators();
+};
+
+const closeContextMenu = () => {
+  if (!contextMenuOpen) return;
+  contextMenuOpen = false;
+  if (contextMenu) contextMenu.hidden = true;
+  // The menu suppressed chrome auto-hide while open; resume normal fading now.
+  renderChrome();
+  noteChromeActivity(true);
+};
+
+const openSubtitleContextTab = tab => {
+  openPlayerModal("subtitles");
+  send("subtitleTab", tab);
+};
+
+const cycleAspectFromControls = () => {
+  const modes = ["Fit", "Fill", "Zoom"];
+  const currentIndex = Math.max(0, modes.findIndex(mode => mode.toLowerCase() === String(state.resizeModeLabel || "Fit").toLowerCase()));
+  const next = modes[(currentIndex + 1) % modes.length];
+  state = { ...state, resizeModeLabel: next };
+  if (resizeLabel) resizeLabel.textContent = next;
+  window.nuvioShowPresetPill("Aspect ratio", next);
+  send("resize", 0);
+};
+
+// Actions that navigate to a different surface should always dismiss the menu, even when the
+// "close after selecting" preference is off (that preference only governs in-place tweaks).
+const contextActionOpensSurface = action => {
+  const kind = String(action || "").split(":")[0];
+  if (kind === "modal" || kind === "subtitleTab") return true;
+  return action === "send:back" ||
+    action === "send:toggleFullscreen" ||
+    action === "send:pictureInPicture" ||
+    action === "send:videoSettings" ||
+    action === "send:reloadSources";
+};
+
+const executeContextAction = action => {
+  const parts = String(action || "").split(":");
+  const kind = parts.shift();
+  if (kind === "toggleCloseOnSelect") {
+    setCloseMenuOnSelect(!closeMenuOnSelect);
+    refreshContextMenuIndicators();
+    return;
+  }
+  if (closeMenuOnSelect || contextActionOpensSurface(action)) {
+    closeContextMenu();
+  }
+  if (kind === "send") {
+    send(parts.shift(), Number(parts.shift() || 0));
+    return;
+  }
+  if (kind === "resizeMode") {
+    const index = Number(parts.shift() || 0);
+    const label = ["Fit", "Fill", "Zoom"][index] || "Fit";
+    state = { ...state, resizeModeLabel: label };
+    if (resizeLabel) resizeLabel.textContent = label;
+    refreshContextMenuIndicators();
+    window.nuvioShowPresetPill("Aspect ratio", label);
+    send("selectResizeMode", index);
+    return;
+  }
+  if (kind === "copyStreamUrl") {
+    window.nuvioShowPresetPill("Stream link", "Copied");
+    send("copyStreamUrl", 0);
+    return;
+  }
+  if (kind === "toggleMpvDiagnostics") {
+    window.nuvioToggleMpvDiagnostics();
+    return;
+  }
+  if (kind === "toggleStreamFailover") {
+    // state.streamFailoverEnabled was already flipped optimistically; forward it to Kotlin, which
+    // persists the setting and pushes the corrected value back.
+    const enabled = Boolean(state.streamFailoverEnabled);
+    refreshContextMenuIndicators();
+    window.nuvioShowPresetPill("Stream failover", enabled ? "On" : "Off");
+    send("toggleStreamFailover", enabled ? 1 : 0);
+    return;
+  }
+  if (kind === "uiScaleSet" || kind === "uiScaleDelta") {
+    const current = Number(state.uiScalePercent) || 0;
+    const raw = kind === "uiScaleDelta" ? current + Number(parts.shift() || 0) : Number(parts.shift() || 0);
+    const clamped = Math.max(-50, Math.min(50, Math.round(raw / 5) * 5));
+    state = { ...state, uiScalePercent: clamped };
+    applyUserUiScale(clamped);
+    refreshContextMenuIndicators();
+    window.nuvioShowPresetPill("UI scale", `${clamped > 0 ? "+" : ""}${clamped}%`);
+    send("setDesktopUiScalePercent", clamped);
+    return;
+  }
+  if (kind === "speed") {
+    const next = Math.max(0.5, Math.min(4, Number(parts.shift() || 1)));
+    const label = `${next.toFixed(1).replace(/\.0$/, "")}x`;
+    state = { ...state, playbackSpeedLabel: label };
+    speedLabel.textContent = label;
+    refreshContextMenuIndicators();
+    window.nuvioShowPresetPill("Playback speed", label);
+    send("setPlaybackSpeed", next);
+    return;
+  }
+  if (kind === "modal") {
+    const modal = parts.shift();
+    if (modal === "sources") {
+      sourceFilterId = "";
+      openPlayerModal("sources");
+      send("sources", 0);
+    } else if (modal === "episodes") {
+      openPlayerModal("episodes");
+      send("episodes", 0);
+    } else {
+      openPlayerModal(modal);
+    }
+    return;
+  }
+  if (kind === "subtitleTab") {
+    openSubtitleContextTab(Number(parts.shift() || 0));
+    return;
+  }
+  if (kind === "subtitleStyle") {
+    // Toggle the style attribute in place — do not pop the style panel open.
+    const command = parts.shift();
+    if (command === "outline") send("subtitleOutlineToggle", 0);
+    if (command === "shadow") send("subtitleShadowToggle", 0);
+    if (command === "bold") send("subtitleBoldToggle", 0);
+    return;
+  }
+  if (kind === "subtitleOpacity") {
+    const currentAlpha = parseArgb((state.subtitleStyle || {}).textColor).alpha;
+    const next = Math.max(0, Math.min(100, Math.round(currentAlpha / 255 * 100) + Number(parts.shift() || 0)));
+    send("subtitleTextOpacity", next);
+  }
+};
+
+// Positions a submenu flyout so it stays inside the viewport. Leaf submenus (plain lists with
+// no nested flyouts of their own) may scroll when taller than the screen; container submenus are
+// only shifted upward so their own nested flyouts are never clipped.
+const positionSubmenu = group => {
+  const submenu = group.querySelector(":scope > .context-menu-submenu");
+  if (!submenu) return;
+  const margin = 8;
+  const hasNested = Boolean(submenu.querySelector(".context-menu-submenu"));
+  submenu.style.top = "";
+  submenu.style.maxHeight = "";
+  submenu.style.overflowY = "";
+  if (!hasNested) {
+    submenu.style.maxHeight = `${Math.max(120, window.innerHeight - margin * 2)}px`;
+    submenu.style.overflowY = "auto";
+  }
+  const rect = submenu.getBoundingClientRect();
+  if (rect.height <= 0) return;
+  if (rect.bottom > window.innerHeight - margin) {
+    const groupRect = group.getBoundingClientRect();
+    const shift = rect.bottom - (window.innerHeight - margin);
+    const newTopViewport = Math.max(margin, rect.top - shift);
+    submenu.style.top = `${newTopViewport - groupRect.top}px`;
+  }
+};
+
+const buildContextMenu = (items, parent) => {
+  items.forEach(item => {
+    const group = document.createElement("div");
+    group.className = "context-menu-group";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "context-menu-item";
+    button.setAttribute("role", "menuitem");
+    if (item.toggleKey) button.dataset.toggleKey = item.toggleKey;
+    if (item.selectedField) {
+      button.dataset.selectedField = item.selectedField;
+      button.dataset.selectedValue = String(item.selectedValue ?? item.label);
+    }
+    if (item.swatch) {
+      const dot = document.createElement("span");
+      dot.className = "context-menu-swatch";
+      dot.style.background = item.swatch;
+      button.appendChild(dot);
+    }
+    const label = document.createElement("span");
+    label.className = "context-menu-label";
+    label.textContent = item.label;
+    button.appendChild(label);
+    if (item.toggleKey || item.selectedField || item.selected) {
+      const indicator = document.createElement("span");
+      indicator.className = "context-menu-state";
+      if (item.selected) indicator.textContent = "✓";
+      button.appendChild(indicator);
+    }
+    if (item.action) {
+      button.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        // Optimistically reflect the choice so the checkmark/On-Off moves immediately, even while
+        // paused (some options only reach mpv once playback resumes); the real state sync corrects
+        // it later if needed.
+        applyOptimisticContextSelection(button);
+        executeContextAction(item.action);
+        if (button.dataset.selectedField || button.dataset.toggleKey) refreshContextMenuIndicators();
+        // Release focus so a kept-open menu doesn't stay pinned via :focus-within once the
+        // pointer moves away (otherwise e.g. the Audio submenu lingers after clicking Mute).
+        button.blur();
+      });
+    }
+    if (item.children) {
+      const arrow = document.createElement("span");
+      arrow.className = "context-menu-arrow";
+      arrow.textContent = "›";
+      button.appendChild(arrow);
+      const submenu = document.createElement("div");
+      submenu.className = "context-menu-submenu";
+      submenu.setAttribute("role", "menu");
+      if (item.dynamicKey) contextMenuDynamicSubmenus.set(item.dynamicKey, submenu);
+      buildContextMenu(item.children, submenu);
+      group.appendChild(button);
+      group.appendChild(submenu);
+      // Keep the flyout on-screen: flip it upward near the bottom edge and let long lists
+      // scroll instead of running off the viewport.
+      group.addEventListener("mouseenter", () => positionSubmenu(group));
+      group.addEventListener("focusin", () => positionSubmenu(group));
+    } else {
+      if (item.shortcut) {
+        const shortcut = document.createElement("span");
+        shortcut.className = "context-menu-shortcut";
+        shortcut.textContent = item.shortcut;
+        button.appendChild(shortcut);
+      }
+      group.appendChild(button);
+    }
+    parent.appendChild(group);
+  });
+};
+
+if (contextMenu) {
+  buildContextMenu(contextMenuItems, contextMenu);
+  refreshContextMenuIndicators();
+  contextMenu.addEventListener("contextmenu", event => event.preventDefault());
+}
+
+window.nuvioOpenAnimeShaderContextMenu = items => {
+  setContextMenuDynamicItems("animeShaders", items);
+};
+
+// Builds the nested "Advanced (mpv)" submenu from a catalog pushed by Kotlin. Each option becomes a
+// flyout of choices; each choice carries a flat `index` the Kotlin side maps back to a property/value.
+window.nuvioSetMpvOptionsMenu = options => {
+  const submenu = contextMenuDynamicSubmenus.get("mpvOptions");
+  if (!submenu) return;
+  submenu.textContent = "";
+  const list = Array.isArray(options) ? options : [];
+  if (list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "context-menu-empty";
+    empty.textContent = "No options available";
+    submenu.appendChild(empty);
+    return;
+  }
+  buildContextMenu(list.map(option => ({
+    label: String(option.label || "Option"),
+    children: (Array.isArray(option.choices) ? option.choices : []).map(choice => ({
+      label: String(choice.label || "Option"),
+      action: `send:selectMpvOption:${Number(choice.index) || 0}`,
+      selected: Boolean(choice.selected),
+    })),
+  })), submenu);
+};
+
+// Friendly names for the built-in subtitle colour swatches, keyed by their RRGGBB value so the
+// menu shows "Gold" / "Cyan" rather than "Color 2". Anything unrecognised falls back to a swatch dot.
+const SUBTITLE_COLOR_NAMES = {
+  FFFFFF: "White",
+  FFD700: "Gold",
+  "00E5FF": "Cyan",
+  FF5C5C: "Red",
+  "00FF88": "Green",
+  "9B59B6": "Purple",
+  F97316: "Orange",
+  "22C55E": "Emerald",
+  "3B82F6": "Blue",
+  "000000": "Black",
+};
+
+const describeSubtitleColor = value => {
+  const clean = String(value || "").replace(/^#/, "").toUpperCase();
+  const rgb = clean.length >= 6 ? clean.slice(-6) : clean.padStart(6, "0");
+  return { css: `#${rgb}`, name: SUBTITLE_COLOR_NAMES[rgb] || null };
+};
+
+const subtitleColorContextEntries = field => {
+  const style = state.subtitleStyle || {};
+  return (state.subtitleColorSwatches || []).map((value, index) => {
+    const info = describeSubtitleColor(value);
+    return {
+      label: info.name || `Color ${index + 1}`,
+      swatch: info.css,
+      selected: value === style[field],
+    };
+  });
+};
+
+const refreshSubtitleStyleContextSubmenus = () => {
+  const style = state.subtitleStyle || {};
+  setContextMenuDynamicItems(
+    "fontFamilies",
+    (state.subtitleFontFamilies || []).map(value => ({
+      value,
+      label: value || "Default",
+      selected: value === style.fontFamily,
+    })),
+  );
+  setContextMenuDynamicItems("subtitleColors", subtitleColorContextEntries("textColor"));
+  setContextMenuDynamicItems("outlineColors", subtitleColorContextEntries("outlineColor"));
+};
+
+const openContextMenu = event => {
+  if (state.pictureInPictureActive) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeContextMenu();
+    return;
+  }
+  if (!contextMenu || isHeroTrailerSurface || openingOverlay?.classList.contains("visible")) return;
+  event.preventDefault();
+  event.stopPropagation();
+  closePlayerModal(false, false);
+  contextMenu.hidden = false;
+  contextMenuOpen = true;
+  // Keep the chrome (and cursor) up while the menu is open so the fade timer can't
+  // collapse the submenus mid-interaction.
+  clearChromeAutoHideTimer();
+  renderChrome();
+  contextMenu.classList.toggle("context-menu-left", event.clientX > window.innerWidth * 0.58);
+  if (!state.isLoadingAddonSubtitles && normalizeTracks(state.addonSubtitleItems).length === 0) {
+    send("fetchAddonSubtitles", 0);
+  }
+  refreshSubtitleStyleContextSubmenus();
+  send("openAnimeShaderContextMenu", 0);
+  send("openMpvOptionsContextMenu", 0);
+  const margin = 8;
+  const x = Math.min(event.clientX, Math.max(margin, window.innerWidth - contextMenu.offsetWidth - margin));
+  const y = Math.min(event.clientY, Math.max(margin, window.innerHeight - contextMenu.offsetHeight - margin));
+  contextMenu.style.left = `${Math.max(margin, x)}px`;
+  contextMenu.style.top = `${Math.max(margin, y)}px`;
+};
+
+root.addEventListener("contextmenu", openContextMenu);
+document.addEventListener("pointerdown", event => {
+  if (!contextMenuOpen || event.target.closest("#contextMenu")) return;
+  // Dismissing the context menu is the complete action for this pointer gesture. Without this
+  // one-shot guard, the click generated after pointerup reaches the video surface and toggles
+  // playback as an unintended second action.
+  if (event.button === 0) {
+    consumeContextMenuDismissalClick = true;
+    window.clearTimeout(contextMenuDismissalClickTimer);
+    contextMenuDismissalClickTimer = window.setTimeout(() => {
+      consumeContextMenuDismissalClick = false;
+    }, 1000);
+  }
+  closeContextMenu();
+});
+
 const normalizeTracks = tracks =>
   Array.isArray(tracks) ? tracks.filter(track => track && typeof track === "object") : [];
 
@@ -884,6 +1729,19 @@ const appendEmptyTrackState = (container, label) => {
 const renderAudioTrackList = () => {
   audioTrackList.textContent = "";
   const tracks = normalizeTracks(state.audioTracks);
+  if (audioPanel) {
+    const canvas = renderAudioTrackList.canvas || (renderAudioTrackList.canvas = document.createElement("canvas"));
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.font = '700 15px "Nuvio JetBrains Sans", "Segoe UI", sans-serif';
+      const widest = tracks.reduce((width, track, index) => {
+        const label = track.label || track.language || `Track ${Number(track.index || index) + 1}`;
+        return Math.max(width, context.measureText(String(label)).width);
+      }, context.measureText("Audio tracks").width);
+      const viewportLimit = Math.max(320, window.innerWidth * .70);
+      audioPanel.style.width = `${Math.round(Math.min(viewportLimit, Math.max(360, (widest + 104) * 1.15)))}px`;
+    }
+  }
   if (tracks.length === 0) {
     appendEmptyTrackState(audioTrackList, "No audio tracks available");
     return;
@@ -900,7 +1758,17 @@ const renderAudioTrackList = () => {
 
 const renderSubtitleTrackList = () => {
   subtitleTrackList.textContent = "";
-  const tracks = normalizeTracks(state.subtitleTracks);
+  // With "Show Only Preferred Languages" on, the app pushes a pre-filtered built-in list (index +
+  // label + isSelected); otherwise fall back to the live native track list. Either way each entry
+  // carries the native track index that selectBuiltInSubtitleTrack expects.
+  const tracks = state.builtInSubtitleFilterActive
+    ? normalizeItems(state.builtInSubtitleItems).map(item => ({
+        index: Number(item.index) || 0,
+        label: item.label || "",
+        language: "",
+        selected: Boolean(item.isSelected),
+      }))
+    : normalizeTracks(state.subtitleTracks);
   const hasSelected = tracks.some(track => Boolean(track.selected));
   appendTrackRow(
     subtitleTrackList,
@@ -1013,9 +1881,10 @@ const renderSwatches = (container, selectedColor, eventType) => {
 };
 
 const renderAutoSyncCues = () => {
-  autoSyncCueList.textContent = "";
   if (!state.hasSelectedAddonSubtitle) {
     autoSyncStatus.textContent = state.selectAddonSubtitleFirstLabel || "Select an addon subtitle first";
+    autoSyncCueList.textContent = "";
+    autoSyncCueList.dataset.renderKey = "";
     return;
   }
   if (state.subtitleAutoSyncIsLoading) {
@@ -1023,7 +1892,17 @@ const renderAutoSyncCues = () => {
   } else {
     autoSyncStatus.textContent = state.subtitleAutoSyncErrorMessage || "";
   }
-  normalizeItems(state.subtitleAutoSyncCues).forEach(cue => {
+  const cues = normalizeItems(state.subtitleAutoSyncCues);
+  const capturedMs = Number(state.subtitleAutoSyncCapturedPositionMs);
+  // This runs on every controls update while the panel is open. Rebuilding an unchanged
+  // list would snap the user's scroll position back every tick, so skip when nothing moved.
+  const renderKey = `${capturedMs}|${cues.map(cue => `${cue.index}:${cue.timeMs}`).join(",")}`;
+  if (autoSyncCueList.dataset.renderKey === renderKey) return;
+  autoSyncCueList.dataset.renderKey = renderKey;
+  autoSyncCueList.textContent = "";
+  let nearestRow = null;
+  let nearestDistance = Infinity;
+  cues.forEach(cue => {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "sync-cue";
@@ -1040,14 +1919,26 @@ const renderAutoSyncCues = () => {
     row.appendChild(time);
     row.appendChild(text);
     autoSyncCueList.appendChild(row);
+    const distance = Math.abs(Number(cue.timeMs) - capturedMs);
+    if (Number.isFinite(distance) && distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestRow = row;
+    }
   });
+  // Center the view on the line closest to the captured moment; heavily desynced subs are
+  // reachable by scrolling up (earlier) or down (later) from there.
+  if (nearestRow) {
+    nearestRow.classList.add("nearest");
+    nearestRow.scrollIntoView({ block: "center" });
+  }
 };
 
 const renderSubtitleStylePanel = () => {
   const style = state.subtitleStyle || {};
   subtitleDelayLabel.textContent = state.subtitleDelayLabel || "Subtitle Delay";
   subtitleDelayValue.textContent = formatDelay(state.subtitleDelayMs);
-  subtitleDelayReset.textContent = state.resetLabel || "Reset";
+  subtitleDelayReset.setAttribute("aria-label", state.resetLabel || "Reset");
+  subtitleDelayReset.title = state.resetLabel || "Reset";
   autoSyncLabel.textContent = state.autoSyncLabel || "Auto Sync";
   autoSyncReload.textContent = state.reloadSmallLabel || "Reload";
   autoSyncCapture.textContent = state.captureLineLabel || "Capture";
@@ -1074,6 +1965,9 @@ const renderSubtitleStylePanel = () => {
   outlineLabel.textContent = state.outlineLabel || "Outline";
   outlineToggle.textContent = style.outlineEnabled ? (state.onLabel || "On") : (state.offLabel || "Off");
   outlineToggle.classList.toggle("primary", Boolean(style.outlineEnabled));
+  shadowLabel.textContent = state.shadowLabel || "Shadow";
+  shadowToggle.textContent = style.shadowEnabled ? (state.onLabel || "On") : (state.offLabel || "Off");
+  shadowToggle.classList.toggle("primary", Boolean(style.shadowEnabled));
   boldLabel.textContent = state.boldLabel || "Bold";
   boldToggle.textContent = style.bold ? (state.onLabel || "On") : (state.offLabel || "Off");
   boldToggle.classList.toggle("primary", Boolean(style.bold));
@@ -1139,6 +2033,15 @@ const renderFilterRow = (container, filters, selectedId, onSelect) => {
 const SourceRowEstimatedHeight = 116;
 const SourceRowGap = 10;
 const SourceRowOverscanPx = 720;
+
+// The source panel scales via `zoom: var(--user-scale)` on .track-panel. getBoundingClientRect()
+// reports zoomed (screen) pixels, but the virtual list's offsets/translateY/scrollTop math all run
+// in the panel's own unzoomed coordinate space — so measured row heights must be divided back into
+// that space or they drift by the scale factor and rows overlap (scaled down) / gap (scaled up).
+const currentSourcePanelScale = () => {
+  const raw = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--panel-scale"));
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+};
 
 const sourceKeyForItems = items => {
   const first = items[0] || {};
@@ -1220,21 +2123,55 @@ const buildSourceRow = (item, onSelect) => {
     chip.textContent = state.playingLabel || "Playing";
     top.appendChild(chip);
   }
-  copy.appendChild(top);
-
+  let subtitle = null;
   if (item.subtitle) {
-    const subtitle = document.createElement("span");
+    subtitle = document.createElement("span");
     subtitle.className = "stream-subtitle";
     subtitle.textContent = item.subtitle;
-    copy.appendChild(subtitle);
   }
 
-  if (item.addonName) {
-    const addon = document.createElement("span");
-    addon.className = "stream-addon";
-    addon.textContent = item.addonName;
-    copy.appendChild(addon);
+  const badges = Array.isArray(item.badges) ? item.badges : [];
+  let badgeRail = null;
+  if (badges.length > 0 || item.addonName) {
+    badgeRail = document.createElement("span");
+    badgeRail.className = "stream-badges";
+    badges.forEach(badge => {
+      const badgeElement = document.createElement("span");
+      badgeElement.className = "stream-badge";
+      badgeElement.title = String(badge.name || "");
+      if (badge.backgroundColor) badgeElement.style.backgroundColor = badge.backgroundColor;
+      if (badge.textColor) badgeElement.style.color = badge.textColor;
+      if (badge.borderColor) badgeElement.style.borderColor = badge.borderColor;
+      if (badge.imageUrl) {
+        const image = document.createElement("img");
+        image.alt = String(badge.name || "");
+        image.loading = "eager";
+        image.decoding = "async";
+        image.src = badge.imageUrl;
+        // A badge image's width (and therefore whether the badge rail wraps to another line) is
+        // only known once it loads, which happens after the row's first height measurement. Re-run
+        // the virtual layout when a not-yet-cached image finishes so the stored height catches the
+        // reflow. Guarded on !complete so cached images don't trigger an endless re-render loop.
+        if (!image.complete) {
+          image.addEventListener("load", requestSourceVirtualRender, { once: true });
+        }
+        badgeElement.appendChild(image);
+      } else {
+        badgeElement.textContent = String(badge.name || "");
+      }
+      badgeRail.appendChild(badgeElement);
+    });
+    if (item.addonName) {
+      const addon = document.createElement("span");
+      addon.className = "stream-addon-inline";
+      addon.textContent = item.addonName;
+      badgeRail.appendChild(addon);
+    }
   }
+  if (badgeRail && state.sourceBadgePlacement === "top") copy.appendChild(badgeRail);
+  copy.appendChild(top);
+  if (subtitle) copy.appendChild(subtitle);
+  if (badgeRail && state.sourceBadgePlacement !== "top") copy.appendChild(badgeRail);
   row.appendChild(copy);
   return row;
 };
@@ -1278,9 +2215,10 @@ const renderSourceVirtualRows = () => {
   }
 
   window.requestAnimationFrame(() => {
+    const scale = currentSourcePanelScale();
     let changed = false;
     rendered.forEach(({ index, wrapper }) => {
-      const measured = Math.ceil(wrapper.getBoundingClientRect().height);
+      const measured = Math.ceil(wrapper.getBoundingClientRect().height / scale);
       if (measured > 0 && Math.abs((sourceVirtualHeights[index] || SourceRowEstimatedHeight) - measured) > 1) {
         sourceVirtualHeights[index] = measured;
         changed = true;
@@ -1296,6 +2234,30 @@ const renderSourceVirtualRows = () => {
 const requestSourceVirtualRender = () => {
   if (sourceVirtualRenderRaf) return;
   sourceVirtualRenderRaf = window.requestAnimationFrame(renderSourceVirtualRows);
+};
+
+const updateSourcePanelWidth = items => {
+  if (!sourcePanel) return;
+  const canvas = updateSourcePanelWidth.canvas || (updateSourcePanelWidth.canvas = document.createElement("canvas"));
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  const measureLines = (value, font) => {
+    context.font = font;
+    return String(value || "")
+      .split(/\r?\n/)
+      .reduce((widest, line) => Math.max(widest, context.measureText(line).width), 0);
+  };
+  const fontFamily = '"Nuvio JetBrains Sans", "Segoe UI", sans-serif';
+  const contentWidth = items.reduce((widest, item) => {
+    const primary = Math.max(
+      measureLines(item.label || "Stream", `700 14px ${fontFamily}`),
+      Math.min(620, measureLines(item.subtitle, `400 12px ${fontFamily}`)),
+    );
+    // The addon is absolutely right-aligned inside the row and must not dictate panel width.
+    return Math.max(widest, primary + 92);
+  }, 400);
+  const viewportLimit = Math.max(500, Math.min(760, window.innerWidth * .62));
+  sourcePanel.style.width = `${Math.round(Math.min(viewportLimit, Math.max(540, contentWidth * 1.15)))}px`;
 };
 
 const renderSourceModal = () => {
@@ -1319,6 +2281,7 @@ const renderSourceModal = () => {
   if (sourceFilterId) {
     items = items.filter(item => String(item.filterId || "") === sourceFilterId);
   }
+  updateSourcePanelWidth(items);
   if (items.length === 0) {
     sourceVirtualItems = [];
     sourceVirtualSpacer = null;
@@ -1371,19 +2334,18 @@ const appendEpisodeRow = (container, item, keyboardIndex) => {
     send("selectEpisode", Number(item.index) || 0);
   });
 
+  const thumb = document.createElement("span");
+  thumb.className = "episode-thumb";
   if (item.thumbnail) {
-    const thumb = document.createElement("span");
-    thumb.className = "episode-thumb";
     const image = document.createElement("img");
     image.alt = "";
-    image.loading = "lazy";
+    image.loading = "eager";
+    image.decoding = "async";
     setImageSource(image, item.thumbnail);
     thumb.appendChild(image);
-    row.appendChild(thumb);
   }
+  row.appendChild(thumb);
 
-  const copy = document.createElement("span");
-  copy.className = "episode-copy";
   const top = document.createElement("span");
   top.className = "episode-row-top";
   if (item.code) {
@@ -1398,7 +2360,9 @@ const appendEpisodeRow = (container, item, keyboardIndex) => {
     chip.textContent = state.playingLabel || "Playing";
     top.appendChild(chip);
   }
-  copy.appendChild(top);
+  row.appendChild(top);
+  const copy = document.createElement("span");
+  copy.className = "episode-copy";
   const name = document.createElement("span");
   name.className = "episode-name";
   name.textContent = item.title || item.code || "Episode";
@@ -1426,6 +2390,31 @@ const ensureEpisodeSeason = () => {
   return selectedEpisodeSeason;
 };
 
+const preloadEpisodeArtwork = items => {
+  items.forEach(item => {
+    const url = String(item && item.thumbnail || "").trim();
+    if (!url || episodeArtworkPreloads.has(url)) return;
+    const preload = new Image();
+    preload.decoding = "async";
+    preload.loading = "eager";
+    episodeArtworkPreloads.set(url, preload);
+    let retried = false;
+    preload.onload = () => {
+      episodeList.querySelectorAll(".episode-thumb img").forEach(image => {
+        if (image.getAttribute("src") !== url || !image.classList.contains("image-error")) return;
+        image.removeAttribute("src");
+        setImageSource(image, url);
+      });
+    };
+    preload.onerror = () => {
+      if (retried) return;
+      retried = true;
+      window.setTimeout(() => { preload.src = url; }, 600);
+    };
+    preload.src = url;
+  });
+};
+
 const renderEpisodeList = () => {
   episodesPanelTitle.textContent = state.episodesPanelTitle || "Episodes";
   episodesCloseButton.textContent = state.panelCloseLabel || "Close";
@@ -1438,7 +2427,9 @@ const renderEpisodeList = () => {
     selectedSeason == null ? "" : String(selectedSeason),
     id => {
       selectedEpisodeSeason = Number(id);
+      keyboardEpisodeIndex = 0;
       renderEpisodeList();
+      window.requestAnimationFrame(() => { episodeList.scrollLeft = 0; });
     },
   );
 
@@ -1446,6 +2437,7 @@ const renderEpisodeList = () => {
   if (selectedSeason != null) {
     items = items.filter(item => Number(item.season) === Number(selectedSeason));
   }
+  preloadEpisodeArtwork(items);
   const nextRenderKey = JSON.stringify([
     selectedSeason,
     state.noEpisodesLabel || "",
@@ -1474,7 +2466,11 @@ const renderEpisodeList = () => {
     row.classList.toggle("keyboard-focused", keyboardPanelMode === "episodes" && index === keyboardEpisodeIndex);
   });
   if (keyboardPanelMode === "episodes") {
-    window.requestAnimationFrame(() => focusKeyboardEpisodeRow());
+    const focusKey = `${selectedSeason}:${keyboardEpisodeIndex}`;
+    if (focusKey !== episodeFocusPositionKey) {
+      episodeFocusPositionKey = focusKey;
+      window.requestAnimationFrame(() => focusKeyboardEpisodeRow());
+    }
   }
 };
 
@@ -1550,13 +2546,23 @@ const visibleKeyboardEpisodeStreams = () => {
 };
 
 const focusKeyboardEpisodeRow = () => {
+  episodeFocusPositionKey = `${ensureEpisodeSeason()}:${keyboardEpisodeIndex}`;
   episodeList.querySelectorAll("[data-keyboard-episode-index]").forEach((candidate, index) => {
     candidate.classList.toggle("keyboard-focused", index === keyboardEpisodeIndex);
   });
   const row = episodeList.querySelector(`[data-keyboard-episode-index="${keyboardEpisodeIndex}"]`);
   if (!row) return;
   row.focus({ preventScroll: true });
-  row.scrollIntoView({ block: "center", inline: "nearest" });
+  const safeInset = 20;
+  const rowLeft = row.offsetLeft;
+  const rowRight = rowLeft + row.offsetWidth;
+  const visibleLeft = episodeList.scrollLeft + safeInset;
+  const visibleRight = episodeList.scrollLeft + episodeList.clientWidth - safeInset;
+  if (rowLeft < visibleLeft) {
+    episodeList.scrollLeft = Math.max(0, rowLeft - safeInset);
+  } else if (rowRight > visibleRight) {
+    episodeList.scrollLeft = rowRight - episodeList.clientWidth + safeInset;
+  }
 };
 
 const focusKeyboardEpisodeStreamRow = () => {
@@ -1590,6 +2596,7 @@ const moveKeyboardSeason = delta => {
   selectedEpisodeSeason = Number(seasons[nextIndex].season) || 0;
   keyboardEpisodeIndex = 0;
   renderEpisodeList();
+  window.requestAnimationFrame(() => { episodeList.scrollLeft = 0; });
 };
 
 const setInputValue = (input, value) => {
@@ -1757,21 +2764,17 @@ const renderNativePlaybackPrompts = () => {
   }
   skipPromptWasDismissed = Boolean(state.skipPromptDismissed);
 
-  const shouldShowSkip = Boolean(state.skipPromptVisible && (!state.skipPromptDismissed || state.controlsVisible));
-  const showSkip = Boolean(shouldShowSkip && (!skipPromptAutoHidden || state.controlsVisible));
-  const showSkipProgress = Boolean(showSkip && !state.controlsVisible && !skipPromptAutoHidden && !state.skipPromptDismissed);
+  // This prompt belongs to the active interval rather than to the transient player chrome.
+  const showSkip = Boolean(state.skipPromptVisible && !state.skipPromptDismissed);
+  const showSkipProgress = false;
   skipPromptLabel.textContent = state.skipPromptLabel || "Skip";
   skipPrompt.setAttribute("aria-label", state.skipPromptLabel || "Skip");
   skipPrompt.setAttribute("aria-hidden", showSkip ? "false" : "true");
   skipPrompt.classList.toggle("visible", showSkip);
   skipPrompt.classList.toggle("show-progress", showSkipProgress);
-  if (showSkipProgress) {
-    startSkipPromptAutoHide();
-  } else if (!showSkip || state.controlsVisible || state.skipPromptDismissed) {
-    window.clearTimeout(skipPromptAutoHideTimer);
-    skipPromptAutoHideTimer = 0;
-    skipPromptAutoHideActive = false;
-  }
+  window.clearTimeout(skipPromptAutoHideTimer);
+  skipPromptAutoHideTimer = 0;
+  skipPromptAutoHideActive = false;
 
   const showNextEpisode = Boolean(state.nextEpisodeVisible);
   const nextThumbUrl = setImageSource(nextEpisodeThumb, state.nextEpisodeThumbnail);
@@ -1801,6 +2804,7 @@ const canAutoHideChrome = showOpening => Boolean(
   !state.isLoading &&
   !state.isLocked &&
   !activeModal &&
+  !contextMenuOpen &&
   !isScrubbing &&
   !isInteractingWithChrome() &&
   !playbackErrorText() &&
@@ -1868,7 +2872,15 @@ const noteChromeActivity = (force = false) => {
 const updateChromePointerInside = inside => {
   if (isChromePointerInside === inside) return;
   isChromePointerInside = inside;
+  syncChromeInteractionToHost();
   noteChromeActivity(true);
+};
+
+const syncChromeInteractionToHost = () => {
+  const active = isInteractingWithChrome();
+  if (hostChromeInteractionActive === active) return;
+  hostChromeInteractionActive = active;
+  send("chromeInteraction", active ? 1 : 0);
 };
 
 const finishChromePointerInteraction = event => {
@@ -1878,6 +2890,7 @@ const finishChromePointerInteraction = event => {
   } else {
     isChromePointerInside = false;
   }
+  syncChromeInteractionToHost();
   clearPressedButton();
   noteChromeActivity(true);
 };
@@ -1887,10 +2900,21 @@ const renderChrome = () => {
   const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
   const isPlaying = Boolean(state.isPlaying);
   const showError = renderPlaybackError();
+  const pictureInPictureActive = Boolean(state.pictureInPictureActive);
+  root.classList.toggle("pip-active", pictureInPictureActive);
   root.classList.toggle("locked", Boolean(state.isLocked));
+  root.classList.toggle("episode-panel-open", activeModal === "episodes");
+  root.classList.toggle("source-panel-open", activeModal === "sources");
+  root.classList.toggle("legacy-hud", Boolean(state.legacyHudEnabled));
+  root.classList.toggle("clock-always-visible", Boolean(state.alwaysShowClock));
+  root.classList.toggle("mpv-diagnostics", Boolean(mpvDiagnosticsEnabled));
+  applyUserUiScale(state.uiScalePercent);
   root.classList.toggle("locked-visible", Boolean(state.isLocked && state.lockedOverlayVisible));
-  const isChromeHidden = Boolean(showError || (!state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible)));
+  // Playback failures are a compact notification now. Keep the normal chrome and cursor visible
+  // so Back remains immediately available instead of turning the error into a modal takeover.
+  const isChromeHidden = Boolean(!pictureInPictureActive && !showError && (!activeModal && !contextMenuOpen && !state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible)));
   root.classList.toggle("chrome-hidden", isChromeHidden);
+  if (isChromeHidden || activeModal) hideControlTooltip();
   // Never hide the cursor in hero-trailer mode — it's a background surface, not the
   // focused player, so the OS/app cursor must behave normally.
   if (!isHeroTrailerSurface && !state.heroTrailerMode && isChromeHidden !== lastCursorHidden) {
@@ -1903,7 +2927,7 @@ const renderChrome = () => {
   syncParentalGuide(showOpening || showError);
 
   title.textContent = state.title || "";
-  setText(episode, state.episodeText);
+  setText(episode, normalizeEpisodeDisplayText(state.episodeText));
   setText(streamTitle, state.streamTitle);
   setText(providerName, state.providerName);
   resizeLabel.textContent = state.resizeModeLabel || "Fit";
@@ -1912,6 +2936,7 @@ const renderChrome = () => {
   audioLabel.textContent = state.audioLabel || "Audio";
   sourcesLabel.textContent = state.sourcesLabel || "Sources";
   episodesLabel.textContent = state.episodesLabel || "Episodes";
+  episodeNotchLabel.textContent = state.episodesLabel || "Episodes";
   lockedLabel.textContent = state.tapToUnlockLabel || "Tap to unlock";
   const showBuffering = Boolean(!showError && state.isLoading && !state.isLocked && !activeModal && !showOpening);
   bufferingStatus.classList.toggle("visible", showBuffering);
@@ -1921,6 +2946,9 @@ const renderChrome = () => {
   setVisible(videoSettingsButton, Boolean(state.showVideoSettings));
   setVisible(sourcesButton, Boolean(state.showSources));
   setVisible(episodesButton, Boolean(state.showEpisodes));
+  setVisible(episodeNotch, Boolean(state.showEpisodes));
+  setVisible(sourceNotch, Boolean(state.showSources));
+  document.querySelectorAll(".episode-skip").forEach(button => setVisible(button, Boolean(state.showEpisodes)));
 
   const playPauseLabel = isPlaying ? state.pauseLabel : state.playLabel;
   if (toggle) {
@@ -1934,6 +2962,17 @@ const renderChrome = () => {
   backButton.setAttribute("aria-label", state.closeLabel || "Close player");
   submitIntroButton.setAttribute("aria-label", state.submitIntroLabel || "Submit Intro");
   videoSettingsButton.setAttribute("aria-label", state.videoSettingsLabel || "Video settings");
+  const pictureInPictureLabel = state.pictureInPictureActive
+    ? "Exit picture in picture"
+    : (state.pictureInPictureLabel || "Picture in picture");
+  pictureInPictureButton.setAttribute("aria-label", pictureInPictureLabel);
+  pictureInPictureButton.setAttribute("title", pictureInPictureLabel);
+  pictureInPictureButton.classList.toggle("selected", Boolean(state.pictureInPictureActive));
+  pictureInPictureExitButton.setAttribute("aria-label", "Exit picture in picture");
+  const pictureInPicturePlaybackLabel = isPlaying ? (state.pauseLabel || "Pause") : (state.playLabel || "Play");
+  pictureInPicturePlayButton.setAttribute("aria-label", pictureInPicturePlaybackLabel);
+  pictureInPicturePlayButton.setAttribute("title", pictureInPicturePlaybackLabel);
+  pictureInPictureToggleIcon.setAttribute("href", isPlaying ? "#icon-pause" : "#icon-play");
   seek.disabled = Boolean(state.isLocked);
   setProgress(positionMs, durationMs);
   renderChapterMarkers(durationMs);
@@ -1946,7 +2985,24 @@ const renderChrome = () => {
     renderNativePlaybackPrompts();
   }
   syncChromeAutoHideTimer(showOpening);
+  updatePlayerClock();
 };
+
+const playerClockFormatter = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const updatePlayerClock = () => {
+  if (!playerClockTime || !playerEndTime) return;
+  const now = new Date();
+  playerClockTime.textContent = playerClockFormatter.format(now);
+  const durationMs = Math.max(0, Number(state.durationMs) || 0);
+  const positionMs = Math.max(0, Number(state.positionMs) || 0);
+  const parsedSpeed = Number.parseFloat(String(state.playbackSpeedLabel || "1").replace(/[^0-9.]/g, ""));
+  const speed = Number.isFinite(parsedSpeed) && parsedSpeed > 0 ? parsedSpeed : 1;
+  const remainingWallMs = Math.max(0, durationMs - positionMs) / speed;
+  const endTime = new Date(now.getTime() + remainingWallMs);
+  const contentLabel = String(state.episodeText || "").trim() ? "Episode" : "Movie";
+  playerEndTime.textContent = `${contentLabel} ends at ${playerClockFormatter.format(endTime)}`;
+};
+window.setInterval(updatePlayerClock, 1000);
 
 const heroTrailerFade = document.createElement("div");
 heroTrailerFade.id = "heroTrailerFade";
@@ -2020,6 +3076,46 @@ if (heroTrailerVolumeSlider) {
     heroTrailerVolumeSlider.addEventListener(type, () => reclaimHeroTrailerFocus());
   });
 }
+// A home hero trailer's heavyweight video surface paints over the Compose navbar. When the
+// pointer enters the edge band where the navbar lives (top for the floating top bar, left for the
+// sidebar — pushed via state.heroTrailerNavDismissEdge), tell Kotlin to stop the trailer so the
+// navbar is uncovered and usable. Bands are intentionally generous (that region is empty video,
+// with the trailer's own chrome kept to the bottom corners) and can be tuned later.
+let heroTrailerNavDismissArmed = true;
+const heroTrailerNavDismissBand = () => {
+  const edge = String(state.heroTrailerNavDismissEdge || "none");
+  // The overlay surface matches the hero region, so a fraction of innerHeight scales with the
+  // hero size. The fraction is pushed per-mode from Kotlin (adaptive hero is a small strip and
+  // needs a tighter band than TV mode's full-viewport hero).
+  const topFrac = Number(state.heroTrailerNavDismissBandFraction);
+  if (edge === "top") return { edge, size: Math.round(window.innerHeight * (topFrac > 0 ? topFrac : 0.22)) };
+  if (edge === "left") return { edge, size: Math.min(120, Math.round(window.innerWidth * 0.10)) };
+  return { edge: "none", size: 0 };
+};
+// The floating top bar is centered and narrow, so the top trigger is limited to the central
+// slice of the width (not the whole top edge). The sidebar spans the full left edge height.
+const heroTrailerNavTopCenterFraction = 0.40;
+window.addEventListener("mousemove", event => {
+  if (!isHeroTrailerSurface && !state.heroTrailerMode) return;
+  const { edge, size } = heroTrailerNavDismissBand();
+  if (edge === "none" || size <= 0) return;
+  let inBand;
+  if (edge === "top") {
+    const halfSpan = (window.innerWidth * heroTrailerNavTopCenterFraction) / 2;
+    inBand = event.clientY <= size && Math.abs(event.clientX - window.innerWidth / 2) <= halfSpan;
+  } else {
+    inBand = event.clientX <= size;
+  }
+  if (!inBand) {
+    heroTrailerNavDismissArmed = true;
+    return;
+  }
+  // Fire once per entry; the surface unmounts on dismissal so this only matters transiently.
+  if (heroTrailerNavDismissArmed) {
+    heroTrailerNavDismissArmed = false;
+    send("heroTrailerNavChromeDismiss", 1);
+  }
+}, { passive: true });
 let heroTrailerLogoFailed = false;
 heroTrailerLogo.addEventListener("error", () => {
   heroTrailerLogoFailed = true;
@@ -2133,17 +3229,65 @@ const isTextEntryTarget = target => {
   return Boolean(element);
 };
 
+// Kotlin sends key bindings as java.awt `VK_` codes. Browser `KeyboardEvent.keyCode` agrees for
+// letters/digits/space/F-keys but diverges for punctuation and a few specials, so translate the
+// event to its AWT equivalent before matching — otherwise punctuation bindings (e.g. the default
+// [ / ] speed keys) silently stop working whenever this overlay holds OS focus (it takes focus on
+// any HUD click, e.g. the seek bar), while letter bindings keep working. The 91/92/93 rows also
+// stop the OS/context-menu keys from colliding with AWT's bracket/backslash codes.
+const JS_TO_AWT_KEYCODE = {
+  13: 10, // Enter
+  45: 155, // Insert (raw 45 collides with AWT VK_MINUS)
+  46: 127, // Delete (raw 46 collides with AWT VK_PERIOD)
+  91: 524, // Left OS/Meta (raw 91 collides with AWT VK_OPEN_BRACKET)
+  92: 524, // Right OS/Meta (raw 92 collides with AWT VK_BACK_SLASH)
+  93: 525, // Context menu (raw 93 collides with AWT VK_CLOSE_BRACKET)
+  186: 59, // ;
+  187: 61, // =
+  188: 44, // ,
+  189: 45, // -
+  190: 46, // .
+  191: 47, // /
+  219: 91, // [
+  220: 92, // \
+  221: 93, // ]
+};
+const awtKeyCodeForEvent = event =>
+  Object.prototype.hasOwnProperty.call(JS_TO_AWT_KEYCODE, event.keyCode)
+    ? JS_TO_AWT_KEYCODE[event.keyCode]
+    : event.keyCode;
+
 const shortcutCommandForEvent = event => {
   if (event.metaKey || event.ctrlKey || event.altKey) return "";
+  const eventKeyCode = awtKeyCodeForEvent(event);
+  const configuredBindings = state.playerShortcutKeyCodes || {};
+  const configuredAction = Object.keys(configuredBindings)
+    .find(action => Number(configuredBindings[action]) === eventKeyCode);
+  const configuredCommand = {
+    play_pause: "keyboardToggle",
+    alternate_play_pause: "keyboardToggle",
+    toggle_mute: "keyboardToggleMute",
+    seek_backward: "keyboardSeekBack",
+    seek_forward: "keyboardSeekForward",
+    speed_up: "keyboardSpeedUp",
+    speed_down: "keyboardSpeedDown",
+    next_subtitle: "keyboardNextSubtitle",
+    next_audio: "keyboardNextAudio",
+    open_sources: "keyboardOpenSources",
+    open_episodes: "keyboardOpenEpisodes",
+    cycle_zoom: "resize",
+    skip_interval: "keyboardSkipInterval",
+    cycle_svp: "keyboardCycleAnimeSvp",
+    cycle_hdr: "keyboardCycleHdrMode",
+    cycle_color_profile: "keyboardCycleColorProfile",
+    cycle_anime: "keyboardCycleAnimeMode",
+    toggle_mpv_diagnostics: "keyboardToggleMpvDiagnostics",
+  }[configuredAction];
+  if (configuredCommand) return configuredCommand;
   switch (event.code) {
-    case "Space":
-    case "KeyK":
-      return "keyboardToggle";
     case "ArrowLeft":
-    case "KeyJ":
       return "keyboardSeekBack";
     case "ArrowRight":
-    case "KeyL":
       return "keyboardSeekForward";
     case "ArrowUp":
       return "volumeUp";
@@ -2154,16 +3298,31 @@ const shortcutCommandForEvent = event => {
   }
 };
 
-let localVolume = 100;
 let volumePillHideTimer = null;
 let lastCursorHidden = null;
+
+const volumeIconHref = () => {
+  // Volume can exceed 100% (up to 200%), so the wave count is scaled for that range:
+  // one wave 1-60, two waves 61-119, three waves 120+.
+  if (localMuted || localVolume <= 0) return "#icon-volume-mute";
+  if (localVolume <= 60) return "#icon-volume-low";
+  if (localVolume <= 119) return "#icon-volume";
+  return "#icon-volume-high";
+};
+
+const syncPlayerVolumeControl = () => {
+  if (playerVolumeSlider) {
+    playerVolumeSlider.value = String(Math.round(localVolume));
+  }
+  playerVolumeIcon?.setAttribute("href", volumeIconHref());
+};
 
 const showVolumePill = () => {
   if (!volumePill) return;
   const percentage = Math.round(localVolume);
   volumePillLabel.textContent = `${percentage}%`;
   if (volumePillIcon) {
-    volumePillIcon.setAttribute("href", percentage <= 0 ? "#icon-volume-mute" : "#icon-volume");
+    volumePillIcon.setAttribute("href", volumeIconHref());
   }
   volumePill.classList.add("visible");
   window.clearTimeout(volumePillHideTimer);
@@ -2174,11 +3333,15 @@ const showVolumePill = () => {
 
 const adjustLocalVolume = deltaPercent => {
   localVolume = Math.max(0, Math.min(200, localVolume + deltaPercent));
+  syncPlayerVolumeControl();
   showVolumePill();
 };
 
-window.nuvioShowVolumePill = percentage => {
+window.nuvioShowVolumePill = (percentage, muted = false) => {
   localVolume = Math.max(0, Math.min(200, Number(percentage) || 0));
+  localMuted = Boolean(muted);
+  refreshContextMenuIndicators();
+  syncPlayerVolumeControl();
   showVolumePill();
 };
 
@@ -2186,8 +3349,17 @@ window.nuvioShowVolumePill = percentage => {
 // Each episode spins up a fresh mpv instance whose volume is restored from the previous episode
 // (e.g. 0%), but this page reloads with localVolume defaulting to 100 — so the next keyboard nudge
 // would render "105%" instead of "5%". Native pushes the real value on fileLoaded to keep them synced.
-window.nuvioSyncVolume = percentage => {
+window.nuvioSyncVolume = (percentage, muted = false) => {
   localVolume = Math.max(0, Math.min(200, Number(percentage) || 0));
+  localMuted = Boolean(muted);
+  refreshContextMenuIndicators();
+  syncPlayerVolumeControl();
+};
+
+window.nuvioSyncMute = muted => {
+  localMuted = Boolean(muted);
+  refreshContextMenuIndicators();
+  syncPlayerVolumeControl();
 };
 
 const presetPill = document.getElementById("presetPill");
@@ -2195,16 +3367,53 @@ const presetPillTitle = document.getElementById("presetPillTitle");
 const presetPillValue = document.getElementById("presetPillValue");
 let presetPillHideTimer = null;
 
-window.nuvioShowPresetPill = (title, value) => {
+window.nuvioShowPresetPill = (title, value, durationMs) => {
   if (!presetPill) return;
   if (presetPillTitle) presetPillTitle.textContent = String(title == null ? "" : title);
   if (presetPillValue) presetPillValue.textContent = String(value == null ? "" : value);
   presetPill.classList.add("visible");
   window.clearTimeout(presetPillHideTimer);
+  const holdMs = Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 1400;
   presetPillHideTimer = window.setTimeout(() => {
     presetPill.classList.remove("visible");
-  }, 1400);
+  }, holdMs);
 };
+
+const hideControlTooltip = () => {
+  if (!controlTooltip) return;
+  controlTooltip.hidden = true;
+  controlTooltip.textContent = "";
+};
+
+const showControlTooltip = button => {
+  if (!controlTooltip || !button) return;
+  const label = String(button.dataset.tooltip || button.getAttribute("aria-label") || "").trim();
+  if (!label) return hideControlTooltip();
+  const buttonRect = button.getBoundingClientRect();
+  const rootRect = root.getBoundingClientRect();
+  const tooltipScale = appliedCombinedUserScale || (1 + (appliedUiScalePercent || 0) / 100);
+  controlTooltip.textContent = label;
+  controlTooltip.style.left = `${Math.max(70, Math.min(rootRect.width - 70, buttonRect.left - rootRect.left + buttonRect.width / 2))}px`;
+  controlTooltip.style.top = `${buttonRect.top - rootRect.top - 8 * tooltipScale}px`;
+  controlTooltip.hidden = false;
+};
+
+if (actionRow && controlTooltip) {
+  actionRow.querySelectorAll("button").forEach(button => {
+    button.dataset.tooltip = button.getAttribute("title") || button.getAttribute("aria-label") || "";
+    button.removeAttribute("title");
+  });
+  actionRow.addEventListener("pointerover", event => {
+    const button = event.target.closest("button");
+    if (button && actionRow.contains(button)) showControlTooltip(button);
+  });
+  actionRow.addEventListener("pointerout", event => {
+    const button = event.target.closest("button");
+    if (!button || button.contains(event.relatedTarget)) return;
+    hideControlTooltip();
+  });
+  actionRow.addEventListener("pointerleave", hideControlTooltip);
+}
 
 const toggleChrome = () => {
   if (playbackErrorText()) return;
@@ -2223,6 +3432,18 @@ const toggleChrome = () => {
   send("toggleChrome", 0);
 };
 
+const revealChromeForPlaybackInteraction = () => {
+  if (state.isLocked) return;
+  if (state.controlsVisible) {
+    noteChromeActivity(true);
+    return;
+  }
+  chromeAutoHideActivity += 1;
+  state = { ...state, controlsVisible: true };
+  renderChrome();
+  send("revealChrome", 0);
+};
+
 const clearPressedButton = () => {
   if (!pressedButton) return;
   pressedButton.classList.remove("is-pressed");
@@ -2234,6 +3455,7 @@ document.addEventListener("pointerdown", event => {
   if (interactingWithChrome) {
     isChromePointerDown = true;
     isChromePointerInside = true;
+    syncChromeInteractionToHost();
     noteChromeActivity(true);
   }
   if (!isTextEntryTarget(event.target)) {
@@ -2252,28 +3474,31 @@ document.addEventListener("pointerdown", event => {
 document.addEventListener("pointermove", event => {
   const inside = isChromeInteractionTarget(event.target);
   updateChromePointerInside(inside);
-  if (state.mouseMoveRevealsControlsEnabled && !state.isLocked) {
-    if (!state.controlsVisible) {
+  if (!state.isLocked) {
+    if (state.mouseMoveRevealsControlsEnabled && !state.controlsVisible) {
       chromeAutoHideActivity += 1;
       state = { ...state, controlsVisible: true };
       renderChrome();
       send("revealChrome", 0);
-    } else {
+    } else if (state.controlsVisible) {
+      // Every movement postpones auto-hide, including movement over buttons, their SVG children,
+      // the seek bar, and other interactive chrome.
       noteChromeActivity();
     }
-  } else if (inside) {
-    noteChromeActivity();
   }
 }, true);
 
 document.addEventListener("pointerup", finishChromePointerInteraction, true);
 document.addEventListener("pointercancel", finishChromePointerInteraction, true);
 document.addEventListener("dragend", clearPressedButton, true);
-document.addEventListener("pointerleave", () => {
+// pointerleave does not bubble, but a capture listener on document sees it for every descendant.
+// That used to mark the pointer outside while merely moving between an icon and its button.
+root.addEventListener("pointerleave", () => {
   updateChromePointerInside(false);
-}, true);
+});
 document.addEventListener("focusin", event => {
   isChromeFocusInside = isChromeInteractionTarget(event.target);
+  syncChromeInteractionToHost();
   if (isChromeFocusInside) {
     noteChromeActivity(true);
   }
@@ -2281,6 +3506,7 @@ document.addEventListener("focusin", event => {
 document.addEventListener("focusout", () => {
   window.setTimeout(() => {
     isChromeFocusInside = isChromeInteractionTarget(document.activeElement);
+    syncChromeInteractionToHost();
     noteChromeActivity(true);
   }, 0);
 }, true);
@@ -2288,6 +3514,7 @@ window.addEventListener("blur", () => {
   isChromePointerInside = false;
   isChromePointerDown = false;
   isChromeFocusInside = false;
+  syncChromeInteractionToHost();
   clearPressedButton();
   syncChromeAutoHideTimer(isOpeningOverlayActive());
 });
@@ -2299,6 +3526,14 @@ document.querySelectorAll("[data-command]").forEach(button => {
     const command = button.dataset.command;
     if (command === "audio") {
       openPlayerModal("audio");
+      return;
+    }
+    if (command === "speed") {
+      stepPlaybackSpeed(1);
+      return;
+    }
+    if (command === "resize") {
+      cycleAspectFromControls();
       return;
     }
     if (command === "subtitles") {
@@ -2313,6 +3548,18 @@ document.querySelectorAll("[data-command]").forEach(button => {
     }
     if (command === "episodes") {
       episodeStreamFilterId = "";
+      keyboardPanelMode = "episodes";
+      send("keyboardPanelOpened", 0);
+      keyboardEpisodeShowingStreams = false;
+      episodeFocusPositionKey = "";
+      const currentEpisode = normalizeItems(state.episodeItems).find(item => Boolean(item.isCurrent));
+      const currentSeason = normalizeItems(state.episodeSeasons).find(season => Boolean(season.isSelected));
+      selectedEpisodeSeason = currentEpisode
+        ? Number(currentEpisode.season)
+        : (currentSeason ? Number(currentSeason.season) : null);
+      const seasonItems = visibleKeyboardEpisodes();
+      const currentIndex = seasonItems.findIndex(item => Boolean(item.isCurrent));
+      keyboardEpisodeIndex = currentIndex >= 0 ? currentIndex : 0;
       openPlayerModal("episodes");
       send("episodes", 0);
       return;
@@ -2396,6 +3643,10 @@ if (fontFamilySelect) {
 outlineToggle.addEventListener("click", event => {
   event.stopPropagation();
   send("subtitleOutlineToggle", 0);
+});
+shadowToggle.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleShadowToggle", 0);
 });
 boldToggle.addEventListener("click", event => {
   event.stopPropagation();
@@ -2512,10 +3763,10 @@ window.nuvioHandleKeyboardPanelKey = code => {
       }
       return;
     }
-    if (code === "ArrowUp") moveKeyboardEpisode(-1);
-    if (code === "ArrowDown") moveKeyboardEpisode(1);
-    if (code === "ArrowLeft") moveKeyboardSeason(-1);
-    if (code === "ArrowRight") moveKeyboardSeason(1);
+    if (code === "ArrowLeft") moveKeyboardEpisode(-1);
+    if (code === "ArrowRight") moveKeyboardEpisode(1);
+    if (code === "ArrowUp") moveKeyboardSeason(1);
+    if (code === "ArrowDown") moveKeyboardSeason(-1);
     if (code === "Enter") {
       const item = visibleKeyboardEpisodes()[keyboardEpisodeIndex];
       if (item) send("selectEpisode", Number(item.index) || 0);
@@ -2640,10 +3891,132 @@ seek.addEventListener("change", () => {
   send("scrubFinish", scrubPositionMs);
   state.positionMs = scrubPositionMs;
   render();
+  // Clicking the range leaves DOM focus on the slider, which makes it swallow Space/arrows like a
+  // touch UI (the keydown handler treats a focused input as text entry and bails). Hand focus back
+  // to the shortcut root so Space keeps toggling playback.
+  focusShortcutRoot();
 });
 
-timeline.addEventListener("pointermove", showChapterTooltipAt);
-timeline.addEventListener("pointerleave", hideChapterTooltip);
+// PiP shows a stripped-down seek bar (the full timeline row is hidden in compact mode). It drives
+// the same scrub pipeline as the main scrubber and shares its buffered/progress fill via setProgress.
+if (pipSeek) {
+  pipSeek.addEventListener("input", () => {
+    noteChromeActivity();
+    isScrubbing = true;
+    scrubPositionMs = rangePositionMs(pipSeek);
+    setProgress(scrubPositionMs, state.durationMs);
+    send("scrubChange", scrubPositionMs);
+  });
+  pipSeek.addEventListener("change", () => {
+    noteChromeActivity();
+    scrubPositionMs = rangePositionMs(pipSeek);
+    isScrubbing = false;
+    send("scrubFinish", scrubPositionMs);
+    state.positionMs = scrubPositionMs;
+    render();
+    focusShortcutRoot();
+  });
+}
+
+let episodeRailPointerId = null;
+let episodeRailStartX = 0;
+let episodeRailStartScroll = 0;
+let episodeRailDragged = false;
+episodeList.addEventListener("wheel", event => {
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+  if (delta === 0) return;
+  event.preventDefault();
+  episodeList.scrollLeft += Math.sign(delta) * 240;
+}, { passive: false });
+episodeList.addEventListener("pointerenter", () => {
+  keyboardPanelMode = "episodes";
+  focusShortcutRoot();
+});
+episodeNotch.addEventListener("pointerenter", () => {
+  if (activeModal !== "episodes") episodeNotch.click();
+});
+sourceNotch.addEventListener("pointerenter", () => {
+  if (activeModal !== "sources") sourceNotch.click();
+});
+episodeList.addEventListener("pointerdown", event => {
+  if (event.button !== 0) return;
+  episodeRailPointerId = event.pointerId;
+  episodeRailStartX = event.clientX;
+  episodeRailStartScroll = episodeList.scrollLeft;
+  episodeRailDragged = false;
+});
+episodeList.addEventListener("pointermove", event => {
+  if (event.pointerId !== episodeRailPointerId) return;
+  const distance = event.clientX - episodeRailStartX;
+  if (!episodeRailDragged && Math.abs(distance) > 8) {
+    episodeRailDragged = true;
+    episodeList.setPointerCapture(event.pointerId);
+    episodeList.classList.add("is-dragging");
+  }
+  if (!episodeRailDragged) return;
+  event.preventDefault();
+  episodeList.scrollLeft = episodeRailStartScroll - distance;
+});
+const finishEpisodeRailDrag = event => {
+  if (event.pointerId !== episodeRailPointerId) return;
+  if (episodeList.hasPointerCapture(event.pointerId)) episodeList.releasePointerCapture(event.pointerId);
+  episodeRailPointerId = null;
+  episodeList.classList.remove("is-dragging");
+};
+episodeList.addEventListener("pointerup", finishEpisodeRailDrag);
+episodeList.addEventListener("pointercancel", finishEpisodeRailDrag);
+episodeList.addEventListener("click", event => {
+  if (episodeRailDragged) {
+    event.preventDefault();
+    event.stopPropagation();
+    episodeRailDragged = false;
+  }
+}, true);
+
+const playbackSpeedStages = [1, 1.25, 1.5, 2, 3, 4];
+// Fine mode steps by a flat 0.1 over a continuous range instead of hopping between the coarse
+// preset stages. Kept as 0.1-multiples with a rounding guard so repeated steps don't drift.
+const PLAYBACK_SPEED_FINE_STEP = 0.1;
+const PLAYBACK_SPEED_FINE_MIN = 0.1;
+const PLAYBACK_SPEED_FINE_MAX = 4;
+const stepPlaybackSpeed = direction => {
+  const current = parsedPlaybackSpeed();
+  let next;
+  if (state.playbackSpeedFineIncrementsEnabled) {
+    const stepped = current + direction * PLAYBACK_SPEED_FINE_STEP;
+    next = Math.min(PLAYBACK_SPEED_FINE_MAX, Math.max(PLAYBACK_SPEED_FINE_MIN, Math.round(stepped * 10) / 10));
+  } else {
+    const currentIndex = playbackSpeedStages.reduce((best, speed, index) =>
+      Math.abs(speed - current) < Math.abs(playbackSpeedStages[best] - current) ? index : best, 0);
+    const nextIndex = Math.max(0, Math.min(playbackSpeedStages.length - 1, currentIndex + direction));
+    next = playbackSpeedStages[nextIndex];
+  }
+  const label = `${String(next).replace(/\.0$/, "")}x`;
+  state = { ...state, playbackSpeedLabel: label };
+  speedLabel.textContent = label;
+  window.nuvioShowPresetPill("Playback speed", label);
+  send("setPlaybackSpeed", next);
+};
+speedButton.addEventListener("contextmenu", event => {
+  event.preventDefault();
+  event.stopPropagation();
+  noteChromeActivity(true);
+  stepPlaybackSpeed(-1);
+});
+
+playerVolumeSlider.addEventListener("input", event => {
+  event.stopPropagation();
+  localVolume = Math.max(0, Math.min(200, Number(playerVolumeSlider.value) || 0));
+  send("volumeSet", localVolume);
+  noteChromeActivity(true);
+});
+playerVolumeSlider.addEventListener("click", event => event.stopPropagation());
+
+timeline.addEventListener("pointermove", showSeekThumbnailAt);
+timeline.addEventListener("pointerleave", () => {
+  hideChapterTooltip();
+  hideSeekThumbnail();
+});
 
 window.playerUpdate = update => {
   const durationMs = Math.round((Number(update.duration) || 0) * 1000);
@@ -2663,6 +4036,8 @@ window.playerUpdate = update => {
     audioTracks,
     subtitleTracks,
   };
+  setContextMenuDynamicItems("subtitleTracks", subtitleTracks);
+  setContextMenuDynamicItems("audioTracks", audioTracks);
   renderChrome();
   if ((audioTracksChanged && activeModal === "audio") ||
       (subtitleTracksChanged && activeModal === "subtitles")) {
@@ -2673,6 +4048,9 @@ window.playerUpdate = update => {
 window.playerControls = nextState => {
   const previousCloseToken = Number(state.closeModalsToken) || 0;
   state = { ...state, ...nextState };
+  refreshContextMenuIndicators();
+  if (contextMenuOpen) refreshSubtitleStyleContextSubmenus();
+  setContextMenuDynamicItems("addonSubtitles", state.addonSubtitleItems);
   hasReceivedPlayerControls = true;
   const closeToken = Number(state.closeModalsToken) || 0;
   if (closeToken !== previousCloseToken) {
@@ -2686,20 +4064,96 @@ window.playerControls = nextState => {
   render();
 };
 
+let activePipPointerId = null;
+
+const beginPipPointerInteraction = (event, mode) => {
+  activePipPointerId = event.pointerId;
+  try {
+    root.setPointerCapture(event.pointerId);
+  } catch (_) {
+    // Pointer capture can fail if WebView has already cancelled the pointer. The native side
+    // still receives the initial interaction and any subsequent events that remain in-view.
+  }
+  send("beginPictureInPictureInteraction", mode);
+};
+
+const endPipPointerInteraction = event => {
+  if (activePipPointerId === null || (event && event.pointerId !== activePipPointerId)) return;
+  const pointerId = activePipPointerId;
+  activePipPointerId = null;
+  send("endPictureInPictureInteraction", 0);
+  try {
+    if (root.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId);
+  } catch (_) {}
+};
+
+root.addEventListener("pointermove", event => {
+  if (event.pointerId !== activePipPointerId) return;
+  event.preventDefault();
+  send("updatePictureInPictureInteraction", 0);
+}, true);
+
+root.addEventListener("pointerup", endPipPointerInteraction, true);
+root.addEventListener("pointercancel", endPipPointerInteraction, true);
+root.addEventListener("lostpointercapture", endPipPointerInteraction, true);
+
+root.addEventListener("pointerdown", event => {
+  if (!state.pictureInPictureActive || event.button !== 0) return;
+  if (event.target.closest("button,input,.pip-resize-handle")) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  beginPipPointerInteraction(event, 1);
+}, true);
+
+pictureInPictureResizeHandles.forEach(handleElement => {
+  handleElement.addEventListener("pointerdown", event => {
+    if (!state.pictureInPictureActive || event.button !== 0) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    beginPipPointerInteraction(event, (Number(handleElement.dataset.pipResize) || 0) + 1);
+  }, true);
+});
+
 root.addEventListener("click", event => {
+  if (consumeContextMenuDismissalClick) {
+    consumeContextMenuDismissalClick = false;
+    window.clearTimeout(contextMenuDismissalClickTimer);
+    event.preventDefault();
+    event.stopPropagation();
+    window.clearTimeout(tapTimer);
+    return;
+  }
+  if (state.pictureInPictureActive) return;
   if (playbackErrorText()) return;
   if (event.target.closest("button,input")) return;
   const onVideoSurface = !isChromeInteractionTarget(event.target);
   window.clearTimeout(tapTimer);
   tapTimer = window.setTimeout(() => {
-    if (onVideoSurface && !state.isLocked) {
-      send("toggle", 0);
+    if (state.isLocked) {
+      // Locked: any tap just reveals the locked overlay (handled inside toggleChrome).
+      toggleChrome();
+      return;
     }
-    toggleChrome();
+    if (onVideoSurface) {
+      // Native playback state follows the click asynchronously. Hide/reset the paused card now so
+      // the stale paused frame cannot flash during the resume handoff.
+      suppressPauseMetadataForPlaybackInteraction();
+      send("toggle", 0);
+      // A surface click is also a playback interaction. Always leave the controls visible and
+      // restart their timeout; toggling chrome here made the result depend on whether a preceding
+      // mousemove happened to reveal it first.
+      revealChromeForPlaybackInteraction();
+    } else {
+      // Clicked the controls themselves — a gap between/around buttons, the control-bar
+      // background, or the header band. Keep the chrome up and just restart the fade timer
+      // instead of hiding it out from under the pointer.
+      noteChromeActivity(true);
+    }
   }, 220);
 });
 
 root.addEventListener("wheel", event => {
+  if (state.pictureInPictureActive) return;
   if (playbackErrorText()) return;
   if (state.isLocked) return;
   if (isChromeInteractionTarget(event.target)) return;
@@ -2713,9 +4167,31 @@ root.addEventListener("wheel", event => {
 root.addEventListener("dblclick", event => {
   if (playbackErrorText()) return;
   if (event.target.closest("button,input")) return;
+  // Only the bare video surface toggles fullscreen — double-clicking the control bar or the top
+  // navbar band shouldn't fling in/out of fullscreen.
+  if (isChromeInteractionTarget(event.target)) return;
   event.preventDefault();
   window.clearTimeout(tapTimer);
   send("toggleFullscreen", 0);
+});
+
+// Mouse "Back" side button (X1 / button 3) closes the player, mirroring Esc. WebView2 mouse events
+// don't reach the app-level AWT listener that handles Back on every other screen, so the button is
+// wired here in the HUD instead. (Button 4 / Forward is intentionally left alone.)
+document.addEventListener("mousedown", event => {
+  if (isHeroTrailerSurface || state.heroTrailerMode) return;
+  if (event.button !== 3) return;
+  event.preventDefault();
+  if (contextMenuOpen) {
+    closeContextMenu();
+    return;
+  }
+  if (activeModal) {
+    closePlayerModal(true);
+    focusShortcutRoot();
+    return;
+  }
+  send("back", 0);
 });
 
 document.addEventListener("keydown", event => {
@@ -2725,6 +4201,11 @@ document.addEventListener("keydown", event => {
   // parallel path fought Compose's own handling and caused stuck-key bugs) and don't run any of
   // the full-screen player key logic below for this surface.
   if (isHeroTrailerSurface || state.heroTrailerMode) {
+    return;
+  }
+  if (event.key === "Escape" && contextMenuOpen) {
+    event.preventDefault();
+    closeContextMenu();
     return;
   }
   if (event.key === "Escape" && playbackErrorText()) {
@@ -2745,7 +4226,8 @@ document.addEventListener("keydown", event => {
   }
   if (playbackErrorText()) return;
   const isMacFullscreenShortcut = event.code === "KeyF" && event.metaKey && event.ctrlKey && !event.altKey;
-  if (event.code === "F11" || isMacFullscreenShortcut) {
+  const configuredFullscreenKey = Math.max(0, Number(state.appFullscreenKeyCode) || 0);
+  if (event.code === "F11" || (configuredFullscreenKey > 0 && awtKeyCodeForEvent(event) === configuredFullscreenKey) || isMacFullscreenShortcut) {
     event.preventDefault();
     focusShortcutRoot();
     send("toggleFullscreen", 0);
@@ -2759,35 +4241,6 @@ document.addEventListener("keydown", event => {
   if (activeModal || isTextEntryTarget(event.target)) {
     return;
   }
-  if (event.code === "Tab") {
-    // Tab skips the intro/outro while the skip prompt is showing (matches the official client).
-    if (skipPrompt.classList.contains("visible")) {
-      event.preventDefault();
-      noteChromeActivity();
-      send("skipInterval", 0);
-    }
-    return;
-  }
-  if (!event.metaKey && !event.ctrlKey && !event.altKey) {
-    const directKeybind = {
-      KeyC: () => send("resize", 0),
-      BracketLeft: () => send("keyboardSpeedStep", -1),
-      BracketRight: () => send("keyboardSpeedStep", 1),
-      KeyS: () => send("keyboardNextSubtitle", 0),
-      KeyA: () => send("keyboardNextAudio", 0),
-      KeyO: () => window.nuvioOpenKeyboardPanel("sources"),
-      KeyE: () => window.nuvioOpenKeyboardPanel("episodes"),
-      F8: () => send("keyboardCycleHdrMode", 0),
-      F9: () => send("keyboardCycleColorProfile", 0),
-      F10: () => send("keyboardCycleAnimeMode", 0),
-    }[event.code];
-    if (directKeybind) {
-      event.preventDefault();
-      noteChromeActivity();
-      directKeybind();
-      return;
-    }
-  }
   const command = shortcutCommandForEvent(event);
   if (!command) {
     return;
@@ -2799,11 +4252,60 @@ document.addEventListener("keydown", event => {
     adjustLocalVolume(5);
   } else if (command === "volumeDown") {
     adjustLocalVolume(-5);
+  } else if (command === "keyboardToggleMute") {
+    localMuted = !localMuted;
+    syncPlayerVolumeControl();
+    showVolumePill();
+  } else if (command === "keyboardSpeedUp") {
+    stepPlaybackSpeed(1);
+    return;
+  } else if (command === "keyboardSpeedDown") {
+    stepPlaybackSpeed(-1);
+    return;
+  } else if (command === "keyboardOpenSources") {
+    window.nuvioOpenKeyboardPanel("sources");
+    return;
+  } else if (command === "keyboardOpenEpisodes") {
+    window.nuvioOpenKeyboardPanel("episodes");
+    return;
+  } else if (command === "keyboardSkipInterval") {
+    if (skipPrompt.classList.contains("visible")) {
+      send("skipInterval", 0);
+    } else if (state.nextEpisodeVisible && state.nextEpisodePlayable) {
+      send("playNextEpisode", 0);
+    }
+    return;
+  } else if (command === "keyboardToggleMpvDiagnostics") {
+    window.nuvioToggleMpvDiagnostics();
+    return;
   }
   send(command, 0);
 });
 
 setProgress(0, 0);
+window.addEventListener("resize", updateViewportUiScale, { passive: true });
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", updateViewportUiScale, { passive: true });
+}
+// A window can cross to a monitor with a different OS scale while retaining the same outer
+// dimensions. Some WebView versions report that as a DPR media-query change without emitting a
+// normal window resize, so re-arm the query after every transition and recalculate explicitly.
+let displayScaleMediaQuery = null;
+const watchDisplayScaleChanges = () => {
+  const nextQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+  const onDisplayScaleChanged = () => {
+    if (displayScaleMediaQuery && displayScaleMediaQuery.removeEventListener) {
+      displayScaleMediaQuery.removeEventListener("change", onDisplayScaleChanged);
+    }
+    updateViewportUiScale();
+    watchDisplayScaleChanges();
+  };
+  displayScaleMediaQuery = nextQuery;
+  if (nextQuery.addEventListener) nextQuery.addEventListener("change", onDisplayScaleChanged);
+  else if (nextQuery.addListener) nextQuery.addListener(onDisplayScaleChanged);
+};
+watchDisplayScaleChanges();
+updateViewportUiScale();
 focusShortcutRoot();
 render();
 send("controlsReady", 0);

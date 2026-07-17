@@ -22,6 +22,9 @@ data class MetaPreview(
     val runtime: String? = null,
     val genres: List<String> = emptyList(),
     val cast: List<HeroCastMember> = emptyList(),
+    // Navigation provenance, not content metadata. A title can appear in both a local-library
+    // catalog and a remote watchlist, so the playback policy must follow the row that was opened.
+    val preferLocalStreams: Boolean = false,
 )
 
 data class HeroCastMember(

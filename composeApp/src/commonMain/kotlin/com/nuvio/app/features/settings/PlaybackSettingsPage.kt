@@ -66,6 +66,7 @@ import com.nuvio.app.features.player.DesktopCustomShaderOption
 import com.nuvio.app.features.player.DesktopRendererApi
 import com.nuvio.app.features.player.DesktopColorProfile
 import com.nuvio.app.features.player.DesktopHdrMode
+import com.nuvio.app.features.player.DesktopMpvConfigMode
 import com.nuvio.app.features.player.ExternalPlayerApp
 import com.nuvio.app.features.player.ExternalPlayerPlatform
 import com.nuvio.app.features.player.HERO_TV_TRAILER_DELAY_VALUES
@@ -76,6 +77,7 @@ import com.nuvio.app.features.player.IosTargetPrimaries
 import com.nuvio.app.features.player.IosTargetTransfer
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.player.STREAM_AUTO_PLAY_TIMEOUT_VALUES
+import com.nuvio.app.features.player.STREAM_FAILOVER_TIMEOUT_VALUES
 import com.nuvio.app.features.player.SubtitleLanguageOption
 import com.nuvio.app.features.player.formatPlaybackSpeedLabel
 import com.nuvio.app.features.player.languageLabelForCode
@@ -185,7 +187,7 @@ fun ValueBox(
 }
 
 @Composable
-private fun SettingsSliderRow(
+internal fun SettingsSliderRow(
     title: String,
     value: Int,
     valueText: String,
@@ -585,12 +587,47 @@ private fun PlaybackSettingsSection(
                 if (isDesktop) {
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_fine_speed_increments),
+                        description = stringResource(Res.string.settings_playback_fine_speed_increments_description),
+                        checked = autoPlayPlayerSettings.desktopPlaybackSpeedFineIncrementsEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setDesktopPlaybackSpeedFineIncrementsEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_mouse_move_reveals_controls),
                         description = stringResource(Res.string.settings_playback_mouse_move_reveals_controls_description),
                         checked = autoPlayPlayerSettings.mouseMoveRevealsControlsEnabled,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.MouseMove),
                         onCheckedChange = PlayerSettingsRepository::setMouseMoveRevealsControlsEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_legacy_hud),
+                        description = stringResource(Res.string.settings_playback_legacy_hud_description),
+                        checked = autoPlayPlayerSettings.desktopLegacyHudEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setDesktopLegacyHudEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_always_show_clock),
+                        description = stringResource(Res.string.settings_playback_always_show_clock_description),
+                        checked = autoPlayPlayerSettings.desktopAlwaysShowClockEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setDesktopAlwaysShowClockEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    val uiScalePercent = autoPlayPlayerSettings.desktopUiScalePercent
+                    SettingsSliderRow(
+                        title = stringResource(Res.string.settings_playback_ui_scale),
+                        value = uiScalePercent,
+                        valueText = "${if (uiScalePercent > 0) "+" else ""}$uiScalePercent%",
+                        valueRange = -50..50,
+                        step = 5,
+                        isTablet = isTablet,
+                        onValueChange = PlayerSettingsRepository::setDesktopUiScalePercent,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsChoiceRow(
@@ -637,6 +674,23 @@ private fun PlaybackSettingsSection(
                         onMoreOptionsClick = { showDesktopBufferPresetDialog = true },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_desktop_audio_passthrough),
+                        description = stringResource(Res.string.settings_playback_desktop_audio_passthrough_desc),
+                        checked = autoPlayPlayerSettings.desktopAudioPassthroughEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setDesktopAudioPassthroughEnabled,
+                    )
+                }
+            }
+        }
+
+        if (isDesktop) {
+            SettingsSection(
+                title = "Anime",
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
                     var showCustomShaderPathsDialog by remember { mutableStateOf(false) }
                     val shaderPathsNotSet = stringResource(Res.string.settings_playback_not_set)
                     val customShaderOptions = DesktopCustomShaderCatalog.availableShaders(
@@ -710,17 +764,27 @@ private fun PlaybackSettingsSection(
                             onDismiss = { showCustomShaderPathsDialog = false },
                         )
                     }
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_desktop_audio_passthrough),
-                        description = stringResource(Res.string.settings_playback_desktop_audio_passthrough_desc),
-                        checked = autoPlayPlayerSettings.desktopAudioPassthroughEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setDesktopAudioPassthroughEnabled,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
+                }
+            }
+
+            SettingsSection(
+                title = "Advanced",
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
                     var showCustomMpvOptionsDialog by remember { mutableStateOf(false) }
                     val mpvOptionsNotSet = stringResource(Res.string.settings_playback_not_set)
+                    SettingsChoiceRow(
+                        title = "MPV configuration mode",
+                        description = autoPlayPlayerSettings.desktopMpvConfigMode.description,
+                        options = DesktopMpvConfigMode.entries.map { mode ->
+                            SettingsChoiceOption(mode, mode.label)
+                        },
+                        selectedValue = autoPlayPlayerSettings.desktopMpvConfigMode,
+                        isTablet = isTablet,
+                        onSelected = PlayerSettingsRepository::setDesktopMpvConfigMode,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
                         title = stringResource(Res.string.settings_playback_desktop_custom_mpv_options),
                         description = autoPlayPlayerSettings.desktopCustomMpvOptions
@@ -742,6 +806,14 @@ private fun PlaybackSettingsSection(
                             onDismiss = { showCustomMpvOptionsDialog = false },
                         )
                     }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_desktop_verbose_mpv_logging),
+                        description = stringResource(Res.string.settings_playback_desktop_verbose_mpv_logging_desc),
+                        checked = autoPlayPlayerSettings.desktopVerboseMpvLoggingEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setDesktopVerboseMpvLoggingEnabled,
+                    )
                 }
             }
         }
@@ -862,7 +934,7 @@ private fun PlaybackSettingsSection(
                     title = stringResource(Res.string.settings_playback_subtitle_size),
                     value = subtitleStyle.fontSizeSp,
                     valueText = stringResource(Res.string.compose_player_font_size_value, subtitleStyle.fontSizeSp),
-                    valueRange = 12..40,
+                    valueRange = 6..40,
                     step = 2,
                     isTablet = isTablet,
                     enabled = subtitleRenderingEnabled,
@@ -918,6 +990,17 @@ private fun PlaybackSettingsSection(
                         },
                     )
                 }
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_playback_subtitle_shadow),
+                    description = stringResource(Res.string.settings_playback_subtitle_shadow_description),
+                    checked = subtitleStyle.shadowEnabled,
+                    enabled = subtitleRenderingEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = { enabled ->
+                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(shadowEnabled = enabled))
+                    },
+                )
                 SettingsGroupDivider(isTablet = isTablet)
                 SubtitleColorDropdownRow(
                     title = stringResource(Res.string.settings_playback_subtitle_text_color),
@@ -1018,6 +1101,35 @@ private fun PlaybackSettingsSection(
                         description = formatReuseCacheDuration(streamReuseLastLinkCacheHours),
                         isTablet = isTablet,
                         onClick = { showReuseCacheDurationDialog = true },
+                    )
+                }
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_playback_stream_failover),
+                    description = stringResource(Res.string.settings_playback_stream_failover_description),
+                    checked = autoPlayPlayerSettings.streamFailoverEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = PlayerSettingsRepository::setStreamFailoverEnabled,
+                )
+                if (autoPlayPlayerSettings.streamFailoverEnabled) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsChoiceRow(
+                        title = stringResource(Res.string.settings_playback_stream_failover_timeout),
+                        description = stringResource(
+                            Res.string.settings_playback_stream_failover_timeout_description,
+                        ),
+                        options = STREAM_FAILOVER_TIMEOUT_VALUES.map { seconds ->
+                            SettingsChoiceOption(
+                                seconds,
+                                stringResource(
+                                    Res.string.settings_playback_stream_failover_timeout_seconds,
+                                    seconds,
+                                ),
+                            )
+                        },
+                        selectedValue = autoPlayPlayerSettings.streamFailoverTimeoutSeconds,
+                        isTablet = isTablet,
+                        onSelected = PlayerSettingsRepository::setStreamFailoverTimeoutSeconds,
                     )
                 }
             }

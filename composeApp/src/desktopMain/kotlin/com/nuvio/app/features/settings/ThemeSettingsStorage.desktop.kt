@@ -3,8 +3,10 @@ package com.nuvio.app.features.settings
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.core.storage.ProfileScopedKey
 import com.nuvio.app.core.sync.decodeSyncBoolean
+import com.nuvio.app.core.sync.decodeSyncInt
 import com.nuvio.app.core.sync.decodeSyncString
 import com.nuvio.app.core.sync.encodeSyncBoolean
+import com.nuvio.app.core.sync.encodeSyncInt
 import com.nuvio.app.core.sync.encodeSyncString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -22,6 +24,8 @@ internal actual object ThemeSettingsStorage {
     private const val desktopColumnGuidesVisibleKey = "desktop_column_guides_visible"
     private const val wasdNavigationEnabledKey = "wasd_navigation_enabled"
     private const val desktopNavigationLayoutKey = "desktop_navigation_layout"
+    private const val desktopAppUiScalePercentKey = "desktop_app_ui_scale_percent"
+    private const val desktopAppUiScaleAppliesToDetailsKey = "desktop_app_ui_scale_applies_to_details"
     private const val selectedAppLanguageKey = "selected_app_language"
     private val profileScopedSyncKeys = listOf(
         selectedThemeKey,
@@ -33,6 +37,8 @@ internal actual object ThemeSettingsStorage {
         liquidGlassNativeTabBarEnabledKey,
         desktopColumnGuidesVisibleKey,
         desktopNavigationLayoutKey,
+        desktopAppUiScalePercentKey,
+        desktopAppUiScaleAppliesToDetailsKey,
     )
     private val store = DesktopStorage.store("nuvio_theme_settings")
 
@@ -106,6 +112,20 @@ internal actual object ThemeSettingsStorage {
         store.putString(ProfileScopedKey.of(desktopNavigationLayoutKey), layoutName)
     }
 
+    actual fun loadDesktopAppUiScalePercent(): Int? =
+        store.getInt(ProfileScopedKey.of(desktopAppUiScalePercentKey))
+
+    actual fun saveDesktopAppUiScalePercent(percent: Int) {
+        store.putInt(ProfileScopedKey.of(desktopAppUiScalePercentKey), percent)
+    }
+
+    actual fun loadDesktopAppUiScaleAppliesToDetails(): Boolean? =
+        store.getBoolean(ProfileScopedKey.of(desktopAppUiScaleAppliesToDetailsKey))
+
+    actual fun saveDesktopAppUiScaleAppliesToDetails(enabled: Boolean) {
+        store.putBoolean(ProfileScopedKey.of(desktopAppUiScaleAppliesToDetailsKey), enabled)
+    }
+
     actual fun loadSelectedAppLanguage(): String? =
         store.getString(selectedAppLanguageKey)
             ?: Locale.getDefault().toLanguageTag().takeIf { it.isNotBlank() }
@@ -128,6 +148,10 @@ internal actual object ThemeSettingsStorage {
         loadLiquidGlassNativeTabBarEnabled()?.let { put(liquidGlassNativeTabBarEnabledKey, encodeSyncBoolean(it)) }
         loadDesktopColumnGuidesVisible()?.let { put(desktopColumnGuidesVisibleKey, encodeSyncBoolean(it)) }
         loadDesktopNavigationLayout()?.let { put(desktopNavigationLayoutKey, encodeSyncString(it)) }
+        loadDesktopAppUiScalePercent()?.let { put(desktopAppUiScalePercentKey, encodeSyncInt(it)) }
+        loadDesktopAppUiScaleAppliesToDetails()?.let {
+            put(desktopAppUiScaleAppliesToDetailsKey, encodeSyncBoolean(it))
+        }
     }
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
@@ -141,6 +165,9 @@ internal actual object ThemeSettingsStorage {
         payload.decodeSyncBoolean(liquidGlassNativeTabBarEnabledKey)?.let(::saveLiquidGlassNativeTabBarEnabled)
         payload.decodeSyncBoolean(desktopColumnGuidesVisibleKey)?.let(::saveDesktopColumnGuidesVisible)
         payload.decodeSyncString(desktopNavigationLayoutKey)?.let(::saveDesktopNavigationLayout)
+        payload.decodeSyncInt(desktopAppUiScalePercentKey)?.let(::saveDesktopAppUiScalePercent)
+        payload.decodeSyncBoolean(desktopAppUiScaleAppliesToDetailsKey)
+            ?.let(::saveDesktopAppUiScaleAppliesToDetails)
         applySelectedAppLanguage(loadSelectedAppLanguage() ?: AppLanguage.ENGLISH.code)
     }
 }

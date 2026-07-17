@@ -13,6 +13,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.nativeKeyCode
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.res.painterResource
@@ -27,19 +34,23 @@ import java.awt.dnd.DnDConstants
 import java.awt.dnd.DropTargetDragEvent
 import java.awt.dnd.DropTargetDropEvent
 import com.nuvio.app.core.ui.DesktopNavigationGestureBridge
+import com.nuvio.app.core.ui.DesktopBackRequestSource
 import com.nuvio.app.features.player.DesktopRendererApi
 import com.nuvio.app.features.player.PlatformPlayerSurface
 import com.nuvio.app.features.player.PlayerSettingsStorage
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.applyNativeBorderlessFullscreen
 import com.nuvio.app.features.player.desktop.applyNativeDesktopWindowChrome
+import com.nuvio.app.features.player.desktop.applyNativeCompactPlayerWindow
 import com.nuvio.app.features.player.desktop.desktopAppFullscreenState
+import com.nuvio.app.features.player.desktop.desktopPictureInPictureState
 import com.nuvio.app.features.player.desktop.ensureNativePlayerBridgeLoaded
 import com.nuvio.app.features.player.desktop.installDesktopAppFullscreenShortcuts
-import com.nuvio.app.features.player.desktop.preloadNativePlayerBridgeAsync
 import com.nuvio.app.features.player.desktop.registerDesktopAppFullscreenToggle
+import com.nuvio.app.features.player.desktop.registerDesktopPictureInPictureHandler
+import com.nuvio.app.features.player.desktop.setDesktopPictureInPicture
+import com.nuvio.app.features.player.desktop.suspendNativeBorderlessFullscreen
 import com.nuvio.app.features.player.desktop.toggleDesktopAppFullscreen
-import com.nuvio.app.features.player.desktop.warmNativePlayerBridgeLoadAsync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -48,8 +59,13 @@ import java.awt.Color as AwtColor
 import java.awt.KeyEventDispatcher
 import java.awt.KeyboardFocusManager
 import com.nuvio.app.features.player.LocalFileDrop
+import com.nuvio.app.features.player.AppShortcutAction
+import com.nuvio.app.features.player.AppShortcutBridge
+import com.nuvio.app.features.player.AppShortcutsRepository
+import com.nuvio.app.features.settings.SettingsTextInputTracker
 import java.awt.Toolkit
 import java.awt.Frame
+import java.awt.Rectangle
 import java.awt.event.AWTEventListener
 import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
@@ -62,6 +78,59 @@ private const val VK_BROWSER_BACK = 0xA6
 private val NuvioDesktopNativeBackground = AwtColor(0x0D, 0x0D, 0x0D)
 private const val NuvioDesktopIconPath = "icons/nuvio-app-icon.png"
 private const val MacosDarkAquaAppearance = "NSAppearanceNameDarkAqua"
+
+private data class DesktopPictureInPictureRestore(
+    val bounds: Rectangle,
+    val placement: WindowPlacement,
+    val extendedState: Int,
+    val alwaysOnTop: Boolean,
+    val borderlessFullscreen: Boolean,
+)
+
+// Session-scoped (lives until the client process exits) memory of the last Picture-in-Picture
+// window bounds. Re-entering PiP restores wherever the user last moved/sized the window instead of
+// snapping back to the default bottom-right. Intentionally not persisted to disk — forgotten on
+// restart, which matches the "for the session" scope the feature is meant to have.
+private var lastPictureInPictureBounds: Rectangle? = null
+
+private fun pictureInPictureDefaultBounds(window: java.awt.Window): Rectangle {
+    val configuration = window.graphicsConfiguration
+        ?: java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration
+    val screen = configuration.bounds
+    val insets = Toolkit.getDefaultToolkit().getScreenInsets(configuration)
+    val usableLeft = screen.x + insets.left
+    val usableTop = screen.y + insets.top
+    val usableWidth = (screen.width - insets.left - insets.right).coerceAtLeast(320)
+    val usableHeight = (screen.height - insets.top - insets.bottom).coerceAtLeast(180)
+    val margin = 20
+    val width = minOf(480, usableWidth - margin * 2).coerceAtLeast(320)
+    val height = minOf((width * 9f / 16f).toInt(), usableHeight - margin * 2).coerceAtLeast(180)
+    return Rectangle(
+        usableLeft + usableWidth - width - margin,
+        usableTop + usableHeight - height - margin,
+        width,
+        height,
+    )
+}
+
+// A remembered rect is only reused if it is still sane and its centre lands on a currently
+// connected screen — otherwise (e.g. a monitor was unplugged since it was captured) the window
+// would open off-screen, so we fall back to the default bottom-right placement.
+private fun pictureInPictureBoundsAreUsable(bounds: Rectangle): Boolean {
+    if (bounds.width < 240 || bounds.height < 135) return false
+    val centerX = bounds.x + bounds.width / 2
+    val centerY = bounds.y + bounds.height / 2
+    return java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.any { device ->
+        device.defaultConfiguration.bounds.contains(centerX, centerY)
+    }
+}
+
+private fun pictureInPictureBounds(window: java.awt.Window): Rectangle {
+    lastPictureInPictureBounds
+        ?.takeIf { pictureInPictureBoundsAreUsable(it) }
+        ?.let { return Rectangle(it) }
+    return pictureInPictureDefaultBounds(window)
+}
 
 private inline fun desktopStartupStep(name: String, block: () -> Unit) {
     val startedAt = System.currentTimeMillis()
@@ -82,9 +151,6 @@ fun main() {
     desktopStartupStep("configure renderer") { configureDesktopRenderer() }
     desktopStartupStep("configure chrome") { configureDesktopChrome() }
     desktopStartupStep("subtitle font warm request") { com.nuvio.app.features.player.warmSubtitleFontCache() }
-    // Overlaps the native bridge DLL extraction/link with Compose/Skia startup so the
-    // startup fullscreen swap below never waits for it on the AWT event thread.
-    desktopStartupStep("native bridge load warm request") { warmNativePlayerBridgeLoadAsync() }
     System.out.println("Info: (DesktopStartup) entering Compose application")
 
     application {
@@ -137,24 +203,60 @@ fun main() {
                 window.contentPane.background = NuvioDesktopNativeBackground
                 (window.contentPane as? JComponent)?.isOpaque = true
             }
-            LaunchedEffect(window) {
-                delay(3_000)
-                desktopStartupStep("apply native desktop chrome") {
-                    applyNativeDesktopWindowChrome(window)
-                }
-                Thread {
-                    desktopStartupStep("native player bridge preload request") {
-                        preloadNativePlayerBridgeAsync()
-                    }
-                }.apply {
-                    name = "nuvio-native-startup-warmup"
-                    isDaemon = true
-                    start()
-                }
-            }
             DisposableEffect(window, windowState) {
+                val uninstallDisplayMetricsTracking = installDesktopDisplayMetricsTracking(window)
+                var pictureInPictureRestore: DesktopPictureInPictureRestore? = null
+                val unregisterPictureInPicture = registerDesktopPictureInPictureHandler { active, targetWindow ->
+                    if (targetWindow != null && targetWindow !== window) return@registerDesktopPictureInPictureHandler
+                    if (active) {
+                        if (pictureInPictureRestore != null) return@registerDesktopPictureInPictureHandler
+                        pictureInPictureRestore = DesktopPictureInPictureRestore(
+                            bounds = Rectangle(window.bounds),
+                            placement = windowState.placement,
+                            extendedState = window.extendedState,
+                            alwaysOnTop = window.isAlwaysOnTop,
+                            borderlessFullscreen = isBorderlessFullscreen.value,
+                        )
+                        if (isBorderlessFullscreen.value) {
+                            suspendNativeBorderlessFullscreen(window, true)
+                            isBorderlessFullscreen.value = false
+                        }
+                        desktopAppFullscreenState.value = false
+                        windowState.placement = WindowPlacement.Floating
+                        window.extendedState = Frame.NORMAL
+                        applyNativeCompactPlayerWindow(window, true)
+                        window.isAlwaysOnTop = true
+                        window.bounds = pictureInPictureBounds(window)
+                        window.toFront()
+                    } else {
+                        val restore = pictureInPictureRestore ?: return@registerDesktopPictureInPictureHandler
+                        pictureInPictureRestore = null
+                        // Remember where the user left the PiP window (after any native move/resize)
+                        // so the next enter reopens there instead of the default corner.
+                        lastPictureInPictureBounds = Rectangle(window.bounds)
+                        applyNativeCompactPlayerWindow(window, false)
+                        window.isAlwaysOnTop = restore.alwaysOnTop
+                        windowState.placement = WindowPlacement.Floating
+                        window.extendedState = Frame.NORMAL
+                        window.bounds = restore.bounds
+                        if (restore.borderlessFullscreen && DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+                            suspendNativeBorderlessFullscreen(window, false)
+                            isBorderlessFullscreen.value = true
+                            desktopAppFullscreenState.value = true
+                        } else {
+                            window.extendedState = restore.extendedState
+                            windowState.placement = restore.placement
+                            desktopAppFullscreenState.value = restore.placement == WindowPlacement.Fullscreen
+                        }
+                        window.toFront()
+                    }
+                }
                 val unregisterFullscreenToggle = registerDesktopAppFullscreenToggle { targetWindow ->
                     if (targetWindow != null && targetWindow !== window) return@registerDesktopAppFullscreenToggle
+                    if (desktopPictureInPictureState.value) {
+                        setDesktopPictureInPicture(false, window)
+                        return@registerDesktopAppFullscreenToggle
+                    }
                     if (DesktopHostOs.current == DesktopHostOs.WINDOWS) {
                         val nextFullscreen = !isBorderlessFullscreen.value
                         applyNativeBorderlessFullscreen(window, nextFullscreen)
@@ -187,7 +289,7 @@ fun main() {
                 }
                 val mouseBackButtonListener = AWTEventListener { event ->
                     if (event is MouseEvent && event.id == MouseEvent.MOUSE_PRESSED && event.button == 4) {
-                        DesktopNavigationGestureBridge.requestBack()
+                        DesktopNavigationGestureBridge.requestBack(DesktopBackRequestSource.Mouse)
                     }
                 }
                 // Diagnostic: minimize/restore fires on the AWT thread regardless of Compose's
@@ -207,16 +309,20 @@ fun main() {
                 KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(backNavigationDispatcher)
                 Toolkit.getDefaultToolkit().addAWTEventListener(mouseBackButtonListener, AWTEvent.MOUSE_EVENT_MASK)
                 onDispose {
+                    uninstallDisplayMetricsTracking()
                     window.removeWindowStateListener(windowStateListener)
                     KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(backNavigationDispatcher)
                     Toolkit.getDefaultToolkit().removeAWTEventListener(mouseBackButtonListener)
                     uninstallFullscreenShortcuts()
                     unregisterFullscreenToggle()
+                    setDesktopPictureInPicture(false, window)
+                    unregisterPictureInPicture()
                     if (isBorderlessFullscreen.value) {
                         applyNativeBorderlessFullscreen(window, false)
                         isBorderlessFullscreen.value = false
                     }
                     desktopAppFullscreenState.value = false
+                    desktopPictureInPictureState.value = false
                 }
             }
 
@@ -251,6 +357,47 @@ fun main() {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        // Bubble-phase handling means focused text fields retain ordinary paste.
+                        // Elsewhere, a copied HTTP(S) media URL opens through the same direct-play
+                        // path as a dropped local file; App rejects it while playback is active.
+                        .onKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                            if (event.isCtrlPressed && event.key == Key.V) {
+                                val clipboardText = runCatching {
+                                    Toolkit.getDefaultToolkit().systemClipboard
+                                        .getData(DataFlavor.stringFlavor) as? String
+                                }.getOrNull()?.trim().orEmpty()
+                                val webStream = clipboardText.takeIf {
+                                    it.startsWith("https://", ignoreCase = true) ||
+                                        it.startsWith("http://", ignoreCase = true)
+                                } ?: return@onKeyEvent false
+                                LocalFileDrop.emit(webStream)
+                                return@onKeyEvent true
+                            }
+                            if (event.isCtrlPressed) return@onKeyEvent false
+                            // Compose text fields may leave ordinary key-down events unconsumed.
+                            // Do not turn content searches or Settings edits into global navigation.
+                            if (SettingsTextInputTracker.active.value) return@onKeyEvent false
+                            AppShortcutsRepository.ensureLoaded()
+                            when (val action = AppShortcutsRepository.actionForKeyCode(event.key.nativeKeyCode)) {
+                                AppShortcutAction.GoHome,
+                                AppShortcutAction.OpenSearch,
+                                AppShortcutAction.OpenLibrary,
+                                AppShortcutAction.OpenCalendar -> {
+                                    AppShortcutBridge.emit(action)
+                                    true
+                                }
+                                AppShortcutAction.ToggleFullscreen -> {
+                                    toggleDesktopAppFullscreen(window)
+                                    true
+                                }
+                                AppShortcutAction.GoBack -> {
+                                    DesktopNavigationGestureBridge.requestBack()
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
                         .dragAndDropTarget(
                             shouldStartDragAndDrop = { event ->
                                 // Accept the drag hover if it carries a file list.

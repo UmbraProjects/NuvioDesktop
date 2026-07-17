@@ -100,9 +100,11 @@ import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watching.application.WatchingState
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.collections_folder_empty_items
 import nuvio.composeapp.generated.resources.collections_folder_not_found
@@ -113,6 +115,28 @@ private val FolderCoverHeight = 176.dp
 private val FolderAdaptiveHeroHeightFallback = 440.dp
 private const val FolderAdaptiveHeroItemLimit = 8
 private const val FolderCatalogPreviewLimit = 18
+
+/**
+ * Session-scoped memory of the Collection (folder) detail's scroll position — the mirror of
+ * HomeScrollMemory for the immersive/adaptive collection layouts. Lets the user return to the
+ * catalog row (and the focused item within it) they were on after opening and closing the
+ * details screen, instead of resetting to the top. Keyed by folder so switching to a different
+ * folder starts fresh. In-memory only: a fresh app launch starts at the top.
+ */
+private object FolderScrollMemory {
+    var folderKey: String? = null
+    var immersiveRowIndex: Int = 0
+    var immersiveItemIndex: Int = 0
+
+    /** Reset the remembered position when we're now viewing a different folder. */
+    fun syncFolder(key: String?) {
+        if (folderKey != key) {
+            folderKey = key
+            immersiveRowIndex = 0
+            immersiveItemIndex = 0
+        }
+    }
+}
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -154,6 +178,11 @@ fun FolderDetailScreen(
     } else {
         folder?.coverImageUrl?.takeIf { it.isNotBlank() }
     }
+
+    // Scope the remembered scroll position to this folder so returning from details lands where
+    // the user was, while opening a different folder still starts at the top.
+    val folderKey = folder?.id ?: uiState.collectionTitle
+    remember(folderKey) { FolderScrollMemory.syncFolder(folderKey); folderKey }
 
     if (showImmersiveCollection) {
         ImmersiveCollectionContent(
@@ -297,8 +326,10 @@ private fun ImmersiveCollectionContent(
 ) {
     val focusRequester = remember { FocusRequester() }
     val coroutineScope = rememberCoroutineScope()
-    var activeRowIndex by remember { mutableIntStateOf(0) }
-    var activeItemIndex by remember { mutableIntStateOf(0) }
+    // Seed from the session-scoped holder so returning from the details screen restores the row
+    // (and the focused item within it) the user was on. Persisted below whenever it changes.
+    var activeRowIndex by remember { mutableIntStateOf(FolderScrollMemory.immersiveRowIndex) }
+    var activeItemIndex by remember { mutableIntStateOf(FolderScrollMemory.immersiveItemIndex) }
     var wheelLocked by remember { mutableStateOf(false) }
     var backButtonHovered by remember { mutableStateOf(false) }
     var activeHeroBackdrop by remember { mutableStateOf<String?>(null) }
@@ -317,6 +348,12 @@ private fun ImmersiveCollectionContent(
             0,
             (sections.getOrNull(activeRowIndex)?.items?.size?.minus(1) ?: 0).coerceAtLeast(0),
         )
+    }
+    // Mirror the live position into the session-scoped holder so it survives leaving and
+    // returning to this screen (e.g. the details view).
+    LaunchedEffect(activeRowIndex, activeItemIndex) {
+        FolderScrollMemory.immersiveRowIndex = activeRowIndex
+        FolderScrollMemory.immersiveItemIndex = activeItemIndex
     }
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -548,8 +585,10 @@ private fun AdaptiveCollectionContent(
     val focusRequester = remember { FocusRequester() }
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = rememberLazyListState()
-    var activeRowIndex by remember { mutableIntStateOf(0) }
-    var activeItemIndex by remember { mutableIntStateOf(0) }
+    // Seed from the session-scoped holder so returning from the details screen restores the row
+    // (and the focused item within it) the user was on. Persisted below whenever it changes.
+    var activeRowIndex by remember { mutableIntStateOf(FolderScrollMemory.immersiveRowIndex) }
+    var activeItemIndex by remember { mutableIntStateOf(FolderScrollMemory.immersiveItemIndex) }
     // The mouse cursor stays at whatever screen position it was at on Home when the user
     // clicked into this collection. Since this screen always mounts scrolled to the top,
     // Compose Desktop's hit-testing fires a synthetic hover "Enter" for whichever row now
@@ -576,6 +615,22 @@ private fun AdaptiveCollectionContent(
             0,
             (sections.getOrNull(activeRowIndex)?.items?.size?.minus(1) ?: 0).coerceAtLeast(0),
         )
+    }
+    // Mirror the live position into the session-scoped holder so it survives leaving and
+    // returning to this screen (e.g. the details view).
+    LaunchedEffect(activeRowIndex, activeItemIndex) {
+        FolderScrollMemory.immersiveRowIndex = activeRowIndex
+        FolderScrollMemory.immersiveItemIndex = activeItemIndex
+    }
+    // On return, bring the restored row into view (the LazyColumn otherwise starts at the top).
+    LaunchedEffect(Unit) {
+        val target = FolderScrollMemory.immersiveRowIndex
+        if (target > 0) {
+            withTimeoutOrNull(4000) {
+                snapshotFlow { lazyListState.layoutInfo.totalItemsCount }.first { it > target }
+            }
+            runCatching { lazyListState.scrollToItem(target) }
+        }
     }
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()

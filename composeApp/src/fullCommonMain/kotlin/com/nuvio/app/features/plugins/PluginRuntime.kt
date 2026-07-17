@@ -22,16 +22,30 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.coroutines.runBlocking
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.generic_unknown
 import org.jetbrains.compose.resources.getString
 import kotlin.random.Random
 
 private const val PLUGIN_TIMEOUT_MS = 60_000L
-private const val MAX_FETCH_BODY_CHARS = 256 * 1024
+private const val MAX_FETCH_BODY_CHARS = 1024 * 1024
 private const val MAX_FETCH_HEADER_VALUE_CHARS = 8 * 1024
 private const val FETCH_TRUNCATION_SUFFIX = "\n...[truncated]"
+
+private val PLUGIN_FORBIDDEN_REQUEST_HEADERS = setOf(
+    "accept-encoding",
+    "connection",
+    "content-length",
+    "expect",
+    "host",
+    "http2-settings",
+    "keep-alive",
+    "proxy-connection",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+)
 
 internal object PluginRuntime {
     private val log = Logger.withTag("PluginRuntime")
@@ -60,6 +74,54 @@ internal object PluginRuntime {
                 scraperId = scraperId,
                 scraperSettings = scraperSettings,
             )
+        }
+    }
+
+    suspend fun getPluginSettingsLayout(
+        code: String,
+        scraperId: String,
+    ): String? = withContext(Dispatchers.Default) {
+        withTimeout(PLUGIN_TIMEOUT_MS) {
+            var layoutJson: String? = null
+            quickJs(Dispatchers.Default) {
+                define("console") {
+                    function("log") { null }
+                    function("error") { null }
+                    function("warn") { null }
+                    function("info") { null }
+                    function("debug") { null }
+                }
+                function("__capture_settings_result") { args ->
+                    layoutJson = args.getOrNull(0)?.toString()
+                    null
+                }
+
+                evaluate<Any?>(buildPolyfillCode(scraperId, "{}"))
+                evaluate<Any?>(
+                    """
+                        var module = { exports: {} };
+                        var exports = module.exports;
+                        (function() {
+                            $code
+                        })();
+                    """.trimIndent(),
+                )
+                evaluate<Any?>(
+                    """
+                        (async function() {
+                            try {
+                                var onSettings = module.exports.onSettings || globalThis.onSettings;
+                                var layout = typeof onSettings === 'function' ? await onSettings() : [];
+                                __capture_settings_result(JSON.stringify(layout || []));
+                            } catch (e) {
+                                console.error("onSettings error:", e);
+                                __capture_settings_result("[]");
+                            }
+                        })();
+                    """.trimIndent(),
+                )
+            }
+            layoutJson
         }
     }
 
@@ -286,6 +348,8 @@ internal object PluginRuntime {
                 """.trimIndent()
                 evaluate<Any?>(wrappedCode)
 
+                val tmdbIdArg = JsonPrimitive(tmdbId).toString()
+                val mediaTypeArg = JsonPrimitive(mediaType).toString()
                 val seasonArg = season?.toString() ?: "undefined"
                 val episodeArg = episode?.toString() ?: "undefined"
                 val callCode = """
@@ -297,7 +361,7 @@ internal object PluginRuntime {
                                 __capture_result(JSON.stringify([]));
                                 return;
                             }
-                            var result = await getStreams("$tmdbId", "$mediaType", $seasonArg, $episodeArg);
+                            var result = await getStreams($tmdbIdArg, $mediaTypeArg, $seasonArg, $episodeArg);
                             __capture_result(JSON.stringify(result || []));
                         } catch (e) {
                             console.error("getStreams error:", e && e.message ? e.message : e, e && e.stack ? e.stack : "");
@@ -308,7 +372,7 @@ internal object PluginRuntime {
                 evaluate<Any?>(callCode)
             }
 
-            return parseJsonResults(resultJson)
+            return parseJsonResults(resultJson, scraperId)
         } finally {
             documentCache.clear()
             elementCache.clear()
@@ -323,8 +387,8 @@ internal object PluginRuntime {
         followRedirects: Boolean,
     ): String {
         return try {
-            val headers = parseHeaders(headersJson).toMutableMap()
-            if (!headers.containsKey("User-Agent")) {
+            val headers = sanitizePluginRequestHeaders(parseHeaders(headersJson)).toMutableMap()
+            if (headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
                 headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             }
 
@@ -338,9 +402,10 @@ internal object PluginRuntime {
                 )
             }
 
-            val responseHeaders = response.headers.mapValues { (_, value) ->
-                truncateString(value, MAX_FETCH_HEADER_VALUE_CHARS)
-            }
+            val truncated = response.body.length > MAX_FETCH_BODY_CHARS
+            val responseHeaders = response.headers
+                .mapKeys { (key, _) -> key.lowercase() }
+                .mapValues { (_, value) -> truncateString(value, MAX_FETCH_HEADER_VALUE_CHARS) }
             val result = JsonObject(
                 mapOf(
                     "ok" to JsonPrimitive(response.status in 200..299),
@@ -349,6 +414,7 @@ internal object PluginRuntime {
                     "url" to JsonPrimitive(response.url),
                     "body" to JsonPrimitive(truncateString(response.body, MAX_FETCH_BODY_CHARS)),
                     "headers" to JsonObject(responseHeaders.mapValues { JsonPrimitive(it.value) }),
+                    "truncated" to JsonPrimitive(truncated),
                 ),
             )
             result.toString()
@@ -423,10 +489,23 @@ internal object PluginRuntime {
         return value.substring(0, end) + FETCH_TRUNCATION_SUFFIX
     }
 
-    private fun parseJsonResults(rawJson: String): List<PluginRuntimeResult> {
-        return runCatching {
-            val array = json.parseToJsonElement(rawJson) as? JsonArray ?: return emptyList()
-            array.mapNotNull { element ->
+    internal fun parseJsonResults(rawJson: String, scraperId: String = "unknown"): List<PluginRuntimeResult> {
+        val normalizedJson = normalizePluginJsonPayload(rawJson)
+        val array = runCatching { json.parseToJsonElement(normalizedJson) as? JsonArray }
+            .getOrNull()
+        val elements = array?.toList() ?: salvagePluginJsonArrayItems(normalizedJson).also { salvaged ->
+            if (salvaged.isNotEmpty()) {
+                log.w { "Plugin:$scraperId salvaged ${salvaged.size} results from malformed JSON (${rawJson.length} chars)" }
+            }
+        }
+
+        if (elements.isEmpty() && normalizedJson != "[]") {
+            val preview = normalizedJson.take(240).replace("\n", "\\n")
+            val suffix = normalizedJson.takeLast(120).replace("\n", "\\n")
+            log.e { "Plugin:$scraperId failed to parse result JSON (${rawJson.length} chars), preview=$preview suffix=$suffix" }
+        }
+
+        return elements.mapNotNull { element ->
                 val item = element as? JsonObject ?: return@mapNotNull null
                 val url = when (val urlValue = item["url"]) {
                     is JsonPrimitive -> urlValue.contentOrNull?.takeIf { it.isNotBlank() }
@@ -434,12 +513,17 @@ internal object PluginRuntime {
                     else -> null
                 } ?: return@mapNotNull null
 
-                val headers = (item["headers"] as? JsonObject)
-                    ?.mapNotNull { (key, value) ->
-                        value.jsonPrimitive.contentOrNull?.let { key to it }
-                    }
-                    ?.toMap()
-                    ?.takeIf { it.isNotEmpty() }
+                // Plugins in the mobile ecosystem use both a compact top-level `headers`
+                // object and the Stremio-shaped `behaviorHints.proxyHeaders.request` object.
+                // Keep both forms: dropping the latter loses Referer/Origin/cookie headers and
+                // makes otherwise valid provider links fail with 403 when handed to mpv.
+                val nestedHeaders = item
+                    .jsonObjectOrNull("behaviorHints")
+                    ?.jsonObjectOrNull("proxyHeaders")
+                    ?.jsonObjectOrNull("request")
+                    .stringMap()
+                val headers = (nestedHeaders + item.jsonObjectOrNull("headers").stringMap())
+                    .takeIf { it.isNotEmpty() }
 
                 PluginRuntimeResult(
                     title = item.stringOrNull("title") ?: item.stringOrNull("name") ?: runBlocking { getString(Res.string.generic_unknown) },
@@ -456,14 +540,25 @@ internal object PluginRuntime {
                     headers = headers,
                 )
             }.filter { it.url.isNotBlank() }
-        }.getOrElse { error ->
-            log.e(error) { "Failed to parse plugin result json" }
-            emptyList()
-        }
     }
 
     private fun JsonObject.stringOrNull(key: String): String? =
-        this[key]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && !it.contains("[object") }
+        this[key]?.jsonPrimitive?.contentOrNull
+            ?.takeIf { it.isNotBlank() && !it.contains("[object") }
+            ?.let(::repairPluginTextEncoding)
+
+    private fun JsonObject.jsonObjectOrNull(key: String): JsonObject? = this[key] as? JsonObject
+
+    private fun JsonObject?.stringMap(): Map<String, String> =
+        this
+            ?.mapNotNull { (key, value) ->
+                (value as? JsonPrimitive)
+                    ?.contentOrNull
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { key to it }
+            }
+            ?.toMap()
+            .orEmpty()
 
     private fun toJsonElement(value: Any?): JsonElement = when (value) {
         null -> JsonNull
@@ -992,4 +1087,207 @@ internal object PluginRuntime {
             }
         """.trimIndent()
     }
+}
+
+internal fun sanitizePluginRequestHeaders(headers: Map<String, String>): Map<String, String> =
+    headers.filter { (name, value) ->
+        name.isNotBlank() && value.isNotBlank() && name.lowercase() !in PLUGIN_FORBIDDEN_REQUEST_HEADERS
+    }
+
+internal fun normalizePluginJsonPayload(rawJson: String): String {
+    val trimmed = rawJson.trim().removePrefix("\uFEFF")
+    if (trimmed.isEmpty()) return "[]"
+
+    val sanitized = buildString(trimmed.length) {
+        var inString = false
+        var escaped = false
+        trimmed.forEach { character ->
+            when {
+                escaped -> {
+                    append(character)
+                    escaped = false
+                }
+                inString && character == '\\' -> {
+                    append(character)
+                    escaped = true
+                }
+                character == '"' -> {
+                    append(character)
+                    inString = !inString
+                }
+                inString && character.code < 0x20 -> when (character) {
+                    '\b' -> append("\\b")
+                    '\t' -> append("\\t")
+                    '\n' -> append("\\n")
+                    '\u000C' -> append("\\f")
+                    '\r' -> append("\\r")
+                    else -> append("\\u${character.code.toString(16).padStart(4, '0')}")
+                }
+                character != '\u0000' -> append(character)
+            }
+        }
+    }
+
+    val arrayStart = sanitized.indexOf('[')
+    val arrayEnd = sanitized.lastIndexOf(']')
+    return if (arrayStart >= 0 && arrayEnd > arrayStart) {
+        sanitized.substring(arrayStart, arrayEnd + 1)
+    } else {
+        sanitized
+    }
+}
+
+internal fun salvagePluginJsonArrayItems(rawJson: String): List<JsonElement> {
+    val arrayStart = rawJson.indexOf('[')
+    if (arrayStart < 0) return emptyList()
+
+    val recovered = mutableListOf<JsonElement>()
+    val recoveryJson = Json { ignoreUnknownKeys = true; isLenient = true }
+    var depth = 0
+    var itemStart = -1
+    var inString = false
+    var escaped = false
+
+    fun recoverItem(endExclusive: Int) {
+        if (itemStart < 0 || endExclusive <= itemStart) return
+        val candidate = rawJson.substring(itemStart, endExclusive).trim()
+        if (candidate.isEmpty()) return
+        runCatching { recoveryJson.parseToJsonElement(candidate) }
+            .getOrNull()
+            ?.let(recovered::add)
+    }
+
+    for (index in arrayStart until rawJson.length) {
+        val character = rawJson[index]
+        if (inString) {
+            when {
+                escaped -> escaped = false
+                character == '\\' -> escaped = true
+                character == '"' -> inString = false
+            }
+            continue
+        }
+
+        when (character) {
+            '"' -> {
+                inString = true
+                if (depth == 1 && itemStart < 0) itemStart = index
+            }
+            '[', '{' -> {
+                depth++
+                if (depth == 2 && itemStart < 0) itemStart = index
+            }
+            '}', ']' -> {
+                if (character == ']' && depth == 1) {
+                    recoverItem(index)
+                    break
+                }
+                depth--
+            }
+            ',' -> if (depth == 1) {
+                recoverItem(index)
+                itemStart = -1
+            }
+            else -> if (depth == 1 && itemStart < 0 && !character.isWhitespace()) {
+                itemStart = index
+            }
+        }
+    }
+
+    if (depth > 0 && itemStart >= 0) {
+        recoverItem(rawJson.length)
+    }
+    return recovered
+}
+
+internal fun repairPluginTextEncoding(value: String): String {
+    var repaired = value
+    // Some providers' source bundles have already damaged the text once, then the JS/native
+    // bridge applies the same UTF-8-as-Windows-1252 mistake again. Decode conservatively, but
+    // allow enough passes to unwind that double encoding.
+    repeat(8) {
+        val next = repairPluginTextEncodingOnce(repaired)
+        if (next == repaired) return repaired
+        repaired = next
+    }
+    return repaired
+}
+
+private fun repairPluginTextEncodingOnce(value: String): String {
+    return buildString(value.length) {
+        var index = 0
+        while (index < value.length) {
+            val leadByte = pluginMojibakeByteOrNull(value[index])?.toInt()?.and(0xff)
+            val sequenceLength = when (leadByte) {
+                in 0xC2..0xDF -> 2
+                in 0xE0..0xEF -> 3
+                in 0xF0..0xF4 -> 4
+                else -> 0
+            }
+
+            val decoded = if (sequenceLength > 0 && index + sequenceLength <= value.length) {
+                val bytes = ByteArray(sequenceLength)
+                var valid = true
+                repeat(sequenceLength) { offset ->
+                    val byte = pluginMojibakeByteOrNull(value[index + offset])
+                    if (byte == null || (offset > 0 && byte.toInt().and(0xff) !in 0x80..0xBF)) {
+                        valid = false
+                    } else {
+                        bytes[offset] = byte
+                    }
+                }
+                if (valid) {
+                    runCatching { bytes.decodeToString(throwOnInvalidSequence = true) }.getOrNull()
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+
+            if (decoded != null) {
+                append(decoded)
+                index += sequenceLength
+                continue
+            }
+
+            append(value[index])
+            index++
+        }
+    }
+}
+
+private fun pluginMojibakeByteOrNull(character: Char): Byte? {
+    if (character.code <= 0xFF) return character.code.toByte()
+    val windows1252Byte = when (character) {
+        '€' -> 0x80
+        '‚' -> 0x82
+        'ƒ' -> 0x83
+        '„' -> 0x84
+        '…' -> 0x85
+        '†' -> 0x86
+        '‡' -> 0x87
+        'ˆ' -> 0x88
+        '‰' -> 0x89
+        'Š' -> 0x8A
+        '‹' -> 0x8B
+        'Œ' -> 0x8C
+        'Ž' -> 0x8E
+        '‘' -> 0x91
+        '’' -> 0x92
+        '“' -> 0x93
+        '”' -> 0x94
+        '•' -> 0x95
+        '–' -> 0x96
+        '—' -> 0x97
+        '˜' -> 0x98
+        '™' -> 0x99
+        'š' -> 0x9A
+        '›' -> 0x9B
+        'œ' -> 0x9C
+        'ž' -> 0x9E
+        'Ÿ' -> 0x9F
+        else -> return null
+    }
+    return windows1252Byte.toByte()
 }

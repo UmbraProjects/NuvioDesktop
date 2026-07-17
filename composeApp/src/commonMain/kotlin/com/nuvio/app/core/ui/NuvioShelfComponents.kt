@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.Res
@@ -99,10 +100,10 @@ fun <T> NuvioShelfSection(
     isLoadingMore: Boolean = false,
     isKeyboardNavigation: Boolean = false,
     key: ((T) -> Any)? = null,
+    rowState: LazyListState = rememberLazyListState(),
     itemContent: @Composable (T) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val rowState = rememberLazyListState()
     // Horizontal infinite scroll: request the next page when the row is scrolled within a few items
     // of the end. onLoadMore is idempotent, so repeated triggers while a page loads are harmless.
     if (onLoadMore != null) {
@@ -217,6 +218,10 @@ fun <T> NuvioShelfSection(
 }
 
 private const val ShelfLoadMoreThreshold = 6
+
+// Below-poster labels are centered and capped to this fraction of the poster width;
+// anything truncated is readable in full via NuvioPosterHoverTooltip.
+const val PosterLabelWidthFraction = 0.65f
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -364,6 +369,16 @@ fun NuvioPosterCard(
         shape = shape,
     )
     val shouldShowTitleBelow = showTitleBelow && !posterCardStyle.hideLabelsEnabled
+    // Scale the below-poster label with the poster size. A fixed type size reads as tiny next to
+    // large artwork (big width slider / high-DPI display), so grow it with the card width — but
+    // dampened (75% of the proportional growth) so labels don't dominate large posters — and
+    // clamped so small posters stay sensible and huge ones don't get an oversized caption.
+    // Base sizes match the pre-scaling styles (bodyMedium 14sp / labelSmall 12sp) so the default
+    // poster width renders identically to before; only wider posters grow the label.
+    val posterWidthRatio = (basePosterWidthDp.toFloat() / DefaultPosterCardWidthDp).coerceIn(1f, 1.5f)
+    val labelScale = 1f + (posterWidthRatio - 1f) * 0.75f
+    val titleLabelFontSizeSp = 14f * labelScale
+    val detailLabelFontSizeSp = 12f * labelScale
 
     Column(
         modifier = modifier.width(cardWidth),
@@ -451,18 +466,38 @@ fun NuvioPosterCard(
             NuvioPosterWatchedOverlay(isWatched = isWatched)
         }
         if (shouldShowTitleBelow) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = tokens.colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // Label is centered and capped at 65% of the poster width; truncated names are
+            // readable in full via the hover tooltip, so no shrink-to-fit here.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(PosterLabelWidthFraction)
+                    .align(Alignment.CenterHorizontally),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                NuvioPosterHoverTooltip(title = title) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = titleLabelFontSizeSp.sp,
+                            lineHeight = (titleLabelFontSizeSp * 1.3f).sp,
+                        ),
+                        color = tokens.colors.textPrimary,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             if (!detailLine.isNullOrBlank()) {
                 Text(
                     text = detailLine,
-                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = detailLabelFontSizeSp.sp,
+                        lineHeight = (detailLabelFontSizeSp * 1.3f).sp,
+                    ),
                     color = tokens.colors.textMuted,
+                    textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

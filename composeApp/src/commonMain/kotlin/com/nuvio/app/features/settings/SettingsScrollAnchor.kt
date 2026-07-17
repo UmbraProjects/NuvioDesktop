@@ -58,15 +58,35 @@ internal object SettingsScrollAnchor {
 
     fun searchKey(key: String): String = "settings_search_$key"
 
-    private val _requested = MutableStateFlow<String?>(null)
-    val requested: StateFlow<String?> = _requested.asStateFlow()
+    internal data class Request(val anchor: String, val sequence: Long)
+    internal data class TitleHighlight(val title: String, val sequence: Long)
+    private val _requested = MutableStateFlow<Request?>(null)
+    val requested: StateFlow<Request?> = _requested.asStateFlow()
+    private val _titleHighlight = MutableStateFlow<TitleHighlight?>(null)
+    val titleHighlight: StateFlow<TitleHighlight?> = _titleHighlight.asStateFlow()
+    private var requestSequence = 0L
+    private var titleHighlightSequence = 0L
 
     fun request(anchor: String) {
-        _requested.value = anchor
+        // A StateFlow does not emit equal values. Give every click a new identity so retrying a
+        // search result can recover even if the prior target never mounted or consumed it.
+        _requested.value = Request(anchor, ++requestSequence)
     }
 
     fun consume(anchor: String) {
-        if (_requested.value == anchor) _requested.value = null
+        if (_requested.value?.anchor == anchor) _requested.value = null
+    }
+
+    fun expire(sequence: Long) {
+        if (_requested.value?.sequence == sequence) _requested.value = null
+    }
+
+    fun highlightTitle(title: String) {
+        _titleHighlight.value = TitleHighlight(title, ++titleHighlightSequence)
+    }
+
+    fun expireTitleHighlight(sequence: Long) {
+        if (_titleHighlight.value?.sequence == sequence) _titleHighlight.value = null
     }
 
     // Back-destination override — set by Fork Enhancements so back from a deep-linked page
@@ -105,7 +125,7 @@ internal fun rememberSettingsAnchorHighlight(anchor: String): SettingsAnchorHigh
     var highlightToken by remember { mutableStateOf(0) }
     var highlighted by remember { mutableStateOf(false) }
     LaunchedEffect(requested) {
-        if (requested == anchor) {
+        if (requested?.anchor == anchor) {
             highlightToken++
             SettingsScrollAnchor.consume(anchor)
         }

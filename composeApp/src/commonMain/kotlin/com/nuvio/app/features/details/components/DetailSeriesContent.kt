@@ -394,8 +394,12 @@ fun DetailSeriesContent(
                             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                             // Only resume-scroll to the preferred episode on the season the
                             // user is actually up to; other seasons should start at episode 1.
+                            // Absolute-numbered anime often carry no season on their episodes, so the
+                            // up-next action has a null season — in that case fall through and let the
+                            // row's own episode-number match decide where to land (otherwise the list
+                            // was stuck at episode 1 for those titles).
                             preferredEpisodeNumber = preferredEpisodeNumber
-                                ?.takeIf { seasonForContent == preferredSeasonNumber },
+                                ?.takeIf { preferredSeasonNumber == null || seasonForContent == preferredSeasonNumber },
                             focusedEpisodeIndex = focusedEpisodeIndex,
                             onEpisodeClick = onEpisodeClick,
                             onEpisodeLongPress = onEpisodeLongPress,

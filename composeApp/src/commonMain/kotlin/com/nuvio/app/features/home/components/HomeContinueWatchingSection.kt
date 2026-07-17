@@ -193,11 +193,13 @@ internal fun HomeContinueWatchingSection(
     sectionPadding: Dp? = null,
     layout: ContinueWatchingLayout? = null,
     focusedItemIndex: Int? = null,
+    rowState: androidx.compose.foundation.lazy.LazyListState? = null,
     onHoverItem: ((Int) -> Unit)? = null,
     onItemClick: ((ContinueWatchingItem) -> Unit)? = null,
     onItemLongPress: ((ContinueWatchingItem) -> Unit)? = null,
 ) {
     if (items.isEmpty()) return
+    val effectiveRowState = rowState ?: androidx.compose.foundation.lazy.rememberLazyListState()
 
     if (sectionPadding != null && layout != null) {
         HomeContinueWatchingSectionContent(
@@ -209,6 +211,7 @@ internal fun HomeContinueWatchingSection(
             sectionPadding = sectionPadding,
             layout = layout,
             focusedItemIndex = focusedItemIndex,
+            rowState = effectiveRowState,
             onHoverItem = onHoverItem,
             onItemClick = onItemClick,
             onItemLongPress = onItemLongPress,
@@ -224,6 +227,7 @@ internal fun HomeContinueWatchingSection(
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
                 layout = rememberContinueWatchingLayout(maxWidth.value),
                 focusedItemIndex = focusedItemIndex,
+                rowState = effectiveRowState,
                 onHoverItem = onHoverItem,
                 onItemClick = onItemClick,
                 onItemLongPress = onItemLongPress,
@@ -242,6 +246,7 @@ private fun HomeContinueWatchingSectionContent(
     sectionPadding: Dp,
     layout: ContinueWatchingLayout,
     focusedItemIndex: Int?,
+    rowState: androidx.compose.foundation.lazy.LazyListState,
     onHoverItem: ((Int) -> Unit)?,
     onItemClick: ((ContinueWatchingItem) -> Unit)?,
     onItemLongPress: ((ContinueWatchingItem) -> Unit)?,
@@ -274,6 +279,7 @@ private fun HomeContinueWatchingSectionContent(
             focusedItemIndex = focusedItemIndex,
             onHoverItem = onHoverItem,
             key = { item -> item.videoId },
+            rowState = rowState,
         ) { item ->
             when (effectiveStyle) {
                 ContinueWatchingSectionStyle.Card -> ContinueWatchingCard(

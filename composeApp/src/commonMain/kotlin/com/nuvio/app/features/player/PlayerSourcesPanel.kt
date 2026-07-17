@@ -53,6 +53,7 @@ import org.jetbrains.compose.resources.stringResource
 fun PlayerSourcesPanel(
     visible: Boolean,
     streamsUiState: StreamsUiState,
+    currentStreamIdentityKey: String?,
     currentStreamUrl: String?,
     currentStreamName: String?,
     onFilterSelected: (String?) -> Unit,
@@ -200,7 +201,16 @@ fun PlayerSourcesPanel(
                             }
 
                             else -> {
-                                val streams = streamsUiState.filteredGroups.flatMap { it.streams }
+                                val streams = prioritizeCurrentItem(
+                                    items = streamsUiState.filteredGroups.flatMap { it.streams },
+                                ) { stream ->
+                                    isCurrentStream(
+                                        stream = stream,
+                                        currentIdentityKey = currentStreamIdentityKey,
+                                        currentUrl = currentStreamUrl,
+                                        currentName = currentStreamName,
+                                    )
+                                }
                                 LazyColumn(
                                     modifier = Modifier.padding(horizontal = tokens.spacing.cardPadding),
                                     verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6),
@@ -212,6 +222,7 @@ fun PlayerSourcesPanel(
                                     ) { _, stream ->
                                         val isCurrent = isCurrentStream(
                                             stream = stream,
+                                            currentIdentityKey = currentStreamIdentityKey,
                                             currentUrl = currentStreamUrl,
                                             currentName = currentStreamName,
                                         )
@@ -329,14 +340,29 @@ internal fun PanelChipButton(
     }
 }
 
-private fun isCurrentStream(
+internal fun isCurrentStream(
     stream: StreamItem,
+    currentIdentityKey: String?,
     currentUrl: String?,
     currentName: String?,
 ): Boolean {
+    // Once the player has a stable identity, it is authoritative. Falling through to the old URL
+    // after an identity mismatch can mark both the failed clicked source and its failover as playing.
+    if (currentIdentityKey != null) return stream.playerSourceIdentityKey() == currentIdentityKey
     if (currentUrl != null && stream.playableDirectUrl == currentUrl) return true
     if (currentName != null && stream.streamLabel.equals(currentName, ignoreCase = true) &&
         stream.playableDirectUrl == currentUrl
     ) return true
     return false
+}
+
+/** Moves the active entry to the front without changing the relative order of any other entry. */
+internal fun <T> prioritizeCurrentItem(items: List<T>, isCurrent: (T) -> Boolean): List<T> {
+    val currentIndex = items.indexOfFirst(isCurrent)
+    if (currentIndex <= 0) return items
+    return buildList(items.size) {
+        add(items[currentIndex])
+        addAll(items.subList(0, currentIndex))
+        addAll(items.subList(currentIndex + 1, items.size))
+    }
 }

@@ -67,7 +67,11 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
     val addonSubtitles by SubtitleRepository.addonSubtitles.collectAsStateWithLifecycle()
     val isLoadingAddonSubtitles by SubtitleRepository.isLoading.collectAsStateWithLifecycle()
 
-    val runtime = remember { PlayerScreenRuntime(args) }
+    val runtime = remember {
+        PlayerScreenRuntime(args).apply {
+            sessionPlaybackSpeed = playerSettingsUiState.defaultPlaybackSpeed
+        }
+    }
     runtime.args = args
 
     BoxWithConstraints(
@@ -129,6 +133,8 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
                 (runtime.shouldPlay && runtime.playbackSnapshot.isLoading))
         EnterImmersivePlayerMode(keepScreenAwake = keepScreenAwake)
         ManagePlayerPictureInPicture(
+            isActive = runtime.pictureInPictureActive,
+            onActiveChange = { runtime.pictureInPictureActive = it },
             isPlaying = runtime.playbackSnapshot.isPlaying,
             playerSize = runtime.layoutSize,
         )

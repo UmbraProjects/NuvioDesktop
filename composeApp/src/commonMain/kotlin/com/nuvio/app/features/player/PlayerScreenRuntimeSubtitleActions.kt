@@ -2,11 +2,12 @@ package com.nuvio.app.features.player
 
 import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
-internal fun PlayerScreenRuntime.fetchAddonSubtitlesForActiveItem() {
-    val type = activeAddonSubtitleType.takeIf { it.isNotBlank() } ?: return
-    val videoId = activeVideoId?.takeIf { it.isNotBlank() } ?: return
-    SubtitleRepository.fetchAddonSubtitles(type, videoId)
+internal fun PlayerScreenRuntime.fetchAddonSubtitlesForActiveItem(): Job? {
+    val type = activeAddonSubtitleType.takeIf { it.isNotBlank() } ?: return null
+    val videoId = activeVideoId?.takeIf { it.isNotBlank() } ?: return null
+    return SubtitleRepository.fetchAddonSubtitles(type, videoId)
 }
 
 internal fun PlayerScreenRuntime.setSubtitleDelay(delayMs: Int) {

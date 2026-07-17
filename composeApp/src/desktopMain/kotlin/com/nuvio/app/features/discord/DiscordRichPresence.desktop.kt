@@ -16,10 +16,10 @@ import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
+import java.net.URLEncoder
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.roundToLong
 
 internal actual object DiscordRichPresencePlatform {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -168,27 +168,48 @@ private class DiscordIpcConnection(
 private fun DiscordRichPresenceActivity.toDiscordActivity(): JsonObject {
     val titleText = title.trim().takeIf { it.isNotBlank() } ?: "Nuvio"
     val subtitleText = subtitle?.trim()?.takeIf { it.isNotBlank() }
+    val episodeLabelText = episodeLabel?.trim()?.takeIf { it.isNotBlank() }
+    val episodeTitleText = episodeTitle?.trim()?.takeIf { it.isNotBlank() }
     if (type == DiscordRichPresenceActivityType.Browsing) {
         return buildJsonObject {
             put("details", truncateDiscordText(titleText))
             subtitleText?.let { put("state", truncateDiscordText(it)) }
-            put("assets", discordPresenceAssets(titleText, imageUrl))
+            put("assets", discordPresenceAssets(titleText, imageUrl, imageFit))
         }
     }
 
     val nowMs = System.currentTimeMillis()
-    val safeSpeed = playbackSpeed.takeIf { it > 0.05f } ?: 1f
-    val hasTimeline = isPlaying && durationMs > 0L && positionMs >= 0L && positionMs < durationMs
-    val startEpochSeconds = if (hasTimeline) {
-        ((nowMs - (positionMs / safeSpeed).roundToLong()) / 1000L).coerceAtLeast(0L)
+    // Discord timestamps have no paused state. Supplying them while paused makes Discord continue
+    // moving the bar and can render a bogus play/pause-looking control over the poster, so paused
+    // activities use an explicit state label and badge without a live wall-clock timeline.
+    val hasTimeline = durationMs > 0L && positionMs >= 0L && positionMs < durationMs
+    val startEpochSeconds = if (hasTimeline && isPlaying) {
+        ((nowMs - positionMs) / 1000L).coerceAtLeast(0L)
     } else {
         null
     }
-    val endEpochSeconds = if (hasTimeline) {
-        ((nowMs + ((durationMs - positionMs) / safeSpeed).roundToLong()) / 1000L).coerceAtLeast(0L)
+    val endEpochSeconds = if (hasTimeline && isPlaying) {
+        ((nowMs + (durationMs - positionMs)) / 1000L).coerceAtLeast(0L)
     } else {
         null
     }
+
+    val pausedText = if (!isPlaying) {
+        discordPausedPresenceText(
+            title = titleText,
+            releaseYear = subtitleText.takeIf { episodeLabelText == null },
+            episodeLabel = episodeLabelText,
+            episodeTitle = episodeTitleText,
+            positionMs = positionMs,
+            durationMs = durationMs,
+        )
+    } else {
+        null
+    }
+    // Playing presence remains title + the existing movie year / episode description. Paused
+    // presence deliberately uses both custom rows for an explicit state and frozen time summary.
+    val displayedDetails = pausedText?.details ?: titleText
+    val displayedState = pausedText?.state ?: subtitleText
 
     return buildJsonObject {
         // Watching activities render start + end as a media progress bar in Discord clients.
@@ -196,13 +217,9 @@ private fun DiscordRichPresenceActivity.toDiscordActivity(): JsonObject {
         // application name configured for this client ID and still show the title in details.
         put("type", DISCORD_ACTIVITY_TYPE_WATCHING)
         put("name", truncateDiscordText(titleText))
-        put("details", if (isPlaying) truncateDiscordText(titleText) else truncateDiscordText("Paused: $titleText"))
-        val progressText = discordProgressText(positionMs, durationMs)
-        listOfNotNull(subtitleText, progressText)
-            .joinToString(" · ")
-            .takeIf { it.isNotBlank() }
-            ?.let { put("state", truncateDiscordText(it)) }
-        put("assets", discordPresenceAssets(titleText, imageUrl))
+        put("details", truncateDiscordText(displayedDetails))
+        displayedState?.let { put("state", truncateDiscordText(it)) }
+        put("assets", discordPresenceAssets(titleText, imageUrl, imageFit, isPaused = !isPlaying))
         if (startEpochSeconds != null && endEpochSeconds != null && endEpochSeconds > startEpochSeconds) {
             put(
                 "timestamps",
@@ -215,47 +232,93 @@ private fun DiscordRichPresenceActivity.toDiscordActivity(): JsonObject {
     }
 }
 
-private fun discordPresenceAssets(title: String, imageUrl: String?): JsonObject =
+internal data class DiscordPausedPresenceText(
+    val details: String,
+    val state: String,
+)
+
+internal fun discordPausedPresenceText(
+    title: String,
+    releaseYear: String?,
+    episodeLabel: String?,
+    episodeTitle: String?,
+    positionMs: Long,
+    durationMs: Long,
+): DiscordPausedPresenceText {
+    val timeSummary = durationMs.takeIf { it > 0L }?.let { duration ->
+        val position = positionMs.coerceIn(0L, duration)
+        "${formatDiscordPlaybackTime(position)} / ${formatDiscordPlaybackTime(duration)}"
+    }
+    val stateParts = if (!episodeLabel.isNullOrBlank()) {
+        listOfNotNull(
+            episodeLabel.trim(),
+            episodeTitle?.trim()?.takeIf { it.isNotBlank() },
+            timeSummary,
+        )
+    } else {
+        listOfNotNull(
+            releaseYear?.trim()?.takeIf { it.isNotBlank() },
+            timeSummary,
+        )
+    }
+    return DiscordPausedPresenceText(
+        details = "Paused: ${title.trim().ifBlank { "Nuvio" }}",
+        state = stateParts.joinToString(" · ").ifBlank { "Paused" },
+    )
+}
+
+private fun formatDiscordPlaybackTime(timeMs: Long): String {
+    val totalSeconds = (timeMs / 1_000L).coerceAtLeast(0L)
+    val seconds = totalSeconds % 60L
+    val minutes = (totalSeconds / 60L) % 60L
+    val hours = totalSeconds / 3_600L
+    return if (hours > 0L) {
+        "$hours:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
+    } else {
+        "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
+    }
+}
+
+private fun discordPresenceAssets(
+    title: String,
+    imageUrl: String?,
+    imageFit: DiscordRichPresenceImageFit,
+    isPaused: Boolean = false,
+): JsonObject =
     buildJsonObject {
         val externalImage = imageUrl
             ?.trim()
             ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
-        put("large_image", externalImage ?: DISCORD_LARGE_IMAGE_KEY)
+        val displayImage = externalImage?.let { url ->
+            if (imageFit == DiscordRichPresenceImageFit.Contain) fittedDiscordImageUrl(url) else url
+        }
+        put("large_image", displayImage ?: DISCORD_LARGE_IMAGE_KEY)
         put("large_text", truncateDiscordText(if (externalImage != null) title else "Nuvio"))
-        if (externalImage != null) {
+        // Keep the poster unobstructed while paused; the text rows already communicate that state.
+        if (externalImage != null && !isPaused) {
             put("small_image", DISCORD_LARGE_IMAGE_KEY)
             put("small_text", "Nuvio")
         }
     }
-
-private fun discordProgressText(positionMs: Long, durationMs: Long): String? {
-    if (durationMs <= 0L) return null
-    return "${formatDiscordDuration(positionMs.coerceIn(0L, durationMs))} / ${formatDiscordDuration(durationMs)}"
-}
-
-private fun formatDiscordDuration(valueMs: Long): String {
-    val totalSeconds = valueMs.coerceAtLeast(0L) / 1000L
-    val hours = totalSeconds / 3600L
-    val minutes = (totalSeconds % 3600L) / 60L
-    val seconds = totalSeconds % 60L
-    return if (hours > 0L) {
-        "$hours:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
-    } else {
-        "$minutes:${seconds.toString().padStart(2, '0')}"
-    }
-}
 
 private fun DiscordRichPresenceActivity.toPayloadKey(): String =
     listOf(
         type.name,
         title.trim(),
         subtitle.orEmpty().trim(),
+        episodeLabel.orEmpty().trim(),
+        episodeTitle.orEmpty().trim(),
         imageUrl.orEmpty().trim(),
+        imageFit.name,
         isPlaying.toString(),
         (positionMs.coerceAtLeast(0L) / 15_000L).toString(),
         durationMs.coerceAtLeast(0L).toString(),
-        (playbackSpeed * 100f).roundToLong().toString(),
+        refreshNonce.toString(),
     ).joinToString("|")
+
+private fun fittedDiscordImageUrl(sourceUrl: String): String =
+    "https://images.weserv.nl/?url=${URLEncoder.encode(sourceUrl, StandardCharsets.UTF_8)}" +
+        "&w=512&h=512&fit=contain&bg=transparent"
 
 private fun truncateDiscordText(value: String): String =
     value.take(DISCORD_TEXT_LIMIT).ifBlank { "Nuvio" }

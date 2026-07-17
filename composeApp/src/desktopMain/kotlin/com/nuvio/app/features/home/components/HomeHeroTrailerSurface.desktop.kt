@@ -54,9 +54,12 @@ actual fun HomeHeroTrailerSurface(
     meta: String,
     description: String,
     modifier: Modifier,
+    navDismissEdge: String,
+    navDismissBandFraction: Float,
     onReady: () -> Unit,
     onEnded: () -> Unit,
     onError: () -> Unit,
+    onNavChromeDismiss: () -> Unit,
     onVolumeChange: (Int) -> Unit,
     onSurfaceDisposed: () -> Unit,
 ) {
@@ -65,6 +68,7 @@ actual fun HomeHeroTrailerSurface(
     val latestOnError = rememberUpdatedState(onError)
     val latestOnReady = rememberUpdatedState(onReady)
     val latestOnEnded = rememberUpdatedState(onEnded)
+    val latestOnNavChromeDismiss = rememberUpdatedState(onNavChromeDismiss)
     val latestOnVolumeChange = rememberUpdatedState(onVolumeChange)
     val latestOnSurfaceDisposed = rememberUpdatedState(onSurfaceDisposed)
     // The settings toggle gates sound on/off; the shared slider sets the level.
@@ -157,6 +161,12 @@ actual fun HomeHeroTrailerSurface(
                         latestOnSurfaceDisposed.value()
                         true
                     }
+                    // The pointer entered the nav-chrome edge band. Dismiss the trailer so the
+                    // Compose navbar (which this heavyweight surface paints over) becomes usable.
+                    "heroTrailerNavChromeDismiss" -> {
+                        latestOnNavChromeDismiss.value()
+                        true
+                    }
                     else -> false
                 }
             },
@@ -179,6 +189,8 @@ actual fun HomeHeroTrailerSurface(
                 isLoading = true,
                 heroTrailerMuted = muted,
                 heroTrailerVolume = effectiveVolume,
+                heroTrailerNavDismissEdge = navDismissEdge,
+                heroTrailerNavDismissBandFraction = navDismissBandFraction,
             ),
         )
         trailerSurfaceLog.i { "attach video=${sourceUrl.take(80)} audio=${sourceAudioUrl?.take(60)} muted=$muted vol=$effectiveVolume" }
@@ -217,6 +229,8 @@ actual fun HomeHeroTrailerSurface(
                 isLoading = true,
                 heroTrailerMuted = muted,
                 heroTrailerVolume = effectiveVolume,
+                heroTrailerNavDismissEdge = navDismissEdge,
+                heroTrailerNavDismissBandFraction = navDismissBandFraction,
             ),
         )
         controller.setMpvProperty("mute", if (muted) "yes" else "no")

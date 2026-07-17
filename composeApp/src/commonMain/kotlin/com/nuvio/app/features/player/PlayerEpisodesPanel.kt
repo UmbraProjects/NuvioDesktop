@@ -57,6 +57,9 @@ import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.details.playbackEpisodeNumber
+import com.nuvio.app.features.details.playbackSeasonNumber
+import com.nuvio.app.features.details.resolveSeriesEpisodePosition
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.streams.StreamCard
 import com.nuvio.app.features.streams.StreamItem
@@ -79,6 +82,7 @@ fun PlayerEpisodesPanel(
     episodes: List<MetaVideo>,
     parentMetaType: String,
     parentMetaId: String,
+    currentVideoId: String?,
     currentSeason: Int?,
     currentEpisode: Int?,
     progressByVideoId: Map<String, WatchProgressEntry>,
@@ -148,6 +152,7 @@ fun PlayerEpisodesPanel(
                             episodes = episodes,
                             parentMetaType = parentMetaType,
                             parentMetaId = parentMetaId,
+                            currentVideoId = currentVideoId,
                             currentSeason = currentSeason,
                             currentEpisode = currentEpisode,
                             progressByVideoId = progressByVideoId,
@@ -177,6 +182,7 @@ private fun EpisodesListSubView(
     episodes: List<MetaVideo>,
     parentMetaType: String,
     parentMetaId: String,
+    currentVideoId: String?,
     currentSeason: Int?,
     currentEpisode: Int?,
     progressByVideoId: Map<String, WatchProgressEntry>,
@@ -188,20 +194,29 @@ private fun EpisodesListSubView(
 ) {
     val tokens = MaterialTheme.nuvio
 
+    val currentPosition = remember(episodes, parentMetaId, currentVideoId, currentSeason, currentEpisode) {
+        episodes.resolveSeriesEpisodePosition(
+            parentMetaId = parentMetaId,
+            videoId = currentVideoId,
+            seasonNumber = currentSeason,
+            episodeNumber = currentEpisode,
+        )
+    }
     val groupedEpisodes = remember(episodes) {
         episodes
-            .filter { it.season != null || it.episode != null }
-            .groupBy { it.season?.coerceAtLeast(0) ?: 0 }
+            .filter { it.playbackEpisodeNumber() != null }
+            .groupBy { it.playbackSeasonNumber()?.coerceAtLeast(0) ?: 0 }
     }
     val availableSeasons = remember(groupedEpisodes) {
         val regular = groupedEpisodes.keys.filter { it > 0 }.sorted()
         val specials = groupedEpisodes.keys.filter { it == 0 }
         regular + specials
     }
-    var selectedSeason by remember(currentSeason, availableSeasons) {
+    var selectedSeason by remember(currentPosition, currentSeason, availableSeasons) {
+        val resolvedCurrentSeason = currentPosition?.seasonNumber ?: currentSeason
         mutableIntStateOf(
             when {
-                currentSeason != null && currentSeason in availableSeasons -> currentSeason
+                resolvedCurrentSeason != null && resolvedCurrentSeason in availableSeasons -> resolvedCurrentSeason
                 availableSeasons.isNotEmpty() -> availableSeasons.first()
                 else -> 1
             },
@@ -209,7 +224,7 @@ private fun EpisodesListSubView(
     }
     val seasonEpisodes = remember(groupedEpisodes, selectedSeason) {
         (groupedEpisodes[selectedSeason] ?: emptyList())
-            .sortedBy { it.episode ?: 0 }
+            .sortedBy { it.playbackEpisodeNumber() ?: 0 }
     }
     val seasonListState = rememberLazyListState()
     val episodeListState = rememberLazyListState()
@@ -228,12 +243,10 @@ private fun EpisodesListSubView(
         }
     }
 
-    LaunchedEffect(selectedSeason, seasonEpisodes, currentSeason, currentEpisode) {
+    LaunchedEffect(selectedSeason, seasonEpisodes, currentPosition) {
         if (seasonEpisodes.isEmpty()) return@LaunchedEffect
-        val activeEpisodeIndex = if (selectedSeason == currentSeason && currentEpisode != null) {
-            seasonEpisodes.indexOfFirst { episode ->
-                episode.season == currentSeason && episode.episode == currentEpisode
-            }
+        val activeEpisodeIndex = if (selectedSeason == currentPosition?.seasonNumber) {
+            seasonEpisodes.indexOfFirst { episode -> episode == currentPosition.video }
         } else {
             -1
         }
@@ -315,13 +328,15 @@ private fun EpisodesListSubView(
             ) {
                 itemsIndexed(
                     items = seasonEpisodes,
-                    key = { index, episode -> "${episode.season}:${episode.episode}:${episode.id}#$index" },
+                    key = { index, episode ->
+                        "${episode.playbackSeasonNumber()}:${episode.playbackEpisodeNumber()}:${episode.id}#$index"
+                    },
                 ) { _, episode ->
-                    val isCurrent = episode.season == currentSeason && episode.episode == currentEpisode
+                    val isCurrent = episode == currentPosition?.video
                     val episodeVideoId = buildPlaybackVideoId(
                         parentMetaId = parentMetaId,
-                        seasonNumber = episode.season,
-                        episodeNumber = episode.episode,
+                        seasonNumber = episode.playbackSeasonNumber(),
+                        episodeNumber = episode.playbackEpisodeNumber(),
                         fallbackVideoId = episode.id,
                     )
                     val isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
@@ -394,16 +409,18 @@ private fun EpisodeRow(
                 horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
             ) {
                 val episodeLabel = buildString {
-                    if (episode.season != null && episode.episode != null) {
+                    val season = episode.playbackSeasonNumber()
+                    val episodeNumber = episode.playbackEpisodeNumber()
+                    if (season != null && episodeNumber != null) {
                         append(
                             stringResource(
                                 Res.string.compose_player_episode_code_full,
-                                episode.season,
-                                episode.episode,
+                                season,
+                                episodeNumber,
                             ),
                         )
-                    } else if (episode.episode != null) {
-                        append(stringResource(Res.string.compose_player_episode_code_episode_only, episode.episode))
+                    } else if (episodeNumber != null) {
+                        append(stringResource(Res.string.compose_player_episode_code_episode_only, episodeNumber))
                     }
                 }
                 if (episodeLabel.isNotBlank()) {
@@ -514,12 +531,14 @@ private fun EpisodeStreamsSubView(
             )
             Text(
                 text = buildString {
-                    if (episode.season != null && episode.episode != null) {
+                    val season = episode.playbackSeasonNumber()
+                    val episodeNumber = episode.playbackEpisodeNumber()
+                    if (season != null && episodeNumber != null) {
                         append(
                             stringResource(
                                 Res.string.compose_player_episode_code_full,
-                                episode.season,
-                                episode.episode,
+                                season,
+                                episodeNumber,
                             ),
                         )
                     }

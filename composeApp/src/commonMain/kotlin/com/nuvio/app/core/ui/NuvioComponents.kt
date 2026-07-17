@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyListScope
@@ -524,34 +525,71 @@ fun NuvioToastHost(
         exit = fadeOut() + slideOutVertically { -it },
     ) {
         val currentToast = renderedToast ?: return@AnimatedVisibility
+        val isTopEnd = currentToast.placement == NuvioToastPlacement.TopEnd
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = statusBarTop + tokens.spacing.listGap)
-                .padding(horizontal = tokens.spacing.screenHorizontal),
-            contentAlignment = Alignment.TopCenter,
+                .padding(
+                    top = statusBarTop + if (isTopEnd) NuvioTokens.Space.s72 else tokens.spacing.listGap,
+                )
+                .padding(
+                    start = tokens.spacing.screenHorizontal,
+                    end = tokens.spacing.screenHorizontal + if (isTopEnd) {
+                        NuvioTokens.Space.s24
+                    } else {
+                        NuvioTokens.Space.none
+                    },
+                ),
+            contentAlignment = if (isTopEnd) Alignment.TopEnd else Alignment.TopCenter,
         ) {
             Surface(
+                modifier = Modifier.widthIn(max = 560.dp),
                 shape = RoundedCornerShape(NuvioTokens.Radius.xl),
                 color = tokens.colors.surfacePopover,
                 tonalElevation = tokens.elevation.raised,
                 shadowElevation = tokens.elevation.overlay,
             ) {
-                Text(
-                    text = currentToast.message,
-                    modifier = Modifier.padding(horizontal = NuvioTokens.Space.s16, vertical = NuvioTokens.Space.s12),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = tokens.colors.textPrimary,
-                )
+                Column(
+                    modifier = Modifier.padding(
+                        horizontal = NuvioTokens.Space.s16,
+                        vertical = NuvioTokens.Space.s12,
+                    ),
+                ) {
+                    currentToast.title?.let { title ->
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = tokens.colors.textPrimary,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(modifier = Modifier.height(NuvioTokens.Space.s4))
+                    }
+                    Text(
+                        text = currentToast.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (currentToast.title == null) {
+                            tokens.colors.textPrimary
+                        } else {
+                            tokens.colors.textMuted
+                        },
+                    )
+                }
             }
         }
     }
+}
+
+enum class NuvioToastPlacement {
+    TopCenter,
+    TopEnd,
 }
 
 data class NuvioToastMessage(
     val id: Long,
     val message: String,
     val durationMillis: Long,
+    val title: String? = null,
+    val placement: NuvioToastPlacement = NuvioToastPlacement.TopCenter,
 )
 
 object NuvioToastController {
@@ -562,12 +600,16 @@ object NuvioToastController {
     fun show(
         message: String,
         durationMillis: Long = 2500L,
+        title: String? = null,
+        placement: NuvioToastPlacement = NuvioToastPlacement.TopCenter,
     ) {
         nextToastId += 1L
         _currentToast.value = NuvioToastMessage(
             id = nextToastId,
             message = message,
             durationMillis = durationMillis,
+            title = title,
+            placement = placement,
         )
     }
 

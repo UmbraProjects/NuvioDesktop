@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,6 +25,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -163,7 +168,7 @@ private fun StyleControlsCard(
             StepperControl(
                 value = stringResource(Res.string.compose_player_font_size_value, style.fontSizeSp),
                 onMinus = {
-                    onStyleChanged(style.copy(fontSizeSp = (style.fontSizeSp - 2).coerceAtLeast(12)))
+                    onStyleChanged(style.copy(fontSizeSp = (style.fontSizeSp - 2).coerceAtLeast(6)))
                 },
                 onPlus = {
                     onStyleChanged(style.copy(fontSizeSp = (style.fontSizeSp + 2).coerceAtMost(40)))
@@ -336,10 +341,18 @@ private fun AutoSyncControls(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val capturedPositionMs = state.capturedPositionMs
-    val nearestCues = if (capturedPositionMs == null) {
-        emptyList()
-    } else {
-        state.cues.sortedBy { abs(it.startTimeMs - capturedPositionMs) }.take(5)
+    // Chronological window around the capture point instead of just the nearest 5 lines:
+    // heavily desynced subtitles can be minutes off, so the list scrolls up (earlier) and
+    // down (later) from the nearest line, which the list auto-centers on.
+    val nearestCues = remember(state.cues, capturedPositionMs) {
+        if (capturedPositionMs == null) {
+            emptyList()
+        } else {
+            state.cues
+                .sortedBy { abs(it.startTimeMs - capturedPositionMs) }
+                .take(AUTO_SYNC_CUE_WINDOW)
+                .sortedBy { it.startTimeMs }
+        }
     }
 
     Column(
@@ -402,34 +415,65 @@ private fun AutoSyncControls(
         }
 
         if (capturedPositionMs != null && nearestCues.isNotEmpty()) {
-            nearestCues.forEach { cue ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(colorScheme.surfaceVariant.copy(alpha = 0.52f))
-                        .clickable { onCueSelected(cue) }
-                        .padding(horizontal = 8.dp, vertical = 7.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = formatCueTimestamp(cue.startTimeMs),
-                        color = colorScheme.primary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = cue.text,
-                        color = colorScheme.onSurface,
-                        fontSize = 12.sp,
-                        maxLines = 2,
-                    )
+            val nearestIndex = remember(nearestCues, capturedPositionMs) {
+                nearestCues.indices.minByOrNull { abs(nearestCues[it].startTimeMs - capturedPositionMs) } ?: 0
+            }
+            val listState = rememberLazyListState()
+            LaunchedEffect(nearestCues, capturedPositionMs) {
+                // Center-ish on the nearest line so both earlier and later cues are in reach.
+                listState.scrollToItem((nearestIndex - 2).coerceAtLeast(0))
+            }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 220.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(nearestCues.size) { index ->
+                    val cue = nearestCues[index]
+                    val isNearest = index == nearestIndex
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                colorScheme.surfaceVariant.copy(alpha = if (isNearest) 0.82f else 0.52f),
+                            )
+                            .then(
+                                if (isNearest) {
+                                    Modifier.border(1.dp, colorScheme.primary.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .clickable { onCueSelected(cue) }
+                            .padding(horizontal = 8.dp, vertical = 7.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = formatCueTimestamp(cue.startTimeMs),
+                            color = colorScheme.primary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = cue.text,
+                            color = colorScheme.onSurface,
+                            fontSize = 12.sp,
+                            maxLines = 2,
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+// Matches PLAYER_CONTROLS_SUBTITLE_CUE_WINDOW in PlayerScreenRuntimeUi.kt so the Compose
+// panel and the native HUD offer the same reach around the captured position.
+private const val AUTO_SYNC_CUE_WINDOW = 60
 
 @Composable
 private fun ToggleRow(

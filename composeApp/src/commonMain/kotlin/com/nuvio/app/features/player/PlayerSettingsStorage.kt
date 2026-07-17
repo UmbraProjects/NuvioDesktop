@@ -11,6 +11,16 @@ internal expect object PlayerSettingsStorage {
     fun saveDefaultPlaybackSpeed(speed: Float)
     fun loadMouseMoveRevealsControlsEnabled(): Boolean?
     fun saveMouseMoveRevealsControlsEnabled(enabled: Boolean)
+    fun loadDesktopLegacyHudEnabled(): Boolean?
+    fun saveDesktopLegacyHudEnabled(enabled: Boolean)
+    fun loadDesktopAlwaysShowClockEnabled(): Boolean?
+    fun saveDesktopAlwaysShowClockEnabled(enabled: Boolean)
+    fun loadDesktopPlaybackSpeedFineIncrementsEnabled(): Boolean?
+    fun saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean)
+    fun loadDesktopVerboseMpvLoggingEnabled(): Boolean?
+    fun saveDesktopVerboseMpvLoggingEnabled(enabled: Boolean)
+    fun loadDesktopUiScalePercent(): Int?
+    fun saveDesktopUiScalePercent(percent: Int)
     fun loadExternalPlayerEnabled(): Boolean?
     fun saveExternalPlayerEnabled(enabled: Boolean)
     fun loadExternalPlayerForwardSubtitles(): Boolean?
@@ -35,6 +45,8 @@ internal expect object PlayerSettingsStorage {
     fun saveSubtitleOutlineColor(colorHex: String)
     fun loadSubtitleOutlineEnabled(): Boolean?
     fun saveSubtitleOutlineEnabled(enabled: Boolean)
+    fun loadSubtitleShadowEnabled(): Boolean?
+    fun saveSubtitleShadowEnabled(enabled: Boolean)
     fun loadSubtitleOutlineWidth(): Int?
     fun saveSubtitleOutlineWidth(width: Int)
     fun loadSubtitleBold(): Boolean?
@@ -75,6 +87,10 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopAudioPassthroughEnabled(enabled: Boolean)
     fun loadDesktopCustomMpvOptions(): String?
     fun saveDesktopCustomMpvOptions(options: String)
+    fun loadDesktopMpvConfigMode(): String?
+    fun saveDesktopMpvConfigMode(mode: String)
+    fun loadDesktopMpvPropertyOverrides(): String?
+    fun saveDesktopMpvPropertyOverrides(serialized: String)
     fun loadMapDV7ToHevc(): Boolean?
     fun saveMapDV7ToHevc(enabled: Boolean)
     fun loadTunnelingEnabled(): Boolean?
@@ -108,6 +124,10 @@ internal expect object PlayerSettingsStorage {
     fun saveStreamAutoPlayPreferBingeGroup(enabled: Boolean)
     fun loadStreamAutoPlayReuseBingeGroup(): Boolean?
     fun saveStreamAutoPlayReuseBingeGroup(enabled: Boolean)
+    fun loadStreamFailoverEnabled(): Boolean?
+    fun saveStreamFailoverEnabled(enabled: Boolean)
+    fun loadStreamFailoverTimeoutSeconds(): Int?
+    fun saveStreamFailoverTimeoutSeconds(seconds: Int)
     fun loadNextEpisodeThresholdMode(): String?
     fun saveNextEpisodeThresholdMode(mode: String)
     fun loadNextEpisodeThresholdPercent(): Float?

@@ -232,6 +232,7 @@ object SearchRepository {
         val selectedGenre = selectedCatalog.resolveGenreSelection(current.selectedGenre)
 
         _discoverUiState.value = DiscoverUiState(
+            availableCatalogs = sources,
             typeOptions = typeOptions,
             selectedType = selectedType,
             catalogOptions = catalogOptions,
@@ -290,8 +291,11 @@ object SearchRepository {
         val current = _discoverUiState.value
         if (current.selectedCatalogKey == catalogKey) return
 
-        val selectedCatalog = current.catalogOptions.firstOrNull { it.key == catalogKey } ?: return
+        val selectedCatalog = discoverSources.firstOrNull { it.key == catalogKey } ?: return
+        val catalogOptions = discoverSources.filter { it.type == selectedCatalog.type }
         _discoverUiState.value = current.copy(
+            selectedType = selectedCatalog.type,
+            catalogOptions = catalogOptions,
             selectedCatalogKey = selectedCatalog.key,
             selectedGenre = selectedCatalog.resolveGenreSelection(null),
             items = emptyList(),

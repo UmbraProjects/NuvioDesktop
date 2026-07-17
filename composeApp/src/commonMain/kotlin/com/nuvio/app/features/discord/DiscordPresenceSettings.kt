@@ -4,13 +4,32 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/**
+ * How much of the Discord Rich Presence integration is shared.
+ *
+ * - [Disabled]: no presence at all (default when nothing has been configured).
+ * - [Watching]: presence only while actively playing something.
+ * - [Full]: the complete integration — browsing, library, viewing, and playback.
+ */
+enum class DiscordPresenceMode {
+    Disabled,
+    Watching,
+    Full,
+}
+
 data class DiscordPresenceSettings(
-    val enabled: Boolean = false,
-)
+    val mode: DiscordPresenceMode = DiscordPresenceMode.Disabled,
+) {
+    /** Playback presence is shared in both Watching and Full. */
+    val showPlaybackPresence: Boolean get() = mode != DiscordPresenceMode.Disabled
+
+    /** Browsing/library presence is shared only in Full. */
+    val showBrowsingPresence: Boolean get() = mode == DiscordPresenceMode.Full
+}
 
 internal expect object DiscordPresenceSettingsStorage {
-    fun loadEnabled(): Boolean?
-    fun saveEnabled(enabled: Boolean)
+    fun loadMode(): DiscordPresenceMode
+    fun saveMode(mode: DiscordPresenceMode)
 }
 
 object DiscordPresenceSettingsRepository {
@@ -18,26 +37,26 @@ object DiscordPresenceSettingsRepository {
     val uiState: StateFlow<DiscordPresenceSettings> = _uiState.asStateFlow()
 
     private var hasLoaded = false
-    private var enabled = false
+    private var mode = DiscordPresenceMode.Disabled
 
     fun ensureLoaded() {
         if (hasLoaded) return
         hasLoaded = true
-        enabled = DiscordPresenceSettingsStorage.loadEnabled() ?: false
+        mode = DiscordPresenceSettingsStorage.loadMode()
         publish()
     }
 
-    fun setEnabled(value: Boolean) {
+    fun setMode(value: DiscordPresenceMode) {
         ensureLoaded()
-        if (enabled == value) return
-        enabled = value
+        if (mode == value) return
+        mode = value
         publish()
-        DiscordPresenceSettingsStorage.saveEnabled(value)
+        DiscordPresenceSettingsStorage.saveMode(value)
     }
 
     private fun publish() {
         _uiState.value = DiscordPresenceSettings(
-            enabled = enabled,
+            mode = mode,
         )
     }
 }

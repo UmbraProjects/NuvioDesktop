@@ -9,6 +9,83 @@ import kotlin.test.assertNotNull
 
 class SeriesPlaybackResolverTest {
     @Test
+    fun preferredSeriesEpisode_treats_seasonless_anime_as_season_one() {
+        val meta = MetaDetails(
+            id = "kitsu:486",
+            type = "series",
+            name = "Pokemon",
+            videos = listOf(
+                MetaVideo(id = "kitsu:486:1", title = "One", episode = 1),
+                MetaVideo(id = "kitsu:486:61", title = "Sixty-one", episode = 61),
+            ),
+        )
+        val action = SeriesPrimaryAction(
+            label = "Resume",
+            videoId = "kitsu:486:1:61",
+            seasonNumber = 1,
+            episodeNumber = 61,
+            episodeTitle = null,
+            episodeThumbnail = null,
+            resumePositionMs = null,
+        )
+
+        val preferred = meta.preferredSeriesEpisode(action, entries = emptyList())
+
+        assertNotNull(preferred)
+        assertEquals("kitsu:486:61", preferred.id)
+        assertEquals(1, preferred.playbackSeasonNumber())
+    }
+
+    @Test
+    fun preferredSeriesEpisode_maps_absolute_anime_action_across_seasons() {
+        val meta = MetaDetails(
+            id = "anime",
+            type = "series",
+            name = "Anime",
+            videos = listOf(
+                MetaVideo(id = "s1e1", title = "One", season = 1, episode = 1),
+                MetaVideo(id = "s1e2", title = "Two", season = 1, episode = 2),
+                MetaVideo(id = "s2e1", title = "Three", season = 2, episode = 1),
+                MetaVideo(id = "s2e2", title = "Four", season = 2, episode = 2),
+            ),
+        )
+        val action = SeriesPrimaryAction(
+            label = "Up next",
+            videoId = "anime:1:4",
+            seasonNumber = 1,
+            episodeNumber = 4,
+            episodeTitle = null,
+            episodeThumbnail = null,
+            resumePositionMs = null,
+        )
+
+        val preferred = meta.preferredSeriesEpisode(action, entries = emptyList())
+
+        assertNotNull(preferred)
+        assertEquals("s2e2", preferred.id)
+    }
+
+    @Test
+    fun preferredSeriesEpisode_falls_back_to_most_recent_played_episode() {
+        val meta = MetaDetails(
+            id = "show",
+            type = "series",
+            name = "Show",
+            videos = listOf(
+                MetaVideo(id = "ep1", title = "One", season = 1, episode = 1),
+                MetaVideo(id = "ep2", title = "Two", season = 1, episode = 2),
+            ),
+        )
+        val older = progressEntry(videoId = "show:1:1", episode = 1, updatedAt = 10L)
+        val recent = progressEntry(videoId = "show:1:2", episode = 2, updatedAt = 20L)
+
+        val preferred = meta.preferredSeriesEpisode(action = null, entries = listOf(older, recent))
+
+        assertNotNull(preferred)
+        assertEquals("ep2", preferred.id)
+    }
+
+    @Test
     fun seriesPrimaryAction_uses_latest_watched_episode_when_manual_mark_exists() {
         val meta = MetaDetails(
             id = "show",
@@ -156,4 +233,17 @@ class SeriesPlaybackResolverTest {
         assertEquals(2, nextEpisode.episode)
         assertEquals("s2e2", nextEpisode.id)
     }
+
+    private fun progressEntry(videoId: String, episode: Int, updatedAt: Long) = WatchProgressEntry(
+        contentType = "series",
+        parentMetaId = "show",
+        parentMetaType = "series",
+        videoId = videoId,
+        title = "Show",
+        seasonNumber = 1,
+        episodeNumber = episode,
+        lastPositionMs = 1_000L,
+        durationMs = 10_000L,
+        lastUpdatedEpochMs = updatedAt,
+    )
 }

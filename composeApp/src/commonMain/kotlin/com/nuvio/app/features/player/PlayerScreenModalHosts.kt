@@ -3,6 +3,8 @@ package com.nuvio.app.features.player
 import androidx.compose.runtime.Composable
 import com.nuvio.app.features.details.MetaDetailsUiState
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.details.playbackEpisodeNumber
+import com.nuvio.app.features.details.playbackSeasonNumber
 import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.p2p.P2pConsentDialog
 import com.nuvio.app.features.p2p.P2pSettingsRepository
@@ -52,6 +54,7 @@ internal fun PlayerScreenModalHosts(
     onVideoSettingsModalDismissed: () -> Unit,
     showSourcesPanel: Boolean,
     sourceStreamsState: StreamsUiState,
+    activeSourceIdentityKey: String?,
     activeSourceUrl: String,
     activeStreamTitle: String,
     onSourceFilterSelected: (String?) -> Unit,
@@ -157,6 +160,7 @@ internal fun PlayerScreenModalHosts(
     PlayerSourcesPanel(
         visible = showSourcesPanel,
         streamsUiState = sourceStreamsState,
+        currentStreamIdentityKey = activeSourceIdentityKey,
         currentStreamUrl = activeSourceUrl,
         currentStreamName = activeStreamTitle,
         onFilterSelected = onSourceFilterSelected,
@@ -171,6 +175,7 @@ internal fun PlayerScreenModalHosts(
             episodes = allEpisodes,
             parentMetaType = parentMetaType,
             parentMetaId = parentMetaId,
+            currentVideoId = activeVideoId,
             currentSeason = activeSeasonNumber,
             currentEpisode = activeEpisodeNumber,
             progressByVideoId = watchProgressByVideoId,
@@ -224,8 +229,8 @@ internal fun selectDownloadedEpisodeForPlayback(
 ): Boolean {
     val downloadedEpisode = DownloadsRepository.findPlayableDownload(
         parentMetaId = parentMetaId,
-        seasonNumber = episode.season,
-        episodeNumber = episode.episode,
+        seasonNumber = episode.playbackSeasonNumber(),
+        episodeNumber = episode.playbackEpisodeNumber(),
         videoId = episode.id,
     )
     if (downloadedEpisode != null) {

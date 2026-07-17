@@ -378,7 +378,6 @@ internal fun PauseMetadataOverlay(
     episodeNumber: Int?,
     episodeTitle: String?,
     pauseDescription: String?,
-    providerName: String,
     metrics: PlayerLayoutMetrics,
     horizontalSafePadding: Dp,
     modifier: Modifier = Modifier,
@@ -419,12 +418,14 @@ internal fun PauseMetadataOverlay(
         }
         val descriptionMaxLines = if (compactHeight) 2 else 3
         val descriptionWidthFraction = if (compactHeight) 0.82f else 0.62f
+        // Nudge the metadata block in from the left edge a little so it sits off the very corner.
+        val contentStartInset = if (compactHeight) 24.dp else 48.dp
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(
-                    start = horizontalSafePadding + metrics.horizontalPadding,
+                    start = horizontalSafePadding + metrics.horizontalPadding + contentStartInset,
                     end = horizontalSafePadding + metrics.horizontalPadding,
                     top = topPadding,
                     bottom = bottomPadding,
@@ -463,15 +464,17 @@ internal fun PauseMetadataOverlay(
             val episodeInfo = if (isEpisode && seasonNumber != null && episodeNumber != null) {
                 stringResource(Res.string.compose_player_episode_code_full, seasonNumber, episodeNumber)
             } else {
-                providerName
+                null
             }
 
-            Text(
-                text = episodeInfo,
-                style = MaterialTheme.nuvioTypeScale.bodyLg,
-                color = Color(0xFFCCCCCC),
-                modifier = Modifier.padding(top = if (compactHeight) 6.dp else 8.dp),
-            )
+            episodeInfo?.let { info ->
+                Text(
+                    text = info,
+                    style = MaterialTheme.nuvioTypeScale.bodyLg,
+                    color = Color(0xFFCCCCCC),
+                    modifier = Modifier.padding(top = if (compactHeight) 6.dp else 8.dp),
+                )
+            }
 
             if (!episodeTitle.isNullOrBlank()) {
                 Text(

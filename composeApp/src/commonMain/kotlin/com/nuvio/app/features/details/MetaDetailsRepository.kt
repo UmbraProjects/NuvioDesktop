@@ -220,6 +220,19 @@ object MetaDetailsRepository {
             ?: cachedEntry.baseMeta
     }
 
+    /** Episode titles keyed by the displayed franchise coordinates. Stream addons sometimes
+     * return a file whose numeric tag claims the requested episode while its title identifies a
+     * different episode; this lets the picker reject that contradiction without show-specific data. */
+    fun episodeTitlesByCoordinate(type: String, id: String): Map<Pair<Int, Int>, String> =
+        peek(type, id)?.videos.orEmpty()
+            .mapNotNull { video ->
+                val season = video.season ?: return@mapNotNull null
+                val episode = video.episode ?: return@mapNotNull null
+                val title = video.title.trim().takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                (season to episode) to title
+            }
+            .toMap()
+
     fun clear() {
         activeRequestKey = null
         cachedMetaByRequestKey.clear()
@@ -794,13 +807,17 @@ object MetaDetailsRepository {
 
     /** Local files are a supplemental stream group unless the detail page explicitly prefers them. */
     fun findLocalStreams(videoId: String): List<com.nuvio.app.features.streams.StreamItem> {
-        val meta = _uiState.value.meta ?: return emptyList()
-        val embeddedLocalStreams = findAddonEmbeddedStreams(meta, videoId)
-            .filter { it.streamType == "local" }
-        if (embeddedLocalStreams.isNotEmpty()) return embeddedLocalStreams
+        val meta = _uiState.value.meta
+        if (meta != null) {
+            val embeddedLocalStreams = findAddonEmbeddedStreams(meta, videoId)
+                .filter { it.streamType == "local" }
+            if (embeddedLocalStreams.isNotEmpty()) return embeddedLocalStreams
+        }
         // Matched local-library items have real (addon) meta with no embedded streams; overlay the
         // local file(s) here so the whole streams → player → scrobble pipeline can serve them.
-        return com.nuvio.app.features.locallibrary.LocalLibraryRepository.localStreamsFor(meta.id, videoId)
+        // The lookup is video-id-keyed, so it works even when the loaded meta is stale or absent
+        // (continue watching from Home, player-internal episode switches).
+        return com.nuvio.app.features.locallibrary.LocalLibraryRepository.localStreamsFor(meta?.id, videoId)
     }
 
     private fun findAddonEmbeddedStreams(

@@ -20,6 +20,17 @@ object FilenameParser {
     private val episodeOnlyRegex =
         Regex("""(?i)(?:^|[ ._-])e(?:p(?:isode)?)?[ ._-]*(\d{1,4})(?![0-9p])""")
 
+    // --- Anime absolute-numbering helpers (only consulted for anime folders) ---
+    private val bracketGroupRegex = Regex("""[\[({][^\])}]*[\])}]""")
+    // A ` - 12 ` / `_12_` / `Ep. 12` delimiter is a strong episode signal in anime releases. The
+    // lookbehind keeps the `e`/`ep` branch from matching a title word that merely ends in 'e'
+    // before a number (e.g. "the 12").
+    private val delimitedEpisodeRegex = Regex("""(?i)(?:[ ._]-[ ._]*|(?<![a-z])ep?[ ._]*)(\d{1,4})(?:v\d)?(?![0-9])""")
+    // Resolution / codec / audio tokens that carry stray digits we must not read as episodes.
+    private val resolutionTokenRegex =
+        Regex("""(?i)\b(?:\d{3,4}p|4k|uhd|x26[45]|h\.?26[45]|hevc|10bit|8bit|aac|flac|opus|ddp?\d(?:\.\d)?)\b""")
+    private val standaloneNumberRegex = Regex("""(?<![0-9])\d{1,4}(?![0-9])""")
+
     // Tokens that mark the start of release metadata; the title ends before the first one.
     private val junkTokenRegex = Regex(
         "(?i)^(" +
@@ -51,9 +62,11 @@ object FilenameParser {
 
     /**
      * Parses episode coordinates for a series file. [seasonFolderName] (e.g. `Season 01`) is used
-     * as a fallback when the file name only carries an episode number.
+     * as a fallback when the file name only carries an episode number. When [isAnime] is set and
+     * no explicit SxxExx/EPxx marker is present, a bare trailing number is read as an *absolute*
+     * episode (season left null) — anime is routinely numbered `Show - 1075` across a whole run.
      */
-    fun parseEpisode(fileName: String, seasonFolderName: String? = null): ParsedEpisode {
+    fun parseEpisode(fileName: String, seasonFolderName: String? = null, isAnime: Boolean = false): ParsedEpisode {
         val base = stripExtension(fileName)
 
         for (regex in seasonEpisodeRegexes) {
@@ -63,16 +76,41 @@ object FilenameParser {
             if (season != null && episode != null) {
                 return ParsedEpisode(
                     showTitle = cleanTitle(base.substring(0, match.range.first)).takeIf { it.isNotBlank() },
+                    // Anime keeps an explicit SxxExx verbatim too: LocalAnimeEpisodeMatcher
+                    // translates franchise season/episode ↔ per-entry absolute numbering through
+                    // the anime-list mapping at play time, so the season is information, not noise.
                     season = season,
                     episode = episode,
                 )
             }
         }
 
-        // No SxxExx — try a bare episode number, taking the season from the folder.
+        // No SxxExx — try a bare episode number, taking the season from the folder. An anime file
+        // with no season marker anywhere (`Show - 1075`) stays absolute-numbered: season null.
         val folderSeason = seasonFolderName?.let { seasonFolderRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() }
         val episode = episodeOnlyRegex.find(base)?.groupValues?.get(1)?.toIntOrNull()
-        return ParsedEpisode(showTitle = null, season = folderSeason, episode = episode)
+            ?: if (isAnime) absoluteAnimeEpisode(base) else null
+        return ParsedEpisode(
+            showTitle = null,
+            season = folderSeason,
+            episode = episode,
+        )
+    }
+
+    /**
+     * Best-effort absolute episode number from an anime file with no SxxExx/EPxx marker, e.g.
+     * `[Group] Frieren - 12 [1080p]` or `One Piece 1075`. Release-group brackets, the year, and
+     * resolution/checksum tokens are removed first so the remaining standalone integer is the
+     * episode. Returns null when nothing looks like an episode number.
+     */
+    private fun absoluteAnimeEpisode(base: String): Int? {
+        val cleaned = base
+            .replace(bracketGroupRegex, " ")   // [SubsGroup], (BD), {crc}
+            .replace(yearRegex, " ")           // a bracketed/inline year is not the episode
+            .replace(resolutionTokenRegex, " ") // 1080p, 720p, 10bit, x265, etc.
+        // Prefer a `- 12` / `_12_` / `Ep 12`–style delimiter; fall back to the last standalone int.
+        delimitedEpisodeRegex.findAll(cleaned).lastOrNull()?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
+        return standaloneNumberRegex.findAll(cleaned).lastOrNull()?.value?.toIntOrNull()
     }
 
     /** A stable, comparison-friendly key for an item so rescans keep manual corrections. */

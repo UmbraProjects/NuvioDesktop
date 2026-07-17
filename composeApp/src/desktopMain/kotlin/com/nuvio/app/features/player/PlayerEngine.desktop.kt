@@ -53,6 +53,8 @@ actual fun PlatformPlayerSurface(
     playWhenReady: Boolean,
     resizeMode: PlayerResizeMode,
     initialPositionMs: Long,
+    initialProgressFraction: Float?,
+    initialPlaybackSpeed: Float,
     useNativeController: Boolean,
     playerControlsState: PlayerControlsState,
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
@@ -73,6 +75,8 @@ actual fun PlatformPlayerSurface(
             playWhenReady = playWhenReady,
             resizeMode = resizeMode,
             initialPositionMs = initialPositionMs,
+            initialProgressFraction = initialProgressFraction,
+            initialPlaybackSpeed = initialPlaybackSpeed,
             playerControlsState = playerControlsState,
             onPlayerControlsAction = onPlayerControlsAction,
             onPlayerControlsEvent = onPlayerControlsEvent,
@@ -102,6 +106,8 @@ private fun NativePlayerSurface(
     playWhenReady: Boolean,
     resizeMode: PlayerResizeMode,
     initialPositionMs: Long,
+    initialProgressFraction: Float?,
+    initialPlaybackSpeed: Float,
     playerControlsState: PlayerControlsState,
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
     onPlayerControlsEvent: (String, Double) -> Boolean,
@@ -118,17 +124,23 @@ private fun NativePlayerSurface(
     val videoIsHdr = remember { mutableStateOf<Boolean?>(null) }
     val videoVsrScale = remember { mutableStateOf<Double?>(null) }
     val videoProfileRefreshToken = remember { mutableIntStateOf(0) }
-    // F10/F7 are documented as forcing the anime preset "regardless of detection" for this
-    // playback session — but the auto-detect gate below only ever looks at the persisted
-    // "Auto-apply to Anime" setting, so without this it silently overrides an explicit F10/F7
-    // press whenever detection says isAnimeContent=false (e.g. continue-watching, which skips
-    // the meta details screen where genre detection normally runs).
-    val animeModeSessionForced = remember { mutableStateOf(false) }
     LaunchedEffect(sourceUrl) {
         DesktopPlayerLaunchShield.showForActiveWindow()
     }
     val playbackHeaders = remember(sourceHeaders) { sanitizePlaybackHeaders(sourceHeaders) }
     val playerSettings by PlayerSettingsRepository.uiState.collectAsState()
+    val initialAnimeSvpRequested = playerSettings.desktopAnimeSvpEnabled &&
+        playerSettings.desktopMpvConfigMode != DesktopMpvConfigMode.Full &&
+        isAnimeContent &&
+        playerSettings.defaultPlaybackSpeed < 1.5f
+    // Keep one state holder for the controller callback's lifetime. Replacing it on a source
+    // change would leave the callback writing to the previous file's state object.
+    val videoPipelineReady = remember { mutableStateOf(!initialAnimeSvpRequested) }
+    val svpStartupProfileAcknowledgementPending = remember { mutableStateOf(false) }
+    LaunchedEffect(sourceUrl) {
+        videoPipelineReady.value = !initialAnimeSvpRequested
+        svpStartupProfileAcknowledgementPending.value = false
+    }
     // The native side pins the D3D11 device to the NVIDIA GPU (and captures the diagnostic mpv
     // log) when VSR is on — the d3d11vpp video processor needs the NVIDIA adapter, which matters
     // on hybrid-GPU machines.
@@ -180,8 +192,18 @@ private fun NativePlayerSurface(
                     PlaybackStartTrace.mark("fileLoaded")
                     videoProfileRefreshToken.intValue += 1
                     true
+                } else if (type == "svpPrerollReady") {
+                    // Native has a filtered frame at the requested start position, but remains
+                    // paused. Allow exactly one full profile pass, then explicitly hand control
+                    // back so shaders cannot compile after audio has already started.
+                    svpStartupProfileAcknowledgementPending.value = true
+                    videoPipelineReady.value = true
+                    true
                 } else if (type == "playbackRestart") {
                     // First decoded/rendered frame of the current file (once per load).
+                    // For an initial 1x anime/SVP load this is also the hand-off point from the
+                    // native pre-roll transaction to the normal runtime profile owner.
+                    videoPipelineReady.value = true
                     PlaybackStartTrace.complete("firstFrame")
                     true
                 } else {
@@ -205,31 +227,20 @@ private fun NativePlayerSurface(
                 KeyEvent.VK_DOWN -> "ArrowDown"
                 KeyEvent.VK_LEFT -> "ArrowLeft"
                 KeyEvent.VK_RIGHT -> "ArrowRight"
-                KeyEvent.VK_ENTER -> "Enter"
-                KeyEvent.VK_ESCAPE -> "Escape"
+                AppShortcutsRepository.keyCode(AppShortcutAction.SelectFocused) -> "Enter"
+                AppShortcutsRepository.keyCode(AppShortcutAction.DismissOverlay) -> "Escape"
                 else -> null
             }
             if (panelKey != null && controller.dispatchKeyboardPanelKey(panelKey)) {
                 event.consume()
                 return@KeyEventDispatcher true
             }
-            // Tab skips the intro/outro, but only while the skip prompt is on screen; otherwise
-            // let Tab keep its normal behavior. Fixed (not rebindable).
-            if (event.keyCode == KeyEvent.VK_TAB) {
-                if (!controller.triggerSkipIntervalIfAvailable()) {
-                    return@KeyEventDispatcher false
-                }
-                event.consume()
-                return@KeyEventDispatcher true
-            }
-            // Fixed, non-rebindable alternates preserved exactly from the historical bindings:
-            // the arrow keys (seek/volume) and K (play/pause). These always apply.
+            // Directional controls stay fixed so keyboard/panel navigation remains recoverable.
             val fixedType = when (event.keyCode) {
                 KeyEvent.VK_LEFT -> "keyboardSeekBack"
                 KeyEvent.VK_RIGHT -> "keyboardSeekForward"
                 KeyEvent.VK_UP -> "volumeUp"
                 KeyEvent.VK_DOWN -> "volumeDown"
-                KeyEvent.VK_K -> "keyboardToggle"
                 else -> null
             }
             if (fixedType != null) {
@@ -242,6 +253,8 @@ private fun NativePlayerSurface(
                 ?: return@KeyEventDispatcher false
             when (action) {
                 PlayerShortcutAction.PlayPause -> controller.dispatchKeyboardShortcut("keyboardToggle", 1.0)
+                PlayerShortcutAction.AlternatePlayPause -> controller.dispatchKeyboardShortcut("keyboardToggle", 1.0)
+                PlayerShortcutAction.ToggleMute -> controller.dispatchKeyboardShortcut("keyboardToggleMute", 1.0)
                 PlayerShortcutAction.SeekBackward -> controller.dispatchKeyboardShortcut("keyboardSeekBack", 1.0)
                 PlayerShortcutAction.SeekForward -> controller.dispatchKeyboardShortcut("keyboardSeekForward", 1.0)
                 PlayerShortcutAction.SpeedUp -> controller.dispatchKeyboardShortcut("keyboardSpeedStep", 1.0)
@@ -251,16 +264,14 @@ private fun NativePlayerSurface(
                 PlayerShortcutAction.OpenSources -> controller.openKeyboardPanel("sources")
                 PlayerShortcutAction.OpenEpisodes -> controller.openKeyboardPanel("episodes")
                 PlayerShortcutAction.CycleZoom -> controller.dispatchKeyboardShortcut("resize", 1.0)
-                PlayerShortcutAction.CycleSvp -> {
-                    animeModeSessionForced.value = true
-                    controller.cycleDesktopAnimeSvpMode()
+                PlayerShortcutAction.SkipInterval -> {
+                    if (!controller.triggerSkipIntervalIfAvailable()) return@KeyEventDispatcher false
                 }
+                PlayerShortcutAction.CycleSvp -> controller.cycleDesktopAnimeSvpMode()
                 PlayerShortcutAction.CycleHdr -> controller.cycleDesktopHdrMode()
                 PlayerShortcutAction.CycleColorProfile -> controller.cycleDesktopColorProfile()
-                PlayerShortcutAction.CycleAnime -> {
-                    animeModeSessionForced.value = true
-                    controller.cycleDesktopAnimeMode()
-                }
+                PlayerShortcutAction.CycleAnime -> controller.cycleDesktopAnimeMode()
+                PlayerShortcutAction.ToggleMpvDiagnostics -> controller.toggleMpvDiagnosticsOverlay()
             }
             event.consume()
             true
@@ -275,10 +286,29 @@ private fun NativePlayerSurface(
     // handle. Disposing here on every URL/header change permanently marks the remembered
     // controller as unusable and can synchronously block the UI while mpv/WebView2 shut down.
     DisposableEffect(controller) {
-        onDispose { controller.dispose() }
+        onDispose {
+            controller.dispose()
+            // The playback session is over: drop any F10/F7 anime force so the next playback
+            // falls back to the persisted "Auto-apply to Anime" behaviour.
+            PlayerSettingsRepository.clearDesktopAnimeSessionState()
+        }
     }
 
-    LaunchedEffect(controller, sourceUrl, playbackHeaders, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, hostFirstFullSizePaintComplete.value) {
+    LaunchedEffect(controller, isAnimeContent) {
+        controller.isAnimeContentDetected = isAnimeContent
+    }
+
+    LaunchedEffect(
+        controller,
+        sourceUrl,
+        playbackHeaders,
+        nvidiaRtxSuperResolutionEnabled,
+        nvidiaRtxHdrEnabled,
+        playerSettings.desktopMpvConfigMode,
+        initialPositionMs,
+        initialProgressFraction,
+        hostFirstFullSizePaintComplete.value,
+    ) {
         if (!hostFirstFullSizePaintComplete.value) {
             return@LaunchedEffect
         }
@@ -296,8 +326,20 @@ private fun NativePlayerSurface(
             sourceHeaders = playbackHeaders,
             playWhenReady = playWhenReady,
             initialPositionMs = initialPositionMs,
-            nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
-            nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
+            initialProgressFraction = initialProgressFraction ?: 0f,
+            // Apply the configured speed before mpv initializes. In particular, this prevents
+            // the SVP/VapourSynth graph from being constructed at 1x only to be torn down when
+            // the common player layer applies a >= 1.5x default speed after the first snapshot.
+            initialPlaybackSpeed = initialPlaybackSpeed,
+            // Native code defers this until MPV_EVENT_FILE_LOADED, then installs it before the
+            // first PLAYBACK_RESTART. That avoids probing/HLS startup crashes while also avoiding
+            // a visible/audio-disrupting filter rebuild after playback has already begun.
+            animeSvpEnabled = initialAnimeSvpRequested,
+            isAnimeContent = isAnimeContent,
+            nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled &&
+                playerSettings.desktopMpvConfigMode != DesktopMpvConfigMode.Full,
+            nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled &&
+                playerSettings.desktopMpvConfigMode != DesktopMpvConfigMode.Full,
             enableUserMpvOptions = true,
             restoreVolume = true,
             onError = { message -> latestOnError.value(message) },
@@ -323,7 +365,8 @@ private fun NativePlayerSurface(
     LaunchedEffect(sourceUrl) {
         videoIsHdr.value = null
         videoVsrScale.value = null
-        animeModeSessionForced.value = false
+        // Note: the anime session override deliberately survives source changes — a forced preset
+        // should carry across binged episodes and only reset when the player closes.
     }
 
     LaunchedEffect(controller, sourceUrl, isAnimeContent) {
@@ -337,42 +380,70 @@ private fun NativePlayerSurface(
         // below would be stuck using whatever isAnimeContent was captured at launch.
         combine(
             snapshotFlow {
-                Triple(videoIsHdr.value, videoVsrScale.value, videoProfileRefreshToken.intValue)
+                DesktopVideoProfileState(
+                    isHdr = videoIsHdr.value,
+                    vsrScale = videoVsrScale.value,
+                    refreshToken = videoProfileRefreshToken.intValue,
+                    pipelineReady = videoPipelineReady.value,
+                )
             },
             PlayerSettingsRepository.uiState,
-        ) { videoState, settings -> Triple(videoState, settings, videoState.third > 0) }
-            .collect { (videoState, settings, fileLoaded) ->
-                val isHdr = videoState.first
-                val vsrScale = videoState.second
+        ) { videoState, settings -> videoState to settings }
+            .collect { (videoState, settings) ->
+                // Native code owns hwdec/vf from FILE_LOADED until the initial VapourSynth graph
+                // has produced a real runtime-ready signal. Applying the ordinary profile in
+                // this interval can otherwise replace d3d11va-copy with d3d11va and clear vf,
+                // forcing two more decoder/filter rebuilds during startup.
+                if (!videoState.pipelineReady) return@collect
+                if (settings.desktopMpvConfigMode == DesktopMpvConfigMode.Full) {
+                    if (svpStartupProfileAcknowledgementPending.value) {
+                        svpStartupProfileAcknowledgementPending.value = false
+                        controller.completeSvpStartupProfile()
+                    }
+                    return@collect
+                }
+
+                val isHdr = videoState.isHdr
+                val vsrScale = videoState.vsrScale
+                val fileLoaded = videoState.refreshToken > 0
                 System.out.println(
                     "Desktop video profile: detectedHdr=${isHdr ?: "unknown"}, " +
                         "hdrMode=${settings.desktopHdrMode.name}, colorProfile=${settings.desktopColorProfile.name}, " +
                         "bufferPreset=${settings.desktopBufferPreset.name}, " +
-                        "animeMode=${settings.desktopAnimeMode.name}, isAnime=$isAnimeContent",
+                        "animeMode=${settings.desktopAnimeMode.name}, " +
+                        "animeAuto=${settings.desktopAnimeModeAutoEnabled}, " +
+                        "animeSessionOverride=${settings.desktopAnimeSessionOverride?.mode?.name ?: "none"}, " +
+                        "isAnime=$isAnimeContent",
                 )
                 applyDesktopVideoProfile(
                     controller = controller,
                     hdrMode = settings.desktopHdrMode,
                     colorProfile = settings.desktopColorProfile,
-                    isHdr = isHdr == true,
+                    isHdr = isHdr,
                 )
                 controller.applyDesktopBufferPreset(settings.desktopBufferPreset)
                 applyDesktopAnimeProfile(
                     controller = controller,
                     mode = settings.desktopAnimeMode,
-                    autoEnabled = settings.desktopAnimeModeAutoEnabled && !animeModeSessionForced.value,
+                    autoEnabled = settings.desktopAnimeModeAutoEnabled,
+                    sessionOverride = settings.desktopAnimeSessionOverride,
                     // Do not queue vapoursynth before mpv has resolved a real video stream.
                     // Some HLS sources expose odd probe tracks during startup, and applying SVP
                     // in that window can kill the native process before fileLoaded is emitted.
                     animeSvpEnabled = settings.desktopAnimeSvpEnabled && fileLoaded,
+                    animeSvpSessionForced = settings.desktopAnimeSvpSessionForced,
                     isAnime = isAnimeContent,
-                    isHdr = isHdr == true,
+                    isHdr = isHdr,
                     nvidiaRtxSuperResolutionEnabled = settings.nvidiaRtxSuperResolutionEnabled,
                     nvidiaRtxSuperResolutionScale = vsrScale,
                     nvidiaRtxHdrEnabled = settings.nvidiaRtxHdrEnabled,
                     customShaderPaths = settings.desktopCustomShaderPaths,
                     customShaderSelectedPath = settings.desktopCustomShaderSelectedPath,
                 )
+                if (svpStartupProfileAcknowledgementPending.value) {
+                    svpStartupProfileAcknowledgementPending.value = false
+                    controller.completeSvpStartupProfile()
+                }
             }
     }
 
@@ -427,11 +498,18 @@ private fun NativePlayerSurface(
     }
 }
 
+private data class DesktopVideoProfileState(
+    val isHdr: Boolean?,
+    val vsrScale: Double?,
+    val refreshToken: Int,
+    val pipelineReady: Boolean,
+)
+
 private fun applyDesktopVideoProfile(
     controller: NativePlayerController,
     hdrMode: DesktopHdrMode,
     colorProfile: DesktopColorProfile,
-    isHdr: Boolean,
+    isHdr: Boolean?,
 ) {
     when (hdrMode) {
         DesktopHdrMode.Auto -> {
@@ -476,7 +554,9 @@ private fun applyDesktopVideoProfile(
     // active (profile-manager.lua). We can't probe the display's HDR state from here (mpv owns
     // that via target-colorspace-hint=auto), so mirror the intent by neutralizing the grade for
     // HDR content unless we're actively tonemapping down to SDR, where the SDR presets are correct.
-    val forceNeutral = isHdr && hdrMode != DesktopHdrMode.AlwaysTonemap
+    // Unknown input is kept neutral. Applying an SDR grade optimistically made native HDR show
+    // one graded frame before its PQ/BT.2020 properties arrived.
+    val forceNeutral = isHdr != false && hdrMode != DesktopHdrMode.AlwaysTonemap
     val (contrast, brightness, saturation, gamma) = when {
         forceNeutral -> listOf(0, 0, 0, 0)
         else -> when (colorProfile) {
@@ -496,8 +576,11 @@ private fun applyDesktopVideoProfile(
 
 /**
  * Applies (or clears) the Stremio-Kai anime enhancement layer: Anime4K GLSL shaders plus anime-tuned
- * scaling/deband and an hqdn3d denoise pass. Resolves the effective preset from [mode]:
- * `Off` -> none, `Auto` -> Optimized only when [isAnime], otherwise the explicitly chosen preset.
+ * scaling/deband and an hqdn3d denoise pass. The active mode is resolved as:
+ * [sessionOverride] (an explicit in-player F10/menu force, session-scoped) if present; otherwise the
+ * persisted [mode] — but only when [autoEnabled] and the title is detected as [isAnime]. A persisted
+ * preset never applies to undetected content on its own, so live-action can't silently inherit an
+ * Anime4K chain from an old force (see the Dutton Ranch 4K-HDR crash report).
  *
  * SVP / motion interpolation from Kai is intentionally not ported (it needs a paid external runtime).
  */
@@ -505,42 +588,63 @@ private fun applyDesktopAnimeProfile(
     controller: NativePlayerController,
     mode: DesktopAnimeMode,
     autoEnabled: Boolean,
+    sessionOverride: DesktopAnimeSessionOverride?,
     animeSvpEnabled: Boolean,
+    animeSvpSessionForced: Boolean,
     isAnime: Boolean,
-    isHdr: Boolean,
+    isHdr: Boolean?,
     nvidiaRtxSuperResolutionEnabled: Boolean = false,
     nvidiaRtxSuperResolutionScale: Double? = null,
     nvidiaRtxHdrEnabled: Boolean = false,
     customShaderPaths: String = "",
     customShaderSelectedPath: String = "",
 ) {
-    val customShaderChain = if (mode == DesktopAnimeMode.CustomShader && !(autoEnabled && !isAnime)) {
+    val activeMode = when {
+        sessionOverride != null -> sessionOverride.mode
+        autoEnabled && isAnime -> mode
+        else -> DesktopAnimeMode.Off
+    }
+    val activeShaderPath = sessionOverride?.customShaderPath ?: customShaderSelectedPath
+    val customShaderChain = if (activeMode == DesktopAnimeMode.CustomShader) {
         DesktopCustomShaders.shaderChain(
             pathsText = customShaderPaths,
-            selectedPath = customShaderSelectedPath,
+            selectedPath = activeShaderPath,
         )
     } else {
         ""
     }
-    val effectivePreset = when {
-        mode == DesktopAnimeMode.Off -> null
-        mode == DesktopAnimeMode.CustomShader -> null
-        autoEnabled && !isAnime -> null
-        else -> mode
+    val effectivePreset = when (activeMode) {
+        DesktopAnimeMode.Off, DesktopAnimeMode.CustomShader -> null
+        else -> activeMode
     }
+
+    // If Anime4k is forced via F10 (effectivePreset != null) OR if it's auto-detected (isAnime),
+    // we consider this video to be Anime for the purposes of SVP interpolation. An explicit F7
+    // press this session also counts, so SVP can be forced onto undetected content.
+    val isEffectivelyAnime = isAnime || effectivePreset != null || customShaderChain.isNotEmpty() ||
+        animeSvpSessionForced
 
     // This function is the single owner of the mpv `vf` chain. NVIDIA RTX VSR and RTX True HDR
     // are both d3d11vpp sub-options; they must be set here so a profile rebuild doesn't wipe them.
     // Anime4K (when active) takes the vf entirely — RTX features are suppressed while Anime4K runs.
     val baselineVf = buildString {
+        // RTX VSR and RTX True HDR are live-action enhancements; neither must stack on top of the
+        // anime enhancement layer (Anime4K / custom GLSL / SVP interpolation). The heavier anime
+        // branches below drop baselineVf entirely, but the SVP-only path reuses it, so gate both
+        // off for any effectively anime session here too. (True HDR's AI SDR->HDR pass tends to
+        // over-saturate/band flat cel-shaded anime and fights the SDR-tuned colour presets.)
         val vsrActive = nvidiaRtxSuperResolutionEnabled &&
+            !isEffectivelyAnime &&
             nvidiaRtxSuperResolutionScale != null &&
             nvidiaRtxSuperResolutionScale > 1.01
         // RTX True HDR requires mpv master ≥ Feb 19 2026: mpv sets IMGFMT_X2BGR10 output
         // automatically when nvidia-true-hdr is present, and uses ID3D11VideoContext1 for
         // proper DXGI HDR colour-space signalling. Init-time d3d11-output-csp=auto and
         // target-colorspace-hint=auto are set in player_bridge.cpp when HDR is enabled.
-        val hdrActive = nvidiaRtxHdrEnabled
+        // True HDR is an SDR -> HDR enhancement. Wait until the stream is positively identified
+        // as SDR before enabling it: treating the initial "unknown" state as SDR briefly applied
+        // the filter to every file, and leaving this independent of isHdr applied it to native HDR.
+        val hdrActive = nvidiaRtxHdrEnabled && isHdr == false && !isEffectivelyAnime
         if (vsrActive || hdrActive) {
             append("d3d11vpp=")
             if (vsrActive) {
@@ -550,10 +654,6 @@ private fun applyDesktopAnimeProfile(
             if (hdrActive) append("nvidia-true-hdr=yes")
         }
     }
-
-    // If Anime4k is forced via F10 (effectivePreset != null) OR if it's auto-detected (isAnime),
-    // we consider this video to be Anime for the purposes of SVP interpolation.
-    val isEffectivelyAnime = isAnime || effectivePreset != null || customShaderChain.isNotEmpty()
 
     val svpFilter = if (isEffectivelyAnime && animeSvpEnabled) {
         DesktopAnimeSvp.vapoursynthArgument()
@@ -594,7 +694,11 @@ private fun applyDesktopAnimeProfile(
         
         val finalVf = listOfNotNull(baselineVf.takeIf { it.isNotEmpty() }, svpFilter).joinToString(",")
         controller.setMpvProperty("vf", finalVf)
-        controller.setMpvProperty("scale", "spline36")
+        // Honour the user's "Upscaling" choice from the Advanced (mpv) menu for live-action; fall
+        // back to the baseline scaler. Re-applied here because this profile refresh would otherwise
+        // clobber the override on every file load / setting change.
+        val scaleOverride = PlayerSettingsRepository.uiState.value.desktopMpvPropertyOverrides["scale"]
+        controller.setMpvProperty("scale", scaleOverride ?: "spline36")
         controller.setMpvProperty("cscale", "lanczos")
         controller.setMpvProperty("scale-blur", "0.0")
         controller.setMpvProperty("deband-threshold", "35")
@@ -614,7 +718,7 @@ private fun applyDesktopAnimeProfile(
 
     // hqdn3d temporal/spatial denoise (Kai's standard anime VF). Skipped on HDR to avoid the heavier
     // filter chain fighting the tonemap path, matching Kai's denoise removal for HDR anime.
-    val hqdn3d = if (isHdr) "" else "@HQDN3D:lavfi=[hqdn3d=luma_spatial=5:chroma_spatial=5:luma_tmp=6:chroma_tmp=6]"
+    val hqdn3d = if (isHdr == true) "" else "@HQDN3D:lavfi=[hqdn3d=luma_spatial=5:chroma_spatial=5:luma_tmp=6:chroma_tmp=6]"
     val finalVf = listOfNotNull(hqdn3d.takeIf { it.isNotEmpty() }, svpFilter).joinToString(",")
 
     // When injecting CPU/software-based lavfi filters (hqdn3d, vapoursynth), we MUST dynamically switch
@@ -685,7 +789,7 @@ private class DesktopStubPlayerController : PlayerEngineController {
     override fun getAudioTracks(): List<AudioTrack> = emptyList()
     override fun getSubtitleTracks(): List<SubtitleTrack> = emptyList()
     override fun selectAudioTrack(index: Int) = Unit
-    override fun selectSubtitleTrack(index: Int) = Unit
+    override fun selectSubtitleTrack(index: Int): Boolean = false
     override fun setSubtitleUri(url: String) = Unit
     override fun clearExternalSubtitle() = Unit
     override fun clearExternalSubtitleAndSelect(trackIndex: Int) = Unit

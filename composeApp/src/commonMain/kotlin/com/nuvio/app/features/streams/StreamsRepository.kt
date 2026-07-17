@@ -531,12 +531,25 @@ object StreamsRepository {
                     val displayName = addon.addonName
                     val group = runCatchingUnlessCancelled {
                         val payload = httpGetText(url)
-                        StreamParser.parse(
+                        val parsedStreams = StreamParser.parse(
                             payload = payload,
                             addonName = displayName,
                             addonId = addon.addonId,
                             addonLogo = addon.manifest.logoUrl,
                         )
+                        val streams = parsedStreams.filterForRequestedEpisode(
+                            season = effectiveSeason,
+                            episode = effectiveEpisode,
+                            episodeTitlesByCoordinate = MetaDetailsRepository.episodeTitlesByCoordinate(
+                                type = type,
+                                id = parentMetaId ?: videoId,
+                            ),
+                        )
+                        val removedCount = parsedStreams.size - streams.size
+                        if (removedCount > 0) {
+                            log.d { "Filtered $removedCount explicit episode mismatches from $displayName" }
+                        }
+                        streams
                     }.fold(
                         onSuccess = { streams ->
                             log.d { "Got ${streams.size} streams from ${displayName}" }

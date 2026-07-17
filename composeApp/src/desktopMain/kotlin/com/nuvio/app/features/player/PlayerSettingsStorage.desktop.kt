@@ -22,6 +22,11 @@ internal actual object PlayerSettingsStorage {
     private const val resizeModeKey = "resize_mode"
     private const val defaultPlaybackSpeedKey = "default_playback_speed"
     private const val mouseMoveRevealsControlsEnabledKey = "mouse_move_reveals_controls_enabled"
+    private const val desktopLegacyHudEnabledKey = "desktop_legacy_hud_enabled"
+    private const val desktopAlwaysShowClockEnabledKey = "desktop_always_show_clock_enabled"
+    private const val desktopPlaybackSpeedFineIncrementsEnabledKey = "desktop_playback_speed_fine_increments_enabled"
+    private const val desktopVerboseMpvLoggingEnabledKey = "desktop_verbose_mpv_logging_enabled"
+    private const val desktopUiScalePercentKey = "desktop_ui_scale_percent"
     private const val externalPlayerEnabledKey = "external_player_enabled"
     private const val externalPlayerForwardSubtitlesKey = "external_player_forward_subtitles"
     private const val externalPlayerIdKey = "external_player_id"
@@ -35,6 +40,7 @@ internal actual object PlayerSettingsStorage {
     private const val subtitleOutlineColorKey = "subtitle_outline_color"
     private const val subtitleOutlineEnabledKey = "subtitle_outline_enabled"
     private const val subtitleOutlineWidthKey = "subtitle_outline_width"
+    private const val subtitleShadowEnabledKey = "subtitle_shadow_enabled"
     private const val subtitleBoldKey = "subtitle_bold"
     private const val subtitleFontSizeSpKey = "subtitle_font_size_sp"
     private const val subtitleBottomOffsetKey = "subtitle_bottom_offset"
@@ -62,6 +68,8 @@ internal actual object PlayerSettingsStorage {
     private const val streamAutoPlayNextEpisodeEnabledKey = "stream_auto_play_next_episode_enabled"
     private const val streamAutoPlayPreferBingeGroupKey = "stream_auto_play_prefer_binge_group"
     private const val streamAutoPlayReuseBingeGroupKey = "stream_auto_play_reuse_binge_group"
+    private const val streamFailoverEnabledKey = "stream_failover_enabled"
+    private const val streamFailoverTimeoutSecondsKey = "stream_failover_timeout_seconds"
     private const val nextEpisodeThresholdModeKey = "next_episode_threshold_mode"
     private const val nextEpisodeThresholdPercentKey = "next_episode_threshold_percent_v2"
     private const val nextEpisodeThresholdMinutesBeforeEndKey = "next_episode_threshold_minutes_before_end_v2"
@@ -94,6 +102,8 @@ internal actual object PlayerSettingsStorage {
     private const val desktopCustomShaderSelectedPathKey = "desktop_custom_shader_selected_path"
     private const val desktopAudioPassthroughEnabledKey = "desktop_audio_passthrough_enabled"
     private const val desktopCustomMpvOptionsKey = "desktop_custom_mpv_options"
+    private const val desktopMpvConfigModeKey = "desktop_mpv_config_mode"
+    private const val desktopMpvPropertyOverridesKey = "desktop_mpv_property_overrides"
     private const val heroTvTrailerEnabledKey = "hero_tv_trailer_enabled"
     private const val heroTvTrailerDelaySecondsKey = "hero_tv_trailer_delay_seconds"
     private const val heroTvTrailerSoundEnabledKey = "hero_tv_trailer_sound_enabled"
@@ -116,6 +126,7 @@ internal actual object PlayerSettingsStorage {
         subtitleOutlineColorKey,
         subtitleOutlineEnabledKey,
         subtitleOutlineWidthKey,
+        subtitleShadowEnabledKey,
         subtitleBoldKey,
         subtitleFontSizeSpKey,
         subtitleBottomOffsetKey,
@@ -141,6 +152,8 @@ internal actual object PlayerSettingsStorage {
         streamAutoPlayNextEpisodeEnabledKey,
         streamAutoPlayPreferBingeGroupKey,
         streamAutoPlayReuseBingeGroupKey,
+        streamFailoverEnabledKey,
+        streamFailoverTimeoutSecondsKey,
         nextEpisodeThresholdModeKey,
         nextEpisodeThresholdPercentKey,
         nextEpisodeThresholdMinutesBeforeEndKey,
@@ -182,6 +195,16 @@ internal actual object PlayerSettingsStorage {
     actual fun loadMouseMoveRevealsControlsEnabled(): Boolean? = loadBoolean(mouseMoveRevealsControlsEnabledKey)
     actual fun saveMouseMoveRevealsControlsEnabled(enabled: Boolean) =
         saveBoolean(mouseMoveRevealsControlsEnabledKey, enabled)
+    actual fun loadDesktopLegacyHudEnabled(): Boolean? = loadBoolean(desktopLegacyHudEnabledKey)
+    actual fun saveDesktopLegacyHudEnabled(enabled: Boolean) = saveBoolean(desktopLegacyHudEnabledKey, enabled)
+    actual fun loadDesktopAlwaysShowClockEnabled(): Boolean? = loadBoolean(desktopAlwaysShowClockEnabledKey)
+    actual fun saveDesktopAlwaysShowClockEnabled(enabled: Boolean) = saveBoolean(desktopAlwaysShowClockEnabledKey, enabled)
+    actual fun loadDesktopPlaybackSpeedFineIncrementsEnabled(): Boolean? = loadBoolean(desktopPlaybackSpeedFineIncrementsEnabledKey)
+    actual fun saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean) = saveBoolean(desktopPlaybackSpeedFineIncrementsEnabledKey, enabled)
+    actual fun loadDesktopVerboseMpvLoggingEnabled(): Boolean? = loadBoolean(desktopVerboseMpvLoggingEnabledKey)
+    actual fun saveDesktopVerboseMpvLoggingEnabled(enabled: Boolean) = saveBoolean(desktopVerboseMpvLoggingEnabledKey, enabled)
+    actual fun loadDesktopUiScalePercent(): Int? = loadInt(desktopUiScalePercentKey)
+    actual fun saveDesktopUiScalePercent(percent: Int) = saveInt(desktopUiScalePercentKey, percent)
     actual fun loadExternalPlayerEnabled(): Boolean? = loadBoolean(externalPlayerEnabledKey)
     actual fun saveExternalPlayerEnabled(enabled: Boolean) = saveBoolean(externalPlayerEnabledKey, enabled)
     actual fun loadExternalPlayerForwardSubtitles(): Boolean? = loadBoolean(externalPlayerForwardSubtitlesKey)
@@ -206,6 +229,8 @@ internal actual object PlayerSettingsStorage {
     actual fun saveSubtitleOutlineColor(colorHex: String) = saveString(subtitleOutlineColorKey, colorHex)
     actual fun loadSubtitleOutlineEnabled(): Boolean? = loadBoolean(subtitleOutlineEnabledKey)
     actual fun saveSubtitleOutlineEnabled(enabled: Boolean) = saveBoolean(subtitleOutlineEnabledKey, enabled)
+    actual fun loadSubtitleShadowEnabled(): Boolean? = loadBoolean(subtitleShadowEnabledKey)
+    actual fun saveSubtitleShadowEnabled(enabled: Boolean) = saveBoolean(subtitleShadowEnabledKey, enabled)
     actual fun loadSubtitleOutlineWidth(): Int? = loadInt(subtitleOutlineWidthKey)
     actual fun saveSubtitleOutlineWidth(width: Int) = saveInt(subtitleOutlineWidthKey, width)
     actual fun loadSubtitleBold(): Boolean? = loadBoolean(subtitleBoldKey)
@@ -265,6 +290,10 @@ internal actual object PlayerSettingsStorage {
     actual fun saveStreamAutoPlayPreferBingeGroup(enabled: Boolean) = saveBoolean(streamAutoPlayPreferBingeGroupKey, enabled)
     actual fun loadStreamAutoPlayReuseBingeGroup(): Boolean? = loadBoolean(streamAutoPlayReuseBingeGroupKey)
     actual fun saveStreamAutoPlayReuseBingeGroup(enabled: Boolean) = saveBoolean(streamAutoPlayReuseBingeGroupKey, enabled)
+    actual fun loadStreamFailoverEnabled(): Boolean? = loadBoolean(streamFailoverEnabledKey)
+    actual fun saveStreamFailoverEnabled(enabled: Boolean) = saveBoolean(streamFailoverEnabledKey, enabled)
+    actual fun loadStreamFailoverTimeoutSeconds(): Int? = loadInt(streamFailoverTimeoutSecondsKey)
+    actual fun saveStreamFailoverTimeoutSeconds(seconds: Int) = saveInt(streamFailoverTimeoutSecondsKey, seconds)
     actual fun loadNextEpisodeThresholdMode(): String? = loadString(nextEpisodeThresholdModeKey)
     actual fun saveNextEpisodeThresholdMode(mode: String) = saveString(nextEpisodeThresholdModeKey, mode)
     actual fun loadNextEpisodeThresholdPercent(): Float? = loadFloat(nextEpisodeThresholdPercentKey)
@@ -330,6 +359,10 @@ internal actual object PlayerSettingsStorage {
     actual fun saveDesktopAudioPassthroughEnabled(enabled: Boolean) = saveBoolean(desktopAudioPassthroughEnabledKey, enabled)
     actual fun loadDesktopCustomMpvOptions(): String? = loadString(desktopCustomMpvOptionsKey)
     actual fun saveDesktopCustomMpvOptions(options: String) = saveString(desktopCustomMpvOptionsKey, options)
+    actual fun loadDesktopMpvConfigMode(): String? = loadString(desktopMpvConfigModeKey)
+    actual fun saveDesktopMpvConfigMode(mode: String) = saveString(desktopMpvConfigModeKey, mode)
+    actual fun loadDesktopMpvPropertyOverrides(): String? = loadString(desktopMpvPropertyOverridesKey)
+    actual fun saveDesktopMpvPropertyOverrides(serialized: String) = saveString(desktopMpvPropertyOverridesKey, serialized)
     actual fun loadHeroTvTrailerEnabled(): Boolean? = loadBoolean(heroTvTrailerEnabledKey)
     actual fun saveHeroTvTrailerEnabled(enabled: Boolean) = saveBoolean(heroTvTrailerEnabledKey, enabled)
     actual fun loadHeroTvTrailerDelaySeconds(): Int? = loadInt(heroTvTrailerDelaySecondsKey)
@@ -372,6 +405,7 @@ internal actual object PlayerSettingsStorage {
         loadSubtitleOutlineColor()?.let { put(subtitleOutlineColorKey, encodeSyncString(it)) }
         loadSubtitleOutlineEnabled()?.let { put(subtitleOutlineEnabledKey, encodeSyncBoolean(it)) }
         loadSubtitleOutlineWidth()?.let { put(subtitleOutlineWidthKey, encodeSyncInt(it)) }
+        loadSubtitleShadowEnabled()?.let { put(subtitleShadowEnabledKey, encodeSyncBoolean(it)) }
         loadSubtitleBold()?.let { put(subtitleBoldKey, encodeSyncBoolean(it)) }
         loadSubtitleFontSizeSp()?.let { put(subtitleFontSizeSpKey, encodeSyncInt(it)) }
         loadSubtitleBottomOffset()?.let { put(subtitleBottomOffsetKey, encodeSyncInt(it)) }
@@ -397,6 +431,8 @@ internal actual object PlayerSettingsStorage {
         loadStreamAutoPlayNextEpisodeEnabled()?.let { put(streamAutoPlayNextEpisodeEnabledKey, encodeSyncBoolean(it)) }
         loadStreamAutoPlayPreferBingeGroup()?.let { put(streamAutoPlayPreferBingeGroupKey, encodeSyncBoolean(it)) }
         loadStreamAutoPlayReuseBingeGroup()?.let { put(streamAutoPlayReuseBingeGroupKey, encodeSyncBoolean(it)) }
+        loadStreamFailoverEnabled()?.let { put(streamFailoverEnabledKey, encodeSyncBoolean(it)) }
+        loadStreamFailoverTimeoutSeconds()?.let { put(streamFailoverTimeoutSecondsKey, encodeSyncInt(it)) }
         loadNextEpisodeThresholdMode()?.let { put(nextEpisodeThresholdModeKey, encodeSyncString(it)) }
         loadNextEpisodeThresholdPercent()?.let { put(nextEpisodeThresholdPercentKey, encodeSyncFloat(it)) }
         loadNextEpisodeThresholdMinutesBeforeEnd()?.let { put(nextEpisodeThresholdMinutesBeforeEndKey, encodeSyncFloat(it)) }
@@ -443,6 +479,7 @@ internal actual object PlayerSettingsStorage {
         payload.decodeSyncString(subtitleOutlineColorKey)?.let(::saveSubtitleOutlineColor)
         payload.decodeSyncBoolean(subtitleOutlineEnabledKey)?.let(::saveSubtitleOutlineEnabled)
         payload.decodeSyncInt(subtitleOutlineWidthKey)?.let(::saveSubtitleOutlineWidth)
+        payload.decodeSyncBoolean(subtitleShadowEnabledKey)?.let(::saveSubtitleShadowEnabled)
         payload.decodeSyncBoolean(subtitleBoldKey)?.let(::saveSubtitleBold)
         payload.decodeSyncInt(subtitleFontSizeSpKey)?.let(::saveSubtitleFontSizeSp)
         payload.decodeSyncInt(subtitleBottomOffsetKey)?.let(::saveSubtitleBottomOffset)
@@ -470,6 +507,8 @@ internal actual object PlayerSettingsStorage {
         payload.decodeSyncBoolean(streamAutoPlayNextEpisodeEnabledKey)?.let(::saveStreamAutoPlayNextEpisodeEnabled)
         payload.decodeSyncBoolean(streamAutoPlayPreferBingeGroupKey)?.let(::saveStreamAutoPlayPreferBingeGroup)
         payload.decodeSyncBoolean(streamAutoPlayReuseBingeGroupKey)?.let(::saveStreamAutoPlayReuseBingeGroup)
+        payload.decodeSyncBoolean(streamFailoverEnabledKey)?.let(::saveStreamFailoverEnabled)
+        payload.decodeSyncInt(streamFailoverTimeoutSecondsKey)?.let(::saveStreamFailoverTimeoutSeconds)
         payload.decodeSyncString(nextEpisodeThresholdModeKey)?.let(::saveNextEpisodeThresholdMode)
         payload.decodeSyncFloat(nextEpisodeThresholdPercentKey)?.let(::saveNextEpisodeThresholdPercent)
         payload.decodeSyncFloat(nextEpisodeThresholdMinutesBeforeEndKey)?.let(::saveNextEpisodeThresholdMinutesBeforeEnd)

@@ -59,4 +59,18 @@ class SimklModelsTest {
 
         assertEquals("tvdb:789", ids.toBestAnimeMovieContentId())
     }
+
+    @Test
+    fun `SIMKL SAO entry episode converts back to franchise season`() {
+        val ids = SimklMediaIds(simkl = 46206, kitsu = "8174")
+
+        assertEquals(2 to 5, ids.toCanonicalAnimeEpisode(season = 1, episode = 5))
+    }
+
+    @Test
+    fun `SIMKL split cour episode restores its franchise offset`() {
+        val ids = SimklMediaIds(simkl = 1186817, kitsu = "42927")
+
+        assertEquals(4 to 15, ids.toCanonicalAnimeEpisode(season = 1, episode = 3))
+    }
 }

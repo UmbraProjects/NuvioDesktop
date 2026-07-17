@@ -9,6 +9,7 @@ import com.nuvio.app.features.addons.AddonsUiState
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.simkl.SIMKL_CW_DAYS_CAP_ALL
@@ -62,6 +63,30 @@ private data class RemoteMetadataResolutionResult(
     val entries: List<WatchProgressEntry>,
     val meta: MetaDetails?,
 )
+
+/**
+ * SIMKL anime progress can use entry-local coordinates while addon metadata exposes the whole
+ * franchise. Prefer SIMKL's episode title when it uniquely identifies a video; coordinates remain
+ * the fallback for providers that omit or localize titles.
+ */
+internal fun resolveRemoteProgressEpisode(
+    videos: List<MetaVideo>,
+    entry: WatchProgressEntry,
+): MetaVideo? {
+    val normalizedTitle = entry.episodeTitle?.normalizeProgressEpisodeTitle()
+    if (!normalizedTitle.isNullOrBlank()) {
+        val titleMatches = videos.filter { video ->
+            video.title.normalizeProgressEpisodeTitle() == normalizedTitle
+        }
+        if (titleMatches.size == 1) return titleMatches.first()
+    }
+    val season = entry.seasonNumber ?: return null
+    val episode = entry.episodeNumber ?: return null
+    return videos.find { video -> video.season == season && video.episode == episode }
+}
+
+private fun String.normalizeProgressEpisodeTitle(): String =
+    lowercase().filter(Char::isLetterOrDigit)
 
 private data class MetadataProviderReadiness(
     val providers: List<AddonManifest>,
@@ -210,6 +235,30 @@ object WatchProgressRepository {
         } else if (shouldUseTraktProgress()) {
             TraktProgressRepository.refreshAsync()
         }
+    }
+
+    /**
+     * Pulls the active Continue Watching source after startup initialization has settled. The
+     * ordinary ensureLoaded path can run before profile-scoped integration settings finish loading,
+     * leaving cross-device progress stale until a profile switch happens to trigger another pull.
+     */
+    suspend fun forceContinueWatchingSync(profileId: Int) {
+        ensureLoaded()
+        when {
+            shouldUseSimklProgress() -> {
+                log.d { "Force refreshing SIMKL Continue Watching for profile $profileId" }
+                SimklProgressRepository.refreshNow()
+            }
+            shouldUseTraktProgress() -> {
+                log.d { "Force refreshing Trakt Continue Watching for profile $profileId" }
+                TraktProgressRepository.refreshNow()
+            }
+            else -> {
+                log.d { "Force refreshing Nuvio Continue Watching for profile $profileId" }
+                pullFromServer(profileId)
+            }
+        }
+        publish()
     }
 
     fun onProfileChanged(profileId: Int) {
@@ -636,7 +685,11 @@ object WatchProgressRepository {
             .filter { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }
         val simklMissing = if (shouldUseSimklProgress()) {
             SimklProgressRepository.uiState.value.entries
-                .filter { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }
+                .filter {
+                    it.poster.isNullOrBlank() ||
+                        it.background.isNullOrBlank() ||
+                        (it.contentType == "series" && !it.episodeTitle.isNullOrBlank())
+                }
         } else emptyList()
         val missingMetadataEntries = localMissing + simklMissing
         val entriesToResolve = missingMetadataEntries.continueWatchingEntries(
@@ -688,11 +741,7 @@ object WatchProgressRepository {
 
                 var appliedEntries = 0
                 for (entry in result.entries) {
-                    val episodeVideo = if (entry.seasonNumber != null && entry.episodeNumber != null) {
-                        meta.videos.find { v ->
-                            v.season == entry.seasonNumber && v.episode == entry.episodeNumber
-                        }
-                    } else null
+                    val episodeVideo = resolveRemoteProgressEpisode(meta.videos, entry)
 
                     if (entry.source == WatchProgressSourceSimkl) {
                         SimklProgressRepository.enrichEntry(
@@ -701,6 +750,8 @@ object WatchProgressRepository {
                             background = meta.background,
                             episodeTitle = episodeVideo?.title ?: entry.episodeTitle,
                             episodeThumbnail = episodeVideo?.thumbnail ?: entry.episodeThumbnail,
+                            seasonNumber = episodeVideo?.season,
+                            episodeNumber = episodeVideo?.episode,
                         )
                         appliedEntries += 1
                         continue
@@ -979,6 +1030,7 @@ object WatchProgressRepository {
             return
         }
 
+        val useSimklProgress = shouldUseSimklProgress()
         val useTraktProgress = shouldUseTraktProgress()
 
         // If Trakt is the active CW source and parentMetaId is not Trakt-resolvable
@@ -1020,8 +1072,9 @@ object WatchProgressRepository {
         }
 
         entriesByVideoId[session.videoId] = entry
-        if (useTraktProgress) {
-            TraktProgressRepository.applyOptimisticProgress(entry)
+        when {
+            useSimklProgress -> SimklProgressRepository.applyOptimisticProgress(entry)
+            useTraktProgress -> TraktProgressRepository.applyOptimisticProgress(entry)
         }
         publish()
         if (persist) persist()

@@ -9,10 +9,15 @@ import kotlinx.coroutines.flow.asSharedFlow
  * desktop to the in-app navigation stack.
  */
 internal object DesktopNavigationGestureBridge {
-    private val _backRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val backRequests: SharedFlow<Unit> = _backRequests.asSharedFlow()
+    private val _backRequests = MutableSharedFlow<DesktopBackRequestSource>(extraBufferCapacity = 1)
+    val backRequests: SharedFlow<DesktopBackRequestSource> = _backRequests.asSharedFlow()
 
-    fun requestBack() {
-        _backRequests.tryEmit(Unit)
+    fun requestBack(source: DesktopBackRequestSource = DesktopBackRequestSource.Keyboard) {
+        _backRequests.tryEmit(source)
     }
+}
+
+internal enum class DesktopBackRequestSource {
+    Keyboard,
+    Mouse,
 }

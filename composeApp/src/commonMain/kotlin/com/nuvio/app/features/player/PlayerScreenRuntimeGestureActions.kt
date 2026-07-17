@@ -109,6 +109,7 @@ internal fun PlayerScreenRuntime.adjustVolume(deltaFraction: Float) {
 }
 
 internal fun PlayerScreenRuntime.togglePlayback() {
+    resetPausedOverlayBackoff()
     if (playbackSnapshot.isPlaying) {
         shouldPlay = false
         playerController?.pause()
@@ -123,10 +124,21 @@ internal fun PlayerScreenRuntime.togglePlayback() {
 }
 
 internal fun PlayerScreenRuntime.prepareTogglePlaybackForNativeFallback(revealControls: Boolean = true) {
+    resetPausedOverlayBackoff()
     shouldPlay = !playbackSnapshot.isPlaying
     if (revealControls) {
         controlsVisible = true
     }
+}
+
+/**
+ * Invalidates pause metadata as soon as playback is toggled. The player snapshot changes
+ * asynchronously, so waiting for it can briefly expose the already-armed overlay between the
+ * mouse click hiding chrome and the native player reporting that playback resumed.
+ */
+private fun PlayerScreenRuntime.resetPausedOverlayBackoff() {
+    pausedOverlayVisible = false
+    pausedOverlayInteractionSignal++
 }
 
 internal fun PlayerScreenRuntime.seekBy(offsetMs: Long) {
@@ -200,7 +212,11 @@ private fun PlayerScreenRuntime.handleDoubleTapSeek(
 }
 
 internal fun PlayerScreenRuntime.cycleResizeMode() {
-    val nextMode = resizeMode.next()
+    setPlayerResizeMode(resizeMode.next())
+}
+
+/** Applies a specific resize mode (used by the context menu's Aspect ratio submenu). */
+internal fun PlayerScreenRuntime.setPlayerResizeMode(nextMode: PlayerResizeMode) {
     resizeMode = nextMode
     lastSyncedSettingsResizeMode = nextMode
     PlayerSettingsRepository.setResizeMode(nextMode)
@@ -215,24 +231,31 @@ internal fun PlayerScreenRuntime.cycleResizeMode() {
 }
 
 internal fun PlayerScreenRuntime.cyclePlaybackSpeed() {
-    val speeds = listOf(1f, 1.25f, 1.5f, 2f)
+    val speeds = listOf(1f, 1.25f, 1.5f, 2f, 3f, 4f)
     val current = playbackSnapshot.playbackSpeed
     val next = speeds.firstOrNull { it > current + 0.01f } ?: speeds.first()
     playerController?.setPlaybackSpeed(next)
+    sessionPlaybackSpeed = next
     playbackSnapshot = playbackSnapshot.copy(playbackSpeed = next)
     showGestureMessage(formatPlaybackSpeedLabel(next))
     controlsVisible = true
 }
 
-internal fun PlayerScreenRuntime.adjustPlaybackSpeedStep(direction: Int) {
-    val speeds = listOf(1f, 1.25f, 1.5f, 2f)
+internal fun PlayerScreenRuntime.adjustPlaybackSpeedStep(direction: Int, showFeedback: Boolean = true) {
     val current = playbackSnapshot.playbackSpeed
-    val currentIndex = speeds.indices.minByOrNull { index -> abs(speeds[index] - current) } ?: 0
-    val nextIndex = (currentIndex + direction.coerceIn(-1, 1)).coerceIn(speeds.indices)
-    val next = speeds[nextIndex]
+    val step = direction.coerceIn(-1, 1)
+    val next = if (playerSettingsUiState.desktopPlaybackSpeedFineIncrementsEnabled) {
+        // Round via integer tenths so repeated key presses do not accumulate Float error.
+        (((current * 10f).toInt() + step).coerceIn(5, 40)) / 10f
+    } else {
+        val speeds = listOf(1f, 1.25f, 1.5f, 2f, 3f, 4f)
+        val currentIndex = speeds.indices.minByOrNull { index -> abs(speeds[index] - current) } ?: 0
+        speeds[(currentIndex + step).coerceIn(speeds.indices)]
+    }
     playerController?.setPlaybackSpeed(next)
+    sessionPlaybackSpeed = next
     playbackSnapshot = playbackSnapshot.copy(playbackSpeed = next)
-    showGestureMessage(formatPlaybackSpeedLabel(next))
+    if (showFeedback) showGestureMessage(formatPlaybackSpeedLabel(next))
 }
 
 @Composable

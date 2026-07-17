@@ -137,6 +137,47 @@ internal data class SeriesPrimaryAction(
     val resumePositionMs: Long?,
 )
 
+/** Resolve the metadata row represented by a primary action. Besides ordinary season/episode
+ * matching, this handles absolute-numbered anime progress against multi-season addon metadata. */
+internal fun MetaDetails.resolveSeriesActionVideo(action: SeriesPrimaryAction?): MetaVideo? {
+    action ?: return null
+    return resolveSeriesPositionVideo(
+        seasonNumber = action.seasonNumber,
+        episodeNumber = action.episodeNumber,
+        videoId = action.videoId,
+    )
+}
+
+/** Episode row to reveal on details: next/resumable primary action first, latest played second. */
+internal fun MetaDetails.preferredSeriesEpisode(
+    action: SeriesPrimaryAction?,
+    entries: List<WatchProgressEntry>,
+): MetaVideo? {
+    resolveSeriesActionVideo(action)?.let { return it }
+    return entries.asSequence()
+        .filter { entry -> entry.parentMetaId == id }
+        .sortedByDescending { entry -> entry.lastUpdatedEpochMs }
+        .mapNotNull { entry ->
+            resolveSeriesPositionVideo(
+                seasonNumber = entry.seasonNumber,
+                episodeNumber = entry.episodeNumber,
+                videoId = entry.videoId,
+            )
+        }
+        .firstOrNull()
+}
+
+private fun MetaDetails.resolveSeriesPositionVideo(
+    seasonNumber: Int?,
+    episodeNumber: Int?,
+    videoId: String?,
+): MetaVideo? = videos.resolveSeriesEpisodePosition(
+    parentMetaId = id,
+    videoId = videoId,
+    seasonNumber = seasonNumber,
+    episodeNumber = episodeNumber,
+)?.video
+
 internal fun MetaDetails.seriesPrimaryAction(
     entries: List<WatchProgressEntry>,
     watchedItems: List<WatchedItem>,

@@ -1,23 +1,21 @@
 package com.nuvio.app.features.settings
 
 import java.awt.Color
-import java.nio.charset.StandardCharsets
-import java.util.Base64
 import javax.swing.JColorChooser
 import javax.swing.SwingUtilities
 
+/**
+ * Native theme-colour picker. Uses Swing's [JColorChooser] on every platform — it ships with the
+ * JVM (RGB/HSV/HSL tabs + swatches), needs no external process, and deliberately avoids spawning
+ * `powershell.exe` for the Windows ColorDialog: encoded-command / `-ExecutionPolicy Bypass`
+ * PowerShell launches are a top behavioural heuristic for AV engines (Kaspersky flagged it), and
+ * the marginally nicer native dialog isn't worth the false-positive.
+ */
 internal actual fun pickCustomThemeColor(initialHex: String): String? {
     val initialColor = initialHex.toAwtColor() ?: Color(0xFF, 0xD7, 0x00)
-    if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) {
-        return pickWindowsThemeColor(initialColor)
-    }
     var selectedColor: Color? = null
     val showDialog = {
-        selectedColor = JColorChooser.showDialog(
-            null,
-            "Choose theme color",
-            initialColor,
-        )
+        selectedColor = JColorChooser.showDialog(null, "Choose theme color", initialColor)
     }
     if (SwingUtilities.isEventDispatchThread()) {
         showDialog()
@@ -26,58 +24,6 @@ internal actual fun pickCustomThemeColor(initialHex: String): String? {
     }
     return selectedColor?.toThemeHex()
 }
-
-private fun pickWindowsThemeColor(initialColor: Color): String? =
-    runCatching {
-        val script = """
-            Add-Type -AssemblyName System.Drawing
-            Add-Type -AssemblyName System.Windows.Forms
-            [System.Windows.Forms.Application]::EnableVisualStyles()
-            ${'$'}owner = New-Object System.Windows.Forms.Form
-            ${'$'}owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
-            ${'$'}owner.Size = New-Object System.Drawing.Size(1, 1)
-            ${'$'}owner.Opacity = 0
-            ${'$'}owner.TopMost = ${'$'}true
-            ${'$'}owner.ShowInTaskbar = ${'$'}false
-            ${'$'}dialog = New-Object System.Windows.Forms.ColorDialog
-            ${'$'}dialog.Color = [System.Drawing.Color]::FromArgb(${initialColor.red}, ${initialColor.green}, ${initialColor.blue})
-            ${'$'}dialog.FullOpen = ${'$'}true
-            try {
-                ${'$'}owner.Show()
-                ${'$'}result = ${'$'}dialog.ShowDialog(${'$'}owner)
-                if (${'$'}result -eq [System.Windows.Forms.DialogResult]::OK) {
-                    ${'$'}hex = [string]::Format("#{0:X2}{1:X2}{2:X2}", ${'$'}dialog.Color.R, ${'$'}dialog.Color.G, ${'$'}dialog.Color.B)
-                    [Console]::Out.WriteLine("NUVIO_COLOR_HEX=${'$'}hex")
-                }
-            } finally {
-                ${'$'}owner.Close()
-                ${'$'}owner.Dispose()
-            }
-        """.trimIndent()
-        val encodedCommand = Base64.getEncoder().encodeToString(
-            script.toByteArray(StandardCharsets.UTF_16LE),
-        )
-        val process = ProcessBuilder(
-            "powershell.exe",
-            "-STA",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-EncodedCommand",
-            encodedCommand,
-        )
-            .redirectErrorStream(true)
-            .start()
-        val output = process.inputStream.bufferedReader().use { it.readText() }
-        process.waitFor()
-        output
-            .lineSequence()
-            .map(String::trim)
-            .firstOrNull { it.startsWith("NUVIO_COLOR_HEX=") }
-            ?.substringAfter('=')
-            ?.takeIf { it.matches(Regex("#[0-9A-Fa-f]{6}")) }
-            ?.uppercase()
-    }.getOrNull()
 
 private fun String.toAwtColor(): Color? {
     val cleaned = trim().removePrefix("#")

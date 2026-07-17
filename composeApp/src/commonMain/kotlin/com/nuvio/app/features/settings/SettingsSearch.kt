@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.updater.AppUpdaterPlatform
 import com.nuvio.app.isDesktop
 import com.nuvio.app.isIos
 import nuvio.composeapp.generated.resources.*
@@ -442,6 +443,18 @@ internal fun settingsSearchEntries(
         category = accountCategory,
         icon = Icons.Rounded.AccountCircle,
     )
+    if (AppUpdaterPlatform.isSupported) {
+        addRow(
+            page = SettingsPage.Account,
+            key = "auto-install-updates",
+            title = stringResource(Res.string.settings_updates_auto_install),
+            description = stringResource(Res.string.settings_updates_auto_install_description),
+            pageLabel = accountPage,
+            section = stringResource(Res.string.settings_updates_section),
+            category = accountCategory,
+            icon = Icons.Rounded.CloudDownload,
+        )
+    }
     addRow(
         page = SettingsPage.ContinueWatching,
         key = "clear-cw-cache",
@@ -1015,7 +1028,9 @@ private fun addPlaybackRows(
     rows.forEach { row ->
         addRow(
             SettingsPage.Playback,
-            "playback-${row.key}",
+            // Search anchors on PlaybackSettingsPage use the setting key itself. Prefixing only
+            // the search index key made clicks request a different, nonexistent destination.
+            row.key,
             row.title,
             row.description,
             pageLabel,
@@ -1125,7 +1140,10 @@ internal fun LazyListScope.settingsSearchResultsContent(
                             description = entry.resultDescription(),
                             icon = entry.icon,
                             isTablet = isTablet,
-                            onClick = { onTargetClick(entry.target) },
+                            onClick = {
+                                SettingsScrollAnchor.highlightTitle(entry.title)
+                                onTargetClick(entry.target)
+                            },
                         )
                     }
                 }
@@ -1186,6 +1204,7 @@ internal fun SettingsSearchField(
                 color = if (focused.value) tokens.colors.borderFocus else tokens.colors.borderDefault,
                 shape = tokens.shapes.compactCard,
             )
+            .trackSettingsTextFocus()
             .onFocusChanged {
                 focused.value = it.isFocused
                 onFocusChange(it.isFocused)

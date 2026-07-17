@@ -13,6 +13,10 @@ val STREAM_AUTO_PLAY_TIMEOUT_VALUES: List<Int> = listOf(
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30, Int.MAX_VALUE
 )
 
+/** Allowed wait durations (seconds) before failover gives up on a stalling stream and tries the next. */
+val STREAM_FAILOVER_TIMEOUT_VALUES: List<Int> = listOf(5, 10, 15, 20, 25, 30, 45, 60)
+const val STREAM_FAILOVER_DEFAULT_TIMEOUT_SECONDS = 10
+
 /**
  * Allowed wait durations (seconds) before the TV-mode home hero swaps to the focused
  * item's trailer.
@@ -46,6 +50,16 @@ data class PlayerSettingsUiState(
     val resizeMode: PlayerResizeMode = PlayerResizeMode.Fit,
     val defaultPlaybackSpeed: Float = 1f,
     val mouseMoveRevealsControlsEnabled: Boolean = true,
+    val desktopLegacyHudEnabled: Boolean = false,
+    val desktopAlwaysShowClockEnabled: Boolean = false,
+    // When true, the desktop speed button / speed keyboard shortcuts step by 0.1 instead of
+    // jumping between the coarse preset stages (1, 1.25, 1.5, 2, 3, 4).
+    val desktopPlaybackSpeedFineIncrementsEnabled: Boolean = false,
+    // When true, mpv writes its full verbose log to logs/mpv-verbose.log (via the mpv --log-file
+    // option) for troubleshooting, instead of the bridge's normal warnings-only capture.
+    val desktopVerboseMpvLoggingEnabled: Boolean = false,
+    // Extra user UI-scale for the desktop/legacy player HUD, in percent (-50..50); 0 = unchanged.
+    val desktopUiScalePercent: Int = 0,
     val externalPlayerEnabled: Boolean = false,
     val externalPlayerForwardSubtitles: Boolean = false,
     val externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId(),
@@ -77,6 +91,10 @@ data class PlayerSettingsUiState(
     val streamAutoPlayNextEpisodeEnabled: Boolean = false,
     val streamAutoPlayPreferBingeGroup: Boolean = true,
     val streamAutoPlayReuseBingeGroup: Boolean = true,
+    // If a stream fails (playback error or never starts within the timeout), automatically try the
+    // next stream in the source list instead of exiting. Opt-in.
+    val streamFailoverEnabled: Boolean = false,
+    val streamFailoverTimeoutSeconds: Int = STREAM_FAILOVER_DEFAULT_TIMEOUT_SECONDS,
     val nextEpisodeThresholdMode: NextEpisodeThresholdMode = NextEpisodeThresholdMode.PERCENTAGE,
     val nextEpisodeThresholdPercent: Float = 99f,
     val nextEpisodeThresholdMinutesBeforeEnd: Float = 2f,
@@ -104,13 +122,22 @@ data class PlayerSettingsUiState(
     val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Off,
     val desktopAnimeModeAutoEnabled: Boolean = false,
     val desktopAnimeSvpEnabled: Boolean = false,
+    // In-memory only (never persisted): F10/shader-menu force for the current playback session.
+    // Non-null bypasses the auto-detect gate entirely; cleared when the player disposes.
+    val desktopAnimeSessionOverride: DesktopAnimeSessionOverride? = null,
+    // In-memory only: F7 turned SVP on this session, so it applies even to undetected content.
+    val desktopAnimeSvpSessionForced: Boolean = false,
     val desktopCustomShaderPaths: String = "",
     val desktopCustomShaderSelectedPath: String = "",
     // Bitstream/passthrough of compressed audio (AC3/DTS/E-AC3/TrueHD/DTS-HD) to a receiver.
     val desktopAudioPassthroughEnabled: Boolean = false,
+    val desktopMpvConfigMode: DesktopMpvConfigMode = DesktopMpvConfigMode.Off,
     // Free-form mpv options, one `key=value` per line, applied just before mpv_initialize so a
     // power user can override any of Nuvio's built-in options.
     val desktopCustomMpvOptions: String = "",
+    // Curated mpv property overrides chosen from the in-player "Advanced (mpv)" menu (e.g.
+    // deband=yes). Applied both at mpv init and at runtime; the raw options box above still wins.
+    val desktopMpvPropertyOverrides: Map<String, String> = emptyMap(),
     val heroTvTrailerEnabled: Boolean = false,
     val heroTvTrailerDelaySeconds: Int = 5,
     val heroTvTrailerSoundEnabled: Boolean = false,
@@ -127,6 +154,11 @@ object PlayerSettingsRepository {
     private var resizeMode = PlayerResizeMode.Fit
     private var defaultPlaybackSpeed = 1f
     private var mouseMoveRevealsControlsEnabled = true
+    private var desktopLegacyHudEnabled = false
+    private var desktopAlwaysShowClockEnabled = false
+    private var desktopPlaybackSpeedFineIncrementsEnabled = false
+    private var desktopVerboseMpvLoggingEnabled = false
+    private var desktopUiScalePercent = 0
     private var externalPlayerEnabled = false
     private var externalPlayerForwardSubtitles = false
     private var externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId()
@@ -158,6 +190,8 @@ object PlayerSettingsRepository {
     private var streamAutoPlayNextEpisodeEnabled = false
     private var streamAutoPlayPreferBingeGroup = true
     private var streamAutoPlayReuseBingeGroup = true
+    private var streamFailoverEnabled = false
+    private var streamFailoverTimeoutSeconds = STREAM_FAILOVER_DEFAULT_TIMEOUT_SECONDS
     private var nextEpisodeThresholdMode = NextEpisodeThresholdMode.PERCENTAGE
     private var nextEpisodeThresholdPercent = 99f
     private var nextEpisodeThresholdMinutesBeforeEnd = 2f
@@ -185,10 +219,15 @@ object PlayerSettingsRepository {
     private var desktopAnimeMode = DesktopAnimeMode.Off
     private var desktopAnimeModeAutoEnabled = false
     private var desktopAnimeSvpEnabled = false
+    // Session-only state; deliberately has no PlayerSettingsStorage backing.
+    private var desktopAnimeSessionOverride: DesktopAnimeSessionOverride? = null
+    private var desktopAnimeSvpSessionForced = false
     private var desktopCustomShaderPaths = ""
     private var desktopCustomShaderSelectedPath = ""
     private var desktopAudioPassthroughEnabled = false
+    private var desktopMpvConfigMode = DesktopMpvConfigMode.Off
     private var desktopCustomMpvOptions = ""
+    private var desktopMpvPropertyOverrides: Map<String, String> = emptyMap()
     private var heroTvTrailerEnabled = false
     private var heroTvTrailerDelaySeconds = 5
     private var heroTvTrailerSoundEnabled = false
@@ -210,6 +249,11 @@ object PlayerSettingsRepository {
         resizeMode = PlayerResizeMode.Fit
         defaultPlaybackSpeed = 1f
         mouseMoveRevealsControlsEnabled = true
+        desktopLegacyHudEnabled = false
+        desktopAlwaysShowClockEnabled = false
+        desktopPlaybackSpeedFineIncrementsEnabled = false
+        desktopVerboseMpvLoggingEnabled = false
+        desktopUiScalePercent = 0
         externalPlayerEnabled = false
         externalPlayerForwardSubtitles = false
         externalPlayerId = ExternalPlayerPlatform.defaultPlayerId()
@@ -241,6 +285,8 @@ object PlayerSettingsRepository {
         streamAutoPlayNextEpisodeEnabled = false
         streamAutoPlayPreferBingeGroup = true
         streamAutoPlayReuseBingeGroup = true
+        streamFailoverEnabled = false
+        streamFailoverTimeoutSeconds = STREAM_FAILOVER_DEFAULT_TIMEOUT_SECONDS
         nextEpisodeThresholdMode = NextEpisodeThresholdMode.PERCENTAGE
         nextEpisodeThresholdPercent = 99f
         nextEpisodeThresholdMinutesBeforeEnd = 2f
@@ -268,10 +314,14 @@ object PlayerSettingsRepository {
         desktopAnimeMode = DesktopAnimeMode.Off
         desktopAnimeModeAutoEnabled = false
         desktopAnimeSvpEnabled = false
+        desktopAnimeSessionOverride = null
+        desktopAnimeSvpSessionForced = false
         desktopCustomShaderPaths = ""
         desktopCustomShaderSelectedPath = ""
         desktopAudioPassthroughEnabled = false
+        desktopMpvConfigMode = DesktopMpvConfigMode.Off
         desktopCustomMpvOptions = ""
+        desktopMpvPropertyOverrides = emptyMap()
         heroTvTrailerEnabled = false
         heroTvTrailerDelaySeconds = 5
         heroTvTrailerSoundEnabled = false
@@ -288,6 +338,12 @@ object PlayerSettingsRepository {
             ?: PlayerResizeMode.Fit
         defaultPlaybackSpeed = PlayerSettingsStorage.loadDefaultPlaybackSpeed() ?: 1f
         mouseMoveRevealsControlsEnabled = PlayerSettingsStorage.loadMouseMoveRevealsControlsEnabled() ?: true
+        desktopLegacyHudEnabled = PlayerSettingsStorage.loadDesktopLegacyHudEnabled() ?: false
+        desktopAlwaysShowClockEnabled = PlayerSettingsStorage.loadDesktopAlwaysShowClockEnabled() ?: false
+        desktopPlaybackSpeedFineIncrementsEnabled =
+            PlayerSettingsStorage.loadDesktopPlaybackSpeedFineIncrementsEnabled() ?: false
+        desktopVerboseMpvLoggingEnabled = PlayerSettingsStorage.loadDesktopVerboseMpvLoggingEnabled() ?: false
+        desktopUiScalePercent = (PlayerSettingsStorage.loadDesktopUiScalePercent() ?: 0).coerceIn(-50, 50)
         externalPlayerEnabled = PlayerSettingsStorage.loadExternalPlayerEnabled() ?: false
         externalPlayerForwardSubtitles = PlayerSettingsStorage.loadExternalPlayerForwardSubtitles() ?: false
         externalPlayerId = PlayerSettingsStorage.loadExternalPlayerId()
@@ -314,6 +370,8 @@ object PlayerSettingsRepository {
                 ?: SubtitleStyleState.DEFAULT.outlineEnabled,
             outlineWidth = PlayerSettingsStorage.loadSubtitleOutlineWidth()
                 ?: SubtitleStyleState.DEFAULT.outlineWidth,
+            shadowEnabled = PlayerSettingsStorage.loadSubtitleShadowEnabled()
+                ?: SubtitleStyleState.DEFAULT.shadowEnabled,
             bold = PlayerSettingsStorage.loadSubtitleBold()
                 ?: SubtitleStyleState.DEFAULT.bold,
             fontSizeSp = PlayerSettingsStorage.loadSubtitleFontSizeSp()
@@ -375,6 +433,10 @@ object PlayerSettingsRepository {
         streamAutoPlayNextEpisodeEnabled = PlayerSettingsStorage.loadStreamAutoPlayNextEpisodeEnabled() ?: false
         streamAutoPlayPreferBingeGroup = PlayerSettingsStorage.loadStreamAutoPlayPreferBingeGroup() ?: true
         streamAutoPlayReuseBingeGroup = PlayerSettingsStorage.loadStreamAutoPlayReuseBingeGroup() ?: true
+        streamFailoverEnabled = PlayerSettingsStorage.loadStreamFailoverEnabled() ?: false
+        streamFailoverTimeoutSeconds =
+            (PlayerSettingsStorage.loadStreamFailoverTimeoutSeconds() ?: STREAM_FAILOVER_DEFAULT_TIMEOUT_SECONDS)
+                .let { if (it in STREAM_FAILOVER_TIMEOUT_VALUES) it else STREAM_FAILOVER_DEFAULT_TIMEOUT_SECONDS }
         nextEpisodeThresholdMode = PlayerSettingsStorage.loadNextEpisodeThresholdMode()
             ?.let { runCatching { NextEpisodeThresholdMode.valueOf(it) }.getOrNull() }
             ?: NextEpisodeThresholdMode.PERCENTAGE
@@ -448,6 +510,11 @@ object PlayerSettingsRepository {
         }
         desktopAudioPassthroughEnabled = PlayerSettingsStorage.loadDesktopAudioPassthroughEnabled() ?: false
         desktopCustomMpvOptions = PlayerSettingsStorage.loadDesktopCustomMpvOptions().orEmpty()
+        desktopMpvConfigMode = PlayerSettingsStorage.loadDesktopMpvConfigMode()
+            ?.let { runCatching { DesktopMpvConfigMode.valueOf(it) }.getOrNull() }
+            // Preserve pre-mode installations which already relied on raw overrides.
+            ?: if (desktopCustomMpvOptions.isBlank()) DesktopMpvConfigMode.Off else DesktopMpvConfigMode.Replace
+        desktopMpvPropertyOverrides = parseMpvPropertyOverrides(PlayerSettingsStorage.loadDesktopMpvPropertyOverrides())
         heroTvTrailerEnabled = PlayerSettingsStorage.loadHeroTvTrailerEnabled() ?: false
         heroTvTrailerDelaySeconds = PlayerSettingsStorage.loadHeroTvTrailerDelaySeconds()
             ?.let(::snapToHeroTvTrailerDelay) ?: 5
@@ -488,6 +555,47 @@ object PlayerSettingsRepository {
         mouseMoveRevealsControlsEnabled = enabled
         publish()
         PlayerSettingsStorage.saveMouseMoveRevealsControlsEnabled(enabled)
+    }
+
+    fun setDesktopLegacyHudEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopLegacyHudEnabled == enabled) return
+        desktopLegacyHudEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopLegacyHudEnabled(enabled)
+    }
+
+    fun setDesktopAlwaysShowClockEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopAlwaysShowClockEnabled == enabled) return
+        desktopAlwaysShowClockEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopAlwaysShowClockEnabled(enabled)
+    }
+
+    fun setDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopPlaybackSpeedFineIncrementsEnabled == enabled) return
+        desktopPlaybackSpeedFineIncrementsEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled)
+    }
+
+    fun setDesktopVerboseMpvLoggingEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopVerboseMpvLoggingEnabled == enabled) return
+        desktopVerboseMpvLoggingEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopVerboseMpvLoggingEnabled(enabled)
+    }
+
+    fun setDesktopUiScalePercent(percent: Int) {
+        ensureLoaded()
+        val clamped = percent.coerceIn(-50, 50)
+        if (desktopUiScalePercent == clamped) return
+        desktopUiScalePercent = clamped
+        publish()
+        PlayerSettingsStorage.saveDesktopUiScalePercent(clamped)
     }
 
     fun setExternalPlayerEnabled(enabled: Boolean) {
@@ -576,6 +684,7 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveSubtitleBackgroundColor(style.backgroundColor.toStorageHexString())
         PlayerSettingsStorage.saveSubtitleOutlineColor(style.outlineColor.toStorageHexString())
         PlayerSettingsStorage.saveSubtitleOutlineEnabled(style.outlineEnabled)
+        PlayerSettingsStorage.saveSubtitleShadowEnabled(style.shadowEnabled)
         PlayerSettingsStorage.saveSubtitleOutlineWidth(style.outlineWidth)
         PlayerSettingsStorage.saveSubtitleBold(style.bold)
         PlayerSettingsStorage.saveSubtitleFontSizeSp(style.fontSizeSp)
@@ -745,6 +854,23 @@ object PlayerSettingsRepository {
         streamAutoPlayNextEpisodeEnabled = enabled
         publish()
         PlayerSettingsStorage.saveStreamAutoPlayNextEpisodeEnabled(enabled)
+    }
+
+    fun setStreamFailoverEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (streamFailoverEnabled == enabled) return
+        streamFailoverEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveStreamFailoverEnabled(enabled)
+    }
+
+    fun setStreamFailoverTimeoutSeconds(seconds: Int) {
+        ensureLoaded()
+        val snapped = if (seconds in STREAM_FAILOVER_TIMEOUT_VALUES) seconds else STREAM_FAILOVER_DEFAULT_TIMEOUT_SECONDS
+        if (streamFailoverTimeoutSeconds == snapped) return
+        streamFailoverTimeoutSeconds = snapped
+        publish()
+        PlayerSettingsStorage.saveStreamFailoverTimeoutSeconds(snapped)
     }
 
     fun setStreamAutoPlayPreferBingeGroup(enabled: Boolean) {
@@ -974,6 +1100,11 @@ object PlayerSettingsRepository {
             resizeMode = resizeMode,
             defaultPlaybackSpeed = defaultPlaybackSpeed,
             mouseMoveRevealsControlsEnabled = mouseMoveRevealsControlsEnabled,
+            desktopLegacyHudEnabled = desktopLegacyHudEnabled,
+            desktopAlwaysShowClockEnabled = desktopAlwaysShowClockEnabled,
+            desktopPlaybackSpeedFineIncrementsEnabled = desktopPlaybackSpeedFineIncrementsEnabled,
+            desktopVerboseMpvLoggingEnabled = desktopVerboseMpvLoggingEnabled,
+            desktopUiScalePercent = desktopUiScalePercent,
             externalPlayerEnabled = externalPlayerEnabled,
             externalPlayerForwardSubtitles = externalPlayerForwardSubtitles,
             externalPlayerId = externalPlayerId,
@@ -1005,6 +1136,8 @@ object PlayerSettingsRepository {
             streamAutoPlayNextEpisodeEnabled = streamAutoPlayNextEpisodeEnabled,
             streamAutoPlayPreferBingeGroup = streamAutoPlayPreferBingeGroup,
             streamAutoPlayReuseBingeGroup = streamAutoPlayReuseBingeGroup,
+            streamFailoverEnabled = streamFailoverEnabled,
+            streamFailoverTimeoutSeconds = streamFailoverTimeoutSeconds,
             nextEpisodeThresholdMode = nextEpisodeThresholdMode,
             nextEpisodeThresholdPercent = nextEpisodeThresholdPercent,
             nextEpisodeThresholdMinutesBeforeEnd = nextEpisodeThresholdMinutesBeforeEnd,
@@ -1032,10 +1165,14 @@ object PlayerSettingsRepository {
             desktopAnimeMode = desktopAnimeMode,
             desktopAnimeModeAutoEnabled = desktopAnimeModeAutoEnabled,
             desktopAnimeSvpEnabled = desktopAnimeSvpEnabled,
+            desktopAnimeSessionOverride = desktopAnimeSessionOverride,
+            desktopAnimeSvpSessionForced = desktopAnimeSvpSessionForced,
             desktopCustomShaderPaths = desktopCustomShaderPaths,
             desktopCustomShaderSelectedPath = desktopCustomShaderSelectedPath,
             desktopAudioPassthroughEnabled = desktopAudioPassthroughEnabled,
+            desktopMpvConfigMode = desktopMpvConfigMode,
             desktopCustomMpvOptions = desktopCustomMpvOptions,
+            desktopMpvPropertyOverrides = desktopMpvPropertyOverrides,
             heroTvTrailerEnabled = heroTvTrailerEnabled,
             heroTvTrailerDelaySeconds = heroTvTrailerDelaySeconds,
             heroTvTrailerSoundEnabled = heroTvTrailerSoundEnabled,
@@ -1100,6 +1237,30 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveDesktopAnimeSvpEnabled(enabled)
     }
 
+    // Session-only anime state below: published through uiState but deliberately never persisted.
+    // The desktop player clears it when the playback surface disposes.
+
+    fun setDesktopAnimeSessionOverride(override: DesktopAnimeSessionOverride) {
+        ensureLoaded()
+        if (desktopAnimeSessionOverride == override) return
+        desktopAnimeSessionOverride = override
+        publish()
+    }
+
+    fun setDesktopAnimeSvpSessionForced(forced: Boolean) {
+        ensureLoaded()
+        if (desktopAnimeSvpSessionForced == forced) return
+        desktopAnimeSvpSessionForced = forced
+        publish()
+    }
+
+    fun clearDesktopAnimeSessionState() {
+        if (desktopAnimeSessionOverride == null && !desktopAnimeSvpSessionForced) return
+        desktopAnimeSessionOverride = null
+        desktopAnimeSvpSessionForced = false
+        publish()
+    }
+
     fun setDesktopCustomShaderPaths(paths: String) {
         ensureLoaded()
         val normalized = paths.trim()
@@ -1133,6 +1294,40 @@ object PlayerSettingsRepository {
         publish()
         PlayerSettingsStorage.saveDesktopCustomMpvOptions(options)
     }
+
+    fun setDesktopMpvConfigMode(mode: DesktopMpvConfigMode) {
+        ensureLoaded()
+        if (desktopMpvConfigMode == mode) return
+        desktopMpvConfigMode = mode
+        publish()
+        PlayerSettingsStorage.saveDesktopMpvConfigMode(mode.name)
+    }
+
+    /** Sets (or, when [value] is null, clears) a single curated mpv property override. */
+    fun setDesktopMpvPropertyOverride(key: String, value: String?) {
+        ensureLoaded()
+        val next = desktopMpvPropertyOverrides.toMutableMap()
+        if (value == null) next.remove(key) else next[key] = value
+        if (next == desktopMpvPropertyOverrides) return
+        desktopMpvPropertyOverrides = next
+        publish()
+        PlayerSettingsStorage.saveDesktopMpvPropertyOverrides(serializeMpvPropertyOverrides(next))
+    }
+
+    private fun parseMpvPropertyOverrides(raw: String?): Map<String, String> =
+        raw?.lineSequence()
+            ?.mapNotNull { line ->
+                val trimmed = line.trim()
+                val separator = trimmed.indexOf('=')
+                if (separator <= 0) return@mapNotNull null
+                trimmed.substring(0, separator).trim() to trimmed.substring(separator + 1).trim()
+            }
+            ?.filter { it.first.isNotEmpty() }
+            ?.toMap()
+            .orEmpty()
+
+    private fun serializeMpvPropertyOverrides(overrides: Map<String, String>): String =
+        overrides.entries.joinToString("\n") { "${it.key}=${it.value}" }
 
     fun setHeroTvTrailerEnabled(enabled: Boolean) {
         ensureLoaded()

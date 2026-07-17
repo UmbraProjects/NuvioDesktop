@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.isIos
+import com.nuvio.app.isDesktop
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -141,7 +143,7 @@ internal fun TabletStreamsLayout(
         Row(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
-                    .weight(0.4f)
+                    .weight(if (isDesktop) 1f else 0.4f)
                     .fillMaxHeight()
                     .padding(24.dp),
                 contentAlignment = Alignment.Center,
@@ -164,7 +166,15 @@ internal fun TabletStreamsLayout(
 
             Box(
                 modifier = Modifier
-                    .weight(0.6f)
+                    .then(
+                        if (isDesktop) {
+                            Modifier
+                                .fillMaxWidth(0.46f)
+                                .widthIn(max = 760.dp)
+                        } else {
+                            Modifier.weight(0.6f)
+                        },
+                    )
                     .fillMaxHeight()
                     .padding(
                         top = if (isIos) 20.dp else 60.dp,

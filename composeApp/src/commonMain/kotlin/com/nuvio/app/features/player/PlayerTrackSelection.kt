@@ -121,6 +121,37 @@ internal fun filterAddonSubtitlesForSettings(
     return filtered
 }
 
+/**
+ * Applies the "Show Only Preferred Languages" setting to the built-in (embedded) subtitle list
+ * shown in the player. Mirrors [filterAddonSubtitlesForSettings] but for on-disc tracks:
+ *  - The currently selected track is always kept, so the user is never locked out of their choice.
+ *  - Forced tracks are kept while forced-subtitle mode is on, since that is a preference in itself.
+ *  - When no preferred languages resolve at all the list is returned untouched — hiding every
+ *    embedded track on an ill-defined filter would be worse than showing them.
+ * This is a display-only concern; automatic track selection still runs over the full list.
+ */
+internal fun filterBuiltInSubtitlesForSettings(
+    tracks: List<SubtitleTrack>,
+    settings: PlayerSettingsUiState,
+    selectedIndex: Int,
+): List<SubtitleTrack> {
+    if (!settings.subtitleStyle.showOnlyPreferredLanguages) return tracks
+
+    val targets = preferredSubtitleTargetsForSettings(settings)
+    if (targets.isEmpty()) return tracks
+
+    return tracks.filter { track ->
+        track.index == selectedIndex ||
+            (settings.subtitleStyle.useForcedSubtitles && track.isForced) ||
+            targets.any { target ->
+                languageMatchesPreference(
+                    trackLanguage = track.language,
+                    targetLanguage = target,
+                )
+            }
+    }
+}
+
 internal fun preferredSubtitleTargetsForSettings(settings: PlayerSettingsUiState): List<String> {
     val preferredLanguage = if (settings.subtitleStyle.useForcedSubtitles) {
         SubtitleLanguageOption.FORCED
@@ -138,14 +169,20 @@ internal fun findPersistedAudioTrackIndex(
     tracks: List<AudioTrack>,
     preference: PersistedPlayerTrackPreference,
 ): Int {
-    preference.audioTrackId?.takeIf { it.isNotBlank() }?.let { trackId ->
-        tracks.firstOrNull { it.id == trackId }?.let { return it.index }
-    }
+    // Track ids are usually positional and can identify a different language in the next episode.
+    // Match stable language/name metadata first; use the id only for legacy entries without it.
     preference.audioLanguage?.takeIf { it.isNotBlank() }?.let { language ->
-        tracks.firstOrNull { languageMatchesPreference(it.language, language) }?.let { return it.index }
+        val languageTracks = tracks.filter { languageMatchesPreference(it.language, language) }
+        preference.audioName?.takeIf { it.isNotBlank() }?.let { name ->
+            languageTracks.firstOrNull { it.label.equals(name, ignoreCase = true) }?.let { return it.index }
+        }
+        languageTracks.firstOrNull()?.let { return it.index }
     }
     preference.audioName?.takeIf { it.isNotBlank() }?.let { name ->
         tracks.firstOrNull { it.label.equals(name, ignoreCase = true) }?.let { return it.index }
+    }
+    preference.audioTrackId?.takeIf { it.isNotBlank() }?.let { trackId ->
+        tracks.firstOrNull { it.id == trackId }?.let { return it.index }
     }
     return -1
 }
@@ -154,14 +191,18 @@ internal fun findPersistedSubtitleTrackIndex(
     tracks: List<SubtitleTrack>,
     preference: PersistedPlayerTrackPreference,
 ): Int {
-    preference.subtitleTrackId?.takeIf { it.isNotBlank() }?.let { trackId ->
-        tracks.firstOrNull { it.id == trackId }?.let { return it.index }
-    }
     preference.subtitleLanguage?.takeIf { it.isNotBlank() }?.let { language ->
-        tracks.firstOrNull { languageMatchesPreference(it.language, language) }?.let { return it.index }
+        val languageTracks = tracks.filter { languageMatchesPreference(it.language, language) }
+        preference.subtitleName?.takeIf { it.isNotBlank() }?.let { name ->
+            languageTracks.firstOrNull { it.label.equals(name, ignoreCase = true) }?.let { return it.index }
+        }
+        languageTracks.firstOrNull()?.let { return it.index }
     }
     preference.subtitleName?.takeIf { it.isNotBlank() }?.let { name ->
         tracks.firstOrNull { it.label.equals(name, ignoreCase = true) }?.let { return it.index }
+    }
+    preference.subtitleTrackId?.takeIf { it.isNotBlank() }?.let { trackId ->
+        tracks.firstOrNull { it.id == trackId }?.let { return it.index }
     }
     return -1
 }

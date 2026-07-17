@@ -1,15 +1,24 @@
 package com.nuvio.app.features.addons
 
+import com.nuvio.app.core.network.DesktopIPv4FirstDns
 import com.nuvio.app.core.storage.DesktopStorage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.time.Duration
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.network_empty_response_body
+import nuvio.composeapp.generated.resources.network_request_failed_http
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.ResponseBody
+import org.jetbrains.compose.resources.getString
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.util.concurrent.TimeUnit
 
 internal actual object AddonStorage {
     private val store = DesktopStorage.store("nuvio_addons")
@@ -34,44 +43,44 @@ internal actual object AddonStorage {
     }
 }
 
-private val desktopHttpClient: HttpClient = HttpClient.newBuilder()
-    .connectTimeout(Duration.ofSeconds(30))
-    .followRedirects(HttpClient.Redirect.NORMAL)
+private val desktopHttpClient = OkHttpClient.Builder()
+    .dns(DesktopIPv4FirstDns())
+    .connectTimeout(60, TimeUnit.SECONDS)
+    .readTimeout(60, TimeUnit.SECONDS)
+    .writeTimeout(60, TimeUnit.SECONDS)
+    .followRedirects(true)
+    .followSslRedirects(true)
     .build()
 
-// Manual-redirect callers (SIMKL anime redirect resolution, plugin fetch redirect="manual")
-// previously built a brand-new HttpClient per request. A JDK HttpClient is never closed here,
-// and each one holds a SelectorManager thread + an IOCP handle + a connection pool that are only
-// reclaimed lazily on GC — so repeated calls leaked threads/handles over a long session. Reuse a
-// single NEVER-redirect client instead; it is functionally identical per request.
-private val desktopHttpClientNoRedirect: HttpClient = HttpClient.newBuilder()
-    .connectTimeout(Duration.ofSeconds(30))
-    .followRedirects(HttpClient.Redirect.NEVER)
-    .build()
+private const val MAX_RAW_RESPONSE_BODY_BYTES = 1024 * 1024
+private const val RAW_RESPONSE_TRUNCATION_SUFFIX = "\n...[truncated]"
 
 actual suspend fun httpGetText(url: String): String =
-    httpGetTextWithHeaders(url, emptyMap())
+    executeTextRequest("GET", url, mapOf("Accept" to "application/json"))
 
 actual suspend fun httpPostJson(url: String, body: String): String =
-    httpPostJsonWithHeaders(url, body, emptyMap())
+    executeTextRequest(
+        method = "POST",
+        url = url,
+        headers = mapOf("Accept" to "application/json", "Content-Type" to "application/json"),
+        body = body,
+    )
 
 actual suspend fun httpGetTextWithHeaders(
     url: String,
     headers: Map<String, String>,
-): String =
-    httpRequestRaw("GET", url, headers, body = "").body
+): String = executeTextRequest("GET", url, mapOf("Accept" to "application/json") + headers)
 
 actual suspend fun httpPostJsonWithHeaders(
     url: String,
     body: String,
     headers: Map<String, String>,
-): String =
-    httpRequestRaw(
-        method = "POST",
-        url = url,
-        headers = mapOf("Content-Type" to "application/json") + headers,
-        body = body,
-    ).body
+): String = executeTextRequest(
+    method = "POST",
+    url = url,
+    headers = mapOf("Accept" to "application/json", "Content-Type" to "application/json") + headers,
+    body = body,
+)
 
 actual suspend fun httpRequestRaw(
     method: String,
@@ -80,32 +89,100 @@ actual suspend fun httpRequestRaw(
     body: String,
     followRedirects: Boolean,
 ): RawHttpResponse = withContext(Dispatchers.IO) {
-    val client = if (followRedirects) desktopHttpClient else desktopHttpClientNoRedirect
-    val normalizedMethod = method.trim().uppercase().ifBlank { "GET" }
-    val requestBuilder = HttpRequest.newBuilder()
-        .uri(URI(url.encodeUnsafeHttpUrlCharacters()))
-        .timeout(Duration.ofSeconds(60))
-        .method(
-            normalizedMethod,
-            if (normalizedMethod == "GET" || normalizedMethod == "HEAD") {
-                HttpRequest.BodyPublishers.noBody()
-            } else {
-                HttpRequest.BodyPublishers.ofString(body)
-            },
+    val client = if (followRedirects) {
+        desktopHttpClient
+    } else {
+        desktopHttpClient.newBuilder().followRedirects(false).followSslRedirects(false).build()
+    }
+    client.newCall(buildDesktopRequest(method, url, headers, body)).execute().use { response ->
+        RawHttpResponse(
+            status = response.code,
+            statusText = response.message,
+            url = response.request.url.toString(),
+            body = readResponseBodyLimited(response.body),
+            headers = response.headers.toMultimap()
+                .mapValues { (_, values) -> values.joinToString(",") }
+                .mapKeys { (name, _) -> name.lowercase() },
         )
+    }
+}
 
-    headers.forEach { (key, value) ->
-        if (key.isNotBlank() && value.isNotBlank()) {
-            requestBuilder.header(key, value)
+private suspend fun executeTextRequest(
+    method: String,
+    url: String,
+    headers: Map<String, String> = emptyMap(),
+    body: String = "",
+): String = withContext(Dispatchers.IO) {
+    desktopHttpClient.newCall(buildDesktopRequest(method, url, headers, body)).execute().use { response ->
+        val payload = readResponseBody(response.body)
+        if (!response.isSuccessful) {
+            error(runBlocking { getString(Res.string.network_request_failed_http, response.code) })
         }
+        if (payload.isBlank()) {
+            throw IllegalStateException(runBlocking { getString(Res.string.network_empty_response_body) })
+        }
+        payload
+    }
+}
+
+private fun buildDesktopRequest(
+    method: String,
+    url: String,
+    headers: Map<String, String>,
+    body: String,
+): Request {
+    val normalizedMethod = method.trim().uppercase().ifBlank { "GET" }
+    val sanitizedHeaders = headers.filterKeys { !it.equals("Accept-Encoding", ignoreCase = true) }
+    val builder = Request.Builder().url(url.encodeUnsafeHttpUrlCharacters())
+    sanitizedHeaders.forEach { (key, value) ->
+        if (key.isNotBlank() && value.isNotBlank()) builder.header(key, value)
     }
 
-    val response = client.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString())
-    RawHttpResponse(
-        status = response.statusCode(),
-        statusText = "HTTP ${response.statusCode()}",
-        url = response.uri().toString(),
-        body = response.body(),
-        headers = response.headers().map().mapValues { (_, values) -> values.joinToString(",") },
+    return if (normalizedMethod in setOf("POST", "PUT", "PATCH", "DELETE")) {
+        val contentType = sanitizedHeaders.entries
+            .firstOrNull { (key, _) -> key.equals("Content-Type", ignoreCase = true) }
+            ?.value
+            ?: if (normalizedMethod == "POST") "application/x-www-form-urlencoded" else "application/json"
+        builder.method(
+            normalizedMethod,
+            body.toByteArray(Charsets.UTF_8).toRequestBody(contentType.toMediaType()),
+        )
+    } else {
+        builder.method(normalizedMethod, null)
+    }.build()
+}
+
+private data class LimitedReadResult(val bytes: ByteArray, val truncated: Boolean)
+
+private fun readAtMostBytes(stream: InputStream, maxBytes: Int): LimitedReadResult {
+    val output = ByteArrayOutputStream(minOf(maxBytes, 16 * 1024))
+    val buffer = ByteArray(8 * 1024)
+    var remaining = maxBytes
+    while (remaining > 0) {
+        val read = stream.read(buffer, 0, minOf(buffer.size, remaining))
+        if (read <= 0) break
+        output.write(buffer, 0, read)
+        remaining -= read
+    }
+    return LimitedReadResult(
+        bytes = output.toByteArray(),
+        truncated = remaining == 0 && stream.read() != -1,
     )
+}
+
+private fun readResponseBodyLimited(body: ResponseBody?): String {
+    if (body == null) return ""
+    val charset = body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
+    val readResult = body.byteStream().use { readAtMostBytes(it, MAX_RAW_RESPONSE_BODY_BYTES) }
+    val decoded = runCatching { String(readResult.bytes, charset) }
+        .getOrElse { String(readResult.bytes, Charsets.UTF_8) }
+    return if (readResult.truncated) decoded + RAW_RESPONSE_TRUNCATION_SUFFIX else decoded
+}
+
+private fun readResponseBody(body: ResponseBody?): String {
+    if (body == null) return ""
+    val bytes = body.bytes()
+    return runCatching {
+        String(bytes, body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8)
+    }.getOrElse { String(bytes, Charsets.UTF_8) }
 }

@@ -23,6 +23,10 @@ internal expect object ThemeSettingsStorage {
     fun saveWasdNavigationEnabled(enabled: Boolean)
     fun loadDesktopNavigationLayout(): String?
     fun saveDesktopNavigationLayout(layoutName: String)
+    fun loadDesktopAppUiScalePercent(): Int?
+    fun saveDesktopAppUiScalePercent(percent: Int)
+    fun loadDesktopAppUiScaleAppliesToDetails(): Boolean?
+    fun saveDesktopAppUiScaleAppliesToDetails(enabled: Boolean)
     fun loadSelectedAppLanguage(): String?
     fun saveSelectedAppLanguage(languageCode: String)
     fun applySelectedAppLanguage(languageCode: String)

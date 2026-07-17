@@ -14,8 +14,8 @@ private data class DesktopExternalPlayerIntent(
  * A known desktop media player and how to launch it.
  *
  * [candidatePaths] are absolute exe locations (with `%ENV%` placeholders expanded at lookup
- * time); [appPathsExe] is the executable name to look up under the Windows "App Paths" registry
- * key, which is how installers register their launch path regardless of install directory.
+ * time). [onPathExe] provides a subprocess-free fallback for non-standard installations whose
+ * installer added the player to PATH.
  * [buildArgs] produces the command-line arguments (after the exe and the URL) for a request,
  * using only options the player reliably supports.
  */
@@ -23,7 +23,6 @@ private class DesktopPlayerDefinition(
     val id: String,
     val displayName: String,
     val candidatePaths: List<String>,
-    val appPathsExe: String? = null,
     val onPathExe: String? = null,
     val buildArgs: (ExternalPlayerPlaybackRequest) -> List<String>,
 )
@@ -40,7 +39,6 @@ internal actual object ExternalPlayerPlatform {
                 "%ProgramFiles%\\mpv.net\\mpvnet.exe",
                 "%LOCALAPPDATA%\\Programs\\mpv.net\\mpvnet.exe",
             ),
-            appPathsExe = "mpv.exe",
             onPathExe = "mpv.exe",
             buildArgs = { request ->
                 buildList {
@@ -62,7 +60,7 @@ internal actual object ExternalPlayerPlatform {
                 "%ProgramFiles%\\VideoLAN\\VLC\\vlc.exe",
                 "%ProgramFiles(x86)%\\VideoLAN\\VLC\\vlc.exe",
             ),
-            appPathsExe = "vlc.exe",
+            onPathExe = "vlc.exe",
             buildArgs = { request ->
                 buildList {
                     request.buildPlayerTitle(includeEpisodeTitle = true)
@@ -87,7 +85,7 @@ internal actual object ExternalPlayerPlatform {
                 "%ProgramFiles%\\MPC-HC64\\mpc-hc64.exe",
                 "%ProgramFiles%\\K-Lite Codec Pack\\MPC-HC64\\mpc-hc64.exe",
             ),
-            appPathsExe = "mpc-hc64.exe",
+            onPathExe = "mpc-hc64.exe",
             buildArgs = { request ->
                 // MPC-HC takes the resume position in milliseconds via /start.
                 if (request.resumePositionMs > 0) listOf("/start", request.resumePositionMs.toString()) else emptyList()
@@ -100,7 +98,7 @@ internal actual object ExternalPlayerPlatform {
                 "%ProgramFiles%\\MPC-BE\\mpc-be64.exe",
                 "%ProgramFiles(x86)%\\MPC-BE\\mpc-be.exe",
             ),
-            appPathsExe = "mpc-be64.exe",
+            onPathExe = "mpc-be64.exe",
             buildArgs = { request ->
                 if (request.resumePositionMs > 0) listOf("/start", request.resumePositionMs.toString()) else emptyList()
             },
@@ -113,7 +111,7 @@ internal actual object ExternalPlayerPlatform {
                 "%ProgramFiles(x86)%\\DAUM\\PotPlayer\\PotPlayerMini.exe",
                 "%ProgramFiles%\\DAUM\\PotPlayer64\\PotPlayer64.exe",
             ),
-            appPathsExe = "PotPlayerMini64.exe",
+            onPathExe = "PotPlayerMini64.exe",
             buildArgs = { request ->
                 buildList {
                     if (request.resumePositionMs > 0) {
@@ -135,18 +133,21 @@ internal actual object ExternalPlayerPlatform {
         ),
     )
 
-    /** Resolved absolute exe path per player id, computed once. `null` = not installed. */
-    private val resolvedPaths: Map<String, String?> by lazy {
-        definitions.associate { it.id to resolveExecutable(it) }
+    /** Resolved only when a specific player is needed; startup no longer scans every player. */
+    private val resolvedPaths = mutableMapOf<String, String?>()
+
+    private fun resolvedPath(def: DesktopPlayerDefinition): String? = synchronized(resolvedPaths) {
+        if (resolvedPaths.containsKey(def.id)) return@synchronized resolvedPaths[def.id]
+        resolveExecutable(def).also { resolvedPaths[def.id] = it }
     }
 
     actual fun defaultPlayerId(): String? =
-        definitions.firstOrNull { resolvedPaths[it.id] != null }?.id ?: systemPlayerId
+        definitions.firstOrNull { resolvedPath(it) != null }?.id ?: systemPlayerId
 
     actual fun availablePlayers(): List<ExternalPlayerApp> =
         buildList {
             definitions.forEach { def ->
-                if (resolvedPaths[def.id] != null) add(ExternalPlayerApp(def.id, def.displayName))
+                if (resolvedPath(def) != null) add(ExternalPlayerApp(def.id, def.displayName))
             }
             // Always offer the OS handler as a fallback (e.g. a player we don't detect, or the
             // user's own file/URL association). It hands the URL to whatever is registered.
@@ -168,7 +169,7 @@ internal actual object ExternalPlayerPlatform {
 
         val def = definitions.firstOrNull { it.id == effectiveId }
             ?: return ExternalPlayerOpenResult.Failed
-        val exePath = resolvedPaths[def.id]
+        val exePath = resolvedPath(def)
             ?: return ExternalPlayerOpenResult.NoPlayerAvailable
 
         val command = buildList {
@@ -209,14 +210,7 @@ internal actual object ExternalPlayerPlatform {
     // --- executable resolution ------------------------------------------------------------
 
     private fun resolveExecutable(def: DesktopPlayerDefinition): String? {
-        // Prefer the App Paths registry entry: it is what Windows itself resolves the bare exe name
-        // to (Start menu / Run box), so it points at the install the user actually launches. Our
-        // hard-coded candidate paths are only a fallback — a machine can have a second, stale or
-        // broken install in the default Program Files location (e.g. a plugin-stripped 64-bit VLC
-        // sitting next to a working 32-bit one) that a candidate path would otherwise match first.
-        def.appPathsExe?.let { exe ->
-            queryAppPath(exe)?.let { if (File(it).isFile) return it }
-        }
+        // Keep discovery in-process: check known install locations first, then PATH.
         def.candidatePaths.forEach { candidate ->
             val expanded = expandEnvPlaceholders(candidate)
             if (expanded != null && File(expanded).isFile) return expanded
@@ -245,35 +239,6 @@ internal actual object ExternalPlayerPlatform {
             .map { File(it.trim(), exe) }
             .firstOrNull { it.isFile }
             ?.absolutePath
-    }
-
-    /**
-     * Reads the default value of
-     * `HKLM/HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\<exe>`, which installers set
-     * to the executable's full path. Uses reg.exe to avoid a registry-access dependency.
-     */
-    private fun queryAppPath(exe: String): String? {
-        val roots = listOf("HKCU", "HKLM")
-        for (root in roots) {
-            val key = "$root\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\$exe"
-            val output = runCatching {
-                val process = ProcessBuilder("reg", "query", key, "/ve")
-                    .redirectErrorStream(true)
-                    .start()
-                val text = process.inputStream.bufferedReader().readText()
-                process.waitFor()
-                text
-            }.getOrNull() ?: continue
-
-            // A matching line looks like: "    (Default)    REG_SZ    C:\Path\player.exe"
-            val path = output.lineSequence()
-                .firstOrNull { it.contains("REG_SZ") }
-                ?.substringAfter("REG_SZ")
-                ?.trim()
-                ?.trim('"')
-            if (!path.isNullOrBlank() && File(path).isFile) return path
-        }
-        return null
     }
 
     // --- system-handler fallback (previous behaviour) -------------------------------------

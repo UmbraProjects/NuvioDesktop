@@ -60,8 +60,10 @@
                        sourceUrl:(NSString *)sourceUrl
                    audioSourceUrl:(NSString *)audioSourceUrl
                     headerLines:(NSArray<NSString *> *)headerLines
+                     mpvOptions:(NSArray<NSString *> *)mpvOptions
                    playWhenReady:(BOOL)playWhenReady
                 initialPositionMs:(long long)initialPositionMs
+          initialProgressFraction:(double)initialProgressFraction
                       controlsUrl:(NSString *)controlsUrl
                            javaVm:(JavaVM *)javaVm
                         eventSink:(jobject)eventSink
@@ -95,7 +97,8 @@
                              outlineSize:(double)outlineSize
                                     bold:(BOOL)bold
                                 fontSize:(double)fontSize
-                                  subPos:(int)subPos;
+                                 subPos:(int)subPos;
+- (void)toggleStatsOverlay;
 - (void)handleScriptMessage:(NSDictionary *)message;
 - (void)focusControlsWebViewIfNeeded;
 - (void)layoutNativeSubviews;
@@ -1015,6 +1018,8 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     NSTimeInterval _lightweightResizeSettleUntil;
     NSSize _lastControlsViewportNudgeSize;
     NSTimeInterval _lastControlsViewportNudgeAt;
+    CGFloat _lastControlsPageZoom;
+    CGFloat _controlsUiScaleFactor;
     std::atomic<double> _cachedDurationSeconds;
     std::atomic<double> _cachedPositionSeconds;
     std::atomic<double> _cachedCacheAheadSeconds;
@@ -1028,8 +1033,10 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
                        sourceUrl:(NSString *)sourceUrl
                    audioSourceUrl:(NSString *)audioSourceUrl
                     headerLines:(NSArray<NSString *> *)headerLines
+                     mpvOptions:(NSArray<NSString *> *)mpvOptions
                    playWhenReady:(BOOL)playWhenReady
                 initialPositionMs:(long long)initialPositionMs
+          initialProgressFraction:(double)initialProgressFraction
                       controlsUrl:(NSString *)controlsUrl
                            javaVm:(JavaVM *)javaVm
                         eventSink:(jobject)eventSink
@@ -1115,8 +1122,10 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     [self startMpvWithSource:sourceUrl
               audioSourceUrl:audioSourceUrl
                  headerLines:headerLines
+                  mpvOptions:mpvOptions
                 playWhenReady:playWhenReady
-             initialPositionMs:initialPositionMs];
+             initialPositionMs:initialPositionMs
+       initialProgressFraction:initialProgressFraction];
     _timer = [NSTimer scheduledTimerWithTimeInterval:0.5
                                              target:self
                                            selector:@selector(syncControls)
@@ -1136,6 +1145,18 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
 - (void)layoutControlsWebViewToBounds:(NSRect)bounds immediate:(BOOL)immediate {
     if (!_webView) {
         return;
+    }
+
+    // Match the 2x desktop-scaling baseline used to size the HUD. This keeps its physical size
+    // consistent on 1x and Retina displays without disturbing the viewport-aware CSS rules.
+    if (@available(macOS 11.0, *)) {
+        NSScreen *screen = _webView.window.screen ?: _hostView.window.screen ?: NSScreen.mainScreen;
+        CGFloat backingScale = screen.backingScaleFactor > 0.0 ? screen.backingScaleFactor : 1.0;
+        CGFloat desiredPageZoom = (2.0 / backingScale) * (_controlsUiScaleFactor > 0.0 ? _controlsUiScaleFactor : 1.0);
+        if (fabs(desiredPageZoom - _lastControlsPageZoom) > 0.001) {
+            _webView.pageZoom = desiredPageZoom;
+            _lastControlsPageZoom = desiredPageZoom;
+        }
     }
 
     if (!NSEqualRects(_webView.frame, bounds)) {
@@ -1354,8 +1375,10 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
 - (void)startMpvWithSource:(NSString *)sourceUrl
             audioSourceUrl:(NSString *)audioSourceUrl
                headerLines:(NSArray<NSString *> *)headerLines
+                mpvOptions:(NSArray<NSString *> *)mpvOptions
               playWhenReady:(BOOL)playWhenReady
-           initialPositionMs:(long long)initialPositionMs {
+           initialPositionMs:(long long)initialPositionMs
+     initialProgressFraction:(double)initialProgressFraction {
     _mpv = mpv_create();
     if (!_mpv) {
         @throw [NSException exceptionWithName:@"PlayerBridgeError"
@@ -1364,12 +1387,32 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     }
     _initialStartSeconds = initialPositionMs > 0 ? (double)initialPositionMs / 1000.0 : 0.0;
 
+    NSString *configMode = @"off";
+    for (NSString *option in mpvOptions) {
+        if ([option hasPrefix:@"@nuvio-config-mode="]) configMode = [option substringFromIndex:19];
+    }
+    BOOL fullUserConfig = [configMode isEqualToString:@"full"];
+    NSMutableSet<NSString *> *configured = [NSMutableSet setWithArray:@[
+        @"config", @"osc", @"input-vo-keyboard", @"keep-open", @"vo"
+    ]];
     setMpvOptionString(_mpv, "config", "no");
     setMpvOptionString(_mpv, "osc", "no");
-    setMpvOptionString(_mpv, "input-default-bindings", "yes");
     setMpvOptionString(_mpv, "input-vo-keyboard", "no");
     setMpvOptionString(_mpv, "keep-open", "yes");
     setMpvOptionString(_mpv, "vo", "libmpv");
+    if (!fullUserConfig) {
+    [configured addObjectsFromArray:@[
+        @"input-default-bindings", @"script-opts", @"hwdec", @"gpu-hwdec-interop", @"hwdec-codecs",
+        @"vd-lavc-software-fallback", @"vd-lavc-threads", @"target-colorspace-hint",
+        @"target-colorspace-hint-mode", @"target-colorspace-hint-strict", @"tone-mapping",
+        @"hdr-compute-peak", @"dither-depth", @"deband", @"scale", @"cscale",
+        @"demuxer-max-bytes", @"demuxer-max-back-bytes", @"demuxer-seekable-cache",
+        @"cache", @"cache-pause", @"cache-pause-initial", @"cache-pause-wait",
+        @"cache-secs", @"hr-seek"
+    ]];
+    setMpvOptionString(_mpv, "input-default-bindings", "yes");
+    // Match the Windows diagnostics footprint: mpv defaults to 20 / 1.65 respectively.
+    setMpvOptionString(_mpv, "script-opts", "stats-font_size=15,stats-border_size=1.25");
     setMpvOptionString(_mpv, "hwdec", "auto");
     setMpvOptionString(_mpv, "gpu-hwdec-interop", "auto");
     setMpvOptionString(_mpv, "hwdec-codecs", "all");
@@ -1387,8 +1430,13 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     setMpvOptionString(_mpv, "demuxer-max-bytes", "64MiB");
     setMpvOptionString(_mpv, "demuxer-max-back-bytes", "16MiB");
     setMpvOptionString(_mpv, "demuxer-seekable-cache", "no");
+    setMpvOptionString(_mpv, "cache", "yes");
+    setMpvOptionString(_mpv, "cache-pause", "yes");
+    setMpvOptionString(_mpv, "cache-pause-initial", "yes");
+    setMpvOptionString(_mpv, "cache-pause-wait", "0.25");
     setMpvOptionString(_mpv, "cache-secs", "30");
     setMpvOptionString(_mpv, "hr-seek", "no");
+    }
 
     if (headerLines.count > 0) {
         NSString *headers = [headerLines componentsJoinedByString:@","];
@@ -1416,9 +1464,13 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
 
     std::vector<const char *> command = {"loadfile", sourceUrl.UTF8String};
     std::string loadOptions;
-    if (initialPositionMs > 0) {
+    if (initialPositionMs > 0 || initialProgressFraction > 0.0) {
         char startBuffer[64];
-        snprintf(startBuffer, sizeof(startBuffer), "start=%.3f", (double)initialPositionMs / 1000.0);
+        if (initialPositionMs > 0) {
+            snprintf(startBuffer, sizeof(startBuffer), "start=%.3f", (double)initialPositionMs / 1000.0);
+        } else {
+            snprintf(startBuffer, sizeof(startBuffer), "start=%.6f%%", initialProgressFraction * 100.0);
+        }
         loadOptions = startBuffer;
         command.push_back("replace");
         command.push_back("-1");
@@ -1923,6 +1975,20 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
             stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
         [chapters addObject:@{ @"startTime": @(startTime), @"title": title ?: @"" }];
     }
+
+    for (NSString *rawOption in mpvOptions) {
+        if ([rawOption hasPrefix:@"@nuvio-config-mode="]) continue;
+        BOOL userOption = [rawOption hasPrefix:@"@nuvio-user:"];
+        NSString *option = userOption ? [rawOption substringFromIndex:12] : rawOption;
+        NSRange separator = [option rangeOfString:@"="];
+        if (separator.location == NSNotFound || separator.location == 0) continue;
+        NSString *key = [option substringToIndex:separator.location];
+        NSString *value = [option substringFromIndex:separator.location + 1];
+        if (userOption && (([configMode isEqualToString:@"add"] && [configured containsObject:key]) ||
+                           (fullUserConfig && [configured containsObject:key]))) continue;
+        setMpvOptionString(_mpv, key.UTF8String, value.UTF8String);
+        if (!userOption) [configured addObject:key];
+    }
     NSData *data = [NSJSONSerialization dataWithJSONObject:chapters options:0 error:nil];
     return data ? ([[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"[]") : @"[]";
 }
@@ -2233,6 +2299,11 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
         [self syncControls];
         return;
     }
+    if ([type isEqualToString:@"setControlsUiScalePercent"] && value) {
+        _controlsUiScaleFactor = fmax(0.5, fmin(1.5, 1.0 + value.doubleValue / 100.0));
+        [self layoutControlsWebViewToBounds:_hostView.bounds immediate:YES];
+        return;
+    }
     if ([type isEqualToString:@"selectAudioTrack"] && value) {
         [self selectAudioTrackId:(int)llround(value.doubleValue)];
         [self syncControls];
@@ -2335,10 +2406,21 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jobjectArray headerLines,
     jboolean playWhenReady,
     jlong initialPositionMs,
+    jdouble initialProgressFraction,
     jstring controlsPageUrl,
     jboolean nvidiaRtxSuperResolutionEnabled,
+    jboolean nvidiaRtxHdrEnabled,
+    jboolean isAnimeContent,
+    jstring animeSvpFilter,
+    jobjectArray extraMpvOptions,
     jobject eventSink
 ) {
+    // These features currently have Windows-only implementations. Keep the complete shared JNI
+    // signature so subsequent arguments (especially eventSink) retain the correct ABI positions.
+    (void)nvidiaRtxSuperResolutionEnabled;
+    (void)nvidiaRtxHdrEnabled;
+    (void)isAnimeContent;
+    (void)animeSvpFilter;
     NSView *hostView = (__bridge NSView *)(void *)(intptr_t)hostViewPtr;
     if (!hostView) {
         throwJavaError(env, @"Unable to resolve the AWT host NSView for native playback.");
@@ -2367,6 +2449,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     std::string audioSource = sourceAudioUrl ? jstringToString(env, sourceAudioUrl) : std::string();
     std::string controls = jstringToString(env, controlsPageUrl);
     NSArray<NSString *> *headers = jstringArrayToNSArray(env, headerLines);
+    NSArray<NSString *> *mpvOptions = jstringArrayToNSArray(env, extraMpvOptions);
     __block MpvWebPlayer *player = nil;
     __block NSString *error = nil;
     runOnMainSync(^{
@@ -2376,8 +2459,10 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
                     sourceUrl:[NSString stringWithUTF8String:source.c_str()]
                    audioSourceUrl:(audioSource.empty() ? nil : [NSString stringWithUTF8String:audioSource.c_str()])
                     headerLines:headers
+                     mpvOptions:mpvOptions
                    playWhenReady:playWhenReady == JNI_TRUE
                 initialPositionMs:initialPositionMs
+          initialProgressFraction:initialProgressFraction
                      controlsUrl:[NSString stringWithUTF8String:controls.c_str()]
                           javaVm:javaVm
                        eventSink:eventSinkRef
@@ -2597,6 +2682,10 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_subtitleTracksJson
     return env->NewStringUTF(json.UTF8String);
 }
 
+- (void)toggleStatsOverlay {
+    [self command:@[@"script-binding", @"stats/display-stats-toggle"]];
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_chaptersJson(
     JNIEnv *env,
@@ -2623,18 +2712,29 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_selectAudioTrack(
     });
 }
 
+// Seek-preview extraction currently uses the Windows libmpv worker path. Keep the JNI surface
+// available on macOS so hovering the timeline degrades to the timestamp-only preview.
 extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_requestSeekThumbnail(
+    JNIEnv * /* env */,
+    jobject /* bridge */,
+    jlong /* handle */,
+    jlong /* positionMs */
+) {}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_selectSubtitleTrack(
     JNIEnv * /* env */,
     jobject /* bridge */,
     jlong handle,
     jint trackId
 ) {
-    if (handle == 0) return;
+    if (handle == 0) return JNI_FALSE;
     MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
     runOnMainAsync(^{
         [player selectSubtitleTrackId:(int)trackId];
     });
+    return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -2720,4 +2820,15 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_applySubtitleStyle
                                         fontSize:(double)fontSize
                                           subPos:(int)subPos];
     });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_toggleStatsOverlay(
+    JNIEnv * /* env */,
+    jobject /* bridge */,
+    jlong handle
+) {
+    if (handle == 0) return;
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{ [player toggleStatsOverlay]; });
 }

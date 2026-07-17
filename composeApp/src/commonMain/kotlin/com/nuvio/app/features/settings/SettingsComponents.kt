@@ -76,6 +76,7 @@ import com.nuvio.app.core.ui.nuvioConsumePointerEvents
 import com.nuvio.app.core.ui.nuvioTypeScale
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_action_off
 import nuvio.composeapp.generated.resources.compose_action_on
@@ -95,6 +96,16 @@ internal data class SettingsChoiceOption<T>(
     val value: T,
     val label: String,
 )
+
+@Composable
+private fun settingsRowTitleColor(title: String): Color {
+    val highlight by SettingsScrollAnchor.titleHighlight.collectAsStateWithLifecycle()
+    return if (highlight?.title == title) {
+        MaterialTheme.nuvio.colors.accent
+    } else {
+        MaterialTheme.nuvio.colors.textPrimary
+    }
+}
 
 @Composable
 internal fun settingsSliderColors() = SliderDefaults.colors(
@@ -453,6 +464,7 @@ internal fun SettingsNavigationRow(
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val titleColor = settingsRowTitleColor(title)
     val iconSize = if (isTablet) 34.dp else 36.dp
     val verticalPadding = if (isTablet) DesktopRowVerticalPadding else 14.dp
     val horizontalPadding = if (isTablet) 16.dp else 16.dp
@@ -506,7 +518,7 @@ internal fun SettingsNavigationRow(
                 Text(
                     text = title,
                     style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
-                    color = tokens.colors.textPrimary,
+                    color = titleColor,
                     fontWeight = FontWeight.Medium,
                 )
                 Spacer(modifier = Modifier.height(if (isTablet) 1.dp else 2.dp))
@@ -581,6 +593,7 @@ internal fun SettingsSwitchRow(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val titleColor = settingsRowTitleColor(title)
     val verticalPadding = if (isTablet) DesktopRowVerticalPadding else 14.dp
     val horizontalPadding = if (isTablet) 16.dp else 16.dp
     val controlWidthModifier = if (isTablet) {
@@ -633,7 +646,7 @@ internal fun SettingsSwitchRow(
             Text(
                 text = title,
                 style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
-                color = tokens.colors.textPrimary,
+                color = titleColor,
                 fontWeight = FontWeight.Medium,
             )
             if (!description.isNullOrBlank()) {
@@ -659,12 +672,13 @@ internal fun SettingsSwitchRow(
 @Composable
 internal fun <T> SettingsChoiceRow(
     title: String,
-    description: String,
+    description: String?,
     options: List<SettingsChoiceOption<T>>,
     selectedValue: T,
     enabled: Boolean = true,
     isTablet: Boolean,
     modifier: Modifier = Modifier,
+    flushContent: Boolean = false,
     onSelected: (T) -> Unit,
     onMoreOptionsClick: (() -> Unit)? = null,
 ) {
@@ -677,6 +691,7 @@ internal fun <T> SettingsChoiceRow(
             enabled = enabled,
             isTablet = isTablet,
             modifier = modifier,
+            flushContent = flushContent,
             onSelected = onSelected,
         )
     } else {
@@ -688,6 +703,7 @@ internal fun <T> SettingsChoiceRow(
             enabled = enabled,
             isTablet = isTablet,
             modifier = modifier,
+            flushContent = flushContent,
             onSelected = onSelected,
         )
     }
@@ -696,16 +712,17 @@ internal fun <T> SettingsChoiceRow(
 @Composable
 internal fun <T> SettingsSegmentedChoiceRow(
     title: String,
-    description: String,
+    description: String?,
     options: List<SettingsChoiceOption<T>>,
     selectedValue: T,
     enabled: Boolean = true,
     isTablet: Boolean,
     modifier: Modifier = Modifier,
+    flushContent: Boolean = false,
     onSelected: (T) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val horizontalPadding = if (isTablet) 16.dp else 16.dp
+    val horizontalPadding = if (flushContent) 0.dp else 16.dp
     val verticalPadding = if (isTablet) DesktopRowVerticalPadding else 12.dp
     val controlWidthModifier = if (isTablet) {
         Modifier.width(DesktopControlWidth)
@@ -724,9 +741,10 @@ internal fun <T> SettingsSegmentedChoiceRow(
             title = title,
             description = description,
             isTablet = isTablet,
+            trailingInset = !flushContent,
             modifier = Modifier
                 .weight(1f)
-                .padding(end = if (isTablet) 12.dp else 16.dp),
+                .padding(end = if (flushContent) 0.dp else if (isTablet) 12.dp else 16.dp),
         )
         SettingsSegmentedControl(
             options = options,
@@ -787,16 +805,17 @@ private fun <T> SettingsSegmentedControl(
 @Composable
 internal fun <T> SettingsDropdownChoiceRow(
     title: String,
-    description: String,
+    description: String?,
     options: List<SettingsChoiceOption<T>>,
     selectedValue: T,
     enabled: Boolean = true,
     isTablet: Boolean,
     modifier: Modifier = Modifier,
+    flushContent: Boolean = false,
     onSelected: (T) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val horizontalPadding = if (isTablet) 16.dp else 16.dp
+    val horizontalPadding = if (flushContent) 0.dp else 16.dp
     val verticalPadding = if (isTablet) DesktopRowVerticalPadding else 12.dp
     val controlWidthModifier = if (isTablet) {
         Modifier.width(DesktopControlWidth)
@@ -817,9 +836,10 @@ internal fun <T> SettingsDropdownChoiceRow(
             title = title,
             description = description,
             isTablet = isTablet,
+            trailingInset = !flushContent,
             modifier = Modifier
                 .weight(1f)
-                .padding(end = if (isTablet) 12.dp else 16.dp),
+                .padding(end = if (flushContent) 0.dp else if (isTablet) 12.dp else 16.dp),
         )
         Box(
             modifier = controlWidthModifier,
@@ -909,9 +929,11 @@ private fun SettingsRowText(
     title: String,
     description: String?,
     isTablet: Boolean,
+    trailingInset: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
+    val titleColor = settingsRowTitleColor(title)
     Column(
         // Inset the text on the trailing side so long descriptions wrap with a comfortable gap
         // before the selector. Padding (not widthIn) is used deliberately: callers wrap this in
@@ -919,13 +941,13 @@ private fun SettingsRowText(
         // ignores widthIn — but padding always shrinks the content.
         modifier = modifier
             .widthIn(max = if (isTablet) 560.dp else Dp.Unspecified)
-            .padding(end = if (isTablet) 28.dp else 0.dp),
+            .padding(end = if (isTablet && trailingInset) 28.dp else 0.dp),
         verticalArrangement = Arrangement.spacedBy(if (isTablet) 2.dp else 4.dp),
     ) {
         Text(
             text = title,
             style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
-            color = tokens.colors.textPrimary,
+            color = titleColor,
             fontWeight = FontWeight.Medium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,

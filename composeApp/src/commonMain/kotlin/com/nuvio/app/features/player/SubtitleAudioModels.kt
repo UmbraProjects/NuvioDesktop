@@ -56,6 +56,8 @@ data class SubtitleStyleState(
     val outlineColor: Color = Color.Black,
     val outlineEnabled: Boolean = true,
     val outlineWidth: Int = 2,
+    // Drop shadow behind the subtitle text (mpv sub-shadow-offset). Independent of the outline.
+    val shadowEnabled: Boolean = false,
     val bold: Boolean = false,
     val fontSizeSp: Int = 18,
     val bottomOffset: Int = 20,
