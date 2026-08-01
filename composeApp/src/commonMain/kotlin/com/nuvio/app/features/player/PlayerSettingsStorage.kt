@@ -15,12 +15,16 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopLegacyHudEnabled(enabled: Boolean)
     fun loadDesktopAlwaysShowClockEnabled(): Boolean?
     fun saveDesktopAlwaysShowClockEnabled(enabled: Boolean)
+    fun loadDesktopPauseOverlaySourceEnabled(): Boolean?
+    fun saveDesktopPauseOverlaySourceEnabled(enabled: Boolean)
     fun loadDesktopPlaybackSpeedFineIncrementsEnabled(): Boolean?
     fun saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean)
     fun loadDesktopVerboseMpvLoggingEnabled(): Boolean?
     fun saveDesktopVerboseMpvLoggingEnabled(enabled: Boolean)
     fun loadDesktopUiScalePercent(): Int?
     fun saveDesktopUiScalePercent(percent: Int)
+    fun loadDesktopSourceNotchPosition(): String?
+    fun saveDesktopSourceNotchPosition(position: String)
     fun loadExternalPlayerEnabled(): Boolean?
     fun saveExternalPlayerEnabled(enabled: Boolean)
     fun loadExternalPlayerForwardSubtitles(): Boolean?
@@ -47,10 +51,18 @@ internal expect object PlayerSettingsStorage {
     fun saveSubtitleOutlineEnabled(enabled: Boolean)
     fun loadSubtitleShadowEnabled(): Boolean?
     fun saveSubtitleShadowEnabled(enabled: Boolean)
+    fun loadSubtitleShadowColor(): String?
+    fun saveSubtitleShadowColor(colorHex: String)
+    fun loadSubtitleShadowOffset(): Int?
+    fun saveSubtitleShadowOffset(offsetTenths: Int)
+    fun loadSubtitleBlur(): Int?
+    fun saveSubtitleBlur(blur: Int)
     fun loadSubtitleOutlineWidth(): Int?
     fun saveSubtitleOutlineWidth(width: Int)
     fun loadSubtitleBold(): Boolean?
     fun saveSubtitleBold(enabled: Boolean)
+    fun loadSubtitleItalic(): Boolean?
+    fun saveSubtitleItalic(enabled: Boolean)
     fun loadSubtitleFontSizeSp(): Int?
     fun saveSubtitleFontSizeSp(fontSizeSp: Int)
     fun loadSubtitleBottomOffset(): Int?
@@ -63,6 +75,10 @@ internal expect object PlayerSettingsStorage {
     fun saveSubtitleShowOnlyPreferredLanguages(enabled: Boolean)
     fun loadAddonSubtitleStartupMode(): String?
     fun saveAddonSubtitleStartupMode(mode: String)
+    fun loadRejectedSubtitleKeywords(): Set<String>?
+    fun saveRejectedSubtitleKeywords(keywords: Set<String>)
+    fun loadRejectedAudioKeywords(): Set<String>?
+    fun saveRejectedAudioKeywords(keywords: Set<String>)
     fun loadStreamReuseLastLinkEnabled(): Boolean?
     fun saveStreamReuseLastLinkEnabled(enabled: Boolean)
     fun loadStreamReuseLastLinkCacheHours(): Int?
@@ -77,6 +93,10 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean)
     fun loadDesktopAnimeSvpEnabled(): Boolean?
     fun saveDesktopAnimeSvpEnabled(enabled: Boolean)
+    fun loadDesktopAnimeSvpDebugOverlayEnabled(): Boolean?
+    fun saveDesktopAnimeSvpDebugOverlayEnabled(enabled: Boolean)
+    fun loadDesktopPlaybackInfoPanelEnabled(): Boolean?
+    fun saveDesktopPlaybackInfoPanelEnabled(enabled: Boolean)
     fun loadDesktopCustomShadersEnabled(): Boolean?
     fun saveDesktopCustomShadersEnabled(enabled: Boolean)
     fun loadDesktopCustomShaderPaths(): String?
@@ -116,6 +136,8 @@ internal expect object PlayerSettingsStorage {
 
     fun loadIntroDbApiKey(): String?
     fun saveIntroDbApiKey(apiKey: String)
+    fun loadSkipDbApiKey(): String?
+    fun saveSkipDbApiKey(apiKey: String)
     fun loadIntroSubmitEnabled(): Boolean?
     fun saveIntroSubmitEnabled(enabled: Boolean)
     fun loadStreamAutoPlayNextEpisodeEnabled(): Boolean?

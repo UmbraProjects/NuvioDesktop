@@ -108,6 +108,73 @@ class FilenameParserTest {
     }
 
     @Test
+    fun extractsEpisodeTitleAfterMarker() {
+        // The release name a cloud link hides behind an opaque object id: the show, the SxxExx
+        // marker, and the episode name should all be recovered, with the trailing release tags
+        // dropped so a direct-play title reads cleanly.
+        val parsed = FilenameParser.parseEpisode(
+            "Friends.S03E01.The.One.with.the.Princess.Leia.Fantasy.UHD.BluRay.2160p.DTS-HD.MA.5.1.DV.HEVC.REMUX-FraMeSToR.mkv",
+        )
+        assertEquals("Friends", parsed.showTitle)
+        assertEquals(3, parsed.season)
+        assertEquals(1, parsed.episode)
+        assertEquals("The One with the Princess Leia Fantasy", parsed.episodeTitle)
+    }
+
+    @Test
+    fun episodeTitleIncludedWhenPresentBetweenDashes() {
+        val parsed = FilenameParser.parseEpisode("Breaking Bad - S02E05 - Breakage.mkv")
+        assertEquals("Breakage", parsed.episodeTitle)
+    }
+
+    @Test
+    fun episodeTitleNullWhenOnlyReleaseTagsFollow() {
+        val parsed = FilenameParser.parseEpisode("The.Wire.S01E03.1080p.WEB.mkv")
+        assertNull(parsed.episodeTitle)
+    }
+
+    @Test
+    fun longHandSeasonAndEpisodeMarkersAreParsed() {
+        val parsed = FilenameParser.parseEpisode(
+            "[PokeArchive] Pokemon Season 15 - Ep01 - BW051 - BW Rival Destinies [1080p].mkv",
+            seasonFolderName = "[PokeArchive] Pokemon the Series - Black and White [Seasons 14-16] - Amazon CBR",
+            isAnime = true,
+        )
+        assertEquals(15, parsed.season)
+        assertEquals(1, parsed.episode)
+    }
+
+    @Test
+    fun shortSeasonMarkerWithSpelledOutEpisodeIsParsed() {
+        val parsed = FilenameParser.parseEpisode("Show S14 - Ep01 - Pilot.mkv")
+        assertEquals(14, parsed.season)
+        assertEquals(1, parsed.episode)
+    }
+
+    @Test
+    fun aMultiSeasonPackNameLendsNoSeasonToItsFiles() {
+        // "Seasons 14-16" describes a range, so a file carrying only an episode number stays
+        // season-less rather than being stamped with whichever number the regex reached first.
+        val parsed = FilenameParser.parseEpisode(
+            "Pokemon - Ep01.mkv",
+            seasonFolderName = "Pokemon the Series [Seasons 14-16]",
+        )
+        assertNull(parsed.season)
+        assertEquals(1, parsed.episode)
+    }
+
+    @Test
+    fun aPluralSeasonWordNoLongerLeaksItsTrailingS() {
+        assertNull(FilenameParser.parseEpisode("Show - Ep02.mkv", seasonFolderName = "Seasons 14").season)
+    }
+
+    @Test
+    fun aRealSeasonFolderStillProvidesTheSeason() {
+        assertEquals(3, FilenameParser.parseEpisode("Show - Ep02.mkv", seasonFolderName = "Season 03").season)
+        assertEquals(3, FilenameParser.parseEpisode("Show - Ep02.mkv", seasonFolderName = "S03").season)
+    }
+
+    @Test
     fun normalizeKeyIsStable() {
         assertEquals(
             FilenameParser.normalizeKey("The Matrix", 1999),

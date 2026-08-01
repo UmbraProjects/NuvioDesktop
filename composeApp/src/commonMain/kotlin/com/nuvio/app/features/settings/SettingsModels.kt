@@ -17,25 +17,28 @@ import nuvio.composeapp.generated.resources.compose_settings_page_advanced
 import nuvio.composeapp.generated.resources.compose_settings_page_appearance
 import nuvio.composeapp.generated.resources.compose_settings_page_content_discovery
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
-import nuvio.composeapp.generated.resources.compose_settings_page_fork_enhancements
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
 import nuvio.composeapp.generated.resources.compose_settings_page_keyboard_shortcuts
 import nuvio.composeapp.generated.resources.compose_settings_page_local_library
+import nuvio.composeapp.generated.resources.compose_settings_page_auto_downloads
 import nuvio.composeapp.generated.resources.compose_settings_page_licenses_attributions
 import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_ratings
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
 import nuvio.composeapp.generated.resources.compose_settings_page_notifications
 import nuvio.composeapp.generated.resources.compose_settings_page_playback
+import nuvio.composeapp.generated.resources.compose_settings_page_qualicache
 import nuvio.composeapp.generated.resources.compose_settings_page_plugins
 import nuvio.composeapp.generated.resources.compose_settings_page_poster_customization
 import nuvio.composeapp.generated.resources.compose_settings_page_root
 import nuvio.composeapp.generated.resources.compose_settings_page_streams
+import nuvio.composeapp.generated.resources.compose_settings_page_stream_scoring
 import nuvio.composeapp.generated.resources.compose_settings_page_supporters_contributors
 import nuvio.composeapp.generated.resources.compose_settings_page_tmdb_enrichment
 import nuvio.composeapp.generated.resources.compose_settings_page_trakt
 import nuvio.composeapp.generated.resources.compose_settings_page_simkl
+import nuvio.composeapp.generated.resources.compose_settings_page_yamtrack
 import nuvio.composeapp.generated.resources.settings_account
 import org.jetbrains.compose.resources.StringResource
 
@@ -79,11 +82,6 @@ internal enum class SettingsPage(
         category = SettingsCategory.General,
         parentPage = Root,
     ),
-    ForkEnhancements(
-        titleRes = Res.string.compose_settings_page_fork_enhancements,
-        category = SettingsCategory.General,
-        parentPage = Root,
-    ),
     Streams(
         titleRes = Res.string.compose_settings_page_streams,
         category = SettingsCategory.General,
@@ -93,6 +91,16 @@ internal enum class SettingsPage(
         titleRes = Res.string.compose_settings_page_local_library,
         category = SettingsCategory.General,
         parentPage = Root,
+    ),
+    AutoDownloads(
+        titleRes = Res.string.compose_settings_page_auto_downloads,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
+    StreamScoring(
+        titleRes = Res.string.compose_settings_page_stream_scoring,
+        category = SettingsCategory.General,
+        parentPage = Streams,
     ),
     KeyboardShortcuts(
         titleRes = Res.string.compose_settings_page_keyboard_shortcuts,
@@ -169,6 +177,11 @@ internal enum class SettingsPage(
         category = SettingsCategory.General,
         parentPage = Integrations,
     ),
+    QualiCache(
+        titleRes = Res.string.compose_settings_page_qualicache,
+        category = SettingsCategory.General,
+        parentPage = Integrations,
+    ),
     Debrid(
         titleRes = Res.string.compose_settings_page_debrid,
         category = SettingsCategory.General,
@@ -181,6 +194,11 @@ internal enum class SettingsPage(
     ),
     SimklAuthentication(
         titleRes = Res.string.compose_settings_page_simkl,
+        category = SettingsCategory.General,
+        parentPage = Integrations,
+    ),
+    YamtrackAuthentication(
+        titleRes = Res.string.compose_settings_page_yamtrack,
         category = SettingsCategory.General,
         parentPage = Integrations,
     ),

@@ -68,6 +68,9 @@ data class HomeCatalogSection(
 fun HomeCatalogSection.canOpenCatalog(previewLimit: Int): Boolean =
     availableItemCount > previewLimit || hasMore
 
+fun HomeCatalogSection.usesInfiniteHomeRow(catalogSeeMoreEnabled: Boolean): Boolean =
+    paginates && !catalogSeeMoreEnabled
+
 /**
  * Guarantees every [HomeCatalogSection.key] in the list is unique by suffixing collisions
  * (`key`, `key#1`, `key#2`, …). LazyColumn/LazyRow throw "Key … was already used" — which on

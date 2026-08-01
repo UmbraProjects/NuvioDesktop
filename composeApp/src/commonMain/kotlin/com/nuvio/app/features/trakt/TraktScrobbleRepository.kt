@@ -4,9 +4,10 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppVersionPolicy
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.metadata.MediaIdResolver
-import com.nuvio.app.features.metadata.canonicalEpisodeNumber
-import com.nuvio.app.features.metadata.canonicalSeasonNumber
 import com.nuvio.app.features.metadata.toTraktExternalIds
+import com.nuvio.app.features.tracking.TrackingCoordinateFamily
+import com.nuvio.app.features.tracking.hasFranchiseScrobbleId
+import com.nuvio.app.features.tracking.projectScrobbleCoordinates
 import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -98,22 +99,29 @@ internal object TraktScrobbleRepository {
         val ids = resolvedIds.toTraktExternalIds()
 
         // Don't send scrobble if we still have no Trakt-supported IDs; title-only
-        // fuzzy matches are too easy to send to the wrong show.
-        if (!ids.hasScrobbleRequestId()) return null
+        // fuzzy matches are too easy to send to the wrong show. This is the shared
+        // franchise-family rule — anime that resolved to native ids only cannot be addressed.
+        if (!resolvedIds.hasFranchiseScrobbleId) return null
 
         val parsedYear = extractTraktYear(releaseInfo)
+        val coordinates = resolvedIds.projectScrobbleCoordinates(
+            family = TrackingCoordinateFamily.FRANCHISE,
+            sourceSeason = seasonNumber,
+            sourceEpisode = episodeNumber,
+            isAnime = resolvedIds.isAnime,
+        )
 
         return if (
             isEpisodeType &&
-            seasonNumber != null &&
-            episodeNumber != null
+            coordinates.season != null &&
+            coordinates.episode != null
         ) {
             TraktScrobbleItem.Episode(
                 showTitle = title,
                 showYear = parsedYear,
                 showIds = ids,
-                season = resolvedIds.canonicalSeasonNumber(seasonNumber) ?: seasonNumber,
-                number = resolvedIds.canonicalEpisodeNumber(episodeNumber) ?: episodeNumber,
+                season = coordinates.season,
+                number = coordinates.episode,
                 episodeTitle = episodeTitle,
             )
         } else {
@@ -325,9 +333,6 @@ internal object TraktScrobbleRepository {
             tvdb = tvdb,
         )
     }
-
-    private fun TraktExternalIds.hasScrobbleRequestId(): Boolean =
-        trakt != null || !imdb.isNullOrBlank() || tmdb != null || tvdb != null
 
 }
 

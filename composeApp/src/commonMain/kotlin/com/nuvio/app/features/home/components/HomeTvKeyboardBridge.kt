@@ -5,7 +5,33 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 /** TV-mode navigation keys, routed independently of which component holds focus. */
-enum class HomeTvKey { Up, Down, Left, Right, Select, ToggleTrailer, ToggleMute, VolumeDown, VolumeUp, TogglePeoplePanel, Dismiss, Search, Library }
+enum class HomeTvKey {
+    Up,
+    Down,
+    Left,
+    Right,
+    // Page Up/Down move a screenful. Which axis that is depends on the layout: TV mode is a
+    // horizontal carousel, every other mode is a vertical list. Home/End jump to either end.
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    Select,
+    ToggleTrailer,
+    ToggleMute,
+    VolumeDown,
+    VolumeUp,
+    TogglePeoplePanel,
+    Dismiss,
+    Search,
+    Library,
+}
+
+// How far [HomeTvKey.PageUp]/[HomeTvKey.PageDown] jump. These lists are virtualised, so the number
+// of items actually on screen is not knowable from a key handler — the steps approximate a
+// screenful instead: the catalog rows that fit down the page, and the posters across a TV row.
+internal const val PAGE_SECTION_STEP = 3
+internal const val PAGE_ITEM_STEP = 6
 
 /**
  * Bridges keyboard navigation to the TV-mode home while the native hero-trailer surface

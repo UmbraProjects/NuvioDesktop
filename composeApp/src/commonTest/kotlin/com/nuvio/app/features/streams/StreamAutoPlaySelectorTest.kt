@@ -249,9 +249,31 @@ class StreamAutoPlaySelectorTest {
         assertFalse(evaluation.hasPendingDebridCandidate)
     }
 
+    @Test
+    fun `autoplay ignores external addon homepage rows`() {
+        val homepage = stream(
+            addonName = "AIOStreams",
+            externalUrl = "https://github.com/Viren070/AIOStreams",
+            name = "AIOStreams",
+        )
+
+        val selected = StreamAutoPlaySelector.selectAutoPlayStream(
+            streams = listOf(homepage),
+            mode = StreamAutoPlayMode.FIRST_STREAM,
+            regexPattern = "",
+            source = StreamAutoPlaySource.ALL_SOURCES,
+            installedAddonNames = setOf("AIOStreams"),
+            selectedAddons = emptySet(),
+            selectedPlugins = emptySet(),
+        )
+
+        assertNull(selected)
+    }
+
     private fun stream(
         addonName: String,
         url: String? = null,
+        externalUrl: String? = null,
         name: String? = null,
         bingeGroup: String? = null,
         directDebrid: Boolean = false,
@@ -261,6 +283,7 @@ class StreamAutoPlaySelectorTest {
     ): StreamItem = StreamItem(
         name = name,
         url = url,
+        externalUrl = externalUrl,
         infoHash = infoHash,
         addonName = addonName,
         addonId = "addon:$addonName",

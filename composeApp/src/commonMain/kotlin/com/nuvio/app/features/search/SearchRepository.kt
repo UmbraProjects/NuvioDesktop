@@ -397,6 +397,7 @@ object SearchRepository {
                 manifestUrl = manifest.transportUrl,
                 contentType = type,
                 catalogId = catalogId,
+                searchQuery = query,
                 supportsPagination = supportsPagination,
             ),
             items = items,

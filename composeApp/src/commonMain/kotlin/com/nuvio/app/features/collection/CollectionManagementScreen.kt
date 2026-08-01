@@ -39,7 +39,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.animateDpAsState
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.core.ui.NuvioSurfaceCard
+import com.nuvio.app.features.settings.trackSettingsTextFocus
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableCollectionItemScope
@@ -192,11 +194,7 @@ internal fun CollectionImportDialog(
     androidx.compose.material3.BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(24.dp),
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
                     text = stringResource(Res.string.collections_import_header),
@@ -215,7 +213,8 @@ internal fun CollectionImportDialog(
                     onValueChange = onTextChange,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(160.dp),
+                        .height(160.dp)
+                        .trackSettingsTextFocus(),
                     placeholder = {
                         Text(
                             stringResource(Res.string.collections_import_json_placeholder),

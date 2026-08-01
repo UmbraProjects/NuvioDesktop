@@ -10,13 +10,22 @@ object FilenameParser {
 
     private val yearRegex = Regex("""(?<![0-9])(19\d{2}|20\d{2})(?![0-9])""")
 
-    // Ordered by specificity — the first that matches a name wins.
+    // Ordered by specificity — the first that matches a name wins. The episode marker accepts
+    // `E`/`Ep`/`Episode` in every form: archival packs routinely spell it out long-hand
+    // (`Pokemon Season 14 - Ep01 - BW001`), and reading only `E<digits>` left those files with no
+    // season at all, so a whole multi-season pack collapsed onto one episode.
     private val seasonEpisodeRegexes = listOf(
-        Regex("""(?i)s(\d{1,2})[ ._-]*e(\d{1,3})"""),                         // S01E02, s1.e2
-        Regex("""(?i)season[ ._-]*(\d{1,2})[ ._-]*episode[ ._-]*(\d{1,3})"""), // Season 1 Episode 2
+        Regex("""(?i)s(\d{1,2})[ ._-]*e(?:pisode|p)?[ ._-]*(\d{1,3})"""),      // S01E02, s1.e2, S14 - Ep01
+        Regex("""(?i)season[ ._-]*(\d{1,2})[ ._-]*e(?:pisode|p)?[ ._-]*(\d{1,3})"""), // Season 14 - Ep01
         Regex("""(?i)(?<![0-9])(\d{1,2})x(\d{1,3})(?![0-9])"""),               // 1x02
     )
-    private val seasonFolderRegex = Regex("""(?i)(?:season|series|s)[ ._-]*(\d{1,3})""")
+    // The leading boundary matters: without it the trailing `s` of a pack name like
+    // `[Seasons 14-16]` matched the bare `s` branch and stamped season 14 onto every file in it.
+    private val seasonFolderRegex = Regex("""(?i)(?:^|[^a-z0-9])(?:season|series|s)[ ._-]*(\d{1,3})""")
+    // A pack spanning several seasons (`Seasons 14-16`, `S01-S03`, `S01-03`) has no single season,
+    // so it must not lend one to files that carry no season of their own.
+    private val seasonRangeRegex =
+        Regex("""(?i)(?:^|[^a-z0-9])(?:seasons|series|s)[ ._-]*(\d{1,3})[ ._]*-[ ._]*(?:s)?(\d{1,3})(?![0-9])""")
     private val episodeOnlyRegex =
         Regex("""(?i)(?:^|[ ._-])e(?:p(?:isode)?)?[ ._-]*(\d{1,4})(?![0-9p])""")
 
@@ -47,6 +56,10 @@ object FilenameParser {
         val showTitle: String?,
         val season: Int?,
         val episode: Int?,
+        // The episode name that follows an explicit SxxExx marker (e.g. the
+        // `The One with the Princess Leia Fantasy` in `Friends.S03E01.The.One…`), cleaned of the
+        // trailing release tags. Null when no marker is present or nothing follows it.
+        val episodeTitle: String? = null,
     )
 
     /**
@@ -81,13 +94,16 @@ object FilenameParser {
                     // the anime-list mapping at play time, so the season is information, not noise.
                     season = season,
                     episode = episode,
+                    episodeTitle = cleanTitle(base.substring(match.range.last + 1)).takeIf { it.isNotBlank() },
                 )
             }
         }
 
         // No SxxExx — try a bare episode number, taking the season from the folder. An anime file
         // with no season marker anywhere (`Show - 1075`) stays absolute-numbered: season null.
-        val folderSeason = seasonFolderName?.let { seasonFolderRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() }
+        val folderSeason = seasonFolderName
+            ?.takeUnless { seasonRangeRegex.containsMatchIn(it) }
+            ?.let { seasonFolderRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() }
         val episode = episodeOnlyRegex.find(base)?.groupValues?.get(1)?.toIntOrNull()
             ?: if (isAnime) absoluteAnimeEpisode(base) else null
         return ParsedEpisode(

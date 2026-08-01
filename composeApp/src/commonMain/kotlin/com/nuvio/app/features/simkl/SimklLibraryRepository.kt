@@ -4,6 +4,8 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.library.LibraryItem
+import com.nuvio.app.features.metadata.MediaIdResolver
+import com.nuvio.app.features.metadata.toSimklIds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,6 +17,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 
 data class SimklLibraryUiState(
     val shows: List<LibraryItem> = emptyList(),
@@ -112,6 +116,120 @@ internal object SimklLibraryRepository {
         refreshJob?.cancel()
         loaded = false
         _uiState.value = SimklLibraryUiState()
+    }
+
+    /** Adds to Plan to Watch, or removes the item from SIMKL's library entirely. */
+    suspend fun setPlanToWatch(item: LibraryItem, desired: Boolean) {
+        val headers = SimklAuthRepository.authorizedHeaders()
+            ?: error("SIMKL is not connected")
+        val resolved = MediaIdResolver.resolve(
+            contentType = item.type,
+            parentMetaId = item.id,
+            videoId = null,
+            title = item.name,
+            isAnimeHint = item.type.equals("anime", ignoreCase = true),
+        )
+        val ids = resolved.toSimklIds()
+        if (!ids.hasAddressableLibraryId()) {
+            error("SIMKL could not identify ${item.name}")
+        }
+
+        val body = encodeLibraryMutation(
+            item = item,
+            ids = ids,
+            desired = desired,
+            isAnime = resolved.isAnime,
+        )
+        val endpoint = if (desired) "/sync/add-to-list" else "/sync/history/remove"
+        val url = SimklAuthRepository.appendParams("$BASE_URL$endpoint")
+        val previous = _uiState.value
+        _uiState.value = previous.withMembership(item, desired, resolved.isAnime)
+        val response = runCatching {
+            httpRequestRaw(method = "POST", url = url, headers = headers, body = body)
+        }.getOrElse { error ->
+            _uiState.value = previous
+            throw error
+        }
+        if (response.status !in 200..299) {
+            _uiState.value = previous
+            error("SIMKL library update failed (${response.status}): ${response.body.take(200)}")
+        }
+        // The write bumps /sync/activities. Clearing the saved watermark prevents a later refresh
+        // from incorrectly treating the optimistic snapshot as already reconciled.
+        SimklSettingsRepository.setLastLibraryActivitiesAt("")
+    }
+
+    fun contains(itemId: String, contentType: String? = null): Boolean =
+        _uiState.value.allItems.any { candidate ->
+            candidate.id == itemId && (contentType == null || candidate.type.equals(contentType, ignoreCase = true))
+        }
+
+    fun find(itemId: String): LibraryItem? = _uiState.value.allItems.firstOrNull { it.id == itemId }
+
+    @Serializable
+    private data class SimklLibraryEntry(
+        val title: String? = null,
+        val to: String? = null,
+        val ids: SimklScrobbleRepository.SimklIds,
+    )
+
+    @Serializable
+    private data class SimklLibraryMutation(
+        val movies: List<SimklLibraryEntry> = emptyList(),
+        val shows: List<SimklLibraryEntry> = emptyList(),
+        val anime: List<SimklLibraryEntry> = emptyList(),
+    )
+
+    private fun encodeLibraryMutation(
+        item: LibraryItem,
+        ids: SimklScrobbleRepository.SimklIds,
+        desired: Boolean,
+        isAnime: Boolean,
+    ): String {
+        val entry = SimklLibraryEntry(
+            title = item.name.takeIf { it.isNotBlank() },
+            to = "plantowatch".takeIf { desired },
+            ids = ids,
+        )
+        val request = when {
+            isAnime -> SimklLibraryMutation(anime = listOf(entry))
+            item.type.equals("movie", ignoreCase = true) -> SimklLibraryMutation(movies = listOf(entry))
+            else -> SimklLibraryMutation(shows = listOf(entry))
+        }
+        return json.encodeToString(request)
+    }
+
+    internal fun encodeLibraryMutationForTest(
+        item: LibraryItem,
+        ids: SimklScrobbleRepository.SimklIds,
+        desired: Boolean,
+        isAnime: Boolean = false,
+    ): String = encodeLibraryMutation(item, ids, desired, isAnime)
+
+    private fun SimklScrobbleRepository.SimklIds.hasAddressableLibraryId(): Boolean =
+        simkl != null || !imdb.isNullOrBlank() || tmdb != null || tvdb != null || mal != null ||
+            kitsu != null || anilist != null || anidb != null
+
+    private fun SimklLibraryUiState.withMembership(
+        item: LibraryItem,
+        desired: Boolean,
+        isAnime: Boolean,
+    ): SimklLibraryUiState {
+        fun List<LibraryItem>.withoutItem() = filterNot { existing ->
+            existing.id == item.id && existing.type.equals(item.type, ignoreCase = true)
+        }
+        val nextShows = shows.withoutItem().toMutableList()
+        val nextMovies = movies.withoutItem().toMutableList()
+        val nextAnime = anime.withoutItem().toMutableList()
+        if (desired) {
+            val added = item.copy(savedAtEpochMs = System.currentTimeMillis())
+            when {
+                isAnime -> nextAnime += added
+                item.type.equals("movie", ignoreCase = true) -> nextMovies += added
+                else -> nextShows += added
+            }
+        }
+        return copy(shows = nextShows, movies = nextMovies, anime = nextAnime, hasLoaded = true)
     }
 
     private suspend fun fetchType(type: String): List<LibraryItem> {

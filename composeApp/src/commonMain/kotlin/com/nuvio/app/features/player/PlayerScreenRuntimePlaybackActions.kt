@@ -1,9 +1,15 @@
 package com.nuvio.app.features.player
 
-import com.nuvio.app.features.simkl.SimklScrobbleRepository
+import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.simkl.WatchProgressSourceSimkl
 import com.nuvio.app.features.tmdb.TmdbService
-import com.nuvio.app.features.trakt.TraktScrobbleRepository
+import com.nuvio.app.features.tracking.TrackingMediaKind
+import com.nuvio.app.features.tracking.TrackingMediaReference
+import com.nuvio.app.features.tracking.TrackingScrobbleAction
+import com.nuvio.app.features.tracking.TrackingScrobbleCoordinator
+import com.nuvio.app.features.tracking.TrackingScrobbleDispatch
+import com.nuvio.app.features.tracking.TrackingScrobbleEvent
+import com.nuvio.app.features.tracking.buildTrackingMediaReference
 import com.nuvio.app.features.watchprogress.WatchProgressClock
 import com.nuvio.app.features.watchprogress.WatchProgressPlaybackSession
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
@@ -11,11 +17,70 @@ import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal val PlayerScreenRuntime.activePlaybackIdentity: String
-    get() = activeTorrentInfoHash
+    get() = "$playbackAttemptId:" + (activeTorrentInfoHash
         ?.let { hash -> "torrent:$hash:${activeTorrentFileIdx ?: -1}" }
-        ?: activeSourceUrl
+        ?: activeSourceUrl)
+
+/**
+ * Invalidates every callback owned by the outgoing player before a new source can be observed.
+ *
+ * Callers must flush the outgoing item's progress first, prepare the incoming resume metadata,
+ * invoke this function, and only then publish the new source URL. Keeping the reset synchronous
+ * closes the Compose-effect window in which a teardown snapshot could be attributed to the new
+ * episode.
+ */
+internal fun PlayerScreenRuntime.beginPlaybackAttempt() {
+    playbackAttemptId += 1L
+    playerController = null
+    playerControllerSourceUrl = null
+    playerAttachedSourceUrl = null
+    playerAttachedAttemptId = null
+    playerStartedSourceUrl = null
+    playerStartedAttemptId = null
+    playbackSnapshot = PlayerPlaybackSnapshot()
+    lastTrustedPlaybackPositionMs = 0L
+    lastMeaningfulPlaybackSnapshot = null
+    initialLoadCompleted = false
+    defaultPlaybackSpeedApplied = false
+    initialSeekApplied = activeInitialPositionMs <= 0L &&
+        (activeInitialProgressFraction == null || activeInitialProgressFraction!! <= 0f)
+    lastProgressPersistEpochMs = 0L
+    previousIsPlaying = false
+    pendingScrobbleStartAfterSeek = false
+    hasRequestedScrobbleStartForCurrentItem = false
+    scrobbleStartRequestGeneration += 1L
+    hasSentCompletionScrobbleForCurrentItem = false
+    currentTrackingScrobbleMedia = null
+    playbackEndExitRequested = false
+    playbackFailureExitRequested = false
+    playbackSourceFailureActive = false
+    shouldPlay = true
+}
+
+internal fun isCurrentPlaybackAttempt(
+    callbackAttemptId: Long,
+    activeAttemptId: Long,
+): Boolean = callbackAttemptId == activeAttemptId
+
+internal fun shouldReleaseNextEpisodeAdvanceLatch(
+    advanceInProgress: Boolean,
+    targetVideoId: String?,
+    activeVideoId: String?,
+    activeAttemptId: Long,
+    startedAttemptId: Long?,
+    isEnded: Boolean,
+    positionMs: Long,
+    minimumPositionMs: Long,
+): Boolean =
+    advanceInProgress &&
+        !targetVideoId.isNullOrBlank() &&
+        activeVideoId == targetVideoId &&
+        startedAttemptId == activeAttemptId &&
+        !isEnded &&
+        positionMs >= minimumPositionMs
 
 internal val PlayerScreenRuntime.playbackSession: WatchProgressPlaybackSession
     get() = WatchProgressPlaybackSession(
@@ -68,7 +133,7 @@ internal fun PlayerScreenRuntime.resetIdentityStateIfNeeded() {
         scrobbleStartRequestGeneration = 0L
         pendingScrobbleStartAfterSeek = false
         hasSentCompletionScrobbleForCurrentItem = false
-        currentTraktScrobbleItem = null
+        currentTrackingScrobbleMedia = null
         // Track ids and selected flags are file-local. Reset them for every new video as well as
         // every source replacement (the source identity is part of videoIdentity), otherwise an
         // episode switch that reuses the same player can display/apply the previous file's index.
@@ -111,157 +176,225 @@ internal fun PlayerScreenRuntime.currentScrobbleProgressPercent(
     return (raw * speed).coerceIn(0f, 100f)
 }
 
+/**
+ * True once the live snapshot describes the item currently being scrobbled.
+ *
+ * Between a next-episode advance and the new player's first sample, `playbackSnapshot` still holds
+ * the *outgoing* episode's position while the season/episode fields have already moved on. Anything
+ * reading the snapshot in that window attributes the old episode's progress to the new one.
+ */
+private val PlayerScreenRuntime.snapshotBelongsToCurrentAttempt: Boolean
+    get() = playerStartedAttemptId == playbackAttemptId
+
 private fun PlayerScreenRuntime.currentScrobbleStartProgressPercent(
     snapshot: PlayerPlaybackSnapshot = playbackSnapshot,
+): Float = scrobbleStartProgressPercent(
+    currentPercent = currentPlaybackProgressPercent(snapshot),
+    positionMs = snapshot.positionMs,
+    durationMs = snapshot.durationMs,
+    initialPositionMs = activeInitialPositionMs,
+    initialProgressFraction = activeInitialProgressFraction,
+    initialSeekApplied = initialSeekApplied,
+    snapshotBelongsToCurrentAttempt = snapshotBelongsToCurrentAttempt,
+)
+
+/**
+ * What a scrobble `start` should report as its position.
+ *
+ * Three cases, in order:
+ *
+ * 1. **The snapshot is not this item's.** Between a next-episode advance and the new player's first
+ *    sample the snapshot still holds the outgoing episode's position while the episode fields have
+ *    already advanced. Reporting it announced the *incoming* episode as nearly finished, which
+ *    providers that read a high start as completion turned into "watched".
+ * 2. **The resume seek has landed.** The live position is then the truth, including after a
+ *    deliberate seek back to before the resume point.
+ * 3. **The resume seek has not landed yet.** The player may still read 0 while a resume is pending,
+ *    so report where playback is about to begin rather than the start of the file.
+ */
+internal fun scrobbleStartProgressPercent(
+    currentPercent: Float,
+    positionMs: Long,
+    durationMs: Long,
+    initialPositionMs: Long,
+    initialProgressFraction: Float?,
+    initialSeekApplied: Boolean,
+    snapshotBelongsToCurrentAttempt: Boolean,
 ): Float {
-    val current = currentPlaybackProgressPercent(snapshot)
-    val resumeFraction = activeInitialProgressFraction
-        ?.takeIf { it > 0f }
-        ?.coerceIn(0f, 1f)
+    val resumeFraction = initialProgressFraction?.takeIf { it > 0f }?.coerceIn(0f, 1f)
     val resumePercent = when {
-        activeInitialPositionMs > 0L && snapshot.durationMs > 0L ->
-            ((activeInitialPositionMs.toFloat() / snapshot.durationMs.toFloat()) * 100f)
-                .coerceIn(0f, 100f)
+        initialPositionMs > 0L && durationMs > 0L ->
+            ((initialPositionMs.toFloat() / durationMs.toFloat()) * 100f).coerceIn(0f, 100f)
         resumeFraction != null -> (resumeFraction * 100f).coerceIn(0f, 100f)
         else -> null
     }
 
-    val isBeforeRequestedResume = if (activeInitialPositionMs > 0L) {
-        snapshot.positionMs < (activeInitialPositionMs - 1_000L).coerceAtLeast(0L)
+    if (!snapshotBelongsToCurrentAttempt) return resumePercent ?: 0f
+    if (initialSeekApplied) return currentPercent
+
+    val isBeforeRequestedResume = if (initialPositionMs > 0L) {
+        positionMs < (initialPositionMs - 1_000L).coerceAtLeast(0L)
     } else {
         resumeFraction != null
     }
 
-    return if (resumePercent != null && resumePercent > current && isBeforeRequestedResume) {
+    return if (resumePercent != null && resumePercent > currentPercent && isBeforeRequestedResume) {
         resumePercent
     } else {
-        current
+        currentPercent
     }
 }
 
-internal data class TraktScrobbleItemInputs(
-    val contentType: String,
-    val parentMetaId: String,
-    val videoId: String?,
-    val title: String,
-    val seasonNumber: Int?,
-    val episodeNumber: Int?,
-    val episodeTitle: String?,
-)
-
-internal data class SimklScrobbleItemInputs(
-    val contentType: String,
-    val parentMetaId: String,
-    val videoId: String?,
-    val title: String,
-    val seasonNumber: Int?,
-    val episodeNumber: Int?,
-    val isAnime: Boolean,
-)
-
-internal fun PlayerScreenRuntime.snapshotTraktScrobbleItemInputs() = TraktScrobbleItemInputs(
-    contentType = contentType ?: parentMetaType,
-    parentMetaId = parentMetaId,
-    videoId = activeVideoId,
-    title = title,
-    seasonNumber = activeSeasonNumber,
-    episodeNumber = activeEpisodeNumber,
-    episodeTitle = activeEpisodeTitle,
-)
-
-internal fun PlayerScreenRuntime.snapshotSimklScrobbleItemInputs() = SimklScrobbleItemInputs(
-    contentType = contentType ?: parentMetaType,
-    parentMetaId = parentMetaId,
-    videoId = activeVideoId,
-    title = title,
-    seasonNumber = activeSeasonNumber,
-    episodeNumber = activeEpisodeNumber,
-    isAnime = AnimeContentCache.isAnime(parentMetaId) ||
-        (activeWatchProgressSource == WatchProgressSourceSimkl && parentMetaId.startsWith("simkl:", ignoreCase = true)),
-)
-
-private suspend fun TraktScrobbleItemInputs.buildItem() =
-    TraktScrobbleRepository.buildItem(
-        contentType = contentType,
+/**
+ * The media the player is currently scrobbling, in provider-neutral form.
+ *
+ * Each provider re-derives its own ids and episode numbering from this reference, so the anime
+ * coordinate system stays a provider concern rather than something the player has to pick.
+ */
+internal fun PlayerScreenRuntime.snapshotTrackingScrobbleMedia(): TrackingMediaReference {
+    val media = buildTrackingMediaReference(
+        contentType = contentType ?: parentMetaType,
         parentMetaId = parentMetaId,
-        videoId = videoId,
+        videoId = activeVideoId,
         title = title,
-        seasonNumber = seasonNumber,
-        episodeNumber = episodeNumber,
-        episodeTitle = episodeTitle,
+        seasonNumber = activeSeasonNumber,
+        episodeNumber = activeEpisodeNumber,
+        episodeTitle = activeEpisodeTitle,
     )
+    // The id-derived classification in buildTrackingMediaReference misses content that is only
+    // known to be anime from runtime state, which is what SIMKL's anime scrobble body keys on.
+    val isAnime = AnimeContentCache.isAnime(parentMetaId) ||
+        (activeWatchProgressSource == WatchProgressSourceSimkl && parentMetaId.startsWith("simkl:", ignoreCase = true))
+    return if (isAnime && media.kind != TrackingMediaKind.MOVIE) {
+        media.copy(kind = TrackingMediaKind.ANIME)
+    } else {
+        media
+    }
+}
 
-private suspend fun SimklScrobbleItemInputs.buildItem() =
-    SimklScrobbleRepository.buildItem(
-        contentType = contentType,
-        parentMetaId = parentMetaId,
-        videoId = videoId,
-        title = title,
-        seasonNumber = seasonNumber,
-        episodeNumber = episodeNumber,
-        isAnime = isAnime,
-    )
+internal fun PlayerScreenRuntime.emitTrackingScrobbleStart(viaSeek: Boolean = false) {
+    val request = prepareTrackingScrobbleStart(viaSeek) ?: return
+    scope.launch { request() }
+}
 
-internal suspend fun PlayerScreenRuntime.currentTraktScrobbleItem() =
-    snapshotTraktScrobbleItemInputs().buildItem()
-
-internal fun PlayerScreenRuntime.emitTraktScrobbleStart() {
-    if (progressTrackingDisabled) return
-    if (hasRequestedScrobbleStartForCurrentItem) return
+/**
+ * Prepares a start, returning the suspending half so a caller already inside a coroutine can await
+ * it instead of racing it.
+ *
+ * A seek sends a stop and then a start. Launched independently they arrive in whatever order the
+ * network settles, and a provider whose `stop` ends the session then sees the stop land *after* the
+ * restart and drops the session entirely. Returning the work rather than launching it lets the seek
+ * path order the pair.
+ */
+private fun PlayerScreenRuntime.prepareTrackingScrobbleStart(
+    viaSeek: Boolean,
+): (suspend () -> Unit)? {
+    if (progressTrackingDisabled) return null
+    if (hasRequestedScrobbleStartForCurrentItem) return null
     hasRequestedScrobbleStartForCurrentItem = true
     val requestGeneration = scrobbleStartRequestGeneration + 1L
     scrobbleStartRequestGeneration = requestGeneration
+    val media = snapshotTrackingScrobbleMedia()
+    val profileId = ProfileRepository.activeProfileId
 
-    scope.launch {
-        val item = currentTraktScrobbleItem()
-        val simklItem = snapshotSimklScrobbleItemInputs().buildItem()
-        if (item == null && simklItem == null) {
-            hasRequestedScrobbleStartForCurrentItem = false
-            return@launch
-        }
+    return prepared@{
         if (requestGeneration != scrobbleStartRequestGeneration || !hasRequestedScrobbleStartForCurrentItem) {
-            // Reset so a subsequent emitTraktScrobbleStart call is not permanently blocked.
+            // Reset so a subsequent start call is not permanently blocked.
             hasRequestedScrobbleStartForCurrentItem = false
-            return@launch
+            return@prepared
         }
-        currentTraktScrobbleItem = item
+        currentTrackingScrobbleMedia = media
+        // A new session must be re-anchored on its own schedule, not the previous item's.
+        TrackingScrobbleCoordinator.onScrobbleItemChanged()
         // Report actual video position, not speed-adjusted — services use this for resume.
-        val progress = currentScrobbleStartProgressPercent()
-        if (item != null) {
-            TraktScrobbleRepository.scrobbleStart(item = item, progressPercent = progress)
-        }
-        if (simklItem != null) {
-            SimklScrobbleRepository.scrobbleStart(item = simklItem, progressPercent = progress)
+        val dispatch = dispatchTrackingScrobble(
+            profileId = profileId,
+            action = TrackingScrobbleAction.START,
+            media = media,
+            progressPercent = currentScrobbleStartProgressPercent(),
+            viaSeek = viaSeek,
+            positionSeconds = playbackSnapshot.positionSecondsOrNull(),
+            durationSeconds = playbackSnapshot.durationSecondsOrNull(),
+        )
+        if (dispatch.handledNothing) {
+            // No connected provider could address this item. Release the latch so the next start
+            // trigger for the same video retries — id enrichment can succeed on a later attempt.
+            currentTrackingScrobbleMedia = null
+            hasRequestedScrobbleStartForCurrentItem = false
         }
     }
 }
 
-internal fun PlayerScreenRuntime.emitTraktScrobbleStop(progressPercent: Float? = null) {
-    if (progressTrackingDisabled) return
+internal fun PlayerScreenRuntime.emitTrackingScrobbleStop(
+    progressPercent: Float? = null,
+    viaSeek: Boolean = false,
+    paused: Boolean = false,
+) {
+    val request = prepareTrackingScrobbleStop(progressPercent, viaSeek, paused) ?: return
+    scope.launch(NonCancellable) { request() }
+}
+
+/** The stop counterpart of [prepareTrackingScrobbleStart]; see there for why this is split. */
+private fun PlayerScreenRuntime.prepareTrackingScrobbleStop(
+    progressPercent: Float?,
+    viaSeek: Boolean,
+    paused: Boolean = false,
+): (suspend () -> Unit)? {
+    if (progressTrackingDisabled) return null
     val provided = progressPercent
-    if (!hasRequestedScrobbleStartForCurrentItem && (provided ?: 0f) < 80f) return
+    if (!hasRequestedScrobbleStartForCurrentItem && (provided ?: 0f) < 80f) return null
 
     // Report raw position for accurate resume; speed only affects the completion threshold.
     val percent = provided ?: currentPlaybackProgressPercent()
-    val itemSnapshot = currentTraktScrobbleItem
-    val inputsSnapshot = snapshotTraktScrobbleItemInputs()
-    val simklInputsSnapshot = snapshotSimklScrobbleItemInputs()
-    scope.launch(NonCancellable) {
-        val item = itemSnapshot ?: inputsSnapshot.buildItem()
-        if (item != null) {
-            TraktScrobbleRepository.scrobbleStop(item = item, progressPercent = percent)
-        }
-        simklInputsSnapshot.buildItem()?.let { simklItem ->
-            SimklScrobbleRepository.scrobbleStop(item = simklItem, progressPercent = percent)
-        }
+    val media = currentTrackingScrobbleMedia ?: snapshotTrackingScrobbleMedia()
+    val profileId = ProfileRepository.activeProfileId
+    val positionSeconds = playbackSnapshot.positionSecondsOrNull()
+    val durationSeconds = playbackSnapshot.durationSecondsOrNull()
+    val request: suspend () -> Unit = {
+        dispatchTrackingScrobble(
+            profileId = profileId,
+            action = TrackingScrobbleAction.STOP,
+            media = media,
+            progressPercent = percent,
+            viaSeek = viaSeek,
+            positionSeconds = positionSeconds,
+            durationSeconds = durationSeconds,
+            paused = paused,
+        )
     }
-    currentTraktScrobbleItem = null
+    currentTrackingScrobbleMedia = null
     hasRequestedScrobbleStartForCurrentItem = false
     scrobbleStartRequestGeneration += 1L
+    return request
+}
+
+private suspend fun dispatchTrackingScrobble(
+    profileId: Int,
+    action: TrackingScrobbleAction,
+    media: TrackingMediaReference,
+    progressPercent: Float,
+    viaSeek: Boolean,
+    positionSeconds: Long?,
+    durationSeconds: Long?,
+    paused: Boolean = false,
+): TrackingScrobbleDispatch {
+    val event = TrackingScrobbleEvent(
+        media = media,
+        progressPercent = progressPercent.toDouble(),
+        positionSeconds = positionSeconds,
+        durationSeconds = durationSeconds,
+        isPauseRatherThanStop = paused,
+    )
+    return if (viaSeek) {
+        TrackingScrobbleCoordinator.scrobbleSeek(profileId = profileId, action = action, event = event)
+    } else {
+        TrackingScrobbleCoordinator.scrobble(profileId = profileId, action = action, event = event)
+    }
 }
 
 internal fun PlayerScreenRuntime.emitStopScrobbleForCurrentProgress(
     snapshot: PlayerPlaybackSnapshot = playbackSnapshot,
+    paused: Boolean = false,
 ) {
     // Speed-adjusted percent: used only to decide whether the 80% completion threshold is met.
     // Raw percent: what gets sent to scrobble services so resume starts at the right position.
@@ -269,7 +402,7 @@ internal fun PlayerScreenRuntime.emitStopScrobbleForCurrentProgress(
     val rawPercent = currentPlaybackProgressPercent(snapshot)
 
     if (effectivePercent >= 0.1f && effectivePercent < 80f && hasRequestedScrobbleStartForCurrentItem) {
-        emitTraktScrobbleStop(rawPercent)
+        emitTrackingScrobbleStop(rawPercent, paused = paused)
         return
     }
 
@@ -277,7 +410,8 @@ internal fun PlayerScreenRuntime.emitStopScrobbleForCurrentProgress(
         val isAtEnd = effectivePercent >= 99f
         if (!hasSentCompletionScrobbleForCurrentItem || isAtEnd) {
             hasSentCompletionScrobbleForCurrentItem = true
-            emitTraktScrobbleStop(rawPercent)
+            // A completion is a completion even if the player happens to be paused at the time.
+            emitTrackingScrobbleStop(rawPercent)
         }
     }
 }
@@ -301,7 +435,7 @@ internal suspend fun PlayerScreenRuntime.resolveParentalGuideImdbId(): String? {
     )
 }
 
-internal fun PlayerScreenRuntime.flushWatchProgress() {
+internal fun PlayerScreenRuntime.flushWatchProgress(paused: Boolean = false) {
     if (progressTrackingDisabled) return
     // Teardown can zero the live snapshot before the flush runs; fall back to the last meaningful
     // sample of the current video so the final position (and its completion) is not dropped.
@@ -316,10 +450,10 @@ internal fun PlayerScreenRuntime.flushWatchProgress() {
         // zero-valued placeholder replace an existing resume point or start a 0% scrobble.
         hasRequestedScrobbleStartForCurrentItem = false
         scrobbleStartRequestGeneration += 1L
-        currentTraktScrobbleItem = null
+        currentTrackingScrobbleMedia = null
         return
     }
-    emitStopScrobbleForCurrentProgress(snapshot)
+    emitStopScrobbleForCurrentProgress(snapshot, paused = paused)
     WatchProgressRepository.flushPlaybackProgress(
         session = playbackSession,
         snapshot = snapshot,
@@ -357,13 +491,31 @@ internal fun PlayerScreenRuntime.scheduleProgressSyncAfterSeek() {
         )
 
         val progressPercent = currentPlaybackProgressPercent()
-        if (progressPercent >= 1f && progressPercent < 80f) {
-            emitTraktScrobbleStop(progressPercent)
+        // No upper bound. This used to stop at 80% so that seeking near the end could not mark an
+        // item watched, which left every provider stale for the rest of the file — the reported
+        // "stopped tracking" after a seek. Seeking to the end is a deliberate act, so it is
+        // reported like any other position and providers may draw their own conclusion.
+        if (progressPercent >= 1f) {
+            // Seek-driven stop/restart: only providers whose scrobble session has to be torn down
+            // and recreated after a jump take part. A provider that treats `start` as "update the
+            // existing session" opts out via its seekScrobblePolicy instead.
+            //
+            // The two halves are awaited in order rather than launched. Racing them let the stop
+            // arrive after the restart, and a provider whose stop ends the session then dropped it
+            // entirely — the progress simply vanished mid-playback.
+            val stopRequest = prepareTrackingScrobbleStop(progressPercent, viaSeek = true)
             val shouldRestartScrobbleNow = shouldRestartScrobbleAfterSeek && shouldPlay
-            if (shouldRestartScrobbleNow && playbackSnapshot.isPlaying) {
+            val startRequest = if (shouldRestartScrobbleNow && playbackSnapshot.isPlaying) {
                 pendingScrobbleStartAfterSeek = false
-                emitTraktScrobbleStart()
-            } else if (shouldRestartScrobbleNow) {
+                prepareTrackingScrobbleStart(viaSeek = true)
+            } else {
+                null
+            }
+            withContext(NonCancellable) {
+                stopRequest?.invoke()
+                startRequest?.invoke()
+            }
+            if (startRequest == null && shouldRestartScrobbleNow) {
                 pendingScrobbleStartAfterSeek = true
             }
         }
@@ -380,4 +532,45 @@ internal fun PlayerScreenRuntime.persistPlaybackProgressTick() {
         snapshot = playbackSnapshot,
         syncRemote = false,
     )
+    emitTrackingProgressRefresh()
 }
+
+/**
+ * Re-anchors any provider that asked to be kept in step with a long-running session.
+ *
+ * Providers extrapolate position from the last scrobble at ordinary speed, so anything that breaks
+ * that — a speed above 1x above all — drifts until the stop corrects it. The coordinator applies
+ * each provider's own interval, so calling this on the progress cadence costs nothing for the
+ * providers that did not opt in.
+ */
+private fun PlayerScreenRuntime.emitTrackingProgressRefresh() {
+    // Only while a session is actually running: a refresh with no preceding start would create one
+    // mid-file, and a paused player has nothing new to report.
+    if (!hasRequestedScrobbleStartForCurrentItem) return
+    if (!playbackSnapshot.isPlaying) return
+    // Same hazard as the start: a snapshot left over from the previous attempt would re-anchor the
+    // new item at the old one's position.
+    if (!snapshotBelongsToCurrentAttempt) return
+    val media = currentTrackingScrobbleMedia ?: return
+    val progressPercent = currentPlaybackProgressPercent()
+    if (progressPercent < 1f) return
+    val profileId = ProfileRepository.activeProfileId
+
+    scope.launch {
+        TrackingScrobbleCoordinator.scrobbleProgressRefresh(
+            profileId = profileId,
+            event = TrackingScrobbleEvent(
+                media = media,
+                progressPercent = progressPercent.toDouble(),
+                positionSeconds = playbackSnapshot.positionSecondsOrNull(),
+                durationSeconds = playbackSnapshot.durationSecondsOrNull(),
+            ),
+        )
+    }
+}
+
+private fun PlayerPlaybackSnapshot.positionSecondsOrNull(): Long? =
+    positionMs.takeIf { it > 0L }?.div(1000L)
+
+private fun PlayerPlaybackSnapshot.durationSecondsOrNull(): Long? =
+    durationMs.takeIf { it > 0L }?.div(1000L)

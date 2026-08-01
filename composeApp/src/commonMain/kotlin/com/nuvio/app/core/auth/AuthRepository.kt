@@ -4,8 +4,10 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.core.network.SupabaseProvider
 import com.nuvio.app.core.storage.LocalAccountDataCleaner
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.exception.AuthRestException
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
+import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.functions.functions
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -91,7 +93,8 @@ object AuthRepository {
         Unit
     }.onFailure { e ->
         log.e(e) { "Email sign-up failed" }
-        _error.value = e.message ?: getString(Res.string.auth_sign_up_failed)
+        _error.value = e.safeAuthErrorDescription()
+            ?: getString(Res.string.auth_sign_up_failed)
     }
 
     suspend fun signInWithEmail(email: String, password: String): Result<Unit> = runCatching {
@@ -102,7 +105,8 @@ object AuthRepository {
         }
     }.onFailure { e ->
         log.e(e) { "Email sign-in failed" }
-        _error.value = e.message ?: getString(Res.string.auth_sign_in_failed)
+        _error.value = e.safeAuthErrorDescription()
+            ?: getString(Res.string.auth_sign_in_failed)
     }
 
     suspend fun signOut(): Result<Unit> = runCatching {
@@ -131,5 +135,28 @@ object AuthRepository {
 
     fun clearError() {
         _error.value = null
+    }
+
+    private fun Throwable.safeAuthErrorDescription(): String? {
+        val description = findCause<AuthRestException>()?.errorDescription
+            ?: findCause<RestException>()?.description
+            ?: return null
+        val normalized = description.trim().replace(Regex("\\s+"), " ")
+        return normalized.takeIf {
+            it.isNotBlank() &&
+                it.length <= 300 &&
+                !it.contains("<html", ignoreCase = true)
+        }
+    }
+
+    private inline fun <reified T : Throwable> Throwable.findCause(): T? {
+        var current: Throwable? = this
+        while (current != null) {
+            if (current is T) return current
+            val next = current.cause
+            if (next === current) break
+            current = next
+        }
+        return null
     }
 }

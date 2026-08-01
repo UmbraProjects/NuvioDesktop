@@ -25,9 +25,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,7 +45,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.nuvio.app.core.i18n.localizedByteUnit
+import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.debrid.DebridProviders
+import kotlin.math.round
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.streams_score_rejected
+import nuvio.composeapp.generated.resources.streams_season_pack_indicator
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
 internal fun StreamCard(
@@ -56,8 +68,38 @@ internal fun StreamCard(
     isCurrent: Boolean = false,
     currentLabel: String? = null,
     focused: Boolean = false,
+    scoreContext: StreamScoreContext,
 ) {
     val cardShape = RoundedCornerShape(12.dp)
+    // Diagnostic overlay, opt-in from the scoring settings page. Computed here rather than passed
+    // in so all three source lists (picker, player sources, player episodes) get it for free.
+    val scoreProfile by StreamScoreRepository.uiState.collectAsState()
+    val score = remember(stream, scoreProfile, scoreContext) {
+        // isScorableStream: an addon's diagnostics/age-rating/"notify me" row is not a release,
+        // so it gets no badge rather than a meaningless +0.
+        if (scoreProfile.enabled && scoreProfile.showScoreOnStreams && stream.isScorableStream) {
+            StreamScorer.score(stream, scoreProfile, scoreContext)
+        } else {
+            null
+        }
+    }
+    // Marks rows detected as season packs. Deliberately narrower than the menu action, which is
+    // offered on anything inspectable: the icon's job is to say "this one is a pack", so gating it
+    // on mere inspectability would light up every row and mean nothing. Detected packs are a subset
+    // of inspectable rows, so the icon still never promises an action the menu withholds.
+    val rowActions = LocalStreamRowActions.current
+    val seasonPack = remember(stream, rowActions?.browsedSeason, rowActions?.isEpisodeView) {
+        if (rowActions?.onDownloadSeason == null) return@remember null
+        val traits = StreamTraitDetector.detect(stream)
+        val offersRoute = stream.offersSeasonPackRoute(
+            traits = traits,
+            browsedSeason = rowActions.browsedSeason,
+            isEpisodeView = rowActions.isEpisodeView,
+        )
+        // The pack's own size rides along with the icon. Null on rows where no addon published one
+        // — an absent number is better than the file's size relabelled as the folder's.
+        if (offersRoute) SeasonPackIndicatorState(traits.packSizeBytes) else null
+    }
     val badgeImages = stream.badges.filter { it.imageURL.isNotBlank() }
     val hasBadges = badgeImages.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints.videoSize != null)
     Row(
@@ -155,6 +197,17 @@ internal fun StreamCard(
             }
         }
 
+        if (score != null || seasonPack != null) {
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                score?.let { StreamScoreBadge(it) }
+                if (seasonPack != null) {
+                    if (score != null) Spacer(modifier = Modifier.height(4.dp))
+                    SeasonPackIndicator(sizeBytes = seasonPack.sizeBytes)
+                }
+            }
+        }
+
         if (showAddonLogo) {
             Spacer(modifier = Modifier.width(12.dp))
             Column(
@@ -181,6 +234,112 @@ internal fun StreamCard(
             }
         }
     }
+}
+
+/**
+ * Shared by the score chip and the pack indicator, which stack in one column and are meant to read
+ * as a pair — changing one alone would break that.
+ */
+private val ScoreBadgeBackground = Color.Black.copy(alpha = 0.62f)
+
+/**
+ * The stream's score, tinted by sign so a long list can be scanned at a glance. A rejected stream
+ * (below the profile's minimum) is called out explicitly — otherwise a large negative number looks
+ * the same as a merely unpopular one, and the whole point of showing this is spotting why something
+ * did or didn't get picked.
+ */
+@Composable
+private fun StreamScoreBadge(score: StreamScore) {
+    val tokens = MaterialTheme.nuvio
+    val color = when {
+        score.rejected -> MaterialTheme.colorScheme.error
+        score.total > 0 -> tokens.colors.accent
+        score.total < 0 -> MaterialTheme.colorScheme.error
+        else -> tokens.colors.textMuted
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                // Black rather than a tint of the score's own colour: tinting put a red number on a
+                // red wash (and an accent number on an accent wash), which is the one pairing that
+                // costs contrast instead of adding it. The number carries the meaning; the chip
+                // just has to get out of its way.
+                .background(ScoreBadgeBackground)
+                .padding(horizontal = 8.dp, vertical = 3.dp),
+        ) {
+            Text(
+                text = if (score.total > 0) "+${score.total}" else score.total.toString(),
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
+                fontWeight = FontWeight.Bold,
+                color = color,
+                maxLines = 1,
+            )
+        }
+        if (score.rejected) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(Res.string.streams_score_rejected),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** What the pack indicator has to say about a row: that it is one, and how big it is. */
+private data class SeasonPackIndicatorState(val sizeBytes: Long?)
+
+/**
+ * Marks a row whose backing torrent holds a whole season, so the pack route is available on it, and
+ * — where an addon published it — how large that whole torrent is. The size is the deciding number
+ * before opening the pack: the file size on the card describes one episode, and a viewer choosing
+ * whether to grab the season needs the other one.
+ *
+ * Shape-matched to [StreamScoreBadge] — same corner radius, same tinted-surface treatment — because
+ * the two stack in one column and reading as a pair is the point. Muted rather than accented: this
+ * says a capability exists, it is not a recommendation.
+ */
+@Composable
+private fun SeasonPackIndicator(sizeBytes: Long?) {
+    val color = MaterialTheme.nuvio.colors.textMuted
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(ScoreBadgeBackground)
+                .padding(horizontal = 6.dp, vertical = 3.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Layers,
+                contentDescription = stringResource(Res.string.streams_season_pack_indicator),
+                tint = color,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        if (sizeBytes != null) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = formatPackSize(sizeBytes),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                color = color,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/**
+ * Whole GB above a gigabyte, whole MB below — this sits under a 14 dp icon in a column beside the
+ * score, so a decimal place would cost width the layout does not have and precision nobody reads a
+ * pack size for.
+ */
+private fun formatPackSize(bytes: Long): String {
+    val gib = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+    if (gib >= 1.0) return "${round(gib).toInt()} ${localizedByteUnit("GB")}"
+    val mib = bytes.toDouble() / (1024.0 * 1024.0)
+    return "${round(mib).toInt()} ${localizedByteUnit("MB")}"
 }
 
 @Composable

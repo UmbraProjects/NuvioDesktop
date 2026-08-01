@@ -28,12 +28,15 @@ import nuvio.composeapp.generated.resources.settings_mdb_api_key_label
 import nuvio.composeapp.generated.resources.settings_mdb_api_key_title
 import nuvio.composeapp.generated.resources.settings_mdb_enable_ratings
 import nuvio.composeapp.generated.resources.settings_mdb_enable_ratings_description
+import nuvio.composeapp.generated.resources.settings_mdb_enable_tracking
+import nuvio.composeapp.generated.resources.settings_mdb_enable_tracking_description
 import nuvio.composeapp.generated.resources.settings_mdb_section_api_key
 import nuvio.composeapp.generated.resources.settings_mdb_section_rating_providers
 import nuvio.composeapp.generated.resources.settings_mdb_section_title
 import nuvio.composeapp.generated.resources.source_audience_score
 import nuvio.composeapp.generated.resources.source_imdb
 import nuvio.composeapp.generated.resources.source_letterboxd
+import nuvio.composeapp.generated.resources.source_mal
 import nuvio.composeapp.generated.resources.source_metacritic
 import nuvio.composeapp.generated.resources.source_rotten_tomatoes
 import nuvio.composeapp.generated.resources.source_tmdb
@@ -63,6 +66,17 @@ internal fun LazyListScope.mdbListSettingsContent(
                     enabled = settings.hasApiKey,
                     isTablet = isTablet,
                     onCheckedChange = MdbListSettingsRepository::setEnabled,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                // Separate consent from the ratings toggle: one spends the key's request budget on
+                // lookups, the other writes playback history to the user's MDBList account.
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_mdb_enable_tracking),
+                    description = stringResource(Res.string.settings_mdb_enable_tracking_description),
+                    checked = settings.trackingEnabled,
+                    enabled = settings.hasApiKey,
+                    isTablet = isTablet,
+                    onCheckedChange = MdbListSettingsRepository::setTrackingEnabled,
                 )
                 if (!settings.hasApiKey) {
                     SettingsGroupDivider(isTablet = isTablet)
@@ -108,6 +122,7 @@ internal fun LazyListScope.mdbListSettingsContent(
                     "mdb-trakt",
                     "mdb-letterboxd",
                     "mdb-audience",
+                    "mdb-mal",
                 ),
             ) {
                 ProviderRows(
@@ -134,6 +149,7 @@ private fun ProviderRows(
         MdbListMetadataService.PROVIDER_TRAKT to Res.string.source_trakt,
         MdbListMetadataService.PROVIDER_LETTERBOXD to Res.string.source_letterboxd,
         MdbListMetadataService.PROVIDER_AUDIENCE to Res.string.source_audience_score,
+        MdbListMetadataService.PROVIDER_MAL to Res.string.source_mal,
     )
 
     providers.forEachIndexed { index, (providerId, providerLabelRes) ->

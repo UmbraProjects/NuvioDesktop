@@ -4,8 +4,9 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppVersionPolicy
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.metadata.MediaIdResolver
-import com.nuvio.app.features.metadata.ResolvedMediaIds
 import com.nuvio.app.features.metadata.toSimklIds
+import com.nuvio.app.features.tracking.TrackingCoordinateFamily
+import com.nuvio.app.features.tracking.projectScrobbleCoordinates
 import com.nuvio.app.features.trakt.TraktExternalIds
 import com.nuvio.app.features.trakt.parseTraktContentIds
 import kotlinx.coroutines.CancellationException
@@ -89,39 +90,35 @@ internal object SimklScrobbleRepository {
             isAnimeHint = isAnime || normalizedType == "anime",
         )
         val resolvedIsAnime = isAnime || resolvedIds.isAnime
+        val coordinates = resolvedIds.projectScrobbleCoordinates(
+            family = TrackingCoordinateFamily.ENTRY_LOCAL,
+            sourceSeason = seasonNumber,
+            sourceEpisode = episodeNumber,
+            isAnime = resolvedIsAnime,
+        )
         val enrichedIds = resolvedIds.toSimklIds()
             .let { if (resolvedIsAnime) enrichAnimeIdsForSimkl(it) else it }
-        val ids = resolvedIds.idsForSimklScrobble(enrichedIds, resolvedIsAnime)
+        val ids = enrichedIds.retainingNativeAnimeIds(coordinates.retainsNativeAnimeIds)
+
+        // Addressability is decided here rather than in the projection: the usable id set is only
+        // known after the anime enrichment round-trip above.
+        if (!ids.hasAny()) return null
 
         return if (
             isEpisodeType &&
-            seasonNumber != null &&
-            episodeNumber != null
+            coordinates.season != null &&
+            coordinates.episode != null
         ) {
-            if (!ids.hasAny()) return null
             SimklScrobbleItem.Episode(
                 showTitle = title,
                 ids = ids,
-                season = resolvedIds.simklAnimeSeasonNumber(seasonNumber, resolvedIsAnime),
-                number = resolvedIds.simklAnimeEpisodeNumber(episodeNumber, resolvedIsAnime),
+                season = coordinates.season,
+                number = coordinates.episode,
                 isAnime = resolvedIsAnime,
             )
         } else {
-            if (!ids.hasAny()) return null
             SimklScrobbleItem.Movie(title = title, ids = ids)
         }
-    }
-
-    private fun ResolvedMediaIds.simklAnimeSeasonNumber(sourceSeason: Int, isAnime: Boolean): Int {
-        if (!isAnime || simkl == null) return sourceSeason
-        val mappedSeason = tmdbSeason ?: tvdbSeason ?: return sourceSeason
-        return if (sourceSeason == mappedSeason) 1 else sourceSeason
-    }
-
-    private fun ResolvedMediaIds.simklAnimeEpisodeNumber(sourceEpisode: Int, isAnime: Boolean): Int {
-        if (!isAnime || simkl == null) return sourceEpisode
-        val offset = tmdbEpisodeOffset ?: tvdbEpisodeOffset ?: 0
-        return (sourceEpisode - offset).coerceAtLeast(1)
     }
 
     private suspend fun send(action: String, item: SimklScrobbleItem, progressPercent: Float) {
@@ -203,29 +200,23 @@ internal object SimklScrobbleRepository {
     )
 
     /**
-     * A franchise-numbered anime request can fail to map to one unambiguous anime-list entry
-     * (long-running franchises such as Pokemon span several TVDB seasons inside one native entry).
-     * In that case the native ids retained from the opened/adjacent entry are actively harmful:
-     * pairing that entry's SIMKL id with a franchise season produces an episode that cannot exist.
-     * Keep only franchise ids and let SIMKL's seasonal-anime mapping translate the TVDB/TMDB S/E.
+     * Applies the projection's per-entry id decision to a SIMKL id set.
+     *
+     * When the coordinates could not be pinned to one unambiguous anime-list entry, the per-entry
+     * ids must go: pairing them with a franchise season produces an episode that cannot exist.
+     * What survives is the franchise ids, which SIMKL's own seasonal-anime mapping can translate.
+     * The decision itself lives in `TrackingIdProjection`; this only carries it out.
      */
-    internal fun ResolvedMediaIds.idsForSimklScrobble(
-        ids: SimklIds,
-        isAnime: Boolean,
-    ): SimklIds = if (
-        isAnime &&
-        franchiseNumbering &&
-        nativeMappingCoversFranchiseEpisode == false
-    ) {
-        ids.copy(
+    internal fun SimklIds.retainingNativeAnimeIds(retains: Boolean): SimklIds = if (retains) {
+        this
+    } else {
+        copy(
             simkl = null,
             mal = null,
             kitsu = null,
             anilist = null,
             anidb = null,
         )
-    } else {
-        ids
     }
 
     @Serializable

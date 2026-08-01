@@ -71,6 +71,33 @@ object KitsuService {
             .getOrNull()?.data?.toResult()?.poster
     }
 
+    /**
+     * Authoritative episode count for one Kitsu entry.
+     *
+     * Detail addons are allowed to enrich a native anime entry with franchise metadata, so their
+     * video list is not a safe source for operations that must stay inside the selected Kitsu
+     * entry (such as season-pack auto-match). This lightweight request asks Kitsu for the one field
+     * that owns that boundary.
+     */
+    suspend fun fetchEpisodeCount(kitsuId: Int): Int? {
+        val url = buildUrl("$BASE_URL/anime/$kitsuId", mapOf("fields[anime]" to "episodeCount"))
+        val response = runCatching {
+            httpRequestRaw(method = "GET", url = url, headers = headers, body = "")
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
+            log.d { "Kitsu episode-count lookup failed for $kitsuId: ${error.message}" }
+        }.getOrNull() ?: return null
+        if (response.status !in 200..299) return null
+
+        return runCatching { json.decodeFromString<KitsuSingleResponse>(response.body) }
+            .getOrNull()
+            ?.data
+            ?.takeIf { it.id?.toIntOrNull() == kitsuId }
+            ?.attributes
+            ?.episodeCount
+            ?.takeIf { it > 0 }
+    }
+
     private fun subtypeRankFor(subtype: String?, preferMovie: Boolean): Int {
         val isMovie = subtype?.equals("movie", ignoreCase = true) == true
         return if (isMovie == preferMovie) 1 else 0
@@ -148,6 +175,7 @@ private data class KitsuAttributes(
     val titles: KitsuTitles? = null,
     val subtype: String? = null,
     val startDate: String? = null,
+    val episodeCount: Int? = null,
     val synopsis: String? = null,
     val posterImage: KitsuPosterImage? = null,
 )

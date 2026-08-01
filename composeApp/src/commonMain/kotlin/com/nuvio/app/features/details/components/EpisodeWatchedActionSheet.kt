@@ -43,8 +43,8 @@ fun EpisodeWatchedActionSheet(
     onToggleWatched: () -> Unit,
     onTogglePreviousWatched: () -> Unit,
     onToggleSeasonWatched: () -> Unit,
-    showPlayManually: Boolean = false,
-    onPlayManually: (() -> Unit)? = null,
+    alternatePlayLabel: String? = null,
+    onAlternatePlay: (() -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
@@ -113,13 +113,13 @@ fun EpisodeWatchedActionSheet(
                     }
                 },
             )
-            if (showPlayManually && onPlayManually != null) {
+            if (alternatePlayLabel != null && onAlternatePlay != null) {
                 NuvioBottomSheetDivider()
                 NuvioBottomSheetActionRow(
                     icon = Icons.Default.PlayArrow,
-                    title = stringResource(Res.string.play_manually),
+                    title = alternatePlayLabel,
                     onClick = {
-                        onPlayManually()
+                        onAlternatePlay()
                         coroutineScope.launch {
                             dismissNuvioBottomSheet(sheetState = sheetState, onDismiss = onDismiss)
                         }

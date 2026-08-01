@@ -1,5 +1,6 @@
 package com.nuvio.app.features.p2p
 
+import com.nuvio.app.features.downloads.isSafeVideoDownloadReference
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.storage.DesktopStorage
 import kotlinx.coroutines.CancellationException
@@ -36,8 +37,6 @@ import java.nio.file.Files
 import java.time.Duration
 import java.util.Locale
 import java.util.concurrent.TimeUnit
-
-private val VIDEO_EXTENSIONS = setOf("mkv", "mp4", "avi", "webm", "ts", "m4v", "mov", "wmv", "flv")
 
 actual object P2pStreamingEngine {
     private val log = Logger.withTag("P2pStreamingEngine")
@@ -213,15 +212,16 @@ actual object P2pStreamingEngine {
         }
 
         if (files.isEmpty()) {
-            val fallback = requestedIdx?.plus(1) ?: 1
-            log.w { "No files after metadata timeout, guessing index $fallback" }
-            return fallback
+            throw P2pStreamingException(
+                "Torrent metadata was unavailable, so a safe video file could not be verified",
+            )
         }
 
         if (!filename.isNullOrBlank()) {
             val name = filename.trim()
             val exact = files.firstOrNull { file ->
-                file.path.substringAfterLast('/').equals(name, ignoreCase = true)
+                file.path.isSafeVideoDownloadReference() &&
+                    file.path.substringAfterLast('/').equals(name, ignoreCase = true)
             }
             if (exact != null) {
                 log.d { "File resolved by exact filename match: ${exact.path} -> id=${exact.id}" }
@@ -229,7 +229,8 @@ actual object P2pStreamingEngine {
             }
 
             val contains = files.firstOrNull { file ->
-                file.path.contains(name, ignoreCase = true)
+                file.path.isSafeVideoDownloadReference() &&
+                    file.path.contains(name, ignoreCase = true)
             }
             if (contains != null) {
                 log.d { "File resolved by filename contains match: ${contains.path} -> id=${contains.id}" }
@@ -239,7 +240,7 @@ actual object P2pStreamingEngine {
 
         if (requestedIdx != null) {
             val torrServerIndex = requestedIdx + 1
-            if (files.any { it.id == torrServerIndex }) {
+            if (files.any { it.id == torrServerIndex && it.path.isSafeVideoDownloadReference() }) {
                 log.d { "File resolved by ID offset: id=$torrServerIndex" }
                 return torrServerIndex
             }
@@ -247,18 +248,18 @@ actual object P2pStreamingEngine {
 
         if (requestedIdx != null && requestedIdx in files.indices) {
             val positionalFile = files[requestedIdx]
-            log.d { "File resolved by positional index: [$requestedIdx] -> ${positionalFile.path} (id=${positionalFile.id})" }
-            return positionalFile.id
+            if (positionalFile.path.isSafeVideoDownloadReference()) {
+                log.d { "File resolved by positional index: [$requestedIdx] -> ${positionalFile.path} (id=${positionalFile.id})" }
+                return positionalFile.id
+            }
         }
 
         val videoFile = files
-            .filter { file ->
-                val ext = file.path.substringAfterLast('.', "").lowercase()
-                ext in VIDEO_EXTENSIONS
-            }
+            .filter { file -> file.path.isSafeVideoDownloadReference() }
             .maxByOrNull { it.length }
 
-        val result = videoFile?.id ?: files.maxByOrNull { it.length }?.id ?: 1
+        val result = videoFile?.id
+            ?: throw P2pStreamingException("Torrent contains no supported video files")
         log.d { "File resolved by largest video fallback: id=$result" }
         return result
     }

@@ -1,9 +1,11 @@
 package com.nuvio.app.features.simkl
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.addons.RawHttpResponse
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,9 +38,23 @@ internal object SimklProgressRepository {
     // videoId → SIMKL session id, needed for DELETE /sync/playback/{id}.
     private val sessionIdByVideoId = mutableMapOf<String, Int>()
 
+    /**
+     * videoId → the watch timestamp of a seed the user has cleared.
+     *
+     * Watched-history seeds are derived from the show's `last_watched` marker, so clearing one from
+     * the UI is not enough: the next refresh rebuilds it from the same marker (or straight out of
+     * [cachedWatchingSeeds], which the activities gate can serve for a long time). The removal is
+     * carried upstream as a history removal by `WatchedRepository`; this keeps the row out of the
+     * projection until SIMKL reports a *newer* watch for it, which is what a genuine re-watch looks
+     * like. In memory only, like every other cache here — by the next launch the history removal
+     * has landed and the marker has moved.
+     */
+    private val suppressedSeedsByVideoId = mutableMapOf<String, Long>()
+
     private var refreshJob: Job? = null
     private var loaded = false
     private var cachedWatchingSeeds: List<WatchProgressEntry> = emptyList()
+    private var hasLoadedWatchingSeeds = false
 
     fun ensureLoaded() {
         if (loaded) return
@@ -80,6 +96,9 @@ internal object SimklProgressRepository {
 
     fun onProfileChanged() {
         loaded = false
+        cachedWatchingSeeds = emptyList()
+        hasLoadedWatchingSeeds = false
+        suppressedSeedsByVideoId.clear()
         _uiState.value = SimklProgressUiState()
     }
 
@@ -125,9 +144,10 @@ internal object SimklProgressRepository {
     fun applyOptimisticProgress(entry: WatchProgressEntry) {
         if (!SimklAuthRepository.isAuthenticated.value) return
         val current = _uiState.value.entries.associateBy { it.videoId }.toMutableMap()
-        val existing = current[entry.videoId]
-        if (existing == null || entry.lastUpdatedEpochMs >= existing.lastUpdatedEpochMs) {
-            current[entry.videoId] = entry
+        val providerEntry = entry.copy(source = WatchProgressSourceSimkl)
+        val existing = current[providerEntry.videoId]
+        if (existing == null || providerEntry.lastUpdatedEpochMs >= existing.lastUpdatedEpochMs) {
+            current[providerEntry.videoId] = providerEntry
         }
         _uiState.value = _uiState.value.copy(
             entries = current.values.sortedByDescending { it.lastUpdatedEpochMs },
@@ -140,21 +160,41 @@ internal object SimklProgressRepository {
         // Do NOT clear sessionIdByVideoId here — deleteSession still needs the ID.
     }
 
+    /**
+     * True when this row is a real playback session, so [deleteSession] has something to delete.
+     *
+     * False for a watched-history seed. Calling [deleteSession] for one used to throw, and the
+     * caller's rollback then put the row straight back — the episode could not be unmarked.
+     */
+    fun hasPlaybackSession(videoId: String): Boolean = sessionIdByVideoId.containsKey(videoId)
+
+    /** See [suppressedSeedsByVideoId]. */
+    fun suppressWatchedSeed(videoId: String, watchedAtEpochMs: Long) {
+        suppressedSeedsByVideoId[videoId] = watchedAtEpochMs
+        cachedWatchingSeeds = cachedWatchingSeeds.withoutSuppressedSeeds()
+    }
+
     suspend fun deleteSession(videoId: String) {
-        val sessionId = sessionIdByVideoId.remove(videoId) ?: return
-        val headers = SimklAuthRepository.authorizedHeaders() ?: return
+        val sessionId = sessionIdByVideoId[videoId]
+            ?: error("Missing SIMKL playback session id for $videoId")
+        val headers = SimklAuthRepository.authorizedHeaders()
+            ?: error("SIMKL authentication is unavailable")
         val url = SimklAuthRepository.appendParams("$BASE_URL/sync/playback/$sessionId")
-        runCatching {
-            httpRequestRaw(method = "DELETE", url = url, headers = headers, body = "")
-        }.onFailure { log.w(it) { "SIMKL DELETE /sync/playback/$sessionId failed" } }
-        sessionIdByVideoId.remove(videoId)
+        val response = httpRequestRaw(method = "DELETE", url = url, headers = headers, body = "")
+        requireSuccessfulSimklPlaybackDelete(response, sessionId)
+        if (sessionIdByVideoId[videoId] == sessionId) {
+            sessionIdByVideoId.remove(videoId)
+        }
+        log.d { "SIMKL playback session $sessionId deleted for $videoId" }
     }
 
     fun clearLocalState() {
         refreshJob?.cancel()
         loaded = false
         cachedWatchingSeeds = emptyList()
+        hasLoadedWatchingSeeds = false
         sessionIdByVideoId.clear()
+        suppressedSeedsByVideoId.clear()
         _uiState.value = SimklProgressUiState()
     }
 
@@ -187,26 +227,42 @@ internal object SimklProgressRepository {
         val activities = SimklAuthRepository.fetchActivities()
         val latestCwTs = activities?.tvShows?.watching
         val savedCwTs = SimklSettingsRepository.lastCwActivitiesAt()
-        if (latestCwTs != null && latestCwTs == savedCwTs && playbackEntries.isNotEmpty()) {
+        if (shouldReuseSimklWatchingSeedCache(latestCwTs, savedCwTs, hasLoadedWatchingSeeds)) {
             log.d { "SIMKL CW: watching-list activities unchanged, skipping re-fetch" }
-            return playbackEntries + cachedWatchingSeeds
+            return playbackEntries + cachedWatchingSeeds.withoutSuppressedSeeds()
+        }
+        if (latestCwTs != null && latestCwTs == savedCwTs) {
+            log.d { "SIMKL CW: watching-list activities unchanged but seed cache is unavailable; re-fetching" }
         }
 
         val watchingUrl = SimklAuthRepository.appendParams("$BASE_URL/sync/all-items/all/watching")
-        val watchingSeeds = runCatching {
+        val watchingSeeds = try {
             val resp = httpRequestRaw(method = "GET", url = watchingUrl, headers = headers, body = "")
-            if (resp.status !in 200..299) return@runCatching emptyList()
+            if (resp.status !in 200..299) {
+                error("SIMKL /sync/all-items/all/watching returned ${resp.status}")
+            }
             val parsed = json.decodeFromString<SimklAllItemsResponse>(resp.body)
             val playbackVideoIds = playbackEntries.map { it.videoId }.toSet()
             (parsed.shows + parsed.anime).mapNotNull { entry ->
                 entry.toLastWatchedSeedEntry(playbackVideoIds)
             }
-        }.getOrDefault(emptyList())
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            log.w(error) { "SIMKL watching-list seed fetch failed" }
+            null
+        }
 
-        cachedWatchingSeeds = watchingSeeds
-        if (latestCwTs != null) SimklSettingsRepository.setLastCwActivitiesAt(latestCwTs)
-        return playbackEntries + watchingSeeds
+        if (watchingSeeds != null) {
+            cachedWatchingSeeds = watchingSeeds.withoutSuppressedSeeds()
+            hasLoadedWatchingSeeds = true
+            if (latestCwTs != null) SimklSettingsRepository.setLastCwActivitiesAt(latestCwTs)
+        }
+        return playbackEntries + if (hasLoadedWatchingSeeds) cachedWatchingSeeds else emptyList()
     }
+
+    private fun List<WatchProgressEntry>.withoutSuppressedSeeds(): List<WatchProgressEntry> =
+        withoutSuppressedSimklSeeds(this, suppressedSeedsByVideoId)
 
     private fun SimklAllItemsEntry.toLastWatchedSeedEntry(
         playbackVideoIds: Set<String>,
@@ -226,7 +282,12 @@ internal object SimklProgressRepository {
         // Skip if this exact episode is already an active playback session — the in-progress
         // card is more useful, and it already serves as an implicit up-next seed.
         if (videoId in playbackVideoIds) return null
-        val watchedMs = lastWatchedAt?.let { parseSimklTimestamp(it) } ?: System.currentTimeMillis()
+        // No fabricated "now" here, unlike an active playback session. This is a historical marker
+        // from the watching list, and stamping an undateable one with the current time makes it
+        // beat every dated row in the sort *and* pass the Continue Watching window unconditionally
+        // — a show last touched years ago reappearing at the top of a 30-day list. Undated rows
+        // sort last instead, and a window excludes them.
+        val watchedMs = lastWatchedAt?.let { parseSimklTimestamp(it) } ?: 0L
         val cachedMeta = MetaDetailsRepository.peek("series", showId)
         val posterUrl = cachedMeta?.poster
             ?: s.poster?.takeIf { it.isNotBlank() }?.simklPosterUrl()
@@ -326,5 +387,40 @@ internal object SimklProgressRepository {
             }
             else -> null
         }
+    }
+}
+
+/**
+ * Drops cleared seeds, and forgets the suppression as soon as SIMKL reports a newer watch — which
+ * is exactly what re-watching the episode produces. [suppressedByVideoId] is mutated in place.
+ */
+internal fun withoutSuppressedSimklSeeds(
+    entries: List<WatchProgressEntry>,
+    suppressedByVideoId: MutableMap<String, Long>,
+): List<WatchProgressEntry> {
+    if (suppressedByVideoId.isEmpty()) return entries
+    return entries.filter { entry ->
+        val suppressedAt = suppressedByVideoId[entry.videoId] ?: return@filter true
+        val isNewerWatch = entry.lastUpdatedEpochMs > suppressedAt
+        if (isNewerWatch) suppressedByVideoId.remove(entry.videoId)
+        isNewerWatch
+    }
+}
+
+internal fun shouldReuseSimklWatchingSeedCache(
+    latestActivitiesAt: String?,
+    savedActivitiesAt: String?,
+    hasLoadedWatchingSeeds: Boolean,
+): Boolean =
+    hasLoadedWatchingSeeds &&
+        latestActivitiesAt != null &&
+        latestActivitiesAt == savedActivitiesAt
+
+internal fun requireSuccessfulSimklPlaybackDelete(response: RawHttpResponse, sessionId: Int) {
+    if (response.status !in 200..299) {
+        error(
+            "SIMKL DELETE /sync/playback/$sessionId returned ${response.status} " +
+                response.body.take(200),
+        )
     }
 }

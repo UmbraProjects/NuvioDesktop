@@ -5,6 +5,7 @@ import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.locallibrary.LocalMediaItem
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import com.nuvio.app.features.tmdb.customPosterUrl
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -43,6 +44,8 @@ enum class LibrarySourceMode {
     LOCAL,
     TRAKT,
     SIMKL,
+    MDBLIST,
+    YAMTRACK,
 }
 
 data class LibraryUiState(
@@ -133,20 +136,13 @@ fun LibraryItem.toMetaPreview(): MetaPreview {
  * needs); if the item has no usable IMDb/TMDB id at all, the original poster is kept.
  */
 private fun resolveLibraryPosterUrl(id: String, type: String, fallback: String?, refreshToken: Long?): String? {
-    val settings = TmdbSettingsRepository.snapshot()
-    if (!settings.libraryPosterEnabled) return fallback.withPosterRefreshToken(refreshToken)
-    val template = settings.libraryPosterUrlTemplate
-    if (template.isBlank()) return fallback.withPosterRefreshToken(refreshToken)
-
-    val imdbId = id.takeIf { it.startsWith("tt") }.orEmpty()
-    val tmdbId = if (id.startsWith("tmdb:")) id.removePrefix("tmdb:").substringBefore(":") else ""
-    if (imdbId.isBlank() && tmdbId.isBlank()) return fallback.withPosterRefreshToken(refreshToken)
-
-    return template
-        .replace("{imdb_id}", imdbId)
-        .replace("{tmdb_id}", tmdbId)
-        .replace("{type}", type)
-        .withPosterRefreshToken(refreshToken)
+    val custom = customPosterUrl(
+        settings = TmdbSettingsRepository.snapshot(),
+        imdbId = id.takeIf { it.startsWith("tt") },
+        tmdbId = if (id.startsWith("tmdb:")) id.removePrefix("tmdb:").substringBefore(":") else null,
+        type = type,
+    )
+    return (custom ?: fallback).withPosterRefreshToken(refreshToken)
 }
 
 /**

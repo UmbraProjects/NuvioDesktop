@@ -15,7 +15,7 @@ import com.nuvio.app.features.p2p.P2pStreamingState
 import com.nuvio.app.features.player.skip.NextEpisodeInfo
 import com.nuvio.app.features.player.skip.SkipInterval
 import com.nuvio.app.features.streams.StreamsUiState
-import com.nuvio.app.features.trakt.TraktScrobbleItem
+import com.nuvio.app.features.tracking.TrackingMediaReference
 import com.nuvio.app.features.watched.WatchedUiState
 import com.nuvio.app.features.watchprogress.WatchProgressUiState
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +45,7 @@ internal class PlayerScreenRuntime(
     val episodeNumber: Int? get() = args.episodeNumber
     val episodeTitle: String? get() = args.episodeTitle
     val episodeThumbnail: String? get() = args.episodeThumbnail
+    val releaseYear: Int? get() = args.releaseYear
     val contentType: String? get() = args.contentType
     val videoId: String? get() = args.videoId
     val parentMetaId: String get() = args.parentMetaId
@@ -134,6 +135,9 @@ internal class PlayerScreenRuntime(
     var activeEpisodeNumber by mutableStateOf(episodeNumber)
     var activeEpisodeTitle by mutableStateOf(episodeTitle)
     var activeEpisodeThumbnail by mutableStateOf(episodeThumbnail)
+    // Artwork resolved after launch for metadata-less direct playback (pasted URL / dropped file),
+    // where args carry no poster. Feeds the Discord presence image so it matches library playback.
+    var adHocArtworkImageUrl by mutableStateOf<String?>(null)
     var activePauseDescription by mutableStateOf(pauseDescription)
     var activeVideoId by mutableStateOf(videoId)
     var activeInitialPositionMs by mutableStateOf(initialPositionMs)
@@ -144,6 +148,10 @@ internal class PlayerScreenRuntime(
     var pictureInPictureActive by mutableStateOf(false)
     var layoutSize by mutableStateOf(IntSize.Zero)
     var playbackSnapshot by mutableStateOf(PlayerPlaybackSnapshot())
+    // Monotonic ownership token for every player attach. Source URLs are not unique attempt
+    // identities: a retry may reuse one, and the outgoing controller can still publish a final
+    // snapshot while the replacement is being composed.
+    var playbackAttemptId by mutableStateOf(1L)
     // Player-instance scoped: a user speed change survives episode/source replacement but a new
     // player session starts from the persisted default.
     var sessionPlaybackSpeed by mutableStateOf(1f)
@@ -154,6 +162,16 @@ internal class PlayerScreenRuntime(
     var lastMeaningfulPlaybackSnapshot by mutableStateOf<PlayerPlaybackSnapshot?>(null)
     var playerController by mutableStateOf<PlayerEngineController?>(null)
     var playerControllerSourceUrl by mutableStateOf<String?>(null)
+    // Set only when the platform surface actually begins attaching the source. On desktop the
+    // controller exists while its native Canvas is still waiting for a full-size paint, so using
+    // controller readiness would incorrectly spend the startup-failover timeout before mpv starts.
+    var playerAttachedSourceUrl by mutableStateOf<String?>(null)
+    var playerAttachedAttemptId by mutableStateOf<Long?>(null)
+    // FILE_LOADED and a non-loading snapshot are not sufficient proof that a provider delivered
+    // playable media: stale debrid cache metadata can yield a response which opens but never
+    // renders. Desktop sets this only from mpv's first-frame PLAYBACK_RESTART event.
+    var playerStartedSourceUrl by mutableStateOf<String?>(null)
+    var playerStartedAttemptId by mutableStateOf<Long?>(null)
     var errorMessage by mutableStateOf<String?>(null)
     var playbackFailureExitRequested by mutableStateOf(false)
     var playbackSourceFailureActive by mutableStateOf(false)
@@ -180,7 +198,7 @@ internal class PlayerScreenRuntime(
     var scrobbleStartRequestGeneration by mutableStateOf(0L)
     var pendingScrobbleStartAfterSeek by mutableStateOf(false)
     var hasSentCompletionScrobbleForCurrentItem by mutableStateOf(false)
-    var currentTraktScrobbleItem by mutableStateOf<TraktScrobbleItem?>(null)
+    var currentTrackingScrobbleMedia by mutableStateOf<TrackingMediaReference?>(null)
 
     var showSourcesPanel by mutableStateOf(false)
     var showEpisodesPanel by mutableStateOf(false)
@@ -224,6 +242,9 @@ internal class PlayerScreenRuntime(
     // stale end-of-file (which lingers while the next stream loads — common with MPV + slow addons)
     // from triggering a SECOND advance and skipping an episode.
     var nextEpisodeAdvanceInProgress by mutableStateOf(false)
+    // The latch belongs to one concrete destination episode. A first frame from any other
+    // playback attempt must not release it.
+    var nextEpisodeAdvanceTargetVideoId by mutableStateOf<String?>(null)
     var nextEpisodeThresholdStableSamples by mutableStateOf(0)
     var pendingP2pSwitch by mutableStateOf<PendingPlayerP2pSwitch?>(null)
     var credentialRefreshJob by mutableStateOf<Job?>(null)

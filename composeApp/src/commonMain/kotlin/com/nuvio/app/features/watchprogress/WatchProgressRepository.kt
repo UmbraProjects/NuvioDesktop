@@ -14,7 +14,16 @@ import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.simkl.SIMKL_CW_DAYS_CAP_ALL
 import com.nuvio.app.features.simkl.SimklAuthRepository
+import com.nuvio.app.features.simkl.simklContinueWatchingCutoffMs
 import com.nuvio.app.features.simkl.SimklCalendarRepository
+import com.nuvio.app.features.mdblist.MdbListCalendarRepository
+import com.nuvio.app.features.mdblist.MdbListProgressRepository
+import com.nuvio.app.features.tracking.ContinueWatchingSource
+import com.nuvio.app.features.tracking.ContinueWatchingSourceRepository
+import com.nuvio.app.features.tracking.TrackingProviderId
+import com.nuvio.app.features.tracking.resolveContinueWatchingSource
+import com.nuvio.app.features.mdblist.MdbListSettingsRepository
+import com.nuvio.app.features.mdblist.WatchProgressSourceMdbList
 import com.nuvio.app.features.simkl.SimklProgressRepository
 import com.nuvio.app.features.simkl.SimklSettingsRepository
 import com.nuvio.app.features.simkl.WatchProgressSourceSimkl
@@ -30,6 +39,8 @@ import com.nuvio.app.features.watching.sync.ProgressDeltaEvent
 import com.nuvio.app.features.watching.sync.ProgressSyncRecord
 import com.nuvio.app.features.watching.sync.ProgressSyncAdapter
 import com.nuvio.app.features.watching.sync.SupabaseProgressSyncAdapter
+import com.nuvio.app.features.watched.WatchedRepository
+import com.nuvio.app.features.yamtrack.YamtrackSettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -108,6 +119,25 @@ private data class WatchProgressDeltaApplyResult(
     val preservedLocalItems: Boolean,
     val changed: Boolean,
 )
+
+internal enum class ContinueWatchingRemovalTarget {
+    LOCAL,
+    TRAKT,
+    SIMKL,
+    MDBLIST,
+}
+
+internal fun continueWatchingRemovalTarget(source: String): ContinueWatchingRemovalTarget? =
+    when (source) {
+        WatchProgressSourceLocal -> ContinueWatchingRemovalTarget.LOCAL
+        WatchProgressSourceTraktPlayback,
+        WatchProgressSourceTraktHistory,
+        WatchProgressSourceTraktShowProgress,
+        -> ContinueWatchingRemovalTarget.TRAKT
+        WatchProgressSourceSimkl -> ContinueWatchingRemovalTarget.SIMKL
+        WatchProgressSourceMdbList -> ContinueWatchingRemovalTarget.MDBLIST
+        else -> null
+    }
 
 object WatchProgressRepository {
     private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -200,6 +230,57 @@ object WatchProgressRepository {
         }
 
         syncScope.launch {
+            MdbListProgressRepository.uiState.collectLatest { state ->
+                if (shouldUseMdbListProgress()) {
+                    publish()
+                    if (state.hasLoaded && state.entries.any { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }) {
+                        lastAddonMetadataReadyFingerprint = null
+                        resolveRemoteMetadata(useStartupGrace = true)
+                        retryMetadataResolutionWhenAddonMetaProvidersReady(AddonRepository.uiState.value)
+                    }
+                }
+            }
+        }
+
+        syncScope.launch {
+            WatchedRepository.uiState.collectLatest {
+                if (shouldUseYamtrackProgress()) publish()
+            }
+        }
+
+        syncScope.launch {
+            ContinueWatchingSourceRepository.uiState.collectLatest {
+                // Switching source has to pull the new one immediately, or Continue Watching shows
+                // an empty list until something else happens to trigger a refresh.
+                when (activeContinueWatchingSource()) {
+                    ContinueWatchingSource.MDBLIST ->
+                        runCatching { MdbListProgressRepository.refreshNow() }
+                    ContinueWatchingSource.SIMKL ->
+                        runCatching { SimklProgressRepository.refreshNow() }
+                    ContinueWatchingSource.TRAKT ->
+                        runCatching { TraktProgressRepository.refreshNow() }
+                    ContinueWatchingSource.YAMTRACK ->
+                        runCatching { WatchedRepository.pullFromServer(ProfileRepository.activeProfileId) }
+                    ContinueWatchingSource.LOCAL -> Unit
+                }
+                publish()
+            }
+        }
+
+        syncScope.launch {
+            MdbListSettingsRepository.uiState.collectLatest {
+                if (shouldUseMdbListProgress()) {
+                    runCatching { MdbListProgressRepository.refreshNow() }
+                        .onFailure { e ->
+                            if (e is CancellationException) throw e
+                            log.w { "Failed to refresh MDBList progress after source change: ${e.message}" }
+                        }
+                }
+                publish()
+            }
+        }
+
+        syncScope.launch {
             SimklSettingsRepository.uiState.collectLatest {
                 val useSimkl = shouldUseSimklProgress()
                 if (useSimkl) {
@@ -227,13 +308,14 @@ object WatchProgressRepository {
         TraktProgressRepository.ensureLoaded()
         SimklSettingsRepository.ensureLoaded()
         SimklAuthRepository.ensureLoaded()
+        MdbListProgressRepository.ensureLoaded()
         SimklProgressRepository.ensureLoaded()
         if (hasLoaded) return
         loadFromDisk(ProfileRepository.activeProfileId)
-        if (shouldUseSimklProgress()) {
-            SimklProgressRepository.refreshAsync()
-        } else if (shouldUseTraktProgress()) {
-            TraktProgressRepository.refreshAsync()
+        when {
+            shouldUseMdbListProgress() -> MdbListProgressRepository.refreshAsync()
+            shouldUseSimklProgress() -> SimklProgressRepository.refreshAsync()
+            shouldUseTraktProgress() -> TraktProgressRepository.refreshAsync()
         }
     }
 
@@ -245,6 +327,10 @@ object WatchProgressRepository {
     suspend fun forceContinueWatchingSync(profileId: Int) {
         ensureLoaded()
         when {
+            shouldUseMdbListProgress() -> {
+                log.d { "Force refreshing MDBList Continue Watching for profile $profileId" }
+                MdbListProgressRepository.refreshNow()
+            }
             shouldUseSimklProgress() -> {
                 log.d { "Force refreshing SIMKL Continue Watching for profile $profileId" }
                 SimklProgressRepository.refreshNow()
@@ -268,11 +354,13 @@ object WatchProgressRepository {
         TraktProgressRepository.onProfileChanged()
         TraktCalendarRepository.onProfileChanged()
         SimklCalendarRepository.onProfileChanged()
+        MdbListCalendarRepository.onProfileChanged()
+        MdbListProgressRepository.onProfileChanged()
         SimklProgressRepository.onProfileChanged()
-        if (shouldUseSimklProgress()) {
-            SimklProgressRepository.refreshAsync()
-        } else if (shouldUseTraktProgress()) {
-            TraktProgressRepository.refreshAsync()
+        when {
+            shouldUseMdbListProgress() -> MdbListProgressRepository.refreshAsync()
+            shouldUseSimklProgress() -> SimklProgressRepository.refreshAsync()
+            shouldUseTraktProgress() -> TraktProgressRepository.refreshAsync()
         }
     }
 
@@ -285,6 +373,8 @@ object WatchProgressRepository {
         lastSuccessfulPushEpochMs = 0L
         deltaCursorEventId = 0L
         deltaInitialized = false
+        MdbListProgressRepository.clearLocalState()
+        MdbListCalendarRepository.clearLocalState()
         TraktProgressRepository.clearLocalState()
         TraktCalendarRepository.clearLocalState()
         TraktSettingsRepository.clearLocalState()
@@ -320,7 +410,7 @@ object WatchProgressRepository {
     }
 
     suspend fun pullFromServer(profileId: Int) {
-        TraktAuthRepository.ensureLoaded()
+        TraktAuthRepository.ensureLoaded(profileId)
         TraktSettingsRepository.ensureLoaded()
         TraktProgressRepository.ensureLoaded()
         currentProfileId = profileId
@@ -612,6 +702,7 @@ object WatchProgressRepository {
             lastStreamSubtitle = cached?.lastStreamSubtitle,
             pauseDescription = cached?.pauseDescription,
             lastSourceUrl = cached?.lastSourceUrl,
+            lastSourceWasLocalFile = cached?.lastSourceWasLocalFile ?: false,
             isCompleted = isWatchProgressComplete(position, duration, false),
         )
 
@@ -683,6 +774,14 @@ object WatchProgressRepository {
     private fun resolveRemoteMetadata(useStartupGrace: Boolean = false) {
         val localMissing = entriesByVideoId.values
             .filter { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }
+        val mdbListMissing = if (shouldUseMdbListProgress()) {
+            MdbListProgressRepository.uiState.value.entries
+                .filter {
+                    it.poster.isNullOrBlank() ||
+                        it.background.isNullOrBlank() ||
+                        (it.contentType == "series" && it.episodeTitle.isNullOrBlank())
+                }
+        } else emptyList()
         val simklMissing = if (shouldUseSimklProgress()) {
             SimklProgressRepository.uiState.value.entries
                 .filter {
@@ -691,7 +790,7 @@ object WatchProgressRepository {
                         (it.contentType == "series" && !it.episodeTitle.isNullOrBlank())
                 }
         } else emptyList()
-        val missingMetadataEntries = localMissing + simklMissing
+        val missingMetadataEntries = localMissing + mdbListMissing + simklMissing
         val entriesToResolve = missingMetadataEntries.continueWatchingEntries(
             limit = WATCH_PROGRESS_METADATA_RESOLUTION_LIMIT,
         )
@@ -742,6 +841,18 @@ object WatchProgressRepository {
                 var appliedEntries = 0
                 for (entry in result.entries) {
                     val episodeVideo = resolveRemoteProgressEpisode(meta.videos, entry)
+
+                    if (entry.source == WatchProgressSourceMdbList) {
+                        MdbListProgressRepository.enrichEntry(
+                            videoId = entry.videoId,
+                            poster = meta.poster,
+                            background = meta.background,
+                            episodeTitle = episodeVideo?.title ?: entry.episodeTitle,
+                            episodeThumbnail = episodeVideo?.thumbnail ?: entry.episodeThumbnail,
+                        )
+                        appliedEntries += 1
+                        continue
+                    }
 
                     if (entry.source == WatchProgressSourceSimkl) {
                         SimklProgressRepository.enrichEntry(
@@ -844,6 +955,11 @@ object WatchProgressRepository {
     fun refreshContinueWatchingAfterPlaybackStops() {
         ensureLoaded()
         when {
+            shouldUseMdbListProgress() -> syncScope.launch {
+                delay(WATCH_PROGRESS_REMOTE_STOP_REFRESH_DELAY_MS)
+                MdbListProgressRepository.refreshAsync()
+            }
+
             shouldUseSimklProgress() -> syncScope.launch {
                 delay(WATCH_PROGRESS_REMOTE_STOP_REFRESH_DELAY_MS)
                 SimklProgressRepository.refreshAsync()
@@ -868,41 +984,26 @@ object WatchProgressRepository {
         ensureLoaded()
         if (videoIds.isEmpty()) return
 
-        if (shouldUseSimklProgress()) {
-            videoIds.forEach(SimklProgressRepository::applyOptimisticRemoval)
-            publish()
-            syncScope.launch {
-                videoIds.forEach { videoId ->
-                    runCatching { SimklProgressRepository.deleteSession(videoId) }
-                        .onFailure { error ->
-                            if (error is CancellationException) throw error
-                            log.e(error) { "Failed to delete SIMKL playback session for $videoId" }
-                        }
-                }
+        val entriesToRemove = currentEntries().filter { entry -> entry.videoId in videoIds }
+        when (activeContinueWatchingSource()) {
+            ContinueWatchingSource.MDBLIST -> {
+                removeMdbListProgress(entriesToRemove)
+                return
             }
-        }
-
-        if (shouldUseTraktProgress()) {
-            val entriesToRemove = currentEntries().filter { entry -> entry.videoId in videoIds }
-            videoIds.forEach(TraktProgressRepository::applyOptimisticRemoval)
-            publish()
-            if (entriesToRemove.isNotEmpty()) {
-                syncScope.launch {
-                    entriesToRemove.forEach { entry ->
-                        runCatching {
-                            TraktProgressRepository.removeProgress(
-                                contentId = entry.parentMetaId,
-                                seasonNumber = entry.seasonNumber,
-                                episodeNumber = entry.episodeNumber,
-                            )
-                        }.onFailure { error ->
-                            if (error is CancellationException) throw error
-                            log.e(error) { "Failed to clear Trakt playback progress for ${entry.videoId}" }
-                        }
-                    }
-                }
+            ContinueWatchingSource.SIMKL -> {
+                removeSimklProgress(entriesToRemove)
+                return
             }
-            return
+            ContinueWatchingSource.TRAKT -> {
+                removeTraktProgress(entriesToRemove)
+                return
+            }
+            // Floppy's rows are projected from the watched store, which the unmark that triggered
+            // this has already cleared — so there is nothing provider-side to remove, and falling
+            // through is what clears the local progress row. Returning here left it behind, to
+            // reappear intact the moment the user switched back to the local source.
+            ContinueWatchingSource.YAMTRACK -> Unit
+            ContinueWatchingSource.LOCAL -> Unit
         }
 
         val removedEntries = videoIds.mapNotNull { videoId ->
@@ -935,39 +1036,22 @@ object WatchProgressRepository {
         }
         if (entriesToRemove.isEmpty()) return
 
-        if (shouldUseSimklProgress()) {
-            entriesToRemove.forEach { SimklProgressRepository.applyOptimisticRemoval(it.videoId) }
-            publish()
-            syncScope.launch {
-                entriesToRemove.forEach { entry ->
-                    runCatching { SimklProgressRepository.deleteSession(entry.videoId) }
-                        .onFailure { error ->
-                            if (error is CancellationException) throw error
-                            log.e(error) { "Failed to delete SIMKL playback session for ${entry.videoId}" }
-                        }
-                }
+        when (activeContinueWatchingSource()) {
+            ContinueWatchingSource.MDBLIST -> {
+                removeMdbListProgress(entriesToRemove)
+                return
             }
-        }
-
-        if (shouldUseTraktProgress()) {
-            TraktProgressRepository.applyOptimisticRemoval(
-                contentId = normalizedContentId,
-                seasonNumber = seasonNumber,
-                episodeNumber = episodeNumber,
-            )
-            publish()
-            syncScope.launch {
-                runCatching {
-                    TraktProgressRepository.removeProgress(
-                        contentId = normalizedContentId,
-                        seasonNumber = seasonNumber,
-                        episodeNumber = episodeNumber,
-                    )
-                }.onFailure { error ->
-                    log.e(error) { "Failed to remove Trakt watch progress" }
-                }
+            ContinueWatchingSource.SIMKL -> {
+                removeSimklProgress(entriesToRemove)
+                return
             }
-            return
+            ContinueWatchingSource.TRAKT -> {
+                removeTraktProgress(entriesToRemove)
+                return
+            }
+            // See clearProgress: nothing to remove provider-side, and the local row still needs it.
+            ContinueWatchingSource.YAMTRACK -> Unit
+            ContinueWatchingSource.LOCAL -> Unit
         }
 
         entriesToRemove.forEach { entry ->
@@ -976,6 +1060,102 @@ object WatchProgressRepository {
         publish()
         persist()
         pushDeleteToServer(entriesToRemove)
+    }
+
+    /** Removes exactly the selected Continue Watching card from the service that supplied it. */
+    fun removeContinueWatchingItem(item: ContinueWatchingItem) {
+        ensureLoaded()
+        val entry = currentEntries().firstOrNull { candidate ->
+            candidate.videoId == item.videoId && candidate.source == item.source
+        } ?: run {
+            log.w { "Continue Watching removal target is stale: source=${item.source} videoId=${item.videoId}" }
+            return
+        }
+
+        when (continueWatchingRemovalTarget(item.source)) {
+            ContinueWatchingRemovalTarget.MDBLIST -> removeMdbListProgress(listOf(entry))
+            ContinueWatchingRemovalTarget.SIMKL -> removeSimklProgress(listOf(entry))
+            ContinueWatchingRemovalTarget.TRAKT -> removeTraktProgress(listOf(entry))
+            ContinueWatchingRemovalTarget.LOCAL -> removeLocalProgress(listOf(entry))
+            null -> log.w { "Unknown Continue Watching source '${item.source}'; refusing cross-provider removal" }
+        }
+    }
+
+    private fun removeMdbListProgress(entries: List<WatchProgressEntry>) {
+        if (entries.isEmpty()) return
+        entries.forEach { MdbListProgressRepository.applyOptimisticRemoval(it.videoId) }
+        publish()
+        syncScope.launch {
+            entries.forEach { entry ->
+                runCatching { MdbListProgressRepository.deleteSession(entry.videoId) }
+                    .onFailure { error ->
+                        if (error is CancellationException) throw error
+                        MdbListProgressRepository.applyOptimisticProgress(entry)
+                        publish()
+                        log.e(error) { "Failed to clear MDBList playback session for ${entry.videoId}" }
+                    }
+            }
+        }
+    }
+
+    private fun removeSimklProgress(entries: List<WatchProgressEntry>) {
+        if (entries.isEmpty()) return
+        entries.forEach { SimklProgressRepository.applyOptimisticRemoval(it.videoId) }
+        publish()
+        syncScope.launch {
+            entries.forEach { entry ->
+                // Only a real playback session can be deleted upstream. The rest of SIMKL's rows
+                // are watched-history seeds derived from the show's last_watched marker: there is
+                // no session behind them, and the removal that matters for those is the history
+                // removal WatchedRepository issues. Attempting the delete anyway threw, and the
+                // rollback below then restored the row — which is what made those episodes
+                // impossible to unmark.
+                if (!SimklProgressRepository.hasPlaybackSession(entry.videoId)) {
+                    SimklProgressRepository.suppressWatchedSeed(
+                        videoId = entry.videoId,
+                        watchedAtEpochMs = entry.lastUpdatedEpochMs,
+                    )
+                    return@forEach
+                }
+                runCatching { SimklProgressRepository.deleteSession(entry.videoId) }
+                    .onFailure { error ->
+                        if (error is CancellationException) throw error
+                        SimklProgressRepository.applyOptimisticProgress(entry)
+                        publish()
+                        log.e(error) { "Failed to delete SIMKL playback session for ${entry.videoId}" }
+                    }
+            }
+        }
+    }
+
+    private fun removeTraktProgress(entries: List<WatchProgressEntry>) {
+        if (entries.isEmpty()) return
+        entries.forEach { TraktProgressRepository.applyOptimisticRemoval(it.videoId) }
+        publish()
+        syncScope.launch {
+            entries.forEach { entry ->
+                runCatching {
+                    TraktProgressRepository.removeProgress(
+                        contentId = entry.parentMetaId,
+                        seasonNumber = entry.seasonNumber,
+                        episodeNumber = entry.episodeNumber,
+                    )
+                }.onFailure { error ->
+                    if (error is CancellationException) throw error
+                    TraktProgressRepository.applyOptimisticProgress(entry)
+                    publish()
+                    log.e(error) { "Failed to clear Trakt playback progress for ${entry.videoId}" }
+                }
+            }
+        }
+    }
+
+    private fun removeLocalProgress(entries: List<WatchProgressEntry>) {
+        val removedEntries = entries.mapNotNull { entry -> entriesByVideoId.remove(entry.videoId) }
+        if (removedEntries.isEmpty()) return
+        publish()
+        persist()
+        pushDeleteToServer(removedEntries)
     }
 
     fun progressForVideo(videoId: String): WatchProgressEntry? {
@@ -1030,6 +1210,7 @@ object WatchProgressRepository {
             return
         }
 
+        val useMdbListProgress = shouldUseMdbListProgress()
         val useSimklProgress = shouldUseSimklProgress()
         val useTraktProgress = shouldUseTraktProgress()
 
@@ -1073,6 +1254,7 @@ object WatchProgressRepository {
             lastStreamSubtitle = session.lastStreamSubtitle,
             pauseDescription = session.pauseDescription,
             lastSourceUrl = session.lastSourceUrl,
+            lastSourceWasLocalFile = isLocalFileSourceUrl(session.lastSourceUrl),
             isCompleted = isCompleted,
         ).normalizedCompletion()
 
@@ -1082,6 +1264,7 @@ object WatchProgressRepository {
 
         entriesByVideoId[session.videoId] = entry
         when {
+            useMdbListProgress -> MdbListProgressRepository.applyOptimisticProgress(entry)
             useSimklProgress -> SimklProgressRepository.applyOptimisticProgress(entry)
             useTraktProgress -> TraktProgressRepository.applyOptimisticProgress(entry)
         }
@@ -1199,72 +1382,121 @@ object WatchProgressRepository {
         persist()
     }
 
-    private fun shouldUseSimklProgress(): Boolean =
-        SimklAuthRepository.isAuthenticated.value && SimklSettingsRepository.isSimklCwSource()
-
-    private fun shouldUseTraktProgress(): Boolean =
-        !shouldUseSimklProgress() &&
-            shouldUseTraktProgressSource(
-                isAuthenticated = TraktAuthRepository.isAuthenticated.value,
-                source = TraktSettingsRepository.uiState.value.watchProgressSource,
-            )
-
-    private fun currentEntries(): List<WatchProgressEntry> {
-        if (shouldUseSimklProgress()) {
-            // Apply the user's day cap and sort most-recently-watched first.
-            val daysCap = SimklSettingsRepository.simklContinueWatchingDaysCap()
-            val cutoffMs = if (daysCap > SIMKL_CW_DAYS_CAP_ALL) {
-                System.currentTimeMillis() - daysCap.toLong() * 24L * 60L * 60L * 1000L
-            } else 0L
-
-            val rawSimkl = SimklProgressRepository.uiState.value.entries
-            val simklItems = rawSimkl
-                .filter { cutoffMs == 0L || it.lastUpdatedEpochMs >= cutoffMs }
-                .sortedByDescending { it.lastUpdatedEpochMs }
-
-            val localNonSimklItems = entriesByVideoId.values.filter { entry ->
-                val id = entry.parentMetaId.lowercase()
-                !isTraktCompatibleId(id) &&
-                    !id.startsWith("kitsu:") &&
-                    !id.startsWith("mal:") &&
-                    !id.startsWith("tvdb:") &&
-                    !id.startsWith("anilist:") &&
-                    !id.startsWith("al:") &&
-                    !id.startsWith("anidb:") &&
-                    !id.startsWith("simkl:")
-            }
-            return if (localNonSimklItems.isEmpty()) {
-                simklItems
-            } else {
-                val simklKeys = simklItems.map { it.videoId }.toSet()
-                val merged = simklItems.toMutableList()
-                localNonSimklItems.forEach { if (it.videoId !in simklKeys) merged.add(it) }
-                merged
+    /**
+     * The single selected Continue Watching source, after checking the provider is connected.
+     *
+     * Mutual exclusion is now structural rather than a chain of `!shouldUseOther()` guards: there is
+     * one stored choice, and a disconnected provider falls back to local rather than to whichever
+     * other provider happened to be next in the old precedence order.
+     */
+    private fun activeContinueWatchingSource(): ContinueWatchingSource =
+        resolveContinueWatchingSource(
+            selected = ContinueWatchingSourceRepository.selectedSource(),
+        ) { providerId ->
+            when (providerId) {
+                TrackingProviderId.MDBLIST -> MdbListSettingsRepository.trackingApiKey() != null
+                TrackingProviderId.SIMKL -> SimklAuthRepository.isAuthenticated.value
+                TrackingProviderId.TRAKT -> TraktAuthRepository.isAuthenticated.value
+                TrackingProviderId.YAMTRACK -> YamtrackSettingsRepository.activeCredentials() != null
             }
         }
 
-        if (shouldUseTraktProgress()) {
-            // Merge Trakt remote progress with local-only entries that use
-            // non-Trakt-compatible IDs (kitsu:, mal:, anilist:, etc.).
-            val traktItems = TraktProgressRepository.uiState.value.entries
-            val localNonTraktItems = entriesByVideoId.values.filter {
-                !isTraktCompatibleId(it.parentMetaId)
+    private fun shouldUseMdbListProgress(): Boolean =
+        activeContinueWatchingSource() == ContinueWatchingSource.MDBLIST
+
+    private fun shouldUseSimklProgress(): Boolean =
+        activeContinueWatchingSource() == ContinueWatchingSource.SIMKL
+
+    private fun shouldUseTraktProgress(): Boolean =
+        activeContinueWatchingSource() == ContinueWatchingSource.TRAKT
+
+    private fun shouldUseYamtrackProgress(): Boolean =
+        activeContinueWatchingSource() == ContinueWatchingSource.YAMTRACK
+
+    private fun currentEntries(): List<WatchProgressEntry> {
+        // A selected remote source shows that source's rows and nothing else.
+        //
+        // Each branch used to merge in local entries the provider "could not address" — anything
+        // without an id in that provider's namespace. The intent was to avoid losing progress for
+        // content the remote cannot hold, but the effect was that selecting a source with three
+        // rows produced a screen of unrelated local history: 96 local entries, 14 of which no
+        // provider could address, drowning the source the user actually picked. Leaking between
+        // services is exactly what choosing a single source is meant to prevent.
+        when (activeContinueWatchingSource()) {
+            ContinueWatchingSource.MDBLIST ->
+                return MdbListProgressRepository.uiState.value.entries
+                    .sortedByDescending { it.lastUpdatedEpochMs }
+                    .withNuvioSyncEntries()
+
+            ContinueWatchingSource.SIMKL -> {
+                // Apply the user's day cap and sort most-recently-watched first.
+                val cutoffMs = simklContinueWatchingCutoffMs(
+                    daysCap = SimklSettingsRepository.simklContinueWatchingDaysCap(),
+                    nowEpochMs = WatchProgressClock.nowEpochMs(),
+                )
+                return SimklProgressRepository.uiState.value.entries
+                    .filter { cutoffMs == 0L || it.lastUpdatedEpochMs >= cutoffMs }
+                    .sortedByDescending { it.lastUpdatedEpochMs }
+                    .withNuvioSyncEntries(cutoffMs)
             }
-            return if (localNonTraktItems.isEmpty()) {
-                traktItems
-            } else {
-                val traktKeys = traktItems.map { it.videoId }.toSet()
-                val merged = traktItems.toMutableList()
-                localNonTraktItems.forEach { localItem ->
-                    if (localItem.videoId !in traktKeys) {
-                        merged.add(localItem)
+
+            ContinueWatchingSource.TRAKT ->
+                return TraktProgressRepository.uiState.value.entries.withNuvioSyncEntries()
+
+            ContinueWatchingSource.YAMTRACK ->
+                return WatchedRepository.uiState.value.items
+                    .asSequence()
+                    .filter { it.season != null && it.episode != null }
+                    .map { item ->
+                        WatchProgressEntry(
+                            contentType = "series",
+                            parentMetaId = item.id,
+                            parentMetaType = "series",
+                            videoId = "${item.id}:${item.season}:${item.episode}",
+                            title = item.name,
+                            poster = item.poster,
+                            seasonNumber = item.season,
+                            episodeNumber = item.episode,
+                            lastPositionMs = 0L,
+                            durationMs = 0L,
+                            lastUpdatedEpochMs = item.markedAtEpochMs,
+                            isCompleted = true,
+                            progressPercent = 100f,
+                            source = WatchProgressSourceYamtrackHistory,
+                        )
                     }
-                }
-                merged
-            }
+                    .sortedByDescending(WatchProgressEntry::lastUpdatedEpochMs)
+                    .toList()
+                    .withNuvioSyncEntries()
+
+            ContinueWatchingSource.LOCAL -> Unit
         }
 
         return entriesByVideoId.values.toList()
+    }
+
+    /**
+     * Adds the Nuvio Sync rows the selected provider cannot hold — native anime namespaces and
+     * addon-specific ids — when the user has asked for it.
+     *
+     * Governed by the same preference as Up Next seeding, because they are the same question:
+     * whether Nuvio Sync contributes alongside the chosen service. Unconditional merging is what
+     * made a three-session source render seventeen rows.
+     */
+    private fun List<WatchProgressEntry>.withNuvioSyncEntries(
+        cutoffMs: Long = 0L,
+    ): List<WatchProgressEntry> {
+        if (!ContinueWatchingPreferencesRepository.uiState.value.seedNextUpFromNuvioSync) return this
+        val remoteKeys = mapTo(mutableSetOf()) { it.videoId }
+        val extra = entriesByVideoId.values.filter { entry ->
+            entry.videoId !in remoteKeys &&
+                !isTraktCompatibleId(entry.parentMetaId) &&
+                // Appended after the source's own day-cap filter, so without this they ignored the
+                // Continue Watching window entirely — turning on Nuvio Sync seeding brought local
+                // history of any age back alongside a 30-day remote list.
+                (cutoffMs == 0L || entry.lastUpdatedEpochMs >= cutoffMs)
+        }
+        return if (extra.isEmpty()) this else this + extra
     }
 
     fun isDroppedShow(contentId: String): Boolean {

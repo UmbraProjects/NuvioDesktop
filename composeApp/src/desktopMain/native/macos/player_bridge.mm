@@ -2140,7 +2140,8 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     NSMutableArray<NSDictionary *> *tracks = [NSMutableArray array];
     long long count = [self int64Property:"track-list/count" fallback:0];
     long long primarySubtitleId = [wantedType isEqualToString:@"sub"]
-        ? [self int64Property:"sid" fallback:-1]
+        ? [self int64Property:"current-tracks/sub/id"
+                    fallback:[self int64Property:"sid" fallback:-1]]
         : -1;
     int logicalIndex = 0;
 
@@ -2160,9 +2161,11 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
         long long channelCount = [self int64Property:[[prefix stringByAppendingString:@"/demux-channel-count"] UTF8String] fallback:0];
         // mpv reports both sid and secondary-sid tracks as selected; expose only the
         // primary/bottom track through the existing selected flag.
+        BOOL trackSelected =
+            [self flagProperty:[[prefix stringByAppendingString:@"/selected"] UTF8String] fallback:NO];
         BOOL selected = [wantedType isEqualToString:@"sub"]
-            ? trackId == primarySubtitleId
-            : [self flagProperty:[[prefix stringByAppendingString:@"/selected"] UTF8String] fallback:NO];
+            ? trackSelected || (primarySubtitleId >= 0 && trackId == primarySubtitleId)
+            : trackSelected;
         BOOL forced = [self flagProperty:[[prefix stringByAppendingString:@"/forced"] UTF8String] fallback:NO];
         NSString *label = [self formatTrackTitleWithType:type
                                                    index:logicalIndex

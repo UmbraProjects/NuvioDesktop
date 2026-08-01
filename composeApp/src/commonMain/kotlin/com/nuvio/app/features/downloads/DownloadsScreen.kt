@@ -31,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -38,8 +39,24 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.i18n.localizedByteUnit
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioScreenHeader
+import com.nuvio.app.core.ui.NuvioStatusModal
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
+
+private sealed interface DownloadsDeleteTarget {
+    val downloadIds: Set<String>
+
+    data class Show(
+        val title: String,
+        override val downloadIds: Set<String>,
+    ) : DownloadsDeleteTarget
+
+    data class Season(
+        val showTitle: String,
+        val seasonNumber: Int,
+        override val downloadIds: Set<String>,
+    ) : DownloadsDeleteTarget
+}
 
 @Composable
 fun DownloadsScreen(
@@ -52,6 +69,7 @@ fun DownloadsScreen(
     }.collectAsStateWithLifecycle()
 
     var selectedShowId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingDelete by remember { mutableStateOf<DownloadsDeleteTarget?>(null) }
 
     val completedEpisodes = remember(uiState.items) {
         uiState.completedItems
@@ -88,14 +106,81 @@ fun DownloadsScreen(
                 uiState = uiState,
                 onOpenDownload = onOpenDownload,
                 onOpenShow = { showId -> selectedShowId = showId },
+                onDeleteShow = { title, episodes ->
+                    val showId = episodes.firstOrNull()?.parentMetaId
+                    pendingDelete = DownloadsDeleteTarget.Show(
+                        title = title,
+                        downloadIds = uiState.items
+                            .asSequence()
+                            .filter { item -> item.isEpisode && item.parentMetaId == showId }
+                            .mapTo(mutableSetOf(), DownloadItem::id),
+                    )
+                },
             )
         } else {
             downloadsShowContent(
                 showId = selectedShowId.orEmpty(),
+                showTitle = selectedShowTitle.orEmpty(),
                 episodes = completedEpisodes,
                 onOpenDownload = onOpenDownload,
+                onDeleteSeason = { showTitle, seasonNumber, episodes ->
+                    val showId = episodes.firstOrNull()?.parentMetaId ?: selectedShowId
+                    pendingDelete = DownloadsDeleteTarget.Season(
+                        showTitle = showTitle,
+                        seasonNumber = seasonNumber,
+                        downloadIds = uiState.items
+                            .asSequence()
+                            .filter { item ->
+                                item.isEpisode &&
+                                    item.parentMetaId == showId &&
+                                    (item.seasonNumber ?: 0) == seasonNumber
+                            }
+                            .mapTo(mutableSetOf(), DownloadItem::id),
+                    )
+                },
             )
         }
+    }
+
+    val deleteTarget = pendingDelete
+    if (deleteTarget != null) {
+        val dialogTitle: String
+        val dialogMessage: String
+        when (deleteTarget) {
+            is DownloadsDeleteTarget.Show -> {
+                dialogTitle = stringResource(Res.string.downloads_delete_show_title)
+                dialogMessage = stringResource(
+                    Res.string.downloads_delete_show_message,
+                    deleteTarget.downloadIds.size,
+                    deleteTarget.title,
+                )
+            }
+            is DownloadsDeleteTarget.Season -> {
+                val seasonLabel = if (deleteTarget.seasonNumber == 0) {
+                    stringResource(Res.string.episodes_specials)
+                } else {
+                    stringResource(Res.string.episodes_season, deleteTarget.seasonNumber)
+                }
+                dialogTitle = stringResource(Res.string.downloads_delete_season_title)
+                dialogMessage = stringResource(
+                    Res.string.downloads_delete_season_message,
+                    deleteTarget.downloadIds.size,
+                    "${deleteTarget.showTitle} — $seasonLabel",
+                )
+            }
+        }
+        NuvioStatusModal(
+            title = dialogTitle,
+            message = dialogMessage,
+            isVisible = true,
+            confirmText = stringResource(Res.string.action_delete),
+            dismissText = stringResource(Res.string.action_cancel),
+            onConfirm = {
+                DownloadsRepository.cancelDownloads(deleteTarget.downloadIds)
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null },
+        )
     }
 }
 
@@ -103,6 +188,7 @@ private fun LazyListScope.downloadsRootContent(
     uiState: DownloadsUiState,
     onOpenDownload: (DownloadItem) -> Unit,
     onOpenShow: (String) -> Unit,
+    onDeleteShow: (String, List<DownloadItem>) -> Unit,
 ) {
     val activeItems = uiState.activeItems
     val completedMovies = uiState.completedItems.filterNot(DownloadItem::isEpisode)
@@ -168,37 +254,47 @@ private fun LazyListScope.downloadsRootContent(
                     .padding(horizontal = 12.dp, vertical = 6.dp)
                     .clickable { onOpenShow(item.parentMetaId) },
                 shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainer,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Top,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Column(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(
                             text = item.title,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             text = stringResource(Res.string.downloads_episode_count, episodes.size),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Icon(
-                        imageVector = Icons.Rounded.PlayArrow,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { onOpenShow(item.parentMetaId) }) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = stringResource(Res.string.downloads_show_downloads),
+                            )
+                        }
+                        IconButton(onClick = { onDeleteShow(item.title, episodes) }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Delete,
+                                contentDescription = stringResource(Res.string.downloads_delete_show),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -224,8 +320,10 @@ private fun LazyListScope.downloadsRootContent(
 
 private fun LazyListScope.downloadsShowContent(
     showId: String,
+    showTitle: String,
     episodes: List<DownloadItem>,
     onOpenDownload: (DownloadItem) -> Unit,
+    onDeleteSeason: (String, Int, List<DownloadItem>) -> Unit,
 ) {
     val showEpisodes = episodes
         .filter { it.parentMetaId == showId }
@@ -261,11 +359,13 @@ private fun LazyListScope.downloadsShowContent(
     seasons.forEach { (seasonNumber, entries) ->
         item {
             SectionTitle(
-                if (seasonNumber == 0) {
+                title = if (seasonNumber == 0) {
                     stringResource(Res.string.episodes_specials)
                 } else {
                     stringResource(Res.string.episodes_season, seasonNumber)
                 },
+                onDelete = { onDeleteSeason(showTitle, seasonNumber, entries) },
+                deleteContentDescription = stringResource(Res.string.downloads_delete_season),
             )
         }
 
@@ -438,14 +538,38 @@ private fun downloadDisplaySubtitle(
 }
 
 @Composable
-private fun SectionTitle(title: String) {
-    Text(
-        text = title,
-        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontWeight = FontWeight.SemiBold,
-    )
+private fun SectionTitle(
+    title: String,
+    onDelete: (() -> Unit)? = null,
+    deleteContentDescription: String? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            // Match DownloadRow's 12dp outer + 14dp inner horizontal inset so the
+            // season title and bin line up exactly with the episode content below.
+            .padding(horizontal = 26.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier
+                .weight(1f)
+                .padding(vertical = 8.dp),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+        )
+        if (onDelete != null) {
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector = Icons.Rounded.Delete,
+                    contentDescription = deleteContentDescription,
+                    tint = Color.White,
+                )
+            }
+        }
+    }
 }
 
 @Composable

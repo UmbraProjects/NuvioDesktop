@@ -30,6 +30,8 @@ object SyncManager {
     private var lastForegroundPullAtMs: Long = 0L
 
     fun pullAllForProfile(profileId: Int) {
+        // Everything here is Nuvio-account state. Connected tracking services are not, and are
+        // imported from the profile warm-up instead (see warmProfileDeferredRepositories).
         val authState = AuthRepository.state.value
         if (authState !is AuthState.Authenticated) return
         if (authState.isAnonymous) return

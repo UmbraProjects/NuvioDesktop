@@ -60,6 +60,7 @@ import com.nuvio.app.core.ui.NuvioIconActionButton
 import com.nuvio.app.core.ui.NuvioInfoBadge
 import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioPrimaryButton
+import com.nuvio.app.features.settings.trackSettingsTextFocus
 import com.nuvio.app.core.ui.NuvioSectionLabel
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.core.ui.nuvio
@@ -67,6 +68,7 @@ import com.nuvio.app.isDesktop
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.plugins_badge_disabled
 import nuvio.composeapp.generated.resources.plugins_badge_enabled
 import nuvio.composeapp.generated.resources.plugins_badge_providers
@@ -483,7 +485,7 @@ fun PluginsSettingsPageContent(
                                 IconButton(onClick = { openScraperSettings(scraper) }) {
                                     Icon(
                                         imageVector = Icons.Rounded.Settings,
-                                        contentDescription = "Provider settings",
+                                        contentDescription = stringResource(Res.string.plugins_provider_settings),
                                         tint = MaterialTheme.colorScheme.primary,
                                     )
                                 }
@@ -658,7 +660,11 @@ private fun DesktopPluginsManager(
                     maxLines = 1,
                 )
                 Text(
-                    text = "${repositories.size} repos, ${scrapers.size} providers",
+                    text = stringResource(
+                        Res.string.plugins_repository_provider_count,
+                        repositories.size,
+                        scrapers.size,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = tokens.colors.textMuted,
                     modifier = Modifier.padding(bottom = 2.dp),
@@ -747,9 +753,9 @@ private fun DesktopPluginSegmentedFilters(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            DesktopPluginFilterSegment("Enabled", enabledOnly) { onEnabledOnlyChange(!enabledOnly) }
-            DesktopPluginFilterSegment("Repos", reposOnly) { onReposOnlyChange(!reposOnly) }
-            DesktopPluginFilterSegment("Providers", providersOnly) { onProvidersOnlyChange(!providersOnly) }
+            DesktopPluginFilterSegment(stringResource(Res.string.plugins_badge_enabled), enabledOnly) { onEnabledOnlyChange(!enabledOnly) }
+            DesktopPluginFilterSegment(stringResource(Res.string.plugins_filter_repos), reposOnly) { onReposOnlyChange(!reposOnly) }
+            DesktopPluginFilterSegment(stringResource(Res.string.plugins_filter_providers), providersOnly) { onProvidersOnlyChange(!providersOnly) }
         }
     }
 }
@@ -821,7 +827,8 @@ private fun DesktopPluginSearchField(
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(focusRequester)
-                    .onFocusChanged { focused = it.isFocused },
+                    .onFocusChanged { focused = it.isFocused }
+                    .trackSettingsTextFocus(),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.colors.textPrimary),
                 cursorBrush = SolidColor(tokens.colors.accent),
@@ -829,7 +836,7 @@ private fun DesktopPluginSearchField(
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (value.isBlank()) {
                             Text(
-                                text = "Filter plugins",
+                                text = stringResource(Res.string.plugins_filter_placeholder),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = tokens.colors.textMuted,
                                 maxLines = 1,
@@ -952,8 +959,8 @@ private fun DesktopPluginRepositoriesTable(
                 )
             } else if (repositories.isEmpty()) {
                 DesktopPluginEmptyTable(
-                    title = "No repositories match these filters",
-                    subtitle = "Clear the search or switch filters to show repositories.",
+                    title = stringResource(Res.string.plugins_filtered_repositories_empty_title),
+                    subtitle = stringResource(Res.string.plugins_filtered_repositories_empty_subtitle),
                 )
             } else {
                 repositories.forEachIndexed { index, repo ->
@@ -991,7 +998,7 @@ private fun DesktopPluginProvidersTable(
             if (scrapers.isEmpty()) {
                 DesktopPluginEmptyTable(
                     title = stringResource(Res.string.plugins_empty_providers),
-                    subtitle = "Install a repository or clear filters to show providers.",
+                    subtitle = stringResource(Res.string.plugins_filtered_providers_empty_subtitle),
                 )
             } else {
                 scrapers.forEachIndexed { index, scraper ->
@@ -1033,12 +1040,16 @@ private fun DesktopPluginProvidersHeader(
             maxLines = 1,
         )
         DesktopPluginDotSetting(
-            label = if (uiState.pluginsEnabled) "Enabled" else "Disabled",
+            label = if (uiState.pluginsEnabled) {
+                stringResource(Res.string.plugins_badge_enabled)
+            } else {
+                stringResource(Res.string.plugins_badge_disabled)
+            },
             active = uiState.pluginsEnabled,
             onClick = { PluginRepository.setPluginsEnabled(!uiState.pluginsEnabled) },
         )
         DesktopPluginDotSetting(
-            label = "Group by repo",
+            label = stringResource(Res.string.plugins_group_by_repo),
             active = uiState.groupStreamsByRepository,
             onClick = { PluginRepository.setGroupStreamsByRepository(!uiState.groupStreamsByRepository) },
         )
@@ -1243,7 +1254,7 @@ private fun DesktopPluginProviderRow(
                 DesktopPluginActionCluster(modifier = Modifier.width(44.dp)) {
                     DesktopPluginActionButton(
                         icon = Icons.Rounded.Settings,
-                        contentDescription = "Provider settings",
+                        contentDescription = stringResource(Res.string.plugins_provider_settings),
                         tint = tokens.colors.accent,
                         onClick = { onConfigure(scraper) },
                     )

@@ -11,6 +11,9 @@ sealed interface CatalogTarget {
         override val contentType: String,
         val catalogId: String,
         val genre: String? = null,
+        // Set when the target came from a search result row, so opening the full catalog keeps
+        // the query instead of dumping the addon's unfiltered catalog.
+        val searchQuery: String? = null,
         override val supportsPagination: Boolean = false,
     ) : CatalogTarget
 

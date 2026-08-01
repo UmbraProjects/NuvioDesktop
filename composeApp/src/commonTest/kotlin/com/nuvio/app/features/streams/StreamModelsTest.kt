@@ -101,13 +101,21 @@ class StreamModelsTest {
     }
 
     @Test
-    fun `torrent url falls through to http externalUrl`() {
+    fun `torrent url does not turn an external web page into playable media`() {
         val httpUrl = "https://cdn.example.com/video.mp4"
         val stream = stream(
             url = "torrent://$hexHash",
             externalUrl = httpUrl,
         )
-        assertEquals(httpUrl, stream.playableDirectUrl)
+        assertNull(stream.playableDirectUrl)
+    }
+
+    @Test
+    fun `external addon homepage is not surfaced as playable media`() {
+        val stream = stream(externalUrl = "https://github.com/Viren070/AIOStreams")
+
+        assertNull(stream.playableDirectUrl)
+        assertFalse(stream.isSelectableForPlayback(debridEnabled = false))
     }
 
     // -----------------------------------------------------------------------

@@ -33,6 +33,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
 import kotlinx.coroutines.flow.StateFlow
@@ -97,7 +98,7 @@ actual fun PlayerShortcutRebindDialog(action: PlayerShortcutAction, onDismiss: (
     LaunchedEffect(action) { runCatching { focusRequester.requestFocus() } }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(shape = tokens.shapes.dialog, color = tokens.colors.surfaceDialog) {
+        NuvioDialogSurface {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -195,7 +196,7 @@ actual fun AppShortcutRebindDialog(action: AppShortcutAction, onDismiss: () -> U
     LaunchedEffect(action) { runCatching { focusRequester.requestFocus() } }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(shape = tokens.shapes.dialog, color = tokens.colors.surfaceDialog) {
+        NuvioDialogSurface {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

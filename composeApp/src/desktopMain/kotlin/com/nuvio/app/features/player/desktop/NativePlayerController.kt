@@ -3,6 +3,7 @@ package com.nuvio.app.features.player.desktop
 import androidx.compose.ui.graphics.Color
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.features.player.PlayerControlAddonSubtitleItem
+import com.nuvio.app.features.player.PlayerControlAudioTrackItem
 import com.nuvio.app.features.player.PlayerControlBuiltInSubtitleItem
 import com.nuvio.app.features.player.PlayerControlEpisodeItem
 import com.nuvio.app.features.player.PlayerControlFilterItem
@@ -32,14 +33,20 @@ import com.nuvio.app.features.player.PlayerResizeMode
 import com.nuvio.app.features.player.PlayerShortcutAction
 import com.nuvio.app.features.player.PlayerShortcutsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.player.SUBTITLE_BLUR_MAX
+import com.nuvio.app.features.player.SUBTITLE_BLUR_MIN
 import com.nuvio.app.features.player.SUBTITLE_DELAY_MAX_MS
 import com.nuvio.app.features.player.SUBTITLE_DELAY_MIN_MS
 import com.nuvio.app.features.player.SubtitleColorSwatches
+import com.nuvio.app.features.player.SubtitleBackgroundColorSwatches
+import com.nuvio.app.features.player.SubtitleShadowColorSwatches
 import com.nuvio.app.features.player.SubtitleStyleState
+import com.nuvio.app.features.player.subtitleShadowOffsetLabel
 import com.nuvio.app.features.player.SubtitleTrack
 import com.nuvio.app.features.player.inferForcedSubtitleTrack
 import com.nuvio.app.features.player.isExplicitProviderDiagnosticVideoUrl
 import com.nuvio.app.features.player.isProviderPlaybackEndpoint
+import com.nuvio.app.features.player.OriginalLanguageCache
 import com.nuvio.app.features.player.preferredSubtitleTargetsForSettings
 import com.nuvio.app.features.player.resolvePreferredAudioLanguageTargets
 import com.nuvio.app.features.player.toStorageHexString
@@ -74,7 +81,7 @@ internal class NativePlayerController(
 
     private companion object {
         val json = Json { ignoreUnknownKeys = true }
-        const val CONTROLS_PAGE_REVISION = "20260716-icon-shine"
+        const val CONTROLS_PAGE_REVISION = "20260728-track-reject-1"
         const val MPV_STARTUP_ERROR_EVENT_PREFIX = "mpvStartupError:"
         const val MPV_PLAYBACK_ERROR_EVENT_PREFIX = "mpvPlaybackError:"
 
@@ -105,6 +112,10 @@ internal class NativePlayerController(
     @Volatile
     private var pendingSource: PendingSource? = null
     private val pendingMpvProperties = linkedMapOf<String, String>()
+    // True while the Metered preset's paused-prefetch clamp is applied to the live handle. Session
+    // state only — never persisted into pendingMpvProperties, so it cannot leak into the next source.
+    @Volatile
+    private var meteredPrefetchFrozen = false
     private var pendingVideoRedraw = false
     // Transient overlay message held across a source switch; shown once the next attach completes.
     @Volatile
@@ -185,12 +196,16 @@ internal class NativePlayerController(
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
             nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
             isAnimeContent = isAnimeContent,
-            animeSvpFilter = if (animeSvpEnabled && PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled) DesktopAnimeSvp.vapoursynthArgument() else null,
+            animeSvpFilter = if (animeSvpEnabled && PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled) {
+                DesktopAnimeSvp.vapoursynthArgument(
+                    debugOverlay = PlayerSettingsRepository.uiState.value.desktopAnimeSvpDebugOverlayEnabled,
+                )
+            } else null,
             extraMpvOptions = buildList {
                 if (isProviderPlaybackEndpoint(sourceUrl) || isExplicitProviderDiagnosticVideoUrl(sourceUrl)) {
                     add("ytdl=no")
                 }
-                if (enableUserMpvOptions) addAll(buildDesktopUserMpvOptions())
+                if (enableUserMpvOptions) addAll(buildDesktopUserMpvOptions(initialPlaybackSpeed))
                 // mpv applies these before mpv_initialize/loadfile. This must follow custom
                 // options so the app's explicit Default Playback Speed remains authoritative and
                 // speed-sensitive filters can see the final value during their first setup.
@@ -392,6 +407,37 @@ internal class NativePlayerController(
         } else {
             NativePlayerBridge.forceVideoRedraw(current)
         }
+    }
+
+    /**
+     * Publishes the pipeline half of the playback-info panel: what mpv is actually doing with the
+     * picture, which only the desktop video-profile pass knows (the settings alone don't say — an
+     * HDR preset does nothing to an SDR file, and an anime preset does nothing to live action).
+     * The subtitle row travels with the ordinary controls state instead, since it can change
+     * mid-playback. [videoLabel] is the colour preset in effect and [shaderLabel] the shader chain
+     * on top of it; they are separate because both can be running at once.
+     *
+     * [session] identifies the playback attempt. This pass re-runs on every settings change as well
+     * as on file load, and the panel is a start-of-playback greeting — the token is what tells the
+     * overlay which of those it is looking at.
+     */
+    fun setPlaybackInfo(
+        session: String,
+        hdrLabel: String?,
+        svpActive: Boolean,
+        videoLabel: String,
+        shaderLabel: String?,
+    ) {
+        val current = handle.takeIf { it != 0L } ?: return
+        val payload = "{\"session\":${session.toJsonString()}," +
+            "\"hdr\":${(hdrLabel ?: "").toJsonString()}," +
+            "\"svp\":$svpActive," +
+            "\"video\":${videoLabel.toJsonString()}," +
+            "\"shader\":${(shaderLabel ?: "").toJsonString()}}"
+        NativePlayerBridge.runJavaScript(
+            current,
+            "window.nuvioSetPlaybackInfo && window.nuvioSetPlaybackInfo($payload)",
+        )
     }
 
     /** Shows a transient pill in the controls overlay, e.g. when cycling a video preset. */
@@ -763,6 +809,9 @@ internal class NativePlayerController(
             return
         }
         if (type == "seekThumbnail") {
+            if (PlayerSettingsRepository.uiState.value.desktopBufferPreset == DesktopBufferPreset.Metered) {
+                return
+            }
             handle.takeIf { it != 0L }?.let { current ->
                 NativePlayerBridge.requestSeekThumbnail(current, value.toLong().coerceAtLeast(0L))
             }
@@ -859,8 +908,10 @@ internal class NativePlayerController(
                 val isPaused = NativePlayerBridge.isPaused(current)
                 if (isEnded) {
                     NativePlayerBridge.seekTo(current, 0L)
+                    releaseMeteredPrefetchFreeze()
                     NativePlayerBridge.setPaused(current, false)
                 } else {
+                    if (isPaused) releaseMeteredPrefetchFreeze()
                     NativePlayerBridge.setPaused(current, !isPaused)
                 }
             }
@@ -876,6 +927,7 @@ internal class NativePlayerController(
     private fun fallbackSeekBy(offsetMs: Long) {
         val current = handle
         if (current != 0L) {
+            releaseMeteredPrefetchFreeze()
             NativePlayerBridge.seekBy(current, offsetMs)
         }
     }
@@ -898,13 +950,23 @@ internal class NativePlayerController(
         return runCatching {
             val isLoading = NativePlayerBridge.isLoading(current)
             val isEnded = NativePlayerBridge.isEnded(current)
+            val isPaused = NativePlayerBridge.isPaused(current)
+            val positionMs = NativePlayerBridge.positionMs(current)
+            val bufferedPositionMs = NativePlayerBridge.bufferedPositionMs(current)
+            updateMeteredPrefetchFreeze(
+                isPaused = isPaused,
+                isLoading = isLoading,
+                isEnded = isEnded,
+                positionMs = positionMs,
+                bufferedPositionMs = bufferedPositionMs,
+            )
             PlayerPlaybackSnapshot(
                 isLoading = isLoading,
-                isPlaying = !NativePlayerBridge.isPaused(current) && !isLoading && !isEnded,
+                isPlaying = !isPaused && !isLoading && !isEnded,
                 isEnded = isEnded,
                 durationMs = NativePlayerBridge.durationMs(current),
-                positionMs = NativePlayerBridge.positionMs(current),
-                bufferedPositionMs = NativePlayerBridge.bufferedPositionMs(current),
+                positionMs = positionMs,
+                bufferedPositionMs = bufferedPositionMs,
                 playbackSpeed = NativePlayerBridge.speed(current),
             )
         }.getOrDefault(PlayerPlaybackSnapshot(isLoading = true))
@@ -927,30 +989,67 @@ internal class NativePlayerController(
         val speed = playbackSpeed
             ?: current?.let { runCatching { NativePlayerBridge.speed(it) }.getOrNull() }
             ?: 1f
-        val factor = speed.coerceAtLeast(1f)
-        val limits = when (DesktopHostOs.current) {
-            DesktopHostOs.WINDOWS -> when (preset) {
-                DesktopBufferPreset.LowData -> BufferLimits(15, 30, "64MiB", "16MiB", "32MiB")
-                DesktopBufferPreset.Balanced -> BufferLimits(60, 120, "256MiB", "64MiB", "64MiB")
-                DesktopBufferPreset.Resilient -> BufferLimits(180, 600, "1GiB", "128MiB", "256MiB")
+        val settings = PlayerSettingsRepository.uiState.value
+        val customOptionNames = desktopCustomMpvOptionNames(settings.desktopCustomMpvOptions)
+        desktopBufferPresetMpvOptions(preset, DesktopHostOs.current, speed)
+            .filterNot { (name, _) -> name == "stream-buffer-size" }
+            // While the Metered freeze is engaged the clamp outranks the preset. Without this an
+            // unrelated re-apply (the video-profile flow re-runs this on every settings change, and
+            // so does every speed change) would restore full readahead mid-pause and start
+            // downloading again.
+            .filterNot { (name, _) -> meteredPrefetchFrozen && name in METERED_PREFETCH_PROPERTIES }
+            .forEach { (name, value) ->
+                if (shouldApplyNuvioRuntimeMpvProperty(settings.desktopMpvConfigMode, customOptionNames, name)) {
+                    setMpvProperty(name, value)
+                }
             }
-            DesktopHostOs.MACOS -> when (preset) {
-                DesktopBufferPreset.LowData -> BufferLimits(10, 10, "32MiB", "8MiB", "16MiB")
-                DesktopBufferPreset.Balanced -> BufferLimits(20, 20, "48MiB", "12MiB", "32MiB")
-                // Preserve the previous macOS defaults for existing installations.
-                DesktopBufferPreset.Resilient -> BufferLimits(30, 30, "64MiB", "16MiB", "64MiB")
-            }
-            else -> return
+    }
+
+    /**
+     * Applies or lifts the Metered preset's paused-prefetch clamp. Driven from [snapshot] so it
+     * follows mpv's real paused state no matter which input path toggled playback (HUD, keyboard,
+     * app, or mpv itself); the unpause and seek paths call [releaseMeteredPrefetchFreeze] directly so
+     * resuming doesn't have to wait for the next poll.
+     */
+    private fun updateMeteredPrefetchFreeze(
+        isPaused: Boolean,
+        isLoading: Boolean,
+        isEnded: Boolean,
+        positionMs: Long,
+        bufferedPositionMs: Long,
+    ) {
+        val settings = PlayerSettingsRepository.uiState.value
+        if (settings.desktopBufferPreset != DesktopBufferPreset.Metered) {
+            releaseMeteredPrefetchFreeze()
+            return
         }
-        setMpvProperty("demuxer-readahead-secs", (limits.readaheadSeconds * factor).toString())
-        setMpvProperty("cache-secs", (limits.cacheSeconds * factor).toString())
-        setMpvProperty("demuxer-max-bytes", limits.maxBytes)
-        setMpvProperty("demuxer-max-back-bytes", limits.maxBackBytes)
-        setMpvProperty("stream-buffer-size", limits.streamBufferSize)
-        // Media buffered before (re)starting playback. A quarter-second at 1x is around 10% of
-        // the former two-second gate; scale content-time with playback speed so wall-clock startup
-        // remains equally quick at faster rates. Presets still control the read-ahead capacity.
-        setMpvProperty("cache-pause-wait", (0.25f * factor).toString())
+        // Never freeze while mpv is still filling, at EOF, or without a buffer to resume from —
+        // those are exactly the states where clamping prefetch could strand a paused player.
+        val hasResumableBuffer = bufferedPositionMs - positionMs >= METERED_FREEZE_MIN_BUFFER_MS
+        val shouldFreeze = isPaused && !isLoading && !isEnded && hasResumableBuffer
+        if (shouldFreeze == meteredPrefetchFrozen) return
+        if (!shouldFreeze) {
+            releaseMeteredPrefetchFreeze()
+            return
+        }
+        val customOptionNames = desktopCustomMpvOptionNames(settings.desktopCustomMpvOptions)
+        meteredPrefetchFrozen = true
+        METERED_PREFETCH_PROPERTIES.forEach { name ->
+            if (shouldApplyNuvioRuntimeMpvProperty(settings.desktopMpvConfigMode, customOptionNames, name)) {
+                // Deliberately not setMpvProperty: that caches the value in pendingMpvProperties and
+                // replays it onto the next handle, which would carry the clamp into the next episode.
+                // The freeze is per-session state; a fresh handle gets the preset from its pre-init
+                // options instead.
+                handle.takeIf { it != 0L }?.let { NativePlayerBridge.setMpvProperty(it, name, METERED_PAUSED_PREFETCH_SECS) }
+            }
+        }
+    }
+
+    /** Restores the preset's prefetch limits if the Metered pause clamp is engaged. Idempotent. */
+    private fun releaseMeteredPrefetchFreeze() {
+        if (!meteredPrefetchFrozen) return
+        meteredPrefetchFrozen = false
+        applyDesktopBufferPreset(PlayerSettingsRepository.uiState.value.desktopBufferPreset)
     }
 
     private fun disposePlayerHandle() {
@@ -961,6 +1060,9 @@ internal class NativePlayerController(
         }
         keyboardPanelOpen = false
         lastSentControlsStructureKey = null
+        // The clamp lived on the handle being torn down; the next handle starts from its pre-init
+        // preset options, so only the flag needs clearing.
+        meteredPrefetchFrozen = false
         if (current != 0L) {
             kotlin.concurrent.thread(isDaemon = true, name = "Nuvio-Player-Dispose") {
                 synchronized(nativeProcessLifecycleLock) {
@@ -971,6 +1073,9 @@ internal class NativePlayerController(
     }
 
     override fun play() {
+        // Restore the full prefetch budget before resuming, so mpv refills immediately instead of
+        // draining the frozen buffer until the next snapshot poll notices playback resumed.
+        releaseMeteredPrefetchFreeze()
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.setPaused(it, false) }
     }
 
@@ -979,10 +1084,14 @@ internal class NativePlayerController(
     }
 
     override fun seekTo(positionMs: Long) {
+        // A seek can invalidate the cache the freeze was protecting; let the demuxer refill at the
+        // preset rate. The snapshot poll re-freezes once the new position has a resumable buffer.
+        releaseMeteredPrefetchFreeze()
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.seekTo(it, positionMs) }
     }
 
     override fun seekBy(offsetMs: Long) {
+        releaseMeteredPrefetchFreeze()
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.seekBy(it, offsetMs) }
     }
 
@@ -1053,14 +1162,6 @@ internal class NativePlayerController(
         val fraction = (NativePlayerBridge.volume(current) / 100f).coerceIn(0f, maxVolumeFraction)
         return PlayerAudioLevel(fraction = fraction, isMuted = fraction <= 0f || NativePlayerBridge.isMuted(current))
     }
-
-    private data class BufferLimits(
-        val readaheadSeconds: Int,
-        val cacheSeconds: Int,
-        val maxBytes: String,
-        val maxBackBytes: String,
-        val streamBufferSize: String,
-    )
 
     override fun getAudioTracks(): List<AudioTrack> =
         decodeTracks { NativePlayerBridge.audioTracksJson(it) }.map { track ->
@@ -1164,15 +1265,22 @@ internal class NativePlayerController(
     }
 
     private fun applySubtitleStyle(current: Long, style: SubtitleStyleState) {
-        // Drop shadow is driven purely through mpv properties (no native-signature change). It only
-        // renders in the "outline-and-shadow" border style that applySubtitleStyle selects for a
-        // transparent background, and only when the offset is non-zero. Set it before the native
-        // call so the redraw it triggers also flushes the shadow change while paused.
+        // Drop shadow, blur, and italic are driven purely through mpv properties (no native-signature
+        // change). The shadow only renders in the "outline-and-shadow" border style that
+        // applySubtitleStyle selects for a transparent background, and only when the offset is
+        // non-zero. Set these before the native call so the redraw it triggers also flushes them
+        // while paused; applySubtitleStyle does not touch sub-blur / sub-italic, so they persist.
         NativePlayerBridge.setMpvProperty(
             current,
             "sub-shadow-offset",
-            if (style.shadowEnabled) SUBTITLE_SHADOW_OFFSET else "0",
+            if (style.shadowEnabled) subtitleShadowOffsetLabel(style.shadowOffset) else "0",
         )
+        NativePlayerBridge.setMpvProperty(
+            current,
+            "sub-blur",
+            style.blur.coerceIn(SUBTITLE_BLUR_MIN, SUBTITLE_BLUR_MAX).toString(),
+        )
+        NativePlayerBridge.setMpvProperty(current, "sub-italic", if (style.italic) "yes" else "no")
         NativePlayerBridge.applySubtitleStyle(
             handle = current,
             textColor = style.textColor.toMpvColorString(),
@@ -1189,7 +1297,7 @@ internal class NativePlayerController(
         // applied afterwards or it is immediately overwritten and the offset appears to do
         // nothing. In outline-and-shadow mode sub-back-color is used for the shadow itself.
         if (style.shadowEnabled && style.backgroundColor.alpha <= 0f) {
-            NativePlayerBridge.setMpvProperty(current, "sub-back-color", SUBTITLE_SHADOW_COLOR)
+            NativePlayerBridge.setMpvProperty(current, "sub-back-color", style.shadowColor.toMpvColorString())
             forceVideoRedraw()
         }
         reapplyCustomSubtitleOverrides(current)
@@ -1251,16 +1359,99 @@ private fun resolveTrackId(index: Int, tracks: List<NativeMpvTrack>): Int? =
         }
     } ?: tracks.getOrNull(index)?.id?.toIntOrNull()
 
-// Subtitle drop-shadow tuning (mpv scaled pixels + #AARRGGBB). The colour must be applied after
-// the subtitle background because mpv aliases sub-shadow-color to sub-back-color.
-// Offset trimmed 2 -> 1.5 so the shadow sits closer to the glyph and reads less like a hard
-// duplicate copy.
-private const val SUBTITLE_SHADOW_OFFSET = "1.5"
-// Alpha lowered over time (0xC0 -> 0x99 -> 0x66) for a progressively softer, less harsh drop
-// shadow. mpv renders the shadow as a solid offset copy (no blur), so opacity and offset are the
-// only levers for "softness".
-private const val SUBTITLE_SHADOW_COLOR = "#66000000"
+/**
+ * The two time-based demuxer limits the Metered preset clamps while paused. Both are listed because
+ * `cache-secs` overrides `demuxer-readahead-secs` whenever the cache is enabled and the stream is
+ * seekable — leaving either one at its preset value would let prefetch continue.
+ */
+private val METERED_PREFETCH_PROPERTIES = listOf("demuxer-readahead-secs", "cache-secs")
 
+/**
+ * Forward prefetch allowed while the Metered preset is paused. Deliberately a small floor rather
+ * than 0: lowering these limits never discards packets mpv has already cached (the demuxer only
+ * stops appending), so the buffer built before the pause survives it — but if the cache is somehow
+ * near-empty, a hard 0 would mean nothing is ever fetched and the player could not resume. One
+ * second is well above `cache-pause-wait` (0.25s) and, because the freeze only engages once there
+ * is already a resumable buffer, in practice it fetches nothing at all.
+ */
+private const val METERED_PAUSED_PREFETCH_SECS = "1"
+
+/** Minimum buffer ahead of the playhead before pausing is allowed to freeze prefetch. */
+private const val METERED_FREEZE_MIN_BUFFER_MS = 3_000L
+
+private data class DesktopBufferLimits(
+    val readaheadSeconds: Int,
+    val cacheSeconds: Int,
+    val maxBytes: String,
+    val maxBackBytes: String,
+)
+
+internal fun desktopBufferPresetMpvOptions(
+    preset: DesktopBufferPreset,
+    hostOs: DesktopHostOs,
+    playbackSpeed: Float = 1f,
+): List<Pair<String, String>> {
+    val limits = when (hostOs) {
+        DesktopHostOs.WINDOWS -> when (preset) {
+            DesktopBufferPreset.Metered -> DesktopBufferLimits(10, 10, "32MiB", "8MiB")
+            DesktopBufferPreset.LowData -> DesktopBufferLimits(15, 30, "64MiB", "16MiB")
+            DesktopBufferPreset.Balanced -> DesktopBufferLimits(60, 120, "256MiB", "64MiB")
+            DesktopBufferPreset.Resilient -> DesktopBufferLimits(180, 600, "1GiB", "128MiB")
+        }
+        DesktopHostOs.MACOS -> when (preset) {
+            DesktopBufferPreset.Metered -> DesktopBufferLimits(8, 8, "24MiB", "8MiB")
+            DesktopBufferPreset.LowData -> DesktopBufferLimits(10, 10, "32MiB", "8MiB")
+            DesktopBufferPreset.Balanced -> DesktopBufferLimits(20, 20, "48MiB", "12MiB")
+            // Preserve the previous macOS defaults for existing installations.
+            DesktopBufferPreset.Resilient -> DesktopBufferLimits(30, 30, "64MiB", "16MiB")
+        }
+        DesktopHostOs.LINUX,
+        DesktopHostOs.UNKNOWN,
+        -> return emptyList()
+    }
+    val factor = playbackSpeed.coerceAtLeast(1f)
+    return listOf(
+        "demuxer-readahead-secs" to (limits.readaheadSeconds * factor).toString(),
+        "cache-secs" to (limits.cacheSeconds * factor).toString(),
+        "demuxer-max-bytes" to limits.maxBytes,
+        "demuxer-max-back-bytes" to limits.maxBackBytes,
+        // This is mpv's tiny demuxer/I/O ring buffer, not its media cache. Large values can turn
+        // forward seeks into sequential reads. Keep it fixed and let the demuxer limits above own
+        // actual resilience; 1 MiB is already 8x mpv's 128 KiB default.
+        "stream-buffer-size" to "1MiB",
+        // Media buffered before (re)starting playback. Scale content-time with playback speed so
+        // wall-clock startup remains equally quick at faster rates.
+        "cache-pause-wait" to (0.25f * factor).toString(),
+    )
+}
+
+internal fun desktopCustomMpvOptionNames(options: String): Set<String> =
+    options.lineSequence()
+        .map(String::trim)
+        .filter { it.isNotEmpty() && !it.startsWith('#') }
+        .mapNotNull { option ->
+            option.indexOf('=')
+                .takeIf { it > 0 }
+                ?.let { separator -> option.substring(0, separator) }
+        }
+        .toSet()
+
+internal fun shouldApplyNuvioRuntimeMpvProperty(
+    configMode: DesktopMpvConfigMode,
+    customOptionNames: Set<String>,
+    propertyName: String,
+): Boolean = when (configMode) {
+    DesktopMpvConfigMode.Full -> false
+    DesktopMpvConfigMode.Replace -> propertyName !in customOptionNames
+    DesktopMpvConfigMode.Off,
+    DesktopMpvConfigMode.Add,
+    -> true
+}
+
+// Subtitle drop-shadow tuning (mpv scaled pixels + #AARRGGBB). The colour must be applied after
+// the subtitle background because mpv aliases sub-shadow-color to sub-back-color. Offset and colour
+// are now user-controlled (SubtitleStyleState.shadowOffset / shadowColor); the old 1.5 px / #66000000
+// hardcodes live on as the model defaults.
 private fun Color.toMpvColorString(): String {
     val alphaInt = (alpha * 255f).toInt().coerceIn(0, 255)
     val redInt = (red * 255f).toInt().coerceIn(0, 255)
@@ -1327,11 +1518,23 @@ private const val AUDIO_PASSTHROUGH_SPDIF_CODECS = "ac3,dts,eac3,truehd,dts-hd,d
  * applied (native side) just before mpv_initialize so they override Nuvio's built-in options.
  * Passthrough is emitted first so a custom `audio-spdif=` line in the options box can still win.
  */
-private fun buildDesktopUserMpvOptions(): List<String> {
+private fun buildDesktopUserMpvOptions(initialPlaybackSpeed: Float): List<String> {
     val settings = PlayerSettingsRepository.uiState.value
     return buildList {
         add("@nuvio-config-mode=${settings.desktopMpvConfigMode.name.lowercase()}")
         val useNuvioOptions = settings.desktopMpvConfigMode != DesktopMpvConfigMode.Full
+        if (useNuvioOptions) {
+            // These must be options, not post-create properties. Native creation does not return
+            // until after loadfile has opened/probed the URL, and stream-buffer-size in particular
+            // is captured by the stream when it opens. Applying the preset afterward left the
+            // native 256 MiB fallback active and made ordinary forward seeks read/discard hundreds
+            // of megabytes instead of issuing an HTTP range request.
+            desktopBufferPresetMpvOptions(
+                preset = settings.desktopBufferPreset,
+                hostOs = DesktopHostOs.current,
+                playbackSpeed = initialPlaybackSpeed,
+            ).forEach { (name, value) -> add("$name=$value") }
+        }
         // Let mpv select an embedded preferred-language subtitle as part of file loading. Waiting
         // for the Compose-side track poll is unnecessarily fragile for tracks already present in
         // the container, and can leave `sid=no` active if startup takes longer than that poll.
@@ -1349,6 +1552,10 @@ private fun buildDesktopUserMpvOptions(): List<String> {
             preferredAudioLanguage = settings.preferredAudioLanguage,
             secondaryPreferredAudioLanguage = settings.secondaryPreferredAudioLanguage,
             deviceLanguages = DeviceLanguagePreferences.preferredLanguageCodes(),
+            // Options are built before the player screen's own meta fetch can have finished, so an
+            // "Original" preference relies on the detail screen having recorded it. When it has
+            // not, the Compose-side track pass corrects the choice once tracks are published.
+            originalLanguage = OriginalLanguageCache.current,
         )
         if (useNuvioOptions && preferredAudioLanguages.isNotEmpty()) {
             add("alang=${preferredAudioLanguages.joinToString(",")}")
@@ -1471,6 +1678,8 @@ private fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("pauseOverlayDescription", pauseOverlayDescription)
         append(',')
+        appendJsonField("pauseOverlaySourceEnabled", pauseOverlaySourceEnabled)
+        append(',')
         appendJsonField("resizeModeLabel", resizeModeLabel)
         append(',')
         appendJsonField("playbackSpeedLabel", playbackSpeedLabel)
@@ -1511,6 +1720,12 @@ private fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("desktopAnimeSvpEnabled", desktopAnimeSvpEnabled)
         append(',')
+        appendJsonField("playbackInfoPanelEnabled", playbackInfoPanelEnabled)
+        append(',')
+        appendJsonField("activeSubtitleLabel", activeSubtitleLabel)
+        append(',')
+        appendJsonField("seekThumbnailsEnabled", seekThumbnailsEnabled)
+        append(',')
         appendJsonField("tapToUnlockLabel", tapToUnlockLabel)
         append(',')
         appendJsonField("playbackErrorTitle", playbackErrorTitle)
@@ -1550,6 +1765,8 @@ private fun PlayerControlsState.toControlsJson(
         appendJsonField("submitIntroSegmentRecapLabel", submitIntroSegmentRecapLabel)
         append(',')
         appendJsonField("submitIntroSegmentOutroLabel", submitIntroSegmentOutroLabel)
+        append(',')
+        appendJsonField("submitIntroSegmentPreviewLabel", submitIntroSegmentPreviewLabel)
         append(',')
         appendJsonField("submitIntroStartTimeLabel", submitIntroStartTimeLabel)
         append(',')
@@ -1597,9 +1814,21 @@ private fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("outlineLabel", outlineLabel)
         append(',')
+        appendJsonField("outlineWidthLabel", outlineWidthLabel)
+        append(',')
         appendJsonField("shadowLabel", shadowLabel)
         append(',')
+        appendJsonField("shadowOffsetLabel", shadowOffsetLabel)
+        append(',')
+        appendJsonField("shadowColorLabel", shadowColorLabel)
+        append(',')
+        appendJsonField("shadowIntensityLabel", shadowIntensityLabel)
+        append(',')
+        appendJsonField("blurLabel", blurLabel)
+        append(',')
         appendJsonField("boldLabel", boldLabel)
+        append(',')
+        appendJsonField("italicLabel", italicLabel)
         append(',')
         appendJsonField("bottomOffsetLabel", bottomOffsetLabel)
         append(',')
@@ -1608,6 +1837,8 @@ private fun PlayerControlsState.toControlsJson(
         appendJsonField("textOpacityLabel", textOpacityLabel)
         append(',')
         appendJsonField("outlineColorLabel", outlineColorLabel)
+        append(',')
+        appendJsonField("backgroundColorLabel", backgroundColorLabel)
         append(',')
         appendJsonField("resetDefaultsLabel", resetDefaultsLabel)
         append(',')
@@ -1662,6 +1893,8 @@ private fun PlayerControlsState.toControlsJson(
         appendJsonMapField("playerShortcutKeyCodes", playerShortcutKeyCodes)
         append(',')
         appendJsonField("uiScalePercent", uiScalePercent)
+        append(',')
+        appendJsonField("sourceNotchPosition", sourceNotchPosition)
         append(',')
         appendJsonArrayField("parentalWarnings", parentalWarnings) { appendParentalWarningJson(it) }
         append(',')
@@ -1761,6 +1994,10 @@ private fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonArrayField("builtInSubtitleItems", builtInSubtitleItems) { appendBuiltInSubtitleItemJson(it) }
         append(',')
+        appendJsonField("audioTrackFilterActive", audioTrackFilterActive)
+        append(',')
+        appendJsonArrayField("audioTrackItems", audioTrackItems) { appendAudioTrackItemJson(it) }
+        append(',')
         appendJsonField("isLoadingAddonSubtitles", isLoadingAddonSubtitles)
         append(',')
         appendJsonField("selectedAddonSubtitleId", selectedAddonSubtitleId)
@@ -1784,6 +2021,10 @@ private fun PlayerControlsState.toControlsJson(
         appendJsonArrayField("subtitleFontFamilies", subtitleFontFamilies) { append(it.toJsonString()) }
         append(',')
         appendJsonArrayField("subtitleColorSwatches", SubtitleColorSwatches.map { it.toStorageHexString() }) { append(it.toJsonString()) }
+        append(',')
+        appendJsonArrayField("subtitleBackgroundColorSwatches", SubtitleBackgroundColorSwatches.map { it.toStorageHexString() }) { append(it.toJsonString()) }
+        append(',')
+        appendJsonArrayField("subtitleShadowColorSwatches", SubtitleShadowColorSwatches.map { it.toStorageHexString() }) { append(it.toJsonString()) }
         append(',')
         appendJsonField("closeModalsToken", closeModalsToken)
         append(',')
@@ -1939,6 +2180,13 @@ private fun StringBuilder.appendSourceItemJson(item: PlayerControlSourceItem) {
     appendJsonField("isCurrent", item.isCurrent)
     append(',')
     appendJsonField("isEnabled", item.isEnabled)
+    // Omitted entirely when scoring's badge is off, so the HUD can simply test for presence.
+    item.score?.let {
+        append(',')
+        appendJsonField("score", it)
+        append(',')
+        appendJsonField("scoreRejected", item.scoreRejected)
+    }
     append('}')
 }
 
@@ -1982,6 +2230,16 @@ private fun StringBuilder.appendAddonSubtitleItemJson(item: PlayerControlAddonSu
     append('}')
 }
 
+private fun StringBuilder.appendAudioTrackItemJson(item: PlayerControlAudioTrackItem) {
+    append('{')
+    appendJsonField("index", item.index)
+    append(',')
+    appendJsonField("label", item.label)
+    append(',')
+    appendJsonField("isSelected", item.isSelected)
+    append('}')
+}
+
 private fun StringBuilder.appendBuiltInSubtitleItemJson(item: PlayerControlBuiltInSubtitleItem) {
     append('{')
     appendJsonField("index", item.index)
@@ -2020,9 +2278,19 @@ private fun StringBuilder.appendSubtitleStyleJson(style: SubtitleStyleState) {
     append(',')
     appendJsonField("outlineEnabled", style.outlineEnabled)
     append(',')
+    appendJsonField("outlineWidth", style.outlineWidth)
+    append(',')
     appendJsonField("shadowEnabled", style.shadowEnabled)
     append(',')
+    appendJsonField("shadowColor", style.shadowColor.toStorageHexString())
+    append(',')
+    appendJsonField("shadowOffset", style.shadowOffset)
+    append(',')
+    appendJsonField("blur", style.blur)
+    append(',')
     appendJsonField("bold", style.bold)
+    append(',')
+    appendJsonField("italic", style.italic)
     append(',')
     appendJsonField("fontSizeSp", style.fontSizeSp)
     append(',')

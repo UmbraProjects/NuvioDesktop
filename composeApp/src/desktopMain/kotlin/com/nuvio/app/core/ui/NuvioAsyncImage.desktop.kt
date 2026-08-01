@@ -25,16 +25,18 @@ import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import coil3.request.NullRequestDataException
 import org.jetbrains.skia.Bitmap
-import org.jetbrains.skia.FilterMipmap
-import org.jetbrains.skia.FilterMode
+import org.jetbrains.skia.CubicResampler
 import org.jetbrains.skia.Image as SkiaImage
-import org.jetbrains.skia.MipmapMode
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 private const val MinCustomDownscaleRatio = 1.08f
 private const val MaxDesktopSourceSizePx = 1536
 private const val MaxScaledBitmapPixels = 1_250_000L
+
+// Catmull-Rom keeps fine poster lettering and line art intact when compact cards cross the custom
+// downscale threshold. The old linear resampler visibly discarded detail at those smaller sizes.
+private val HighQualityDesktopResampler = CubicResampler(b = 0f, c = 0.5f)
 
 private val IsWindowsDesktop: Boolean =
     System.getProperty("os.name")
@@ -278,7 +280,7 @@ private class ScaledBitmapPainter(
         bitmap.allocN32Pixels(width, height)
         scalePixels(
             bitmap.peekPixels()!!,
-            FilterMipmap(FilterMode.LINEAR, MipmapMode.LINEAR),
+            HighQualityDesktopResampler,
             false,
         )
         return bitmap.asComposeImageBitmap()

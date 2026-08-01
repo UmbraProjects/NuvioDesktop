@@ -7,15 +7,23 @@ import kotlinx.serialization.json.longOrNull
 internal data class LocalDebridCachedItem(
     val name: String?,
     val size: Long?,
+    /** Names of the files inside, when the caller asked for them. Empty when it did not, or when
+     * the provider cannot list files without adding the torrent. */
+    val fileNames: List<String> = emptyList(),
 )
 
 internal object LocalDebridService {
+    /**
+     * @param listFiles also fetch each cached torrent's file listing. Torbox only — Premiumize's
+     * cache check returns a bare yes/no plus a name.
+     */
     suspend fun checkCached(
         account: DebridServiceCredential,
         hashes: List<String>,
+        listFiles: Boolean = false,
     ): Map<String, LocalDebridCachedItem>? =
         when (account.provider.id) {
-            DebridProviders.TORBOX_ID -> checkTorboxCached(account.apiKey, hashes)
+            DebridProviders.TORBOX_ID -> checkTorboxCached(account.apiKey, hashes, listFiles)
             DebridProviders.PREMIUMIZE_ID -> checkPremiumizeCached(account.apiKey, hashes)
             else -> null
         }
@@ -28,9 +36,14 @@ internal object LocalDebridService {
     private suspend fun checkTorboxCached(
         apiKey: String,
         hashes: List<String>,
+        listFiles: Boolean,
     ): Map<String, LocalDebridCachedItem>? =
         try {
-            val response = TorboxApiClient.checkCached(apiKey = apiKey, hashes = hashes)
+            val response = TorboxApiClient.checkCached(
+                apiKey = apiKey,
+                hashes = hashes,
+                listFiles = listFiles,
+            )
             if (!response.isSuccessful || response.body?.success == false) {
                 null
             } else {
@@ -38,6 +51,9 @@ internal object LocalDebridService {
                     LocalDebridCachedItem(
                         name = value.name,
                         size = value.size,
+                        fileNames = value.files.orEmpty().mapNotNull { file ->
+                            (file.shortName ?: file.name)?.takeIf { it.isNotBlank() }
+                        },
                     )
                 }
             }

@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CollectionsBookmark
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Link
@@ -118,8 +119,12 @@ import com.nuvio.app.features.discord.DiscordPresenceSettingsRepository
 import com.nuvio.app.features.home.HeroBadgePlacement
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.locallibrary.LocalLibraryRepository
+import com.nuvio.app.features.librarypvr.libraryDownloadsSection
 import com.nuvio.app.features.mdblist.MdbListSettings
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
+import com.nuvio.app.features.qualicache.QualiCacheSettings
+import com.nuvio.app.features.qualicache.QualiCacheSettingsRepository
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsUiState
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -133,6 +138,8 @@ import com.nuvio.app.features.simkl.SimklAuthUiState
 import com.nuvio.app.features.simkl.SimklConnectionMode
 import com.nuvio.app.features.simkl.SimklSettingsRepository
 import com.nuvio.app.features.simkl.SimklSettingsUiState
+import com.nuvio.app.features.yamtrack.YamtrackSettings
+import com.nuvio.app.features.yamtrack.YamtrackSettingsRepository
 import com.nuvio.app.features.trakt.TraktAuthUiState
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktConnectionMode
@@ -145,6 +152,7 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepositor
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesUiState
 import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.collections_header
 import nuvio.composeapp.generated.resources.compose_about_open_logs_folder
 import nuvio.composeapp.generated.resources.compose_nav_home
@@ -156,7 +164,6 @@ import nuvio.composeapp.generated.resources.compose_settings_page_advanced
 import nuvio.composeapp.generated.resources.compose_settings_page_appearance
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
-import nuvio.composeapp.generated.resources.compose_settings_page_fork_enhancements
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
 import nuvio.composeapp.generated.resources.compose_settings_page_keyboard_shortcuts
@@ -170,6 +177,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_poster_customi
 import nuvio.composeapp.generated.resources.compose_settings_page_root
 import nuvio.composeapp.generated.resources.compose_settings_page_streams
 import nuvio.composeapp.generated.resources.compose_settings_page_local_library
+import nuvio.composeapp.generated.resources.compose_settings_page_auto_downloads
 import nuvio.composeapp.generated.resources.compose_settings_page_simkl
 import nuvio.composeapp.generated.resources.compose_settings_page_tmdb_enrichment
 import nuvio.composeapp.generated.resources.compose_settings_page_trakt
@@ -192,7 +200,9 @@ private const val SettingsSearchRevealHapticDelayMillis = 90L
 private const val NuvioHtpcRepoUrl = "https://github.com/UmbraProjects/NuvioDesktop"
 
 private val DesktopSettingsSidebarWidth = 244.dp
-private val DesktopSettingsMainColumnWidth = 775.dp
+// Widened 20% from 775.dp: the denser pages (stream scoring's label + stepper rows in particular)
+// were running out of horizontal room for their captions.
+private val DesktopSettingsMainColumnWidth = 930.dp
 private val DesktopSettingsContextPanelWidth = 300.dp
 
 @Composable
@@ -283,6 +293,10 @@ fun SettingsScreen(
             MdbListSettingsRepository.ensureLoaded()
             MdbListSettingsRepository.uiState
         }.collectAsStateWithLifecycle()
+        val qualiCacheSettings by remember {
+            QualiCacheSettingsRepository.ensureLoaded()
+            QualiCacheSettingsRepository.uiState
+        }.collectAsStateWithLifecycle()
         val debridSettings by remember {
             DebridSettingsRepository.ensureLoaded()
             DebridSettingsRepository.uiState
@@ -302,6 +316,10 @@ fun SettingsScreen(
         val simklSettingsUiState by remember {
             SimklSettingsRepository.ensureLoaded()
             SimklSettingsRepository.uiState
+        }.collectAsStateWithLifecycle()
+        val yamtrackSettingsUiState by remember {
+            YamtrackSettingsRepository.ensureLoaded()
+            YamtrackSettingsRepository.uiState
         }.collectAsStateWithLifecycle()
         val traktCommentsEnabled by remember {
             TraktCommentsSettings.ensureLoaded()
@@ -387,7 +405,7 @@ fun SettingsScreen(
         }
         LaunchedEffect(pendingTitleHighlight) {
             val highlight = pendingTitleHighlight ?: return@LaunchedEffect
-            delay(3_000L)
+            delay(SettingsScrollAnchorHighlightMillis)
             SettingsScrollAnchor.expireTitleHighlight(highlight.sequence)
         }
 
@@ -472,6 +490,7 @@ fun SettingsScreen(
                 episodeReleaseNotificationsUiState = episodeReleaseNotificationsUiState,
                 tmdbSettings = tmdbSettings,
                 mdbListSettings = mdbListSettings,
+                qualiCacheSettings = qualiCacheSettings,
                 debridSettings = debridSettings,
                 discordPresenceSettings = discordPresenceSettings,
                 traktAuthUiState = traktAuthUiState,
@@ -479,6 +498,7 @@ fun SettingsScreen(
                 traktSettingsUiState = traktSettingsUiState,
                 simklAuthUiState = simklAuthUiState,
                 simklSettingsUiState = simklSettingsUiState,
+                yamtrackSettingsUiState = yamtrackSettingsUiState,
                 homescreenHeroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenHeroInfoLines = homescreenSettingsUiState.heroInfoLines,
                 homescreenHeroInfoPriority = homescreenSettingsUiState.heroInfoPriority,
@@ -546,6 +566,7 @@ fun SettingsScreen(
                 episodeReleaseNotificationsUiState = episodeReleaseNotificationsUiState,
                 tmdbSettings = tmdbSettings,
                 mdbListSettings = mdbListSettings,
+                qualiCacheSettings = qualiCacheSettings,
                 debridSettings = debridSettings,
                 discordPresenceSettings = discordPresenceSettings,
                 traktAuthUiState = traktAuthUiState,
@@ -553,6 +574,7 @@ fun SettingsScreen(
                 traktSettingsUiState = traktSettingsUiState,
                 simklAuthUiState = simklAuthUiState,
                 simklSettingsUiState = simklSettingsUiState,
+                yamtrackSettingsUiState = yamtrackSettingsUiState,
                 homescreenHeroEnabled = homescreenSettingsUiState.heroEnabled,
                 homescreenHeroInfoLines = homescreenSettingsUiState.heroInfoLines,
                 homescreenHeroInfoPriority = homescreenSettingsUiState.heroInfoPriority,
@@ -626,6 +648,7 @@ private fun MobileSettingsScreen(
     episodeReleaseNotificationsUiState: EpisodeReleaseNotificationsUiState,
     tmdbSettings: TmdbSettings,
     mdbListSettings: MdbListSettings,
+    qualiCacheSettings: QualiCacheSettings,
     debridSettings: DebridSettings,
     discordPresenceSettings: DiscordPresenceSettings,
     traktAuthUiState: TraktAuthUiState,
@@ -633,6 +656,7 @@ private fun MobileSettingsScreen(
     traktSettingsUiState: TraktSettingsUiState,
     simklAuthUiState: SimklAuthUiState,
     simklSettingsUiState: SimklSettingsUiState,
+    yamtrackSettingsUiState: YamtrackSettings,
     homescreenHeroEnabled: Boolean,
     homescreenHeroInfoLines: Int,
     homescreenHeroInfoPriority: String,
@@ -672,6 +696,8 @@ private fun MobileSettingsScreen(
     // outside the per-page SaveableStateProvider makes the top-bar search one global index.
     var settingsSearchQuery by rememberSaveable { mutableStateOf("") }
     saveableStateHolder.SaveableStateProvider(page.name) {
+        val localLibraryUiState by LocalLibraryRepository.uiState.collectAsStateWithLifecycle()
+        val localLibraryTitlesState = rememberLocalLibraryTitlesState()
         var rootSearchVisible by rememberSaveable { mutableStateOf(isDesktop) }
         var rootSearchRevealAnimating by rememberSaveable { mutableStateOf(false) }
         val listState = rememberLazyListState()
@@ -705,7 +731,13 @@ private fun MobileSettingsScreen(
             settingsSearchQuery = ""
             when (target) {
                 is SettingsSearchTarget.Page -> {
-                    target.anchor?.let(SettingsScrollAnchor::request)
+                    target.anchor?.let { anchor ->
+                        SettingsScrollAnchor.request(
+                            anchor = anchor,
+                            fallbackAnchor = target.fallbackAnchor,
+                            fallbackTitle = target.fallbackTitle,
+                        )
+                    }
                     when (target.page) {
                         SettingsPage.Account -> onAccountClick()
                         SettingsPage.SupportersContributors -> onSupportersContributorsClick()
@@ -778,9 +810,9 @@ private fun MobileSettingsScreen(
                         settingsRootContent(
                             isTablet = false,
                             onPlaybackClick = { onPageChange(SettingsPage.Playback) },
-                            onForkEnhancementsClick = { onPageChange(SettingsPage.ForkEnhancements) },
                             onStreamsClick = { onPageChange(SettingsPage.Streams) },
                             onLocalLibraryClick = { onPageChange(SettingsPage.LocalLibrary) },
+                            onAutoDownloadsClick = { onPageChange(SettingsPage.AutoDownloads) },
                             onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                             onAdvancedClick = { onPageChange(SettingsPage.Advanced) },
                             onNotificationsClick = { onPageChange(SettingsPage.Notifications) },
@@ -793,6 +825,7 @@ private fun MobileSettingsScreen(
                             onIntegrationsClick = { onPageChange(SettingsPage.Integrations) },
                             onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
                             onSimklClick = { onPageChange(SettingsPage.SimklAuthentication) },
+                            onYamtrackClick = { onPageChange(SettingsPage.YamtrackAuthentication) },
                             onSupportersContributorsClick = onSupportersContributorsClick,
                             onLicensesAttributionsClick = onLicensesAttributionsClick,
                             onCheckForUpdatesClick = onCheckForUpdatesClick,
@@ -808,38 +841,6 @@ private fun MobileSettingsScreen(
                 SettingsPage.Account -> accountSettingsContent(
                     isTablet = false,
                     rememberLastProfileEnabled = rememberLastProfileEnabled,
-                )
-                SettingsPage.ForkEnhancements -> forkEnhancementsContent(
-                    isTablet = false,
-                    onOpenHomescreen = { anchor ->
-                        SettingsScrollAnchor.request(anchor)
-                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                        onPageChange(SettingsPage.Homescreen)
-                    },
-                    onOpenPlayback = { anchor ->
-                        SettingsScrollAnchor.request(anchor)
-                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                        onPageChange(SettingsPage.Playback)
-                    },
-                    onOpenTmdb = { anchor ->
-                        SettingsScrollAnchor.request(anchor)
-                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                        onPageChange(SettingsPage.TmdbEnrichment)
-                    },
-                    onOpenPosterCustomization = { anchor ->
-                        SettingsScrollAnchor.request(anchor)
-                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                        onPageChange(SettingsPage.Appearance)
-                    },
-                    onOpenSimkl = {
-                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                        onPageChange(SettingsPage.SimklAuthentication)
-                    },
-                    onOpenIntegrations = { anchor ->
-                        SettingsScrollAnchor.request(anchor)
-                        SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                        onPageChange(SettingsPage.Integrations)
-                    },
                 )
                 SettingsPage.SupportersContributors -> supportersContributorsContent(
                     isTablet = false,
@@ -865,10 +866,18 @@ private fun MobileSettingsScreen(
                 )
                 SettingsPage.Streams -> streamsSettingsContent(
                     isTablet = false,
+                    onOpenStreamScoring = { onPageChange(SettingsPage.StreamScoring) },
                 )
                 SettingsPage.LocalLibrary -> localLibraryContent(
                     isTablet = false,
+                    state = localLibraryUiState,
+                    titlesState = localLibraryTitlesState,
                 )
+                SettingsPage.AutoDownloads -> libraryDownloadsSection(
+                    isTablet = false,
+                    onDownloadsClick = onDownloadsClick,
+                )
+                SettingsPage.StreamScoring -> streamScoringSection(isTablet = false)
                 SettingsPage.KeyboardShortcuts -> keyboardShortcutsContent(
                     isTablet = false,
                 )
@@ -960,9 +969,11 @@ private fun MobileSettingsScreen(
                     onDiscordPresenceModeChange = DiscordPresenceSettingsRepository::setMode,
                     onTmdbClick = { onPageChange(SettingsPage.TmdbEnrichment) },
                     onMdbListClick = { onPageChange(SettingsPage.MdbListRatings) },
+                    onQualiCacheClick = { onPageChange(SettingsPage.QualiCache) },
                     onDebridClick = { onPageChange(SettingsPage.Debrid) },
                     onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
                     onSimklClick = { onPageChange(SettingsPage.SimklAuthentication) },
+                    onYamtrackClick = { onPageChange(SettingsPage.YamtrackAuthentication) },
                 )
                 SettingsPage.TmdbEnrichment -> tmdbSettingsContent(
                     isTablet = false,
@@ -971,6 +982,10 @@ private fun MobileSettingsScreen(
                 SettingsPage.MdbListRatings -> mdbListSettingsContent(
                     isTablet = false,
                     settings = mdbListSettings,
+                )
+                SettingsPage.QualiCache -> qualiCacheSettingsContent(
+                    isTablet = false,
+                    settings = qualiCacheSettings,
                 )
                 SettingsPage.Debrid -> debridSettingsContent(
                     isTablet = false,
@@ -984,6 +999,7 @@ private fun MobileSettingsScreen(
                     onCommentsEnabledChange = TraktCommentsSettings::setEnabled,
                 )
                 SettingsPage.SimklAuthentication -> simklSettingsContent(isTablet = false, uiState = simklAuthUiState, settingsUiState = simklSettingsUiState)
+                SettingsPage.YamtrackAuthentication -> yamtrackSettingsContent(isTablet = false, settings = yamtrackSettingsUiState)
             }
         }
     }
@@ -993,6 +1009,7 @@ private fun SettingsPage.isEnabledByFeaturePolicy(): Boolean =
     when (this) {
         SettingsPage.Notifications -> AppFeaturePolicy.notificationsEnabled
         SettingsPage.Plugins -> AppFeaturePolicy.pluginsEnabled
+        SettingsPage.AutoDownloads -> AppFeaturePolicy.downloadsEnabled
         else -> true
     }
 
@@ -1079,6 +1096,7 @@ private fun TabletSettingsScreen(
     episodeReleaseNotificationsUiState: EpisodeReleaseNotificationsUiState,
     tmdbSettings: TmdbSettings,
     mdbListSettings: MdbListSettings,
+    qualiCacheSettings: QualiCacheSettings,
     debridSettings: DebridSettings,
     discordPresenceSettings: DiscordPresenceSettings,
     traktAuthUiState: TraktAuthUiState,
@@ -1086,6 +1104,7 @@ private fun TabletSettingsScreen(
     traktSettingsUiState: TraktSettingsUiState,
     simklAuthUiState: SimklAuthUiState,
     simklSettingsUiState: SimklSettingsUiState,
+    yamtrackSettingsUiState: YamtrackSettings,
     homescreenHeroEnabled: Boolean,
     homescreenHeroInfoLines: Int,
     homescreenHeroInfoPriority: String,
@@ -1142,6 +1161,8 @@ private fun TabletSettingsScreen(
         val contentWidth = shellWidth - DesktopSettingsSidebarWidth
 
         saveableStateHolder.SaveableStateProvider(page.name) {
+            val localLibraryUiState by LocalLibraryRepository.uiState.collectAsStateWithLifecycle()
+            val localLibraryTitlesState = rememberLocalLibraryTitlesState()
             var rootSearchVisible by rememberSaveable { mutableStateOf(false) }
             var rootSearchRevealAnimating by rememberSaveable { mutableStateOf(false) }
             val hapticFeedback = LocalHapticFeedback.current
@@ -1160,7 +1181,13 @@ private fun TabletSettingsScreen(
                 when (target) {
                     is SettingsSearchTarget.Page -> {
                         if (target.page.isEnabledByFeaturePolicy()) {
-                            target.anchor?.let(SettingsScrollAnchor::request)
+                            target.anchor?.let { anchor ->
+                                SettingsScrollAnchor.request(
+                                    anchor = anchor,
+                                    fallbackAnchor = target.fallbackAnchor,
+                                    fallbackTitle = target.fallbackTitle,
+                                )
+                            }
                             openInlinePage(target.page)
                         }
                     }
@@ -1265,7 +1292,7 @@ private fun TabletSettingsScreen(
                         orderDesktopSettingsSidebarItems(sidebarItems, categoryOrder)
                     }
                     Box(modifier = Modifier.weight(1f)) {
-                        DesktopPanelSection(title = "Categories") {
+                        DesktopPanelSection(title = stringResource(Res.string.settings_desktop_categories)) {
                             DesktopSettingsSidebarList(
                                 items = orderedSidebarItems,
                                 activeSidebarPage = activeSidebarPage,
@@ -1351,9 +1378,9 @@ private fun TabletSettingsScreen(
                             settingsRootContent(
                                 isTablet = true,
                                 onPlaybackClick = { openInlinePage(SettingsPage.Playback) },
-                                onForkEnhancementsClick = { openInlinePage(SettingsPage.ForkEnhancements) },
                                 onStreamsClick = { openInlinePage(SettingsPage.Streams) },
                                 onLocalLibraryClick = { openInlinePage(SettingsPage.LocalLibrary) },
+                                onAutoDownloadsClick = { openInlinePage(SettingsPage.AutoDownloads) },
                                 onAppearanceClick = { openInlinePage(SettingsPage.Appearance) },
                                 onAdvancedClick = { openInlinePage(SettingsPage.Advanced) },
                                 onNotificationsClick = { openInlinePage(SettingsPage.Notifications) },
@@ -1366,6 +1393,7 @@ private fun TabletSettingsScreen(
                                 onIntegrationsClick = { openInlinePage(SettingsPage.Integrations) },
                                 onTraktClick = { openInlinePage(SettingsPage.TraktAuthentication) },
                                 onSimklClick = { openInlinePage(SettingsPage.SimklAuthentication) },
+                                onYamtrackClick = { openInlinePage(SettingsPage.YamtrackAuthentication) },
                                 onSupportersContributorsClick = { openInlinePage(SettingsPage.SupportersContributors) },
                                 onLicensesAttributionsClick = { openInlinePage(SettingsPage.LicensesAttributions) },
                                 onCheckForUpdatesClick = onCheckForUpdatesClick,
@@ -1385,38 +1413,6 @@ private fun TabletSettingsScreen(
                     SettingsPage.Account -> accountSettingsContent(
                         isTablet = true,
                         rememberLastProfileEnabled = rememberLastProfileEnabled,
-                    )
-                    SettingsPage.ForkEnhancements -> forkEnhancementsContent(
-                        isTablet = true,
-                        onOpenHomescreen = { anchor ->
-                            SettingsScrollAnchor.request(anchor)
-                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                            openInlinePage(SettingsPage.Homescreen)
-                        },
-                        onOpenPlayback = { anchor ->
-                            SettingsScrollAnchor.request(anchor)
-                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                            openInlinePage(SettingsPage.Playback)
-                        },
-                        onOpenTmdb = { anchor ->
-                            SettingsScrollAnchor.request(anchor)
-                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                            openInlinePage(SettingsPage.TmdbEnrichment)
-                        },
-                        onOpenPosterCustomization = { anchor ->
-                            SettingsScrollAnchor.request(anchor)
-                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                            openInlinePage(SettingsPage.Appearance)
-                        },
-                        onOpenSimkl = {
-                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                            openInlinePage(SettingsPage.SimklAuthentication)
-                        },
-                        onOpenIntegrations = { anchor ->
-                            SettingsScrollAnchor.request(anchor)
-                            SettingsScrollAnchor.setBackTo(SettingsPage.ForkEnhancements)
-                            openInlinePage(SettingsPage.Integrations)
-                        },
                     )
                     SettingsPage.SupportersContributors -> supportersContributorsContent(
                         isTablet = true,
@@ -1442,10 +1438,18 @@ private fun TabletSettingsScreen(
                     )
                     SettingsPage.Streams -> streamsSettingsContent(
                         isTablet = true,
+                        onOpenStreamScoring = { openInlinePage(SettingsPage.StreamScoring) },
                     )
                     SettingsPage.LocalLibrary -> localLibraryContent(
                         isTablet = true,
+                        state = localLibraryUiState,
+                        titlesState = localLibraryTitlesState,
                     )
+                    SettingsPage.AutoDownloads -> libraryDownloadsSection(
+                        isTablet = true,
+                        onDownloadsClick = onDownloadsClick,
+                    )
+                SettingsPage.StreamScoring -> streamScoringSection(isTablet = true)
                     SettingsPage.KeyboardShortcuts -> keyboardShortcutsContent(
                         isTablet = true,
                     )
@@ -1537,9 +1541,11 @@ private fun TabletSettingsScreen(
                         onDiscordPresenceModeChange = DiscordPresenceSettingsRepository::setMode,
                         onTmdbClick = { onPageChange(SettingsPage.TmdbEnrichment) },
                         onMdbListClick = { onPageChange(SettingsPage.MdbListRatings) },
+                    onQualiCacheClick = { onPageChange(SettingsPage.QualiCache) },
                         onDebridClick = { onPageChange(SettingsPage.Debrid) },
                         onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
                         onSimklClick = { onPageChange(SettingsPage.SimklAuthentication) },
+                        onYamtrackClick = { onPageChange(SettingsPage.YamtrackAuthentication) },
                     )
                     SettingsPage.TmdbEnrichment -> tmdbSettingsContent(
                         isTablet = true,
@@ -1548,6 +1554,10 @@ private fun TabletSettingsScreen(
                     SettingsPage.MdbListRatings -> mdbListSettingsContent(
                         isTablet = true,
                         settings = mdbListSettings,
+                    )
+                    SettingsPage.QualiCache -> qualiCacheSettingsContent(
+                        isTablet = true,
+                        settings = qualiCacheSettings,
                     )
                     SettingsPage.Debrid -> debridSettingsContent(
                         isTablet = true,
@@ -1561,6 +1571,7 @@ private fun TabletSettingsScreen(
                         onCommentsEnabledChange = TraktCommentsSettings::setEnabled,
                     )
                     SettingsPage.SimklAuthentication -> simklSettingsContent(isTablet = true, uiState = simklAuthUiState, settingsUiState = simklSettingsUiState)
+                    SettingsPage.YamtrackAuthentication -> yamtrackSettingsContent(isTablet = true, settings = yamtrackSettingsUiState)
                 }
                     }
                     }
@@ -1621,11 +1632,6 @@ private fun desktopSettingsSidebarItems(): List<DesktopSettingsSidebarItem> = li
         page = SettingsPage.MetaScreen,
     ),
     DesktopSettingsSidebarItem(
-        label = "Fork Additions",
-        icon = Icons.Rounded.AutoAwesome,
-        page = SettingsPage.ForkEnhancements,
-    ),
-    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_homescreen),
         icon = Icons.Rounded.Settings,
         page = SettingsPage.Homescreen,
@@ -1666,6 +1672,11 @@ private fun desktopSettingsSidebarItems(): List<DesktopSettingsSidebarItem> = li
         page = SettingsPage.LocalLibrary,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.compose_settings_page_auto_downloads),
+        icon = Icons.Rounded.CloudDownload,
+        page = SettingsPage.AutoDownloads,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_keyboard_shortcuts),
         icon = Icons.Rounded.Keyboard,
         page = SettingsPage.KeyboardShortcuts,
@@ -1685,19 +1696,22 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.Playback -> SettingsPage.Playback
     SettingsPage.Appearance,
     SettingsPage.PosterCustomization -> SettingsPage.Appearance
-    SettingsPage.ForkEnhancements -> SettingsPage.ForkEnhancements
     SettingsPage.Homescreen -> SettingsPage.Homescreen
     SettingsPage.Plugins -> SettingsPage.Plugins
     SettingsPage.Streams -> SettingsPage.Streams
     SettingsPage.LocalLibrary -> SettingsPage.LocalLibrary
+    SettingsPage.AutoDownloads -> SettingsPage.AutoDownloads
+    SettingsPage.StreamScoring -> SettingsPage.Streams
     SettingsPage.KeyboardShortcuts -> SettingsPage.KeyboardShortcuts
     SettingsPage.LicensesAttributions -> SettingsPage.LicensesAttributions
     SettingsPage.Account -> SettingsPage.Account
     SettingsPage.TraktAuthentication,
     SettingsPage.SimklAuthentication -> SettingsPage.Integrations
+    SettingsPage.YamtrackAuthentication -> SettingsPage.Integrations
     SettingsPage.Integrations,
     SettingsPage.TmdbEnrichment,
     SettingsPage.MdbListRatings,
+    SettingsPage.QualiCache,
     SettingsPage.Debrid -> SettingsPage.Integrations
     SettingsPage.Notifications -> SettingsPage.Notifications
     SettingsPage.Advanced -> SettingsPage.Advanced
@@ -1706,11 +1720,14 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
 
 private fun SettingsPage.desktopBackPage(): SettingsPage? = when (this) {
     SettingsPage.PosterCustomization -> SettingsPage.Appearance
+    SettingsPage.StreamScoring -> SettingsPage.Streams
     SettingsPage.TmdbEnrichment,
     SettingsPage.MdbListRatings,
+    SettingsPage.QualiCache,
     SettingsPage.Debrid,
     SettingsPage.TraktAuthentication,
-    SettingsPage.SimklAuthentication -> SettingsPage.Integrations
+    SettingsPage.SimklAuthentication,
+    SettingsPage.YamtrackAuthentication -> SettingsPage.Integrations
     else -> null
 }
 
@@ -1909,7 +1926,7 @@ private fun DesktopSettingsTopBar(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.ViewColumn,
-                    contentDescription = "Toggle column guides",
+                    contentDescription = stringResource(Res.string.settings_desktop_toggle_column_guides),
                     tint = if (columnGuidesVisible) {
                         tokens.colors.accent
                     } else {
@@ -2074,10 +2091,10 @@ private fun DesktopSettingsContextPanel(
             ) {
                 LaunchedEffect(Unit) { SettingsFavoritesRepository.ensureLoaded() }
                 val favorites by SettingsFavoritesRepository.favorites.collectAsStateWithLifecycle()
-                DesktopPanelSection(title = "Favorites") {
+                DesktopPanelSection(title = stringResource(Res.string.settings_desktop_favorites)) {
                     if (favorites.isEmpty()) {
                         Text(
-                            text = "Right-click a settings heading to pin it here.",
+                            text = stringResource(Res.string.settings_desktop_favorites_empty),
                             style = MaterialTheme.typography.bodySmall,
                             color = tokens.colors.textMuted,
                         )
@@ -2166,10 +2183,13 @@ private fun DesktopSettingsSidebarFooter() {
         modifier = Modifier.padding(top = 12.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
+        // Muted rather than accent-coloured: this is a quiet footnote, and a bright accent (red,
+        // cyan, gold) made it the loudest thing in the sidebar. The underline still marks it as a
+        // link.
         Text(
-            text = "Nuvio HTPC",
+            text = stringResource(Res.string.settings_desktop_project_name),
             style = MaterialTheme.typography.bodySmall,
-            color = tokens.colors.accent,
+            color = tokens.colors.textMuted,
             fontWeight = FontWeight.Medium,
             textDecoration = TextDecoration.Underline,
             modifier = Modifier.clickable {
@@ -2177,14 +2197,18 @@ private fun DesktopSettingsSidebarFooter() {
             },
         )
         Text(
-            text = "Build: ${AppVersionConfig.DESKTOP_VERSION_NAME} (${AppVersionConfig.DESKTOP_VERSION_CODE})",
+            text = stringResource(
+                Res.string.settings_desktop_build,
+                AppVersionConfig.DESKTOP_VERSION_NAME,
+                AppVersionConfig.DESKTOP_VERSION_CODE,
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = tokens.colors.textMuted,
         )
         Text(
             text = stringResource(Res.string.compose_about_open_logs_folder),
             style = MaterialTheme.typography.bodySmall,
-            color = tokens.colors.accent,
+            color = tokens.colors.textMuted,
             fontWeight = FontWeight.Medium,
             textDecoration = TextDecoration.Underline,
             modifier = Modifier.clickable { platformOpenLogsDirectory() },

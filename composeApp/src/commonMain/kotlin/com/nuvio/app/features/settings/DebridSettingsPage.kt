@@ -49,6 +49,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.features.debrid.DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT
 import com.nuvio.app.features.debrid.DebridCredentialValidator
 import com.nuvio.app.features.debrid.DebridDeviceAuthorization
@@ -620,11 +621,7 @@ private fun DebridPrepareCountDialog(
     val options = listOf(1, 2, 3, 5)
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -717,6 +714,7 @@ private fun DebridTemplateDialog(
                 onValueChange = { draft = it },
                 modifier = Modifier
                     .fillMaxWidth()
+                    .trackSettingsTextFocus()
                     .heightIn(min = 140.dp, max = 280.dp),
                 minLines = 5,
                 colors = OutlinedTextFieldDefaults.colors(
@@ -1176,6 +1174,7 @@ private fun DebridTextListDialog(
                 onValueChange = { value = it },
                 modifier = Modifier
                     .fillMaxWidth()
+                    .trackSettingsTextFocus()
                     .heightIn(min = 120.dp),
                 minLines = 4,
                 colors = OutlinedTextFieldDefaults.colors(
@@ -1211,11 +1210,7 @@ private fun DebridDialogSurface(
     title: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-    ) {
+    NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1784,7 +1779,7 @@ private fun DebridApiKeyDialog(
                     draft = it
                     validationMessage = null
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
                 singleLine = true,
                 placeholder = { Text(placeholder) },
                 colors = OutlinedTextFieldDefaults.colors(

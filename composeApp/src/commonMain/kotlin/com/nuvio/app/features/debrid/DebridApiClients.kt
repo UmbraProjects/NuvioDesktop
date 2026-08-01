@@ -59,9 +59,17 @@ internal object TorboxApiClient {
             body = "",
         )
 
+    /**
+     * @param listFiles also returns each cached torrent's file listing. Off by default because the
+     * availability check runs on the stream-list path and only needs a yes/no; the listing multiplies
+     * the response size by the number of files in every torrent checked. Free in API terms either
+     * way — this endpoint carries the standard 300/min limit and the hashes go in the POST body, so
+     * neither the file listing nor the batch size costs an extra request.
+     */
     suspend fun checkCached(
         apiKey: String,
         hashes: List<String>,
+        listFiles: Boolean = false,
     ): DebridApiResponse<TorboxEnvelopeDto<Map<String, TorboxCachedItemDto>>> {
         val normalizedHashes = hashes
             .map { it.trim().lowercase() }
@@ -79,19 +87,29 @@ internal object TorboxApiClient {
         )
         return request(
             method = "POST",
-            url = "$BASE_URL/v1/api/torrents/checkcached?format=object",
+            url = "$BASE_URL/v1/api/torrents/checkcached?format=object" +
+                if (listFiles) "&list_files=true" else "",
             apiKey = apiKey,
             body = body,
             contentType = "application/json",
         )
     }
 
-    suspend fun createTorrent(apiKey: String, magnet: String): DebridApiResponse<TorboxEnvelopeDto<TorboxCreateTorrentDataDto>> {
+    /**
+     * [onlyIfCached] defaults to true so every automatic caller keeps refusing uncached magnets —
+     * adding one starts a real transfer that can take hours, which must never happen off the back of
+     * playback resolution. Only a deliberate, user-initiated inspection passes false.
+     */
+    suspend fun createTorrent(
+        apiKey: String,
+        magnet: String,
+        onlyIfCached: Boolean = true,
+    ): DebridApiResponse<TorboxEnvelopeDto<TorboxCreateTorrentDataDto>> {
         val boundary = "NuvioDebrid${magnet.hashCode().toUInt()}"
         val body = multipartFormBody(
             boundary = boundary,
             "magnet" to magnet,
-            "add_only_if_cached" to "true",
+            "add_only_if_cached" to onlyIfCached.toString(),
             "allow_zip" to "false",
         )
         return request(

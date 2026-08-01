@@ -8,6 +8,9 @@ import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DebridStreamPresentation
+import com.nuvio.app.features.streams.StreamScoreContexts
+import com.nuvio.app.features.streams.StreamScoreRepository
+import com.nuvio.app.features.streams.StreamScoring
 import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
 import com.nuvio.app.features.debrid.LocalDebridAvailabilityService
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -44,6 +47,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import kotlin.time.TimeSource
 
 /**
  * Dedicated stream fetcher for use inside the player (sources & episodes panels).
@@ -324,6 +328,7 @@ object PlayerStreamsRepository {
         )
 
         val job = scope.launch {
+            val fetchStarted = TimeSource.Monotonic.markNow()
             val installedAddonIds = streamAddons.map { it.addonId }.toSet()
             val installedAddonNames = installedAddonOrder.toSet()
             val pluginRemainingByAddonId = pluginProviderGroups
@@ -333,6 +338,12 @@ object PlayerStreamsRepository {
             val totalTasks = streamAddons.size + pluginProviderGroups.sumOf { it.scrapers.size }
             val completions = Channel<StreamLoadCompletion>(capacity = Channel.BUFFERED)
             val debridAvailabilityJobs = mutableListOf<Job>()
+
+            log.i {
+                "Fetch started type=$type id=$effectiveVideoId season=$effectiveSeason episode=$effectiveEpisode " +
+                    "affinity=$sourceAffinity addons=${streamAddons.size} " +
+                    "pluginScrapers=${pluginProviderGroups.sumOf { it.scrapers.size }}"
+            }
 
             fun publishCompletion(completion: StreamLoadCompletion) {
                 if (completions.trySend(completion).isFailure) {
@@ -348,6 +359,16 @@ object PlayerStreamsRepository {
                 return DebridStreamPresentation.apply(
                     groups = listOf(badgeGroup),
                     settings = debridSettings,
+                    // The context must match the content: scoring an episode with a movie context
+                    // measures it against the movie size band and buries every normal episode.
+                    scoring = StreamScoring(
+                        profile = StreamScoreRepository.profile,
+                        context = StreamScoreContexts.forPlayback(
+                            isEpisode = effectiveEpisode != null,
+                            contentId = parentMetaId ?: videoId,
+                            contentType = type,
+                        ),
+                    ),
                 ).firstOrNull() ?: badgeGroup
             }
 
@@ -401,6 +422,11 @@ object PlayerStreamsRepository {
 
             streamAddons.forEach { addon ->
                 launch {
+                    val providerStarted = TimeSource.Monotonic.markNow()
+                    log.i {
+                        "Provider started addon=${addon.addonName} id=${addon.addonId} " +
+                            "type=$type contentId=$effectiveVideoId"
+                    }
                     val url = buildAddonResourceUrl(
                         manifestUrl = addon.manifest.transportUrl,
                         resource = "stream",
@@ -423,13 +449,24 @@ object PlayerStreamsRepository {
                                 type = type,
                                 id = parentMetaId ?: videoId,
                             ),
+                            seriesTitle = MetaDetailsRepository.seriesTitleFor(
+                                type = type,
+                                id = parentMetaId ?: videoId,
+                            ),
                         )
                     }.fold(
                         onSuccess = { streams ->
+                            log.i {
+                                "Provider completed addon=${addon.addonName} id=${addon.addonId} " +
+                                    "streams=${streams.size} elapsedMs=${providerStarted.elapsedNow().inWholeMilliseconds}"
+                            }
                             AddonStreamGroup(displayName, addon.addonId, streams, isLoading = false)
                         },
                         onFailure = { err ->
-                            log.w(err) { "Failed: ${displayName}" }
+                            log.w(err) {
+                                "Provider failed addon=$displayName id=${addon.addonId} " +
+                                    "elapsedMs=${providerStarted.elapsedNow().inWholeMilliseconds}"
+                            }
                             AddonStreamGroup(displayName, addon.addonId, emptyList(), isLoading = false, error = err.message)
                         },
                     )
@@ -441,6 +478,11 @@ object PlayerStreamsRepository {
                 val includeScraperNameInSubtitle = false
                 providerGroup.scrapers.forEach { scraper ->
                     launch {
+                        val providerStarted = TimeSource.Monotonic.markNow()
+                        log.i {
+                            "Plugin provider started group=${providerGroup.addonName} " +
+                                "scraper=${scraper.name} type=$type contentId=$effectiveVideoId"
+                        }
                         val completion = PluginRepository.executeScraper(
                             scraper = scraper,
                             tmdbId = pluginContentId(
@@ -453,6 +495,11 @@ object PlayerStreamsRepository {
                             episode = effectiveEpisode,
                         ).fold(
                             onSuccess = { results ->
+                                log.i {
+                                    "Plugin provider completed group=${providerGroup.addonName} " +
+                                        "scraper=${scraper.name} streams=${results.size} " +
+                                        "elapsedMs=${providerStarted.elapsedNow().inWholeMilliseconds}"
+                                }
                                 StreamLoadCompletion.PluginScraper(
                                     addonId = providerGroup.addonId,
                                     streams = results.map { result ->
@@ -467,7 +514,11 @@ object PlayerStreamsRepository {
                                 )
                             },
                             onFailure = { error ->
-                                log.w(error) { "Plugin scraper failed: ${scraper.name}" }
+                                log.w(error) {
+                                    "Plugin provider failed group=${providerGroup.addonName} " +
+                                        "scraper=${scraper.name} " +
+                                        "elapsedMs=${providerStarted.elapsedNow().inWholeMilliseconds}"
+                                }
                                 StreamLoadCompletion.PluginScraper(
                                     addonId = providerGroup.addonId,
                                     streams = emptyList(),
@@ -533,6 +584,13 @@ object PlayerStreamsRepository {
             for (availabilityJob in debridAvailabilityJobs) {
                 availabilityJob.join()
             }
+            val completedState = stateFlow.value
+            log.i {
+                "Fetch completed type=$type id=$effectiveVideoId season=$effectiveSeason episode=$effectiveEpisode " +
+                    "providers=${completedState.groups.size} streams=${completedState.groups.sumOf { it.streams.size }} " +
+                    "errors=${completedState.groups.count { !it.error.isNullOrBlank() }} " +
+                    "elapsedMs=${fetchStarted.elapsedNow().inWholeMilliseconds}"
+            }
             launch {
                 DirectDebridStreamPreparer.prepare(
                     streams = stateFlow.value.groups
@@ -542,6 +600,8 @@ object PlayerStreamsRepository {
                     episode = effectiveEpisode,
                     playerSettings = playerSettings,
                     installedAddonNames = installedAddonNames,
+                    contentId = parentMetaId ?: videoId,
+                    contentType = type,
                 ) { original, prepared ->
                     stateFlow.update { current ->
                         current.copy(

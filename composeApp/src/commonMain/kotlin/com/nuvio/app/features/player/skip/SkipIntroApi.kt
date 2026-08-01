@@ -2,6 +2,7 @@ package com.nuvio.app.features.player.skip
 
 import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.addons.httpPostJsonWithHeaders
+import com.nuvio.app.features.addons.httpRequestRaw
 import kotlinx.serialization.json.Json
 
 internal object SkipIntroApi {
@@ -11,6 +12,49 @@ internal object SkipIntroApi {
     private const val ANISKIP_BASE = "https://api.aniskip.com/v2/"
     private const val ARM_BASE = "https://arm.haglund.dev/api/v2/"
     private const val ANIMESKIP_BASE = "https://api.anime-skip.com/"
+
+    // api.skipdb.tv only routes /api/segments; the rest of the API (dump, titles, keys) lives on
+    // the apex host, so use that one throughout.
+    private const val SKIPDB_BASE = "https://skipdb.tv/api/"
+
+    // Only "conservative" reports the runtime offset without applying it. "greedy" shifts the
+    // timings by that offset, which assumes the whole runtime difference sits ahead of the
+    // segment — wrong whenever a release simply carries longer credits. Reads stay unshifted and
+    // out-of-range answers are dropped instead.
+    private const val SKIPDB_ADJUST = "conservative"
+
+    // --- SkipDB ---
+
+    /**
+     * Best segment of each kind for one title. Pass a null [season]/[episode] for a movie, and
+     * [durationSeconds] whenever the runtime is known — without it SkipDB cannot tell which cut is
+     * being played and downgrades every answer to `agnostic`.
+     */
+    suspend fun getSkipDbSegments(
+        imdbId: String,
+        season: Int?,
+        episode: Int?,
+        durationSeconds: Long?,
+    ): SkipDbSegmentsResponse? {
+        if (imdbId.isBlank()) return null
+        val query = buildString {
+            append("imdb_id=").append(imdbId)
+            if (season != null && episode != null) {
+                append("&season=").append(season)
+                append("&episode=").append(episode)
+            }
+            if (durationSeconds != null && durationSeconds > 0L) {
+                append("&duration=").append(durationSeconds)
+            }
+            append("&adjust=").append(SKIPDB_ADJUST)
+        }
+        return try {
+            val text = httpGetText("${SKIPDB_BASE}segments?$query")
+            json.decodeFromString<SkipDbSegmentsResponse>(text)
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     // --- IntroDb ---
 
@@ -83,6 +127,58 @@ internal object SkipIntroApi {
             false
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /**
+     * Contributes one segment. A rejection is as informative as an acceptance here — the server
+     * explains overlaps, validation failures and rate limits in the body — so the reply is read on
+     * both paths rather than reduced to a success flag.
+     */
+    suspend fun submitSkipDbSegment(
+        apiKey: String,
+        request: SkipDbSubmitRequest,
+    ): SkipDbSubmitResponse? {
+        if (apiKey.isBlank()) return null
+        val body = json.encodeToString(SkipDbSubmitRequest.serializer(), request)
+        val headers = mapOf(
+            "Authorization" to "Bearer $apiKey",
+            "Content-Type" to "application/json",
+        )
+        return try {
+            val response = httpRequestRaw(
+                method = "POST",
+                url = "${SKIPDB_BASE}segments",
+                headers = headers,
+                body = body,
+            )
+            runCatching { json.decodeFromString<SkipDbSubmitResponse>(response.body) }
+                .getOrNull()
+                ?: SkipDbSubmitResponse(
+                    error = "HTTP ${response.status}".takeIf { response.status !in 200..299 },
+                    status = if (response.status in 200..299) "pending" else null,
+                )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Mints a submission key that is not tied to any account. SkipDB allows this so contributors do
+     * not have to register; the trade-off is that such keys cannot vote.
+     */
+    suspend fun createSkipDbAnonymousKey(): String? {
+        return try {
+            val response = httpRequestRaw(
+                method = "POST",
+                url = "${SKIPDB_BASE}keys/anonymous",
+                headers = mapOf("Content-Type" to "application/json"),
+                body = "{}",
+            )
+            if (response.status !in 200..299) return null
+            json.decodeFromString<SkipDbAnonymousKeyResponse>(response.body).key?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
         }
     }
 

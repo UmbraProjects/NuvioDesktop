@@ -36,9 +36,34 @@ class HomeCatalogSectionTest {
         assertFalse(section.canOpenCatalog(previewLimit = 18))
     }
 
+    @Test
+    fun `paginating catalog uses infinite home row by default`() {
+        val section = section(
+            availableItemCount = 20,
+            hasMore = true,
+            paginates = true,
+        )
+
+        assertTrue(section.usesInfiniteHomeRow(catalogSeeMoreEnabled = false))
+    }
+
+    @Test
+    fun `see more preference disables infinite home row without changing pagination capability`() {
+        val section = section(
+            availableItemCount = 20,
+            hasMore = true,
+            paginates = true,
+        )
+
+        assertFalse(section.usesInfiniteHomeRow(catalogSeeMoreEnabled = true))
+        assertTrue(section.paginates)
+        assertTrue(section.canOpenCatalog(previewLimit = 18))
+    }
+
     private fun section(
         availableItemCount: Int,
         hasMore: Boolean,
+        paginates: Boolean = false,
     ): HomeCatalogSection =
         HomeCatalogSection(
             key = "addon:movie:popular",
@@ -60,5 +85,6 @@ class HomeCatalogSectionTest {
             ),
             availableItemCount = availableItemCount,
             hasMore = hasMore,
+            paginates = paginates,
         )
 }

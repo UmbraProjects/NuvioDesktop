@@ -25,16 +25,22 @@ import vapoursynth as vs
 import gc
 import traceback
 
-diagnostic_log_path = os.path.join(os.path.dirname(__file__), "svp_diag.log")
-
 # Config loader: reads script-opts/svp.conf placed next to this script in MPV config
 def load_config():
     cfg = {
         'max_cache_size': 2048,   # MB default for 16GB machines
         'num_threads': 'auto',    # 'auto' or integer
-        'DEBUG_OVERLAY': False
+        'DEBUG_OVERLAY': False,
+        'diag_log': ''            # absolute path; blank = next to this script
     }
-    conf_path = os.path.join(os.path.dirname(__file__), 'script-opts', 'svp.conf')
+    # Nuvio exports the config to script-opts/; the sibling path is kept as a fallback so a
+    # hand-placed svp.conf next to this script still works.
+    script_dir = os.path.dirname(__file__)
+    candidates = [
+        os.path.join(script_dir, 'script-opts', 'svp.conf'),
+        os.path.join(script_dir, 'svp.conf'),
+    ]
+    conf_path = next((path for path in candidates if os.path.exists(path)), candidates[0])
     try:
         if os.path.exists(conf_path):
             with open(conf_path, 'r', encoding='utf-8') as f:
@@ -62,6 +68,8 @@ def load_config():
                             cfg[key] = int(value)
                         except Exception:
                             pass
+                    elif key == 'diag_log':
+                        cfg[key] = value
             cfg['_conf_path'] = conf_path
             cfg['_status'] = 'loaded'
         else:
@@ -73,6 +81,37 @@ def load_config():
     return cfg
 
 config = load_config()
+
+# Diagnostic log location. Nuvio points this at its own logs folder (next to nuvio.log and
+# nuvio-mpv.log) so users can find it; falling back to the script directory keeps the script
+# usable standalone, e.g. dropped into a plain mpv config.
+MAX_DIAG_LOG_BYTES = 2 * 1024 * 1024
+
+def resolve_diag_log_path(cfg):
+    configured = str(cfg.get('diag_log') or '').strip()
+    if configured:
+        try:
+            parent = os.path.dirname(configured)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            return configured
+        except Exception:
+            pass
+    return os.path.join(os.path.dirname(__file__), "svp_diag.log")
+
+def rotate_diag_log(path):
+    """Keeps one previous log so the file cannot grow without bound across sessions."""
+    try:
+        if os.path.exists(path) and os.path.getsize(path) > MAX_DIAG_LOG_BYTES:
+            previous = path + ".1"
+            if os.path.exists(previous):
+                os.remove(previous)
+            os.replace(path, previous)
+    except Exception:
+        pass
+
+diagnostic_log_path = resolve_diag_log_path(config)
+rotate_diag_log(diagnostic_log_path)
 
 # Apply to core
 core = vs.core
@@ -259,15 +298,19 @@ log_svp_diag(
     f"svpflow1={svpflow1_status}, svpflow2={svpflow2_status}"
 )
 
-def add_method_overlay(clip):
+def add_method_overlay(clip, target_fps):
     """
-    Simple, resilient overlay that prints one-line status + current method.
-    Make sure the rest of the pipeline calls this before returning final clip
-    if you want the overlay visible.
+    Simple, resilient overlay that prints current method plus the source/target/output rates —
+    the output rate is what tells you interpolation actually reached the filter output, which
+    mpv's own stats page cannot show (its "Frame Rate" line is the container rate).
     """
     try:
-        txt = f"SVP | {overlay_status} | Method: {current_method}"
-        # alignment=7 places it bottom-right; change alignment if you prefer
+        txt = (
+            f"SVP | Method: {current_method}\n"
+            f"{fmt_fps(src_fps)} -> {fmt_fps(target_fps)} fps | out={clip_fps_text(clip)}\n"
+            f"{overlay_status}"
+        )
+        # alignment=7 is the top-left corner (ASS numpad numbering)
         return core.text.Text(clip, txt, alignment=7)
     except Exception:
         return clip
@@ -558,6 +601,6 @@ log_clip_summary("final_output_ready", smooth, current_method, get_target_fps())
 smooth = add_svp_runtime_probe(smooth, current_method, get_target_fps())
 
 if DEBUG_OVERLAY:
-    smooth = add_method_overlay(smooth)
+    smooth = add_method_overlay(smooth, get_target_fps())
 
 smooth.set_output()

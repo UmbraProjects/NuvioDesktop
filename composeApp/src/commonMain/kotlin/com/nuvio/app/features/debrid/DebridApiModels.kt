@@ -102,6 +102,16 @@ internal data class TorboxCachedItemDto(
     val name: String? = null,
     val size: Long? = null,
     val hash: String? = null,
+    /** Only present when the request asked for `list_files`. */
+    val files: List<TorboxCachedFileDto>? = null,
+)
+
+@Serializable
+internal data class TorboxCachedFileDto(
+    val id: Int? = null,
+    val name: String? = null,
+    val size: Long? = null,
+    @SerialName("short_name") val shortName: String? = null,
 )
 
 @Serializable

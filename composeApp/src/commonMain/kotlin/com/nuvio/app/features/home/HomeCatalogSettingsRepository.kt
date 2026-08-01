@@ -35,6 +35,7 @@ data class HomeCatalogSettingsItem(
     val defaultTitle: String,
     val addonName: String,
     val customTitle: String = "",
+    val markerColor: HomeCatalogMarkerColor? = null,
     val enabled: Boolean = true,
     val heroSourceEnabled: Boolean = true,
     val order: Int = 0,
@@ -63,6 +64,10 @@ data class HomeCatalogSettingsUiState(
     val heroAmbientBackgroundEnabled: Boolean = false,
     val tvModeEnabled: Boolean = false,
     val smoothScrollingEnabled: Boolean = true,
+    val catalogSeeMoreEnabled: Boolean = false,
+    val catalogRowNumbersEnabled: Boolean = false,
+    val tvRowDotsEnabled: Boolean = false,
+    val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
     val items: List<HomeCatalogSettingsItem> = emptyList(),
 ) {
     val signature: String
@@ -95,9 +100,17 @@ data class HomeCatalogSettingsUiState(
             append('|')
             append(smoothScrollingEnabled)
             append('|')
+            append(catalogSeeMoreEnabled)
+            append('|')
+            append(catalogRowNumbersEnabled)
+            append('|')
+            append(tvRowDotsEnabled)
+            append('|')
+            append(tvRowDotsAnchor)
+            append('|')
             append(
                 items.joinToString(separator = "|") { item ->
-                    "${item.key}:${item.order}:${item.enabled}:${item.heroSourceEnabled}:${item.customTitle}"
+                    "${item.key}:${item.order}:${item.enabled}:${item.heroSourceEnabled}:${item.customTitle}:${item.markerColor}"
                 }
             )
         }
@@ -127,6 +140,18 @@ internal data class HomeCatalogSettingsSnapshot(
     val preferences: Map<String, HomeCatalogPreference>,
 )
 
+/** Where TV Mode's row-jump dots sit. See HomeTvRowDotStrip. */
+@Serializable
+enum class HomeTvRowDotsAnchor {
+    /** On the shelf's title line, centred on the window. */
+    @SerialName("row_title")
+    RowTitle,
+
+    /** Over the backdrop, in the slot the "Bottom of backdrop" hero badges occupy. */
+    @SerialName("hero_backdrop")
+    HeroBackdrop,
+}
+
 @Serializable
 enum class HeroBadgePlacement {
     @SerialName("bottom_backdrop")
@@ -143,6 +168,7 @@ enum class HeroBadgePlacement {
 private data class StoredHomeCatalogPreference(
     val key: String,
     val customTitle: String = "",
+    val markerColor: HomeCatalogMarkerColor? = null,
     val enabled: Boolean = true,
     val heroSourceEnabled: Boolean = true,
     val order: Int = 0,
@@ -166,6 +192,10 @@ private data class StoredHomeCatalogSettingsPayload(
     @SerialName("immersiveCatalogModeEnabled")
     val tvModeEnabled: Boolean = false,
     val smoothScrollingEnabled: Boolean = true,
+    val catalogSeeMoreEnabled: Boolean = false,
+    val catalogRowNumbersEnabled: Boolean = false,
+    val tvRowDotsEnabled: Boolean = false,
+    val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
     val items: List<StoredHomeCatalogPreference> = emptyList(),
 )
 
@@ -198,6 +228,10 @@ object HomeCatalogSettingsRepository {
     private var heroAmbientBackgroundEnabled = false
     private var tvModeEnabled = false
     private var smoothScrollingEnabled = true
+    private var catalogSeeMoreEnabled = false
+    private var catalogRowNumbersEnabled = false
+    private var tvRowDotsEnabled = false
+    private var tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
 
     fun onProfileChanged() {
         hasLoaded = false
@@ -216,6 +250,10 @@ object HomeCatalogSettingsRepository {
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
         smoothScrollingEnabled = true
+        catalogSeeMoreEnabled = false
+        catalogRowNumbersEnabled = false
+        tvRowDotsEnabled = false
+        tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
         definitions = emptyList()
         collectionDefinitions = emptyList()
         lastSyncedCatalogKeys = null
@@ -242,6 +280,10 @@ object HomeCatalogSettingsRepository {
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
         smoothScrollingEnabled = true
+        catalogSeeMoreEnabled = false
+        catalogRowNumbersEnabled = false
+        tvRowDotsEnabled = false
+        tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
         _uiState.value = HomeCatalogSettingsUiState()
     }
 
@@ -434,6 +476,38 @@ object HomeCatalogSettingsRepository {
         persist()
     }
 
+    fun setCatalogSeeMoreEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (catalogSeeMoreEnabled == enabled) return
+        catalogSeeMoreEnabled = enabled
+        publish()
+        persist()
+    }
+
+    fun setCatalogRowNumbersEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (catalogRowNumbersEnabled == enabled) return
+        catalogRowNumbersEnabled = enabled
+        publish()
+        persist()
+    }
+
+    fun setTvRowDotsEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (tvRowDotsEnabled == enabled) return
+        tvRowDotsEnabled = enabled
+        publish()
+        persist()
+    }
+
+    fun setTvRowDotsAnchor(anchor: HomeTvRowDotsAnchor) {
+        ensureLoaded()
+        if (tvRowDotsAnchor == anchor) return
+        tvRowDotsAnchor = anchor
+        publish()
+        persist()
+    }
+
     fun setHeroSourceEnabled(key: String, enabled: Boolean) {
         updatePreference(key) { preference ->
             if (!enabled) {
@@ -468,6 +542,12 @@ object HomeCatalogSettingsRepository {
         }
     }
 
+    fun setMarkerColor(key: String, markerColor: HomeCatalogMarkerColor?) {
+        updatePreference(key) { preference ->
+            preference.copy(markerColor = markerColor)
+        }
+    }
+
     fun resetToDefaults() {
         ensureLoaded()
         heroEnabled = true
@@ -484,6 +564,10 @@ object HomeCatalogSettingsRepository {
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
         smoothScrollingEnabled = true
+        catalogSeeMoreEnabled = false
+        catalogRowNumbersEnabled = false
+        tvRowDotsEnabled = false
+        tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
         preferences.clear()
         normalizePreferences()
         publish()
@@ -569,6 +653,10 @@ object HomeCatalogSettingsRepository {
             heroAmbientBackgroundEnabled = parsedPayload.heroAmbientBackgroundEnabled
             tvModeEnabled = parsedPayload.tvModeEnabled
             smoothScrollingEnabled = parsedPayload.smoothScrollingEnabled
+            catalogSeeMoreEnabled = parsedPayload.catalogSeeMoreEnabled
+            catalogRowNumbersEnabled = parsedPayload.catalogRowNumbersEnabled
+            tvRowDotsEnabled = parsedPayload.tvRowDotsEnabled
+            tvRowDotsAnchor = parsedPayload.tvRowDotsAnchor
             normalizeHeroModes()
             preferences = parsedPayload.items.associateBy { it.key }.toMutableMap()
             publish()
@@ -631,6 +719,7 @@ object HomeCatalogSettingsRepository {
             normalized[entry.key] = StoredHomeCatalogPreference(
                 key = entry.key,
                 customTitle = stored?.customTitle.orEmpty(),
+                markerColor = stored?.markerColor,
                 enabled = stored?.enabled ?: true,
                 heroSourceEnabled = heroSourceEnabled,
                 order = stored?.order ?: nextOrder++,
@@ -650,6 +739,7 @@ object HomeCatalogSettingsRepository {
                     defaultTitle = definition.defaultTitle,
                     addonName = definition.addonName,
                     customTitle = preference?.customTitle.orEmpty(),
+                    markerColor = preference?.markerColor,
                     enabled = preference?.enabled ?: true,
                     heroSourceEnabled = preference?.heroSourceEnabled ?: true,
                     order = preference?.order ?: 0,
@@ -663,6 +753,7 @@ object HomeCatalogSettingsRepository {
                 defaultTitle = colDef.title,
                 addonName = colDef.subtitle,
                 customTitle = preference?.customTitle.orEmpty(),
+                markerColor = preference?.markerColor,
                 enabled = preference?.enabled ?: true,
                 heroSourceEnabled = preference?.heroSourceEnabled ?: false,
                 order = preference?.order ?: 0,
@@ -698,6 +789,12 @@ object HomeCatalogSettingsRepository {
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
             smoothScrollingEnabled = smoothScrollingEnabled,
+            catalogSeeMoreEnabled = catalogSeeMoreEnabled,
+            catalogRowNumbersEnabled = catalogRowNumbersEnabled,
+            // Reported raw (not && tvModeEnabled) so the settings row keeps showing what the user
+            // saved while the toggle sits disabled outside TV Mode; the shelf gates on the mode.
+            tvRowDotsEnabled = tvRowDotsEnabled,
+            tvRowDotsAnchor = tvRowDotsAnchor,
             items = items,
         )
     }
@@ -759,6 +856,10 @@ object HomeCatalogSettingsRepository {
                     heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
                     tvModeEnabled = tvModeEnabled,
                     smoothScrollingEnabled = smoothScrollingEnabled,
+                    catalogSeeMoreEnabled = catalogSeeMoreEnabled,
+                    catalogRowNumbersEnabled = catalogRowNumbersEnabled,
+                    tvRowDotsEnabled = tvRowDotsEnabled,
+                    tvRowDotsAnchor = tvRowDotsAnchor,
                     items = preferences.values.sortedBy { it.order },
                 ),
             ),
@@ -827,6 +928,7 @@ object HomeCatalogSettingsRepository {
                     enabled = pref.enabled,
                     order = pref.order,
                     customTitle = pref.customTitle,
+                    markerColor = pref.markerColor?.storageValue.orEmpty(),
                     isCollection = true,
                     collectionId = pref.key.removePrefix("collection_"),
                 )
@@ -838,6 +940,7 @@ object HomeCatalogSettingsRepository {
                     enabled = pref.enabled,
                     order = pref.order,
                     customTitle = pref.customTitle,
+                    markerColor = pref.markerColor?.storageValue.orEmpty(),
                     isCollection = false,
                 )
             }
@@ -855,6 +958,7 @@ object HomeCatalogSettingsRepository {
         hideCatalogUnderline = payload.hideCatalogUnderline
         if (payload.items.isNotEmpty()) {
             val existingHeroState = preferences.mapValues { it.value.heroSourceEnabled }
+            val existingMarkerColors = preferences.mapValues { it.value.markerColor }
             preferences = payload.items.associate { item ->
                 val key = if (item.isCollection) {
                     "collection_${item.collectionId}"
@@ -864,6 +968,11 @@ object HomeCatalogSettingsRepository {
                 key to StoredHomeCatalogPreference(
                     key = key,
                     customTitle = item.customTitle,
+                    markerColor = if (item.markerColor == null) {
+                        existingMarkerColors[key]
+                    } else {
+                        HomeCatalogMarkerColor.fromStorageValue(item.markerColor)
+                    },
                     enabled = item.enabled,
                     heroSourceEnabled = existingHeroState[key] ?: true,
                     order = item.order,

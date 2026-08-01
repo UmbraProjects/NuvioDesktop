@@ -37,6 +37,26 @@ data class DiscoverCatalogOption(
     val supportsPagination: Boolean = false,
 )
 
+internal fun discoverCatalogDisplayLabels(catalogs: List<DiscoverCatalogOption>): List<String> =
+    catalogs.mapIndexed { index, catalog ->
+        val sameAsPrevious = catalogs.getOrNull(index - 1)
+            ?.catalogName
+            ?.equals(catalog.catalogName, ignoreCase = true) == true
+        val sameAsNext = catalogs.getOrNull(index + 1)
+            ?.catalogName
+            ?.equals(catalog.catalogName, ignoreCase = true) == true
+        if (sameAsPrevious || sameAsNext) {
+            val typeLabel = when (catalog.type.lowercase()) {
+                "movie" -> "Movie"
+                "series", "show", "tv" -> "Show"
+                else -> catalog.type.replaceFirstChar { it.titlecase() }
+            }
+            "${catalog.catalogName} ($typeLabel)"
+        } else {
+            catalog.catalogName
+        }
+    }
+
 data class DiscoverUiState(
     val availableCatalogs: List<DiscoverCatalogOption> = emptyList(),
     val typeOptions: List<String> = emptyList(),

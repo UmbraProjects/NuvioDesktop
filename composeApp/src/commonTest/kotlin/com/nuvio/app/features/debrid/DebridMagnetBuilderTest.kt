@@ -1,6 +1,7 @@
 package com.nuvio.app.features.debrid
 
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamClientResolve
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -29,6 +30,13 @@ class DebridMagnetBuilderTest {
     }
 
     @Test
+    fun `uses magnet carried only by client resolve metadata`() {
+        val magnet = "magnet:?xt=urn:btih:$hexHash&dn=Season.Pack"
+        val stream = stream(clientResolve = StreamClientResolve(magnetUri = magnet))
+        assertEquals(magnet, DebridMagnetBuilder.fromStream(stream))
+    }
+
+    @Test
     fun `returns null for torrent-null sentinel url`() {
         val stream = stream(url = "torrent://null")
         assertNull(DebridMagnetBuilder.fromStream(stream))
@@ -43,9 +51,11 @@ class DebridMagnetBuilderTest {
     private fun stream(
         url: String? = null,
         infoHash: String? = null,
+        clientResolve: StreamClientResolve? = null,
     ): StreamItem = StreamItem(
         url = url,
         infoHash = infoHash,
+        clientResolve = clientResolve,
         addonName = "TestAddon",
         addonId = "test.addon",
     )

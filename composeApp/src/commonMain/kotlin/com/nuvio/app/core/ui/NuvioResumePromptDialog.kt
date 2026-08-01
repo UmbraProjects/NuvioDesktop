@@ -51,13 +51,7 @@ fun NuvioResumePromptDialog(
     val tokens = MaterialTheme.nuvio
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.widthIn(min = 560.dp, max = 760.dp),
-            color = tokens.colors.surfaceDialog,
-            shape = tokens.shapes.dialog,
-            tonalElevation = tokens.elevation.playerControls,
-            shadowElevation = tokens.elevation.modal,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.widthIn(min = 560.dp, max = 760.dp), shape = tokens.shapes.dialog) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

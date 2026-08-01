@@ -5,16 +5,33 @@ package com.nuvio.app.features.streams
  * occasionally return adjacent anime numbering schemes for one request (for example Pokémon
  * S7E41 for an S7E1 request). Unlabelled releases and season packs remain available because their
  * match cannot be determined safely.
+ *
+ * Evidence is ranked: a numeric S/E coordinate naming the requested episode is decisive, and the
+ * episode-title heuristic is consulted only when no explicit coordinate agrees. Titles infer a
+ * coordinate from prose, so letting them overrule an agreeing tag lets one ambiguous title reject
+ * streams the addon labelled correctly. [seriesTitle], when known, additionally discards episode
+ * titles that merely repeat it — those match every stream and identify no episode.
  */
 internal fun List<StreamItem>.filterForRequestedEpisode(
     season: Int?,
     episode: Int?,
     episodeTitlesByCoordinate: Map<Pair<Int, Int>, String> = emptyMap(),
+    seriesTitle: String? = null,
 ): List<StreamItem> {
     if (season == null || episode == null) return this
+    val normalizedSeriesTitle = seriesTitle?.normalizedEpisodeTitle().orEmpty()
     val knownTitles = episodeTitlesByCoordinate.mapNotNull { (coordinate, title) ->
         title.normalizedEpisodeTitle()
             .takeIf { normalized -> normalized.length >= 8 && ' ' in normalized }
+            // An episode title that only repeats the series title identifies nothing: addons put
+            // the series title in every description and release name, so it would match the whole
+            // result set and reject it as "that one episode". Episode 12 of "A Place Further Than
+            // the Universe" is called exactly that, which emptied the picker for every other
+            // episode of the show.
+            ?.takeIf { normalized ->
+                normalizedSeriesTitle.isEmpty() ||
+                    !normalizedSeriesTitle.containsWholeNormalizedTitle(normalized)
+            }
             ?.let { normalized -> normalized to coordinate }
     }
     return filter { stream ->
@@ -33,7 +50,7 @@ private fun StreamItem.episodeMatchFor(
     episode: Int,
     knownTitles: List<Pair<String, Pair<Int, Int>>>,
 ): EpisodeMatch {
-    var hasPositiveMatch = false
+    var hasExplicitMatch = false
     // File-level fields describe the actual selected torrent file and therefore take precedence
     // over an addon's display description, which may merely echo the requested episode.
     val fileCoordinates = listOfNotNull(
@@ -45,15 +62,35 @@ private fun StreamItem.episodeMatchFor(
     ).flatMap(String::explicitEpisodeCoordinates)
     fileCoordinates.matchAgainst(season, episode)?.let { match ->
         if (match == EpisodeMatch.Mismatch) return match
-        hasPositiveMatch = true
+        hasExplicitMatch = true
     }
 
     clientResolve?.stream?.raw?.parsed?.let { parsed ->
         if (parsed.seasons.isNotEmpty() && parsed.episodes.isNotEmpty()) {
             if (season !in parsed.seasons || episode !in parsed.episodes) return EpisodeMatch.Mismatch
-            hasPositiveMatch = true
+            hasExplicitMatch = true
         }
     }
+
+    val displayCoordinates = listOfNotNull(title, description, name)
+        .flatMap(String::explicitEpisodeCoordinates)
+    displayCoordinates.matchAgainst(season, episode)?.let { match ->
+        if (match == EpisodeMatch.Mismatch) return match
+        hasExplicitMatch = true
+    }
+
+    val resolvedSeason = clientResolve?.season
+    val resolvedEpisode = clientResolve?.episode
+    if (resolvedSeason != null && resolvedEpisode != null) {
+        if (resolvedSeason != season || resolvedEpisode != episode) return EpisodeMatch.Mismatch
+        hasExplicitMatch = true
+    }
+
+    // A numeric S/E tag naming the requested episode settles it. The title heuristic below infers
+    // a coordinate from prose, so letting it overrule an explicit agreeing tag means a single
+    // ambiguous title can veto a stream the addon labelled correctly — which is how a series whose
+    // episode title repeats the series title lost its entire result set.
+    if (hasExplicitMatch) return EpisodeMatch.Match
 
     val searchableText = listOfNotNull(
         behaviorHints.filename,
@@ -69,25 +106,7 @@ private fun StreamItem.episodeMatchFor(
         .filter { (knownTitle, _) -> searchableText.containsWholeNormalizedTitle(knownTitle) }
         .map { (_, coordinate) -> coordinate }
         .distinct()
-    titledCoordinates.matchAgainst(season, episode)?.let { match ->
-        if (match == EpisodeMatch.Mismatch) return match
-        hasPositiveMatch = true
-    }
-
-    val displayCoordinates = listOfNotNull(title, description, name)
-        .flatMap(String::explicitEpisodeCoordinates)
-    displayCoordinates.matchAgainst(season, episode)?.let { match ->
-        if (match == EpisodeMatch.Mismatch) return match
-        hasPositiveMatch = true
-    }
-
-    val resolvedSeason = clientResolve?.season
-    val resolvedEpisode = clientResolve?.episode
-    if (resolvedSeason != null && resolvedEpisode != null) {
-        if (resolvedSeason != season || resolvedEpisode != episode) return EpisodeMatch.Mismatch
-        hasPositiveMatch = true
-    }
-    return if (hasPositiveMatch) EpisodeMatch.Match else EpisodeMatch.Unknown
+    return titledCoordinates.matchAgainst(season, episode) ?: EpisodeMatch.Unknown
 }
 
 private fun List<Pair<Int, Int>>.matchAgainst(season: Int, episode: Int): EpisodeMatch? = when {

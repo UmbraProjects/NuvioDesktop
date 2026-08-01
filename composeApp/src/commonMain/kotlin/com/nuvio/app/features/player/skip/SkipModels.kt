@@ -71,6 +71,160 @@ data class IntroDbSegmentsResponse(
     @SerialName("updated_at") val updatedAt: String? = null,
 )
 
+// --- SkipDB API response models ---
+
+// SkipDB's /api/segments endpoint answers with the best segment of each kind for one movie or
+// episode, e.g.:
+// {"imdb_id":"tt0413573","season":2,"episode":3,
+//  "segments":{"intro":{"start_ms":405500,"end_ms":428500,"adjusted":false,"offset_ms":0,
+//                       "match":"exact","confidence":0.9},
+//              "recap":null,"outro":{..},"preview":null},
+//  "intro_length_estimate_ms":24450}
+// An unknown title is not an error: it answers 200 with every segment null.
+@Serializable
+data class SkipDbSegmentsResponse(
+    @SerialName("imdb_id") val imdbId: String? = null,
+    @SerialName("season") val season: Int? = null,
+    @SerialName("episode") val episode: Int? = null,
+    @SerialName("segments") val segments: SkipDbSegments? = null,
+    @SerialName("intro_length_estimate_ms") val introLengthEstimateMs: Long? = null,
+)
+
+@Serializable
+data class SkipDbSegments(
+    @SerialName("intro") val intro: SkipDbSegment? = null,
+    @SerialName("recap") val recap: SkipDbSegment? = null,
+    @SerialName("outro") val outro: SkipDbSegment? = null,
+    @SerialName("preview") val preview: SkipDbSegment? = null,
+)
+
+@Serializable
+data class SkipDbSegment(
+    @SerialName("start_ms") val startMs: Long? = null,
+    @SerialName("end_ms") val endMs: Long? = null,
+    @SerialName("match") val match: String? = null,
+    @SerialName("adjusted") val adjusted: Boolean = false,
+    @SerialName("offset_ms") val offsetMs: Long? = null,
+    @SerialName("confidence") val confidence: Double? = null,
+)
+
+/**
+ * How closely the timings SkipDB returned line up with the runtime of the cut actually being
+ * played. Reported per segment; only [OUT_OF_RANGE] means the answer describes a different
+ * release and should not be used.
+ */
+object SkipDbMatch {
+    /** Runtime matched a stored submission within ~2s. */
+    const val EXACT = "exact"
+
+    /** Runtime was within ~15s; SkipDB reports the offset it would take to line them up. */
+    const val SHIFTED = "shifted"
+
+    /** No runtime was supplied, so the timings are unverified against this cut. */
+    const val AGNOSTIC = "agnostic"
+
+    /** The closest stored cut differs too much for the timings to mean anything here. */
+    const val OUT_OF_RANGE = "out-of-range"
+}
+
+// --- SkipDB submission models ---
+
+/**
+ * A contributed segment. Times are milliseconds; [durationMs] is the runtime of the cut they were
+ * taken from, which is what lets SkipDB serve them back to the right release later.
+ */
+@Serializable
+data class SkipDbSubmitRequest(
+    @SerialName("imdb_id") val imdbId: String,
+    @SerialName("season") val season: Int? = null,
+    @SerialName("episode") val episode: Int? = null,
+    @SerialName("segment_type") val segmentType: String,
+    @SerialName("start_ms") val startMs: Long,
+    @SerialName("end_ms") val endMs: Long,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+)
+
+@Serializable
+data class SkipDbSubmitResponse(
+    @SerialName("id") val id: Long? = null,
+    @SerialName("status") val status: String? = null,
+    @SerialName("auto_approved") val autoApproved: Boolean = false,
+    @SerialName("reasons") val reasons: List<String> = emptyList(),
+    @SerialName("message") val message: String? = null,
+    @SerialName("error") val error: String? = null,
+)
+
+@Serializable
+data class SkipDbAnonymousKeyResponse(
+    @SerialName("key") val key: String? = null,
+    @SerialName("prefix") val prefix: String? = null,
+)
+
+/** What a submission attempt should tell the user, in a form both player UIs can render. */
+data class SkipSubmitOutcome(
+    val accepted: Boolean,
+    val message: String,
+)
+
+/**
+ * Turns SkipDB's reply into something worth showing.
+ *
+ * A submission does not have to be published to have succeeded — one held for review comes back
+ * `pending`, which is still a contribution — so only an outright rejection or an error counts as a
+ * failure. SkipDB explains itself when it turns something down (an overlap with an existing
+ * segment, a failed validation, a rate limit), and that reason is far more useful than a generic
+ * failure line, so it is preferred over anything written here.
+ */
+internal fun SkipDbSubmitResponse.toOutcome(): SkipSubmitOutcome {
+    error?.takeIf { it.isNotBlank() }?.let { reason ->
+        return SkipSubmitOutcome(accepted = false, message = reason)
+    }
+    val accepted = !status.isNullOrBlank() && !status.equals("rejected", ignoreCase = true)
+    return SkipSubmitOutcome(
+        accepted = accepted,
+        message = message?.takeIf { it.isNotBlank() }
+            ?: reasons.firstOrNull { it.isNotBlank() }
+            ?: if (accepted) "Submitted to SkipDB." else "SkipDB rejected the submission.",
+    )
+}
+
+internal const val SKIPDB_PROVIDER = "skipdb"
+
+/** Segment kinds SkipDB accepts, in the order the pickers show them. */
+val SKIP_SEGMENT_TYPES: List<String> = listOf("intro", "recap", "outro", "preview")
+
+/**
+ * Flattens one SkipDB answer into the intervals worth showing. Kinds SkipDB has nothing for come
+ * back null and are simply absent from the result.
+ */
+internal fun SkipDbSegments.toSkipIntervals(): List<SkipInterval> = listOfNotNull(
+    intro.toSkipInterval("intro"),
+    recap.toSkipInterval("recap"),
+    outro.toSkipInterval("outro"),
+    preview.toSkipInterval("preview"),
+)
+
+/**
+ * Drops the two answers SkipDB gives that are not usable intervals: `out-of-range`, where the
+ * closest cut it knows about is too far off this release for its timings to mean anything, and the
+ * 0/0 sentinel, which records that somebody confirmed this segment does *not* exist rather than
+ * that it runs for no time.
+ */
+private fun SkipDbSegment?.toSkipInterval(type: String): SkipInterval? {
+    val segment = this ?: return null
+    if (segment.match.equals(SkipDbMatch.OUT_OF_RANGE, ignoreCase = true)) return null
+    val startMs = segment.startMs ?: return null
+    val endMs = segment.endMs ?: return null
+    if (startMs == 0L && endMs == 0L) return null
+    if (endMs <= startMs) return null
+    return SkipInterval(
+        startTime = startMs / 1000.0,
+        endTime = endMs / 1000.0,
+        type = type,
+        provider = SKIPDB_PROVIDER,
+    )
+}
+
 @Serializable
 data class SubmitIntroRequest(
     @SerialName("imdb_id") val imdbId: String,

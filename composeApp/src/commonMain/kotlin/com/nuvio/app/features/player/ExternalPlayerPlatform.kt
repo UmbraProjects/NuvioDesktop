@@ -3,6 +3,7 @@ package com.nuvio.app.features.player
 data class ExternalPlayerApp(
     val id: String,
     val name: String,
+    val isAvailable: Boolean = true,
 )
 
 data class SubtitleInput(
@@ -54,6 +55,7 @@ sealed interface ExternalPlayerIntentResult {
 internal expect object ExternalPlayerPlatform {
     fun defaultPlayerId(): String?
     fun availablePlayers(): List<ExternalPlayerApp>
+    fun configurePlayer(playerId: String): Boolean
     fun open(
         request: ExternalPlayerPlaybackRequest,
         playerId: String?,

@@ -37,6 +37,11 @@ fun HomeCatalogRowSection(
     isLoadingMore: Boolean = false,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
+    // 1-based position of this row among the home content rows, appended to the header when the
+    // "Number catalog rows" setting is on. Null on every surface that isn't the home row list.
+    rowNumber: Int? = null,
+    // TV Mode's row-jump dots, rendered on the header line next to the title. Null everywhere else.
+    headerTrailingContent: (@Composable () -> Unit)? = null,
 ) {
     val effectiveRowState = rowState ?: rememberLazyListState()
     if (sectionPadding != null) {
@@ -56,6 +61,8 @@ fun HomeCatalogRowSection(
             isLoadingMore = isLoadingMore,
             onPosterClick = onPosterClick,
             onPosterLongClick = onPosterLongClick,
+            rowNumber = rowNumber,
+            headerTrailingContent = headerTrailingContent,
         )
     } else {
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -75,6 +82,8 @@ fun HomeCatalogRowSection(
                 isKeyboardNavigation = isKeyboardNavigation,
                 onPosterClick = onPosterClick,
                 onPosterLongClick = onPosterLongClick,
+                rowNumber = rowNumber,
+                headerTrailingContent = headerTrailingContent,
             )
         }
     }
@@ -97,6 +106,8 @@ private fun HomeCatalogRowSectionContent(
     isKeyboardNavigation: Boolean,
     onPosterClick: ((MetaPreview) -> Unit)?,
     onPosterLongClick: ((MetaPreview) -> Unit)?,
+    rowNumber: Int?,
+    headerTrailingContent: (@Composable () -> Unit)?,
 ) {
     val posterCardStyle = rememberHomePosterCardStyleUiState()
     val homeCatalogSettings by remember {
@@ -104,8 +115,14 @@ private fun HomeCatalogRowSectionContent(
         HomeCatalogSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
 
+    val headerTitle = if (rowNumber != null && homeCatalogSettings.catalogRowNumbersEnabled) {
+        "${section.title} • $rowNumber"
+    } else {
+        section.title
+    }
+
     NuvioShelfSection(
-        title = section.title,
+        title = headerTitle,
         entries = entries,
         modifier = modifier,
         headerHorizontalPadding = sectionPadding,
@@ -118,6 +135,7 @@ private fun HomeCatalogRowSectionContent(
         isLoadingMore = isLoadingMore,
         isKeyboardNavigation = isKeyboardNavigation,
         viewAllPillSize = NuvioViewAllPillSize.Compact,
+        headerTrailingContent = headerTrailingContent,
         key = { item -> item.stableKey() },
         rowState = rowState,
     ) { item ->

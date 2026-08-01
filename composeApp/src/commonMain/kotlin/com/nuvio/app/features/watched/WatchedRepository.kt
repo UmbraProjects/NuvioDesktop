@@ -2,6 +2,8 @@ package com.nuvio.app.features.watched
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.details.MetaDetails
+import com.nuvio.app.features.details.effectiveEpisodeNumber
+import com.nuvio.app.features.details.effectiveSeasonNumber
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktSettingsRepository
@@ -10,6 +12,15 @@ import com.nuvio.app.features.trakt.shouldUseTraktProgress
 import com.nuvio.app.features.watching.sync.SupabaseWatchedSyncAdapter
 import com.nuvio.app.features.watching.sync.TraktWatchedSyncAdapter
 import com.nuvio.app.features.watching.sync.WatchedDeltaEvent
+import com.nuvio.app.features.tracking.ContinueWatchingSourceRepository
+import com.nuvio.app.features.tracking.LibrarySourceRepository
+import com.nuvio.app.features.tracking.TrackingHistoryItem
+import com.nuvio.app.features.tracking.TrackingMutationResult
+import com.nuvio.app.features.tracking.TrackingProviderId
+import com.nuvio.app.features.tracking.TrackingProviderRegistry
+import com.nuvio.app.features.tracking.buildTrackingMediaReference
+import com.nuvio.app.features.tracking.resolveLibrarySource
+import com.nuvio.app.features.tracking.trackingProvider
 import com.nuvio.app.features.watching.sync.WatchedSyncAdapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +31,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -33,19 +46,18 @@ private data class StoredWatchedPayload(
     val deltaInitialized: Boolean = false,
 )
 
-internal enum class WatchedTraktHistorySync {
-    Mirror,
+internal enum class WatchedRemoteSync {
+    Manual,
     Skip,
 }
 
-internal fun shouldMirrorWatchedMarkToTraktHistory(
-    sync: WatchedTraktHistorySync,
-    isTraktAuthenticated: Boolean,
-): Boolean = sync == WatchedTraktHistorySync.Mirror && isTraktAuthenticated
+internal fun shouldWriteSelectedLibraryHistory(sync: WatchedRemoteSync): Boolean =
+    sync == WatchedRemoteSync.Manual
 
 object WatchedRepository {
     private const val watchedItemsPageSize = 900
     private const val watchedItemsDeltaPageSize = 900
+    private const val providerHistoryPullMinIntervalMs = 60_000L
     private const val watchedDeltaOperationUpsert = "upsert"
     private const val watchedDeltaOperationDelete = "delete"
 
@@ -65,6 +77,8 @@ object WatchedRepository {
     private var lastSuccessfulPushEpochMs: Long = 0L
     private var deltaCursorEventId: Long = 0L
     private var deltaInitialized: Boolean = false
+    private val providerHistoryPullLock = Mutex()
+    private var lastProviderHistoryPullAtMs: Long = 0L
     internal var syncAdapter: WatchedSyncAdapter = SupabaseWatchedSyncAdapter
 
     fun ensureLoaded() {
@@ -114,7 +128,7 @@ object WatchedRepository {
     }
 
     suspend fun pullFromServer(profileId: Int) {
-        TraktAuthRepository.ensureLoaded()
+        TraktAuthRepository.ensureLoaded(profileId)
         TraktSettingsRepository.ensureLoaded()
         currentProfileId = profileId
         val pullStartedEpochMs = WatchedClock.nowEpochMs()
@@ -123,9 +137,10 @@ object WatchedRepository {
             .toList()
         val lastPushEpochMs = lastSuccessfulPushEpochMs
         runCatching {
-            if (shouldUseTraktWatchedSync()) {
+            val remoteAdapter = activeRemoteWatchedAdapter()
+            if (remoteAdapter != null) {
                 pullFullFromAdapter(
-                    adapter = TraktWatchedSyncAdapter,
+                    adapter = remoteAdapter,
                     profileId = profileId,
                     localBeforePull = localBeforePull,
                     lastPushEpochMs = lastPushEpochMs,
@@ -142,6 +157,59 @@ object WatchedRepository {
             }
         }.onFailure { e ->
             log.e(e) { "Failed to pull watched items from server" }
+        }
+
+        // Provider history is merged additively after the account's primary watched store. A
+        // missing row from SIMKL, MDBList or Floppy must never erase a tick written locally or by
+        // another service; those APIs are independent histories, not mirrors of one another.
+        pullConnectedProviderHistoryAdditively(profileId)
+    }
+
+    /**
+     * Imports connected tracking-provider history without touching the Nuvio Sync store.
+     *
+     * SIMKL, MDBList and Floppy are the user's own connections and have nothing to do with whether
+     * they signed into a Nuvio account. This was previously reachable only through [pullFromServer],
+     * whose only caller returns early for anonymous and signed-out users, so "Continue without
+     * account" meant provider history was never imported at all.
+     */
+    suspend fun pullConnectedProviderHistory(profileId: Int) {
+        ensureLoaded()
+        if (profileId != currentProfileId) return
+        providerHistoryPullLock.withLock {
+            // A fresh sign-in reaches both this and the account sync within a second of each other,
+            // and every provider read costs a request against a shared daily budget.
+            val now = WatchedClock.nowEpochMs()
+            if (now - lastProviderHistoryPullAtMs < providerHistoryPullMinIntervalMs) return
+            lastProviderHistoryPullAtMs = now
+        }
+        pullConnectedProviderHistoryAdditively(profileId)
+    }
+
+    private suspend fun pullConnectedProviderHistoryAdditively(profileId: Int) {
+        val providers = TrackingProviderRegistry.connectedWatchedProviders()
+        if (providers.isEmpty()) return
+        var changed = false
+        providers.forEach { provider ->
+            val remoteItems = try {
+                provider.pull(profileId = profileId, pageSize = watchedItemsPageSize)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                log.w(error) { "Failed to pull watched history from ${provider.providerId.storageId}" }
+                return@forEach
+            }
+            if (profileId != currentProfileId) return
+            val merged = mergeWatchedItemsAdditively(itemsByKey.values, remoteItems)
+            if (merged.size != itemsByKey.size || merged != itemsByKey) {
+                itemsByKey = merged.toMutableMap()
+                changed = true
+            }
+        }
+        if (changed && profileId == currentProfileId) {
+            hasLoaded = true
+            publish()
+            persist()
         }
     }
 
@@ -305,16 +373,16 @@ object WatchedRepository {
     }
 
     fun markWatched(items: Collection<WatchedItem>) {
-        markWatched(items = items, traktHistorySync = WatchedTraktHistorySync.Mirror)
+        markWatched(items = items, remoteSync = WatchedRemoteSync.Manual)
     }
 
     internal fun markWatchedFromPlaybackCompletion(item: WatchedItem, syncRemote: Boolean = true) {
-        markWatched(items = listOf(item), traktHistorySync = WatchedTraktHistorySync.Skip, syncRemote = syncRemote)
+        markWatched(items = listOf(item), remoteSync = WatchedRemoteSync.Skip, syncRemote = syncRemote)
     }
 
     private fun markWatched(
         items: Collection<WatchedItem>,
-        traktHistorySync: WatchedTraktHistorySync,
+        remoteSync: WatchedRemoteSync,
         syncRemote: Boolean = true,
     ) {
         ensureLoaded()
@@ -330,7 +398,7 @@ object WatchedRepository {
         publish()
         persist()
         if (syncRemote) {
-            pushMarksToServer(timestampedItems, traktHistorySync)
+            pushMarksToServer(timestampedItems, remoteSync)
         }
     }
 
@@ -359,16 +427,27 @@ object WatchedRepository {
     }
 
     fun unmarkWatched(items: Collection<WatchedItem>) {
+        unmarkWatched(items = items, syncRemote = true)
+    }
+
+    private fun unmarkWatched(
+        items: Collection<WatchedItem>,
+        syncRemote: Boolean,
+    ) {
         ensureLoaded()
         if (items.isEmpty()) return
-        val removedItems = items.mapNotNull { watchedItem ->
-            itemsByKey.remove(watchedItemKey(watchedItem.type, watchedItem.id, watchedItem.season, watchedItem.episode))
+        val removedByKey = mutableMapOf<String, WatchedItem>()
+        items.forEach { watchedItem ->
+            val key = watchedItemKey(watchedItem.type, watchedItem.id, watchedItem.season, watchedItem.episode)
+            itemsByKey.remove(key)?.let { removed -> removedByKey[key] = removed }
         }
-        if (removedItems.isNotEmpty()) {
+        if (removedByKey.isNotEmpty()) {
             publish()
             persist()
-            pushDeleteToServer(removedItems)
         }
+        if (!syncRemote) return
+
+        pushDeleteToServer(watchedUnmarkDeleteTargets(items, removedByKey))
     }
 
     fun isWatched(
@@ -393,24 +472,32 @@ object WatchedRepository {
             isWatched(
                 id = meta.id,
                 type = meta.type,
-                season = episode.season,
-                episode = episode.episode,
+                season = episode.effectiveSeasonNumber(),
+                episode = episode.effectiveEpisodeNumber(),
             ) || isEpisodeCompleted(episode)
         }
         val seriesWatchedItem = meta.toSeriesWatchedItem()
         val hasSeriesWatchedMarker = isWatched(id = meta.id, type = meta.type)
         if (shouldMarkSeriesWatched) {
             if (!hasSeriesWatchedMarker) {
-                markWatched(seriesWatchedItem)
+                markWatched(
+                    items = listOf(seriesWatchedItem),
+                    remoteSync = WatchedRemoteSync.Skip,
+                    syncRemote = false,
+                )
             }
         } else if (hasSeriesWatchedMarker) {
-            unmarkWatched(seriesWatchedItem)
+            // The parent marker is a local aggregate used by poster UI, not a provider history
+            // entry. In Nuvio Sync a delete without episode coordinates means "delete this whole
+            // title", and external providers similarly interpret it as a whole-show mutation.
+            unmarkWatched(items = listOf(seriesWatchedItem), syncRemote = false)
+            rewriteNuvioSeriesHistory(seriesWatchedItem)
         }
     }
 
     private fun pushMarksToServer(
         items: Collection<WatchedItem>,
-        traktHistorySync: WatchedTraktHistorySync,
+        remoteSync: WatchedRemoteSync,
     ) {
         syncScope.launch {
             runCatching {
@@ -419,7 +506,7 @@ object WatchedRepository {
                 val pushed = pushToActiveTargets(
                     profileId = profileId,
                     items = items,
-                    traktHistorySync = traktHistorySync,
+                    remoteSync = remoteSync,
                 )
                 if (pushed) {
                     recordSuccessfulPush(profileId = profileId, items = items)
@@ -484,35 +571,57 @@ object WatchedRepository {
     }
 
     private fun shouldUseTraktWatchedSync(): Boolean =
-        shouldUseTraktWatchedSync(
-            isAuthenticated = TraktAuthRepository.isAuthenticated.value,
-            source = TraktSettingsRepository.uiState.value.watchProgressSource,
-        )
+        activeRemoteWatchedAdapter() === TraktWatchedSyncAdapter
+
+    /**
+     * The watched-history adapter for the selected Continue Watching source, or null for Nuvio Sync.
+     *
+     * Previously this asked "is Trakt the progress source?" while reading a setting that nothing
+     * writes any more, so it was stuck on whatever that value happened to be. It now follows the
+     * single Continue Watching selection.
+     *
+     * **Only Trakt is eligible, deliberately.** `pullFullFromAdapter` treats the adapter as the
+     * authority and reconciles the local store against it, which is right for Trakt — a full
+     * history store this app also writes to. It is not right for the read-only providers: MDBList's
+     * history contains only what this app has scrobbled since it was connected, so promoting it to
+     * authority would reconcile away watched ticks it has never seen. Feeding those providers into
+     * the seed pipeline needs an additive merge path, which does not exist yet.
+     */
+    private fun activeRemoteWatchedAdapter(): WatchedSyncAdapter? {
+        val providerId = ContinueWatchingSourceRepository.selectedSource().providerId ?: return null
+        if (providerId != TrackingProviderId.TRAKT) return null
+        if (!TrackingProviderRegistry.isAuthenticated(providerId)) return null
+        return TraktWatchedSyncAdapter
+    }
 
     private suspend fun pushToActiveTargets(
         profileId: Int,
         items: Collection<WatchedItem>,
-        traktHistorySync: WatchedTraktHistorySync,
+        remoteSync: WatchedRemoteSync,
     ): Boolean {
-        val shouldMirrorToTrakt = shouldMirrorWatchedMarkToTraktHistory(
-            sync = traktHistorySync,
-            isTraktAuthenticated = TraktAuthRepository.isAuthenticated.value,
-        )
-
-        if (shouldUseTraktWatchedSync()) {
-            if (!shouldMirrorToTrakt) return false
-            TraktWatchedSyncAdapter.push(profileId = profileId, items = items)
+        val writer = selectedLibraryHistoryWriter()
+        if (writer == null) {
+            withSyncRetry("Watched items push") {
+                syncAdapter.push(profileId = profileId, items = items)
+            }
             return true
         }
 
-        // Retry only the Supabase upsert (idempotent); re-pushing Trakt history would add
-        // duplicate plays.
-        withSyncRetry("Watched items push") {
-            syncAdapter.push(profileId = profileId, items = items)
-        }
-        if (shouldMirrorToTrakt) {
-            TraktWatchedSyncAdapter.push(profileId = profileId, items = items)
-        }
+        val remoteItems = items.withoutDerivedSeriesMarkers()
+        if (remoteItems.isEmpty()) return false
+        // Completed playback is already delivered to external providers through their scrobbler.
+        // Only an explicit in-app action should add a second, manual history entry.
+        if (!shouldWriteSelectedLibraryHistory(remoteSync)) return false
+        val result = writer.addToHistory(
+            profileId = profileId,
+            items = remoteItems.map { item ->
+                TrackingHistoryItem(
+                    media = item.toTrackingMediaReference(),
+                    watchedAtEpochMs = item.markedAtEpochMs,
+                )
+            },
+        )
+        result.warnIfIncomplete(writer.providerId, "mark watched")
         return true
     }
 
@@ -537,17 +646,95 @@ object WatchedRepository {
         profileId: Int,
         items: Collection<WatchedItem>,
     ) {
-        if (shouldUseTraktWatchedSync()) {
-            TraktWatchedSyncAdapter.delete(profileId = profileId, items = items)
+        val writer = selectedLibraryHistoryWriter()
+        if (writer == null) {
+            syncAdapter.delete(profileId = profileId, items = items)
             return
         }
+        writer.removeFromHistory(
+            profileId = profileId,
+            // A parent marker can only arrive here from an explicit whole-show unmark. Derived
+            // marker changes are local-only, so retaining it here deliberately clears the entire
+            // remote show (including any unreleased rows written by older builds).
+            items = items.map(WatchedItem::toTrackingMediaReference),
+        ).warnIfIncomplete(writer.providerId, "unmark watched")
+    }
 
-        syncAdapter.delete(profileId = profileId, items = items)
-        if (TraktAuthRepository.isAuthenticated.value) {
-            TraktWatchedSyncAdapter.delete(profileId = profileId, items = items)
+    /**
+     * Reports items the provider could not address — no id it accepts, or coordinates it cannot
+     * map. These are silent successes from the caller's point of view: the local store has already
+     * changed, and the next additive pull quietly puts the old state back. Until there is a way to
+     * surface this in the UI, at least make it visible in the log rather than dropping the result.
+     */
+    private fun TrackingMutationResult.warnIfIncomplete(
+        providerId: TrackingProviderId,
+        action: String,
+    ) {
+        if (isComplete) return
+        log.w {
+            "${providerId.storageId} could not $action $notFoundCount of $attemptedCount item(s); " +
+                "local state and ${providerId.storageId} are now out of step for those"
+        }
+    }
+
+    private fun selectedLibraryHistoryWriter() = resolveLibrarySource(
+        selected = LibrarySourceRepository.selectedSource(),
+        isProviderAuthenticated = TrackingProviderRegistry::isAuthenticated,
+    ).trackingProvider?.let(TrackingProviderRegistry::historyWriter)
+
+    /**
+     * Nuvio Sync represents a null season/episode delete as "remove the whole title". Replacing
+     * the title snapshot is therefore the only safe way to clear its derived series marker after
+     * one episode is unmarked: delete the title, then immediately restore every episode that is
+     * still watched locally. External providers never receive the derived marker in the first
+     * place, so they need no rewrite.
+     */
+    private fun rewriteNuvioSeriesHistory(seriesItem: WatchedItem) {
+        if (selectedLibraryHistoryWriter() != null) return
+        val remainingEpisodes = itemsByKey.values.filter { item ->
+            item.isEpisode && item.contentIdentity() == seriesItem.contentIdentity()
+        }
+        val profileId = ProfileRepository.activeProfileId
+        syncScope.launch {
+            runCatching {
+                syncAdapter.delete(profileId = profileId, items = listOf(seriesItem))
+                if (remainingEpisodes.isNotEmpty()) {
+                    withSyncRetry("Watched series rewrite") {
+                        syncAdapter.push(profileId = profileId, items = remainingEpisodes)
+                    }
+                }
+            }.onFailure { error ->
+                log.e(error) { "Failed to rewrite Nuvio watched series after episode unmark" }
+            }
         }
     }
 }
+
+private fun WatchedItem.toTrackingMediaReference() = buildTrackingMediaReference(
+    contentType = type,
+    parentMetaId = id,
+    title = name,
+    releaseInfo = releaseInfo,
+    seasonNumber = season,
+    episodeNumber = episode,
+)
+
+/**
+ * A series-level marker sent in the same action as concrete episodes is only Nuvio's local
+ * aggregate for poster state. Sending it in a history-add request widens the operation to the
+ * entire show, which includes unreleased episodes on MDBList. Standalone movies and genuine
+ * standalone title actions are retained.
+ */
+internal fun Collection<WatchedItem>.withoutDerivedSeriesMarkers(): List<WatchedItem> {
+    val episodeParents = asSequence()
+        .filter(WatchedItem::isEpisode)
+        .mapTo(linkedSetOf()) { item -> item.contentIdentity() }
+    if (episodeParents.isEmpty()) return toList()
+    return filterNot { item -> !item.isEpisode && item.contentIdentity() in episodeParents }
+}
+
+private fun WatchedItem.contentIdentity(): String =
+    "${type.trim().lowercase()}:${id.trim()}"
 
 internal fun mergeWatchedItemsPreservingUnsynced(
     serverItems: Collection<WatchedItem>,
@@ -570,6 +757,40 @@ internal fun mergeWatchedItemsPreservingUnsynced(
             }
         }
 
+    return merged
+}
+
+/**
+ * What an unmark should remove upstream: everything the user asked to unmark, deduplicated.
+ *
+ * Deliberately not "whatever was removed from the local store". A tick can be rendered entirely
+ * from a provider's own projection — SIMKL's watching-list marker shows an episode as watched with
+ * no local row behind it — and gating the delete on a local removal made "unmark" a silent no-op
+ * for exactly those episodes, locally *and* upstream. The stored copy wins where there is one,
+ * because it carries the title and release info the id-only overload leaves blank.
+ */
+internal fun watchedUnmarkDeleteTargets(
+    requestedItems: Collection<WatchedItem>,
+    removedByKey: Map<String, WatchedItem>,
+): List<WatchedItem> = requestedItems
+    .associateBy { item -> watchedItemKey(item.type, item.id, item.season, item.episode) }
+    .map { (key, requested) -> removedByKey[key] ?: requested }
+
+internal fun mergeWatchedItemsAdditively(
+    localItems: Collection<WatchedItem>,
+    remoteItems: Collection<WatchedItem>,
+): Map<String, WatchedItem> {
+    val merged = localItems
+        .map(WatchedItem::normalizedMarkedAt)
+        .associateBy { watchedItemKey(it.type, it.id, it.season, it.episode) }
+        .toMutableMap()
+    remoteItems.map(WatchedItem::normalizedMarkedAt).forEach { remote ->
+        val key = watchedItemKey(remote.type, remote.id, remote.season, remote.episode)
+        val local = merged[key]
+        if (local == null || remote.markedAtEpochMs > local.markedAtEpochMs) {
+            merged[key] = remote
+        }
+    }
     return merged
 }
 

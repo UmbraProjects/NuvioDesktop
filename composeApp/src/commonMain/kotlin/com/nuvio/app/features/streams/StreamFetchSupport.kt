@@ -11,6 +11,14 @@ import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.streams_plugin_repository_fallback
 import org.jetbrains.compose.resources.getString
 
+/**
+ * AIOStreams omits `streamData` by default unless the request User-Agent contains `AIOStreams/`.
+ * That block carries structured stream type and cache status, allowing scoring to avoid parsing
+ * user-controlled formatter text. Other addons simply receive an ordinary compatibility token.
+ */
+internal val STREAM_METADATA_REQUEST_HEADERS: Map<String, String> =
+    mapOf("User-Agent" to "NuvioDesktop/1.0 AIOStreams/1.0")
+
 internal data class InstalledStreamAddonTarget(
     val addonName: String,
     val addonId: String,
@@ -113,6 +121,7 @@ internal fun PluginRuntimeResult.toStreamItem(
         url = url,
         infoHash = infoHash,
         sourceName = scraper.name,
+        audioLanguages = listOfNotNull(language?.takeIf { it.isNotBlank() }),
         addonName = addonName,
         addonId = addonId,
         streamType = normalizeStreamType(type),

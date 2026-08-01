@@ -96,7 +96,9 @@ class DebridStreamFormatter(
     }
 
     private fun serviceId(stream: StreamItem): String? =
-        stream.debridCacheStatus?.providerId ?: stream.clientResolve?.service
+        stream.debridCacheStatus?.providerId
+            ?: stream.clientResolve?.service
+            ?: stream.streamData?.serviceId
 
     private fun serviceCached(stream: StreamItem, resolve: StreamClientResolve?): Boolean? =
         when (stream.debridCacheStatus?.state) {
@@ -104,7 +106,9 @@ class DebridStreamFormatter(
             StreamDebridCacheState.NOT_CACHED -> false
             StreamDebridCacheState.CHECKING,
             StreamDebridCacheState.UNKNOWN,
-            null -> resolve?.isCached
+            // Falls through to the addon's own flags so the displayed cache state matches the one
+            // StreamTraitDetector scores.
+            null -> resolve?.isCached ?: stream.streamData?.serviceCached
         }
 
     private fun streamType(stream: StreamItem, resolve: StreamClientResolve?): String =

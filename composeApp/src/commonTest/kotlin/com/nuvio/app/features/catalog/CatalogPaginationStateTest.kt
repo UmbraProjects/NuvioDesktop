@@ -63,6 +63,42 @@ class CatalogPaginationStateTest {
         assertTrue(catalog.supportsPagination())
     }
 
+    @Test
+    fun `pagination probe accepts a page containing new items`() {
+        val initial = pageWithItems("tt1", "tt2")
+        val probe = pageWithItems("tt3", "tt4", skip = 2)
+
+        val result = applyCatalogPaginationProbe(initial, probe)
+
+        assertTrue(result.supportsPagination)
+        assertEquals(listOf("tt1", "tt2", "tt3", "tt4"), result.page.items.map { it.id })
+        assertEquals(4, result.page.rawItemCount)
+        assertEquals(4, result.page.nextSkip)
+    }
+
+    @Test
+    fun `pagination probe rejects an addon that repeats its first page`() {
+        val initial = pageWithItems("tt1", "tt2")
+        val probe = pageWithItems("tt1", "tt2", skip = 2)
+
+        val result = applyCatalogPaginationProbe(initial, probe)
+
+        assertEquals(false, result.supportsPagination)
+        assertEquals(initial, result.page)
+    }
+
+    @Test
+    fun `pagination probe accepts a partially overlapping page with a new item`() {
+        val initial = pageWithItems("tt1", "tt2")
+        val probe = pageWithItems("tt2", "tt3", skip = 2)
+
+        val result = applyCatalogPaginationProbe(initial, probe)
+
+        assertTrue(result.supportsPagination)
+        assertEquals(listOf("tt1", "tt2", "tt3"), result.page.items.map { it.id })
+        assertEquals(4, result.page.nextSkip)
+    }
+
     private fun page(
         rawItemCount: Int,
         nextSkip: Int?,
@@ -77,5 +113,21 @@ class CatalogPaginationStateTest {
             ),
             rawItemCount = rawItemCount,
             nextSkip = nextSkip,
+        )
+
+    private fun pageWithItems(
+        vararg ids: String,
+        skip: Int = 0,
+    ): CatalogPage =
+        CatalogPage(
+            items = ids.map { id ->
+                MetaPreview(
+                    id = id,
+                    type = "movie",
+                    name = "Movie $id",
+                )
+            },
+            rawItemCount = ids.size,
+            nextSkip = skip + ids.size,
         )
 }

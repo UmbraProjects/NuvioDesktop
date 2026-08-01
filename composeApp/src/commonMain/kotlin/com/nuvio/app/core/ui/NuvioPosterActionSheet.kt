@@ -12,12 +12,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CheckCircleOutline
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,7 +45,59 @@ import nuvio.composeapp.generated.resources.hero_add_to_library
 import nuvio.composeapp.generated.resources.hero_mark_unwatched
 import nuvio.composeapp.generated.resources.hero_mark_watched
 import nuvio.composeapp.generated.resources.hero_remove_from_library
+import nuvio.composeapp.generated.resources.poster_go_to_local_library
 import org.jetbrains.compose.resources.stringResource
+import dev.chrisbanes.haze.HazeState
+
+@Composable
+fun NuvioPosterZoomActionSheet(
+    item: MetaPreview?,
+    isSaved: Boolean,
+    isWatched: Boolean,
+    anchor: PosterZoomAnchor?,
+    hazeState: HazeState,
+    onDismiss: () -> Unit,
+    onToggleLibrary: () -> Unit,
+    onToggleWatched: () -> Unit,
+    onOpenInLocalLibrary: (() -> Unit)? = null,
+) {
+    if (item == null) return
+    NuvioPosterZoomActionOverlay(
+        imageUrl = anchor?.imageUrl ?: item.poster,
+        title = item.name,
+        subtitle = item.releaseInfo?.takeIf { it.isNotBlank() }?.let(::formatReleaseDateForDisplay)
+            ?: item.type.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
+        isWatched = isWatched,
+        anchor = anchor,
+        actions = buildList {
+            add(
+                PosterZoomOverlayAction(
+                    icon = if (isSaved) Icons.Default.Check else Icons.Default.Add,
+                    label = stringResource(if (isSaved) Res.string.hero_remove_from_library else Res.string.hero_add_to_library),
+                    onSelected = onToggleLibrary,
+                ),
+            )
+            add(
+                PosterZoomOverlayAction(
+                    icon = if (isWatched) Icons.Default.CheckCircle else Icons.Default.CheckCircleOutline,
+                    label = stringResource(if (isWatched) Res.string.hero_mark_unwatched else Res.string.hero_mark_watched),
+                    onSelected = onToggleWatched,
+                ),
+            )
+            onOpenInLocalLibrary?.let { openLocal ->
+                add(
+                    PosterZoomOverlayAction(
+                        icon = Icons.Default.FolderOpen,
+                        label = stringResource(Res.string.poster_go_to_local_library),
+                        onSelected = openLocal,
+                    ),
+                )
+            }
+        },
+        hazeState = hazeState,
+        onDismissed = onDismiss,
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,8 +108,30 @@ fun NuvioPosterActionSheet(
     onDismiss: () -> Unit,
     onToggleLibrary: () -> Unit,
     onToggleWatched: () -> Unit,
+    /**
+     * Opens this title in the local library settings page. Null when it has no local copy, so the
+     * row is only offered for titles that are actually on disk.
+     */
+    onOpenInLocalLibrary: (() -> Unit)? = null,
+    zoomAnchor: PosterZoomAnchor? = null,
+    zoomHazeState: HazeState? = null,
 ) {
     if (item == null) return
+    val posterCardStyle = rememberPosterCardStyleUiState()
+    if (posterCardStyle.zoomActionPreviewEnabled && zoomHazeState != null) {
+        NuvioPosterZoomActionSheet(
+            item = item,
+            isSaved = isSaved,
+            isWatched = isWatched,
+            anchor = zoomAnchor,
+            hazeState = zoomHazeState,
+            onDismiss = onDismiss,
+            onToggleLibrary = onToggleLibrary,
+            onToggleWatched = onToggleWatched,
+            onOpenInLocalLibrary = onOpenInLocalLibrary,
+        )
+        return
+    }
     val tokens = MaterialTheme.nuvio
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
@@ -112,6 +189,22 @@ fun NuvioPosterActionSheet(
                     }
                 },
             )
+            onOpenInLocalLibrary?.let { openLocalLibrary ->
+                NuvioBottomSheetDivider()
+                NuvioBottomSheetActionRow(
+                    icon = Icons.Default.FolderOpen,
+                    title = stringResource(Res.string.poster_go_to_local_library),
+                    onClick = {
+                        openLocalLibrary()
+                        coroutineScope.launch {
+                            dismissNuvioBottomSheet(
+                                sheetState = sheetState,
+                                onDismiss = onDismiss,
+                            )
+                        }
+                    },
+                )
+            }
         }
     }
 }

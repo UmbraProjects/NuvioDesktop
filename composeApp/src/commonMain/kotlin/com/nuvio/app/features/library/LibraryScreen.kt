@@ -8,11 +8,13 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -32,11 +35,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.DateRange
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -67,6 +73,8 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -82,7 +90,9 @@ import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.NuvioViewAllPillSize
 import com.nuvio.app.core.ui.NuvioShelfSection
+import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.nuvioConsumePointerEvents
+import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.cloud.CloudLibraryFile
 import com.nuvio.app.features.cloud.CloudLibraryItem
 import com.nuvio.app.features.cloud.CloudLibraryItemType
@@ -130,6 +140,10 @@ fun LibraryScreen(
         WatchedRepository.ensureLoaded()
         WatchedRepository.uiState
     }.collectAsStateWithLifecycle()
+    val displaySettings by remember {
+        LibraryDisplaySettingsRepository.ensureLoaded()
+        LibraryDisplaySettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
     val homeCatalogSettingsUiState by remember {
         HomeCatalogSettingsRepository.snapshot()
         HomeCatalogSettingsRepository.uiState
@@ -152,6 +166,13 @@ fun LibraryScreen(
     var focusedRowIndex by remember { mutableIntStateOf(0) }
     var focusedItemIndex by remember { mutableIntStateOf(0) }
     val isTraktSource = uiState.sourceMode == LibrarySourceMode.TRAKT
+    val isRemoteSource = uiState.sourceMode != LibrarySourceMode.LOCAL
+    val sortedSections = remember(uiState.sections, displaySettings.sortOption, uiState.sourceMode) {
+        sortLibrarySections(uiState.sections, displaySettings.sortOption, uiState.sourceMode)
+    }
+    val gridEntries = remember(sortedSections, displaySettings.sortOption, uiState.sourceMode) {
+        libraryGridEntries(sortedSections, displaySettings.sortOption, uiState.sourceMode)
+    }
 
     LaunchedEffect(Unit) {
         if (isDesktop) try { screenFocusRequester.requestFocus() } catch (_: Exception) {}
@@ -169,7 +190,7 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(networkStatusUiState.condition, isTraktSource) {
+    LaunchedEffect(networkStatusUiState.condition, isRemoteSource) {
         when (networkStatusUiState.condition) {
             NetworkCondition.NoInternet,
             NetworkCondition.ServersUnreachable,
@@ -180,7 +201,7 @@ fun LibraryScreen(
             NetworkCondition.Online -> {
                 if (!observedOfflineState) return@LaunchedEffect
                 observedOfflineState = false
-                if (isTraktSource) {
+                if (isRemoteSource) {
                     coroutineScope.launch {
                         LibraryRepository.pullFromServer(ProfileRepository.activeProfileId)
                     }
@@ -206,8 +227,18 @@ fun LibraryScreen(
         }
     }
 
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    val gridColumns = remember(maxWidth) {
+        when {
+            maxWidth >= 1400.dp -> 7
+            maxWidth >= 1200.dp -> 6
+            maxWidth >= 1000.dp -> 5
+            maxWidth >= 840.dp -> 4
+            else -> 3
+        }
+    }
     NuvioScreen(
-        modifier = modifier.then(
+        modifier = Modifier.fillMaxSize().then(
             if (isDesktop) {
                 Modifier
                     .focusRequester(screenFocusRequester)
@@ -217,13 +248,22 @@ fun LibraryScreen(
                     }
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        val sections = uiState.sections
+                        val sections = sortedSections
                         when (event.navigationKey()) {
                             Key.L, Key.H -> { onNavigateToHome?.invoke(); true }
                             Key.DirectionDown -> {
-                                val maxRow = (sections.size - 1).coerceAtLeast(0)
+                                val maxRow = if (displaySettings.layoutMode == LibraryLayoutMode.GRID) {
+                                    ((gridEntries.size - 1).coerceAtLeast(0) / gridColumns)
+                                } else {
+                                    (sections.size - 1).coerceAtLeast(0)
+                                }
                                 focusedRowIndex = (focusedRowIndex + 1).coerceAtMost(maxRow)
-                                focusedItemIndex = 0
+                                if (displaySettings.layoutMode == LibraryLayoutMode.GRID) {
+                                    val rowSize = (gridEntries.size - focusedRowIndex * gridColumns).coerceIn(0, gridColumns)
+                                    focusedItemIndex = focusedItemIndex.coerceAtMost((rowSize - 1).coerceAtLeast(0))
+                                } else {
+                                    focusedItemIndex = 0
+                                }
                                 coroutineScope.launch {
                                     listState.animateScrollToItem((focusedRowIndex + 1).coerceAtLeast(0))
                                 }
@@ -231,14 +271,19 @@ fun LibraryScreen(
                             }
                             Key.DirectionUp -> {
                                 focusedRowIndex = (focusedRowIndex - 1).coerceAtLeast(0)
-                                focusedItemIndex = 0
+                                if (displaySettings.layoutMode != LibraryLayoutMode.GRID) focusedItemIndex = 0
                                 coroutineScope.launch {
                                     listState.animateScrollToItem(if (focusedRowIndex == 0) 0 else focusedRowIndex + 1)
                                 }
                                 true
                             }
                             Key.DirectionRight -> {
-                                val maxItem = (sections.getOrNull(focusedRowIndex)?.items?.take(LIBRARY_SECTION_PREVIEW_LIMIT)?.size?.minus(1) ?: 0).coerceAtLeast(0)
+                                val maxItem = if (displaySettings.layoutMode == LibraryLayoutMode.GRID) {
+                                    val remaining = gridEntries.size - focusedRowIndex * gridColumns
+                                    (remaining.coerceAtMost(gridColumns) - 1).coerceAtLeast(0)
+                                } else {
+                                    (sections.getOrNull(focusedRowIndex)?.items?.take(LIBRARY_SECTION_PREVIEW_LIMIT)?.size?.minus(1) ?: 0).coerceAtLeast(0)
+                                }
                                 focusedItemIndex = (focusedItemIndex + 1).coerceAtMost(maxItem)
                                 true
                             }
@@ -247,7 +292,12 @@ fun LibraryScreen(
                                 true
                             }
                             Key.Enter, Key.NumPadEnter -> {
-                                sections.getOrNull(focusedRowIndex)?.items?.take(LIBRARY_SECTION_PREVIEW_LIMIT)?.getOrNull(focusedItemIndex)
+                                val selectedItem = if (displaySettings.layoutMode == LibraryLayoutMode.GRID) {
+                                    gridEntries.getOrNull(focusedRowIndex * gridColumns + focusedItemIndex)?.item
+                                } else {
+                                    sections.getOrNull(focusedRowIndex)?.items?.take(LIBRARY_SECTION_PREVIEW_LIMIT)?.getOrNull(focusedItemIndex)
+                                }
+                                selectedItem
                                     ?.let { onPosterClick?.invoke(it) }
                                 true
                             }
@@ -343,11 +393,15 @@ fun LibraryScreen(
         } else {
             when {
                 !uiState.isLoaded || (uiState.isLoading && uiState.sections.isEmpty()) -> {
-                    items(3) {
-                        HomeSkeletonRow(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            showHeaderAccent = !homeCatalogSettingsUiState.hideCatalogUnderline,
-                        )
+                    if (displaySettings.layoutMode == LibraryLayoutMode.GRID) {
+                        libraryGridSkeletonItems(gridColumns)
+                    } else {
+                        items(3) {
+                            HomeSkeletonRow(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                showHeaderAccent = !homeCatalogSettingsUiState.hideCatalogUnderline,
+                            )
+                        }
                     }
                 }
 
@@ -377,7 +431,7 @@ fun LibraryScreen(
 
                 uiState.sections.isEmpty() -> {
                     item {
-                        if (networkStatusUiState.isOfflineLike && isTraktSource) {
+                        if (networkStatusUiState.isOfflineLike && isRemoteSource) {
                             NuvioNetworkOfflineCard(
                                 condition = networkStatusUiState.condition,
                                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -402,23 +456,215 @@ fun LibraryScreen(
                 }
 
                 else -> {
-                    librarySections(
-                        sections = uiState.sections,
-                        watchedKeys = watchedUiState.watchedKeys,
-                        showHeaderAccent = !homeCatalogSettingsUiState.hideCatalogUnderline,
-                        focusedRowIndex = focusedRowIndex,
-                        focusedItemIndex = focusedItemIndex,
-                        onHoverItem = if (isDesktop) { rowIdx, itemIdx ->
-                            focusedRowIndex = rowIdx
-                            focusedItemIndex = itemIdx
-                        } else null,
-                        onPosterClick = onPosterClick,
-                        onSectionViewAllClick = onSectionViewAllClick,
-                        onPosterLongClick = onPosterLongClick,
-                    )
+                    if (displaySettings.layoutMode == LibraryLayoutMode.GRID) {
+                        libraryGridContent(
+                            entries = gridEntries,
+                            columns = gridColumns,
+                            watchedKeys = watchedUiState.watchedKeys,
+                            focusedRowIndex = focusedRowIndex,
+                            focusedItemIndex = focusedItemIndex,
+                            onPosterClick = onPosterClick,
+                            onPosterLongClick = onPosterLongClick,
+                        )
+                    } else {
+                        librarySections(
+                            sections = sortedSections,
+                            watchedKeys = watchedUiState.watchedKeys,
+                            showHeaderAccent = !homeCatalogSettingsUiState.hideCatalogUnderline,
+                            focusedRowIndex = focusedRowIndex,
+                            focusedItemIndex = focusedItemIndex,
+                            onHoverItem = if (isDesktop) { rowIdx, itemIdx ->
+                                focusedRowIndex = rowIdx
+                                focusedItemIndex = itemIdx
+                            } else null,
+                            onPosterClick = onPosterClick,
+                            onSectionViewAllClick = onSectionViewAllClick,
+                            onPosterLongClick = onPosterLongClick,
+                        )
+                    }
                 }
             }
         }
+    }
+    }
+}
+
+private fun LazyListScope.libraryGridContent(
+    entries: List<LibraryGridEntry>,
+    columns: Int,
+    watchedKeys: Set<String>,
+    focusedRowIndex: Int,
+    focusedItemIndex: Int,
+    onPosterClick: ((LibraryItem) -> Unit)?,
+    onPosterLongClick: ((LibraryItem, LibrarySection) -> Unit)?,
+) {
+    itemsIndexed(entries.chunked(columns), key = { _, row -> "library-grid:${row.first().item.type}:${row.first().item.id}" }) { rowIndex, row ->
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            row.forEachIndexed { itemIndex, entry ->
+                val focused = isDesktop && rowIndex == focusedRowIndex && itemIndex == focusedItemIndex
+                HomePosterCard(
+                    item = entry.item.toMetaPreview(),
+                    modifier = Modifier.weight(1f).then(
+                        if (focused) Modifier.border(
+                            width = 2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(14.dp),
+                        ) else Modifier,
+                    ),
+                    isWatched = WatchingState.isPosterWatched(watchedKeys, entry.item.toMetaPreview()),
+                    onClick = onPosterClick?.let { { it(entry.item) } },
+                    onLongClick = onPosterLongClick?.let { { it(entry.item, entry.section) } },
+                )
+            }
+            repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+private fun LazyListScope.libraryGridSkeletonItems(columns: Int) {
+    items(2) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            repeat(columns) {
+                Box(
+                    Modifier.weight(1f).height(210.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun LibraryNavigationContextMenu(
+    modifier: Modifier = Modifier,
+    content: @Composable (Modifier) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        content(Modifier.secondaryClick { expanded = true })
+        LibraryDisplayDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false })
+    }
+}
+
+// The library sort menu is styled after the floating search bar's discover picker, so the two
+// navbar menus read as one system: same translucent surface, hairline border and row metrics.
+internal val LibraryNavMenuWidth = 320.dp
+internal val LibraryNavMenuBorderColor = Color.White.copy(alpha = 0.13f)
+private val LibraryNavMenuRowSelectedColor = Color.White.copy(alpha = 0.1f)
+
+@Composable
+internal fun libraryNavMenuSurfaceColor(): Color {
+    val tokens = MaterialTheme.nuvio
+    return tokens.colors.surface.copy(alpha = tokens.opacity.strong)
+}
+
+private val LibrarySortEntries: List<Pair<LibrarySortOption, String>> = listOf(
+    LibrarySortOption.DEFAULT to "Default order",
+    LibrarySortOption.ADDED_DESC to "Recently added",
+    LibrarySortOption.ADDED_ASC to "Oldest added",
+    LibrarySortOption.TITLE_ASC to "Title A–Z",
+    LibrarySortOption.TITLE_DESC to "Title Z–A",
+)
+
+/**
+ * Standalone popup form, used where the menu has no bar to hang off (bottom navigation bar,
+ * desktop hover sidebar). The floating top bar attaches [LibrarySortMenuPanel] under the pill
+ * instead.
+ */
+@Composable
+fun LibraryDisplayDropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        shape = RoundedCornerShape(20.dp),
+        containerColor = libraryNavMenuSurfaceColor(),
+        tonalElevation = 0.dp,
+        shadowElevation = MaterialTheme.nuvio.elevation.overlay,
+        border = BorderStroke(0.5.dp, LibraryNavMenuBorderColor),
+        modifier = Modifier.width(240.dp),
+    ) {
+        LibrarySortMenuItems(onDismissRequest = onDismissRequest)
+    }
+}
+
+/**
+ * The menu body without a container, for hosts that supply their own surface — the floating top
+ * bar hangs this off the bottom of the nav pill exactly like the discover picker.
+ */
+@Composable
+fun LibrarySortMenuPanel(
+    shape: Shape,
+    modifier: Modifier = Modifier,
+    onDismissRequest: () -> Unit = {},
+) {
+    Surface(
+        color = libraryNavMenuSurfaceColor(),
+        shape = shape,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        border = BorderStroke(0.5.dp, LibraryNavMenuBorderColor),
+        modifier = modifier,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            LibrarySortMenuItems(onDismissRequest = onDismissRequest)
+        }
+    }
+}
+
+@Composable
+private fun LibrarySortMenuItems(onDismissRequest: () -> Unit) {
+    val settings by remember {
+        LibraryDisplaySettingsRepository.ensureLoaded()
+        LibraryDisplaySettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
+    Text(
+        text = stringResource(Res.string.library_sort),
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        style = MaterialTheme.typography.labelMedium,
+        color = Color.White.copy(alpha = 0.55f),
+    )
+    LibrarySortEntries.forEach { (option, label) ->
+        LibraryMenuItem(label = label, selected = settings.sortOption == option) {
+            LibraryDisplaySettingsRepository.setSortOption(option)
+            onDismissRequest()
+        }
+    }
+}
+
+@Composable
+private fun LibraryMenuItem(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (selected) LibraryNavMenuRowSelectedColor else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // Kept in the layout even when unselected so every label starts on the same column.
+        Icon(
+            imageVector = Icons.Rounded.Check,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = if (selected) Color.White else Color.Transparent,
+        )
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (selected) Color.White else Color.White.copy(alpha = 0.72f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

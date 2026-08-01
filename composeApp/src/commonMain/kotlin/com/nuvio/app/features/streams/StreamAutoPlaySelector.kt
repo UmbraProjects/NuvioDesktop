@@ -45,6 +45,8 @@ object StreamAutoPlaySelector {
         bingeGroupOnly: Boolean = false,
         debridEnabled: Boolean = true,
         activeResolverProviderId: String? = null,
+        scoreProfile: StreamScoreProfile = StreamScoreProfile(),
+        scoreContext: StreamScoreContext = StreamScoreContext.MOVIE,
     ): StreamItem? =
         evaluateAutoPlayStream(
             streams = streams,
@@ -59,6 +61,8 @@ object StreamAutoPlaySelector {
             bingeGroupOnly = bingeGroupOnly,
             debridEnabled = debridEnabled,
             activeResolverProviderId = activeResolverProviderId,
+            scoreProfile = scoreProfile,
+            scoreContext = scoreContext,
         ).stream
 
     fun evaluateAutoPlayStream(
@@ -74,6 +78,8 @@ object StreamAutoPlaySelector {
         bingeGroupOnly: Boolean = false,
         debridEnabled: Boolean = true,
         activeResolverProviderId: String? = null,
+        scoreProfile: StreamScoreProfile = StreamScoreProfile(),
+        scoreContext: StreamScoreContext = StreamScoreContext.MOVIE,
     ): StreamAutoPlayEvaluation {
         if (streams.isEmpty()) return StreamAutoPlayEvaluation()
 
@@ -129,6 +135,14 @@ object StreamAutoPlaySelector {
         val matchingStreams = when (mode) {
             StreamAutoPlayMode.MANUAL -> emptyList()
             StreamAutoPlayMode.FIRST_STREAM -> candidateStreams
+            StreamAutoPlayMode.SCORED ->
+                // rank() is a no-op for an inactive profile, so this degrades to FIRST_STREAM order
+                // rather than selecting nothing.
+                StreamScorer.rank(
+                    candidateStreams,
+                    scoreProfile.takeIf { it.appliesToFirstStream() } ?: StreamScoreProfile(),
+                    scoreContext,
+                )
             StreamAutoPlayMode.REGEX_MATCH -> {
                 val pattern = regexPattern.trim()
 

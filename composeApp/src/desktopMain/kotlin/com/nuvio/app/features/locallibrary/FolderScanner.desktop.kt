@@ -27,7 +27,7 @@ internal actual object FolderScanner {
         val items = mutableListOf<LocalMediaItem>()
 
         // Plex layout: one subfolder per movie.
-        root.listFiles()?.filter { it.isDirectory }?.forEach { movieDir ->
+        root.listFiles()?.filter { it.isDirectory && !it.isUnmatchedFolder() }?.forEach { movieDir ->
             val videos = collectVideoFiles(movieDir)
             val primary = videos.maxByOrNull { it.length() } ?: return@forEach
             items += buildMovieItem(folder, nameForTitle = movieDir.name, file = primary)
@@ -42,19 +42,19 @@ internal actual object FolderScanner {
     }
 
     private fun scanSeries(folder: LocalFolder, root: File): List<LocalMediaItem> {
-        val showDirs = root.listFiles()?.filter { it.isDirectory }.orEmpty()
+        val showDirs = root.listFiles()?.filter { it.isDirectory && !it.isUnmatchedFolder() }.orEmpty()
         val items = mutableListOf<LocalMediaItem>()
 
         for (showDir in showDirs) {
             val episodes = collectVideoFiles(showDir)
             if (episodes.isEmpty()) continue
-            items += buildSeriesItem(folder, showDir.name, episodes)
+            items += buildSeriesItem(folder, showDir, episodes)
         }
 
         // Loose episode files at the root → treat the root folder itself as one show.
         val looseEpisodes = root.listFiles()?.filter { it.isFile && it.isVideo() }.orEmpty()
         if (looseEpisodes.isNotEmpty()) {
-            items += buildSeriesItem(folder, root.name, looseEpisodes)
+            items += buildSeriesItem(folder, root, looseEpisodes)
         }
 
         return items.dedupeByKey()
@@ -74,12 +74,18 @@ internal actual object FolderScanner {
         )
     }
 
-    private fun buildSeriesItem(folder: LocalFolder, showFolderName: String, episodeFiles: List<File>): LocalMediaItem {
-        val parsed = FilenameParser.parseTitle(showFolderName)
-        val title = parsed.title.ifBlank { showFolderName }
+    private fun buildSeriesItem(folder: LocalFolder, showDirectory: File, episodeFiles: List<File>): LocalMediaItem {
+        val parsed = FilenameParser.parseTitle(showDirectory.name)
+        val title = parsed.title.ifBlank { showDirectory.name }
         val files = episodeFiles
             .map { file ->
-                val seasonFolderName = file.parentFile?.name
+                // A title folder can contain "S17" without being a season directory. Only nested
+                // directories may provide fallback season context; direct children stay absolute.
+                val seasonFolderName = file.parentFile
+                    ?.takeUnless { parent ->
+                        parent.absolutePath.equals(showDirectory.absolutePath, ignoreCase = true)
+                    }
+                    ?.name
                 val episode = FilenameParser.parseEpisode(file.name, seasonFolderName, isAnime = folder.isAnime)
                 LocalMediaFile(path = file.absolutePath, season = episode.season, episode = episode.episode)
             }
@@ -99,10 +105,17 @@ internal actual object FolderScanner {
         val result = mutableListOf<File>()
         dir.walkTopDown()
             .maxDepth(6)
+            .onEnter { !it.isUnmatchedFolder() }
             .filter { it.isFile && it.isVideo() }
             .forEach { result += it }
         return result
     }
+
+    /**
+     * Compatibility with the older Kitsu repair flow, which parked rejected files here. The current
+     * flow is internal-only, but existing folders must stay ignored or their files would reappear.
+     */
+    private fun File.isUnmatchedFolder(): Boolean = name.equals(LOCAL_UNMATCHED_FOLDER, ignoreCase = true)
 
     private fun File.isVideo(): Boolean = extension.lowercase() in VIDEO_EXTENSIONS
 

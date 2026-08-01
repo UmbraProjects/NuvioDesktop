@@ -30,29 +30,48 @@ import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.cloud.cloudLibraryDisplayArtworkUrl
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
+import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.cw_action_go_to_details
 import nuvio.composeapp.generated.resources.cw_action_remove
 import nuvio.composeapp.generated.resources.cw_action_resync
 import nuvio.composeapp.generated.resources.cw_action_start_from_beginning
-import nuvio.composeapp.generated.resources.play_manually
 import org.jetbrains.compose.resources.stringResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NuvioContinueWatchingActionSheet(
     item: ContinueWatchingItem?,
-    showManualPlayOption: Boolean,
+    alternatePlayLabel: String? = null,
     showDetailsOption: Boolean = true,
     onDismiss: () -> Unit,
     onOpenDetails: () -> Unit,
     onStartFromBeginning: (() -> Unit)? = null,
-    onPlayManually: (() -> Unit)? = null,
+    onAlternatePlay: (() -> Unit)? = null,
     onResync: () -> Unit,
     onRemove: () -> Unit,
+    zoomAnchor: PosterZoomAnchor? = null,
+    zoomHazeState: HazeState? = null,
 ) {
     if (item == null) return
+    val posterCardStyle = rememberPosterCardStyleUiState()
+    if (posterCardStyle.zoomActionPreviewEnabled && zoomHazeState != null) {
+        NuvioContinueWatchingZoomActionSheet(
+            item = item,
+            alternatePlayLabel = alternatePlayLabel,
+            showDetailsOption = showDetailsOption,
+            anchor = zoomAnchor,
+            hazeState = zoomHazeState,
+            onDismiss = onDismiss,
+            onOpenDetails = onOpenDetails,
+            onStartFromBeginning = onStartFromBeginning,
+            onAlternatePlay = onAlternatePlay,
+            onResync = onResync,
+            onRemove = onRemove,
+        )
+        return
+    }
     val tokens = MaterialTheme.nuvio
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
@@ -86,12 +105,12 @@ fun NuvioContinueWatchingActionSheet(
                     onClick = { dismissAfter(onOpenDetails) },
                 )
             }
-            if (showManualPlayOption && onPlayManually != null) {
+            if (alternatePlayLabel != null && onAlternatePlay != null) {
                 NuvioBottomSheetDivider()
                 NuvioBottomSheetActionRow(
                     icon = Icons.Default.PlayArrow,
-                    title = stringResource(Res.string.play_manually),
-                    onClick = { dismissAfter(onPlayManually) },
+                    title = alternatePlayLabel,
+                    onClick = { dismissAfter(onAlternatePlay) },
                 )
             }
             if (!item.isNextUp && onStartFromBeginning != null) {
@@ -116,6 +135,79 @@ fun NuvioContinueWatchingActionSheet(
             )
         }
     }
+}
+
+/**
+ * Long-press zoom preview for Continue Watching cards, mirroring [NuvioPosterZoomActionSheet] so the
+ * setting applies to every shelf rather than just catalog posters.
+ */
+@Composable
+private fun NuvioContinueWatchingZoomActionSheet(
+    item: ContinueWatchingItem,
+    alternatePlayLabel: String?,
+    showDetailsOption: Boolean,
+    anchor: PosterZoomAnchor?,
+    hazeState: HazeState,
+    onDismiss: () -> Unit,
+    onOpenDetails: () -> Unit,
+    onStartFromBeginning: (() -> Unit)?,
+    onAlternatePlay: (() -> Unit)?,
+    onResync: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    NuvioPosterZoomActionOverlay(
+        imageUrl = anchor?.imageUrl
+            ?: (item.poster ?: item.imageUrl)?.let(::cloudLibraryDisplayArtworkUrl),
+        title = item.title,
+        subtitle = localizedContinueWatchingSubtitle(item),
+        anchor = anchor,
+        actions = buildList {
+            if (showDetailsOption) {
+                add(
+                    PosterZoomOverlayAction(
+                        icon = Icons.Default.Info,
+                        label = stringResource(Res.string.cw_action_go_to_details),
+                        onSelected = onOpenDetails,
+                    ),
+                )
+            }
+            if (alternatePlayLabel != null && onAlternatePlay != null) {
+                add(
+                    PosterZoomOverlayAction(
+                        icon = Icons.Default.PlayArrow,
+                        label = alternatePlayLabel,
+                        onSelected = onAlternatePlay,
+                    ),
+                )
+            }
+            if (!item.isNextUp && onStartFromBeginning != null) {
+                add(
+                    PosterZoomOverlayAction(
+                        icon = Icons.Default.Replay,
+                        label = stringResource(Res.string.cw_action_start_from_beginning),
+                        onSelected = onStartFromBeginning,
+                    ),
+                )
+            }
+            add(
+                PosterZoomOverlayAction(
+                    icon = Icons.Default.Refresh,
+                    label = stringResource(Res.string.cw_action_resync),
+                    onSelected = onResync,
+                ),
+            )
+            add(
+                PosterZoomOverlayAction(
+                    icon = Icons.Default.DeleteOutline,
+                    label = stringResource(Res.string.cw_action_remove),
+                    isDestructive = true,
+                    onSelected = onRemove,
+                ),
+            )
+        },
+        hazeState = hazeState,
+        onDismissed = onDismiss,
+    )
 }
 
 @Composable

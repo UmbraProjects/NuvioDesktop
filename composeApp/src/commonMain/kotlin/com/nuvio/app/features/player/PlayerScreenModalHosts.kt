@@ -84,6 +84,7 @@ internal fun PlayerScreenModalHosts(
     activeVideoId: String?,
     metaUiState: MetaDetailsUiState,
     displayedPositionMs: Long,
+    submitIntroDurationSeconds: Long?,
     submitIntroSegmentType: String,
     onSubmitIntroSegmentTypeChanged: (String) -> Unit,
     submitIntroStartTimeStr: String,
@@ -167,6 +168,9 @@ internal fun PlayerScreenModalHosts(
         onStreamSelected = onSourceStreamSelected,
         onReload = onReloadSources,
         onDismiss = onSourcesPanelDismissed,
+        isEpisode = isSeries,
+        contentId = parentMetaId,
+        contentType = parentMetaType,
     )
 
     if (isSeries) {
@@ -204,12 +208,14 @@ internal fun PlayerScreenModalHosts(
         ?: parentMetaId.takeIf { it.startsWith("tt") }
         ?: metaUiState.meta?.id?.takeIf { it.startsWith("tt") }
 
-    if (showSubmitIntroModal && season != null && episode != null && !imdbId.isNullOrBlank()) {
+    // A null season/episode here is a film, which SkipDB takes as-is.
+    if (showSubmitIntroModal && !imdbId.isNullOrBlank()) {
         com.nuvio.app.features.player.skip.SubmitIntroDialog(
             imdbId = imdbId,
             season = season,
             episode = episode,
             currentTimeSec = displayedPositionMs / 1000.0,
+            durationSeconds = submitIntroDurationSeconds,
             segmentType = submitIntroSegmentType,
             onSegmentTypeChange = onSubmitIntroSegmentTypeChanged,
             startTimeStr = submitIntroStartTimeStr,

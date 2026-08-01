@@ -5,6 +5,10 @@ import com.nuvio.app.features.player.PlayerSettingsUiState
 import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.StreamAutoPlayMode
 import com.nuvio.app.features.streams.StreamAutoPlaySelector
+import com.nuvio.app.features.streams.StreamScoreRepository
+import com.nuvio.app.features.streams.StreamScoreProfile
+import com.nuvio.app.features.streams.StreamScoreContext
+import com.nuvio.app.features.streams.StreamScoreContexts
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.epochMs
 import kotlinx.coroutines.CancellationException
@@ -23,6 +27,8 @@ object DirectDebridStreamPreparer {
         episode: Int?,
         playerSettings: PlayerSettingsUiState,
         installedAddonNames: Set<String>,
+        contentId: String? = null,
+        contentType: String? = null,
         onPrepared: (original: StreamItem, prepared: StreamItem) -> Unit,
     ) {
         val settings = DebridSettingsRepository.snapshot()
@@ -34,6 +40,12 @@ object DirectDebridStreamPreparer {
             limit = limit,
             playerSettings = playerSettings,
             installedAddonNames = installedAddonNames,
+            scoreProfile = StreamScoreRepository.profile,
+            scoreContext = StreamScoreContexts.forPlayback(
+                isEpisode = episode != null,
+                contentId = contentId,
+                contentType = contentType,
+            ),
         )
         for (stream in candidates) {
             DirectDebridPlaybackResolver.cachedPlayableStream(stream, season, episode)?.let { cached ->
@@ -68,6 +80,8 @@ object DirectDebridStreamPreparer {
         limit: Int,
         playerSettings: PlayerSettingsUiState,
         installedAddonNames: Set<String>,
+        scoreProfile: StreamScoreProfile = StreamScoreProfile(),
+        scoreContext: StreamScoreContext = StreamScoreContext.MOVIE,
     ): List<StreamItem> {
         if (limit <= 0) return emptyList()
         val candidates = streams
@@ -88,6 +102,8 @@ object DirectDebridStreamPreparer {
             installedAddonNames = installedAddonNames,
             selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
             selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
+            scoreProfile = scoreProfile,
+            scoreContext = scoreContext,
         )
         if (autoPlaySelection?.let { it.isAddonDebridCandidate && (it.isDirectDebridStream || it.isCachedDebridTorrentStream) } == true) {
             candidates.firstOrNull { it.preparationKey() == autoPlaySelection.preparationKey() }

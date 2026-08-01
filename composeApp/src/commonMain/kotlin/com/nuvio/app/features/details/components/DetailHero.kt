@@ -30,7 +30,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CheckCircleOutline
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +47,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
@@ -100,11 +104,14 @@ fun DetailHero(
     heroTrailerKeyboardNavigation: Boolean = false,
     heroTrailerPlaybackMode: MetaHeroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero,
     heroTrailerBackgroundMode: MetaHeroTrailerBackgroundMode = MetaHeroTrailerBackgroundMode.Black,
+    heroGradientColor: Color? = null,
+    onBackdropLoaded: (Painter, ImageBitmap?) -> Unit = { _, _ -> },
     desktopOverlay: Boolean = false,
     discoveryFacts: List<HeroDiscoveryFact> = emptyList(),
     maxDiscoveryBadges: Int = 0,
     playButtonLabel: String = stringResource(Res.string.action_play),
     isSaved: Boolean = false,
+    libraryName: String = "Nuvio",
     isWatched: Boolean = false,
     showActions: Boolean = false,
     showOverview: Boolean = false,
@@ -112,13 +119,17 @@ fun DetailHero(
     showProduction: Boolean = false,
     showDetails: Boolean = false,
     showManualPlayOption: Boolean = false,
-    actionsFocused: Boolean = false,
+    focusedActionIndex: Int? = null,
     onPrimaryPlayClick: () -> Unit = {},
     onPrimaryPlayLongClick: (() -> Unit)? = null,
     onRandomEpisodeClick: (() -> Unit)? = null,
     onSaveClick: () -> Unit = {},
     onSaveLongClick: (() -> Unit)? = null,
+    isMonitored: Boolean = false,
+    onMonitorClick: (() -> Unit)? = null,
     onWatchedClick: () -> Unit = {},
+    onRateClick: (() -> Unit)? = null,
+    ratingProviderName: String? = null,
     onCastClick: ((MetaPerson, String?) -> Unit)? = null,
     onCompanyClick: ((MetaCompany, String) -> Unit)? = null,
     onHeroTrailerMuteToggle: () -> Unit = {},
@@ -166,7 +177,7 @@ fun DetailHero(
         // and "Backdrop" (a dark wash over the artwork) both scrim to black; "Theme" and the
         // no-trailer state keep the theme background.
         val heroTrailerScrimColor = when {
-            !boundedHeroTrailerActive -> MaterialTheme.colorScheme.background
+            !boundedHeroTrailerActive -> heroGradientColor ?: MaterialTheme.colorScheme.background
             heroTrailerBackgroundMode == MetaHeroTrailerBackgroundMode.Theme -> MaterialTheme.colorScheme.background
             else -> Color.Black
         }
@@ -218,6 +229,7 @@ fun DetailHero(
                         },
                         contentScale = ContentScale.Crop,
                         desktopImageScaling = NuvioDesktopImageScaling.Disabled,
+                        onSuccess = { state -> onBackdropLoaded(state.painter, null) },
                     )
                     if (backdropWashActive) {
                         // Dim the backdrop so the small trailer stays the focal point. The scrim
@@ -317,6 +329,7 @@ fun DetailHero(
                         contentMaxWidth = contentMaxWidth,
                         playButtonLabel = playButtonLabel,
                         isSaved = isSaved,
+                        libraryName = libraryName,
                         isWatched = isWatched,
                         showActions = showActions,
                         showOverview = showOverview,
@@ -324,13 +337,17 @@ fun DetailHero(
                         showProduction = showProduction,
                         showDetails = showDetails,
                         showManualPlayOption = showManualPlayOption,
-                        actionsFocused = actionsFocused,
+                        focusedActionIndex = focusedActionIndex,
                         onPrimaryPlayClick = onPrimaryPlayClick,
                         onPrimaryPlayLongClick = onPrimaryPlayLongClick,
                         onRandomEpisodeClick = onRandomEpisodeClick,
                         onSaveClick = onSaveClick,
                         onSaveLongClick = onSaveLongClick,
+                        isMonitored = isMonitored,
+                        onMonitorClick = onMonitorClick,
                         onWatchedClick = onWatchedClick,
+                        onRateClick = onRateClick,
+                        ratingProviderName = ratingProviderName,
                         onCastClick = onCastClick,
                         onCompanyClick = onCompanyClick,
                     )
@@ -427,6 +444,7 @@ private fun DetailDesktopHeroOverlay(
     contentMaxWidth: Dp,
     playButtonLabel: String,
     isSaved: Boolean,
+    libraryName: String,
     isWatched: Boolean,
     showActions: Boolean,
     showOverview: Boolean,
@@ -434,13 +452,17 @@ private fun DetailDesktopHeroOverlay(
     showProduction: Boolean,
     showDetails: Boolean,
     showManualPlayOption: Boolean,
-    actionsFocused: Boolean,
+    focusedActionIndex: Int?,
     onPrimaryPlayClick: () -> Unit,
     onPrimaryPlayLongClick: (() -> Unit)?,
     onRandomEpisodeClick: (() -> Unit)?,
     onSaveClick: () -> Unit,
     onSaveLongClick: (() -> Unit)?,
+    isMonitored: Boolean,
+    onMonitorClick: (() -> Unit)?,
     onWatchedClick: () -> Unit,
+    onRateClick: (() -> Unit)?,
+    ratingProviderName: String?,
     onCastClick: ((MetaPerson, String?) -> Unit)?,
     onCompanyClick: ((MetaCompany, String) -> Unit)?,
 ) {
@@ -523,6 +545,7 @@ private fun DetailDesktopHeroOverlay(
             }
 
             if (showActions) {
+                val isSeriesMeta = meta.type.trim().lowercase() in setOf("series", "show", "tv", "tvshow")
                 DetailActionButtons(
                     modifier = Modifier
                         .padding(top = 328.dp)
@@ -531,13 +554,21 @@ private fun DetailDesktopHeroOverlay(
                     secondaryActions = listOfNotNull(
                         onRandomEpisodeClick?.let { playRandom ->
                             DetailSecondaryAction(
-                                label = stringResource(Res.string.action_random_episode),
+                                label = stringResource(Res.string.hero_play_random_episode),
                                 icon = Icons.Default.PlayArrow,
                                 onClick = playRandom,
                             )
                         },
                         DetailSecondaryAction(
-                            label = if (isWatched) {
+                            label = if (isSeriesMeta) {
+                                stringResource(
+                                    if (isWatched) {
+                                        Res.string.hero_mark_series_unwatched
+                                    } else {
+                                        Res.string.hero_mark_series_watched
+                                    },
+                                )
+                            } else if (isWatched) {
                                 stringResource(Res.string.hero_mark_unwatched)
                             } else {
                                 stringResource(Res.string.hero_mark_watched)
@@ -551,11 +582,14 @@ private fun DetailDesktopHeroOverlay(
                             onClick = onWatchedClick,
                         ),
                         DetailSecondaryAction(
-                            label = if (isSaved) {
-                                stringResource(Res.string.hero_remove_from_library)
-                            } else {
-                                stringResource(Res.string.hero_add_to_library)
-                            },
+                            label = stringResource(
+                                if (isSaved) {
+                                    Res.string.hero_remove_from_named_library
+                                } else {
+                                    Res.string.hero_add_to_named_library
+                                },
+                                libraryName,
+                            ),
                             icon = if (isSaved) {
                                 Icons.Default.Check
                             } else {
@@ -565,9 +599,33 @@ private fun DetailDesktopHeroOverlay(
                             onClick = onSaveClick,
                             onLongClick = onSaveLongClick,
                         ),
+                        onMonitorClick?.let { monitor ->
+                            DetailSecondaryAction(
+                                label = stringResource(
+                                    if (isMonitored) {
+                                        Res.string.hero_remove_from_local_library
+                                    } else {
+                                        Res.string.hero_add_to_local_library
+                                    },
+                                ),
+                                icon = Icons.Default.CloudDownload,
+                                isActive = isMonitored,
+                                onClick = monitor,
+                            )
+                        },
+                        onRateClick?.let { rate ->
+                            DetailSecondaryAction(
+                                label = stringResource(
+                                    Res.string.hero_rate_on_provider,
+                                    ratingProviderName.orEmpty(),
+                                ),
+                                icon = Icons.Default.Star,
+                                onClick = rate,
+                            )
+                        },
                     ),
                     isTablet = true,
-                    focused = actionsFocused,
+                    focusedActionIndex = focusedActionIndex,
                     onPlayClick = onPrimaryPlayClick,
                     onPlayLongClick = if (showManualPlayOption) onPrimaryPlayLongClick else null,
                 )
@@ -716,7 +774,7 @@ private fun DetailHeroPeopleHeader(
     ) {
         if (showCast) {
             DetailHeroPeopleTabLabel(
-                text = "Starring",
+                text = stringResource(Res.string.meta_starring),
                 selected = activeTab == DetailHeroPeopleTab.Starring,
                 onClick = { onTabSelected(DetailHeroPeopleTab.Starring) },
             )

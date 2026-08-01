@@ -8,6 +8,10 @@ data class MetaDetails(
     val type: String,
     val name: String,
     val tmdbId: Int? = null,
+    /** IMDb ID supplied by metadata addons even when [id] uses an anime-native namespace. */
+    val imdbId: String? = null,
+    /** MyAnimeList ID supplied by anime metadata addons. */
+    val malId: String? = null,
     val poster: String? = null,
     val background: String? = null,
     val logo: String? = null,

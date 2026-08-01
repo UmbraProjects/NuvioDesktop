@@ -16,7 +16,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-private const val SettingsScrollAnchorHighlightMillis = 3000L
+internal const val SettingsScrollAnchorHighlightMillis = 5000L
+private const val SettingsScrollAnchorFallbackDelayMillis = 120L
 
 /**
  * Lets a deep-link (e.g. from the Fork Enhancements overview, the settings search, or a pinned
@@ -44,6 +45,7 @@ internal object SettingsScrollAnchor {
     const val ColorProfile = "color_profile"
     const val DesktopRenderer = "desktop_renderer"
     const val MouseMove = "mouse_move"
+    const val SourceNotch = "source_notch"
     const val DefaultSpeed = "default_speed"
     const val BingeMode = "binge_mode"
     const val ExtraLargePosters = "extra_large_posters"
@@ -51,14 +53,21 @@ internal object SettingsScrollAnchor {
     const val AnimeEnhancements = "anime_enhancements"
     const val AnimeAutoApply = "anime_auto_apply"
     const val AnimeSvp = "anime_svp"
+    const val AnimeSvpOverlay = "anime_svp_overlay"
     const val RtxHdr = "rtx_hdr"
     const val TmdbHeroImages = "tmdb_hero_images"
     const val TvdbApiKey = "tvdb_api_key"
     const val DiscordPresence = "discord_presence"
 
     fun searchKey(key: String): String = "settings_search_$key"
+    fun section(title: String): String = "settings_section_$title"
 
-    internal data class Request(val anchor: String, val sequence: Long)
+    internal data class Request(
+        val anchor: String,
+        val fallbackAnchor: String?,
+        val fallbackTitle: String?,
+        val sequence: Long,
+    )
     internal data class TitleHighlight(val title: String, val sequence: Long)
     private val _requested = MutableStateFlow<Request?>(null)
     val requested: StateFlow<Request?> = _requested.asStateFlow()
@@ -67,14 +76,28 @@ internal object SettingsScrollAnchor {
     private var requestSequence = 0L
     private var titleHighlightSequence = 0L
 
-    fun request(anchor: String) {
+    fun request(
+        anchor: String,
+        fallbackAnchor: String? = null,
+        fallbackTitle: String? = null,
+    ) {
         // A StateFlow does not emit equal values. Give every click a new identity so retrying a
         // search result can recover even if the prior target never mounted or consumed it.
-        _requested.value = Request(anchor, ++requestSequence)
+        _requested.value = Request(
+            anchor = anchor,
+            fallbackAnchor = fallbackAnchor,
+            fallbackTitle = fallbackTitle,
+            sequence = ++requestSequence,
+        )
     }
 
-    fun consume(anchor: String) {
-        if (_requested.value?.anchor == anchor) _requested.value = null
+    internal fun consume(anchor: String, sequence: Long, allowFallback: Boolean = false): Boolean {
+        val request = _requested.value ?: return false
+        val matches = request.anchor == anchor ||
+            (allowFallback && request.fallbackAnchor == anchor)
+        if (!matches || request.sequence != sequence) return false
+        _requested.value = null
+        return true
     }
 
     fun expire(sequence: Long) {
@@ -107,7 +130,7 @@ internal object SettingsScrollAnchor {
 
 /**
  * The state produced by [rememberSettingsAnchorHighlight]: [modifier] must be applied to the
- * anchored element so it can be brought into view, and [highlighted] is true for ~3s after the
+ * anchored element so it can be brought into view, and [highlighted] is true for ~5s after the
  * anchor is requested so the caller can tint its label with the accent colour.
  */
 internal data class SettingsAnchorHighlight(
@@ -125,9 +148,19 @@ internal fun rememberSettingsAnchorHighlight(anchor: String): SettingsAnchorHigh
     var highlightToken by remember { mutableStateOf(0) }
     var highlighted by remember { mutableStateOf(false) }
     LaunchedEffect(requested) {
-        if (requested?.anchor == anchor) {
+        val request = requested ?: return@LaunchedEffect
+        if (request.anchor == anchor) {
+            if (!SettingsScrollAnchor.consume(anchor, request.sequence)) return@LaunchedEffect
             highlightToken++
-            SettingsScrollAnchor.consume(anchor)
+        } else if (request.fallbackAnchor == anchor) {
+            // Give the exact destination a frame to mount and consume the request. If it is
+            // conditionally hidden (or not anchored yet), the nearest visible fallback takes over.
+            delay(SettingsScrollAnchorFallbackDelayMillis)
+            if (!SettingsScrollAnchor.consume(anchor, request.sequence, allowFallback = true)) {
+                return@LaunchedEffect
+            }
+            request.fallbackTitle?.let(SettingsScrollAnchor::highlightTitle)
+            highlightToken++
         }
     }
     LaunchedEffect(highlightToken) {

@@ -42,6 +42,8 @@ import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioShelfItemSlot
 import com.nuvio.app.core.ui.desktopHorizontalListNavigation
 import com.nuvio.app.features.details.MetaTrailer
+import com.nuvio.app.core.ui.NuvioCardDepthSurface
+import com.nuvio.app.core.ui.nuvioCardDepth
 import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.detail_tab_trailer
 import nuvio.composeapp.generated.resources.detail_trailer_category_count
@@ -224,6 +226,7 @@ private fun TrailerCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(cornerRadius))
+                .nuvioCardDepth(RoundedCornerShape(cornerRadius), NuvioCardDepthSurface.Trailers)
                 .clickable(onClick = onClick),
         ) {
             AsyncImage(

@@ -2,8 +2,8 @@ package com.nuvio.app.features.collection
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.AddonRepository
-import com.nuvio.app.features.catalog.CATALOG_PAGE_SIZE
 import com.nuvio.app.features.catalog.CatalogPage
+import com.nuvio.app.features.catalog.applyCatalogPaginationProbe
 import com.nuvio.app.features.catalog.CatalogTarget
 import com.nuvio.app.features.catalog.fetchCatalogPage
 import com.nuvio.app.features.catalog.mergeCatalogItems
@@ -347,7 +347,7 @@ object FolderDetailRepository {
         val job = scope.launch {
             runCatching {
                 val source = currentTab.source
-                when {
+                val initialPage = when {
                     source?.isTmdb == true -> TmdbCollectionSourceResolver.resolve(
                         source = source,
                         page = if (reset) 1 else requestedSkip,
@@ -365,15 +365,50 @@ object FolderDetailRepository {
                         genre = currentTab.genre,
                         skip = requestedSkip.takeIf { it > 0 },
                     )
-                }.withUnreleasedFilter()
-            }.onSuccess { page ->
+                }
+
+                if (
+                    reset &&
+                    source?.isTmdb != true &&
+                    source?.isTrakt != true &&
+                    !currentTab.supportsPagination &&
+                    initialPage.rawItemCount > 0 &&
+                    initialPage.nextSkip != null
+                ) {
+                    val probePage = runCatching {
+                        fetchCatalogPage(
+                            manifestUrl = requireNotNull(currentTab.manifestUrl),
+                            type = currentTab.type,
+                            catalogId = currentTab.catalogId,
+                            genre = currentTab.genre,
+                            skip = initialPage.nextSkip,
+                        )
+                    }.getOrNull()
+                    if (probePage != null) {
+                        applyCatalogPaginationProbe(initialPage, probePage).let { probeResult ->
+                            CatalogLoadResult(
+                                page = probeResult.page,
+                                supportsPagination = probeResult.supportsPagination,
+                            )
+                        }
+                    } else {
+                        CatalogLoadResult(page = initialPage)
+                    }
+                } else {
+                    CatalogLoadResult(
+                        page = initialPage,
+                        supportsPagination = currentTab.supportsPagination,
+                    )
+                }
+            }.onSuccess { loadResult ->
+                val page = loadResult.page.withUnreleasedFilter()
                 updateTab(index) { tab ->
                     val mergedItems = if (reset) {
                         page.items
                     } else {
                         mergeCatalogItems(tab.items, page.items)
                     }
-                    val supportsPagination = tab.supportsPagination || page.rawItemCount >= CATALOG_PAGE_SIZE
+                    val supportsPagination = tab.supportsPagination || loadResult.supportsPagination
                     val loadedNewItems = reset || mergedItems.size > tab.items.size
                     val paginationState = nextCatalogPaginationState(
                         supportsPagination = supportsPagination,
@@ -490,6 +525,11 @@ object FolderDetailRepository {
         }.ensureUniqueKeys()
     }
 }
+
+private data class CatalogLoadResult(
+    val page: CatalogPage,
+    val supportsPagination: Boolean = false,
+)
 
 private fun Boolean?.orFalse(): Boolean = this == true
 

@@ -62,6 +62,31 @@ import nuvio.composeapp.generated.resources.settings_tmdb_section_credentials
 import nuvio.composeapp.generated.resources.settings_tmdb_section_localization
 import nuvio.composeapp.generated.resources.settings_tmdb_section_modules
 import nuvio.composeapp.generated.resources.settings_tmdb_section_title
+import nuvio.composeapp.generated.resources.settings_tmdb_filename_catalogs
+import nuvio.composeapp.generated.resources.settings_tmdb_filename_catalogs_description
+import nuvio.composeapp.generated.resources.settings_tmdb_filename_catalogs_missing_key
+import nuvio.composeapp.generated.resources.settings_tmdb_filename_catalogs_section
+import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_addon
+import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_addon_description
+import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_description
+import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_missing_key
+import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_movies_tvdb_shows
+import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_movies_tvdb_shows_description
+import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_section
+import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_tmdb
+import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_tmdb_description
+import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_title
+import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_description
+import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_missing_template
+import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_section
+import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_title
+import nuvio.composeapp.generated.resources.settings_tmdb_poster_template
+import nuvio.composeapp.generated.resources.settings_tmdb_poster_template_description
+import nuvio.composeapp.generated.resources.settings_tmdb_poster_template_label
+import nuvio.composeapp.generated.resources.settings_tvdb_api_key
+import nuvio.composeapp.generated.resources.settings_tvdb_api_key_description
+import nuvio.composeapp.generated.resources.settings_tvdb_api_key_label
+import nuvio.composeapp.generated.resources.settings_tvdb_api_key_section
 import org.jetbrains.compose.resources.stringResource
 
 internal fun LazyListScope.tmdbSettingsContent(
@@ -252,7 +277,7 @@ internal fun LazyListScope.tmdbSettingsContent(
     item {
         val tvdbSettingsUiState by TvdbSettingsRepository.uiState.collectAsStateWithLifecycle()
         SettingsSection(
-            title = "HERO BACKDROP & LOGO",
+            title = stringResource(Res.string.settings_tmdb_hero_artwork_section),
             isTablet = isTablet,
         ) {
             SettingsGroup(
@@ -261,17 +286,16 @@ internal fun LazyListScope.tmdbSettingsContent(
             ) {
                 TmdbInfoRow(
                     isTablet = isTablet,
-                    text = "Applies to the Search and Library hero only. The Home page always " +
-                        "uses your metadata addon's own images.",
+                    text = stringResource(Res.string.settings_tmdb_hero_artwork_description),
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 val heroImageOptions = buildList {
-                    add(SettingsChoiceOption(HeroImageSource.Addon, "Addon (default)"))
+                    add(SettingsChoiceOption(HeroImageSource.Addon, stringResource(Res.string.settings_tmdb_hero_artwork_addon)))
                     if (settings.hasApiKey) {
-                        add(SettingsChoiceOption(HeroImageSource.TmdbOnly, "TMDB for everything"))
+                        add(SettingsChoiceOption(HeroImageSource.TmdbOnly, stringResource(Res.string.settings_tmdb_hero_artwork_tmdb)))
                     }
                     if (settings.hasApiKey && tvdbSettingsUiState.hasApiKey) {
-                        add(SettingsChoiceOption(HeroImageSource.TmdbMoviesTvdbShows, "TMDB movies + TVDB shows"))
+                        add(SettingsChoiceOption(HeroImageSource.TmdbMoviesTvdbShows, stringResource(Res.string.settings_tmdb_hero_artwork_movies_tvdb_shows)))
                     }
                 }
                 val selectedHeroImageSource = if (heroImageOptions.any { it.value == settings.heroImageSource }) {
@@ -280,7 +304,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     HeroImageSource.Addon
                 }
                 SettingsChoiceRow(
-                    title = "Hero artwork source",
+                    title = stringResource(Res.string.settings_tmdb_hero_artwork_title),
                     description = selectedHeroImageSource.settingsDescription(),
                     options = heroImageOptions,
                     selectedValue = selectedHeroImageSource,
@@ -289,7 +313,10 @@ internal fun LazyListScope.tmdbSettingsContent(
                 )
                 if (!settings.hasApiKey) {
                     SettingsGroupDivider(isTablet = isTablet)
-                    TmdbInfoRow(isTablet = isTablet, text = "Add a TMDB API key below to use TMDB images.")
+                    TmdbInfoRow(
+                        isTablet = isTablet,
+                        text = stringResource(Res.string.settings_tmdb_hero_artwork_missing_key),
+                    )
                 }
             }
         }
@@ -298,7 +325,7 @@ internal fun LazyListScope.tmdbSettingsContent(
     item {
         val tvdbSettingsUiState by TvdbSettingsRepository.uiState.collectAsStateWithLifecycle()
         SettingsSection(
-            title = "THETVDB API KEY",
+            title = stringResource(Res.string.settings_tvdb_api_key_section),
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
@@ -314,14 +341,39 @@ internal fun LazyListScope.tmdbSettingsContent(
 
     item {
         SettingsSection(
-            title = "LIBRARY POSTERS",
+            title = stringResource(Res.string.settings_tmdb_filename_catalogs_section),
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
                 SettingsSwitchRow(
-                    title = "Custom poster service",
-                    description = "Route Library posters through a custom poster service " +
-                        "(PostersPlus, RPDB, etc.) instead of plain TMDB images.",
+                    title = stringResource(Res.string.settings_tmdb_filename_catalogs),
+                    description = stringResource(Res.string.settings_tmdb_filename_catalogs_description),
+                    checked = settings.resolveFilenameCatalogs,
+                    enabled = settings.hasApiKey,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-filename-catalogs")),
+                    onCheckedChange = TmdbSettingsRepository::setResolveFilenameCatalogs,
+                )
+                if (!settings.hasApiKey) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    TmdbInfoRow(
+                        isTablet = isTablet,
+                        text = stringResource(Res.string.settings_tmdb_filename_catalogs_missing_key),
+                    )
+                }
+            }
+        }
+    }
+
+    item {
+        SettingsSection(
+            title = stringResource(Res.string.settings_tmdb_library_posters_section),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_tmdb_library_posters_title),
+                    description = stringResource(Res.string.settings_tmdb_library_posters_description),
                     checked = settings.libraryPosterEnabled,
                     enabled = settings.libraryPosterUrlTemplate.isNotBlank(),
                     isTablet = isTablet,
@@ -331,7 +383,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     SettingsGroupDivider(isTablet = isTablet)
                     TmdbInfoRow(
                         isTablet = isTablet,
-                        text = "Add a poster URL template below first.",
+                        text = stringResource(Res.string.settings_tmdb_library_posters_missing_template),
                     )
                 }
                 SettingsGroupDivider(isTablet = isTablet)
@@ -345,11 +397,12 @@ internal fun LazyListScope.tmdbSettingsContent(
     }
 }
 
+@Composable
 private fun HeroImageSource.settingsDescription(): String =
     when (this) {
-        HeroImageSource.Addon -> "Use whatever backdrop and logo your addons provide."
-        HeroImageSource.TmdbOnly -> "Fetch backdrop and logo from TMDB for all content."
-        HeroImageSource.TmdbMoviesTvdbShows -> "Use TMDB for movies and TVDB for TV and anime."
+        HeroImageSource.Addon -> stringResource(Res.string.settings_tmdb_hero_artwork_addon_description)
+        HeroImageSource.TmdbOnly -> stringResource(Res.string.settings_tmdb_hero_artwork_tmdb_description)
+        HeroImageSource.TmdbMoviesTvdbShows -> stringResource(Res.string.settings_tmdb_hero_artwork_movies_tvdb_shows_description)
     }
 
 @Composable
@@ -428,14 +481,13 @@ private fun TvdbApiKeyRow(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = "TheTVDB API key",
+                text = stringResource(Res.string.settings_tvdb_api_key),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "Get a free API key at thetvdb.com/api-information. " +
-                    "Required for the TMDB + TheTVDB backdrop mode.",
+                text = stringResource(Res.string.settings_tvdb_api_key_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -444,7 +496,7 @@ private fun TvdbApiKeyRow(
             value = draft,
             onValueChange = { draft = it },
             modifier = Modifier.fillMaxWidth(),
-            label = "TVDB API key",
+            label = stringResource(Res.string.settings_tvdb_api_key_label),
         )
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
             Button(
@@ -476,14 +528,13 @@ private fun TmdbLibraryPosterRow(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = "Poster URL template",
+                text = stringResource(Res.string.settings_tmdb_poster_template),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "Paste your full poster URL using placeholders {imdb_id}, {tmdb_id} and " +
-                    "{type}. The matching value is filled in for each item.",
+                text = stringResource(Res.string.settings_tmdb_poster_template_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -492,10 +543,10 @@ private fun TmdbLibraryPosterRow(
         OutlinedTextField(
             value = draft,
             onValueChange = { draft = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
             minLines = 2,
             maxLines = 6,
-            label = { Text("URL template") },
+            label = { Text(stringResource(Res.string.settings_tmdb_poster_template_label)) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
                 unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
@@ -558,7 +609,7 @@ private fun TmdbLanguageRow(
                 draft = it
             },
             enabled = enabled,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
             singleLine = true,
             label = { Text(stringResource(Res.string.settings_tmdb_language_code_label)) },
             colors = OutlinedTextFieldDefaults.colors(

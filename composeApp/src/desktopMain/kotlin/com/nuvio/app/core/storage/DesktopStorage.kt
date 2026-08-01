@@ -20,6 +20,21 @@ internal object DesktopStorage {
         resolveAppDataDir()
     }
 
+    @Volatile
+    private var freshInstall = false
+
+    /**
+     * True when neither a Nuvio HTPC data directory nor a legacy Nuvio directory existed when
+     * storage was first resolved — i.e. a genuinely new user, not an upgrade and not someone who
+     * simply never changed a given setting. Touching this resolves [rootDir], so the answer is
+     * captured before anything has had a chance to create the directory.
+     */
+    val isFreshInstall: Boolean
+        get() {
+            rootDir
+            return freshInstall
+        }
+
     fun store(name: String): Store = synchronized(stores) {
         stores.getOrPut(name) { Store(rootDir.resolve("$name.properties")) }
     }
@@ -61,7 +76,9 @@ internal object DesktopStorage {
                     ?: userHome.resolve(".config")
             }
             val destination = parent.resolve(if (osName.contains("mac")) "NuvioHTPC" else "nuviohtpc")
-            migrateLegacyDirectories(destination, parent.resolve(if (osName.contains("mac")) "Nuvio" else "nuvio"))
+            val legacy = parent.resolve(if (osName.contains("mac")) "Nuvio" else "nuvio")
+            freshInstall = !destination.exists() && !legacy.exists()
+            migrateLegacyDirectories(destination, legacy)
             return destination
         }
 
@@ -81,6 +98,7 @@ internal object DesktopStorage {
             ?.resolve("Nuvio")
             ?: userHome.resolve("AppData/Roaming/Nuvio")
         val localNuvio = localAppData.resolve("Nuvio")
+        freshInstall = !roamingNuvio.exists() && !localNuvio.exists()
         migrateLegacyDirectories(destination, roamingNuvio, localNuvio)
         return destination
     }

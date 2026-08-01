@@ -181,6 +181,19 @@ internal data class SimklAllItemsEntry(
     val show: SimklShowMedia? = null,
     val movie: SimklMovieMedia? = null,
     val anime: SimklShowMedia? = null,
+    val seasons: List<SimklWatchedSeason> = emptyList(),
+)
+
+@Serializable
+internal data class SimklWatchedSeason(
+    val number: Int? = null,
+    val episodes: List<SimklWatchedEpisode> = emptyList(),
+)
+
+@Serializable
+internal data class SimklWatchedEpisode(
+    val number: Int? = null,
+    @SerialName("watched_at") val watchedAt: String? = null,
 )
 
 @Serializable

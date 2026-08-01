@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
@@ -68,11 +69,7 @@ fun PinEntryDialog(
     val haptic = LocalHapticFeedback.current
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(24.dp),
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

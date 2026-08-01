@@ -52,6 +52,7 @@ import com.nuvio.app.features.details.MetaHeroTrailerPlaybackMode
 import com.nuvio.app.core.ui.NuvioActionLabel
 import com.nuvio.app.features.details.MetaEpisodeCardStyle
 import com.nuvio.app.features.details.MetaScreenSectionItem
+import com.nuvio.app.features.details.MetaScreenBackgroundMode
 import com.nuvio.app.features.details.MetaScreenSectionKey
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsUiState
@@ -109,6 +110,19 @@ import nuvio.composeapp.generated.resources.settings_meta_trailers
 import nuvio.composeapp.generated.resources.settings_meta_trailers_description
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_delay
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_delay_seconds
+import nuvio.composeapp.generated.resources.settings_meta_background_cinematic
+import nuvio.composeapp.generated.resources.settings_meta_background_description
+import nuvio.composeapp.generated.resources.settings_meta_background_dominant
+import nuvio.composeapp.generated.resources.settings_meta_background_normal
+import nuvio.composeapp.generated.resources.settings_meta_background_title
+import nuvio.composeapp.generated.resources.settings_meta_episode_ratings
+import nuvio.composeapp.generated.resources.settings_meta_episode_ratings_description
+import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_background
+import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_background_backdrop
+import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_background_black
+import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_background_description
+import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_background_theme
+import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_manual
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableCollectionItemScope
@@ -127,6 +141,20 @@ internal fun LazyListScope.metaScreenSettingsContent(
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
+                SettingsChoiceRow(
+                    title = stringResource(Res.string.settings_meta_background_title),
+                    description = stringResource(Res.string.settings_meta_background_description),
+                    options = listOf(
+                        SettingsChoiceOption(MetaScreenBackgroundMode.Normal, stringResource(Res.string.settings_meta_background_normal)),
+                        SettingsChoiceOption(MetaScreenBackgroundMode.Cinematic, stringResource(Res.string.settings_meta_background_cinematic)),
+                        SettingsChoiceOption(MetaScreenBackgroundMode.DominantColor, stringResource(Res.string.settings_meta_background_dominant)),
+                    ),
+                    selectedValue = uiState.backgroundMode,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-dominant-background")),
+                    onSelected = MetaScreenSettingsRepository::setBackgroundMode,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
                 if (showHeroTrailerPlaybackSetting) {
                     val selectedPlaybackArea = if (!uiState.heroTrailerPlayback) {
                         HeroTrailerPlaybackArea.Off
@@ -189,26 +217,21 @@ internal fun LazyListScope.metaScreenSettingsContent(
                                 onCheckedChange = { MetaScreenSettingsRepository.setHeroTrailerSoundEnabled(it) },
                             )
                             SettingsGroupDivider(isTablet = isTablet)
-                            // NOTE: literal labels rather than Res.string.* — the compose resource
-                            // accessor generator would not surface freshly-added string keys to the
-                            // compiler in this environment (siblings resolved, these did not, even
-                            // on a fully clean build). Wire these to string resources once that
-                            // generation issue is resolved.
                             SettingsChoiceRow(
-                                title = "Trailer background",
-                                description = "Background shown around a trailer while it plays on the info screen. Returns to normal when it ends.",
+                                title = stringResource(Res.string.settings_meta_hero_trailer_background),
+                                description = stringResource(Res.string.settings_meta_hero_trailer_background_description),
                                 options = listOf(
                                     SettingsChoiceOption(
                                         MetaHeroTrailerBackgroundMode.Black,
-                                        "Black (lights out)",
+                                        stringResource(Res.string.settings_meta_hero_trailer_background_black),
                                     ),
                                     SettingsChoiceOption(
                                         MetaHeroTrailerBackgroundMode.Backdrop,
-                                        "Backdrop wash",
+                                        stringResource(Res.string.settings_meta_hero_trailer_background_backdrop),
                                     ),
                                     SettingsChoiceOption(
                                         MetaHeroTrailerBackgroundMode.Theme,
-                                        "Theme background",
+                                        stringResource(Res.string.settings_meta_hero_trailer_background_theme),
                                     ),
                                 ),
                                 selectedValue = uiState.heroTrailerBackgroundMode,
@@ -237,6 +260,15 @@ internal fun LazyListScope.metaScreenSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-blur-episodes")),
                     onCheckedChange = { MetaScreenSettingsRepository.setBlurUnwatchedEpisodes(it) },
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_meta_episode_ratings),
+                    description = stringResource(Res.string.settings_meta_episode_ratings_description),
+                    checked = uiState.episodeRatingsEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-episode-ratings")),
+                    onCheckedChange = MetaScreenSettingsRepository::setEpisodeRatingsEnabled,
+                )
             }
         }
     }
@@ -250,7 +282,7 @@ private enum class HeroTrailerPlaybackArea {
 
 @Composable
 private fun heroTrailerDelayOptions(): List<SettingsChoiceOption<Int>> =
-    listOf(SettingsChoiceOption(0, "Manual")) + HERO_TV_TRAILER_DELAY_VALUES.map { seconds ->
+    listOf(SettingsChoiceOption(0, stringResource(Res.string.settings_meta_hero_trailer_manual))) + HERO_TV_TRAILER_DELAY_VALUES.map { seconds ->
         SettingsChoiceOption(
             seconds,
             stringResource(Res.string.settings_playback_hero_tv_trailer_delay_seconds, seconds),

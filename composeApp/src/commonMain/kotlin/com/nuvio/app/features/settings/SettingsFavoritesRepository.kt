@@ -26,15 +26,49 @@ private data class StoredSettingsFavoritesPayload(
 /**
  * User-pinned settings headings, shown in the desktop settings side panel. Persisted per profile.
  *
- * Defaults are intentionally empty for now — seed [DEFAULT_FAVORITES] later to ship a curated
- * starter set; [ensureLoaded] applies them only on first run (when nothing has been persisted yet),
- * so a user who later removes a default won't have it reappear.
+ * A curated starter set is applied only when the app starts without an existing data directory.
+ * The initial value is immediately persisted, so removing a default never makes it reappear.
  */
 internal object SettingsFavoritesRepository {
     private val json = Json { ignoreUnknownKeys = true }
 
-    // Seed this to ship default pins later. Empty = start with no favorites.
-    private val DEFAULT_FAVORITES: List<SettingsFavorite> = emptyList()
+    private val DEFAULT_FAVORITES = listOf(
+        SettingsFavorite(
+            page = SettingsPage.Homescreen.name,
+            anchor = "heading:Homescreen:Display Mode",
+            title = "Display Mode",
+        ),
+        SettingsFavorite(
+            page = SettingsPage.Homescreen.name,
+            anchor = "heading:Homescreen:Home Layout",
+            title = "Home Layout",
+        ),
+        SettingsFavorite(
+            page = SettingsPage.Appearance.name,
+            anchor = "heading:Appearance:DISPLAY",
+            title = "Display",
+        ),
+        SettingsFavorite(
+            page = SettingsPage.MetaScreen.name,
+            anchor = "heading:MetaScreen:APPEARANCE",
+            title = "Appearance",
+        ),
+        SettingsFavorite(
+            page = SettingsPage.Playback.name,
+            anchor = "heading:Playback:PLAYER",
+            title = "Player",
+        ),
+        SettingsFavorite(
+            page = SettingsPage.Integrations.name,
+            anchor = "heading:Integrations:Integrations",
+            title = "Integrations",
+        ),
+        SettingsFavorite(
+            page = SettingsPage.KeyboardShortcuts.name,
+            anchor = "heading:KeyboardShortcuts:Navigation",
+            title = "Navigation",
+        ),
+    )
 
     private val _favorites = MutableStateFlow<List<SettingsFavorite>>(emptyList())
     val favorites: StateFlow<List<SettingsFavorite>> = _favorites.asStateFlow()
@@ -47,8 +81,11 @@ internal object SettingsFavoritesRepository {
 
         val payload = SettingsFavoritesStorage.loadPayload()
         if (payload == null) {
-            // First run: apply defaults and persist so they can be individually removed later.
-            _favorites.value = DEFAULT_FAVORITES
+            _favorites.value = if (SettingsFavoritesStorage.shouldSeedDefaults()) {
+                DEFAULT_FAVORITES
+            } else {
+                emptyList()
+            }
             persist()
             return
         }

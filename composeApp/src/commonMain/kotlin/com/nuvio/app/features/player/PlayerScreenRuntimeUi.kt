@@ -36,10 +36,17 @@ import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.p2p.P2pStreamingState
 import com.nuvio.app.features.p2p.formatP2pMegabytes
 import com.nuvio.app.features.p2p.formatP2pSpeed
+import com.nuvio.app.features.player.skip.SKIP_SEGMENT_TYPES
 import com.nuvio.app.features.player.skip.SkipIntroRepository
 import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
+import com.nuvio.app.features.streams.StreamScore
+import com.nuvio.app.features.streams.StreamScoreContext
+import com.nuvio.app.features.streams.StreamScoreContexts
+import com.nuvio.app.features.streams.StreamScoreProfile
+import com.nuvio.app.features.streams.StreamScoreRepository
+import com.nuvio.app.features.streams.StreamScorer
 import com.nuvio.app.features.streams.isSelectableForPlayback
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import com.nuvio.app.features.watching.application.WatchingState
@@ -56,6 +63,7 @@ import org.jetbrains.compose.resources.stringResource
 internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     val runtime = this
     val playbackFailedToast = stringResource(Res.string.player_error_playback_failed)
+    val unableToPlayStreamMessage = stringResource(Res.string.player_error_unable_to_play_stream)
     val debridRateLimitedToast = stringResource(Res.string.player_error_debrid_rate_limited)
     val failoverTryingNextToast = stringResource(Res.string.player_failover_trying_next)
     val streamBadgeSettings by remember {
@@ -157,9 +165,16 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     val playerControlAddonSubtitles = buildPlayerControlAddonSubtitleItems()
     // Only override the overlay's native built-in list while the preferred-languages filter is on;
     // otherwise leave the list empty so the overlay keeps using its live native track list.
-    val builtInSubtitleFilterActive = subtitleStyle.showOnlyPreferredLanguages
+    val builtInSubtitleFilterActive = subtitleStyle.showOnlyPreferredLanguages ||
+        playerSettingsUiState.effectiveRejectedSubtitleKeywords().isNotEmpty()
     val playerControlBuiltInSubtitles = if (builtInSubtitleFilterActive) {
         buildPlayerControlBuiltInSubtitleItems()
+    } else {
+        emptyList()
+    }
+    val audioTrackFilterActive = playerSettingsUiState.rejectedAudioKeywords.isNotEmpty()
+    val playerControlAudioTracks = if (audioTrackFilterActive) {
+        buildPlayerControlAudioTrackItems()
     } else {
         emptyList()
     }
@@ -215,12 +230,22 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     }
 
     LaunchedEffect(args.parentMetaId) {
-        if (!isAnimeContent) {
+        // Names the title for the readers that build language targets without a meta id — mpv's
+        // alang/slang options and the player's subtitle-list filter.
+        OriginalLanguageCache.setCurrent(args.parentMetaId)
+        // Continue-watching and auto-advance both reach the player without the detail screen ever
+        // having been opened, so an "Original" preference may still need this title's language.
+        val needsOriginalLanguage = playerSettingsUiState.usesOriginalLanguagePreference() &&
+            OriginalLanguageCache.languageFor(args.parentMetaId) == null
+        if (!isAnimeContent || needsOriginalLanguage) {
             val meta = MetaDetailsRepository.fetchLightweightMeta(args.parentMetaType, args.parentMetaId)
-            if (meta != null && !meta.genres.isNullOrEmpty()) {
-                AnimeContentCache.record(args.parentMetaId, meta.genres)
-                if (AnimeContentCache.isAnime(args.parentMetaId)) {
-                    isAnimeContent = true
+            if (meta != null) {
+                OriginalLanguageCache.record(args.parentMetaId, meta.language)
+                if (!meta.genres.isNullOrEmpty()) {
+                    AnimeContentCache.record(args.parentMetaId, meta.genres)
+                    if (AnimeContentCache.isAnime(args.parentMetaId)) {
+                        isAnimeContent = true
+                    }
                 }
             }
         }
@@ -235,6 +260,10 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         pauseOverlayLogo = logo,
         pauseOverlayEpisodeInfo = if (seasonNumber != null && episodeNumber != null) {
             stringResource(Res.string.compose_player_episode_code_full, seasonNumber, episodeNumber)
+        } else if (playerSettingsUiState.desktopPauseOverlaySourceEnabled) {
+            // Movies borrow this line for the provider name; the source row now says it better, so
+            // don't print it twice.
+            ""
         } else {
             activeProviderName
         },
@@ -242,6 +271,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         // Only a real synopsis belongs here — the raw stream/release name (activeStreamSubtitle)
         // reads as messy clutter in the pause card, so it is intentionally not used as a fallback.
         pauseOverlayDescription = activePauseDescription.orEmpty(),
+        pauseOverlaySourceEnabled = playerSettingsUiState.desktopPauseOverlaySourceEnabled,
         resizeModeLabel = stringResource(resizeMode.labelRes),
         playbackSpeedLabel = formatPlaybackSpeedLabel(playbackSnapshot.playbackSpeed),
         subtitlesLabel = stringResource(Res.string.compose_player_subs),
@@ -269,6 +299,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 DesktopAnimeMode.Off.label
             },
         desktopAnimeSvpEnabled = playerSettingsUiState.desktopAnimeSvpEnabled,
+        playbackInfoPanelEnabled = playerSettingsUiState.desktopPlaybackInfoPanelEnabled,
+        activeSubtitleLabel = activePlaybackSubtitleLabel(),
+        seekThumbnailsEnabled = playerSettingsUiState.desktopBufferPreset != DesktopBufferPreset.Metered,
         tapToUnlockLabel = stringResource(Res.string.compose_player_tap_to_unlock),
         playbackErrorTitle = stringResource(Res.string.compose_player_playback_error),
         playbackErrorMessage = errorMessage.orEmpty(),
@@ -289,6 +322,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         submitIntroSegmentIntroLabel = stringResource(Res.string.submit_intro_segment_intro),
         submitIntroSegmentRecapLabel = stringResource(Res.string.submit_intro_segment_recap),
         submitIntroSegmentOutroLabel = stringResource(Res.string.submit_intro_segment_outro),
+        submitIntroSegmentPreviewLabel = stringResource(Res.string.submit_intro_segment_preview),
         submitIntroStartTimeLabel = stringResource(Res.string.submit_intro_start_time_label),
         submitIntroEndTimeLabel = stringResource(Res.string.submit_intro_end_time_label),
         submitIntroCaptureLabel = stringResource(Res.string.submit_intro_capture_button),
@@ -312,12 +346,19 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         loadingSubtitleLinesLabel = stringResource(Res.string.compose_player_loading_lines),
         fontSizeLabel = stringResource(Res.string.compose_player_font_size),
         outlineLabel = stringResource(Res.string.compose_player_outline),
+        outlineWidthLabel = stringResource(Res.string.compose_player_outline_width),
         shadowLabel = stringResource(Res.string.compose_player_shadow),
+        shadowOffsetLabel = stringResource(Res.string.compose_player_shadow_offset),
+        shadowColorLabel = stringResource(Res.string.compose_player_shadow_color),
+        shadowIntensityLabel = stringResource(Res.string.compose_player_shadow_intensity),
+        blurLabel = stringResource(Res.string.compose_player_blur),
         boldLabel = stringResource(Res.string.compose_player_bold),
+        italicLabel = stringResource(Res.string.compose_player_italic),
         bottomOffsetLabel = stringResource(Res.string.compose_player_bottom_offset),
         colorLabel = stringResource(Res.string.compose_player_color),
         textOpacityLabel = stringResource(Res.string.compose_player_text_opacity),
         outlineColorLabel = stringResource(Res.string.compose_player_outline_color),
+        backgroundColorLabel = stringResource(Res.string.compose_player_background_color),
         resetDefaultsLabel = stringResource(Res.string.compose_player_reset_defaults),
         onLabel = stringResource(Res.string.compose_action_on),
         offLabel = stringResource(Res.string.compose_action_off),
@@ -344,11 +385,16 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         alwaysShowClock = playerSettingsUiState.desktopAlwaysShowClockEnabled,
         playbackSpeedFineIncrementsEnabled = playerSettingsUiState.desktopPlaybackSpeedFineIncrementsEnabled,
         uiScalePercent = playerSettingsUiState.desktopUiScalePercent,
+        sourceNotchPosition = playerSettingsUiState.desktopSourceNotchPosition.name.lowercase(),
         parentalWarnings = parentalWarnings,
         showParentalGuide = showParentalGuide,
-        showSubmitIntro = isSeries &&
-            playerSettingsUiState.introSubmitEnabled &&
-            playerSettingsUiState.introDbApiKey.isNotBlank() &&
+        // Films are submittable too: SkipDB takes them with no season or episode, and holds opening
+        // title sequences and end credits for them.
+        showSubmitIntro = playerSettingsUiState.introSubmitEnabled &&
+            (
+                playerSettingsUiState.skipDbApiKey.isNotBlank() ||
+                    playerSettingsUiState.introDbApiKey.isNotBlank()
+                ) &&
             !activeSubmitIntroImdbId().isNullOrBlank(),
         showVideoSettings = isIos,
         showSources = activeVideoId != null,
@@ -378,6 +424,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         addonSubtitleItems = playerControlAddonSubtitles,
         builtInSubtitleFilterActive = builtInSubtitleFilterActive,
         builtInSubtitleItems = playerControlBuiltInSubtitles,
+        audioTrackFilterActive = audioTrackFilterActive,
+        audioTrackItems = playerControlAudioTracks,
         isLoadingAddonSubtitles = isLoadingAddonSubtitles,
         selectedAddonSubtitleId = selectedAddonSubtitleId.orEmpty(),
         useCustomSubtitles = useCustomSubtitles,
@@ -448,8 +496,10 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             ),
     ) {
         if (playerSurfaceSourceUrl != null) {
+            val surfaceAttemptId = playbackAttemptId
+            val surfaceSourceUrl = playerSurfaceSourceUrl
             PlatformPlayerSurface(
-                sourceUrl = playerSurfaceSourceUrl,
+                sourceUrl = surfaceSourceUrl,
                 sourceAudioUrl = activeSourceAudioUrl,
                 sourceHeaders = activeSourceHeaders,
                 sourceResponseHeaders = activeSourceResponseHeaders,
@@ -465,23 +515,84 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     isDesktop && activeInitialPositionMs <= 0L && !isProviderDiagnosticVideoPlayback
                 },
                 initialPlaybackSpeed = sessionPlaybackSpeed,
+                playbackAttemptId = surfaceAttemptId,
                 playerControlsState = playerControlsState,
-                onPlayerControlsAction = { action -> handlePlayerControlsAction(action) },
-                onPlayerControlsEvent = { type, value -> handlePlayerControlsEvent(type, value) },
+                onPlayerControlsAction = { action ->
+                    if (isCurrentPlaybackAttempt(surfaceAttemptId, playbackAttemptId)) {
+                        handlePlayerControlsAction(action)
+                    } else {
+                        true
+                    }
+                },
+                onPlayerControlsEvent = { type, value ->
+                    if (isCurrentPlaybackAttempt(surfaceAttemptId, playbackAttemptId)) {
+                        handlePlayerControlsEvent(type, value)
+                    } else {
+                        true
+                    }
+                },
                 onPlayerControlsScrubChange = { positionMs ->
+                    if (!isCurrentPlaybackAttempt(surfaceAttemptId, playbackAttemptId)) {
+                        return@PlatformPlayerSurface true
+                    }
                     handlePlayerControlsScrubChange(positionMs)
                     true
                 },
                 onPlayerControlsScrubFinished = { positionMs ->
+                    if (!isCurrentPlaybackAttempt(surfaceAttemptId, playbackAttemptId)) {
+                        return@PlatformPlayerSurface true
+                    }
                     handlePlayerControlsScrubFinished(positionMs)
                     true
                 },
                 onControllerReady = { controller ->
+                    if (!isCurrentPlaybackAttempt(surfaceAttemptId, playbackAttemptId)) {
+                        return@PlatformPlayerSurface
+                    }
                     playerController = controller
-                    playerControllerSourceUrl = activeSourceUrl
+                    playerControllerSourceUrl = surfaceSourceUrl
+                },
+                onPlayerAttached = {
+                    if (!isCurrentPlaybackAttempt(surfaceAttemptId, playbackAttemptId)) {
+                        return@PlatformPlayerSurface
+                    }
+                    playerAttachedSourceUrl = surfaceSourceUrl
+                    playerAttachedAttemptId = surfaceAttemptId
                 },
                 onSnapshot = { snapshot ->
+                    if (!isCurrentPlaybackAttempt(surfaceAttemptId, playbackAttemptId)) {
+                        return@PlatformPlayerSurface
+                    }
+                    val providerWaitVideoDetected = isLikelyProviderWaitVideo(
+                        durationMs = snapshot.durationMs,
+                        requestedResumePositionMs = activeInitialPositionMs,
+                        isSeries = isSeries,
+                    )
+                    if (providerWaitVideoDetected && providerDiagnosticVideoSourceUrl != activeSourceUrl) {
+                        // This is provider status media, never episode progress. Mark it before
+                        // publishing the snapshot so completion/scrobble/next-episode effects cannot
+                        // observe its 01:59 position as the end of the requested episode.
+                        providerDiagnosticVideoSourceUrl = activeSourceUrl
+                        providerDiagnosticProbePendingSourceUrl = null
+                        lastTrustedPlaybackPositionMs = 0L
+                        lastMeaningfulPlaybackSnapshot = null
+                        hasRequestedScrobbleStartForCurrentItem = false
+                        scrobbleStartRequestGeneration += 1L
+                        pendingScrobbleStartAfterSeek = false
+                        currentTrackingScrobbleMedia = null
+                        val failoverTaken = tryFailoverToNextSource(
+                            message = unableToPlayStreamMessage,
+                            playbackFailedToast = playbackFailedToast,
+                            tryingNextToast = failoverTryingNextToast,
+                            trigger = StreamFailoverTrigger.ProviderDiagnosticVideo,
+                        )
+                        if (!failoverTaken) {
+                            activeInitialPositionMs = 0L
+                            activeInitialProgressFraction = null
+                        }
+                    }
                     if (
+                        !isProviderDiagnosticVideoPlayback &&
                         snapshot.isPlaying &&
                         !snapshot.isLoading &&
                         !snapshot.isEnded &&
@@ -490,7 +601,12 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     ) {
                         lastTrustedPlaybackPositionMs = snapshot.positionMs
                     }
-                    if (!snapshot.isLoading && snapshot.durationMs > 0L && snapshot.positionMs >= 1_000L) {
+                    if (
+                        !isProviderDiagnosticVideoPlayback &&
+                        !snapshot.isLoading &&
+                        snapshot.durationMs > 0L &&
+                        snapshot.positionMs >= 1_000L
+                    ) {
                         lastMeaningfulPlaybackSnapshot = snapshot
                     }
                     playbackSnapshot = snapshot
@@ -507,6 +623,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     }
                 },
                 onError = { message ->
+                    if (!isCurrentPlaybackAttempt(surfaceAttemptId, playbackAttemptId)) {
+                        return@PlatformPlayerSurface
+                    }
                     if (message == null) {
                         errorMessage = null
                         return@PlatformPlayerSurface
@@ -851,6 +970,12 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         "hideChrome" -> {
             controlsVisible = false
         }
+        "playbackRestart" -> {
+            // Native emits this once the current file has produced its first rendered frame.
+            // Keep it source-scoped so stale callbacks cannot satisfy a replacement watchdog.
+            playerStartedSourceUrl = activeSourceUrl
+            playerStartedAttemptId = playbackAttemptId
+        }
         "reloadSources" -> {
             prepareSourcesForPlayerControls(forceRefresh = true)
         }
@@ -893,11 +1018,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             episodeStreamsPanelState.selectedEpisode?.let { requestEpisodeStreamsForPlayerControls(it, forceRefresh = true) }
         }
         "submitIntroSegment" -> {
-            submitIntroSegmentType = when (value.toInt()) {
-                1 -> "recap"
-                2 -> "outro"
-                else -> "intro"
-            }
+            submitIntroSegmentType = SKIP_SEGMENT_TYPES.getOrElse(value.toInt()) { "intro" }
             submitIntroStatusMessage = null
         }
         "submitIntroStart" -> {
@@ -1016,8 +1137,38 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         "subtitleShadowToggle" -> {
             PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(shadowEnabled = !subtitleStyle.shadowEnabled))
         }
+        "subtitleShadowOffsetDelta" -> {
+            PlayerSettingsRepository.setSubtitleStyle(
+                subtitleStyle.copy(
+                    shadowOffset = (subtitleStyle.shadowOffset + value.toInt())
+                        .coerceIn(SUBTITLE_SHADOW_OFFSET_MIN, SUBTITLE_SHADOW_OFFSET_MAX),
+                ),
+            )
+        }
+        "subtitleShadowOpacity" -> {
+            val alpha = (value.toFloat() / 100f).coerceIn(0f, 1f)
+            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(shadowColor = subtitleStyle.shadowColor.copy(alpha = alpha)))
+        }
+        "subtitleOutlineWidthDelta" -> {
+            PlayerSettingsRepository.setSubtitleStyle(
+                subtitleStyle.copy(
+                    outlineWidth = (subtitleStyle.outlineWidth + value.toInt())
+                        .coerceIn(SUBTITLE_OUTLINE_WIDTH_MIN, SUBTITLE_OUTLINE_WIDTH_MAX),
+                ),
+            )
+        }
+        "subtitleBlurDelta" -> {
+            PlayerSettingsRepository.setSubtitleStyle(
+                subtitleStyle.copy(
+                    blur = (subtitleStyle.blur + value.toInt()).coerceIn(SUBTITLE_BLUR_MIN, SUBTITLE_BLUR_MAX),
+                ),
+            )
+        }
         "subtitleBoldToggle" -> {
             PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(bold = !subtitleStyle.bold))
+        }
+        "subtitleItalicToggle" -> {
+            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(italic = !subtitleStyle.italic))
         }
         "subtitleBottomOffsetDelta" -> {
             PlayerSettingsRepository.setSubtitleStyle(
@@ -1032,6 +1183,18 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         "subtitleOutlineColor" -> {
             SubtitleColorSwatches.getOrNull(value.toInt())?.let { color ->
                 PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineColor = color.copy(alpha = subtitleStyle.outlineColor.alpha)))
+            }
+        }
+        "subtitleBackgroundColor" -> {
+            SubtitleBackgroundColorSwatches.getOrNull(value.toInt())?.let { color ->
+                PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(backgroundColor = color))
+            }
+        }
+        "subtitleShadowColor" -> {
+            SubtitleShadowColorSwatches.getOrNull(value.toInt())?.let { color ->
+                PlayerSettingsRepository.setSubtitleStyle(
+                    subtitleStyle.copy(shadowColor = color.copy(alpha = subtitleStyle.shadowColor.alpha)),
+                )
             }
         }
         "subtitleTextOpacity" -> {
@@ -1159,23 +1322,28 @@ private fun PlayerScreenRuntime.submitIntroFromPlayerControls() {
     val episode = activeEpisodeNumber
     val start = submitIntroStartTimeSec
     val end = submitIntroEndTimeSec
-    if (imdbId.isNullOrBlank() || season == null || episode == null || start == null || end == null || end <= start) {
+    // A null season/episode is a film, which SkipDB accepts — only the timings have to be valid.
+    if (imdbId.isNullOrBlank() || start == null || end == null || end <= start) {
         submitIntroStatusMessage = "Check the start and end times."
         return
     }
     isSubmitIntroSubmitting = true
     submitIntroStatusMessage = null
+    // The runtime is what lets SkipDB match these timings to the right cut later, so it is sent
+    // with the submission exactly as it is sent with a lookup.
+    val durationSeconds = playbackSnapshot.durationMs.takeIf { it > 0L }?.let { it / 1000L }
     scope.launch {
-        val result = SkipIntroRepository.submitIntro(
+        val outcome = SkipIntroRepository.submitSegment(
             imdbId = imdbId,
             season = season,
             episode = episode,
             startSec = start,
             endSec = end,
             segmentType = submitIntroSegmentType,
+            durationSeconds = durationSeconds,
         )
         isSubmitIntroSubmitting = false
-        if (result) {
+        if (outcome.accepted) {
             submitIntroStartTimeSec = 0.0
             submitIntroEndTimeSec = 0.0
             submitIntroStartTimeStr = "00:00"
@@ -1184,7 +1352,9 @@ private fun PlayerScreenRuntime.submitIntroFromPlayerControls() {
             submitIntroStatusMessage = null
             playerControlsCloseModalsToken += 1
         } else {
-            submitIntroStatusMessage = "Unable to submit timestamps."
+            // SkipDB explains itself — an overlap, a failed validation, a rate limit — and that is
+            // far more actionable than a generic failure line.
+            submitIntroStatusMessage = outcome.message
         }
     }
 }
@@ -1283,75 +1453,202 @@ private fun PlayerScreenRuntime.buildPlayerControlEpisodeStreamFilters(
         selectedFilter = selectedFilter,
     )
 
+/**
+ * Scores every stream once, or nothing at all when no consumer needs a number.
+ *
+ * Scoring runs the full trait detector — dozens of regex passes over each release name — so the
+ * sort and the badge share one pass here rather than each running their own.
+ */
+private fun scorePlayerControlStreams(
+    streams: List<IndexedValue<Pair<String, StreamItem>>>,
+    profile: StreamScoreProfile,
+    context: StreamScoreContext,
+): Map<Int, StreamScore> {
+    if (!profile.enabled || !(profile.sortStreamList || profile.showScoreOnStreams)) return emptyMap()
+    return streams.associate { (index, item) ->
+        index to StreamScorer.score(item.second, profile, context)
+    }
+}
+
+private fun playerControlSourceItem(
+    originalIndex: Int,
+    filterId: String,
+    stream: StreamItem,
+    isCurrent: Boolean,
+    canResolveDebrid: Boolean,
+    score: StreamScore?,
+): PlayerControlSourceItem = PlayerControlSourceItem(
+    // Selection events index the repository's original flattened list. Keep that action
+    // index even though the currently playing item is presented first.
+    index = originalIndex,
+    filterId = filterId,
+    label = stream.streamLabel,
+    subtitle = stream.streamSubtitle.orEmpty(),
+    addonName = stream.addonName,
+    badges = stream.badges.map { badge ->
+        PlayerControlStreamBadge(
+            name = badge.name,
+            imageUrl = badge.imageURL,
+            backgroundColor = badge.tagColor,
+            textColor = badge.textColor,
+            borderColor = badge.borderColor,
+        )
+    },
+    isCurrent = isCurrent,
+    isEnabled = stream.isSelectableForPlayback(canResolveDebrid),
+    score = score?.total,
+    scoreRejected = score?.rejected == true,
+)
+
+/**
+ * The HUD's source rows.
+ *
+ * Held in [remember] because building the list scores every stream, and this HUD recomposes on
+ * every position tick — several times a second, for the whole session. A few hundred sources
+ * re-scored at that rate saturates the UI thread, which is why the player only ever went
+ * unresponsive *after* the sources panel had been opened once (nothing loads the list before that)
+ * and then stayed that way until playback ended.
+ */
+@Composable
 private fun PlayerScreenRuntime.buildPlayerControlSourceItems(): List<PlayerControlSourceItem> {
     val canResolveDebrid = DebridSettingsRepository.uiState.value.canResolvePlayableLinks
-    val indexedStreams = sourceStreamsState.groups.flatMap { group ->
-        group.streams.map { stream -> group.addonId to stream }
-    }.mapIndexed { index, item -> IndexedValue(index, item) }
-    return prioritizeCurrentItem(indexedStreams) { (_, item) ->
-        isCurrentPlayerControlStream(item.second)
-    }.map { (originalIndex, item) ->
-        val (filterId, stream) = item
-        PlayerControlSourceItem(
-            // Selection events index the repository's original flattened list. Keep that action
-            // index even though the currently playing item is presented first.
-            index = originalIndex,
-            filterId = filterId,
-            label = stream.streamLabel,
-            subtitle = stream.streamSubtitle.orEmpty(),
-            addonName = stream.addonName,
-            badges = stream.badges.map { badge ->
-                PlayerControlStreamBadge(
-                    name = badge.name,
-                    imageUrl = badge.imageURL,
-                    backgroundColor = badge.tagColor,
-                    textColor = badge.textColor,
-                    borderColor = badge.borderColor,
-                )
-            },
-            isCurrent = isCurrentPlayerControlStream(stream),
-            isEnabled = stream.isSelectableForPlayback(canResolveDebrid),
+    val scoreProfile = StreamScoreRepository.profile
+    val groups = sourceStreamsState.groups
+    val identityKey = activeSourceIdentityKey
+    val sourceUrl = activeSourceUrl
+    val torrentInfoHash = activeTorrentInfoHash
+    val isEpisode = activeEpisodeNumber != null
+    val metaId = parentMetaId
+    val metaType = contentType ?: parentMetaType
+    return remember(
+        groups,
+        scoreProfile,
+        canResolveDebrid,
+        identityKey,
+        sourceUrl,
+        torrentInfoHash,
+        isEpisode,
+        metaId,
+        metaType,
+    ) {
+        val scoreContext = StreamScoreContexts.forPlayback(
+            isEpisode = isEpisode,
+            contentId = metaId,
+            contentType = metaType,
         )
+        val indexedStreams = groups.flatMap { group ->
+            group.streams.map { stream -> group.addonId to stream }
+        }.mapIndexed { index, item -> IndexedValue(index, item) }
+        val scores = scorePlayerControlStreams(indexedStreams, scoreProfile, scoreContext)
+        // The desktop sources panel is the HTML overlay, so it cannot reuse the Compose picker's
+        // sorting — apply the same score ordering here. The index stays the repository's original
+        // one because selection events are dispatched by it.
+        val ordered = if (!scoreProfile.enabled || !scoreProfile.sortStreamList) {
+            indexedStreams
+        } else {
+            indexedStreams.sortedByDescending { (index, _) -> scores[index]?.total ?: 0 }
+        }
+        val current = findCurrentPlayerControlStream(
+            entries = ordered,
+            identityKey = identityKey,
+            sourceUrl = sourceUrl,
+            torrentInfoHash = torrentInfoHash,
+        ) { it.value.second }
+        prioritizeCurrentItem(ordered) { it === current }.map { entry ->
+            val (originalIndex, item) = entry
+            val (filterId, stream) = item
+            playerControlSourceItem(
+                originalIndex = originalIndex,
+                filterId = filterId,
+                stream = stream,
+                // Identity alone cannot decide this: one file offered by two providers — or listed
+                // twice by one — gives both rows the same key, and asking each row on its own
+                // painted "Playing" on every copy.
+                isCurrent = entry === current,
+                canResolveDebrid = canResolveDebrid,
+                score = scores[originalIndex]?.takeIf { scoreProfile.showScoreOnStreams },
+            )
+        }
     }
 }
 
+/** The episode panel's per-episode source rows. Memoized for the same reason as the source list. */
+@Composable
 private fun PlayerScreenRuntime.buildPlayerControlEpisodeStreamItems(): List<PlayerControlSourceItem> {
     val canResolveDebrid = DebridSettingsRepository.uiState.value.canResolvePlayableLinks
-    return episodeStreamsRepoState.groups.flatMap { group ->
-        group.streams.map { stream -> group.addonId to stream }
-    }.mapIndexed { index, (filterId, stream) ->
-        PlayerControlSourceItem(
-            index = index,
-            filterId = filterId,
-            label = stream.streamLabel,
-            subtitle = stream.streamSubtitle.orEmpty(),
-            addonName = stream.addonName,
-            badges = stream.badges.map { badge ->
-                PlayerControlStreamBadge(
-                    name = badge.name,
-                    imageUrl = badge.imageURL,
-                    backgroundColor = badge.tagColor,
-                    textColor = badge.textColor,
-                    borderColor = badge.borderColor,
-                )
-            },
-            isCurrent = false,
-            isEnabled = stream.isSelectableForPlayback(canResolveDebrid),
+    val scoreProfile = StreamScoreRepository.profile
+    val groups = episodeStreamsRepoState.groups
+    val metaId = parentMetaId
+    val metaType = contentType ?: parentMetaType
+    return remember(groups, scoreProfile, canResolveDebrid, metaId, metaType) {
+        val scoreContext = StreamScoreContexts.forPlayback(
+            isEpisode = true,
+            contentId = metaId,
+            contentType = metaType,
         )
+        val indexedStreams = groups.flatMap { group ->
+            group.streams.map { stream -> group.addonId to stream }
+        }.mapIndexed { index, item -> IndexedValue(index, item) }
+        val scores = scorePlayerControlStreams(indexedStreams, scoreProfile, scoreContext)
+        indexedStreams.map { (index, item) ->
+            val (filterId, stream) = item
+            playerControlSourceItem(
+                originalIndex = index,
+                filterId = filterId,
+                stream = stream,
+                isCurrent = false,
+                canResolveDebrid = canResolveDebrid,
+                score = scores[index]?.takeIf { scoreProfile.showScoreOnStreams },
+            )
+        }
     }
 }
 
-private fun PlayerScreenRuntime.isCurrentPlayerControlStream(stream: StreamItem): Boolean {
-    val activeKey = activeSourceIdentityKey
-    val streamKey = stream.playerSourceIdentityKey()
-    if (activeKey != null) {
-        return streamKey == activeKey
+/**
+ * The one entry that is playing, or null when none of them is.
+ *
+ * Resolved once for a whole list instead of asked row by row, so exactly one row can ever be marked
+ * — see the note at the call site about duplicate files sharing an identity key.
+ *
+ * The tiers are tried in order and the first that matches anything wins. Identity stays
+ * authoritative; the weaker signals are consulted only when it matches *nothing*, which is the case
+ * that used to leave the list with no "Playing" row at all — proxying addons re-sign their URLs on
+ * every fetch, so a key minted at playback start can no longer be found in a list fetched later.
+ * Falling through can no longer mark a second row, which is what made it unsafe before.
+ */
+private fun <T> findCurrentPlayerControlStream(
+    entries: List<T>,
+    identityKey: String?,
+    sourceUrl: String?,
+    torrentInfoHash: String?,
+    stream: (T) -> StreamItem,
+): T? {
+    if (identityKey != null) {
+        entries.firstOrNull { stream(it).playerSourceIdentityKey() == identityKey }?.let { return it }
     }
-    val directUrl = stream.playableDirectUrl
-    if (directUrl != null && directUrl == activeSourceUrl) return true
-    val infoHash = stream.p2pInfoHash
-    if (infoHash != null && infoHash == activeTorrentInfoHash) return true
-    return false
+    if (!sourceUrl.isNullOrBlank()) {
+        entries.firstOrNull { stream(it).playableDirectUrl == sourceUrl }?.let { return it }
+    }
+    if (!torrentInfoHash.isNullOrBlank()) {
+        entries.firstOrNull { stream(it).p2pInfoHash == torrentInfoHash }?.let { return it }
+    }
+    return null
+}
+
+/**
+ * Display name of the subtitle track actually on screen, or empty when there is none. Reads the same
+ * two selections the subtitle panel marks — an addon subtitle wins whenever [useCustomSubtitles] is
+ * set, because that is the flag mpv's own track selection is turned off by.
+ */
+@Composable
+private fun PlayerScreenRuntime.activePlaybackSubtitleLabel(): String = if (useCustomSubtitles) {
+    visibleAddonSubtitles.firstOrNull { subtitle ->
+        subtitle.id == selectedAddonSubtitleId || subtitle.url == selectedAddonSubtitleId
+    }?.display.orEmpty()
+} else {
+    visibleSubtitleTracks.firstOrNull { it.index == selectedSubtitleIndex }
+        ?.let { localizedTrackDisplayName(it.label, it.language, it.index) }
+        .orEmpty()
 }
 
 @Composable
@@ -1361,6 +1658,16 @@ private fun PlayerScreenRuntime.buildPlayerControlBuiltInSubtitleItems(): List<P
             index = track.index,
             label = localizedTrackDisplayName(track.label, track.language, track.index),
             isSelected = !useCustomSubtitles && track.index == selectedSubtitleIndex,
+        )
+    }
+
+@Composable
+private fun PlayerScreenRuntime.buildPlayerControlAudioTrackItems(): List<PlayerControlAudioTrackItem> =
+    visibleAudioTracks.map { track ->
+        PlayerControlAudioTrackItem(
+            index = track.index,
+            label = localizedTrackDisplayName(track.label, track.language, track.index),
+            isSelected = track.index == selectedAudioIndex,
         )
     }
 
@@ -1585,6 +1892,14 @@ private fun BoxScope.RenderPlaybackOverlays(
 
 @Composable
 private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
+    LaunchedEffect(showSubtitleModal, playerController) {
+        if (!showSubtitleModal || playerController == null) return@LaunchedEffect
+        while (true) {
+            refreshTracks()
+            kotlinx.coroutines.delay(250)
+        }
+    }
+
     PlayerScreenModalHosts(
         pendingP2pSwitch = pendingP2pSwitch,
         onPendingP2pSwitchChanged = { pendingP2pSwitch = it },
@@ -1596,7 +1911,7 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
         onNextEpisodeAutoPlayCountdownChanged = { nextEpisodeAutoPlayCountdown = it },
         onNextEpisodeAutoPlaySourceNameChanged = { nextEpisodeAutoPlaySourceName = it },
         showAudioModal = showAudioModal,
-        audioTracks = audioTracks,
+        audioTracks = visibleAudioTracks,
         selectedAudioIndex = selectedAudioIndex,
         onAudioTrackSelected = { index ->
             selectedAudioIndex = index
@@ -1611,7 +1926,10 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
         showSubtitleModal = showSubtitleModal,
         activeSubtitleTab = activeSubtitleTab,
         subtitleTracks = visibleSubtitleTracks,
-        selectedSubtitleIndex = selectedSubtitleIndex,
+        selectedSubtitleIndex = visibleSubtitleTracks
+            .firstOrNull(SubtitleTrack::isSelected)
+            ?.index
+            ?: selectedSubtitleIndex,
         addonSubtitles = visibleAddonSubtitles,
         selectedAddonSubtitleId = selectedAddonSubtitleId,
         isLoadingAddonSubtitles = isLoadingAddonSubtitles,
@@ -1737,6 +2055,7 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
         activeVideoId = activeVideoId,
         metaUiState = metaUiState,
         displayedPositionMs = displayedPositionMs,
+        submitIntroDurationSeconds = playbackSnapshot.durationMs.takeIf { it > 0L }?.let { it / 1000L },
         submitIntroSegmentType = submitIntroSegmentType,
         onSubmitIntroSegmentTypeChanged = { submitIntroSegmentType = it },
         submitIntroStartTimeStr = submitIntroStartTimeStr,

@@ -900,6 +900,7 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kmpalette.core)
             implementation(libs.androidx.navigation.compose)
             implementation(libs.kermit)
             implementation(libs.supabase.postgrest)
@@ -945,6 +946,21 @@ compose.desktop {
             // stays installed.
             if (isWindowsHost) "-XX:ErrorFile=C:/Users/Public/nuvio_hs_err_pid%p.log" else null,
             if (isWindowsHost) "-XX:+CreateCoredumpOnCrash" else null,
+            // Stop-the-world diagnostics (chasing the intermittent "UI froze then recovered"
+            // hitch). A safepoint halts every Java thread — the Compose UI thread and all
+            // coroutines — so a long one freezes the window and can't log a thing about itself:
+            // nuvio.log just stops mid-burst with no error. Reconstructing one after the fact
+            // from the JVM's cumulative counters only gets you a total (a real case: 7.7s at
+            // safepoints across 57 of them, of which GC was 0.07s — so it was NOT GC, but the
+            // counters can't say which VM operation it was). This names each operation and
+            // splits reaching-the-safepoint from time-spent-at-it, which separates "the app
+            // allocated too hard" from "the OS wasn't scheduling/paging our threads back in".
+            // Cheap: one line per safepoint, capped at 3x2MB. Same fixed-path reasoning as
+            // ErrorFile above — relocateJvmDiagnosticArtifacts() moves these next to nuvio.log.
+            if (isWindowsHost) {
+                "-Xlog:safepoint,gc:file=C:/Users/Public/nuvio_safepoint_pid%p.log" +
+                    ":time,uptime,level,tags:filesize=2m,filecount=3"
+            } else null,
             smokePlayerUrl?.takeIf { it.isNotBlank() }?.let { "-Dnuvio.desktop.smokePlayerUrl=$it" },
         )
 

@@ -51,7 +51,9 @@ import nuvio.composeapp.generated.resources.compose_settings_page_notifications
 import nuvio.composeapp.generated.resources.compose_settings_page_playback
 import nuvio.composeapp.generated.resources.compose_settings_page_streams
 import nuvio.composeapp.generated.resources.compose_settings_page_local_library
+import nuvio.composeapp.generated.resources.compose_settings_page_auto_downloads
 import nuvio.composeapp.generated.resources.settings_local_library_description
+import nuvio.composeapp.generated.resources.settings_auto_downloads_description
 import nuvio.composeapp.generated.resources.compose_settings_page_supporters_contributors
 import nuvio.composeapp.generated.resources.compose_settings_root_account_description
 import nuvio.composeapp.generated.resources.compose_settings_root_appearance_description
@@ -70,17 +72,17 @@ import nuvio.composeapp.generated.resources.compose_settings_root_about_section
 import nuvio.composeapp.generated.resources.compose_settings_root_account_section
 import nuvio.composeapp.generated.resources.compose_settings_root_advanced_description
 import nuvio.composeapp.generated.resources.compose_settings_root_advanced_section
-import nuvio.composeapp.generated.resources.compose_settings_page_fork_enhancements
 import nuvio.composeapp.generated.resources.compose_settings_page_trakt
 import nuvio.composeapp.generated.resources.compose_settings_page_simkl
+import nuvio.composeapp.generated.resources.compose_settings_page_yamtrack
 import nuvio.composeapp.generated.resources.settings_simkl_description
+import nuvio.composeapp.generated.resources.settings_yamtrack_description
 import nuvio.composeapp.generated.resources.settings_appearance_continue_watching_description
 import nuvio.composeapp.generated.resources.settings_content_discovery_addons_description
 import nuvio.composeapp.generated.resources.settings_content_discovery_collections_description
 import nuvio.composeapp.generated.resources.settings_content_discovery_homescreen_description
 import nuvio.composeapp.generated.resources.settings_content_discovery_meta_screen_description
 import nuvio.composeapp.generated.resources.settings_content_discovery_plugins_description
-import nuvio.composeapp.generated.resources.settings_fork_enhancements_root_description
 import nuvio.composeapp.generated.resources.settings_playback_subtitle
 import nuvio.composeapp.generated.resources.about_supporters_contributors_subtitle
 import nuvio.composeapp.generated.resources.about_licenses_attributions_subtitle
@@ -89,9 +91,9 @@ import org.jetbrains.compose.resources.stringResource
 internal fun LazyListScope.settingsRootContent(
     isTablet: Boolean,
     onPlaybackClick: () -> Unit,
-    onForkEnhancementsClick: () -> Unit,
     onStreamsClick: () -> Unit,
     onLocalLibraryClick: () -> Unit,
+    onAutoDownloadsClick: () -> Unit,
     onAppearanceClick: () -> Unit,
     onAdvancedClick: () -> Unit,
     onNotificationsClick: () -> Unit,
@@ -104,6 +106,7 @@ internal fun LazyListScope.settingsRootContent(
     onIntegrationsClick: () -> Unit,
     onTraktClick: () -> Unit,
     onSimklClick: () -> Unit,
+    onYamtrackClick: () -> Unit,
     onSupportersContributorsClick: () -> Unit,
     onLicensesAttributionsClick: () -> Unit,
     onCheckForUpdatesClick: (() -> Unit)? = null,
@@ -158,6 +161,14 @@ internal fun LazyListScope.settingsRootContent(
                         isTablet = isTablet,
                         onClick = onSimklClick,
                     )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_yamtrack),
+                        description = stringResource(Res.string.settings_yamtrack_description),
+                        icon = Icons.Rounded.Bookmarks,
+                        isTablet = isTablet,
+                        onClick = onYamtrackClick,
+                    )
                 }
             }
         }
@@ -192,6 +203,16 @@ internal fun LazyListScope.settingsRootContent(
                         isTablet = isTablet,
                         onClick = onLocalLibraryClick,
                     )
+                    if (showDownloadsEntry) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.compose_settings_page_auto_downloads),
+                            description = stringResource(Res.string.settings_auto_downloads_description),
+                            icon = Icons.Rounded.CloudDownload,
+                            isTablet = isTablet,
+                            onClick = onAutoDownloadsClick,
+                        )
+                    }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
                         title = stringResource(Res.string.compose_settings_page_continue_watching),
@@ -218,14 +239,6 @@ internal fun LazyListScope.settingsRootContent(
                             onClick = onDownloadsClick,
                         )
                     }
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.compose_settings_page_fork_enhancements),
-                        description = stringResource(Res.string.settings_fork_enhancements_root_description),
-                        icon = Icons.Rounded.AutoAwesome,
-                        isTablet = isTablet,
-                        onClick = onForkEnhancementsClick,
-                    )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
                         title = stringResource(Res.string.compose_settings_page_homescreen),

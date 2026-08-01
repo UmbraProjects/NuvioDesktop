@@ -54,6 +54,7 @@ import com.nuvio.app.features.settings.DesktopNavigationLayout
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -103,6 +104,11 @@ import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaExternalRating
 import com.nuvio.app.features.details.components.RatingsRow
 import com.nuvio.app.features.details.formatRuntimeForDisplay
+import com.nuvio.app.features.qualicache.QualiCacheQualityService
+import com.nuvio.app.features.qualicache.QualityHighlight
+import com.nuvio.app.features.qualicache.QualityInlineBadges
+import com.nuvio.app.features.qualicache.rememberQualityBadgesEnabled
+import com.nuvio.app.features.qualicache.rememberQualityHighlights
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.HeroBadgePlacement
@@ -169,6 +175,13 @@ private const val HERO_BACKDROP_FADE_FRACTION = 0.35f
 private const val HERO_METADATA_PREFETCH_CONCURRENCY = 4
 private val heroImageLog = Logger.withTag("HomeHeroImages")
 private val heroTrailerLog = Logger.withTag("HomeHeroTrailer")
+
+/**
+ * How long focus must rest on an item before its trailer is extracted from YouTube. Long enough
+ * that browsing a row never triggers one; comfortably shorter than the shortest auto-play delay,
+ * so the stream is still warm by the time the dwell timer fires.
+ */
+private const val HERO_TRAILER_PREFETCH_DWELL_MS = 1_200L
 private val IMMERSIVE_HERO_CONTENT_MIN_HEIGHT = 300.dp
 private val IMMERSIVE_HERO_CONTENT_MAX_HEIGHT = 420.dp
 private val IMMERSIVE_HERO_CONTENT_BOTTOM_PADDING = 44.dp
@@ -717,6 +730,10 @@ private fun DesktopHomeHeroFrame(
     var heroTrailerSurfaceReady by remember { mutableStateOf(false) }
     var heroTrailerPlaybackRequested by remember { mutableStateOf(false) }
     var heroTrailerFinished by remember { mutableStateOf(false) }
+    // Bumped by the surface's onError; the effect below turns one failure into a single fresh
+    // re-extraction rather than letting a rejected media URL silence the item.
+    var heroTrailerErrorToken by remember { mutableIntStateOf(0) }
+    var heroTrailerRetriedKey by remember { mutableStateOf<String?>(null) }
     var peoplePanelTab by remember { mutableStateOf(HeroPeoplePanelTab.Starring) }
     // Manual override: automatic saliency-based crop detection was removed (unreliable across a
     // wide enough variety of backdrops that it wasn't worth the complexity) in favor of a single
@@ -745,6 +762,10 @@ private fun DesktopHomeHeroFrame(
         heroTrailerSurfaceReady = false
         heroTrailerPlaybackRequested = false
         heroTrailerFinished = false
+        // Clearing the token first matters: the retry effect keys on it, and a leftover non-zero
+        // token plus a cleared marker would read as "this newly focused item just failed".
+        heroTrailerErrorToken = 0
+        heroTrailerRetriedKey = null
         heroTrailerLog.i {
             "gate autoplay=$heroTrailerAutoplayEnabled homeActive=$heroTrailerHomeActive " +
                 "adaptiveHeroMode=$adaptiveHeroMode immersive=$immersiveMode " +
@@ -752,14 +773,38 @@ private fun DesktopHomeHeroFrame(
                 "delay=${playerSettings.heroTvTrailerDelaySeconds}s"
         }
     }
-    // Resolve the trailer stream shortly after focus settles, even when autoplay is disabled,
-    // so a later `T` press can start without YouTube extraction. Do not mount the native player
-    // here: even a hidden WebView can briefly steal OS focus while it initializes.
-    LaunchedEffect(heroTrailerFocusKey, tvHeroActive) {
-        if (!tvHeroActive || currentItem.type == "collection") return@LaunchedEffect
-        delay(250L)
+    // Resolve the trailer stream once focus settles, even when autoplay is disabled, so a later
+    // `T` press can start without YouTube extraction. Do not mount the native player here: even a
+    // hidden WebView can briefly steal OS focus while it initializes.
+    //
+    // The wait is long enough to sit out normal browsing. Each resolve is a full YouTube extraction
+    // (watch page + one player call per client), so at the old 250ms scrolling a catalog fired one
+    // per poster passed over — dozens of extractions a minute, which is both wasted work and the
+    // surest way to get this client's media URLs refused.
+    LaunchedEffect(heroTrailerFocusKey, tvHeroActive, heroTrailerHomeActive) {
+        if (!tvHeroActive || !heroTrailerHomeActive || currentItem.type == "collection") {
+            return@LaunchedEffect
+        }
+        delay(HERO_TRAILER_PREFETCH_DWELL_MS)
         heroTrailerLog.i { "caching trailer stream for $heroTrailerFocusKey" }
         HeroTrailerMetadataService.resolve(currentItem.type, currentItem.id)
+    }
+    // A rejected media URL (YouTube 403s them often enough) is worth exactly one fresh extraction:
+    // the cached resolution is dropped and re-resolved, which is what the details screen effectively
+    // does every time and why a trailer could play there while the home hero stayed silent. One
+    // retry per focused item — a second failure means the item really has nothing playable.
+    LaunchedEffect(heroTrailerErrorToken, heroTrailerFocusKey) {
+        if (heroTrailerErrorToken == 0 || heroTrailerRetriedKey == heroTrailerFocusKey) {
+            return@LaunchedEffect
+        }
+        heroTrailerRetriedKey = heroTrailerFocusKey
+        heroTrailerLog.i { "retrying trailer after playback error for $heroTrailerFocusKey" }
+        HeroTrailerMetadataService.invalidate(currentItem.type, currentItem.id)
+        val resolved = HeroTrailerMetadataService.resolve(currentItem.type, currentItem.id)
+        if (resolved == null) return@LaunchedEffect
+        heroTrailerSource = resolved
+        heroTrailerFinished = false
+        heroTrailerPlaybackRequested = true
     }
     // At the configured delay, mount and play using the cached stream. The desktop surface stays
     // at 1px until its first frame, so the artwork remains visible instead of flashing black.
@@ -970,6 +1015,9 @@ private fun DesktopHomeHeroFrame(
                         heroTrailerSurfaceReady = false
                         heroTrailerPlaybackRequested = false
                         heroTrailerFinished = true
+                        // Hands the item to the retry effect above, which re-extracts once before
+                        // accepting that it has no playable trailer.
+                        heroTrailerErrorToken += 1
                     },
                     onVolumeChange = { newVolume -> HeroTrailerAudioState.setVolume(newVolume) },
                     onSurfaceDisposed = onHeroTrailerSurfaceDisposed,
@@ -1479,17 +1527,46 @@ private fun DesktopHeroContentBlock(
             Spacer(modifier = Modifier.height(2.dp))
         }
 
-        val genreText = desktopHeroGenreText(item, showExtendedMetadata, showReleaseMetadata)
-        if (genreText.isNotBlank()) {
+        // Looked up once: a second call site would issue its own poll while the server warms a
+        // title up.
+        val qualityBadgesEnabled = rememberQualityBadgesEnabled()
+        val qualityHighlights = rememberQualityHighlights(
+            type = item.type,
+            id = item.id,
+            releaseDate = item.rawReleaseDate,
+        )
+        // With the quality badges on, the meta line splits in two the way the streaming apps lay it
+        // out: genres and the age rating lead above the synopsis, while year, runtime and the
+        // quality sit underneath it as a footer. Keeping all of that on one row was tried and
+        // overran the line on titles with three genres, a long release string and a quality set
+        // beside them. With the badges off there is nothing to make room for, so the year and
+        // runtime stay on the genre line and the footer disappears entirely.
+        val ageRating = item.ageRating?.trim()?.takeIf { it.isNotBlank() }
+        val genreText = desktopHeroGenreText(
+            item = item,
+            showExtendedMetadata = showExtendedMetadata,
+            showReleaseMetadata = showReleaseMetadata && !qualityBadgesEnabled,
+            includeAgeRating = false,
+        )
+        if (genreText.isNotBlank() || ageRating != null) {
             Spacer(modifier = Modifier.height(14.dp))
-            Text(
-                text = genreText,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.76f),
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (genreText.isNotBlank()) {
+                    Text(
+                        text = genreText,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.76f),
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
+                ageRating?.let { rating -> HeroAgeRatingBadge(text = rating) }
+            }
         }
 
         HomeHeroRatingsRow(item = item, ratingsCache = ratingsCache)
@@ -1508,6 +1585,14 @@ private fun DesktopHeroContentBlock(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+
+        HeroReleaseFooter(
+            item = item,
+            highlights = qualityHighlights,
+            // Nothing to put down here when the badges are off: the year and runtime went back onto
+            // the genre line above.
+            showReleaseMetadata = showReleaseMetadata && qualityBadgesEnabled,
+        )
 
         if (!resumePromptLabel.isNullOrBlank() && onResumePromptAction != null) {
             Spacer(modifier = Modifier.height(18.dp))
@@ -1587,7 +1672,7 @@ private fun HeroPeopleTabs(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         HeroPeopleTabLabel(
-            text = "Starring",
+            text = stringResource(Res.string.meta_starring),
             selected = activeTab == HeroPeoplePanelTab.Starring,
             onClick = { onTabChange(HeroPeoplePanelTab.Starring) },
         )
@@ -1601,7 +1686,7 @@ private fun HeroPeopleTabs(
                 maxLines = 1,
             )
             HeroPeopleTabLabel(
-                text = "Production",
+                text = stringResource(Res.string.meta_section_production_title),
                 selected = activeTab == HeroPeoplePanelTab.Production,
                 onClick = { onTabChange(HeroPeoplePanelTab.Production) },
             )
@@ -1997,6 +2082,70 @@ private val heroCrewRoleMarkers = listOf(
         "producer",
 )
 
+/** Outlined age rating beside the genres, matching the badge the details header already uses. */
+@Composable
+private fun HeroAgeRatingBadge(text: String) {
+    val color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.76f)
+    Box(
+        modifier = Modifier
+            .border(BorderStroke(1.dp, color.copy(alpha = 0.55f)), RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = color,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * Year, runtime and the quality, set under the synopsis.
+ *
+ * Its own line rather than part of the genre line above so the quality has somewhere to sit that
+ * is not competing with the genres for a single row's width. Renders nothing when there is neither
+ * release metadata nor a trusted release, so it costs no space on items with neither — which is the
+ * whole line with the quality badges switched off, since the caller then keeps the year and runtime
+ * on the genre line instead.
+ */
+@Composable
+private fun HeroReleaseFooter(
+    item: MetaPreview,
+    highlights: List<QualityHighlight>,
+    showReleaseMetadata: Boolean,
+) {
+    val releaseText = if (showReleaseMetadata) {
+        listOfNotNull(
+            item.releaseInfo?.takeIf(String::isNotBlank)?.let(::formatReleaseDateForDisplay),
+            formatRuntimeForDisplay(item.runtime),
+        ).filter { it.isNotBlank() }.joinToString(" • ")
+    } else {
+        ""
+    }
+    if (releaseText.isBlank() && highlights.isEmpty()) return
+
+    Spacer(modifier = Modifier.height(14.dp))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (releaseText.isNotBlank()) {
+            Text(
+                text = releaseText,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.76f),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        QualityInlineBadges(highlights = highlights)
+    }
+}
+
 @Composable
 private fun HomeHeroRatingsRow(item: MetaPreview, ratingsCache: Map<String, List<MetaExternalRating>>) {
     val ratings = ratingsCache["${item.type}:${item.id}"].orEmpty()
@@ -2047,6 +2196,8 @@ private fun desktopHeroGenreText(
     item: MetaPreview,
     showExtendedMetadata: Boolean,
     showReleaseMetadata: Boolean = showExtendedMetadata,
+    /** False when the caller draws the rating as its own badge rather than as text in this line. */
+    includeAgeRating: Boolean = true,
 ): String {
     val values = buildList {
         addAll(item.genres.take(3))
@@ -2059,10 +2210,12 @@ private fun desktopHeroGenreText(
             formatRuntimeForDisplay(item.runtime)
                 ?.takeIf(String::isNotBlank)
                 ?.let(::add)
-            item.ageRating
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
-                ?.let(::add)
+            if (includeAgeRating) {
+                item.ageRating
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+                    ?.let(::add)
+            }
         }
     }
     if (values.isEmpty() && item.type == "collection") return ""
@@ -2308,6 +2461,13 @@ private fun BoxScope.heroDiscoveryMedalOverlayModifier(
             )
     }
 
+/**
+ * Where the backdrop region's centre line falls across the hero, as a fraction of its width. The
+ * "Bottom of backdrop" discovery badges are centred on it, so content elsewhere on screen can line
+ * up with them horizontally — see TV Mode's row-jump dots.
+ */
+internal const val HeroBackdropCentreFraction = 1f - HERO_BACKDROP_WIDTH_FRACTION / 2f
+
 private fun HeroBadgePlacement.heroDiscoveryMedalAlignment(): Alignment =
     when (this) {
         HeroBadgePlacement.BottomBackdrop -> Alignment.BottomCenter
@@ -2496,7 +2656,7 @@ private fun HeroDiscoveryAwardIcon(
         else -> {
             val badgeFileName = heroDiscoveryBadgeFileName(category, label)
             val bundledBadgeModel = remember(badgeFileName) {
-                heroBundledBadgeModel(badgeFileName)
+                badgeFileName?.let { heroBundledBadgeModel(it) }
             }
             val fallbackPainter = painterResource(heroDiscoveryBadgeResource(category, label))
             if (bundledBadgeModel != null) {
@@ -2754,8 +2914,8 @@ private fun heroDiscoveryBadgeResource(category: String, label: String): Drawabl
             } else {
                 Res.drawable.hero_badge_release_status_available
             }
-            "studio", "prestige" -> Res.drawable.hero_badge_studio
-            "director" -> Res.drawable.hero_badge_director
+            "studio", "prestige" -> Res.drawable.hero_badge_director
+            "director" -> Res.drawable.hero_badge_studio
             "trending" -> Res.drawable.hero_badge_trending
             "short_film" -> Res.drawable.hero_badge_short_film
             "mini_series" -> Res.drawable.hero_badge_mini_series
@@ -2765,41 +2925,33 @@ private fun heroDiscoveryBadgeResource(category: String, label: String): Drawabl
         }
     }
 
-private fun heroDiscoveryBadgeFileName(category: String, label: String): String =
+/**
+ * The bundled badge bitmap to load through the image pipeline, or null when the badge is vector art.
+ *
+ * Most badges are SVG now and are drawn straight from [painterResource], which lets Skia rasterise
+ * them at draw size — sharp at any medal size or DPI. Routing those through the bitmap loader would
+ * only add a temp-file extraction and a downscale, so they return null and take the painter branch.
+ * What is left is the per-language flags and the generic win/nom marks, which are still PNG and do
+ * want the loader's high-quality downscale.
+ *
+ * Unknown categories return null and fall through to [heroDiscoveryBadgeResource]'s own fallback.
+ */
+private fun heroDiscoveryBadgeFileName(category: String, label: String): String? =
     if (category.startsWith("foreign:")) {
         "hero_badge_foreign.png"
     } else {
         when (category) {
-            "award:best_picture" -> "hero_badge_best_picture.png"
-            "award:best_picture_nom" -> "hero_badge_oscar_nom.png"
-            "award:globe_win" -> "hero_badge_globe_win.png"
-            "award:globe_nom" -> "hero_badge_globe_nom.png"
-            "award:emmy_win" -> "hero_badge_emmy_win.png"
-            "award:emmy_nom" -> "hero_badge_emmy_nom.png"
-            "award:palme" -> "hero_badge_palme.png"
-            "award:golden_lion" -> "hero_badge_golden_lion.png"
-            "award:golden_bear" -> "hero_badge_golden_bear.png"
-            "award:festival", "festival" -> "hero_badge_festival.png"
-            "award:people_choice" -> "hero_badge_people_choice.png"
             "wins", "gg_wins", "win" -> "hero_badge_win.png"
             "pic_noms", "gg_noms", "emmy_noms", "noms", "nom" -> "hero_badge_nom.png"
-            "metacritic" -> "hero_badge_metacritic.png"
-            "cult" -> "hero_badge_cult.png"
-            "true_story" -> "hero_badge_true_story.png"
-            "new_release", "digital_release" -> "hero_badge_new_release.png"
+            "award:people_choice" -> "hero_badge_people_choice.png"
+            // Only the "available" half is still a bitmap; Cinema/Production is vector.
             "release_status", "alert" -> if (label.isUnavailableReleaseStatusLabel()) {
-                "hero_badge_release_status.png"
+                null
             } else {
                 "hero_badge_release_status_available.png"
             }
-            "studio", "prestige" -> "hero_badge_studio.png"
-            "director" -> "hero_badge_director.png"
-            "trending" -> "hero_badge_trending.png"
-            "short_film" -> "hero_badge_short_film.png"
-            "mini_series" -> "hero_badge_mini_series.png"
-            "binge_ready" -> "hero_badge_binge_ready.png"
             "foreign", "info" -> "hero_badge_foreign.png"
-            else -> "hero_badge_win.png"
+            else -> null
         }
     }
 

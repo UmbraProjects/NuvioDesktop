@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.ui.Modifier
@@ -50,12 +51,14 @@ import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.home.HeroBadgePlacement
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.home.HomeTvRowDotsAnchor
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.player.HERO_TV_TRAILER_DELAY_VALUES
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.isDesktop
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.action_reset
 import nuvio.composeapp.generated.resources.layout_hide_unreleased
 import nuvio.composeapp.generated.resources.layout_hide_unreleased_sub
@@ -130,30 +133,97 @@ internal fun LazyListScope.homescreenSettingsContent(
                 0
             }
             SettingsSection(
-                title = "Display Mode",
+                title = stringResource(Res.string.settings_home_display_mode),
                 isTablet = isTablet,
             ) {
                 SettingsGroup(isTablet = isTablet) {
                     SettingsChoiceRow(
-                        title = "Display Mode",
-                        description = currentMode.description,
-                        options = HomeDisplayMode.entries.map { SettingsChoiceOption(it, it.label) },
+                        title = stringResource(Res.string.settings_home_display_mode),
+                        description = currentMode.localizedDescription(),
+                        options = HomeDisplayMode.entries.map { SettingsChoiceOption(it, it.localizedLabel()) },
                         selectedValue = currentMode,
                         enabled = heroEnabled,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.DisplayMode),
                         onSelected = { it.applyTo() },
                     )
+                    // Both only do anything in Adaptive, so they belong with the mode picker
+                    // rather than in the general Home Layout list.
+                    if (isDesktop) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        AdaptiveHeroVerticalBiasRow(
+                            bias = adaptiveHeroVerticalBias,
+                            enabled = heroEnabled && adaptiveHeroEnabled && !tvModeEnabled,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHeroPosition),
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        AdaptiveHeroHeightRow(
+                            enabled = heroEnabled && adaptiveHeroEnabled && !tvModeEnabled,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHeroHeight),
+                        )
+                    }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
-                        title = "Smooth scrolling",
-                        description = "Ease mouse-wheel scrolling in Basic and Adaptive modes. " +
-                            "TV Mode still jumps one catalog per scroll.",
+                        title = stringResource(Res.string.settings_home_smooth_scrolling),
+                        description = stringResource(Res.string.settings_home_smooth_scrolling_description),
                         checked = homeSettings.smoothScrollingEnabled,
                         enabled = currentMode != HomeDisplayMode.TvMode,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("home-smooth-scrolling")),
                         onCheckedChange = HomeCatalogSettingsRepository::setSmoothScrollingEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_home_row_jump_dots),
+                        description = stringResource(Res.string.settings_home_row_jump_dots_description),
+                        checked = homeSettings.tvRowDotsEnabled,
+                        enabled = currentMode == HomeDisplayMode.TvMode,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("home-tv-row-dots"),
+                        ),
+                        onCheckedChange = HomeCatalogSettingsRepository::setTvRowDotsEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsChoiceRow(
+                        // Horizontal only — the dots stay on the row's title line either way.
+                        title = stringResource(Res.string.settings_home_row_jump_dot_position),
+                        description = homeSettings.tvRowDotsAnchor.localizedDescription(),
+                        options = HomeTvRowDotsAnchor.entries.map {
+                            SettingsChoiceOption(it, it.localizedLabel())
+                        },
+                        selectedValue = homeSettings.tvRowDotsAnchor,
+                        enabled = currentMode == HomeDisplayMode.TvMode &&
+                            homeSettings.tvRowDotsEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("home-tv-row-dots-anchor"),
+                        ),
+                        onSelected = HomeCatalogSettingsRepository::setTvRowDotsAnchor,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_home_see_more_arrows),
+                        description = stringResource(Res.string.settings_home_see_more_arrows_description),
+                        checked = homeSettings.catalogSeeMoreEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("home-catalog-see-more"),
+                        ),
+                        onCheckedChange = HomeCatalogSettingsRepository::setCatalogSeeMoreEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_home_number_catalog_rows),
+                        description = stringResource(Res.string.settings_home_number_catalog_rows_description),
+                        checked = homeSettings.catalogRowNumbersEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("home-catalog-row-numbers"),
+                        ),
+                        onCheckedChange = HomeCatalogSettingsRepository::setCatalogRowNumbersEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsChoiceRow(
@@ -179,14 +249,14 @@ internal fun LazyListScope.homescreenSettingsContent(
                     SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_hero_tv_trailer_delay),
                         description = if (selectedHeroTrailerWait <= 0) {
-                            "Manual"
+                            stringResource(Res.string.settings_meta_hero_trailer_manual)
                         } else {
                             stringResource(
                                 Res.string.settings_playback_hero_tv_trailer_delay_seconds,
                                 selectedHeroTrailerWait,
                             )
                         },
-                        options = listOf(SettingsChoiceOption(0, "Manual")) +
+                        options = listOf(SettingsChoiceOption(0, stringResource(Res.string.settings_meta_hero_trailer_manual))) +
                             HERO_TV_TRAILER_DELAY_VALUES.map { seconds ->
                                 SettingsChoiceOption(
                                     seconds,
@@ -218,8 +288,8 @@ internal fun LazyListScope.homescreenSettingsContent(
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
-                        title = "Trailers in Search",
-                        description = "Allow focused search results to play hero trailers.",
+                        title = stringResource(Res.string.settings_home_search_trailers),
+                        description = stringResource(Res.string.settings_home_search_trailers_description),
                         checked = playerSettings.heroTvTrailerSearchEnabled,
                         enabled = heroEnabled,
                         isTablet = isTablet,
@@ -246,7 +316,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsChoiceRow(
-                    title = "Hero badge count",
+                    title = stringResource(Res.string.settings_home_hero_badge_count),
                     description = heroInfoLines.heroBadgeCountLabel(),
                     options = (0..6).map { count ->
                         SettingsChoiceOption(count, count.heroBadgeCountLabel())
@@ -259,7 +329,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsChoiceRow(
-                    title = "Hero badge position",
+                    title = stringResource(Res.string.settings_home_hero_badge_position),
                     description = heroBadgePlacement.settingsLabel(),
                     options = HeroBadgePlacement.entries.map { placement ->
                         SettingsChoiceOption(placement, placement.settingsLabel())
@@ -272,8 +342,8 @@ internal fun LazyListScope.homescreenSettingsContent(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsChoiceRow(
-                    title = "Hero badge size",
-                    description = "Modify badge sizes.",
+                    title = stringResource(Res.string.settings_home_hero_badge_size),
+                    description = stringResource(Res.string.settings_home_hero_badge_size_description),
                     options = HERO_BADGE_SCALE_STEPS.map { scale ->
                         SettingsChoiceOption(scale, scale.heroBadgeScaleLabel())
                     },
@@ -294,8 +364,8 @@ internal fun LazyListScope.homescreenSettingsContent(
                   )
                   SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
-                    title = "Only show unavailable release status",
-                    description = "Show release status only for cinema and production titles.",
+                    title = stringResource(Res.string.settings_home_release_status_unavailable_only),
+                    description = stringResource(Res.string.settings_home_release_status_unavailable_only_description),
                     checked = heroReleaseStatusUnavailableOnly,
                     enabled = heroEnabled,
                     isTablet = isTablet,
@@ -320,21 +390,6 @@ internal fun LazyListScope.homescreenSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("home-hide-catalog-underline")),
                     onCheckedChange = HomeCatalogSettingsRepository::setHideCatalogUnderline,
                 )
-                if (isDesktop) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    AdaptiveHeroVerticalBiasRow(
-                        bias = adaptiveHeroVerticalBias,
-                        enabled = heroEnabled && adaptiveHeroEnabled && !tvModeEnabled,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHeroPosition),
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    AdaptiveHeroHeightRow(
-                        enabled = heroEnabled && adaptiveHeroEnabled && !tvModeEnabled,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHeroHeight),
-                    )
-                }
             }
         }
     }
@@ -459,20 +514,37 @@ private fun HomeDisplayMode.applyTo() {
     }
 }
 
-private val HomeDisplayMode.label: String
-    get() = when (this) {
-        HomeDisplayMode.Basic -> "Basic"
-        HomeDisplayMode.Adaptive -> "Adaptive"
-        HomeDisplayMode.AdaptiveAmbient -> "Adaptive Ambient"
-        HomeDisplayMode.TvMode -> "TV Mode"
+@Composable
+private fun HomeDisplayMode.localizedLabel(): String =
+    when (this) {
+        HomeDisplayMode.Basic -> stringResource(Res.string.settings_home_display_mode_basic)
+        HomeDisplayMode.Adaptive -> stringResource(Res.string.settings_home_display_mode_adaptive)
+        HomeDisplayMode.AdaptiveAmbient -> stringResource(Res.string.settings_home_display_mode_adaptive_ambient)
+        HomeDisplayMode.TvMode -> stringResource(Res.string.settings_home_display_mode_tv)
     }
 
-private val HomeDisplayMode.description: String
-    get() = when (this) {
-        HomeDisplayMode.Basic -> "Static hero backdrop with no extra effects."
-        HomeDisplayMode.Adaptive -> "Crops the hero backdrop to keep the focal point in view as it changes."
-        HomeDisplayMode.AdaptiveAmbient -> "Adaptive cropping plus a soft ambient glow behind the hero."
-        HomeDisplayMode.TvMode -> "Optimized layout and larger badges for viewing from a couch."
+@Composable
+private fun HomeDisplayMode.localizedDescription(): String =
+    when (this) {
+        HomeDisplayMode.Basic -> stringResource(Res.string.settings_home_display_mode_basic_description)
+        HomeDisplayMode.Adaptive -> stringResource(Res.string.settings_home_display_mode_adaptive_description)
+        HomeDisplayMode.AdaptiveAmbient -> stringResource(Res.string.settings_home_display_mode_adaptive_ambient_description)
+        HomeDisplayMode.TvMode -> stringResource(Res.string.settings_home_display_mode_tv_description)
+    }
+
+@Composable
+private fun HomeTvRowDotsAnchor.localizedLabel(): String =
+    when (this) {
+        HomeTvRowDotsAnchor.RowTitle -> stringResource(Res.string.settings_home_row_jump_dot_position_row)
+        HomeTvRowDotsAnchor.HeroBackdrop -> stringResource(Res.string.settings_home_row_jump_dot_position_backdrop)
+    }
+
+@Composable
+private fun HomeTvRowDotsAnchor.localizedDescription(): String =
+    when (this) {
+        HomeTvRowDotsAnchor.RowTitle -> stringResource(Res.string.settings_home_row_jump_dot_position_row_description)
+        HomeTvRowDotsAnchor.HeroBackdrop ->
+            stringResource(Res.string.settings_home_row_jump_dot_position_backdrop_description)
     }
 
 @Composable
@@ -499,13 +571,13 @@ private fun AdaptiveHeroVerticalBiasRow(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = "Backdrop vertical position",
+                text = stringResource(Res.string.settings_home_backdrop_vertical_position),
                 style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "Tune where adaptive hero backdrops crop vertically.",
+                text = stringResource(Res.string.settings_home_backdrop_vertical_position_description),
                 style = if (isTablet) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -562,13 +634,13 @@ private fun AdaptiveHeroHeightRow(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = "Hero height",
+                text = stringResource(Res.string.settings_home_hero_height),
                 style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "Set how much of the window the adaptive hero occupies.",
+                text = stringResource(Res.string.settings_home_hero_height_description),
                 style = if (isTablet) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -596,18 +668,20 @@ private fun AdaptiveHeroHeightRow(
 private fun Float.formatAdaptiveHeroHeight(): String =
     "${(this * 100).roundToInt()}%"
 
+@Composable
 private fun Int.heroBadgeCountLabel(): String =
     when (this) {
-        0 -> "Hidden"
-        1 -> "1 badge"
-        else -> "$this badges"
+        0 -> stringResource(Res.string.settings_home_hero_badge_count_hidden)
+        1 -> stringResource(Res.string.settings_home_hero_badge_count_one)
+        else -> stringResource(Res.string.settings_home_hero_badge_count_many, this)
     }
 
+@Composable
 private fun HeroBadgePlacement.settingsLabel(): String =
     when (this) {
-        HeroBadgePlacement.BottomBackdrop -> "Bottom of backdrop"
-        HeroBadgePlacement.TopRightHorizontal -> "Top right horizontal"
-        HeroBadgePlacement.TopRightVertical -> "Top right vertical"
+        HeroBadgePlacement.BottomBackdrop -> stringResource(Res.string.settings_home_hero_badge_position_bottom)
+        HeroBadgePlacement.TopRightHorizontal -> stringResource(Res.string.settings_home_hero_badge_position_top_horizontal)
+        HeroBadgePlacement.TopRightVertical -> stringResource(Res.string.settings_home_hero_badge_position_top_vertical)
     }
 
 private val HERO_BADGE_SCALE_STEPS = listOf(1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f)
@@ -623,25 +697,25 @@ private data class HeroInfoPriorityField(
     val selected: Boolean,
 )
 
-private val HERO_INFO_PRIORITY_LABELS = listOf(
-    "wins" to "Awards wins",
-    "gg_wins" to "Golden Globe wins",
-    "festival" to "Festival awards",
-    "pic_noms" to "Best Picture nominations",
-    "gg_noms" to "Golden Globe nominations",
-    "emmy_noms" to "Emmy nominations",
-    "studio" to "Studio",
-    "director" to "Director",
-    "trending" to "Trending",
-    "cult" to "Cult favorite",
-    "foreign" to "Foreign language",
-    "new_release" to "New release",
-    "metacritic" to "Metacritic",
-    "true_story" to "True story",
-    "short_film" to "Short film",
-    "mini_series" to "Mini-series",
-    "binge_ready" to "Binge ready",
-    "release_status" to "Release status",
+private val HERO_INFO_PRIORITY_KEYS = listOf(
+    "wins",
+    "gg_wins",
+    "festival",
+    "pic_noms",
+    "gg_noms",
+    "emmy_noms",
+    "studio",
+    "director",
+    "trending",
+    "cult",
+    "foreign",
+    "new_release",
+    "metacritic",
+    "true_story",
+    "short_film",
+    "mini_series",
+    "binge_ready",
+    "release_status",
 )
 
 private fun heroInfoPriorityKeys(value: String): List<String> =
@@ -650,10 +724,30 @@ private fun heroInfoPriorityKeys(value: String): List<String> =
         .filter(String::isNotBlank)
         .distinct()
 
+@Composable
 private fun heroInfoPriorityFields(value: String): List<HeroInfoPriorityField> {
     val selectedKeys = heroInfoPriorityKeys(value)
-    val labelsByKey = HERO_INFO_PRIORITY_LABELS.toMap()
-    val knownKeys = HERO_INFO_PRIORITY_LABELS.map { it.first }
+    val labelsByKey = mapOf(
+        "wins" to stringResource(Res.string.settings_home_hero_info_awards_wins),
+        "gg_wins" to stringResource(Res.string.settings_home_hero_info_golden_globe_wins),
+        "festival" to stringResource(Res.string.settings_home_hero_info_festival_awards),
+        "pic_noms" to stringResource(Res.string.settings_home_hero_info_best_picture_nominations),
+        "gg_noms" to stringResource(Res.string.settings_home_hero_info_golden_globe_nominations),
+        "emmy_noms" to stringResource(Res.string.settings_home_hero_info_emmy_nominations),
+        "studio" to stringResource(Res.string.settings_home_hero_info_studio),
+        "director" to stringResource(Res.string.settings_home_hero_info_director),
+        "trending" to stringResource(Res.string.settings_home_hero_info_trending),
+        "cult" to stringResource(Res.string.settings_home_hero_info_cult_favorite),
+        "foreign" to stringResource(Res.string.settings_home_hero_info_foreign_language),
+        "new_release" to stringResource(Res.string.settings_home_hero_info_new_release),
+        "metacritic" to stringResource(Res.string.settings_home_hero_info_metacritic),
+        "true_story" to stringResource(Res.string.settings_home_hero_info_true_story),
+        "short_film" to stringResource(Res.string.settings_home_hero_info_short_film),
+        "mini_series" to stringResource(Res.string.settings_home_hero_info_mini_series),
+        "binge_ready" to stringResource(Res.string.settings_home_hero_info_binge_ready),
+        "release_status" to stringResource(Res.string.settings_home_hero_info_release_status),
+    )
+    val knownKeys = HERO_INFO_PRIORITY_KEYS
     val orderedKeys = selectedKeys + knownKeys.filterNot { it in selectedKeys }
     return orderedKeys.map { key ->
         HeroInfoPriorityField(
@@ -678,14 +772,14 @@ private fun HeroInfoPriorityRow(
         .joinToString(separator = ", ") { it.label }
         .let { preview ->
             when {
-                selectedFields.isEmpty() -> "No hero info shown"
+                selectedFields.isEmpty() -> stringResource(Res.string.settings_home_hero_info_none)
                 selectedFields.size <= 3 -> preview
                 else -> "$preview, +${selectedFields.size - 3}"
             }
         }
 
     SettingsNavigationRow(
-        title = "Hero info priority",
+        title = stringResource(Res.string.settings_home_hero_info_priority),
         description = summary,
         isTablet = isTablet,
         enabled = enabled,
@@ -712,13 +806,9 @@ private fun HeroInfoPriorityDialog(
     onDismiss: () -> Unit,
 ) {
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier
+        NuvioDialogSurface(modifier = Modifier
                 .fillMaxWidth()
-                .widthIn(max = 640.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shape = MaterialTheme.shapes.extraLarge,
-        ) {
+                .widthIn(max = 640.dp)) {
             Column(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -733,13 +823,13 @@ private fun HeroInfoPriorityDialog(
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(
-                            text = "Hero info priority",
+                            text = stringResource(Res.string.settings_home_hero_info_priority),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "Choose which hero badges are preferred first.",
+                            text = stringResource(Res.string.settings_home_hero_info_priority_description),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -747,7 +837,7 @@ private fun HeroInfoPriorityDialog(
                     IconButton(onClick = onDismiss) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
-                            contentDescription = "Close",
+                            contentDescription = stringResource(Res.string.action_close),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -798,7 +888,7 @@ private fun HeroInfoPriorityList(
     ) {
         if (showHeader) {
             Text(
-                text = "Hero info priority",
+                text = stringResource(Res.string.settings_home_hero_info_priority),
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -838,7 +928,11 @@ private fun HeroInfoPriorityList(
                                         fontWeight = FontWeight.Medium,
                                     )
                                     Text(
-                                        text = if (field.selected) "Shown in this priority order" else "Skipped",
+                                        text = if (field.selected) {
+                                            stringResource(Res.string.settings_home_hero_info_shown)
+                                        } else {
+                                            stringResource(Res.string.settings_home_hero_info_skipped)
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -868,7 +962,7 @@ private fun HeroInfoPriorityList(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Rounded.Menu,
-                                        contentDescription = "Reorder",
+                                        contentDescription = stringResource(Res.string.action_reorder),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(
                                             alpha = if (field.selected) 1f else 0.45f,
                                         ),
@@ -1012,6 +1106,9 @@ private fun HomescreenCatalogList(
                                 expandedKey = if (shouldExpand) item.key else null
                             },
                             onTitleChange = { HomeCatalogSettingsRepository.setCustomTitle(item.key, it) },
+                            onMarkerColorChange = {
+                                HomeCatalogSettingsRepository.setMarkerColor(item.key, it)
+                            },
                             onEnabledChange = { HomeCatalogSettingsRepository.setEnabled(item.key, it) },
                             onSendToTop = { HomeCatalogSettingsRepository.moveToTop(item.key) },
                             dragHandleScope = this@ReorderableItem,

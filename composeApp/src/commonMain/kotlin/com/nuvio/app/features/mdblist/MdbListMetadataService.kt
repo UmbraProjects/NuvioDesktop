@@ -19,7 +19,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 object MdbListMetadataService {
-    const val CACHE_VERSION = 2
+    const val CACHE_VERSION = 4
 
     const val PROVIDER_IMDB = "imdb"
     const val PROVIDER_TMDB = "tmdb"
@@ -28,6 +28,7 @@ object MdbListMetadataService {
     const val PROVIDER_TRAKT = "trakt"
     const val PROVIDER_LETTERBOXD = "letterboxd"
     const val PROVIDER_AUDIENCE = "audience"
+    const val PROVIDER_MAL = "mal"
 
     val PROVIDER_PRIORITY_ORDER = listOf(
         PROVIDER_IMDB,
@@ -37,6 +38,7 @@ object MdbListMetadataService {
         PROVIDER_TRAKT,
         PROVIDER_LETTERBOXD,
         PROVIDER_AUDIENCE,
+        PROVIDER_MAL,
     )
 
     private val log = Logger.withTag("MdbListMetadata")
@@ -51,6 +53,8 @@ object MdbListMetadataService {
         "trakt" to PROVIDER_TRAKT,
         "letterboxd" to PROVIDER_LETTERBOXD,
         "popcorn" to PROVIDER_AUDIENCE,
+        "mal" to PROVIDER_MAL,
+        "myanimelist" to PROVIDER_MAL,
     )
 
     private const val FOUND_TTL_MS = 7L * 24L * 60L * 60L * 1000L
@@ -80,7 +84,7 @@ object MdbListMetadataService {
         if (!settings.enabled) return false
         if (settings.apiKey.trim().isBlank()) return false
         if (settings.enabledProvidersInPriorityOrder().isEmpty()) return false
-        return extractImdbId(meta.id) != null || extractImdbId(fallbackItemId) != null
+        return resolveLookup(meta, fallbackItemId) != null
     }
 
     suspend fun enrichMeta(
@@ -93,14 +97,13 @@ object MdbListMetadataService {
         }
         val apiKey = settings.apiKey.trim()
 
-        val imdbId = extractImdbId(meta.id)
-            ?: extractImdbId(fallbackItemId)
+        val lookup = resolveLookup(meta, fallbackItemId)
             ?: return meta.copy(externalRatings = emptyList())
         val mediaType = toMdbListMediaType(meta.type)
         val enabledProviders = settings.enabledProvidersInPriorityOrder().toSet()
 
         val enrichment = fetchEnrichmentData(
-            imdbId = imdbId,
+            lookup = lookup,
             mediaType = mediaType,
             apiKey = apiKey,
         )
@@ -119,11 +122,11 @@ object MdbListMetadataService {
     }
 
     private suspend fun fetchEnrichmentData(
-        imdbId: String,
+        lookup: MdbListLookup,
         mediaType: String,
         apiKey: String,
     ): MdbListEnrichmentData {
-        val cacheKey = "v$CACHE_VERSION:$mediaType:$imdbId"
+        val cacheKey = "v$CACHE_VERSION:${lookup.provider}:$mediaType:${lookup.id}"
         val now = LibraryClock.nowEpochMs()
         val pending = cacheMutex.withLock {
             val loaded = ensureCacheLoaded()
@@ -139,7 +142,7 @@ object MdbListMetadataService {
                 serviceScope.launch {
                     performFetchAndCache(
                         cacheKey = cacheKey,
-                        imdbId = imdbId,
+                        lookup = lookup,
                         mediaType = mediaType,
                         apiKey = apiKey,
                         requestedAtMs = now,
@@ -153,14 +156,14 @@ object MdbListMetadataService {
 
     private suspend fun performFetchAndCache(
         cacheKey: String,
-        imdbId: String,
+        lookup: MdbListLookup,
         mediaType: String,
         apiKey: String,
         requestedAtMs: Long,
         deferred: CompletableDeferred<MdbListEnrichmentData>,
     ) {
         val enrichment = try {
-            fetchFromApi(imdbId = imdbId, mediaType = mediaType, apiKey = apiKey)
+            fetchFromApi(lookup = lookup, mediaType = mediaType, apiKey = apiKey)
         } catch (error: MdbListRateLimitedException) {
             log.w { "MDBList rate limit hit; backing off for 30 minutes" }
             cacheMutex.withLock {
@@ -175,7 +178,9 @@ object MdbListMetadataService {
             deferred.completeExceptionally(error)
             throw error
         } catch (error: Throwable) {
-            log.w { "MDBList request failed for $mediaType/$imdbId: ${error.message}" }
+            log.w {
+                "MDBList request failed for ${lookup.provider}/$mediaType/${lookup.id}: ${error.message}"
+            }
             cacheMutex.withLock {
                 // Briefly negative-cache the failure so a persistently-failing title isn't re-hit on
                 // every hero scroll. Persisted like any entry; pruned once the short TTL lapses.
@@ -203,11 +208,12 @@ object MdbListMetadataService {
     }
 
     private suspend fun fetchFromApi(
-        imdbId: String,
+        lookup: MdbListLookup,
         mediaType: String,
         apiKey: String,
     ): MdbListEnrichmentData {
-        val url = "https://api.mdblist.com/imdb/$mediaType/$imdbId?apikey=$apiKey&append_to_response=keyword"
+        val url = "https://api.mdblist.com/${lookup.provider}/$mediaType/${lookup.id}/" +
+            "?apikey=$apiKey&append_to_response=keyword"
         val response = httpRequestRaw(
             method = "GET",
             url = url,
@@ -226,7 +232,7 @@ object MdbListMetadataService {
         val payload = response.body.takeIf { it.isNotBlank() } ?: error("Empty response body")
         val parsed = json.decodeFromString<MdbListRatingsResponse>(payload)
         val ratings = parsed.ratings.mapNotNull { item ->
-            val providerId = sourceToProvider[item.source?.lowercase()] ?: return@mapNotNull null
+            val providerId = providerIdForSource(item.source) ?: return@mapNotNull null
             val value = item.value ?: return@mapNotNull null
             MetaExternalRating(source = providerId, value = value)
         }
@@ -279,11 +285,42 @@ object MdbListMetadataService {
         return imdbRegex.find(value)?.value
     }
 
+    internal fun providerIdForSource(source: String?): String? =
+        source?.trim()?.lowercase()?.let(sourceToProvider::get)
+
+    internal fun resolveLookup(meta: MetaDetails, fallbackItemId: String): MdbListLookup? {
+        sequenceOf(meta.id, meta.imdbId, fallbackItemId)
+            .mapNotNull(::extractImdbId)
+            .firstOrNull()
+            ?.let { return MdbListLookup(provider = PROVIDER_IMDB, id = it) }
+
+        sequenceOf(meta.malId, extractNamespacedId(meta.id, "mal", "myanimelist"),
+            extractNamespacedId(fallbackItemId, "mal", "myanimelist"))
+            .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
+            .firstOrNull()
+            ?.let { return MdbListLookup(provider = PROVIDER_MAL, id = it) }
+
+        return null
+    }
+
+    private fun extractNamespacedId(value: String?, vararg namespaces: String): String? {
+        val normalized = value?.trim()?.takeIf(String::isNotBlank) ?: return null
+        val separator = normalized.indexOf(':')
+        if (separator <= 0 || separator == normalized.lastIndex) return null
+        if (normalized.substring(0, separator).lowercase() !in namespaces) return null
+        return normalized.substring(separator + 1)
+    }
+
     private fun toMdbListMediaType(metaType: String): String {
         val normalized = metaType.trim().lowercase()
         return if (normalized == "movie") "movie" else "show"
     }
 }
+
+internal data class MdbListLookup(
+    val provider: String,
+    val id: String,
+)
 
 private class MdbListRateLimitedException : RuntimeException()
 

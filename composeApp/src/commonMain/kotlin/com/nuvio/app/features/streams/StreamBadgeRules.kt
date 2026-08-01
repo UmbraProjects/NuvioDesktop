@@ -184,14 +184,24 @@ internal object StreamBadgeRulesParser {
 }
 
 object StreamBadgeMatcher {
-    fun compile(rules: StreamBadgeRules): List<CompiledStreamBadgeFilter> {
+    /**
+     * @param options extra regex options to compile every filter with. Empty for stream matching,
+     * where a pattern's own casing may be load-bearing — some packs distinguish a release group
+     * from an ordinary word by case alone. Callers matching against text they generate themselves
+     * can pass [RegexOption.IGNORE_CASE], since there is no such distinction to preserve.
+     */
+    fun compile(
+        rules: StreamBadgeRules,
+        options: Set<RegexOption> = emptySet(),
+    ): List<CompiledStreamBadgeFilter> {
         if (!rules.hasImport) return emptyList()
         return rules.normalized().imports.filter { it.isActive }.flatMap { import ->
             import.filters.mapNotNull { filter ->
                 if (!filter.isEnabled || filter.name.isBlank() || filter.pattern.isBlank()) {
                     return@mapNotNull null
                 }
-                val regex = runCatching { Regex(filter.pattern) }.getOrNull() ?: return@mapNotNull null
+                val regex = runCatching { Regex(filter.pattern, options) }.getOrNull()
+                    ?: return@mapNotNull null
                 CompiledStreamBadgeFilter(
                     name = filter.name,
                     badge = StreamBadge(
@@ -215,10 +225,20 @@ object StreamBadgeMatcher {
         return matchedBadges(stream, filters).map { it.name }
     }
 
-    fun matchedBadges(stream: StreamItem, filters: List<CompiledStreamBadgeFilter>): List<StreamBadge> {
-        if (filters.isEmpty()) return emptyList()
-        val candidates = badgeMatchCandidates(stream)
-        if (candidates.isEmpty()) return emptyList()
+    fun matchedBadges(stream: StreamItem, filters: List<CompiledStreamBadgeFilter>): List<StreamBadge> =
+        matchedBadges(badgeMatchCandidates(stream), filters)
+
+    /**
+     * The badges whose filters match any of [candidates].
+     *
+     * Taking the candidate strings rather than a [StreamItem] lets callers that have no stream —
+     * QualiCache's quality tokens, for instance — reuse the same user-imported rules.
+     */
+    fun matchedBadges(
+        candidates: List<String>,
+        filters: List<CompiledStreamBadgeFilter>,
+    ): List<StreamBadge> {
+        if (filters.isEmpty() || candidates.isEmpty()) return emptyList()
 
         val matched = linkedMapOf<String, StreamBadge>()
         filters.forEach { filter ->

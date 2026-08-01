@@ -43,6 +43,7 @@ data class MetaScreenSectionItem(
 data class MetaScreenSettingsUiState(
     val items: List<MetaScreenSectionItem> = emptyList(),
     val cinematicBackground: Boolean = false,
+    val backgroundMode: MetaScreenBackgroundMode = MetaScreenBackgroundMode.Normal,
     val discoveryBadgesEnabled: Boolean = true,
     val heroTrailerPlayback: Boolean = false,
     val heroTrailerPlaybackMode: MetaHeroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero,
@@ -55,7 +56,30 @@ data class MetaScreenSettingsUiState(
     val tabLayout: Boolean = false,
     val episodeCardStyle: MetaEpisodeCardStyle = MetaEpisodeCardStyle.Horizontal,
     val blurUnwatchedEpisodes: Boolean = false,
+    val episodeRatingsEnabled: Boolean = true,
 )
+
+enum class MetaScreenBackgroundMode {
+    Normal,
+    Cinematic,
+    DominantColor,
+    ;
+
+    companion object {
+        fun parse(raw: String?): MetaScreenBackgroundMode? = when (raw?.lowercase()) {
+            "normal", "default" -> Normal
+            "cinematic", "blurred" -> Cinematic
+            "dominant_color", "dominant-color", "dominantcolor", "dominant" -> DominantColor
+            else -> null
+        }
+
+        fun persist(mode: MetaScreenBackgroundMode): String = when (mode) {
+            Normal -> "normal"
+            Cinematic -> "cinematic"
+            DominantColor -> "dominant_color"
+        }
+    }
+}
 
 enum class MetaHeroTrailerPlaybackMode {
     Hero,
@@ -134,6 +158,8 @@ private data class StoredMetaScreenSectionPreference(
 private data class StoredMetaScreenSettingsPayload(
     val items: List<StoredMetaScreenSectionPreference> = emptyList(),
     val cinematicBackground: Boolean = false,
+    @SerialName("background_mode")
+    val backgroundMode: String? = null,
     @SerialName("discovery_badges_enabled")
     val discoveryBadgesEnabled: Boolean = true,
     @SerialName("hero_trailer_playback")
@@ -151,6 +177,8 @@ private data class StoredMetaScreenSettingsPayload(
     val episodeCardStyle: String = "horizontal",
     @SerialName("blur_unwatched_episodes")
     val blurUnwatchedEpisodes: Boolean = false,
+    @SerialName("episode_ratings_enabled")
+    val episodeRatingsEnabled: Boolean = true,
 )
 
 private data class MetaScreenSectionDefinition(
@@ -224,6 +252,7 @@ object MetaScreenSettingsRepository {
     private var hasLoaded = false
     private var preferences: MutableMap<MetaScreenSectionKey, StoredMetaScreenSectionPreference> = mutableMapOf()
     private var cinematicBackground: Boolean = false
+    private var backgroundMode: MetaScreenBackgroundMode = MetaScreenBackgroundMode.Normal
     private var discoveryBadgesEnabled: Boolean = true
     private var heroTrailerPlayback: Boolean = false
     private var heroTrailerPlaybackMode: MetaHeroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
@@ -233,6 +262,7 @@ object MetaScreenSettingsRepository {
     private var tabLayout: Boolean = false
     private var episodeCardStyle: MetaEpisodeCardStyle = MetaEpisodeCardStyle.Horizontal
     private var blurUnwatchedEpisodes: Boolean = false
+    private var episodeRatingsEnabled: Boolean = true
     private fun localizedString(resource: StringResource): String = runBlocking { getString(resource) }
 
     fun ensureLoaded() {
@@ -245,7 +275,9 @@ object MetaScreenSettingsRepository {
                 json.decodeFromString<StoredMetaScreenSettingsPayload>(payload)
             }.getOrNull()
             if (parsed != null) {
-                cinematicBackground = false
+                backgroundMode = MetaScreenBackgroundMode.parse(parsed.backgroundMode)
+                    ?: if (parsed.cinematicBackground) MetaScreenBackgroundMode.DominantColor else MetaScreenBackgroundMode.Normal
+                cinematicBackground = backgroundMode != MetaScreenBackgroundMode.Normal
                 discoveryBadgesEnabled = parsed.discoveryBadgesEnabled
                 heroTrailerPlayback = parsed.heroTrailerPlayback
                 heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.parse(parsed.heroTrailerPlaybackMode)
@@ -257,6 +289,7 @@ object MetaScreenSettingsRepository {
                 tabLayout = false
                 episodeCardStyle = MetaEpisodeCardStyle.Horizontal
                 blurUnwatchedEpisodes = parsed.blurUnwatchedEpisodes
+                episodeRatingsEnabled = parsed.episodeRatingsEnabled
                 preferences = parsed.items.mapNotNull { item ->
                     val key = runCatching { MetaScreenSectionKey.valueOf(item.key) }.getOrNull() ?: return@mapNotNull null
                     key to item
@@ -273,6 +306,7 @@ object MetaScreenSettingsRepository {
         hasLoaded = false
         preferences.clear()
         cinematicBackground = false
+        backgroundMode = MetaScreenBackgroundMode.Normal
         discoveryBadgesEnabled = true
         heroTrailerPlayback = false
         heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
@@ -282,13 +316,23 @@ object MetaScreenSettingsRepository {
         tabLayout = false
         episodeCardStyle = MetaEpisodeCardStyle.Horizontal
         blurUnwatchedEpisodes = false
+        episodeRatingsEnabled = true
         _uiState.value = MetaScreenSettingsUiState()
         ensureLoaded()
     }
 
     fun setCinematicBackground(enabled: Boolean) {
         ensureLoaded()
-        cinematicBackground = false
+        backgroundMode = if (enabled) MetaScreenBackgroundMode.DominantColor else MetaScreenBackgroundMode.Normal
+        cinematicBackground = enabled
+        publish()
+        persist()
+    }
+
+    fun setBackgroundMode(mode: MetaScreenBackgroundMode) {
+        ensureLoaded()
+        backgroundMode = mode
+        cinematicBackground = mode != MetaScreenBackgroundMode.Normal
         publish()
         persist()
     }
@@ -358,6 +402,13 @@ object MetaScreenSettingsRepository {
         persist()
     }
 
+    fun setEpisodeRatingsEnabled(enabled: Boolean) {
+        ensureLoaded()
+        episodeRatingsEnabled = enabled
+        publish()
+        persist()
+    }
+
     fun setTabGroup(key: MetaScreenSectionKey, groupId: Int?) {
         ensureLoaded()
         normalizePreferences()
@@ -369,6 +420,7 @@ object MetaScreenSettingsRepository {
         hasLoaded = false
         preferences.clear()
         cinematicBackground = false
+        backgroundMode = MetaScreenBackgroundMode.Normal
         discoveryBadgesEnabled = true
         heroTrailerPlayback = false
         heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
@@ -378,6 +430,7 @@ object MetaScreenSettingsRepository {
         tabLayout = false
         episodeCardStyle = MetaEpisodeCardStyle.Horizontal
         blurUnwatchedEpisodes = false
+        episodeRatingsEnabled = true
         _uiState.value = MetaScreenSettingsUiState()
     }
 
@@ -395,7 +448,8 @@ object MetaScreenSettingsRepository {
         blurUnwatchedEpisodes: Boolean = false,
     ) {
         ensureLoaded()
-        this.cinematicBackground = false
+        this.backgroundMode = if (cinematicBackground) MetaScreenBackgroundMode.DominantColor else MetaScreenBackgroundMode.Normal
+        this.cinematicBackground = cinematicBackground
         this.discoveryBadgesEnabled = discoveryBadgesEnabled
         this.heroTrailerPlayback = heroTrailerPlayback
         this.heroTrailerPlaybackMode = heroTrailerPlaybackMode
@@ -429,6 +483,7 @@ object MetaScreenSettingsRepository {
         ensureLoaded()
         preferences.clear()
         cinematicBackground = false
+        backgroundMode = MetaScreenBackgroundMode.Normal
         discoveryBadgesEnabled = true
         heroTrailerPlayback = false
         heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.Hero
@@ -438,6 +493,7 @@ object MetaScreenSettingsRepository {
         tabLayout = false
         episodeCardStyle = MetaEpisodeCardStyle.Horizontal
         blurUnwatchedEpisodes = false
+        episodeRatingsEnabled = true
         normalizePreferences()
         publish()
         persist()
@@ -489,7 +545,8 @@ object MetaScreenSettingsRepository {
                         tabGroup = preference?.tabGroup,
                     )
                 },
-            cinematicBackground = false,
+            cinematicBackground = cinematicBackground,
+            backgroundMode = backgroundMode,
             discoveryBadgesEnabled = discoveryBadgesEnabled,
             heroTrailerPlayback = heroTrailerPlayback,
             heroTrailerPlaybackMode = heroTrailerPlaybackMode,
@@ -499,6 +556,7 @@ object MetaScreenSettingsRepository {
             tabLayout = false,
             episodeCardStyle = MetaEpisodeCardStyle.Horizontal,
             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+            episodeRatingsEnabled = episodeRatingsEnabled,
         )
     }
 
@@ -507,7 +565,8 @@ object MetaScreenSettingsRepository {
             json.encodeToString(
                 StoredMetaScreenSettingsPayload(
                     items = preferences.values.sortedBy { it.order },
-                    cinematicBackground = false,
+                    cinematicBackground = cinematicBackground,
+                    backgroundMode = MetaScreenBackgroundMode.persist(backgroundMode),
                     discoveryBadgesEnabled = discoveryBadgesEnabled,
                     heroTrailerPlayback = heroTrailerPlayback,
                     heroTrailerPlaybackMode = MetaHeroTrailerPlaybackMode.persist(heroTrailerPlaybackMode),
@@ -517,6 +576,7 @@ object MetaScreenSettingsRepository {
                     tabLayout = false,
                     episodeCardStyle = MetaEpisodeCardStyle.persist(MetaEpisodeCardStyle.Horizontal),
                     blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+                    episodeRatingsEnabled = episodeRatingsEnabled,
                 ),
             ),
         )

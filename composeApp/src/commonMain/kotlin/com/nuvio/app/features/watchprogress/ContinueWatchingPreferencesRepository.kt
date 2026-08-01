@@ -18,6 +18,7 @@ private data class StoredContinueWatchingPreferences(
     val useEpisodeThumbnails: Boolean = true,
     @SerialName("show_unaired_next_up")
     val showUnairedNextUp: Boolean = true,
+    val seedNextUpFromNuvioSync: Boolean = false,
     @SerialName("blur_continue_watching_next_up")
     val blurNextUp: Boolean = false,
     val dismissedNextUpKeys: Set<String> = emptySet(),
@@ -96,6 +97,7 @@ object ContinueWatchingPreferencesRepository {
                 upNextFromFurthestEpisode = stored.upNextFromFurthestEpisode,
                 useEpisodeThumbnails = stored.useEpisodeThumbnails,
                 showUnairedNextUp = stored.showUnairedNextUp,
+                seedNextUpFromNuvioSync = stored.seedNextUpFromNuvioSync,
                 blurNextUp = stored.blurNextUp,
                 dismissedNextUpKeys = stored.dismissedNextUpKeys,
                 showResumePromptOnLaunch = stored.showResumePromptOnLaunch,
@@ -127,6 +129,12 @@ object ContinueWatchingPreferencesRepository {
     fun setUseEpisodeThumbnails(enabled: Boolean) {
         ensureLoaded()
         _uiState.value = _uiState.value.copy(useEpisodeThumbnails = enabled)
+        persist()
+    }
+
+    fun setSeedNextUpFromNuvioSync(enabled: Boolean) {
+        ensureLoaded()
+        _uiState.value = _uiState.value.copy(seedNextUpFromNuvioSync = enabled)
         persist()
     }
 
@@ -185,6 +193,7 @@ object ContinueWatchingPreferencesRepository {
                     upNextFromFurthestEpisode = _uiState.value.upNextFromFurthestEpisode,
                     useEpisodeThumbnails = _uiState.value.useEpisodeThumbnails,
                     showUnairedNextUp = _uiState.value.showUnairedNextUp,
+                    seedNextUpFromNuvioSync = _uiState.value.seedNextUpFromNuvioSync,
                     blurNextUp = _uiState.value.blurNextUp,
                     dismissedNextUpKeys = _uiState.value.dismissedNextUpKeys,
                     showResumePromptOnLaunch = _uiState.value.showResumePromptOnLaunch,

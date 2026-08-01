@@ -27,6 +27,7 @@ internal data class PlayerScreenArgs(
     val episodeNumber: Int?,
     val episodeTitle: String?,
     val episodeThumbnail: String?,
+    val releaseYear: Int?,
     val contentType: String?,
     val videoId: String?,
     val parentMetaId: String,

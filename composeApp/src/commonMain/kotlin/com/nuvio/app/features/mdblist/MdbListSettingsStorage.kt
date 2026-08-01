@@ -5,6 +5,12 @@ import kotlinx.serialization.json.JsonObject
 internal expect object MdbListSettingsStorage {
     fun loadEnabled(): Boolean?
     fun saveEnabled(enabled: Boolean)
+    fun loadTrackingEnabled(): Boolean?
+    fun saveTrackingEnabled(enabled: Boolean)
+    fun loadContinueWatchingSource(): Boolean?
+    fun saveContinueWatchingSource(enabled: Boolean)
+    fun loadCalendarSource(): Boolean?
+    fun saveCalendarSource(enabled: Boolean)
     fun loadApiKey(): String?
     fun saveApiKey(apiKey: String)
     fun loadUseImdb(): Boolean?
@@ -21,6 +27,8 @@ internal expect object MdbListSettingsStorage {
     fun saveUseLetterboxd(enabled: Boolean)
     fun loadUseAudience(): Boolean?
     fun saveUseAudience(enabled: Boolean)
+    fun loadUseMal(): Boolean?
+    fun saveUseMal(enabled: Boolean)
     fun exportToSyncPayload(): JsonObject
     fun replaceFromSyncPayload(payload: JsonObject)
 }

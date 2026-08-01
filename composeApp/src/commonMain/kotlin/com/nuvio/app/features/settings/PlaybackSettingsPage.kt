@@ -54,16 +54,20 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.player.AddonSubtitleStartupMode
 import com.nuvio.app.features.player.AudioLanguageOption
+import com.nuvio.app.features.player.AudioRejectKeyword
+import com.nuvio.app.features.player.SubtitleRejectKeyword
 import com.nuvio.app.features.player.AvailableLanguageOptions
 import com.nuvio.app.features.player.DesktopAnimeMode
 import com.nuvio.app.features.player.DesktopBufferPreset
 import com.nuvio.app.features.player.DesktopCustomShaderCatalog
 import com.nuvio.app.features.player.DesktopCustomShaderOption
 import com.nuvio.app.features.player.DesktopRendererApi
+import com.nuvio.app.features.player.DesktopSourceNotchPosition
 import com.nuvio.app.features.player.DesktopColorProfile
 import com.nuvio.app.features.player.DesktopHdrMode
 import com.nuvio.app.features.player.DesktopMpvConfigMode
@@ -78,8 +82,16 @@ import com.nuvio.app.features.player.IosTargetTransfer
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.player.STREAM_AUTO_PLAY_TIMEOUT_VALUES
 import com.nuvio.app.features.player.STREAM_FAILOVER_TIMEOUT_VALUES
+import com.nuvio.app.features.player.SUBTITLE_BLUR_MAX
+import com.nuvio.app.features.player.SUBTITLE_BLUR_MIN
+import com.nuvio.app.features.player.SUBTITLE_OUTLINE_WIDTH_MAX
+import com.nuvio.app.features.player.SUBTITLE_OUTLINE_WIDTH_MIN
+import com.nuvio.app.features.player.SUBTITLE_SHADOW_OFFSET_MAX
+import com.nuvio.app.features.player.SUBTITLE_SHADOW_OFFSET_MIN
+import com.nuvio.app.features.player.SUBTITLE_SHADOW_OFFSET_STEP
 import com.nuvio.app.features.player.SubtitleLanguageOption
 import com.nuvio.app.features.player.formatPlaybackSpeedLabel
+import com.nuvio.app.features.player.subtitleShadowOffsetLabel
 import com.nuvio.app.features.player.languageLabelForCode
 import com.nuvio.app.features.player.toStorageHexString
 import com.nuvio.app.features.p2p.P2pConsentDialog
@@ -191,6 +203,7 @@ internal fun SettingsSliderRow(
     title: String,
     value: Int,
     valueText: String,
+    valueTextForValue: ((Int) -> String)? = null,
     valueRange: IntRange,
     step: Int,
     isTablet: Boolean,
@@ -199,6 +212,13 @@ internal fun SettingsSliderRow(
 ) {
     val horizontalPadding = 16.dp
     var sliderValue by remember(value) { mutableFloatStateOf(value.toFloat()) }
+    val displayedValue = sliderValue.roundToInt().coerceIn(valueRange.first, valueRange.last)
+    val displayedValueText = valueTextForValue?.invoke(displayedValue)
+        ?: if (displayedValue == value) {
+            valueText
+        } else {
+            valueText.replaceFirst(value.toString(), displayedValue.toString())
+        }
 
     Row(
         modifier = Modifier
@@ -230,7 +250,7 @@ internal fun SettingsSliderRow(
                 steps = calculateSteps(valueRange.first.toFloat(), valueRange.last.toFloat(), step.toFloat()),
                 modifier = Modifier.weight(1f),
             )
-            ValueBox(text = valueText, modifier = Modifier.width(44.dp))
+            ValueBox(text = displayedValueText, modifier = Modifier.width(44.dp))
         }
     }
 }
@@ -452,6 +472,8 @@ private fun PlaybackSettingsSection(
     var showPreferredSubtitleDialog by remember { mutableStateOf(false) }
     var showSecondarySubtitleDialog by remember { mutableStateOf(false) }
     var showAddonSubtitleStartupModeDialog by remember { mutableStateOf(false) }
+    var showRejectSubtitleKeywordsDialog by remember { mutableStateOf(false) }
+    var showRejectAudioKeywordsDialog by remember { mutableStateOf(false) }
     var showExternalPlayerAppDialog by remember { mutableStateOf(false) }
     var showReuseCacheDurationDialog by remember { mutableStateOf(false) }
     var showIosAudioOutputDialog by remember { mutableStateOf(false) }
@@ -522,6 +544,22 @@ private fun PlaybackSettingsSection(
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
+                // Leads the section: it resizes the whole player HUD, and it is the first thing
+                // a new user on a smaller display needs to find.
+                if (isDesktop) {
+                    val uiScalePercent = autoPlayPlayerSettings.desktopUiScalePercent
+                    SettingsSliderRow(
+                        title = stringResource(Res.string.settings_playback_ui_scale),
+                        value = uiScalePercent,
+                        valueText = "${if (uiScalePercent > 0) "+" else ""}$uiScalePercent%",
+                        valueTextForValue = { "${if (it > 0) "+" else ""}$it%" },
+                        valueRange = -50..50,
+                        step = 5,
+                        isTablet = isTablet,
+                        onValueChange = PlayerSettingsRepository::setDesktopUiScalePercent,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                }
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_playback_show_loading_overlay),
                     description = stringResource(Res.string.settings_playback_show_loading_overlay_description),
@@ -603,6 +641,28 @@ private fun PlaybackSettingsSection(
                         onCheckedChange = PlayerSettingsRepository::setMouseMoveRevealsControlsEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
+                    val sourceNotchLabels = mapOf(
+                        DesktopSourceNotchPosition.Right to
+                            stringResource(Res.string.settings_playback_source_notch_right),
+                        DesktopSourceNotchPosition.Left to
+                            stringResource(Res.string.settings_playback_source_notch_left),
+                        DesktopSourceNotchPosition.Hidden to
+                            stringResource(Res.string.settings_playback_source_notch_hidden),
+                    )
+                    SettingsChoiceRow(
+                        title = stringResource(Res.string.settings_playback_source_notch),
+                        description = sourceNotchLabels.getValue(
+                            autoPlayPlayerSettings.desktopSourceNotchPosition,
+                        ),
+                        options = DesktopSourceNotchPosition.entries.map { position ->
+                            SettingsChoiceOption(position, sourceNotchLabels.getValue(position))
+                        },
+                        selectedValue = autoPlayPlayerSettings.desktopSourceNotchPosition,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.SourceNotch),
+                        onSelected = PlayerSettingsRepository::setDesktopSourceNotchPosition,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_legacy_hud),
                         description = stringResource(Res.string.settings_playback_legacy_hud_description),
@@ -619,15 +679,12 @@ private fun PlaybackSettingsSection(
                         onCheckedChange = PlayerSettingsRepository::setDesktopAlwaysShowClockEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    val uiScalePercent = autoPlayPlayerSettings.desktopUiScalePercent
-                    SettingsSliderRow(
-                        title = stringResource(Res.string.settings_playback_ui_scale),
-                        value = uiScalePercent,
-                        valueText = "${if (uiScalePercent > 0) "+" else ""}$uiScalePercent%",
-                        valueRange = -50..50,
-                        step = 5,
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_info_panel),
+                        description = stringResource(Res.string.settings_playback_info_panel_description),
+                        checked = autoPlayPlayerSettings.desktopPlaybackInfoPanelEnabled,
                         isTablet = isTablet,
-                        onValueChange = PlayerSettingsRepository::setDesktopUiScalePercent,
+                        onCheckedChange = PlayerSettingsRepository::setDesktopPlaybackInfoPanelEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsChoiceRow(
@@ -687,7 +744,7 @@ private fun PlaybackSettingsSection(
 
         if (isDesktop) {
             SettingsSection(
-                title = "Anime",
+                title = stringResource(Res.string.settings_playback_section_anime),
                 isTablet = isTablet,
             ) {
                 SettingsGroup(isTablet = isTablet) {
@@ -741,6 +798,17 @@ private fun PlaybackSettingsSection(
                             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvp),
                             onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
                         )
+                        if (autoPlayPlayerSettings.desktopAnimeSvpEnabled) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay),
+                                description = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay_desc),
+                                checked = autoPlayPlayerSettings.desktopAnimeSvpDebugOverlayEnabled,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvpOverlay),
+                                onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpDebugOverlayEnabled,
+                            )
+                        }
                     }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
@@ -768,14 +836,14 @@ private fun PlaybackSettingsSection(
             }
 
             SettingsSection(
-                title = "Advanced",
+                title = stringResource(Res.string.settings_playback_section_advanced),
                 isTablet = isTablet,
             ) {
                 SettingsGroup(isTablet = isTablet) {
                     var showCustomMpvOptionsDialog by remember { mutableStateOf(false) }
                     val mpvOptionsNotSet = stringResource(Res.string.settings_playback_not_set)
                     SettingsChoiceRow(
-                        title = "MPV configuration mode",
+                        title = stringResource(Res.string.settings_playback_mpv_configuration_mode),
                         description = autoPlayPlayerSettings.desktopMpvConfigMode.description,
                         options = DesktopMpvConfigMode.entries.map { mode ->
                             SettingsChoiceOption(mode, mode.label)
@@ -920,6 +988,32 @@ private fun PlaybackSettingsSection(
                     isTablet = isTablet,
                     onClick = { showAddonSubtitleStartupModeDialog = true },
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_reject_subtitle_keywords),
+                    description = rejectKeywordSummary(
+                        autoPlayPlayerSettings.rejectedSubtitleKeywords.map { subtitleRejectKeywordLabel(it) },
+                    ),
+                    enabled = otherSubtitleOptionsEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(
+                        SettingsScrollAnchor.searchKey("reject-subtitle-keywords"),
+                    ),
+                    onClick = { showRejectSubtitleKeywordsDialog = true },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_reject_audio_keywords),
+                    description = rejectKeywordSummary(
+                        autoPlayPlayerSettings.rejectedAudioKeywords.map { audioRejectKeywordLabel(it) },
+                    ),
+                    enabled = audioLanguageEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(
+                        SettingsScrollAnchor.searchKey("reject-audio-keywords"),
+                    ),
+                    onClick = { showRejectAudioKeywordsDialog = true },
+                )
             }
         }
 
@@ -968,6 +1062,17 @@ private fun PlaybackSettingsSection(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_playback_subtitle_italic),
+                    description = stringResource(Res.string.settings_playback_subtitle_italic_description),
+                    checked = subtitleStyle.italic,
+                    enabled = subtitleRenderingEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = { enabled ->
+                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(italic = enabled))
+                    },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
                     title = stringResource(Res.string.settings_playback_subtitle_outline),
                     description = stringResource(Res.string.settings_playback_subtitle_outline_description),
                     checked = subtitleStyle.outlineEnabled,
@@ -989,6 +1094,19 @@ private fun PlaybackSettingsSection(
                             PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineColor = color))
                         },
                     )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSliderRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_outline_width),
+                        value = subtitleStyle.outlineWidth,
+                        valueText = subtitleStyle.outlineWidth.toString(),
+                        valueRange = SUBTITLE_OUTLINE_WIDTH_MIN..SUBTITLE_OUTLINE_WIDTH_MAX,
+                        step = 1,
+                        isTablet = isTablet,
+                        enabled = subtitleRenderingEnabled,
+                        onValueChange = { value ->
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineWidth = value))
+                        },
+                    )
                 }
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
@@ -999,6 +1117,47 @@ private fun PlaybackSettingsSection(
                     isTablet = isTablet,
                     onCheckedChange = { enabled ->
                         PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(shadowEnabled = enabled))
+                    },
+                )
+                if (subtitleStyle.shadowEnabled) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSliderRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_shadow_offset),
+                        value = subtitleStyle.shadowOffset,
+                        valueText = subtitleShadowOffsetLabel(subtitleStyle.shadowOffset),
+                        valueRange = SUBTITLE_SHADOW_OFFSET_MIN..SUBTITLE_SHADOW_OFFSET_MAX,
+                        step = SUBTITLE_SHADOW_OFFSET_STEP,
+                        isTablet = isTablet,
+                        enabled = subtitleRenderingEnabled,
+                        onValueChange = { value ->
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(shadowOffset = value))
+                        },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SubtitleColorDropdownRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_shadow_color),
+                        options = subtitleTextColorOptions(),
+                        selectedColor = subtitleStyle.shadowColor.copy(alpha = 1f),
+                        enabled = subtitleRenderingEnabled,
+                        isTablet = isTablet,
+                        onColorSelected = { color ->
+                            PlayerSettingsRepository.setSubtitleStyle(
+                                subtitleStyle.copy(shadowColor = color.copy(alpha = subtitleStyle.shadowColor.alpha)),
+                            )
+                        },
+                    )
+                }
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSliderRow(
+                    title = stringResource(Res.string.settings_playback_subtitle_blur),
+                    value = subtitleStyle.blur,
+                    valueText = subtitleStyle.blur.toString(),
+                    valueRange = SUBTITLE_BLUR_MIN..SUBTITLE_BLUR_MAX,
+                    step = 1,
+                    isTablet = isTablet,
+                    enabled = subtitleRenderingEnabled,
+                    onValueChange = { value ->
+                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(blur = value))
                     },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
@@ -1132,6 +1291,16 @@ private fun PlaybackSettingsSection(
                         onSelected = PlayerSettingsRepository::setStreamFailoverTimeoutSeconds,
                     )
                 }
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_playback_pause_overlay_source),
+                    description = stringResource(
+                        Res.string.settings_playback_pause_overlay_source_description,
+                    ),
+                    checked = autoPlayPlayerSettings.desktopPauseOverlaySourceEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = PlayerSettingsRepository::setDesktopPauseOverlaySourceEnabled,
+                )
             }
         }
 
@@ -1363,6 +1532,9 @@ private fun PlaybackSettingsSection(
                     description = stringResource(Res.string.settings_playback_anime_skip_description),
                     checked = autoPlayPlayerSettings.animeSkipEnabled,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(
+                        SettingsScrollAnchor.searchKey("anime-skip"),
+                    ),
                     onCheckedChange = PlayerSettingsRepository::setAnimeSkipEnabled,
                 )
                 if (autoPlayPlayerSettings.animeSkipEnabled) {
@@ -1373,6 +1545,9 @@ private fun PlaybackSettingsSection(
                         title = stringResource(Res.string.settings_playback_anime_skip_client_id),
                         description = autoPlayPlayerSettings.animeSkipClientId.ifBlank { notSetLabel },
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("anime-skip-client"),
+                        ),
                         onClick = { showAnimeSkipClientIdDialog = true },
                     )
                     if (showAnimeSkipClientIdDialog) {
@@ -1392,16 +1567,41 @@ private fun PlaybackSettingsSection(
                     description = stringResource(Res.string.settings_playback_intro_submit_enabled_description),
                     checked = autoPlayPlayerSettings.introSubmitEnabled,
                     isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(
+                        SettingsScrollAnchor.searchKey("intro-submit"),
+                    ),
                     onCheckedChange = PlayerSettingsRepository::setIntroSubmitEnabled,
                 )
                 if (autoPlayPlayerSettings.introSubmitEnabled) {
                     SettingsGroupDivider(isTablet = isTablet)
-                    var showIntroDbApiKeyDialog by remember { mutableStateOf(false) }
+                    var showSkipDbApiKeyDialog by remember { mutableStateOf(false) }
                     val notSetLabel = stringResource(Res.string.settings_playback_not_set)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_playback_skipdb_api_key),
+                        description = autoPlayPlayerSettings.skipDbApiKey.ifBlank { notSetLabel },
+                        isTablet = isTablet,
+                        onClick = { showSkipDbApiKeyDialog = true },
+                    )
+                    if (showSkipDbApiKeyDialog) {
+                        SkipDbApiKeyDialog(
+                            initialValue = autoPlayPlayerSettings.skipDbApiKey,
+                            onSave = {
+                                PlayerSettingsRepository.setSkipDbApiKey(it)
+                                showSkipDbApiKeyDialog = false
+                            },
+                            onDismiss = { showSkipDbApiKeyDialog = false },
+                        )
+                    }
+
+                    SettingsGroupDivider(isTablet = isTablet)
+                    var showIntroDbApiKeyDialog by remember { mutableStateOf(false) }
                     SettingsNavigationRow(
                         title = stringResource(Res.string.settings_playback_introdb_api_key),
                         description = autoPlayPlayerSettings.introDbApiKey.ifBlank { notSetLabel },
                         isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("introdb-key"),
+                        ),
                         onClick = { showIntroDbApiKeyDialog = true },
                     )
                     if (showIntroDbApiKeyDialog) {
@@ -1603,6 +1803,7 @@ private fun PlaybackSettingsSection(
             options = listOf(
                 LanguageSelectionOption(AudioLanguageOption.DEFAULT, stringResource(Res.string.settings_playback_option_default)),
                 LanguageSelectionOption(AudioLanguageOption.DEVICE, stringResource(Res.string.settings_playback_option_device_language)),
+                LanguageSelectionOption(AudioLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
             ) + AvailableLanguageOptions.map { option ->
                 LanguageSelectionOption(option.code, stringResource(option.labelRes))
             },
@@ -1620,6 +1821,7 @@ private fun PlaybackSettingsSection(
             title = stringResource(Res.string.settings_playback_secondary_audio_language),
             options = listOf(
                 LanguageSelectionOption(null, stringResource(Res.string.settings_playback_option_none)),
+                LanguageSelectionOption(AudioLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
             ) + AvailableLanguageOptions.map { option ->
                 LanguageSelectionOption(option.code, stringResource(option.labelRes))
             },
@@ -1639,6 +1841,7 @@ private fun PlaybackSettingsSection(
                 LanguageSelectionOption(SubtitleLanguageOption.NONE, stringResource(Res.string.settings_playback_option_none)),
                 LanguageSelectionOption(SubtitleLanguageOption.DEVICE, stringResource(Res.string.settings_playback_option_device_language)),
                 LanguageSelectionOption(SubtitleLanguageOption.FORCED, stringResource(Res.string.settings_playback_option_forced)),
+                LanguageSelectionOption(SubtitleLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
             ) + AvailableLanguageOptions.map { option ->
                 LanguageSelectionOption(option.code, stringResource(option.labelRes))
             },
@@ -1657,6 +1860,7 @@ private fun PlaybackSettingsSection(
             options = listOf(
                 LanguageSelectionOption(null, stringResource(Res.string.settings_playback_option_none)),
                 LanguageSelectionOption(SubtitleLanguageOption.FORCED, stringResource(Res.string.settings_playback_option_forced)),
+                LanguageSelectionOption(SubtitleLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
             ) + AvailableLanguageOptions.map { option ->
                 LanguageSelectionOption(option.code, stringResource(option.labelRes))
             },
@@ -1666,6 +1870,32 @@ private fun PlaybackSettingsSection(
                 showSecondarySubtitleDialog = false
             },
             onDismiss = { showSecondarySubtitleDialog = false },
+        )
+    }
+
+    if (showRejectSubtitleKeywordsDialog) {
+        TrackRejectKeywordDialog(
+            title = stringResource(Res.string.settings_playback_reject_subtitle_keywords),
+            description = stringResource(Res.string.settings_playback_reject_subtitle_keywords_description),
+            options = SubtitleRejectKeyword.entries.map { keyword ->
+                TrackRejectKeywordOption(keyword, subtitleRejectKeywordLabel(keyword))
+            },
+            selected = autoPlayPlayerSettings.rejectedSubtitleKeywords,
+            onSelectionSaved = { PlayerSettingsRepository.setRejectedSubtitleKeywords(it) },
+            onDismiss = { showRejectSubtitleKeywordsDialog = false },
+        )
+    }
+
+    if (showRejectAudioKeywordsDialog) {
+        TrackRejectKeywordDialog(
+            title = stringResource(Res.string.settings_playback_reject_audio_keywords),
+            description = stringResource(Res.string.settings_playback_reject_audio_keywords_description),
+            options = AudioRejectKeyword.entries.map { keyword ->
+                TrackRejectKeywordOption(keyword, audioRejectKeywordLabel(keyword))
+            },
+            selected = autoPlayPlayerSettings.rejectedAudioKeywords,
+            onSelectionSaved = { PlayerSettingsRepository.setRejectedAudioKeywords(it) },
+            onDismiss = { showRejectAudioKeywordsDialog = false },
         )
     }
 
@@ -1695,9 +1925,11 @@ private fun PlaybackSettingsSection(
         ExternalPlayerSelectionDialog(
             players = availableExternalPlayers,
             selectedPlayerId = autoPlayPlayerSettings.externalPlayerId,
-            onPlayerSelected = { playerId ->
-                PlayerSettingsRepository.setExternalPlayerId(playerId)
-                showExternalPlayerAppDialog = false
+            onPlayerSelected = { player ->
+                if (player.isAvailable || ExternalPlayerPlatform.configurePlayer(player.id)) {
+                    PlayerSettingsRepository.setExternalPlayerId(player.id)
+                    showExternalPlayerAppDialog = false
+                }
             },
             onDismiss = { showExternalPlayerAppDialog = false },
         )
@@ -1944,17 +2176,13 @@ private data class LanguageSelectionOption(
 private fun ExternalPlayerSelectionDialog(
     players: List<ExternalPlayerApp>,
     selectedPlayerId: String?,
-    onPlayerSelected: (String) -> Unit,
+    onPlayerSelected: (ExternalPlayerApp) -> Unit,
     onDismiss: () -> Unit,
 ) {
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1988,7 +2216,7 @@ private fun ExternalPlayerSelectionDialog(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onPlayerSelected(player.id) },
+                                    .clickable { onPlayerSelected(player) },
                                 shape = RoundedCornerShape(12.dp),
                                 color = containerColor,
                             ) {
@@ -1998,12 +2226,22 @@ private fun ExternalPlayerSelectionDialog(
                                         .padding(horizontal = 14.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text(
-                                        text = player.name,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurface,
+                                    Column(
                                         modifier = Modifier.weight(1f),
-                                    )
+                                    ) {
+                                        Text(
+                                            text = player.name,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        if (!player.isAvailable) {
+                                            Text(
+                                                text = stringResource(Res.string.settings_playback_external_player_locate),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
                                     Box(
                                         modifier = Modifier.size(24.dp),
                                         contentAlignment = Alignment.Center,
@@ -2045,12 +2283,8 @@ private fun LanguageSelectionDialog(
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier
+                .fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2135,11 +2369,7 @@ private fun ReuseCacheDurationDialog(
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2226,11 +2456,7 @@ private fun DecoderPriorityDialog(
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2315,11 +2541,7 @@ private fun <T> IosEnumSelectionDialog(
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2420,11 +2642,7 @@ private fun LibassRenderTypeDialog(
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2523,11 +2741,7 @@ private fun AddonSubtitleStartupModeDialog(
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2617,6 +2831,11 @@ private fun StreamAutoPlayModeDialog(
             Res.string.settings_playback_stream_selection_mode_first_stream_description,
         ),
         Triple(
+            StreamAutoPlayMode.SCORED,
+            Res.string.settings_playback_stream_selection_mode_scored,
+            Res.string.settings_playback_stream_selection_mode_scored_description,
+        ),
+        Triple(
             StreamAutoPlayMode.REGEX_MATCH,
             Res.string.settings_playback_stream_selection_mode_regex,
             Res.string.settings_playback_stream_selection_mode_regex_description,
@@ -2626,11 +2845,7 @@ private fun StreamAutoPlayModeDialog(
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2753,11 +2968,7 @@ private fun StreamAutoPlaySourceDialog(
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2835,6 +3046,120 @@ private fun StreamAutoPlaySourceDialog(
     }
 }
 
+private data class TrackRejectKeywordOption<T>(val value: T, val label: String)
+
+/**
+ * Multi-select over a fixed set of track kinds. Ticking nothing means "reject nothing", which is
+ * why there is no "All" row — the empty selection here is the permissive default, the opposite of
+ * [StreamAutoPlayProviderSelectionDialog] where empty means "everything is allowed through".
+ *
+ * Saves on every tick rather than on dismiss so the summary line behind the dialog stays truthful;
+ * the settings repository already ignores a set that has not changed.
+ */
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun <T> TrackRejectKeywordDialog(
+    title: String,
+    description: String,
+    options: List<TrackRejectKeywordOption<T>>,
+    selected: Set<T>,
+    onSelectionSaved: (Set<T>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                options.forEach { option ->
+                    val isSelected = option.value in selected
+                    val containerColor = if (isSelected) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelectionSaved(
+                                    if (isSelected) selected - option.value else selected + option.value,
+                                )
+                            },
+                        shape = RoundedCornerShape(12.dp),
+                        color = containerColor,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = option.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = stringResource(Res.string.settings_playback_dialog_close),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun rejectKeywordSummary(labels: List<String>): String = if (labels.isEmpty()) {
+    stringResource(Res.string.settings_playback_reject_keywords_none)
+} else {
+    labels.joinToString(" • ")
+}
+
+@Composable
+private fun subtitleRejectKeywordLabel(keyword: SubtitleRejectKeyword): String = when (keyword) {
+    SubtitleRejectKeyword.SIGNS -> stringResource(Res.string.settings_playback_reject_keyword_signs)
+    SubtitleRejectKeyword.SONGS -> stringResource(Res.string.settings_playback_reject_keyword_songs)
+    SubtitleRejectKeyword.KARAOKE -> stringResource(Res.string.settings_playback_reject_keyword_karaoke)
+    SubtitleRejectKeyword.FORCED -> stringResource(Res.string.settings_playback_reject_keyword_forced)
+}
+
+@Composable
+private fun audioRejectKeywordLabel(keyword: AudioRejectKeyword): String = when (keyword) {
+    AudioRejectKeyword.COMMENTARY -> stringResource(Res.string.settings_playback_reject_keyword_commentary)
+    AudioRejectKeyword.DESCRIPTIVE_AUDIO ->
+        stringResource(Res.string.settings_playback_reject_keyword_descriptive_audio)
+    AudioRejectKeyword.VISUALLY_IMPAIRED ->
+        stringResource(Res.string.settings_playback_reject_keyword_visually_impaired)
+}
+
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun StreamAutoPlayProviderSelectionDialog(
@@ -2855,11 +3180,7 @@ private fun StreamAutoPlayProviderSelectionDialog(
             onDismiss()
         },
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -3005,11 +3326,7 @@ private fun StreamAutoPlayRegexDialog(
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier
                     .padding(20.dp)
@@ -3077,6 +3394,7 @@ private fun StreamAutoPlayRegexDialog(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
+                            .trackSettingsTextFocus()
                             .padding(horizontal = 14.dp, vertical = 12.dp),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
@@ -3150,11 +3468,7 @@ private fun CustomMpvOptionsDialog(
     var value by remember { mutableStateOf(initialValue) }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -3180,6 +3494,7 @@ private fun CustomMpvOptionsDialog(
                         onValueChange = { value = it },
                         modifier = Modifier
                             .fillMaxWidth()
+                            .trackSettingsTextFocus()
                             .heightIn(min = 96.dp)
                             .padding(horizontal = 14.dp, vertical = 12.dp),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -3224,11 +3539,7 @@ private fun CustomShaderPathsDialog(
     var value by remember { mutableStateOf(initialValue) }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -3254,6 +3565,7 @@ private fun CustomShaderPathsDialog(
                         onValueChange = { value = it },
                         modifier = Modifier
                             .fillMaxWidth()
+                            .trackSettingsTextFocus()
                             .heightIn(min = 136.dp)
                             .padding(horizontal = 14.dp, vertical = 12.dp),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -3304,11 +3616,7 @@ private fun AnimeSkipClientIdDialog(
     var value by remember { mutableStateOf(initialValue) }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -3334,6 +3642,7 @@ private fun AnimeSkipClientIdDialog(
                         onValueChange = { value = it },
                         modifier = Modifier
                             .fillMaxWidth()
+                            .trackSettingsTextFocus()
                             .padding(horizontal = 14.dp, vertical = 12.dp),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = MaterialTheme.colorScheme.onSurface,
@@ -3368,11 +3677,7 @@ private fun IntroDbApiKeyDialog(
     val invalidKeyMessage = stringResource(Res.string.settings_playback_introdb_invalid_key)
 
     BasicAlertDialog(onDismissRequest = { if (!isVerifying) onDismiss() }) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -3458,6 +3763,103 @@ private fun IntroDbApiKeyDialog(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
+private fun SkipDbApiKeyDialog(
+    initialValue: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var value by remember { mutableStateOf(initialValue) }
+    var isCreatingKey by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val createFailedMessage = stringResource(Res.string.settings_playback_skipdb_create_key_failed)
+
+    BasicAlertDialog(onDismissRequest = { if (!isCreatingKey) onDismiss() }) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.settings_playback_skipdb_api_key),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(Res.string.settings_playback_skipdb_api_key_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SettingsSecretTextField(
+                    value = value,
+                    onValueChange = {
+                        value = it
+                        errorMessage = null
+                    },
+                    label = stringResource(Res.string.settings_playback_skipdb_api_key),
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = errorMessage != null,
+                )
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
+                // SkipDB hands out submission keys without an account, so contributing does not
+                // require registering anywhere. Kept as an explicit action rather than something
+                // that happens silently on first submit, since it creates a key on their service.
+                TextButton(
+                    onClick = {
+                        isCreatingKey = true
+                        errorMessage = null
+                        scope.launch {
+                            val created = com.nuvio.app.features.player.skip.SkipIntroRepository
+                                .createSkipDbAnonymousKey()
+                            isCreatingKey = false
+                            if (created) {
+                                onDismiss()
+                            } else {
+                                errorMessage = createFailedMessage
+                            }
+                        }
+                    },
+                    enabled = !isCreatingKey,
+                ) {
+                    if (isCreatingKey) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    } else {
+                        Text(stringResource(Res.string.settings_playback_skipdb_create_key))
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onDismiss, enabled = !isCreatingKey) {
+                        Text(stringResource(Res.string.action_cancel))
+                    }
+                    TextButton(
+                        onClick = { onSave(value.trim()) },
+                        enabled = !isCreatingKey,
+                    ) {
+                        Text(stringResource(Res.string.action_save))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun NextEpisodeThresholdModeDialog(
     selected: com.nuvio.app.features.player.skip.NextEpisodeThresholdMode,
     onSelect: (com.nuvio.app.features.player.skip.NextEpisodeThresholdMode) -> Unit,
@@ -3466,11 +3868,7 @@ private fun NextEpisodeThresholdModeDialog(
     val options = com.nuvio.app.features.player.skip.NextEpisodeThresholdMode.entries
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -3558,6 +3956,7 @@ private val StreamAutoPlayMode.labelRes: StringResource
         StreamAutoPlayMode.MANUAL -> Res.string.settings_playback_stream_selection_mode_manual
         StreamAutoPlayMode.FIRST_STREAM -> Res.string.settings_playback_stream_selection_mode_first_stream
         StreamAutoPlayMode.REGEX_MATCH -> Res.string.settings_playback_stream_selection_mode_regex
+        StreamAutoPlayMode.SCORED -> Res.string.settings_playback_stream_selection_mode_scored
     }
 
 private val com.nuvio.app.features.player.skip.NextEpisodeThresholdMode.labelRes: StringResource

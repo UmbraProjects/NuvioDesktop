@@ -94,6 +94,8 @@ data class PlayerControlsState(
     val pauseOverlayEpisodeInfo: String = "",
     val pauseOverlayEpisodeTitle: String = "",
     val pauseOverlayDescription: String = "",
+    // Opt-in: adds the playing source as the overlay's bottom row, reusing streamTitle/providerName.
+    val pauseOverlaySourceEnabled: Boolean = false,
     val resizeModeLabel: String = "Fit",
     val playbackSpeedLabel: String = "1x",
     val subtitlesLabel: String = "Subs",
@@ -114,6 +116,16 @@ data class PlayerControlsState(
     val desktopColorProfileLabel: String = "Neutral",
     val desktopAnimeModeLabel: String = "Off",
     val desktopAnimeSvpEnabled: Boolean = false,
+    /** Opt-in "what am I actually watching" summary, shown when playback starts. */
+    val playbackInfoPanelEnabled: Boolean = false,
+    /**
+     * Name of the subtitle track currently on screen, or empty when subtitles are off. The panel's
+     * other rows are pushed from the desktop video-profile pass (only it knows what mpv ended up
+     * doing); this one lives here because the subtitle selection is owned by common code and can
+     * change mid-playback.
+     */
+    val activeSubtitleLabel: String = "",
+    val seekThumbnailsEnabled: Boolean = true,
     val tapToUnlockLabel: String = "Tap to unlock",
     val playbackErrorTitle: String = "Playback error",
     val playbackErrorMessage: String = "",
@@ -134,6 +146,7 @@ data class PlayerControlsState(
     val submitIntroSegmentIntroLabel: String = "Intro",
     val submitIntroSegmentRecapLabel: String = "Recap",
     val submitIntroSegmentOutroLabel: String = "Outro",
+    val submitIntroSegmentPreviewLabel: String = "Preview",
     val submitIntroStartTimeLabel: String = "START TIME (MM:SS)",
     val submitIntroEndTimeLabel: String = "END TIME (MM:SS)",
     val submitIntroCaptureLabel: String = "Capture",
@@ -157,12 +170,19 @@ data class PlayerControlsState(
     val loadingSubtitleLinesLabel: String = "Loading subtitle lines...",
     val fontSizeLabel: String = "Font Size",
     val outlineLabel: String = "Outline",
+    val outlineWidthLabel: String = "Outline Width",
     val shadowLabel: String = "Shadow",
+    val shadowOffsetLabel: String = "Shadow Offset",
+    val shadowColorLabel: String = "Shadow Color",
+    val shadowIntensityLabel: String = "Shadow Intensity",
+    val blurLabel: String = "Blur",
     val boldLabel: String = "Bold",
+    val italicLabel: String = "Italic",
     val bottomOffsetLabel: String = "Bottom Offset",
     val colorLabel: String = "Color",
     val textOpacityLabel: String = "Text Opacity",
     val outlineColorLabel: String = "Outline Color",
+    val backgroundColorLabel: String = "Background Color",
     val resetDefaultsLabel: String = "Reset Defaults",
     val onLabel: String = "On",
     val offLabel: String = "Off",
@@ -188,6 +208,7 @@ data class PlayerControlsState(
     val alwaysShowClock: Boolean = false,
     val playbackSpeedFineIncrementsEnabled: Boolean = false,
     val uiScalePercent: Int = 0,
+    val sourceNotchPosition: String = "right",
     val parentalWarnings: List<ParentalWarning> = emptyList(),
     val showParentalGuide: Boolean = false,
     val showOpeningOverlay: Boolean = false,
@@ -242,6 +263,13 @@ data class PlayerControlsState(
      */
     val builtInSubtitleFilterActive: Boolean = false,
     val builtInSubtitleItems: List<PlayerControlBuiltInSubtitleItem> = emptyList(),
+    /**
+     * Desktop only: the same arrangement as [builtInSubtitleFilterActive] for audio, so rejected
+     * audio tracks (commentary, audio description) are hidden from the overlay's track list and
+     * context menu. False leaves the overlay on its live native list.
+     */
+    val audioTrackFilterActive: Boolean = false,
+    val audioTrackItems: List<PlayerControlAudioTrackItem> = emptyList(),
     val isLoadingAddonSubtitles: Boolean = false,
     val selectedAddonSubtitleId: String = "",
     val useCustomSubtitles: Boolean = false,
@@ -310,6 +338,13 @@ data class PlayerControlSourceItem(
     val badges: List<PlayerControlStreamBadge> = emptyList(),
     val isCurrent: Boolean = false,
     val isEnabled: Boolean = true,
+    /**
+     * Stream score for the HUD's diagnostic badge, or null when scoring is off or the badge is not
+     * enabled. The desktop player's source panel is the web overlay rather than Compose, so it
+     * cannot reuse the StreamCard badge and needs the value in its payload.
+     */
+    val score: Int? = null,
+    val scoreRejected: Boolean = false,
 )
 
 data class PlayerControlStreamBadge(
@@ -349,6 +384,12 @@ data class PlayerControlAddonSubtitleItem(
  * to built-in tracks too. [index] is the native track index used to select the track.
  */
 data class PlayerControlBuiltInSubtitleItem(
+    val index: Int = 0,
+    val label: String = "",
+    val isSelected: Boolean = false,
+)
+
+data class PlayerControlAudioTrackItem(
     val index: Int = 0,
     val label: String = "",
     val isSelected: Boolean = false,
@@ -405,6 +446,7 @@ expect fun PlatformPlayerSurface(
     initialPositionMs: Long = 0L,
     initialProgressFraction: Float? = null,
     initialPlaybackSpeed: Float = 1f,
+    playbackAttemptId: Long = 0L,
     useNativeController: Boolean = false,
     playerControlsState: PlayerControlsState = PlayerControlsState(),
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean = { false },
@@ -412,6 +454,7 @@ expect fun PlatformPlayerSurface(
     onPlayerControlsScrubChange: (Long) -> Boolean = { false },
     onPlayerControlsScrubFinished: (Long) -> Boolean = { false },
     onControllerReady: (PlayerEngineController) -> Unit,
+    onPlayerAttached: () -> Unit = {},
     onSnapshot: (PlayerPlaybackSnapshot) -> Unit,
     onError: (String?) -> Unit,
 )

@@ -22,6 +22,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -49,11 +53,10 @@ private const val PremiumizeUrl = "https://www.premiumize.me"
 private const val TorboxUrl = "https://torbox.app"
 private const val MdbListUrl = "https://mdblist.com"
 private const val IntroDbUrl = "https://introdb.app/"
+private const val SkipDbUrl = "https://skipdb.tv"
 private const val TvdbUrl = "https://thetvdb.com"
-private const val TvdbLogoUrl = "https://artworks.thetvdb.com/banners/images/logo.png"
 private const val SimklUrl = "https://simkl.com"
-private const val SimklLogoUrl = "https://simkl.in/img/simkl_logo_100x100.jpg"
-private const val KitsuUrl = "https://kitsu.io"
+private const val KitsuUrl = "https://kitsu.app"
 private const val NuvioRepositoryUrl = "https://github.com/NuvioMedia/NuvioDesktop"
 private const val NuvioContributeUrl = "https://tapframe.space/contribute"
 private const val MpvKitUrl = "https://github.com/mpvkit/MPVKit"
@@ -206,6 +209,7 @@ private fun AttributionRow(
                         url = logoUrl,
                         contentDescription = title,
                         isTablet = isTablet,
+                        fallbackText = item.logoText,
                     )
                 }
             }
@@ -328,7 +332,19 @@ private fun ProviderLogoImage(
     url: String,
     contentDescription: String,
     isTablet: Boolean,
+    fallbackText: String? = null,
 ) {
+    // These logos are hotlinked from the provider, so they are unavailable offline or if the
+    // host blocks us. Fall back to the letter badge rather than leaving a blank square.
+    var failed by remember(url) { mutableStateOf(false) }
+    if (failed && !fallbackText.isNullOrBlank()) {
+        ProviderLogoTextBadge(
+            text = fallbackText,
+            contentDescription = contentDescription,
+            isTablet = isTablet,
+        )
+        return
+    }
     AsyncImage(
         model = url,
         contentDescription = contentDescription,
@@ -336,6 +352,7 @@ private fun ProviderLogoImage(
             .padding(top = 2.dp)
             .size(if (isTablet) 46.dp else 40.dp),
         contentScale = ContentScale.Fit,
+        onError = { failed = true },
     )
 }
 
@@ -412,6 +429,14 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         link = MdbListUrl,
     ),
     AttributionItem(
+        searchKey = "skipdb-attribution",
+        titleRes = Res.string.settings_licenses_attributions_skipdb_title,
+        bodyRes = Res.string.settings_licenses_attributions_skipdb_body,
+        logo = null,
+        logoText = "SkipDB",
+        link = SkipDbUrl,
+    ),
+    AttributionItem(
         searchKey = "introdb-attribution",
         titleRes = Res.string.settings_licenses_attributions_introdb_title,
         bodyRes = Res.string.settings_licenses_attributions_introdb_body,
@@ -422,24 +447,21 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         searchKey = "tvdb-attribution",
         titleRes = Res.string.settings_licenses_attributions_tvdb_title,
         bodyRes = Res.string.settings_licenses_attributions_tvdb_body,
-        logo = null,
-        logoText = "TVDB",
+        logo = IntegrationLogo.Tvdb,
         link = TvdbUrl,
     ),
     AttributionItem(
         searchKey = "simkl-attribution",
         titleRes = Res.string.settings_licenses_attributions_simkl_title,
         bodyRes = Res.string.settings_licenses_attributions_simkl_body,
-        logo = null,
-        logoText = "SIMKL",
+        logo = IntegrationLogo.Simkl,
         link = SimklUrl,
     ),
     AttributionItem(
         searchKey = "kitsu-attribution",
         titleRes = Res.string.settings_licenses_attributions_kitsu_title,
         bodyRes = Res.string.settings_licenses_attributions_kitsu_body,
-        logo = null,
-        logoText = "Kitsu",
+        logo = IntegrationLogo.Kitsu,
         link = KitsuUrl,
     ),
     AttributionItem(
@@ -456,8 +478,7 @@ private fun nuvioAttributionItem(): AttributionItem =
         searchKey = "nuvio-team",
         titleRes = Res.string.settings_licenses_attributions_nuvio_team_title,
         bodyRes = Res.string.settings_licenses_attributions_nuvio_team_body,
-        logo = null,
-        logoText = "N",
+        logo = IntegrationLogo.Nuvio,
         link = NuvioContributeUrl,
     )
 

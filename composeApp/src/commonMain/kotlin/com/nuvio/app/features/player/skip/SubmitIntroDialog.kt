@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.PlayCircleOutline
 import androidx.compose.material.icons.rounded.Replay
@@ -42,12 +43,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.nuvio.app.features.settings.trackSettingsTextFocus
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
@@ -57,6 +60,7 @@ import nuvio.composeapp.generated.resources.submit_intro_capture_button
 import nuvio.composeapp.generated.resources.submit_intro_end_time_label
 import nuvio.composeapp.generated.resources.submit_intro_segment_intro
 import nuvio.composeapp.generated.resources.submit_intro_segment_outro
+import nuvio.composeapp.generated.resources.submit_intro_segment_preview
 import nuvio.composeapp.generated.resources.submit_intro_segment_recap
 import nuvio.composeapp.generated.resources.submit_intro_segment_type_label
 import nuvio.composeapp.generated.resources.submit_intro_start_time_label
@@ -68,9 +72,11 @@ import kotlin.math.floor
 @Composable
 fun SubmitIntroDialog(
     imdbId: String,
-    season: Int,
-    episode: Int,
+    /** Both null for a film. */
+    season: Int?,
+    episode: Int?,
     currentTimeSec: Double,
+    durationSeconds: Long?,
     segmentType: String,
     onSegmentTypeChange: (String) -> Unit,
     startTimeStr: String,
@@ -83,14 +89,10 @@ fun SubmitIntroDialog(
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
     var isSubmitting by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 8.dp,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp)) {
             Column(
                 modifier = Modifier
                     .padding(24.dp)
@@ -151,6 +153,13 @@ fun SubmitIntroDialog(
                             onClick = { onSegmentTypeChange("outro") },
                             modifier = Modifier.weight(1f)
                         )
+                        SegmentTypeButton(
+                            label = stringResource(Res.string.submit_intro_segment_preview),
+                            icon = Icons.Rounded.FastForward,
+                            selected = segmentType == "preview",
+                            onClick = { onSegmentTypeChange("preview") },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
 
@@ -169,6 +178,17 @@ fun SubmitIntroDialog(
                     onValueChange = onEndTimeChange,
                     onCapture = { onEndTimeChange(formatSecondsToMMSS(currentTimeSec)) }
                 )
+
+                // SkipDB says why it turned a submission down — an overlap with an existing
+                // segment, a failed validation, a rate limit — so the reason is shown rather than
+                // the attempt failing silently.
+                statusMessage?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -201,20 +221,26 @@ fun SubmitIntroDialog(
                             .clickable(enabled = !isSubmitting) {
                                 val start = parseTimeToSeconds(startTimeStr)
                                 val end = parseTimeToSeconds(endTimeStr)
-                                if (start != null && end != null && end > start) {
+                                if (start == null || end == null || end <= start) {
+                                    statusMessage = "Check the start and end times."
+                                } else {
                                     isSubmitting = true
+                                    statusMessage = null
                                     scope.launch {
-                                        val result = SkipIntroRepository.submitIntro(
+                                        val outcome = SkipIntroRepository.submitSegment(
                                             imdbId = imdbId,
                                             season = season,
                                             episode = episode,
                                             startSec = start,
                                             endSec = end,
                                             segmentType = segmentType,
+                                            durationSeconds = durationSeconds,
                                         )
                                         isSubmitting = false
-                                        if (result) {
+                                        if (outcome.accepted) {
                                             onSuccess()
+                                        } else {
+                                            statusMessage = outcome.message
                                         }
                                     }
                                 }
@@ -315,7 +341,8 @@ private fun TimeInputRow(
                     onValueChange = onValueChange,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                        .trackSettingsTextFocus(),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onSurface,
                     ),

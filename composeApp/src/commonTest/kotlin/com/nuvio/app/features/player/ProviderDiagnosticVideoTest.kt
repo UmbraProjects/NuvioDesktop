@@ -11,6 +11,32 @@ class ProviderDiagnosticVideoTest {
         assertTrue(shouldSkipProviderDiagnosticVideo(streamFailoverEnabled = true))
         assertFalse(shouldSkipProviderDiagnosticVideo(streamFailoverEnabled = false))
     }
+
+    @Test
+    fun `two minute provider clip cannot satisfy a later episode resume`() {
+        assertTrue(
+            isLikelyProviderWaitVideo(
+                durationMs = 120_000L,
+                requestedResumePositionMs = 293_502L,
+                isSeries = true,
+            ),
+        )
+        assertFalse(
+            isLikelyProviderWaitVideo(
+                durationMs = 120_000L,
+                requestedResumePositionMs = 60_000L,
+                isSeries = true,
+            ),
+        )
+        assertFalse(
+            isLikelyProviderWaitVideo(
+                durationMs = 120_000L,
+                requestedResumePositionMs = 293_502L,
+                isSeries = false,
+            ),
+        )
+    }
+
     @Test
     fun recognisesDiagnosticMessageQueryWithoutDependingOnAddonDomain() {
         assertTrue(

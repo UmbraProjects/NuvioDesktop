@@ -8,10 +8,11 @@ junit = "4.13.2"
 kotlin = "2.3.0"
 kotlinx-serialization = "1.8.1"
 kotlinx-coroutines = "1.10.2"
+kmpalette = "4.0.0-beta02"
 ktor = "3.4.1"
 material3 = "1.11.0-alpha07"
 supabase = "3.4.1"
-quickjsKt = "1.0.5"
+quickjsKt = "1.0.8"
 ksoup = "0.2.6"
 reorderable = "3.0.0"
 
@@ -35,6 +36,7 @@ coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.r
 coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+kmpalette-core = { module = "com.materialkolor.palette:core", version.ref = "kmpalette" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }
 supabase-postgrest = { module = "io.github.jan-tennert.supabase:postgrest-kt", version.ref = "supabase" }

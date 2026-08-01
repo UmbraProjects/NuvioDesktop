@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,11 +24,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material3.DropdownMenu
@@ -45,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -62,6 +67,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
@@ -76,11 +84,18 @@ import com.nuvio.app.core.ui.nuvioConsumePointerEvents
 import com.nuvio.app.core.ui.nuvioTypeScale
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
+import com.nuvio.app.features.home.HomeCatalogMarkerColor
+import com.nuvio.app.features.home.composeColor
+import com.nuvio.app.features.home.prefersDarkForeground
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.compose_action_off
 import nuvio.composeapp.generated.resources.compose_action_on
 import nuvio.composeapp.generated.resources.settings_homescreen_collection_with_addon
+import nuvio.composeapp.generated.resources.settings_homescreen_bookmark_color
+import nuvio.composeapp.generated.resources.settings_homescreen_bookmark_color_description
+import nuvio.composeapp.generated.resources.settings_homescreen_bookmark_color_none
 import nuvio.composeapp.generated.resources.settings_homescreen_display_name
 import nuvio.composeapp.generated.resources.settings_homescreen_hero_source
 import nuvio.composeapp.generated.resources.settings_homescreen_hidden
@@ -130,6 +145,8 @@ internal fun SettingsModernSlider(
     onValueChangeFinished: () -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
     var size by remember { mutableStateOf(IntSize.Zero) }
     fun valueFromX(x: Float): Float {
         val width = size.width.coerceAtLeast(1).toFloat()
@@ -158,13 +175,19 @@ internal fun SettingsModernSlider(
             .height(28.dp)
             .alpha(if (enabled) 1f else tokens.opacity.medium)
             .onGloballyPositioned { size = it.size }
-            .pointerInput(enabled, valueRange, steps, size) {
+            // Keep the gesture coroutine alive while dragging. Keying pointerInput to the measured
+            // size (or a freshly-created range object) can cancel an active mouse gesture during
+            // recomposition, leaving the thumb frozen until the button is released.
+            .pointerInput(enabled, valueRange.start, valueRange.endInclusive, steps) {
                 if (!enabled) return@pointerInput
                 detectDragGestures(
-                    onDragEnd = onValueChangeFinished,
-                    onDragCancel = onValueChangeFinished,
-                    onDragStart = { offset -> onValueChange(valueFromX(offset.x)) },
-                    onDrag = { change, _ -> onValueChange(valueFromX(change.position.x)) },
+                    onDragEnd = { currentOnValueChangeFinished() },
+                    onDragCancel = { currentOnValueChangeFinished() },
+                    onDragStart = { offset -> currentOnValueChange(valueFromX(offset.x)) },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        currentOnValueChange(valueFromX(change.position.x))
+                    },
                 )
             },
         contentAlignment = Alignment.CenterStart,
@@ -203,6 +226,13 @@ internal fun SettingsModernSlider(
 /** Fixed width shared by dropdown and segmented controls so every picker on the desktop
  * settings pages lines up, regardless of control type. */
 private val DesktopControlWidth = 210.dp
+
+// Trailing inset on the title/description column, shared by every desktop settings row so they
+// all wrap at the same column. This is the ONLY lever that moves the wrap point: the text column
+// is laid out with Modifier.weight(1f), whose default fill=true pins it to a fixed slot width, and
+// a widthIn(max=...) inside a fixed-width constraint is silently ignored. Raise this to wrap
+// sooner; a max-width token here would do nothing.
+internal val SettingsRowTextGap = 120.dp
 
 /** Vertical padding shared by every desktop settings row (switch, navigation, dropdown,
  * segmented) so row spacing no longer depends on which control type it hosts. Based on the
@@ -361,10 +391,16 @@ internal val LocalSettingsPage = staticCompositionLocalOf<SettingsPage?> { null 
 internal fun SettingsSection(
     title: String,
     isTablet: Boolean,
+    // Rendered immediately after the title text, so a header's own controls (e.g. a refresh or add
+    // icon) sit next to the heading with a little padding rather than pushed to the far right the
+    // way [actions] is.
+    titleTrailing: @Composable RowScope.() -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val displayTitle = settingsTitleCase(title)
+    val sectionHighlight = rememberSettingsAnchorHighlight(SettingsScrollAnchor.section(title))
     if (isTablet) {
         // Edge-to-edge desktop header: a real heading sitting directly on the page
         // background, not a small boxed label — rows below flow with no card wrapper.
@@ -373,7 +409,11 @@ internal fun SettingsSection(
         // favorite's identity. Empty string when there's no page context (favoriting disabled).
         val anchor = if (page != null) "heading:${page.name}:$title" else ""
         val highlight = rememberSettingsAnchorHighlight(anchor)
-        val titleColor = if (highlight.highlighted) tokens.colors.accent else tokens.colors.textPrimary
+        val titleColor = if (highlight.highlighted || sectionHighlight.highlighted) {
+            tokens.colors.accent
+        } else {
+            tokens.colors.textPrimary
+        }
         Column {
             Row(
                 modifier = Modifier
@@ -382,27 +422,36 @@ internal fun SettingsSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     Text(
-                        text = title,
+                        text = displayTitle,
                         style = MaterialTheme.nuvioTypeScale.titleSm,
                         color = titleColor,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = highlight.modifier.then(
-                            if (page != null) {
-                                // Right-click the heading to pin it as a favorite.
-                                Modifier.secondaryClick {
-                                    SettingsFavoritesRepository.add(
-                                        SettingsFavorite(page = page.name, anchor = anchor, title = title),
-                                    )
-                                }
-                            } else {
-                                Modifier
-                            },
-                        ),
+                        modifier = sectionHighlight.modifier
+                            .then(highlight.modifier)
+                            .then(
+                                if (page != null) {
+                                    // Right-click the heading to pin it as a favorite.
+                                    Modifier.secondaryClick {
+                                        SettingsFavoritesRepository.add(
+                                            SettingsFavorite(
+                                                page = page.name,
+                                                anchor = anchor,
+                                                title = displayTitle,
+                                            ),
+                                        )
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            ),
                     )
+                }
+                    titleTrailing()
                 }
                 Row(
                     horizontalArrangement = Arrangement.End,
@@ -416,7 +465,9 @@ internal fun SettingsSection(
     }
     Column {
         Surface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(sectionHighlight.modifier),
             color = tokens.colors.surface,
             shape = RoundedCornerShape(
                 topStart = NuvioTokens.Radius.sm,
@@ -433,14 +484,17 @@ internal fun SettingsSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = tokens.colors.textMuted,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = displayTitle,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = tokens.colors.textMuted,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    titleTrailing()
+                }
                 Row(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically,
@@ -481,8 +535,7 @@ internal fun SettingsNavigationRow(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .padding(end = if (isTablet) 40.dp else 12.dp)
-                .widthIn(max = if (isTablet) 560.dp else Dp.Unspecified),
+                .padding(end = if (isTablet) SettingsRowTextGap else 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null || iconPainter != null) {
@@ -638,8 +691,7 @@ internal fun SettingsSwitchRow(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(end = if (isTablet) 40.dp else 12.dp)
-                .widthIn(max = if (isTablet) 560.dp else Dp.Unspecified)
+                .padding(end = if (isTablet) SettingsRowTextGap else 12.dp)
                 .alpha(if (enabled) NuvioTokens.Opacity.visible else tokens.opacity.medium),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -744,7 +796,7 @@ internal fun <T> SettingsSegmentedChoiceRow(
             trailingInset = !flushContent,
             modifier = Modifier
                 .weight(1f)
-                .padding(end = if (flushContent) 0.dp else if (isTablet) 12.dp else 16.dp),
+                .padding(end = if (flushContent || isTablet) 0.dp else 16.dp),
         )
         SettingsSegmentedControl(
             options = options,
@@ -760,7 +812,7 @@ internal fun <T> SettingsSegmentedChoiceRow(
 /** The pill-shaped two-segment control shared by [SettingsSegmentedChoiceRow] and the boolean
  * [SettingsSwitchRow], so on/off toggles read the same as any other binary choice. */
 @Composable
-private fun <T> SettingsSegmentedControl(
+internal fun <T> SettingsSegmentedControl(
     options: List<SettingsChoiceOption<T>>,
     selectedValue: T,
     enabled: Boolean,
@@ -839,7 +891,7 @@ internal fun <T> SettingsDropdownChoiceRow(
             trailingInset = !flushContent,
             modifier = Modifier
                 .weight(1f)
-                .padding(end = if (flushContent) 0.dp else if (isTablet) 12.dp else 16.dp),
+                .padding(end = if (flushContent || isTablet) 0.dp else 16.dp),
         )
         Box(
             modifier = controlWidthModifier,
@@ -936,12 +988,11 @@ private fun SettingsRowText(
     val titleColor = settingsRowTitleColor(title)
     Column(
         // Inset the text on the trailing side so long descriptions wrap with a comfortable gap
-        // before the selector. Padding (not widthIn) is used deliberately: callers wrap this in
-        // Modifier.weight(1f), whose default fill=true forces the column to its full slot width and
-        // ignores widthIn — but padding always shrinks the content.
+        // before the selector. Must be padding, not widthIn — see SettingsRowTextGap. Dropdown and
+        // segmented rows route through here, so applying the shared gap keeps them wrapping at the
+        // same column as the switch rows rather than running closer to their control.
         modifier = modifier
-            .widthIn(max = if (isTablet) 560.dp else Dp.Unspecified)
-            .padding(end = if (isTablet && trailingInset) 28.dp else 0.dp),
+            .padding(end = if (isTablet && trailingInset) SettingsRowTextGap else 0.dp),
         verticalArrangement = Arrangement.spacedBy(if (isTablet) 2.dp else 4.dp),
     ) {
         Text(
@@ -971,6 +1022,7 @@ internal fun HomescreenCatalogRow(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onTitleChange: (String) -> Unit,
+    onMarkerColorChange: (HomeCatalogMarkerColor?) -> Unit,
     onEnabledChange: (Boolean) -> Unit,
     onSendToTop: () -> Unit,
     dragHandleScope: ReorderableCollectionItemScope,
@@ -996,8 +1048,7 @@ internal fun HomescreenCatalogRow(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(end = if (isTablet) 40.dp else 12.dp)
-                    .then(if (isTablet) Modifier.widthIn(max = 560.dp) else Modifier),
+                    .padding(end = if (isTablet) SettingsRowTextGap else 12.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
@@ -1070,7 +1121,7 @@ internal fun HomescreenCatalogRow(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.ArrowUpward,
-                            contentDescription = "Send to top",
+                            contentDescription = stringResource(Res.string.cd_send_to_top),
                             tint = tokens.colors.textMuted,
                         )
                     }
@@ -1104,7 +1155,7 @@ internal fun HomescreenCatalogRow(
                 OutlinedTextField(
                     value = item.customTitle,
                     onValueChange = onTitleChange,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
                     singleLine = true,
                     label = { Text(stringResource(Res.string.settings_homescreen_display_name)) },
                     placeholder = { Text(item.defaultTitle) },
@@ -1115,6 +1166,111 @@ internal fun HomescreenCatalogRow(
                         unfocusedContainerColor = tokens.colors.surface,
                         disabledContainerColor = tokens.colors.surface,
                     ),
+                )
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = stringResource(Res.string.settings_homescreen_bookmark_color),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = tokens.colors.textPrimary,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = stringResource(Res.string.settings_homescreen_bookmark_color_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = tokens.colors.textMuted,
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CatalogMarkerColorOption(
+                            markerColor = null,
+                            selected = item.markerColor == null,
+                            contentDescription = stringResource(
+                                Res.string.settings_homescreen_bookmark_color_none,
+                            ),
+                            onClick = { onMarkerColorChange(null) },
+                        )
+                        HomeCatalogMarkerColor.entries.forEach { markerColor ->
+                            CatalogMarkerColorOption(
+                                markerColor = markerColor,
+                                selected = item.markerColor == markerColor,
+                                contentDescription =
+                                    "${stringResource(Res.string.settings_homescreen_bookmark_color)}: " +
+                                        markerColor.accessibleName,
+                                onClick = { onMarkerColorChange(markerColor) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CatalogMarkerColorOption(
+    markerColor: HomeCatalogMarkerColor?,
+    selected: Boolean,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    val tokens = MaterialTheme.nuvio
+    val swatchColor = markerColor?.composeColor ?: tokens.colors.surface
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(40.dp)
+            .semantics {
+                this.contentDescription = contentDescription
+                this.selected = selected
+            },
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(swatchColor)
+                .border(
+                    width = if (selected) 3.dp else 1.dp,
+                    color = if (selected) {
+                        tokens.colors.borderFocus
+                    } else {
+                        tokens.colors.borderDefault.copy(alpha = tokens.opacity.strong)
+                    },
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (markerColor == null) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(7.dp),
+                ) {
+                    drawLine(
+                        color = tokens.colors.textMuted,
+                        start = Offset(0f, size.height),
+                        end = Offset(size.width, 0f),
+                        strokeWidth = 2.dp.toPx(),
+                        cap = StrokeCap.Round,
+                    )
+                }
+            } else if (selected) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(17.dp),
+                    tint = if (markerColor.prefersDarkForeground) {
+                        Color.Black.copy(alpha = 0.78f)
+                    } else {
+                        Color.White
+                    },
                 )
             }
         }

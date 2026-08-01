@@ -70,4 +70,48 @@ class LocalAnimeEpisodeMatcherTest {
             LocalAnimeEpisodeMatcher.matchFiles(malItem, "myanimelist:123:12"),
         )
     }
+
+    @Test
+    fun `pokemon sibling kitsu entries do not share absolute local files`() {
+        val xyFile = LocalMediaFile(path = "/anime/Pokemon XY - 12.mkv", episode = 12)
+        val xyzFile = LocalMediaFile(path = "/anime/Pokemon XYZ - 12.mkv", episode = 12)
+        val xy = pokemonItem(kitsuId = 7850, malId = 19291, file = xyFile)
+        val xyz = pokemonItem(kitsuId = 11367, malId = 31592, file = xyzFile)
+
+        assertTrue(LocalAnimeEpisodeMatcher.matchFiles(xy, "kitsu:11367:12").orEmpty().isEmpty())
+        assertEquals(listOf(xyzFile), LocalAnimeEpisodeMatcher.matchFiles(xyz, "kitsu:11367:12"))
+        assertTrue(LocalAnimeEpisodeMatcher.matchFiles(xyz, "kitsu:7850:12").orEmpty().isEmpty())
+        assertEquals(listOf(xyFile), LocalAnimeEpisodeMatcher.matchFiles(xy, "kitsu:7850:12"))
+    }
+
+    @Test
+    fun `internal mapping overrides franchise-looking source coordinates`() {
+        val mapped = LocalMediaFile(
+            path = "/anime/Pokemon XYZ S17E12.mkv",
+            season = 17,
+            episode = 12,
+            mappedEpisode = 13,
+        )
+        val xyz = pokemonItem(kitsuId = 11367, malId = 31592, file = mapped)
+
+        assertTrue(LocalAnimeEpisodeMatcher.matchFiles(xyz, "kitsu:11367:12").orEmpty().isEmpty())
+        assertEquals(listOf(mapped), LocalAnimeEpisodeMatcher.matchFiles(xyz, "kitsu:11367:13"))
+    }
+
+    private fun pokemonItem(
+        kitsuId: Int,
+        malId: Int,
+        file: LocalMediaFile,
+    ) = LocalMediaItem(
+        key = "folder:pokemon-$kitsuId",
+        folderId = "folder",
+        type = LocalFolderType.SERIES,
+        isAnime = true,
+        title = "Pokemon",
+        imdbId = "tt0168366",
+        tmdbId = 60572,
+        kitsuId = kitsuId,
+        malId = malId,
+        files = listOf(file),
+    )
 }

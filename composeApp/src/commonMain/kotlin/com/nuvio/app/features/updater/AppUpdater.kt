@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.build.AppVersionConfig
 import com.nuvio.app.core.i18n.localizedByteUnit
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.addons.httpRequestRaw
 import kotlinx.coroutines.CoroutineScope
@@ -500,15 +501,9 @@ fun AppUpdaterHost(
             }
         },
     ) {
-        Surface(
-            modifier = modifier
+        NuvioDialogSurface(modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 8.dp,
-            shadowElevation = 16.dp,
-        ) {
+                .padding(horizontal = 20.dp)) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),

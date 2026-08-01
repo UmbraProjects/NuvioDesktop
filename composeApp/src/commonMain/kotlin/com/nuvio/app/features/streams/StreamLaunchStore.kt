@@ -14,6 +14,7 @@ data class StreamLaunch(
     val logo: String? = null,
     val poster: String? = null,
     val background: String? = null,
+    val releaseYear: Int? = null,
     val seasonNumber: Int? = null,
     val episodeNumber: Int? = null,
     val episodeTitle: String? = null,
@@ -22,6 +23,9 @@ data class StreamLaunch(
     val resumePositionMs: Long? = null,
     val resumeProgressFraction: Float? = null,
     val manualSelection: Boolean = false,
+    // Captured at play time from the detail page that launched playback, so the streams request
+    // doesn't re-read a shared flag that a later, unrelated detail load may have overwritten.
+    val preferLocalStreams: Boolean = false,
     val startFromBeginning: Boolean = false,
     val disableProgressTracking: Boolean = false,
     val autoPlayMode: PlayerAutoPlayMode = PlayerAutoPlayMode.NextEpisode,

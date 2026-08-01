@@ -104,6 +104,84 @@ class AnimeIdMappingSelectionTest {
         )
     }
 
+    /**
+     * Pokémon season 15 is three anime-list entries — Best Wishes! S2, Episode N and Decolora
+     * Adventure — sharing one TVDB/TMDB season at offsets 0/24/38, and the rows carry those offsets
+     * under `tvdb` only. Treating the absent tmdb offset as 0 made all three claim the season's
+     * first cour, which ties and drops back to whichever entry was already open.
+     */
+    @Test
+    fun bundledPokemonSeasonFifteenSplitsResolveFromASiblingEntry() {
+        val decolora = AnimeIdMappingRepository.lookup(
+            ResolvedMediaIds(sourceId = "kitsu:7895", contentType = "series", kitsu = 7895),
+        )
+        assertEquals(7895, decolora?.kitsuId, "bundled mapping no longer contains the Decolora entry")
+
+        fun entryFor(episode: Int) = AnimeIdMappingRepository.franchiseEntryFor(
+            base = decolora!!,
+            season = 15,
+            episode = episode,
+        )?.kitsuId
+
+        // Asked from the wrong sibling, so a tie would answer 7895 for every episode.
+        assertEquals(7080, entryFor(1))
+        assertEquals(7586, entryFor(30))
+        assertEquals(7895, entryFor(45))
+    }
+
+    @Test
+    fun aProviderOnlyOffsetAppliesToTheSeasonItShares() {
+        val firstCour = AnimeIdMapping(kitsuId = 1, tmdbSeason = 15, tvdbSeason = 15)
+        val laterCour = AnimeIdMapping(
+            kitsuId = 2,
+            tmdbSeason = 15,
+            tvdbSeason = 15,
+            tvdbEpisodeOffset = 38,
+        )
+
+        assertEquals(
+            firstCour,
+            selectAnimeMappingByCoordinates(
+                candidates = listOf(firstCour, laterCour),
+                season = 15,
+                episode = 1,
+                coordinateSystem = AnimeMappingCoordinateSystem.AUTO,
+            ),
+        )
+        assertEquals(
+            laterCour,
+            selectAnimeMappingByCoordinates(
+                candidates = listOf(firstCour, laterCour),
+                season = 15,
+                episode = 39,
+                coordinateSystem = AnimeMappingCoordinateSystem.AUTO,
+            ),
+        )
+    }
+
+    /** Different seasons mean the offset is not expressed in the same numbering, so it must not
+     * carry across: a tvdb offset says nothing about where a differently-numbered tmdb season
+     * starts. */
+    @Test
+    fun aProviderOnlyOffsetDoesNotCarryAcrossDifferentSeasons() {
+        val mapping = AnimeIdMapping(
+            kitsuId = 1,
+            tmdbSeason = 2,
+            tvdbSeason = 15,
+            tvdbEpisodeOffset = 38,
+        )
+
+        assertEquals(
+            mapping,
+            selectAnimeMappingByCoordinates(
+                candidates = listOf(mapping),
+                season = 2,
+                episode = 1,
+                coordinateSystem = AnimeMappingCoordinateSystem.TMDB,
+            ),
+        )
+    }
+
     @Test
     fun ambiguousCoordinateDoesNotGuessFromJsonOrder() {
         val first = AnimeIdMapping(kitsuId = 1, tmdbSeason = 1)

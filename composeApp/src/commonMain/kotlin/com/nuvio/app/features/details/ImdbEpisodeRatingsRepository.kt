@@ -49,7 +49,11 @@ object ImdbEpisodeRatingsRepository {
                         mutex.withLock {
                             cache[cacheKey] = CacheEntry(
                                 ratings = ratings,
-                                expiresAtMs = currentTimeMs() + CACHE_TTL_MS,
+                                expiresAtMs = currentTimeMs() + if (ratings.isEmpty()) {
+                                    EMPTY_CACHE_TTL_MS
+                                } else {
+                                    CACHE_TTL_MS
+                                },
                             )
                         }
                     }
@@ -78,7 +82,11 @@ object ImdbEpisodeRatingsRepository {
         if (!imdbId.isNullOrBlank()) {
             val primary = toRatingsMap(ImdbTapframeApi.getSeasonRatings(imdbId))
             if (primary.isNotEmpty()) return primary
-            log.w { "Primary episode ratings empty for imdbId=$imdbId, trying fallback" }
+
+            val directImdb = episodeDtosToRatingsMap(ImdbGraphQlApi.getEpisodeRatings(imdbId))
+            if (directImdb.isNotEmpty()) return directImdb
+
+            log.w { "IMDb episode ratings empty for imdbId=$imdbId, trying TMDB fallback" }
         }
 
         if (tmdbId != null) {
@@ -100,6 +108,18 @@ object ImdbEpisodeRatingsRepository {
             }
         }
 
+    private fun episodeDtosToRatingsMap(
+        payload: List<SeriesGraphEpisodeRatingDto>,
+    ): Map<Pair<Int, Int>, Double> =
+        buildMap {
+            payload.forEach { episode ->
+                val seasonNumber = episode.seasonNumber ?: return@forEach
+                val episodeNumber = episode.episodeNumber ?: return@forEach
+                val voteAverage = episode.voteAverage?.takeIf { it > 0.0 } ?: return@forEach
+                put(seasonNumber to episodeNumber, voteAverage)
+            }
+        }
+
     private fun normalizeImdbId(value: String?): String? =
         value
             ?.trim()
@@ -109,4 +129,5 @@ object ImdbEpisodeRatingsRepository {
     private fun currentTimeMs(): Long = LibraryClock.nowEpochMs()
 
     private const val CACHE_TTL_MS = 30L * 60L * 1000L
+    private const val EMPTY_CACHE_TTL_MS = 60L * 1000L
 }

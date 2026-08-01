@@ -54,12 +54,33 @@ internal expect fun releaseProviderDiagnosticVideo(sourceUrl: String)
 internal fun shouldSkipProviderDiagnosticVideo(streamFailoverEnabled: Boolean): Boolean =
     streamFailoverEnabled
 
+private const val PROVIDER_WAIT_VIDEO_DURATION_MS = 120_000L
+private const val PROVIDER_WAIT_VIDEO_DURATION_TOLERANCE_MS = 1_500L
+
+/**
+ * Detects the debrid "file is being downloaded" status clip after mpv has exposed its media
+ * metadata. The resume mismatch keeps this deliberately narrow: an actual two-minute episode is
+ * not diagnostic, but a two-minute file cannot satisfy a resume point from later in a normal
+ * episode. Native code independently blocks VapourSynth for the duration signature so detection
+ * remains crash-safe before this common-layer callback runs.
+ */
+internal fun isLikelyProviderWaitVideo(
+    durationMs: Long,
+    requestedResumePositionMs: Long,
+    isSeries: Boolean,
+): Boolean =
+    isSeries &&
+        durationMs in
+            (PROVIDER_WAIT_VIDEO_DURATION_MS - PROVIDER_WAIT_VIDEO_DURATION_TOLERANCE_MS)..
+            (PROVIDER_WAIT_VIDEO_DURATION_MS + PROVIDER_WAIT_VIDEO_DURATION_TOLERANCE_MS) &&
+        requestedResumePositionMs > durationMs + 1_000L
+
 internal fun PlayerScreenRuntime.activateProviderDiagnosticVideo(diagnostic: ProviderDiagnosticVideo) {
     removeFailedStreamFromCache()
     hasRequestedScrobbleStartForCurrentItem = false
     scrobbleStartRequestGeneration += 1L
     pendingScrobbleStartAfterSeek = false
-    currentTraktScrobbleItem = null
+    currentTrackingScrobbleMedia = null
     providerDiagnosticVideoSourceUrl = diagnostic.sourceUrl
     providerDiagnosticProbePendingSourceUrl = null
     activeSourceAudioUrl = null
@@ -69,5 +90,6 @@ internal fun PlayerScreenRuntime.activateProviderDiagnosticVideo(diagnostic: Pro
     activeInitialProgressFraction = null
     shouldPlay = true
     errorMessage = null
+    beginPlaybackAttempt()
     activeSourceUrl = diagnostic.sourceUrl
 }

@@ -40,7 +40,7 @@ fun configureDesktopFileLogging() {
             previousHandler?.uncaughtException(thread, error)
         }
         System.out.println("${Instant.now()} Nuvio desktop logging started: ${sink.activeFile.absolutePath}")
-        relocateNativeCrashArtifacts(logDirectory)
+        relocateJvmDiagnosticArtifacts(logDirectory)
     }.onFailure { error ->
         originalErr.println("Unable to initialize Nuvio file logging: ${error.message}")
     }
@@ -51,18 +51,19 @@ private fun desktopLogDirectory(): File {
 }
 
 /**
- * Moves JVM native-crash artifacts into the normal log directory so they sit beside nuvio.log and
+ * Moves JVM diagnostic artifacts into the normal log directory so they sit beside nuvio.log and
  * get picked up by the "Open logs folder" flow / user log bundles.
  *
  * These are the `hs_err_pid*.log` HotSpot crash report and the `.mdmp` minidump produced by the
- * `-XX:ErrorFile` / `-XX:+CreateCoredumpOnCrash` flags (see the jvmArgs block in
- * composeApp/build.gradle.kts). `-XX:ErrorFile` is a static startup flag that can't expand
+ * `-XX:ErrorFile` / `-XX:+CreateCoredumpOnCrash` flags, plus the `nuvio_safepoint_pid*.log`
+ * stop-the-world log produced by `-Xlog:safepoint,gc` (see the jvmArgs block in
+ * composeApp/build.gradle.kts). All of them are static startup flags that can't expand
  * `%LOCALAPPDATA%` into this user's per-profile log dir, so the JVM is pointed at a fixed,
- * always-writable drop location (C:\Users\Public) and we consolidate on the next launch. This is
- * inherently crash-then-relaunch: the crash kills the process, so the move can only happen after.
- * Windows-only, matching the flags; a no-op elsewhere.
+ * always-writable drop location (C:\Users\Public) and we consolidate on the next launch. For the
+ * crash artifacts that is inherently crash-then-relaunch: the crash kills the process, so the move
+ * can only happen after. Windows-only, matching the flags; a no-op elsewhere.
  */
-private fun relocateNativeCrashArtifacts(logDirectory: File) {
+private fun relocateJvmDiagnosticArtifacts(logDirectory: File) {
     val isWindows = System.getProperty("os.name").orEmpty().contains("Windows", ignoreCase = true)
     if (!isWindows) return
 
@@ -74,17 +75,22 @@ private fun relocateNativeCrashArtifacts(logDirectory: File) {
         System.getenv("PUBLIC")?.let { add(File(it) to true) }
         System.getenv("TEMP")?.let { add(File(it) to false) }
     }
+    // This run's own safepoint log is open and still being appended to. Moving it would either
+    // fail on the Windows share lock or pull the file out from under the VM, so skip anything
+    // carrying our PID and let the next launch collect it.
+    val currentPidMarker = "pid${ProcessHandle.current().pid()}"
     val seenDirs = mutableSetOf<String>()
     for ((dir, broad) in sources) {
         val key = runCatching { dir.canonicalPath }.getOrDefault(dir.absolutePath)
         if (!seenDirs.add(key) || !dir.isDirectory) continue
-        val crashFiles = dir.listFiles { file ->
+        val artifacts = dir.listFiles { file ->
             file.isFile && (
                 file.name.startsWith("nuvio_hs_err_pid") ||
+                    file.name.startsWith("nuvio_safepoint_pid") ||
                     (broad && file.name.startsWith("hs_err_pid"))
-                )
+                ) && !file.name.contains(currentPidMarker)
         } ?: continue
-        for (source in crashFiles) {
+        for (source in artifacts) {
             val destination = File(logDirectory, source.name)
             runCatching {
                 Files.move(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
@@ -93,7 +99,7 @@ private fun relocateNativeCrashArtifacts(logDirectory: File) {
                 Files.copy(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
                 source.delete()
             }.onSuccess {
-                System.out.println("${Instant.now()} Relocated native crash artifact to ${destination.absolutePath}")
+                System.out.println("${Instant.now()} Relocated JVM diagnostic artifact to ${destination.absolutePath}")
             }
         }
     }

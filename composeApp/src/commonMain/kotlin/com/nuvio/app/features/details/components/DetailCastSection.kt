@@ -35,6 +35,8 @@ import com.nuvio.app.core.ui.desktopHorizontalListNavigation
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import com.nuvio.app.features.details.MetaPerson
+import com.nuvio.app.core.ui.NuvioCardDepthSurface
+import com.nuvio.app.core.ui.nuvioCardDepth
 import com.nuvio.app.features.details.castAvatarSharedTransitionKey
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -161,7 +163,8 @@ private fun CastItem(
                 .background(
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     shape = CircleShape,
-                ),
+                )
+                .nuvioCardDepth(CircleShape, NuvioCardDepthSurface.Cast),
             contentAlignment = Alignment.Center,
         ) {
             if (person.photo != null) {

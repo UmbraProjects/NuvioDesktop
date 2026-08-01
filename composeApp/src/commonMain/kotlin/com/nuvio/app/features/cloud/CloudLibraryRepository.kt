@@ -1,5 +1,7 @@
 package com.nuvio.app.features.cloud
 
+import com.nuvio.app.features.catalog.FilenameMetaResolver
+import com.nuvio.app.features.catalog.ResolvedName
 import com.nuvio.app.features.debrid.DebridProviderCapability
 import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.debrid.DebridServiceCredential
@@ -7,6 +9,7 @@ import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.supports
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -97,6 +100,7 @@ object CloudLibraryRepository {
     )
     private val _uiState = MutableStateFlow(CloudLibraryUiState())
     private var loadedConnectionKeys: List<CloudConnectionKey> = emptyList()
+    private var resolveNamesJob: Job? = null
     val uiState = _uiState.asStateFlow()
 
     fun ensureLoaded() {
@@ -132,6 +136,33 @@ object CloudLibraryRepository {
             val refreshed = store.refresh()
             loadedConnectionKeys = connectedCloudConnectionKeys()
             _uiState.value = refreshed
+            resolveDisplayNames(refreshed)
+        }
+    }
+
+    /**
+     * Turns torrent names into real titles and posters in the background, then re-publishes.
+     *
+     * Deliberately after the raw state is emitted: the library appears immediately and improves a
+     * moment later instead of waiting on TMDB. Every failure leaves the raw names in place.
+     */
+    private fun resolveDisplayNames(state: CloudLibraryUiState) {
+        val names = state.items.map { it.name }.filter { it.isNotBlank() }.distinct()
+        if (names.isEmpty()) return
+        resolveNamesJob?.cancel()
+        resolveNamesJob = scope.launch {
+            // The resolver caps how long one call waits and finishes the rest in the background, so
+            // a large account fills in over a few passes. A pass that adds nothing new is the end.
+            var published = 0
+            repeat(RESOLVE_NAMES_PASSES) {
+                val resolved = runCatching {
+                    FilenameMetaResolver.resolveNames(names, catalogType = CloudLibraryContentType)
+                }.getOrDefault(emptyMap())
+                if (resolved.size <= published) return@launch
+                published = resolved.size
+                // update(), not assignment: a playback URL may have been stored while we resolved.
+                _uiState.update { current -> current.withResolvedNames(resolved) }
+            }
         }
     }
 
@@ -248,8 +279,11 @@ object CloudLibraryRepository {
         val refreshed = store.refresh()
         loadedConnectionKeys = connectedCloudConnectionKeys()
         _uiState.value = refreshed
+        resolveDisplayNames(refreshed)
         return refreshed
     }
+
+    private const val RESOLVE_NAMES_PASSES = 3
 
     private data class CloudConnectionKey(
         val providerId: String,
@@ -280,6 +314,27 @@ internal fun CloudLibraryUiState.findPlaybackTargetForProgress(
     val singleItem = matchingItems.singleOrNull() ?: return null
     val singleFile = singleItem.playableFiles.singleOrNull() ?: return null
     return CloudLibraryPlaybackTarget(item = singleItem, file = singleFile)
+}
+
+/** Attaches titles/artwork recovered from torrent names, keyed by the raw name that was resolved. */
+internal fun CloudLibraryUiState.withResolvedNames(
+    resolved: Map<String, ResolvedName>,
+): CloudLibraryUiState {
+    if (resolved.isEmpty()) return this
+    var didUpdate = false
+    val updatedProviders = providers.map { providerState ->
+        val updatedItems = providerState.items.map { item ->
+            val match = resolved[item.name] ?: return@map item
+            didUpdate = true
+            item.copy(
+                resolvedName = match.displayName,
+                resolvedPoster = match.poster ?: match.posterFallback,
+                resolvedBackdrop = match.backdrop,
+            )
+        }
+        providerState.copy(items = updatedItems)
+    }
+    return if (didUpdate) copy(providers = updatedProviders) else this
 }
 
 internal fun CloudLibraryUiState.withResolvedPlaybackUrl(

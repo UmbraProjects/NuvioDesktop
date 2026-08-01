@@ -55,6 +55,7 @@ actual fun PlatformPlayerSurface(
     initialPositionMs: Long,
     initialProgressFraction: Float?,
     initialPlaybackSpeed: Float,
+    playbackAttemptId: Long,
     useNativeController: Boolean,
     playerControlsState: PlayerControlsState,
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
@@ -62,6 +63,7 @@ actual fun PlatformPlayerSurface(
     onPlayerControlsScrubChange: (Long) -> Boolean,
     onPlayerControlsScrubFinished: (Long) -> Boolean,
     onControllerReady: (PlayerEngineController) -> Unit,
+    onPlayerAttached: () -> Unit,
     onSnapshot: (PlayerPlaybackSnapshot) -> Unit,
     onError: (String?) -> Unit,
 ) {
@@ -77,12 +79,14 @@ actual fun PlatformPlayerSurface(
             initialPositionMs = initialPositionMs,
             initialProgressFraction = initialProgressFraction,
             initialPlaybackSpeed = initialPlaybackSpeed,
+            playbackAttemptId = playbackAttemptId,
             playerControlsState = playerControlsState,
             onPlayerControlsAction = onPlayerControlsAction,
             onPlayerControlsEvent = onPlayerControlsEvent,
             onPlayerControlsScrubChange = onPlayerControlsScrubChange,
             onPlayerControlsScrubFinished = onPlayerControlsScrubFinished,
             onControllerReady = onControllerReady,
+            onPlayerAttached = onPlayerAttached,
             onSnapshot = onSnapshot,
             onError = onError,
         )
@@ -92,6 +96,7 @@ actual fun PlatformPlayerSurface(
     DesktopStubPlayerSurface(
         modifier = modifier,
         onControllerReady = onControllerReady,
+        onPlayerAttached = onPlayerAttached,
         onSnapshot = onSnapshot,
     )
 }
@@ -108,12 +113,14 @@ private fun NativePlayerSurface(
     initialPositionMs: Long,
     initialProgressFraction: Float?,
     initialPlaybackSpeed: Float,
+    playbackAttemptId: Long,
     playerControlsState: PlayerControlsState,
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
     onPlayerControlsEvent: (String, Double) -> Boolean,
     onPlayerControlsScrubChange: (Long) -> Boolean,
     onPlayerControlsScrubFinished: (Long) -> Boolean,
     onControllerReady: (PlayerEngineController) -> Unit,
+    onPlayerAttached: () -> Unit,
     onSnapshot: (PlayerPlaybackSnapshot) -> Unit,
     onError: (String?) -> Unit,
 ) {
@@ -123,8 +130,11 @@ private fun NativePlayerSurface(
     val hostFirstFullSizePaintComplete = remember { mutableStateOf(false) }
     val videoIsHdr = remember { mutableStateOf<Boolean?>(null) }
     val videoVsrScale = remember { mutableStateOf<Double?>(null) }
+    // Whether Windows itself has HDR on for this display — reported by the native bridge per
+    // file load. Null until the first report.
+    val displayHdrEnabled = remember { mutableStateOf<Boolean?>(null) }
     val videoProfileRefreshToken = remember { mutableIntStateOf(0) }
-    LaunchedEffect(sourceUrl) {
+    LaunchedEffect(playbackAttemptId, sourceUrl) {
         DesktopPlayerLaunchShield.showForActiveWindow()
     }
     val playbackHeaders = remember(sourceHeaders) { sanitizePlaybackHeaders(sourceHeaders) }
@@ -137,9 +147,14 @@ private fun NativePlayerSurface(
     // change would leave the callback writing to the previous file's state object.
     val videoPipelineReady = remember { mutableStateOf(!initialAnimeSvpRequested) }
     val svpStartupProfileAcknowledgementPending = remember { mutableStateOf(false) }
-    LaunchedEffect(sourceUrl) {
+    LaunchedEffect(playbackAttemptId, sourceUrl) {
         videoPipelineReady.value = !initialAnimeSvpRequested
         svpStartupProfileAcknowledgementPending.value = false
+        // Per-source, not per-player: this token is what `fileLoaded` below is derived from, and
+        // leaving the previous file's count in place made that read true from the moment a new
+        // source was attached. The profile pass would then queue vapoursynth into `vf` before mpv
+        // had resolved the incoming stream at all — the window that kills the native process.
+        videoProfileRefreshToken.intValue = 0
     }
     // The native side pins the D3D11 device to the NVIDIA GPU (and captures the diagnostic mpv
     // log) when VSR is on — the d3d11vpp video processor needs the NVIDIA adapter, which matters
@@ -150,9 +165,10 @@ private fun NativePlayerSurface(
     val latestOnPlayerControlsEvent = rememberUpdatedState(onPlayerControlsEvent)
     val latestOnPlayerControlsScrubChange = rememberUpdatedState(onPlayerControlsScrubChange)
     val latestOnPlayerControlsScrubFinished = rememberUpdatedState(onPlayerControlsScrubFinished)
+    val latestOnSnapshot = rememberUpdatedState(onSnapshot)
     val latestOnError = rememberUpdatedState(onError)
 
-    LaunchedEffect(controller, sourceUrl) {
+    LaunchedEffect(controller, playbackAttemptId, sourceUrl) {
         onControllerReady(controller)
     }
 
@@ -188,6 +204,9 @@ private fun NativePlayerSurface(
                 } else if (type == "videoVsrScale") {
                     videoVsrScale.value = value
                     true
+                } else if (type == "displayHdr") {
+                    displayHdrEnabled.value = value != 0.0
+                    true
                 } else if (type == "fileLoaded") {
                     PlaybackStartTrace.mark("fileLoaded")
                     videoProfileRefreshToken.intValue += 1
@@ -205,6 +224,7 @@ private fun NativePlayerSurface(
                     // native pre-roll transaction to the normal runtime profile owner.
                     videoPipelineReady.value = true
                     PlaybackStartTrace.complete("firstFrame")
+                    latestOnPlayerControlsEvent.value(type, value)
                     true
                 } else {
                     latestOnPlayerControlsEvent.value(type, value)
@@ -300,6 +320,7 @@ private fun NativePlayerSurface(
 
     LaunchedEffect(
         controller,
+        playbackAttemptId,
         sourceUrl,
         playbackHeaders,
         nvidiaRtxSuperResolutionEnabled,
@@ -318,7 +339,9 @@ private fun NativePlayerSurface(
         // set a new activeSourceUrl (see BingeAdvance "switchToEpisodeStream" log) but this line
         // never follows while the window is minimized, that confirms the attach is waiting on a
         // paused recomposition rather than something in stream selection.
-        BingeAdvanceLog.i { "desktop attach firing sourceUrl=${sourceUrl.takeLast(48)}" }
+        BingeAdvanceLog.i {
+            "desktop attach firing attemptId=$playbackAttemptId sourceUrl=${sourceUrl.takeLast(48)}"
+        }
         controller.attach(
             tracePlaybackStart = true,
             sourceUrl = sourceUrl,
@@ -344,6 +367,7 @@ private fun NativePlayerSurface(
             restoreVolume = true,
             onError = { message -> latestOnError.value(message) },
         )
+        onPlayerAttached()
     }
 
     LaunchedEffect(controller, playWhenReady) {
@@ -362,14 +386,15 @@ private fun NativePlayerSurface(
         controller.updateControls(playerControlsState)
     }
 
-    LaunchedEffect(sourceUrl) {
+    LaunchedEffect(playbackAttemptId, sourceUrl) {
         videoIsHdr.value = null
         videoVsrScale.value = null
+        displayHdrEnabled.value = null
         // Note: the anime session override deliberately survives source changes — a forced preset
         // should carry across binged episodes and only reset when the player closes.
     }
 
-    LaunchedEffect(controller, sourceUrl, isAnimeContent) {
+    LaunchedEffect(controller, playbackAttemptId, sourceUrl, isAnimeContent) {
         // Apply the saved colour/HDR presets whenever they change or the file's HDR
         // state is (re)detected. Deliberately NOT gated on HDR detection: the colour
         // profile (and F8/F9 changes) must take effect even if the video-params event
@@ -382,6 +407,7 @@ private fun NativePlayerSurface(
             snapshotFlow {
                 DesktopVideoProfileState(
                     isHdr = videoIsHdr.value,
+                    displayHdr = displayHdrEnabled.value,
                     vsrScale = videoVsrScale.value,
                     refreshToken = videoProfileRefreshToken.intValue,
                     pipelineReady = videoPipelineReady.value,
@@ -396,6 +422,16 @@ private fun NativePlayerSurface(
                 // forcing two more decoder/filter rebuilds during startup.
                 if (!videoState.pipelineReady) return@collect
                 if (settings.desktopMpvConfigMode == DesktopMpvConfigMode.Full) {
+                    // The user's own mpv.conf owns the picture here, so there is nothing truthful to
+                    // say about HDR/SVP/shaders — but the panel still has a subtitle row to show,
+                    // and it only ever appears once a session has been announced.
+                    controller.setPlaybackInfo(
+                        session = "$playbackAttemptId:${sourceUrl.hashCode()}",
+                        hdrLabel = null,
+                        svpActive = false,
+                        videoLabel = "",
+                        shaderLabel = null,
+                    )
                     if (svpStartupProfileAcknowledgementPending.value) {
                         svpStartupProfileAcknowledgementPending.value = false
                         controller.completeSvpStartupProfile()
@@ -422,7 +458,7 @@ private fun NativePlayerSurface(
                     isHdr = isHdr,
                 )
                 controller.applyDesktopBufferPreset(settings.desktopBufferPreset)
-                applyDesktopAnimeProfile(
+                val animeProfile = applyDesktopAnimeProfile(
                     controller = controller,
                     mode = settings.desktopAnimeMode,
                     autoEnabled = settings.desktopAnimeModeAutoEnabled,
@@ -439,6 +475,26 @@ private fun NativePlayerSurface(
                     nvidiaRtxHdrEnabled = settings.nvidiaRtxHdrEnabled,
                     customShaderPaths = settings.desktopCustomShaderPaths,
                     customShaderSelectedPath = settings.desktopCustomShaderSelectedPath,
+                )
+                // Same pass, same inputs: the info panel reports what was just applied rather than
+                // re-deriving it from the settings, which would disagree with the picture whenever a
+                // preset didn't actually take (SDR file + HDR mode, live action + anime preset).
+                controller.setPlaybackInfo(
+                    session = "$playbackAttemptId:${sourceUrl.hashCode()}",
+                    hdrLabel = desktopHdrInfoLabel(
+                        isHdr = isHdr,
+                        hdrMode = settings.desktopHdrMode,
+                        displayHdr = videoState.displayHdr,
+                    ),
+                    svpActive = animeProfile.svpActive,
+                    // Both, not one or the other: a shader chain runs on top of the colour preset,
+                    // it does not replace it.
+                    videoLabel = desktopColorProfileInfoLabel(
+                        colorProfile = settings.desktopColorProfile,
+                        isHdr = isHdr,
+                        hdrMode = settings.desktopHdrMode,
+                    ),
+                    shaderLabel = animeProfile.shaderLabel,
                 )
                 if (svpStartupProfileAcknowledgementPending.value) {
                     svpStartupProfileAcknowledgementPending.value = false
@@ -463,9 +519,9 @@ private fun NativePlayerSurface(
             }
     }
 
-    LaunchedEffect(controller) {
+    LaunchedEffect(controller, playbackAttemptId, sourceUrl) {
         while (true) {
-            onSnapshot(controller.snapshot())
+            latestOnSnapshot.value(controller.snapshot())
             delay(500L)
         }
     }
@@ -498,8 +554,67 @@ private fun NativePlayerSurface(
     }
 }
 
+/**
+ * Display name for an active custom shader: its entry in the user's shader library, falling back to
+ * the file's own name. The fallback matters — without it a shader the library lookup misses would
+ * leave the info panel naming the colour preset while a shader was demonstrably running.
+ */
+private fun String.customShaderDisplayName(libraryPaths: String): String? {
+    if (isBlank()) return null
+    DesktopCustomShaders.availableShaders(libraryPaths)
+        .firstOrNull { it.path == this }
+        ?.let { return it.label }
+    return substringAfterLast('\\').substringAfterLast('/').substringBeforeLast('.')
+        .takeIf { it.isNotBlank() }
+}
+
+/** What [applyDesktopAnimeProfile] actually ended up doing, for the playback-info panel. */
+private data class DesktopAnimeProfileResult(
+    /** Active shader chain's display name, or null when the picture is running ungraded by one. */
+    val shaderLabel: String?,
+    val svpActive: Boolean,
+)
+
+/**
+ * The HDR row's value, or null when the row should be left out entirely. Present only for genuinely
+ * HDR video: on an SDR file every HDR mode is a no-op, and saying "HDR: Off" there is noise.
+ *
+ * The values name themselves ("HDR Passthrough") because the panel prints no captions.
+ *
+ * [displayHdr] decides the Auto case. Auto hands the choice to mpv's `target-colorspace-hint=auto`,
+ * which passes HDR through to an HDR display and tone maps it down to an SDR one — so without
+ * knowing the display's state the row cannot say which of the two actually happened. Unknown is
+ * reported as passthrough, matching what Auto does whenever the display can take it.
+ */
+private fun desktopHdrInfoLabel(
+    isHdr: Boolean?,
+    hdrMode: DesktopHdrMode,
+    displayHdr: Boolean?,
+): String? = when {
+    isHdr != true -> null
+    hdrMode == DesktopHdrMode.AlwaysTonemap -> "HDR Tone Mapped to SDR"
+    hdrMode == DesktopHdrMode.Auto && displayHdr == false -> "HDR Tone Mapped to SDR"
+    else -> "HDR Passthrough"
+}
+
+/**
+ * The colour preset as it is actually being applied — which is neutral on HDR video that isn't being
+ * tonemapped, because the presets are SDR-tuned equalizer offsets and are deliberately suppressed
+ * there (see the forceNeutral note in [applyDesktopVideoProfile]).
+ */
+private fun desktopColorProfileInfoLabel(
+    colorProfile: DesktopColorProfile,
+    isHdr: Boolean?,
+    hdrMode: DesktopHdrMode,
+): String = if (isHdr != false && hdrMode != DesktopHdrMode.AlwaysTonemap) {
+    DesktopColorProfile.Neutral.label
+} else {
+    colorProfile.label
+}
+
 private data class DesktopVideoProfileState(
     val isHdr: Boolean?,
+    val displayHdr: Boolean?,
     val vsrScale: Double?,
     val refreshToken: Int,
     val pipelineReady: Boolean,
@@ -598,7 +713,7 @@ private fun applyDesktopAnimeProfile(
     nvidiaRtxHdrEnabled: Boolean = false,
     customShaderPaths: String = "",
     customShaderSelectedPath: String = "",
-) {
+): DesktopAnimeProfileResult {
     val activeMode = when {
         sessionOverride != null -> sessionOverride.mode
         autoEnabled && isAnime -> mode
@@ -627,36 +742,39 @@ private fun applyDesktopAnimeProfile(
     // This function is the single owner of the mpv `vf` chain. NVIDIA RTX VSR and RTX True HDR
     // are both d3d11vpp sub-options; they must be set here so a profile rebuild doesn't wipe them.
     // Anime4K (when active) takes the vf entirely — RTX features are suppressed while Anime4K runs.
+    //
+    // RTX VSR and RTX True HDR are live-action enhancements; neither must stack on top of the
+    // anime enhancement layer (Anime4K / custom GLSL / SVP interpolation). The heavier anime
+    // branches below drop baselineVf entirely, but the SVP-only path reuses it, so gate both
+    // off for any effectively anime session here too. (True HDR's AI SDR->HDR pass tends to
+    // over-saturate/band flat cel-shaded anime and fights the SDR-tuned colour presets.)
+    val vsrActive = nvidiaRtxSuperResolutionEnabled &&
+        !isEffectivelyAnime &&
+        nvidiaRtxSuperResolutionScale != null &&
+        nvidiaRtxSuperResolutionScale > 1.01
+    // RTX True HDR requires mpv master ≥ Feb 19 2026: mpv sets IMGFMT_X2BGR10 output
+    // automatically when nvidia-true-hdr is present, and uses ID3D11VideoContext1 for
+    // proper DXGI HDR colour-space signalling. Init-time d3d11-output-csp=auto and
+    // target-colorspace-hint=auto are set in player_bridge.cpp when HDR is enabled.
+    // True HDR is an SDR -> HDR enhancement. Wait until the stream is positively identified
+    // as SDR before enabling it: treating the initial "unknown" state as SDR briefly applied
+    // the filter to every file, and leaving this independent of isHdr applied it to native HDR.
+    val trueHdrActive = nvidiaRtxHdrEnabled && isHdr == false && !isEffectivelyAnime
     val baselineVf = buildString {
-        // RTX VSR and RTX True HDR are live-action enhancements; neither must stack on top of the
-        // anime enhancement layer (Anime4K / custom GLSL / SVP interpolation). The heavier anime
-        // branches below drop baselineVf entirely, but the SVP-only path reuses it, so gate both
-        // off for any effectively anime session here too. (True HDR's AI SDR->HDR pass tends to
-        // over-saturate/band flat cel-shaded anime and fights the SDR-tuned colour presets.)
-        val vsrActive = nvidiaRtxSuperResolutionEnabled &&
-            !isEffectivelyAnime &&
-            nvidiaRtxSuperResolutionScale != null &&
-            nvidiaRtxSuperResolutionScale > 1.01
-        // RTX True HDR requires mpv master ≥ Feb 19 2026: mpv sets IMGFMT_X2BGR10 output
-        // automatically when nvidia-true-hdr is present, and uses ID3D11VideoContext1 for
-        // proper DXGI HDR colour-space signalling. Init-time d3d11-output-csp=auto and
-        // target-colorspace-hint=auto are set in player_bridge.cpp when HDR is enabled.
-        // True HDR is an SDR -> HDR enhancement. Wait until the stream is positively identified
-        // as SDR before enabling it: treating the initial "unknown" state as SDR briefly applied
-        // the filter to every file, and leaving this independent of isHdr applied it to native HDR.
-        val hdrActive = nvidiaRtxHdrEnabled && isHdr == false && !isEffectivelyAnime
-        if (vsrActive || hdrActive) {
+        if (vsrActive || trueHdrActive) {
             append("d3d11vpp=")
             if (vsrActive) {
                 append("scale=${nvidiaRtxSuperResolutionScale!!.coerceIn(1.0, 4.0)}:scaling-mode=nvidia")
-                if (hdrActive) append(":")
+                if (trueHdrActive) append(":")
             }
-            if (hdrActive) append("nvidia-true-hdr=yes")
+            if (trueHdrActive) append("nvidia-true-hdr=yes")
         }
     }
 
     val svpFilter = if (isEffectivelyAnime && animeSvpEnabled) {
-        DesktopAnimeSvp.vapoursynthArgument()
+        DesktopAnimeSvp.vapoursynthArgument(
+            debugOverlay = PlayerSettingsRepository.uiState.value.desktopAnimeSvpDebugOverlayEnabled,
+        )
     } else null
     val svpActive = svpFilter != null
     applyDesktopSvpRuntimeProfile(controller, svpActive)
@@ -677,7 +795,10 @@ private fun applyDesktopAnimeProfile(
 
         controller.setMpvProperty("vf", listOfNotNull(svpFilter).joinToString(","))
         controller.forceVideoRedraw()
-        return
+        return DesktopAnimeProfileResult(
+            shaderLabel = customShaderChain.customShaderDisplayName(customShaderPaths),
+            svpActive = svpActive,
+        )
     }
 
     if (effectivePreset == null) {
@@ -704,7 +825,7 @@ private fun applyDesktopAnimeProfile(
         controller.setMpvProperty("deband-threshold", "35")
         controller.setMpvProperty("deband-grain", "0")
         controller.forceVideoRedraw()
-        return
+        return DesktopAnimeProfileResult(shaderLabel = null, svpActive = svpActive)
     }
 
     // Anime-tuned scaling + deband (Stremio-Kai's anime-sdr base profile).
@@ -726,6 +847,13 @@ private fun applyDesktopAnimeProfile(
     controller.setMpvProperty("hwdec", "d3d11va-copy")
     controller.setMpvProperty("vf", finalVf)
     controller.forceVideoRedraw()
+    // Named as the shader family plus its preset. The chain behind a preset is six to ten
+    // Anime4K_* files, which is not something to print, and the bare preset label ("Mode A (HQ)")
+    // never says what is doing the work.
+    return DesktopAnimeProfileResult(
+        shaderLabel = "Anime4K ${effectivePreset.label}",
+        svpActive = svpActive,
+    )
 }
 
 private fun applyDesktopSvpRuntimeProfile(
@@ -756,12 +884,14 @@ private fun applyDesktopSvpRuntimeProfile(
 private fun DesktopStubPlayerSurface(
     modifier: Modifier,
     onControllerReady: (PlayerEngineController) -> Unit,
+    onPlayerAttached: () -> Unit,
     onSnapshot: (PlayerPlaybackSnapshot) -> Unit,
 ) {
     val controller = remember { DesktopStubPlayerController() }
 
     LaunchedEffect(controller) {
         onControllerReady(controller)
+        onPlayerAttached()
         onSnapshot(PlayerPlaybackSnapshot(isLoading = false))
     }
 

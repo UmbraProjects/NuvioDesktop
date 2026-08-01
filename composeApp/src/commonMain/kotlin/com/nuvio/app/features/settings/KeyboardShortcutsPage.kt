@@ -40,6 +40,9 @@ import com.nuvio.app.features.player.resetAllPlayerShortcuts
 import com.nuvio.app.features.player.appShortcutKeyLabels
 import com.nuvio.app.features.player.ensureAppShortcutBindingsLoaded
 import com.nuvio.app.features.player.resetAllAppShortcuts
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * Read-only reference of every desktop keyboard shortcut, and the single authoritative inventory
@@ -67,7 +70,18 @@ private fun key(vararg alternatives: String): List<List<String>> =
 private fun navigationShortcuts(labels: Map<AppShortcutAction, String>): List<Shortcut> =
     AppShortcutAction.entries.map { action ->
         Shortcut(action.displayName, key(labels[action] ?: "—"), appAction = action)
-    }
+    } + browsingShortcuts()
+
+/**
+ * Fixed browsing keys on Home, Library, Search and Collections. Not rebindable, so they carry no
+ * [AppShortcutAction] — they are listed here because this page is the shortcut inventory.
+ */
+private fun browsingShortcuts(): List<Shortcut> = listOf(
+    Shortcut("Page down (row in TV mode, page otherwise)", key("Page Down")),
+    Shortcut("Page up (row in TV mode, page otherwise)", key("Page Up")),
+    Shortcut("Jump to top", key("Home")),
+    Shortcut("Jump to bottom", key("End")),
+)
 
 /**
  * A player shortcut row. When [action] is set, the primary key renders live from the current
@@ -118,9 +132,7 @@ private val playerRowSections: List<Pair<String, List<PlayerRowSpec>>> = listOf(
 internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
     item(key = "keyboard-shortcuts-intro") {
         Text(
-            text = "Shortcuts work while the app is focused. Player shortcuts apply during " +
-                "playback; text fields (like Search) always keep their keys. Click a player " +
-                "shortcut below to rebind it.",
+            text = stringResource(Res.string.settings_shortcuts_intro),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.nuvio.colors.textSecondary,
             modifier = Modifier
@@ -137,14 +149,14 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
         val wasdEnabled by ThemeSettingsRepository.wasdNavigationEnabled.collectAsState()
         val appLabels by appShortcutKeyLabels().collectAsState()
         var rebindingApp by remember { mutableStateOf<AppShortcutAction?>(null) }
-        SettingsSection(title = "Navigation", isTablet = isTablet) {
+        SettingsSection(title = stringResource(Res.string.settings_shortcuts_navigation), isTablet = isTablet) {
             SettingsGroup(isTablet = isTablet) {
                 SettingsChoiceRow(
-                    title = "Move focus",
+                    title = stringResource(Res.string.settings_shortcuts_move_focus),
                     description = null,
                     options = listOf(
-                        SettingsChoiceOption(false, "Arrows"),
-                        SettingsChoiceOption(true, "WASD"),
+                        SettingsChoiceOption(false, stringResource(Res.string.settings_shortcuts_arrows)),
+                        SettingsChoiceOption(true, stringResource(Res.string.settings_shortcuts_wasd)),
                     ),
                     selectedValue = wasdEnabled,
                     isTablet = isTablet,
@@ -165,7 +177,7 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
             }
         }
         Text(
-            text = "Reset navigation shortcuts to defaults",
+            text = stringResource(Res.string.settings_shortcuts_reset_navigation),
             color = MaterialTheme.nuvio.colors.accent,
             modifier = Modifier.clickable { resetAllAppShortcuts() }.padding(NuvioTokens.Space.s12),
         )
@@ -239,7 +251,7 @@ private fun ShortcutRow(shortcut: Shortcut, isTablet: Boolean, onRebind: (() -> 
         if (onRebind != null) {
             Icon(
                 imageVector = Icons.Rounded.Edit,
-                contentDescription = "Rebind ${shortcut.action}",
+                contentDescription = stringResource(Res.string.settings_shortcuts_rebind, shortcut.action),
                 tint = tokens.colors.textMuted,
                 modifier = Modifier.size(tokens.icons.sm),
             )
@@ -251,7 +263,7 @@ private fun ShortcutRow(shortcut: Shortcut, isTablet: Boolean, onRebind: (() -> 
 private fun ResetAllShortcutsRow(isTablet: Boolean, onResetAll: () -> Unit) {
     val tokens = MaterialTheme.nuvio
     Text(
-        text = "Reset all player shortcuts to defaults",
+        text = stringResource(Res.string.settings_shortcuts_reset_player),
         style = MaterialTheme.typography.bodyMedium,
         color = tokens.colors.accent,
         fontWeight = FontWeight.SemiBold,

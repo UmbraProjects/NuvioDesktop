@@ -71,7 +71,9 @@ internal actual fun Modifier.horizontalListMouseInput(
                         // vertically-scrolling page can scroll past this row.
                         val amount = when {
                             abs(scrollDelta.x) > abs(scrollDelta.y) -> scrollDelta.x
-                            event.keyboardModifiers.isShiftPressed || treatPlainScrollAsHorizontal -> scrollDelta.y
+                            event.keyboardModifiers.isShiftPressed ||
+                                DesktopNavigationGestureBridge.horizontalScrollModifierActive.value ||
+                                treatPlainScrollAsHorizontal -> scrollDelta.y
                             else -> 0f
                         }
                         if (amount != 0f) {

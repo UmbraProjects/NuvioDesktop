@@ -28,6 +28,11 @@ data class CatalogPaginationState(
     val consecutiveDuplicatePages: Int = 0,
 )
 
+data class CatalogPaginationProbeResult(
+    val page: CatalogPage,
+    val supportsPagination: Boolean,
+)
+
 private val inflightMutex = Mutex()
 private val inflightRequestScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 private val inflightRequests = mutableMapOf<String, CompletableDeferred<String>>()
@@ -82,8 +87,10 @@ suspend fun fetchCatalogPage(
     } else {
         null
     }
+    // Cloud-library catalogs hand back raw release filenames with no artwork; give those rows a
+    // real title and poster. A catalog with proper metadata short-circuits without any work.
     return CatalogPage(
-        items = parsed.items,
+        items = FilenameMetaResolver.enrich(parsed.items),
         rawItemCount = parsed.rawItemCount,
         nextSkip = nextSkip,
     )
@@ -123,6 +130,36 @@ fun nextCatalogPaginationState(
             consecutiveDuplicatePages = duplicatePages,
         )
     }
+}
+
+/**
+ * Verifies an ambiguous catalog by comparing its first page with a speculative `skip` page.
+ *
+ * Some add-ons implement skip-based pagination without advertising `skip` in their manifest.
+ * Treat the catalog as paginating only when the probe returns at least one genuinely new item;
+ * an add-on that ignores the unsupported extra and repeats page one remains finite.
+ */
+fun applyCatalogPaginationProbe(
+    initialPage: CatalogPage,
+    probePage: CatalogPage,
+): CatalogPaginationProbeResult {
+    val mergedItems = mergeCatalogItems(initialPage.items, probePage.items)
+    val loadedNewItems = mergedItems.size > initialPage.items.size
+    if (!loadedNewItems) {
+        return CatalogPaginationProbeResult(
+            page = initialPage,
+            supportsPagination = false,
+        )
+    }
+
+    return CatalogPaginationProbeResult(
+        page = CatalogPage(
+            items = mergedItems,
+            rawItemCount = initialPage.rawItemCount + probePage.rawItemCount,
+            nextSkip = probePage.nextSkip,
+        ),
+        supportsPagination = true,
+    )
 }
 
 fun mergeCatalogItems(

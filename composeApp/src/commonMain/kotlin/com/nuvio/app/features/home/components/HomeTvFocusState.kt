@@ -77,6 +77,8 @@ internal class HomeTvFocusState(
         }
     private val itemIndices = mutableStateMapOf<Int, Int>()
 
+    // Stored per section, so a caller changing sectionIndex must snapshot this first if it means
+    // to carry the column position across — see HomeScreen's withCarriedTvItemIndex.
     var itemIndex: Int
         get() = itemIndices[sectionIndex] ?: 0
         set(value) {

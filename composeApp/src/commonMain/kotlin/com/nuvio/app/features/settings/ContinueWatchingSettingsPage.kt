@@ -1,5 +1,30 @@
 package com.nuvio.app.features.settings
 
+import nuvio.composeapp.generated.resources.settings_cw_seed_nuvio_description
+import nuvio.composeapp.generated.resources.settings_cw_seed_nuvio_title
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.tracking.ContinueWatchingSource
+import com.nuvio.app.features.tracking.ContinueWatchingSourceRepository
+import com.nuvio.app.features.tracking.TrackingProviderRegistry
+import com.nuvio.app.features.simkl.SIMKL_CW_DAYS_CAP_ALL
+import com.nuvio.app.features.simkl.SimklSettingsRepository
+import com.nuvio.app.features.trakt.TRAKT_CONTINUE_WATCHING_DAYS_CAP_ALL
+import com.nuvio.app.features.trakt.TraktContinueWatchingDaysOptions
+import com.nuvio.app.features.trakt.TraktSettingsRepository
+import com.nuvio.app.features.trakt.normalizeTraktContinueWatchingDaysCap
+import nuvio.composeapp.generated.resources.settings_cw_source_local
+import nuvio.composeapp.generated.resources.settings_cw_source_mdblist
+import nuvio.composeapp.generated.resources.settings_cw_source_not_connected
+import nuvio.composeapp.generated.resources.settings_cw_source_section
+import nuvio.composeapp.generated.resources.settings_cw_source_simkl
+import nuvio.composeapp.generated.resources.settings_cw_source_title
+import nuvio.composeapp.generated.resources.settings_cw_source_trakt
+import nuvio.composeapp.generated.resources.settings_cw_source_floppy
+import nuvio.composeapp.generated.resources.settings_cw_window_all
+import nuvio.composeapp.generated.resources.settings_cw_window_days
+import nuvio.composeapp.generated.resources.settings_cw_window_title
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,8 +46,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -34,6 +57,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.features.home.components.ContinueWatchingStylePreview
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache
@@ -57,7 +81,6 @@ import nuvio.composeapp.generated.resources.settings_continue_watching_section_c
 import nuvio.composeapp.generated.resources.settings_continue_watching_section_on_launch
 import nuvio.composeapp.generated.resources.settings_continue_watching_section_sort_order
 import nuvio.composeapp.generated.resources.settings_continue_watching_section_up_next_behavior
-import nuvio.composeapp.generated.resources.settings_continue_watching_section_visibility
 import nuvio.composeapp.generated.resources.settings_continue_watching_show_description
 import nuvio.composeapp.generated.resources.settings_continue_watching_show_title
 import nuvio.composeapp.generated.resources.settings_continue_watching_sort_mode_default
@@ -91,23 +114,6 @@ internal fun LazyListScope.continueWatchingSettingsContent(
 ) {
     item {
         SettingsSection(
-            title = stringResource(Res.string.settings_continue_watching_section_visibility),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_continue_watching_show_title),
-                    description = stringResource(Res.string.settings_continue_watching_show_description),
-                    checked = isVisible,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-show-continue-watching")),
-                    onCheckedChange = ContinueWatchingPreferencesRepository::setVisible,
-                )
-            }
-        }
-    }
-    item {
-        SettingsSection(
             title = stringResource(Res.string.settings_continue_watching_section_card_style),
             isTablet = isTablet,
         ) {
@@ -120,10 +126,35 @@ internal fun LazyListScope.continueWatchingSettingsContent(
     }
     item {
         SettingsSection(
+            title = stringResource(Res.string.settings_cw_source_section),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-source")),
+            ) {
+                ContinueWatchingSourceRow(isTablet = isTablet)
+                ContinueWatchingWindowRow(isTablet = isTablet)
+                SettingsGroupDivider(isTablet = isTablet)
+                SeedFromNuvioSyncRow(isTablet = isTablet)
+            }
+        }
+    }
+    item {
+        SettingsSection(
             title = stringResource(Res.string.settings_continue_watching_section_up_next_behavior),
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_continue_watching_show_title),
+                    description = stringResource(Res.string.settings_continue_watching_show_description),
+                    checked = isVisible,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-show-continue-watching")),
+                    onCheckedChange = ContinueWatchingPreferencesRepository::setVisible,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_continue_watching_use_episode_thumbnails_title),
                     description = stringResource(Res.string.settings_continue_watching_use_episode_thumbnails_description),
@@ -377,11 +408,7 @@ private fun ContinueWatchingSortModeDialog(
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -450,4 +477,133 @@ private fun ContinueWatchingSortModeDialog(
             }
         }
     }
+}
+
+
+/**
+ * The single place Continue Watching's source is chosen.
+ *
+ * One control rather than a switch on each provider's own page: those could all be on at once, and
+ * which one actually won was decided by a precedence chain nobody could see from the UI.
+ */
+@Composable
+private fun ContinueWatchingSourceRow(isTablet: Boolean) {
+    val selected by ContinueWatchingSourceRepository.uiState.collectAsStateWithLifecycle()
+    val connected by TrackingProviderRegistry.connectedProviderIds.collectAsStateWithLifecycle()
+
+    val labels = ContinueWatchingSource.entries.associateWith { source ->
+        stringResource(
+            when (source) {
+                ContinueWatchingSource.LOCAL -> Res.string.settings_cw_source_local
+                ContinueWatchingSource.TRAKT -> Res.string.settings_cw_source_trakt
+                ContinueWatchingSource.SIMKL -> Res.string.settings_cw_source_simkl
+                ContinueWatchingSource.MDBLIST -> Res.string.settings_cw_source_mdblist
+                ContinueWatchingSource.YAMTRACK -> Res.string.settings_cw_source_floppy
+            },
+        )
+    }
+
+    val selectedProvider = selected.providerId
+    val isSelectionConnected = selectedProvider == null || selectedProvider in connected
+
+    SettingsChoiceRow(
+        title = stringResource(Res.string.settings_cw_source_title),
+        description = if (isSelectionConnected) {
+            labels.getValue(selected)
+        } else {
+            stringResource(Res.string.settings_cw_source_not_connected)
+        },
+        options = ContinueWatchingSource.entries.map { source ->
+            SettingsChoiceOption(source, labels.getValue(source))
+        },
+        selectedValue = selected,
+        isTablet = isTablet,
+        onSelected = ContinueWatchingSourceRepository::setSource,
+    )
+}
+
+/** Edits the history window for whichever provider currently owns Continue Watching. */
+@Composable
+private fun ContinueWatchingWindowRow(isTablet: Boolean) {
+    val source by ContinueWatchingSourceRepository.uiState.collectAsStateWithLifecycle()
+    if (source != ContinueWatchingSource.TRAKT && source != ContinueWatchingSource.SIMKL) return
+
+    val traktSettings by remember {
+        TraktSettingsRepository.ensureLoaded()
+        TraktSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val simklSettings by remember {
+        SimklSettingsRepository.ensureLoaded()
+        SimklSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
+
+    val selectedDays = when (source) {
+        ContinueWatchingSource.TRAKT ->
+            normalizeTraktContinueWatchingDaysCap(traktSettings.continueWatchingDaysCap)
+        ContinueWatchingSource.SIMKL ->
+            simklSettings.simklContinueWatchingDaysCap.coerceAtLeast(SIMKL_CW_DAYS_CAP_ALL)
+        ContinueWatchingSource.LOCAL,
+        ContinueWatchingSource.MDBLIST,
+        ContinueWatchingSource.YAMTRACK -> return
+    }
+
+    SettingsGroupDivider(isTablet = isTablet)
+    SettingsChoiceRow(
+        title = stringResource(Res.string.settings_cw_window_title),
+        description = continueWatchingWindowLabel(selectedDays),
+        options = TraktContinueWatchingDaysOptions.map { days ->
+            val normalized = if (source == ContinueWatchingSource.TRAKT) {
+                normalizeTraktContinueWatchingDaysCap(days)
+            } else {
+                days.coerceAtLeast(SIMKL_CW_DAYS_CAP_ALL)
+            }
+            SettingsChoiceOption(normalized, continueWatchingWindowLabel(normalized))
+        },
+        selectedValue = selectedDays,
+        isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(
+            SettingsScrollAnchor.searchKey("continue-watching-window"),
+        ),
+        onSelected = { days ->
+            when (source) {
+                ContinueWatchingSource.TRAKT ->
+                    TraktSettingsRepository.setContinueWatchingDaysCap(days)
+                ContinueWatchingSource.SIMKL ->
+                    SimklSettingsRepository.setSimklContinueWatchingDaysCap(days)
+                ContinueWatchingSource.LOCAL,
+                ContinueWatchingSource.MDBLIST -> Unit
+                ContinueWatchingSource.YAMTRACK -> Unit
+            }
+        },
+    )
+}
+
+@Composable
+private fun continueWatchingWindowLabel(days: Int): String =
+    if (days == TRAKT_CONTINUE_WATCHING_DAYS_CAP_ALL) {
+        stringResource(Res.string.settings_cw_window_all)
+    } else {
+        stringResource(Res.string.settings_cw_window_days, days)
+    }
+
+
+/**
+ * Whether Up Next may also draw on the Nuvio Sync watched history while another service is the
+ * Continue Watching source.
+ *
+ * Only meaningful for a remote source, so it is disabled when Nuvio Sync is already the source.
+ */
+@Composable
+private fun SeedFromNuvioSyncRow(isTablet: Boolean) {
+    val preferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
+    val source by ContinueWatchingSourceRepository.uiState.collectAsStateWithLifecycle()
+
+    SettingsSwitchRow(
+        title = stringResource(Res.string.settings_cw_seed_nuvio_title),
+        description = stringResource(Res.string.settings_cw_seed_nuvio_description),
+        checked = preferences.seedNextUpFromNuvioSync,
+        enabled = source != ContinueWatchingSource.LOCAL,
+        isTablet = isTablet,
+        onCheckedChange = ContinueWatchingPreferencesRepository::setSeedNextUpFromNuvioSync,
+    )
 }

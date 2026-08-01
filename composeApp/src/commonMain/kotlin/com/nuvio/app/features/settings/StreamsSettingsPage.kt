@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.streams.STREAM_BADGE_IMPORT_LIMIT
@@ -62,6 +63,7 @@ import nuvio.composeapp.generated.resources.action_cancel
 import nuvio.composeapp.generated.resources.action_close
 import nuvio.composeapp.generated.resources.action_delete
 import nuvio.composeapp.generated.resources.action_import
+import nuvio.composeapp.generated.resources.compose_settings_page_stream_scoring
 import nuvio.composeapp.generated.resources.settings_fusion_badge_group_title
 import nuvio.composeapp.generated.resources.settings_fusion_badge_other_group_title
 import nuvio.composeapp.generated.resources.settings_fusion_badge_preview_action
@@ -82,6 +84,8 @@ import nuvio.composeapp.generated.resources.settings_stream_badge_position_top
 import nuvio.composeapp.generated.resources.settings_stream_badge_urls_description
 import nuvio.composeapp.generated.resources.settings_stream_badge_urls_title
 import nuvio.composeapp.generated.resources.settings_stream_badges_section
+import nuvio.composeapp.generated.resources.settings_stream_scoring_enabled_desc
+import nuvio.composeapp.generated.resources.settings_stream_scoring_enabled_title
 import nuvio.composeapp.generated.resources.settings_stream_size_badges_description
 import nuvio.composeapp.generated.resources.settings_stream_size_badges_title
 import nuvio.composeapp.generated.resources.settings_stream_addon_logo_title
@@ -89,7 +93,25 @@ import nuvio.composeapp.generated.resources.settings_stream_addon_logo_descripti
 import nuvio.composeapp.generated.resources.settings_stream_display_section
 import org.jetbrains.compose.resources.stringResource
 
-internal fun LazyListScope.streamsSettingsContent(isTablet: Boolean) {
+internal fun LazyListScope.streamsSettingsContent(
+    isTablet: Boolean,
+    onOpenStreamScoring: () -> Unit = {},
+) {
+    item {
+        SettingsSection(
+            title = stringResource(Res.string.settings_stream_scoring_enabled_title),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.compose_settings_page_stream_scoring),
+                    description = stringResource(Res.string.settings_stream_scoring_enabled_desc),
+                    isTablet = isTablet,
+                    onClick = onOpenStreamScoring,
+                )
+            }
+        }
+    }
     item {
         val currentSettings by remember {
             StreamBadgeSettingsRepository.ensureLoaded()
@@ -135,6 +157,21 @@ internal fun LazyListScope.streamsSettingsContent(isTablet: Boolean) {
             }
         }
 
+        if (showBadgeImportDialog) {
+            BadgeUrlManagerDialog(
+                currentRules = currentRules,
+                onDismiss = { showBadgeImportDialog = false },
+            )
+        }
+    }
+    // Its own item{} so it gets the same inter-section spacing as every other heading —
+    // nested inside the badges item it only had the section's internal padding.
+    item {
+        val currentSettings by remember {
+            StreamBadgeSettingsRepository.ensureLoaded()
+            StreamBadgeSettingsRepository.uiState
+        }.collectAsStateWithLifecycle()
+
         SettingsSection(
             title = stringResource(Res.string.settings_stream_display_section),
             isTablet = isTablet,
@@ -149,13 +186,6 @@ internal fun LazyListScope.streamsSettingsContent(isTablet: Boolean) {
                     onCheckedChange = StreamBadgeSettingsRepository::setShowAddonLogo,
                 )
             }
-        }
-
-        if (showBadgeImportDialog) {
-            BadgeUrlManagerDialog(
-                currentRules = currentRules,
-                onDismiss = { showBadgeImportDialog = false },
-            )
         }
 
     }
@@ -210,7 +240,7 @@ private fun BadgeUrlManagerDialog(
                     draftUrl = it
                     errorMessage = null
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
                 label = { Text(stringResource(Res.string.settings_fusion_badge_url_label)) },
                 singleLine = false,
                 minLines = 2,
@@ -518,11 +548,7 @@ private fun SettingsDialogSurface(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = tokens.shapes.dialog,
-        color = tokens.colors.surfaceDialog,
-    ) {
+    NuvioDialogSurface(modifier = Modifier.fillMaxWidth(), shape = tokens.shapes.dialog) {
         Column(
             modifier = Modifier.padding(tokens.spacing.dialogPadding),
             verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),

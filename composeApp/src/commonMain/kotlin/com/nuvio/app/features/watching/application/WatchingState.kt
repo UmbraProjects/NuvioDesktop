@@ -1,6 +1,8 @@
 package com.nuvio.app.features.watching.application
 
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.details.effectiveEpisodeNumber
+import com.nuvio.app.features.details.effectiveSeasonNumber
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.watched.WatchedItem
 import com.nuvio.app.features.watched.normalizeWatchedMarkedAtEpochMs
@@ -29,8 +31,8 @@ object WatchingState {
         watchedItemKey(
             type = metaType,
             id = metaId,
-            season = episode.season,
-            episode = episode.episode,
+            season = episode.effectiveSeasonNumber(),
+            episode = episode.effectiveEpisodeNumber(),
         ),
     )
 

@@ -75,9 +75,19 @@ internal fun selectAnimeMappingByCoordinates(
 
     fun AnimeIdMapping.coordinates(system: AnimeMappingCoordinateSystem): List<Pair<Int, Int>> {
         val hasNoExplicitSeason = tmdbSeason == null && tvdbSeason == null
-        val tmdb = tmdbSeason?.let { it to (tmdbEpisodeOffset ?: 0) }
+        // anime-list rows routinely carry an offset for one provider only. A missing offset means
+        // "unknown", not "zero": when both seasons are the same number the sibling's offset is
+        // expressed in that same numbering, so it is the right answer, and 0 is a false claim that
+        // collides with the season's genuine first cour. Pokémon season 15 is three entries at
+        // tvdb offsets 0/24/38 with no tmdb offsets — without this they all advertise offset 0,
+        // tie, and resolve to no entry at all. `preferredAnimeEpisodeOffset` already falls back
+        // this way; the two must agree or selection and numbering disagree about the same entry.
+        val sharedSeason = tmdbSeason != null && tmdbSeason == tvdbSeason
+        val tmdbOffset = tmdbEpisodeOffset ?: tvdbEpisodeOffset.takeIf { sharedSeason }
+        val tvdbOffset = tvdbEpisodeOffset ?: tmdbEpisodeOffset.takeIf { sharedSeason }
+        val tmdb = tmdbSeason?.let { it to (tmdbOffset ?: 0) }
             ?: if (hasNoExplicitSeason) 1 to (tmdbEpisodeOffset ?: tvdbEpisodeOffset ?: 0) else null
-        val tvdb = tvdbSeason?.let { it to (tvdbEpisodeOffset ?: 0) }
+        val tvdb = tvdbSeason?.let { it to (tvdbOffset ?: 0) }
             ?: if (hasNoExplicitSeason) 1 to (tvdbEpisodeOffset ?: tmdbEpisodeOffset ?: 0) else null
         return when (system) {
             AnimeMappingCoordinateSystem.TMDB -> listOfNotNull(tmdb)

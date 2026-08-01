@@ -411,7 +411,9 @@ object TraktProgressRepository {
     fun applyOptimisticProgress(entry: WatchProgressEntry) {
         if (!TraktAuthRepository.isAuthenticated.value) return
         val current = _uiState.value.entries.associateBy { it.videoId }.toMutableMap()
-        val normalizedEntry = entry.normalizedCompletion()
+        val normalizedEntry = entry
+            .copy(source = WatchProgressSourceTraktPlayback)
+            .normalizedCompletion()
         val existing = current[normalizedEntry.videoId]
         if (existing == null || normalizedEntry.lastUpdatedEpochMs >= existing.lastUpdatedEpochMs) {
             current[normalizedEntry.videoId] = normalizedEntry

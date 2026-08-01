@@ -21,6 +21,9 @@ object PlaybackStartTrace {
     private val log = Logger.withTag("PlaybackStartTrace")
     private val timeSource = TimeSource.Monotonic
 
+    /** How long a [beginPending] anchor stays adoptable by the [begin] that follows it. */
+    private const val PendingWindowMillis = 30_000L
+
     @Volatile
     private var origin: TimeSource.Monotonic.ValueTimeMark? = null
 
@@ -30,10 +33,67 @@ object PlaybackStartTrace {
     @Volatile
     private var completed = true
 
+    @Volatile
+    private var pendingOrigin: TimeSource.Monotonic.ValueTimeMark? = null
+
+    @Volatile
+    private var pendingEntries: List<String> = emptyList()
+
+    /**
+     * Anchors the next [begin] at *this* moment instead of at the scrape.
+     *
+     * The stream scrape is not the start of a playback from the user's point of view — the click
+     * is. Everything between the two (navigation, the streams screen's first composition, its
+     * first rendered frame) is dead time the old trace could not see, which is exactly where a
+     * "sat on the previous page for a few seconds" stall lives. Callers on the click path record
+     * that intent here; the [begin] that follows within [PendingWindowMillis] adopts this origin
+     * so the summary spans click → first frame. A pending anchor that never gets a [begin]
+     * (navigation cancelled, cached link reused) simply expires.
+     */
+    fun beginPending(reason: String) {
+        pendingOrigin = timeSource.markNow()
+        pendingEntries = listOf("$reason +0ms")
+        log.i { "beginPending: $reason" }
+    }
+
+    /**
+     * Records a mark against the pending anchor before the trace proper has begun. No-ops when no
+     * anchor is live, so pre-scrape marks never start a trace of their own.
+     */
+    fun markPending(label: String) {
+        val start = pendingOrigin ?: return
+        val line = "$label +${start.elapsedNow().inWholeMilliseconds}ms"
+        pendingEntries = pendingEntries + line
+        log.i { line }
+    }
+
+    /**
+     * Records a mark on whichever trace is live — the pending anchor, or the real trace once
+     * [begin] has adopted it. Marks on the click path can land on either side of the scrape
+     * depending on frame timing, and unlike [mark] this never *starts* a trace, so one arriving
+     * with nothing in flight is dropped rather than logged as a bogus playback start.
+     */
+    fun markPendingOrActive(label: String) {
+        if (pendingOrigin != null) {
+            markPending(label)
+            return
+        }
+        if (!completed && origin != null) mark(label)
+    }
+
     /** Starts a new trace, discarding any unfinished one (e.g. an abandoned scrape). */
     fun begin(reason: String) {
-        origin = timeSource.markNow()
-        entries = listOf("$reason +0ms")
+        val pending = pendingOrigin
+        val adoptPending = pending != null &&
+            pending.elapsedNow().inWholeMilliseconds <= PendingWindowMillis
+        origin = if (adoptPending) pending else timeSource.markNow()
+        entries = if (adoptPending) {
+            pendingEntries + "$reason +${pending!!.elapsedNow().inWholeMilliseconds}ms"
+        } else {
+            listOf("$reason +0ms")
+        }
+        pendingOrigin = null
+        pendingEntries = emptyList()
         completed = false
         log.i { "begin: $reason" }
     }

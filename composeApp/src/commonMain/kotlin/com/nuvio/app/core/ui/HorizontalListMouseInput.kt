@@ -40,13 +40,15 @@ internal expect fun Modifier.horizontalListMouseInput(
  *
  * [scrollStepPx] is the distance scrolled per arrow-key press. If null, defaults to
  * a fraction of the viewport width. See [horizontalListMouseInput] for
- * [treatPlainScrollAsHorizontal].
+ * [treatPlainScrollAsHorizontal]. Set [handlePageAndEdgeKeys] for rows that should also consume
+ * Page Up/Down as one-viewport jumps and Home/End as jumps to the first/last item.
  */
 @Composable
 internal fun Modifier.desktopHorizontalListNavigation(
     state: LazyListState,
     scrollStepPx: Float? = null,
     treatPlainScrollAsHorizontal: Boolean = false,
+    handlePageAndEdgeKeys: Boolean = false,
 ): Modifier {
     val coroutineScope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
@@ -76,6 +78,45 @@ internal fun Modifier.desktopHorizontalListNavigation(
                 Key.DirectionLeft -> {
                     coroutineScope.launch { state.animateScrollBy(-step) }
                     true
+                }
+                Key.PageDown -> {
+                    if (!handlePageAndEdgeKeys) {
+                        false
+                    } else {
+                        coroutineScope.launch {
+                            state.animateScrollBy(state.layoutInfo.viewportSize.width.toFloat())
+                        }
+                        true
+                    }
+                }
+                Key.PageUp -> {
+                    if (!handlePageAndEdgeKeys) {
+                        false
+                    } else {
+                        coroutineScope.launch {
+                            state.animateScrollBy(-state.layoutInfo.viewportSize.width.toFloat())
+                        }
+                        true
+                    }
+                }
+                Key.MoveHome -> {
+                    if (!handlePageAndEdgeKeys) {
+                        false
+                    } else {
+                        coroutineScope.launch { state.animateScrollToItem(0) }
+                        true
+                    }
+                }
+                Key.MoveEnd -> {
+                    if (!handlePageAndEdgeKeys) {
+                        false
+                    } else {
+                        coroutineScope.launch {
+                            val lastIndex = state.layoutInfo.totalItemsCount - 1
+                            if (lastIndex >= 0) state.animateScrollToItem(lastIndex)
+                        }
+                        true
+                    }
                 }
                 else -> false
             }

@@ -29,4 +29,28 @@ class MetaDetailsParserTest {
         assertEquals("series", result.type)
         assertEquals("The Fragrant Flower Blooms with Dignity", result.name)
     }
+
+    @Test
+    fun `parse preserves anime provider ids and certification fallback`() {
+        val result = MetaDetailsParser.parse(
+            """
+            {
+              "meta": {
+                "id": "kitsu:42898",
+                "type": "series",
+                "name": "World Trigger 2",
+                "_imdbId": "tt3950102",
+                "_malId": "40907",
+                "_tmdbId": "61628",
+                "certification": "TV-14"
+              }
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("tt3950102", result.imdbId)
+        assertEquals("40907", result.malId)
+        assertEquals(61628, result.tmdbId)
+        assertEquals("TV-14", result.ageRating)
+    }
 }

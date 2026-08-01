@@ -44,6 +44,8 @@ import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.streams.StreamCard
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamScoreContext
+import com.nuvio.app.features.streams.StreamScoreContexts
 import com.nuvio.app.features.streams.StreamsUiState
 import com.nuvio.app.features.streams.isSelectableForPlayback
 import nuvio.composeapp.generated.resources.*
@@ -61,8 +63,22 @@ fun PlayerSourcesPanel(
     onReload: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    // Only used to pick movie vs episode thresholds for the optional score badge.
+    isEpisode: Boolean = false,
+    // Same, for the animation-relaxed size floor.
+    contentId: String? = null,
+    contentType: String? = null,
 ) {
     val tokens = MaterialTheme.nuvio
+    // Hoisted out of the row: it is the same for every card, and building one per row per
+    // recomposition re-reads the player settings and the anime cache once per visible source.
+    val scoreContext = remember(isEpisode, contentId, contentType) {
+        StreamScoreContexts.forPlayback(
+            isEpisode = isEpisode,
+            contentId = contentId,
+            contentType = contentType,
+        )
+    }
     val debridSettings by remember {
         DebridSettingsRepository.ensureLoaded()
         DebridSettingsRepository.uiState
@@ -201,16 +217,18 @@ fun PlayerSourcesPanel(
                             }
 
                             else -> {
-                                val streams = prioritizeCurrentItem(
-                                    items = streamsUiState.filteredGroups.flatMap { it.streams },
-                                ) { stream ->
-                                    isCurrentStream(
-                                        stream = stream,
-                                        currentIdentityKey = currentStreamIdentityKey,
-                                        currentUrl = currentStreamUrl,
-                                        currentName = currentStreamName,
-                                    )
-                                }
+                                // The playing row is resolved once for the whole list rather than
+                                // asked of each row: one file offered by two addons (or listed
+                                // twice by one) shares an identity key, and a per-row test marked
+                                // every copy "Playing".
+                                val allStreams = streamsUiState.filteredGroups.flatMap { it.streams }
+                                val currentStream = findCurrentStream(
+                                    streams = allStreams,
+                                    currentIdentityKey = currentStreamIdentityKey,
+                                    currentUrl = currentStreamUrl,
+                                    currentName = currentStreamName,
+                                )
+                                val streams = prioritizeCurrentItem(allStreams) { it === currentStream }
                                 LazyColumn(
                                     modifier = Modifier.padding(horizontal = tokens.spacing.cardPadding),
                                     verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6),
@@ -220,12 +238,7 @@ fun PlayerSourcesPanel(
                                         items = streams,
                                         key = { index, stream -> "${stream.addonId}::${index}::${stream.url ?: stream.infoHash ?: stream.clientResolve?.infoHash ?: stream.name}" },
                                     ) { _, stream ->
-                                        val isCurrent = isCurrentStream(
-                                            stream = stream,
-                                            currentIdentityKey = currentStreamIdentityKey,
-                                            currentUrl = currentStreamUrl,
-                                            currentName = currentStreamName,
-                                        )
+                                        val isCurrent = stream === currentStream
                                         StreamCard(
                                             stream = stream,
                                             enabled = stream.isSelectableForPlayback(debridSettings.canResolvePlayableLinks),
@@ -236,6 +249,7 @@ fun PlayerSourcesPanel(
                                             badgePlacement = streamBadgeSettings.badgePlacement,
                                             isCurrent = isCurrent,
                                             currentLabel = stringResource(Res.string.compose_player_playing),
+                                            scoreContext = scoreContext,
                                             onClick = { onStreamSelected(stream) },
                                         )
                                     }
@@ -340,20 +354,36 @@ internal fun PanelChipButton(
     }
 }
 
-internal fun isCurrentStream(
-    stream: StreamItem,
+/**
+ * The single stream that is playing, or null when the list holds none of them.
+ *
+ * Resolved for a whole list rather than asked of each row on its own. An identity key describes a
+ * *file*, so a release offered by two addons — or listed twice by one — gives several rows the same
+ * key, and a per-row predicate answered "yes" for every copy.
+ *
+ * The tiers are tried in order and the first that matches anything wins. Identity stays
+ * authoritative: it is never overridden by a weaker signal, only fallen back on when it matches
+ * nothing at all. That case is the list having been re-fetched since playback started — proxying
+ * addons such as AIOStreams re-sign their URLs each time, so a key minted at launch can go missing
+ * from a later list and leave no row marked. Falling through is safe now only because a second row
+ * can no longer be marked as a result.
+ */
+internal fun findCurrentStream(
+    streams: List<StreamItem>,
     currentIdentityKey: String?,
     currentUrl: String?,
     currentName: String?,
-): Boolean {
-    // Once the player has a stable identity, it is authoritative. Falling through to the old URL
-    // after an identity mismatch can mark both the failed clicked source and its failover as playing.
-    if (currentIdentityKey != null) return stream.playerSourceIdentityKey() == currentIdentityKey
-    if (currentUrl != null && stream.playableDirectUrl == currentUrl) return true
-    if (currentName != null && stream.streamLabel.equals(currentName, ignoreCase = true) &&
-        stream.playableDirectUrl == currentUrl
-    ) return true
-    return false
+): StreamItem? {
+    if (currentIdentityKey != null) {
+        streams.firstOrNull { it.playerSourceIdentityKey() == currentIdentityKey }?.let { return it }
+    }
+    if (!currentUrl.isNullOrBlank()) {
+        streams.firstOrNull { it.playableDirectUrl == currentUrl }?.let { return it }
+    }
+    if (!currentName.isNullOrBlank()) {
+        streams.firstOrNull { it.streamLabel.equals(currentName, ignoreCase = true) }?.let { return it }
+    }
+    return null
 }
 
 /** Moves the active entry to the front without changing the relative order of any other entry. */

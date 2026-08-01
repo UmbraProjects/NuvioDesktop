@@ -29,6 +29,9 @@ data class TmdbSettings(
     // placeholders, e.g. a PostersPlus/RPDB/etc. endpoint. Applied only to the library.
     val libraryPosterEnabled: Boolean = false,
     val libraryPosterUrlTemplate: String = "",
+    // Cloud-library catalogs (TorBox, the AIOStreams library addon) list release filenames with no
+    // metadata; when set, those rows are looked up on TMDB by parsed name + year. Needs an API key.
+    val resolveFilenameCatalogs: Boolean = true,
     val heroImageSource: HeroImageSource = HeroImageSource.Addon,
 ) {
     val hasApiKey: Boolean

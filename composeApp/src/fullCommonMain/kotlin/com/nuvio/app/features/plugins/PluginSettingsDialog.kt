@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.nuvio.app.core.ui.NuvioInputField
+import com.nuvio.app.features.settings.trackSettingsTextFocus
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -48,6 +49,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
 import nuvio.composeapp.generated.resources.action_save
+import nuvio.composeapp.generated.resources.plugins_provider_settings_title
+import nuvio.composeapp.generated.resources.plugins_select_option
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -84,7 +87,7 @@ internal fun PluginSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    text = "$scraperName settings",
+                    text = stringResource(Res.string.plugins_provider_settings_title, scraperName),
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -142,6 +145,7 @@ private fun PluginTextSetting(
             value = settings[key]?.jsonPrimitive?.contentOrNull.orEmpty(),
             onValueChange = { settings[key] = JsonPrimitive(it) },
             placeholder = field["placeholder"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            modifier = Modifier.trackSettingsTextFocus(),
         )
         PluginSettingDescription(description)
     }
@@ -176,7 +180,7 @@ private fun PluginSelectSetting(
                     } else {
                         null
                     }
-                } ?: currentValue.ifBlank { "Select option" }
+                } ?: currentValue.ifBlank { stringResource(Res.string.plugins_select_option) }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

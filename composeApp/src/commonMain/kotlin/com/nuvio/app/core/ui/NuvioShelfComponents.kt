@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -53,7 +54,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -71,6 +75,7 @@ import nuvio.composeapp.generated.resources.home_view_all
 import nuvio.composeapp.generated.resources.poster_logo_content_description
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 enum class NuvioPosterShape {
     Poster,
@@ -94,6 +99,9 @@ fun <T> NuvioShelfSection(
     showHeaderAccent: Boolean = true,
     onViewAllClick: (() -> Unit)? = null,
     viewAllPillSize: NuvioViewAllPillSize = NuvioViewAllPillSize.Default,
+    // Optional content placed on the header's line, immediately after the title (TV Mode's
+    // row-jump dots). Present only where a caller opts in, so ordinary shelves are unchanged.
+    headerTrailingContent: (@Composable () -> Unit)? = null,
     focusedItemIndex: Int? = null,
     onHoverItem: ((Int) -> Unit)? = null,
     onLoadMore: (() -> Unit)? = null,
@@ -166,6 +174,7 @@ fun <T> NuvioShelfSection(
                 showAccent = showHeaderAccent,
                 onViewAllClick = onViewAllClick,
                 viewAllPillSize = viewAllPillSize,
+                trailingContent = headerTrailingContent,
             )
         }
         LazyRow(
@@ -218,6 +227,20 @@ fun <T> NuvioShelfSection(
 }
 
 private const val ShelfLoadMoreThreshold = 6
+
+// How much of the header row the title may occupy when trailing content is present. Longer names
+// ellipsize rather than run under the centred trailing slot.
+private const val HeaderTitleMaxWidthFraction = 0.26f
+
+/**
+ * The share of the header row kept clear on *each* side of centred trailing content.
+ *
+ * Trailing content is centred on the row, so one margin governs both edges: it must clear the
+ * title's own [HeaderTitleMaxWidthFraction] column on the left, which in turn leaves far more than
+ * the view-all pill needs on the right. Content wider than what's left over is expected to cap
+ * itself at that width rather than spill — see HomeTvRowDotStrip.
+ */
+internal const val NuvioShelfHeaderTrailingSideMarginFraction = 0.28f
 
 // Below-poster labels are centered and capped to this fraction of the poster width;
 // anything truncated is readable in full via NuvioPosterHoverTooltip.
@@ -332,7 +355,9 @@ private fun Modifier.desktopShelfEdgeScroll(state: LazyListState, isMouseActive:
                     val event = awaitPointerEvent(PointerEventPass.Initial)
                     when (event.type) {
                         PointerEventType.Exit -> positionChannel.trySend(null)
-                        else -> positionChannel.trySend(event.changes.firstOrNull()?.position?.x)
+                        PointerEventType.Move ->
+                            positionChannel.trySend(event.changes.firstOrNull()?.position?.x)
+                        else -> Unit
                     }
                 }
             }
@@ -369,16 +394,17 @@ fun NuvioPosterCard(
         shape = shape,
     )
     val shouldShowTitleBelow = showTitleBelow && !posterCardStyle.hideLabelsEnabled
+    // Upstream's 14sp label is balanced around its 126dp poster. This fork supports much larger
+    // posters, so scale gently by the square root of the size ratio. The tight clamp preserves
+    // upstream sizing on ordinary layouts while LocalDensity continues handling monitor DPI.
+    val posterLabelScale = sqrt(basePosterWidthDp.toFloat() / DefaultPosterCardWidthDp)
+        .coerceIn(0.96f, 1.32f)
     // Scale the below-poster label with the poster size. A fixed type size reads as tiny next to
     // large artwork (big width slider / high-DPI display), so grow it with the card width — but
     // dampened (75% of the proportional growth) so labels don't dominate large posters — and
     // clamped so small posters stay sensible and huge ones don't get an oversized caption.
     // Base sizes match the pre-scaling styles (bodyMedium 14sp / labelSmall 12sp) so the default
     // poster width renders identically to before; only wider posters grow the label.
-    val posterWidthRatio = (basePosterWidthDp.toFloat() / DefaultPosterCardWidthDp).coerceIn(1f, 1.5f)
-    val labelScale = 1f + (posterWidthRatio - 1f) * 0.75f
-    val titleLabelFontSizeSp = 14f * labelScale
-    val detailLabelFontSizeSp = 12f * labelScale
 
     Column(
         modifier = modifier.width(cardWidth),
@@ -407,7 +433,13 @@ fun NuvioPosterCard(
                         Modifier
                     },
                 )
-                .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
+                .nuvioPosterDepth(cardShape)
+                .posterCardClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                    zoomImageUrl = imageUrl,
+                    zoomCornerRadius = posterCardStyle.cornerRadiusDp.dp,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             if (imageUrl != null) {
@@ -468,36 +500,28 @@ fun NuvioPosterCard(
         if (shouldShowTitleBelow) {
             // Label is centered and capped at 65% of the poster width; truncated names are
             // readable in full via the hover tooltip, so no shrink-to-fit here.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(PosterLabelWidthFraction)
-                    .align(Alignment.CenterHorizontally),
-                contentAlignment = Alignment.TopCenter,
-            ) {
-                NuvioPosterHoverTooltip(title = title) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = titleLabelFontSizeSp.sp,
-                            lineHeight = (titleLabelFontSizeSp * 1.3f).sp,
-                        ),
-                        color = tokens.colors.textPrimary,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium.let { style ->
+                    style.copy(
+                        fontSize = style.fontSize * posterLabelScale,
+                        lineHeight = style.lineHeight * posterLabelScale,
                     )
-                }
-            }
+                },
+                color = tokens.colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             if (!detailLine.isNullOrBlank()) {
                 Text(
                     text = detailLine,
-                    modifier = Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = detailLabelFontSizeSp.sp,
-                        lineHeight = (detailLabelFontSizeSp * 1.3f).sp,
-                    ),
+                    style = MaterialTheme.typography.labelSmall.let { style ->
+                        style.copy(
+                            fontSize = style.fontSize * posterLabelScale,
+                            lineHeight = style.lineHeight * posterLabelScale,
+                        )
+                    },
                     color = tokens.colors.textMuted,
-                    textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -517,36 +541,67 @@ private fun NuvioShelfSectionHeader(
     showAccent: Boolean = true,
     onViewAllClick: (() -> Unit)? = null,
     viewAllPillSize: NuvioViewAllPillSize = NuvioViewAllPillSize.Default,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val tokens = MaterialTheme.nuvio
+    val viewAllPlaceholderModifier = if (onViewAllClick == null) {
+        Modifier
+            .alpha(0f)
+            .clearAndSetSemantics { }
+    } else {
+        Modifier
+    }
     Column(
         modifier = modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = title,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleLarge,
-                color = tokens.colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            val viewAllPlaceholderModifier = if (onViewAllClick == null) {
-                Modifier
-                    .alpha(0f)
-                    .clearAndSetSemantics { }
-            } else {
-                Modifier
+        if (trailingContent == null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = tokens.colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                NuvioViewAllPill(
+                    onClick = onViewAllClick,
+                    size = viewAllPillSize,
+                    modifier = viewAllPlaceholderModifier,
+                )
             }
-            NuvioViewAllPill(
-                onClick = onViewAllClick,
-                size = viewAllPillSize,
-                modifier = viewAllPlaceholderModifier,
-            )
+        } else {
+            // Trailing content is centred on the header itself — i.e. on the window's centre line —
+            // rather than packed next to the title, so it stays put as the title changes from row to
+            // row. That makes the three pieces overlapping siblings instead of a Row: title pinned
+            // left, trailing content centred, view-all pill pinned right exactly where it sits
+            // without trailing content. Keeping content clear of the title and the pill is the
+            // trailing slot's job — see NuvioShelfHeaderTrailingSideMarginFraction.
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = title,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .widthIn(max = maxWidth * HeaderTitleMaxWidthFraction),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = tokens.colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                trailingContent()
+                NuvioViewAllPill(
+                    onClick = onViewAllClick,
+                    size = viewAllPillSize,
+                    modifier = viewAllPlaceholderModifier.align(Alignment.CenterEnd),
+                )
+            }
         }
         if (showAccent) {
             Box(
@@ -634,16 +689,30 @@ private fun NuvioPosterShape.cardWidth(basePosterWidthDp: Int): Dp =
     }
 
 @OptIn(ExperimentalFoundationApi::class)
+@Composable
 internal fun Modifier.posterCardClickable(
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
-): Modifier =
-    if (onClick != null || onLongClick != null) {
-        combinedClickable(
-            onClick = { onClick?.invoke() },
-            onLongClick = onLongClick,
-        )
-            .secondaryClick(onLongClick)
-    } else {
-        this
+    zoomImageUrl: String? = null,
+    zoomCornerRadius: Dp = NuvioTokens.Radius.poster,
+): Modifier {
+    if (onClick == null && onLongClick == null) return this
+    val bounds = remember { mutableStateOf<Rect?>(null) }
+    val handleLongClick = onLongClick?.let { longClick ->
+        {
+            bounds.value?.takeIf { zoomImageUrl != null }?.let { cardBounds ->
+                PosterZoomAnchorHolder.stash(
+                    PosterZoomAnchor(cardBounds, zoomImageUrl, zoomCornerRadius),
+                )
+            }
+            longClick()
+        }
     }
+    return onGloballyPositioned { coordinates ->
+        val position = coordinates.positionInRoot()
+        bounds.value = Rect(position.x, position.y, position.x + coordinates.size.width, position.y + coordinates.size.height)
+    }.combinedClickable(
+        onClick = { onClick?.invoke() },
+        onLongClick = handleLongClick,
+    ).secondaryClick(handleLongClick)
+}

@@ -12,6 +12,7 @@ internal const val WatchProgressSourceLocal = "local"
 internal const val WatchProgressSourceTraktPlayback = "trakt_playback"
 internal const val WatchProgressSourceTraktHistory = "trakt_history"
 internal const val WatchProgressSourceTraktShowProgress = "trakt_show_progress"
+internal const val WatchProgressSourceYamtrackHistory = "yamtrack_history"
 
 @Serializable
 enum class ContinueWatchingSectionStyle {
@@ -25,6 +26,10 @@ enum class ContinueWatchingSortMode {
     DEFAULT,
     STREAMING_STYLE,
 }
+
+/** Whether a playback source URL is a local file (local-library / download) rather than a remote stream. */
+fun isLocalFileSourceUrl(url: String?): Boolean =
+    !url.isNullOrBlank() && !url.startsWith("http", ignoreCase = true)
 
 @Serializable
 data class WatchProgressEntry(
@@ -49,6 +54,11 @@ data class WatchProgressEntry(
     val lastStreamSubtitle: String? = null,
     val pauseDescription: String? = null,
     val lastSourceUrl: String? = null,
+    // True only when the last playback of this entry was a local file (local-library or a completed
+    // download) rather than a remote stream. Written going forward; entries from before this field
+    // existed deserialize to false, which retroactively stops the old "auto-play the local file from
+    // anywhere" state from resuming locally until the user plays the local file on purpose again.
+    val lastSourceWasLocalFile: Boolean = false,
     val isCompleted: Boolean = false,
     val progressPercent: Float? = null,
     val source: String = WatchProgressSourceLocal,
@@ -185,6 +195,15 @@ data class ContinueWatchingPreferencesUiState(
     val upNextFromFurthestEpisode: Boolean = true,
     val useEpisodeThumbnails: Boolean = true,
     val showUnairedNextUp: Boolean = true,
+    /**
+     * Whether Up Next may also be seeded from the Nuvio Sync watched history when a *remote*
+     * Continue Watching source is selected.
+     *
+     * Off by default so a chosen source shows that source. Trakt and Simkl supply their own
+     * completed seeds, so they are largely unaffected; MDBList does not, so with this off it shows
+     * only its in-progress sessions.
+     */
+    val seedNextUpFromNuvioSync: Boolean = false,
     val blurNextUp: Boolean = false,
     val dismissedNextUpKeys: Set<String> = emptySet(),
     val showResumePromptOnLaunch: Boolean = true,

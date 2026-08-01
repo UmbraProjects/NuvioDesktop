@@ -105,14 +105,17 @@ internal fun StreamBadgeChip(
 }
 
 @Composable
-internal fun StreamBadgeImage(badge: StreamBadge) {
+internal fun StreamBadgeImage(
+    badge: StreamBadge,
+    size: StreamBadgeChipSize = StreamBadgeChipSize.STREAM,
+) {
     StreamBadgeChip(
         imageURL = badge.imageURL,
         name = badge.name,
         tagColor = badge.tagColor,
         tagStyle = badge.tagStyle,
         borderColor = badge.borderColor,
-        size = StreamBadgeChipSize.STREAM,
+        size = size,
     )
 }
 

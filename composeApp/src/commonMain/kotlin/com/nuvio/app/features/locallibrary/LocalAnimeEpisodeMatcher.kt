@@ -26,7 +26,7 @@ internal object LocalAnimeEpisodeMatcher {
      */
     fun matchFiles(item: LocalMediaItem, videoId: String): List<LocalMediaFile>? {
         val target = resolveTarget(item, videoId) ?: return null
-        return item.files.filter { it.matches(target) }
+        return item.files.filter { it.isEpisodePlayable && it.matches(target) }
     }
 
     /**
@@ -61,9 +61,9 @@ internal object LocalAnimeEpisodeMatcher {
     )
 
     private fun LocalMediaFile.matches(target: Target): Boolean {
-        val fileEpisode = episode ?: return false
-        return if (season != null) {
-            season == target.franchiseSeason && fileEpisode == target.franchiseEpisode
+        val fileEpisode = effectiveEpisode ?: return false
+        return if (effectiveSeason != null) {
+            effectiveSeason == target.franchiseSeason && fileEpisode == target.franchiseEpisode
         } else {
             fileEpisode == target.entryEpisode
         }

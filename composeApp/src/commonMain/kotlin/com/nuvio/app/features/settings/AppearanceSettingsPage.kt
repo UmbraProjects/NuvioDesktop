@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +56,13 @@ import com.nuvio.app.isDesktop
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_reset
+import nuvio.composeapp.generated.resources.settings_appearance_card_depth
+import nuvio.composeapp.generated.resources.settings_appearance_custom_theme
+import nuvio.composeapp.generated.resources.settings_appearance_custom_theme_accent
+import nuvio.composeapp.generated.resources.settings_appearance_custom_theme_background
+import nuvio.composeapp.generated.resources.settings_appearance_custom_theme_card
+import nuvio.composeapp.generated.resources.settings_appearance_custom_theme_description
+import nuvio.composeapp.generated.resources.settings_appearance_custom_theme_raised
 import nuvio.composeapp.generated.resources.cd_selected
 import nuvio.composeapp.generated.resources.settings_appearance_app_language
 import nuvio.composeapp.generated.resources.settings_appearance_app_language_sheet_title
@@ -67,6 +75,8 @@ import nuvio.composeapp.generated.resources.settings_appearance_liquid_glass
 import nuvio.composeapp.generated.resources.settings_appearance_liquid_glass_description
 import nuvio.composeapp.generated.resources.settings_appearance_desktop_navigation
 import nuvio.composeapp.generated.resources.settings_appearance_section_display
+import nuvio.composeapp.generated.resources.settings_appearance_start_windowed
+import nuvio.composeapp.generated.resources.settings_appearance_start_windowed_description
 import nuvio.composeapp.generated.resources.settings_appearance_section_theme
 import nuvio.composeapp.generated.resources.settings_poster_card_style
 import org.jetbrains.compose.resources.StringResource
@@ -160,11 +170,48 @@ internal fun LazyListScope.appearanceSettingsContent(
     }
     item {
         var showLanguageSheet by remember { mutableStateOf(false) }
+        val startWindowed by remember {
+            DesktopWindowStartupPreference.ensureLoaded()
+            DesktopWindowStartupPreference.startWindowed
+        }.collectAsState()
         SettingsSection(
             title = stringResource(Res.string.settings_appearance_section_display),
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
+                // App UI scale leads the section: it rescales everything below it, so it reads as
+                // the parent control rather than an option buried under the colour toggles.
+                if (isDesktop) {
+                    SettingsSliderRow(
+                        title = stringResource(Res.string.settings_appearance_app_ui_scale),
+                        value = desktopAppUiScalePercent,
+                        valueText = "${if (desktopAppUiScalePercent > 0) "+" else ""}$desktopAppUiScalePercent%",
+                        valueTextForValue = { "${if (it > 0) "+" else ""}$it%" },
+                        valueRange = -25..25,
+                        step = 5,
+                        isTablet = isTablet,
+                        onValueChange = onDesktopAppUiScalePercentChange,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_appearance_app_ui_scale_details),
+                        description = stringResource(Res.string.settings_appearance_app_ui_scale_details_description),
+                        checked = desktopAppUiScaleAppliesToDetails,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("app-ui-scale-details")),
+                        onCheckedChange = onDesktopAppUiScaleAppliesToDetailsChange,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_appearance_start_windowed),
+                        description = stringResource(Res.string.settings_appearance_start_windowed_description),
+                        checked = startWindowed,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("start-windowed")),
+                        onCheckedChange = DesktopWindowStartupPreference::setStartWindowed,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                }
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_appearance_amoled_black),
                     description = stringResource(Res.string.settings_appearance_amoled_description),
@@ -185,25 +232,6 @@ internal fun LazyListScope.appearanceSettingsContent(
                     )
                 }
                 if (isDesktop) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSliderRow(
-                        title = stringResource(Res.string.settings_appearance_app_ui_scale),
-                        value = desktopAppUiScalePercent,
-                        valueText = "${if (desktopAppUiScalePercent > 0) "+" else ""}$desktopAppUiScalePercent%",
-                        valueRange = -25..25,
-                        step = 5,
-                        isTablet = isTablet,
-                        onValueChange = onDesktopAppUiScalePercentChange,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_appearance_app_ui_scale_details),
-                        description = stringResource(Res.string.settings_appearance_app_ui_scale_details_description),
-                        checked = desktopAppUiScaleAppliesToDetails,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("app-ui-scale-details")),
-                        onCheckedChange = onDesktopAppUiScaleAppliesToDetailsChange,
-                    )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsChoiceRow(
                         title = stringResource(Res.string.settings_appearance_desktop_navigation),
@@ -263,10 +291,24 @@ internal fun LazyListScope.appearanceSettingsContent(
                     cornerRadiusDp = posterCardStyleUiState.cornerRadiusDp,
                     catalogLandscapeModeEnabled = posterCardStyleUiState.catalogLandscapeModeEnabled,
                     hideLabelsEnabled = posterCardStyleUiState.hideLabelsEnabled,
+                    zoomActionPreviewEnabled = posterCardStyleUiState.zoomActionPreviewEnabled,
                     onWidthSelected = PosterCardStyleRepository::setWidthDp,
                     onCornerRadiusSelected = PosterCardStyleRepository::setCornerRadiusDp,
                     onCatalogLandscapeModeChange = PosterCardStyleRepository::setCatalogLandscapeModeEnabled,
                     onHideLabelsChange = PosterCardStyleRepository::setHideLabelsEnabled,
+                )
+            }
+        }
+    }
+    item {
+        SettingsSection(
+            title = stringResource(Res.string.settings_appearance_card_depth),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                CardDepthControls(
+                    isTablet = isTablet,
+                    uiState = posterCardStyleUiState,
                 )
             }
         }
@@ -368,13 +410,13 @@ private fun CustomThemeEditor(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = "Custom theme",
+                    text = stringResource(Res.string.settings_appearance_custom_theme),
                     style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "Use six-digit hex colors. Changes apply as soon as a value is valid.",
+                    text = stringResource(Res.string.settings_appearance_custom_theme_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -385,22 +427,22 @@ private fun CustomThemeEditor(
             )
         }
         CustomThemeColorField(
-            label = "Accent",
+            label = stringResource(Res.string.settings_appearance_custom_theme_accent),
             value = customTheme.accentHex,
             onValidHex = ThemeSettingsRepository::setCustomThemeAccent,
         )
         CustomThemeColorField(
-            label = "Background",
+            label = stringResource(Res.string.settings_appearance_custom_theme_background),
             value = customTheme.backgroundHex,
             onValidHex = ThemeSettingsRepository::setCustomThemeBackground,
         )
         CustomThemeColorField(
-            label = "Raised surface",
+            label = stringResource(Res.string.settings_appearance_custom_theme_raised),
             value = customTheme.elevatedHex,
             onValidHex = ThemeSettingsRepository::setCustomThemeElevated,
         )
         CustomThemeColorField(
-            label = "Card surface",
+            label = stringResource(Res.string.settings_appearance_custom_theme_card),
             value = customTheme.cardHex,
             onValidHex = ThemeSettingsRepository::setCustomThemeCard,
         )
@@ -445,7 +487,7 @@ private fun CustomThemeColorField(
                     onValidHex(next)
                 }
             },
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).trackSettingsTextFocus(),
             singleLine = true,
             label = { Text(label) },
             supportingText = if (parsedColor == null) {

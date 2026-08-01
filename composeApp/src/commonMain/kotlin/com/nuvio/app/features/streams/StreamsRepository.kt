@@ -5,7 +5,7 @@ import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.enabledAddons
-import com.nuvio.app.features.addons.httpGetText
+import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DebridStreamPresentation
@@ -38,6 +38,20 @@ object StreamsRepository {
     private val _uiState = MutableStateFlow(StreamsUiState())
     val uiState: StateFlow<StreamsUiState> = _uiState.asStateFlow()
 
+    /**
+     * Whether the streams currently loaded belong to an episode rather than a film.
+     *
+     * A property of the *request*, not of any one emission, which is why it lives here instead of on
+     * [StreamsUiState] — the state is rebuilt from scratch at several points during a load and the
+     * flag would have to be re-threaded through every one of them.
+     *
+     * Anything that scores these streams outside the load itself needs it: size thresholds are
+     * per-content-type, and judging an episode against the movie band marks every normal episode as
+     * "far from preferred size".
+     */
+    private val _isEpisodeRequest = MutableStateFlow(false)
+    val isEpisodeRequest: StateFlow<Boolean> = _isEpisodeRequest.asStateFlow()
+
     private var activeJob: Job? = null
     private var activeRequestKey: String? = null
 
@@ -62,8 +76,9 @@ object StreamsRepository {
         return "$type::${resolvedEpisode.videoId}::${resolvedEpisode.streamSeason}::${resolvedEpisode.streamEpisode}::$manualSelection"
     }
 
-    fun load(type: String, videoId: String, parentMetaId: String? = null, title: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false) {
+    fun load(type: String, videoId: String, parentMetaId: String? = null, title: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false, preferLocalStreams: Boolean = false) {
         load(
+            preferLocalStreams = preferLocalStreams,
             type = type,
             videoId = videoId,
             parentMetaId = parentMetaId,
@@ -75,8 +90,9 @@ object StreamsRepository {
         )
     }
 
-    fun reload(type: String, videoId: String, parentMetaId: String? = null, title: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false) {
+    fun reload(type: String, videoId: String, parentMetaId: String? = null, title: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false, preferLocalStreams: Boolean = false) {
         load(
+            preferLocalStreams = preferLocalStreams,
             type = type,
             videoId = videoId,
             parentMetaId = parentMetaId,
@@ -88,7 +104,7 @@ object StreamsRepository {
         )
     }
 
-    private fun load(type: String, videoId: String, parentMetaId: String?, title: String?, season: Int?, episode: Int?, manualSelection: Boolean, forceRefresh: Boolean) {
+    private fun load(type: String, videoId: String, parentMetaId: String?, title: String?, season: Int?, episode: Int?, manualSelection: Boolean, forceRefresh: Boolean, preferLocalStreams: Boolean) {
         val resolvedEpisode = MediaIdResolver.resolveLocalEpisodeIdentity(
             contentType = type,
             parentMetaId = parentMetaId ?: videoId,
@@ -136,17 +152,27 @@ object StreamsRepository {
         val debridSettings = DebridSettingsRepository.snapshot()
         val streamBadgeRules = StreamBadgeSettingsRepository.snapshot()
         val localStreams = MetaDetailsRepository.findLocalStreams(effectiveVideoId)
-        val preferLocalStreams = MetaDetailsRepository.prefersLocalStreams()
         val includeLocalInPicker = localStreams.isNotEmpty() && !preferLocalStreams
-        val autoPlayMode = playerSettings.streamAutoPlayMode
+        val scoreProfile = StreamScoreRepository.profile
+        _isEpisodeRequest.value = effectiveEpisode != null
+        val scoreContext = StreamScoreContexts.forPlayback(
+            isEpisode = effectiveEpisode != null,
+            contentId = parentMetaId ?: videoId,
+            contentType = type,
+        )
+        // Scoring turns any automatic pick into a best-score pick; see StreamAutoPlayPolicy.
+        val autoPlayMode = StreamAutoPlayPolicy.effectiveMode(playerSettings.streamAutoPlayMode, scoreProfile)
         val isAutoPlayEnabled = !manualSelection && autoPlayMode != StreamAutoPlayMode.MANUAL &&
             !(autoPlayMode == StreamAutoPlayMode.REGEX_MATCH &&
                 !StreamAutoPlayPolicy.isRegexSelectionConfigured(playerSettings.streamAutoPlayRegex))
 
-        // Look up persisted binge group when both settings are enabled
+        // Look up persisted binge group when both settings are enabled, unless the score profile is
+        // set to override binge affinity — every downstream use here keys off this being non-null, so
+        // clearing it is all it takes to hand the pick back to the scored order.
         val persistedBingeGroup = if (
             playerSettings.streamAutoPlayPreferBingeGroup &&
-            playerSettings.streamAutoPlayReuseBingeGroup
+            playerSettings.streamAutoPlayReuseBingeGroup &&
+            !StreamAutoPlayPolicy.scoreOverridesBingeGroup(autoPlayMode, scoreProfile)
         ) {
             parentMetaId?.let { BingeGroupCacheRepository.get(it) }
         } else null
@@ -337,6 +363,8 @@ object StreamsRepository {
                 val selected = StreamAutoPlaySelector.selectAutoPlayStream(
                     streams = allStreams,
                     mode = autoPlayMode,
+                    scoreProfile = scoreProfile,
+                    scoreContext = scoreContext,
                     regexPattern = playerSettings.streamAutoPlayRegex,
                     source = playerSettings.streamAutoPlaySource,
                     installedAddonNames = installedAddonNames,
@@ -393,6 +421,18 @@ object StreamsRepository {
                 }
 
                 val eligibleGroupIds = setOf(group.addonId)
+
+                // Torrent-name lookup for already-resolved debrid rows, so a season pack among them
+                // can be marked without opening it. Deliberately outside the cache-check gate and
+                // never awaited: the list publishes now, and a row lights up if a name arrives.
+                debridAvailabilityJobs += launch {
+                    val named = LocalDebridAvailabilityService.annotateTorrentNames(
+                        groups = listOf(group),
+                        eligibleGroupIds = eligibleGroupIds,
+                    ).firstOrNull()
+                    if (named != null && named != group) publishAddonGroup(presentStreamGroup(named))
+                }
+
                 val shouldWaitForCacheCheck = LocalDebridAvailabilityService.hasPendingCacheCheck(
                     groups = listOf(group),
                     eligibleGroupIds = eligibleGroupIds,
@@ -441,6 +481,8 @@ object StreamsRepository {
                                     val selected = StreamAutoPlaySelector.selectAutoPlayStream(
                                         streams = allStreams,
                                         mode = autoPlayMode,
+                                        scoreProfile = scoreProfile,
+                                        scoreContext = scoreContext,
                                         regexPattern = playerSettings.streamAutoPlayRegex,
                                         source = playerSettings.streamAutoPlaySource,
                                         installedAddonNames = installedAddonNames,
@@ -481,6 +523,8 @@ object StreamsRepository {
                                 val evaluation = StreamAutoPlaySelector.evaluateAutoPlayStream(
                                     streams = allStreams,
                                     mode = autoPlayMode,
+                                    scoreProfile = scoreProfile,
+                                    scoreContext = scoreContext,
                                     regexPattern = playerSettings.streamAutoPlayRegex,
                                     source = playerSettings.streamAutoPlaySource,
                                     installedAddonNames = installedAddonNames,
@@ -530,7 +574,7 @@ object StreamsRepository {
 
                     val displayName = addon.addonName
                     val group = runCatchingUnlessCancelled {
-                        val payload = httpGetText(url)
+                        val payload = httpGetTextWithHeaders(url, STREAM_METADATA_REQUEST_HEADERS)
                         val parsedStreams = StreamParser.parse(
                             payload = payload,
                             addonName = displayName,
@@ -544,6 +588,10 @@ object StreamsRepository {
                                 type = type,
                                 id = parentMetaId ?: videoId,
                             ),
+                            seriesTitle = MetaDetailsRepository.seriesTitleFor(
+                                type = type,
+                                id = parentMetaId ?: videoId,
+                            ) ?: title,
                         )
                         val removedCount = parsedStreams.size - streams.size
                         if (removedCount > 0) {
@@ -687,6 +735,8 @@ object StreamsRepository {
                     episode = effectiveEpisode,
                     playerSettings = playerSettings,
                     installedAddonNames = installedAddonNames,
+                    contentId = parentMetaId ?: videoId,
+                    contentType = type,
                 ) { original, prepared ->
                     _uiState.update { current ->
                         current.copy(
@@ -715,6 +765,8 @@ object StreamsRepository {
                 val evaluation = StreamAutoPlaySelector.evaluateAutoPlayStream(
                     streams = allStreams,
                     mode = autoPlayMode,
+                    scoreProfile = scoreProfile,
+                    scoreContext = scoreContext,
                     regexPattern = playerSettings.streamAutoPlayRegex,
                     source = playerSettings.streamAutoPlaySource,
                     installedAddonNames = installedAddonNames,

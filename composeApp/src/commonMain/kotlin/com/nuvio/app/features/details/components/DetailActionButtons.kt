@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.AppIconResource
 import com.nuvio.app.core.ui.appIconPainter
+import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.core.ui.secondaryClick
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_play
@@ -57,7 +58,12 @@ fun DetailActionButtons(
     secondaryActions: List<DetailSecondaryAction> = emptyList(),
     actionsMenuLabel: String = "More actions",
     isTablet: Boolean = false,
-    focused: Boolean = false,
+    /**
+     * Which button in the row holds keyboard focus: 0 is Play, 1+ index into [secondaryActions] in
+     * render order. Null when the row is not focused at all. Previously only Play could be focused,
+     * so left/right had nowhere to go from it.
+     */
+    focusedActionIndex: Int? = null,
     onPlayClick: () -> Unit = {},
     onPlayLongClick: (() -> Unit)? = null,
 ) {
@@ -68,8 +74,9 @@ fun DetailActionButtons(
     val hapticFeedback = LocalHapticFeedback.current
     // Kept small: this button is wide, so even a few percent of scale would push its edge into
     // the secondary buttons beside it.
-    val playScale by animateFloatAsState(targetValue = if (focused) 1.02f else 1f)
-    val focusRingAlpha by animateFloatAsState(targetValue = if (focused) 1f else 0f)
+    val playFocused = focusedActionIndex == 0
+    val playScale by animateFloatAsState(targetValue = if (playFocused) 1.02f else 1f)
+    val focusRingAlpha by animateFloatAsState(targetValue = if (playFocused) 1f else 0f)
     val focusRingColor = MaterialTheme.colorScheme.primary
     val hasSecondaryActions = secondaryActions.isNotEmpty()
 
@@ -151,22 +158,25 @@ fun DetailActionButtons(
             if (hasSecondaryActions) {
                 Spacer(modifier = Modifier.width(12.dp))
                 secondaryActions.forEachIndexed { index, action ->
-                    DetailIconAction(
-                        label = action.label,
-                        icon = action.icon,
-                        active = action.isActive,
-                        size = iconButtonSize,
-                        onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                            action.onClick()
-                        },
-                        onLongClick = action.onLongClick?.let { longClick ->
-                            {
+                    NuvioPosterHoverTooltip(title = action.label) {
+                        DetailIconAction(
+                            label = action.label,
+                            icon = action.icon,
+                            active = action.isActive,
+                            focused = focusedActionIndex == index + 1,
+                            size = iconButtonSize,
+                            onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                longClick()
-                            }
-                        },
-                    )
+                                action.onClick()
+                            },
+                            onLongClick = action.onLongClick?.let { longClick ->
+                                {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    longClick()
+                                }
+                            },
+                        )
+                    }
 
                     if (index != secondaryActions.lastIndex) {
                         Spacer(modifier = Modifier.width(12.dp))
@@ -186,10 +196,26 @@ private fun DetailIconAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp,
+    focused: Boolean = false,
     onLongClick: (() -> Unit)? = null,
 ) {
+    // Matches the Play button's ring so a focus move along the row reads as one continuous control.
+    val focusRingAlpha by animateFloatAsState(targetValue = if (focused) 1f else 0f)
+    val focusRingColor = MaterialTheme.colorScheme.primary
     Surface(
-        modifier = modifier,
+        modifier = modifier.drawWithContent {
+            drawContent()
+            if (focusRingAlpha <= 0f) return@drawWithContent
+            val stroke = 3.dp.toPx()
+            val inset = stroke / 2f
+            drawRoundRect(
+                color = focusRingColor.copy(alpha = focusRingColor.alpha * focusRingAlpha),
+                topLeft = Offset(inset, inset),
+                size = Size(this.size.width - inset * 2f, this.size.height - inset * 2f),
+                cornerRadius = CornerRadius((12.dp.toPx() - inset).coerceAtLeast(0f)),
+                style = Stroke(width = stroke),
+            )
+        },
         shape = RoundedCornerShape(12.dp),
         color = if (active) {
             MaterialTheme.colorScheme.onBackground

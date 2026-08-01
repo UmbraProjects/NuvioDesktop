@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_save
 import nuvio.composeapp.generated.resources.api_keys_onboarding_dont_ask_again
@@ -46,15 +47,9 @@ fun ApiKeysOnboardingHost(modifier: Modifier = Modifier) {
     if (!state.visible) return
 
     BasicAlertDialog(onDismissRequest = ApiKeysOnboardingController::dismissUntilRestart) {
-        Surface(
-            modifier = modifier
+        NuvioDialogSurface(modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 8.dp,
-            shadowElevation = 16.dp,
-        ) {
+                .padding(horizontal = 20.dp)) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),

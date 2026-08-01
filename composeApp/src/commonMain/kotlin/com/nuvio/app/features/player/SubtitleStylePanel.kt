@@ -187,7 +187,7 @@ private fun StyleControlsCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Font",
+                text = stringResource(Res.string.player_subtitle_font),
                 color = colorScheme.onSurfaceVariant,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
@@ -236,10 +236,43 @@ private fun StyleControlsCard(
             }
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(Res.string.compose_player_outline_width),
+                color = colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            StepperControl(
+                value = style.outlineWidth.toString(),
+                onMinus = {
+                    onStyleChanged(style.copy(outlineWidth = (style.outlineWidth - 1).coerceAtLeast(SUBTITLE_OUTLINE_WIDTH_MIN)))
+                },
+                onPlus = {
+                    onStyleChanged(style.copy(outlineWidth = (style.outlineWidth + 1).coerceAtMost(SUBTITLE_OUTLINE_WIDTH_MAX)))
+                },
+                buttonSize = btnSize,
+                buttonRadius = btnRadius,
+                minWidth = 46.dp,
+                minusIcon = Icons.Rounded.KeyboardArrowDown,
+                plusIcon = Icons.Rounded.KeyboardArrowUp,
+            )
+        }
+
         ToggleRow(
             label = stringResource(Res.string.compose_player_bold),
             enabled = style.bold,
             onToggle = { onStyleChanged(style.copy(bold = !style.bold)) },
+        )
+
+        ToggleRow(
+            label = stringResource(Res.string.compose_player_italic),
+            enabled = style.italic,
+            onToggle = { onStyleChanged(style.copy(italic = !style.italic)) },
         )
 
         Row(
@@ -306,6 +339,106 @@ private fun StyleControlsCard(
             selectedColor = style.outlineColor,
             onColorSelected = { onStyleChanged(style.copy(outlineColor = it)) },
         )
+
+        ColorPickerRow(
+            label = stringResource(Res.string.compose_player_background_color),
+            colors = SubtitleBackgroundColorSwatches,
+            selectedColor = style.backgroundColor,
+            onColorSelected = { onStyleChanged(style.copy(backgroundColor = it)) },
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(Res.string.compose_player_blur),
+                color = colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            StepperControl(
+                value = style.blur.toString(),
+                onMinus = { onStyleChanged(style.copy(blur = (style.blur - 1).coerceAtLeast(SUBTITLE_BLUR_MIN))) },
+                onPlus = { onStyleChanged(style.copy(blur = (style.blur + 1).coerceAtMost(SUBTITLE_BLUR_MAX))) },
+                buttonSize = btnSize,
+                buttonRadius = btnRadius,
+                minWidth = 46.dp,
+                minusIcon = Icons.Rounded.KeyboardArrowDown,
+                plusIcon = Icons.Rounded.KeyboardArrowUp,
+            )
+        }
+
+        // Drop-shadow group. The offset, colour, and intensity rows only take visible effect while
+        // the shadow toggle is on, but they stay editable so the look can be dialled in first.
+        ToggleRow(
+            label = stringResource(Res.string.compose_player_shadow),
+            enabled = style.shadowEnabled,
+            onToggle = { onStyleChanged(style.copy(shadowEnabled = !style.shadowEnabled)) },
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(Res.string.compose_player_shadow_offset),
+                color = colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            StepperControl(
+                value = subtitleShadowOffsetLabel(style.shadowOffset),
+                onMinus = {
+                    onStyleChanged(style.copy(shadowOffset = (style.shadowOffset - SUBTITLE_SHADOW_OFFSET_STEP).coerceAtLeast(SUBTITLE_SHADOW_OFFSET_MIN)))
+                },
+                onPlus = {
+                    onStyleChanged(style.copy(shadowOffset = (style.shadowOffset + SUBTITLE_SHADOW_OFFSET_STEP).coerceAtMost(SUBTITLE_SHADOW_OFFSET_MAX)))
+                },
+                buttonSize = btnSize,
+                buttonRadius = btnRadius,
+                minWidth = 46.dp,
+                minusIcon = Icons.Rounded.KeyboardArrowDown,
+                plusIcon = Icons.Rounded.KeyboardArrowUp,
+            )
+        }
+
+        ColorPickerRow(
+            label = stringResource(Res.string.compose_player_shadow_color),
+            colors = SubtitleShadowColorSwatches,
+            selectedColor = style.shadowColor.copy(alpha = 1f),
+            onColorSelected = { onStyleChanged(style.copy(shadowColor = it.copy(alpha = style.shadowColor.alpha))) },
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val currentAlphaPercent = (style.shadowColor.alpha * 100f).roundToInt().coerceIn(0, 100)
+            Text(
+                text = stringResource(Res.string.compose_player_shadow_intensity),
+                color = colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            StepperControl(
+                value = "$currentAlphaPercent%",
+                onMinus = {
+                    val newAlpha = (currentAlphaPercent - 10).coerceAtLeast(0) / 100f
+                    onStyleChanged(style.copy(shadowColor = style.shadowColor.copy(alpha = newAlpha)))
+                },
+                onPlus = {
+                    val newAlpha = (currentAlphaPercent + 10).coerceAtMost(100) / 100f
+                    onStyleChanged(style.copy(shadowColor = style.shadowColor.copy(alpha = newAlpha)))
+                },
+                buttonSize = btnSize,
+                buttonRadius = btnRadius,
+                minWidth = 58.dp,
+            )
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),

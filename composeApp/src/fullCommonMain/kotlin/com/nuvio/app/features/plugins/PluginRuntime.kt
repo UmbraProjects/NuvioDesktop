@@ -1,6 +1,8 @@
 package com.nuvio.app.features.plugins
 
 import co.touchlab.kermit.Logger
+import com.dokar.quickjs.QuickJs
+import com.dokar.quickjs.binding.asyncFunction
 import com.dokar.quickjs.binding.define
 import com.dokar.quickjs.binding.function
 import com.dokar.quickjs.quickJs
@@ -9,7 +11,11 @@ import com.fleeksoft.ksoup.nodes.Document
 import com.fleeksoft.ksoup.nodes.Element
 import com.fleeksoft.ksoup.select.Elements
 import com.nuvio.app.features.addons.httpRequestRaw
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -29,17 +35,36 @@ import nuvio.composeapp.generated.resources.generic_unknown
 import org.jetbrains.compose.resources.getString
 import kotlin.random.Random
 
+/** Wall-clock budget for one scraper, including everything it waits on. */
 private const val PLUGIN_TIMEOUT_MS = 60_000L
 
-// Caps how many QuickJS native runtimes can be alive at once. Each executePlugin /
-// getPluginSettingsLayout call stands up its own native (JNI) QuickJS runtime; stream
-// loading fans every enabled scraper out concurrently with no throttle, so a heavy
-// plugin set can spin up 15-30+ native runtimes at the same time. That concurrency is
-// the prime suspect for the silent, log-less native crashes seen only on plugin users
-// (addon users never touch QuickJS). Bounding it keeps native memory/thread pressure in
-// check and shrinks the timeout/cancellation teardown race window. Tunable: drop toward
-// 1 to test the hypothesis more aggressively, raise for more scrape parallelism.
-private const val MAX_CONCURRENT_PLUGINS = 4
+// Separate, much tighter bound on how long a plugin may keep the JS engine *busy*: an infinite
+// loop or a pathological regex. quickjs-kt measures only time spent executing JavaScript here, so
+// time awaiting __native_fetch does not count against it and a merely slow provider isn't punished.
+// QuickJS interrupts itself and throws, which unwinds the native stack cleanly — unlike cancelling
+// the coroutine from outside while native code is mid-call, which is what used to corrupt state.
+private const val PLUGIN_JS_EXECUTION_TIMEOUT_MS = 15_000L
+
+// Caps the JS heap of a single scraper so a runaway allocation surfaces as a catchable JS error
+// instead of exhausting the process. Generous: response bodies are already capped at 1 MB each.
+private const val PLUGIN_MEMORY_LIMIT_BYTES = 128L * 1024 * 1024
+
+// Each scraper gets its own QuickJS runtime, and separate runtimes are independent native state, so
+// running them at the same time is fine — the access violations that forced this to 1 came from
+// quickjs-kt 1.0.5's native lifetime/locking bugs (close racing a binding callback or a pending
+// job), fixed upstream in 1.0.7. This cap is now only about resources: a repository like
+// All-in-One ships 60+ scrapers, and 60 simultaneous native heaps plus 60 parsed DOMs costs a lot
+// of memory for no extra throughput on work that is almost entirely network-bound.
+private const val MAX_CONCURRENT_PLUGIN_RUNTIMES = 12
+
+// Deliberately not Dispatchers.Default. That pool is sized to the CPU count and shared with the
+// rest of the app, while a scraper spends nearly all its time waiting on provider HTTP. QuickJS's
+// own pending-job loop also runs on whatever dispatcher its runtime was created with, so parking
+// scrapers on Default starves both the app and the JS event loops driving those same scrapers.
+private val pluginDispatcher = Dispatchers.IO
+
+// Cheerio's `:contains("x")` takes quoted text; Ksoup's takes it bare.
+private val CHEERIO_CONTAINS_REGEX = Regex(""":contains\([\"']([^\"']+)[\"']\)""")
 
 private const val MAX_FETCH_BODY_CHARS = 1024 * 1024
 private const val MAX_FETCH_HEADER_VALUE_CHARS = 8 * 1024
@@ -66,10 +91,9 @@ internal object PluginRuntime {
         ignoreUnknownKeys = true
     }
 
-    // Bounds concurrent QuickJS native runtimes across all callers (see MAX_CONCURRENT_PLUGINS).
-    private val nativeRuntimeSemaphore = Semaphore(MAX_CONCURRENT_PLUGINS)
-
-    private val containsRegex = Regex(""":contains\([\"']([^\"']+)[\"']\)""")
+    // Bounds how many QuickJS runtimes exist at once; shared by stream scrapers and settings
+    // evaluation. Not a correctness guard — see MAX_CONCURRENT_PLUGIN_RUNTIMES.
+    private val runtimeSlots = Semaphore(MAX_CONCURRENT_PLUGIN_RUNTIMES)
 
     suspend fun executePlugin(
         code: String,
@@ -79,70 +103,94 @@ internal object PluginRuntime {
         episode: Int?,
         scraperId: String,
         scraperSettings: Map<String, Any> = emptyMap(),
-    ): List<PluginRuntimeResult> = withContext(Dispatchers.Default) {
-        // Acquire the permit outside withTimeout so time spent queuing for a native
-        // runtime slot does not count against the plugin's execution budget.
-        nativeRuntimeSemaphore.withPermit {
-            withTimeout(PLUGIN_TIMEOUT_MS) {
-                executePluginInternal(
-                    code = code,
-                    tmdbId = tmdbId,
-                    mediaType = mediaType,
-                    season = season,
-                    episode = episode,
-                    scraperId = scraperId,
-                    scraperSettings = scraperSettings,
-                )
+    ): List<PluginRuntimeResult> = withContext(pluginDispatcher) {
+        // The slot is taken outside the timeout on purpose. Charging queue time to the budget only
+        // works when the queue is short; with more enabled scrapers than slots the ones at the back
+        // spent their entire budget waiting and timed out having never run a line of JavaScript.
+        runtimeSlots.withPermit {
+            withConfinedRuntimeThread(scraperId) { confined ->
+                withTimeout(PLUGIN_TIMEOUT_MS) {
+                    executePluginInternal(
+                        code = code,
+                        tmdbId = tmdbId,
+                        mediaType = mediaType,
+                        season = season,
+                        episode = episode,
+                        scraperId = scraperId,
+                        scraperSettings = scraperSettings,
+                        runtimeDispatcher = confined,
+                    )
+                }
             }
+        }
+    }
+
+    /**
+     * Runs [block] on a thread dedicated to one QuickJS runtime, and hands it that dispatcher.
+     *
+     * QuickJS runtimes are single-threaded by design: the runtime caches a stack boundary for its
+     * overflow check, so touching one from a different thread than the last call used compares the
+     * current stack pointer against a boundary belonging to some other thread's stack. Running on
+     * `Dispatchers.IO` did exactly that — a scraper does three evaluations plus a pending-job loop,
+     * each a suspension point free to resume on a different pool thread. The result was an
+     * `EXCEPTION_ACCESS_VIOLATION` inside the native evaluate (and, when it stopped short of a
+     * crash, a scraper whose result was silently dropped: roughly 1% of runs at 12-way concurrency).
+     *
+     * Confinement is per execution, not global: runtimes still run concurrently, each on its own
+     * thread, so throughput is unchanged. The thread costs about a tenth of a millisecond to start
+     * against a scraper that then spends seconds on the network, and [runtimeSlots] already bounds
+     * how many can exist at once.
+     */
+    @OptIn(DelicateCoroutinesApi::class)
+    private suspend fun <T> withConfinedRuntimeThread(
+        scraperId: String,
+        block: suspend (CoroutineDispatcher) -> T,
+    ): T {
+        val confined = newSingleThreadContext("plugin-runtime-$scraperId")
+        return try {
+            withContext(confined) { block(confined) }
+        } finally {
+            confined.close()
         }
     }
 
     suspend fun getPluginSettingsLayout(
         code: String,
         scraperId: String,
-    ): String? = withContext(Dispatchers.Default) {
-        nativeRuntimeSemaphore.withPermit {
-            withTimeout(PLUGIN_TIMEOUT_MS) {
-                var layoutJson: String? = null
-                quickJs(Dispatchers.Default) {
-                    define("console") {
-                        function("log") { null }
-                        function("error") { null }
-                        function("warn") { null }
-                        function("info") { null }
-                        function("debug") { null }
-                    }
-                    function("__capture_settings_result") { args ->
-                        layoutJson = args.getOrNull(0)?.toString()
-                        null
-                    }
+    ): String? = withContext(pluginDispatcher) {
+        runtimeSlots.withPermit {
+            withConfinedRuntimeThread(scraperId) { confined ->
+                withTimeout(PLUGIN_TIMEOUT_MS) {
+                    var layoutJson: String? = null
+                    quickJs(confined) {
+                        applyPluginRuntimeLimits()
+                        // onSettings implementations fetch remote option lists and parse them, so
+                        // they need the same host API surface the scraper entry point gets.
+                        registerPluginBindings(scraperId, PluginDomCache())
+                        function("__capture_settings_result") { args ->
+                            layoutJson = args.getOrNull(0)?.toString()
+                            null
+                        }
 
-                    evaluate<Any?>(buildPolyfillCode(scraperId, "{}"))
-                    evaluate<Any?>(
-                        """
-                            var module = { exports: {} };
-                            var exports = module.exports;
-                            (function() {
-                                $code
-                            })();
-                        """.trimIndent(),
-                    )
-                    evaluate<Any?>(
-                        """
-                            (async function() {
-                                try {
-                                    var onSettings = module.exports.onSettings || globalThis.onSettings;
-                                    var layout = typeof onSettings === 'function' ? await onSettings() : [];
-                                    __capture_settings_result(JSON.stringify(layout || []));
-                                } catch (e) {
-                                    console.error("onSettings error:", e);
-                                    __capture_settings_result("[]");
-                                }
-                            })();
-                        """.trimIndent(),
-                    )
+                        evaluate<Any?>(buildPolyfillCode(scraperId, "{}"))
+                        evaluate<Any?>(wrapPluginModule(code))
+                        evaluate<Any?>(
+                            """
+                                (async function() {
+                                    try {
+                                        var onSettings = module.exports.onSettings || globalThis.onSettings;
+                                        var layout = typeof onSettings === 'function' ? await onSettings() : [];
+                                        __capture_settings_result(JSON.stringify(layout || []));
+                                    } catch (e) {
+                                        console.error("onSettings error:", e);
+                                        __capture_settings_result("[]");
+                                    }
+                                })();
+                            """.trimIndent(),
+                        )
+                    }
+                    layoutJson
                 }
-                layoutJson
             }
         }
     }
@@ -155,202 +203,15 @@ internal object PluginRuntime {
         episode: Int?,
         scraperId: String,
         scraperSettings: Map<String, Any>,
+        runtimeDispatcher: CoroutineDispatcher,
     ): List<PluginRuntimeResult> {
-        val documentCache = mutableMapOf<String, Document>()
-        val elementCache = mutableMapOf<String, Element>()
-        var idCounter = 0
+        val dom = PluginDomCache()
         var resultJson = "[]"
 
         try {
-            quickJs(Dispatchers.Default) {
-                define("console") {
-                    function("log") { args ->
-                        log.d { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }
-                        null
-                    }
-                    function("error") { args ->
-                        log.e { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }
-                        null
-                    }
-                    function("warn") { args ->
-                        log.w { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }
-                        null
-                    }
-                    function("info") { args ->
-                        log.i { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }
-                        null
-                    }
-                    function("debug") { args ->
-                        log.d { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }
-                        null
-                    }
-                }
-
-                function("__native_fetch") { args ->
-                    val url = args.getOrNull(0)?.toString() ?: ""
-                    val method = args.getOrNull(1)?.toString() ?: "GET"
-                    val headersJson = args.getOrNull(2)?.toString() ?: "{}"
-                    val body = args.getOrNull(3)?.toString() ?: ""
-                    val followRedirects = args.getOrNull(4) as? Boolean ?: true
-                    try {
-                        performNativeFetch(url, method, headersJson, body, followRedirects)
-                    } catch (t: Throwable) {
-                        log.e(t) { "Fetch bridge error for $method $url" }
-                        JsonObject(
-                            mapOf(
-                                "ok" to JsonPrimitive(false),
-                                "status" to JsonPrimitive(0),
-                                "statusText" to JsonPrimitive(t.message ?: "Fetch failed"),
-                                "url" to JsonPrimitive(url),
-                                "body" to JsonPrimitive(""),
-                                "headers" to JsonObject(emptyMap()),
-                            ),
-                        ).toString()
-                    }
-                }
-
-                function("__crypto_digest_hex") { args ->
-                    val algorithm = args.getOrNull(0)?.toString() ?: "SHA256"
-                    val data = args.getOrNull(1)?.toString() ?: ""
-                    runCatching {
-                        pluginDigestHex(algorithm, data)
-                    }.getOrDefault("")
-                }
-
-                function("__crypto_hmac_hex") { args ->
-                    val algorithm = args.getOrNull(0)?.toString() ?: "SHA256"
-                    val key = args.getOrNull(1)?.toString() ?: ""
-                    val data = args.getOrNull(2)?.toString() ?: ""
-                    runCatching {
-                        pluginHmacHex(algorithm, key, data)
-                    }.getOrDefault("")
-                }
-
-                function("__crypto_base64_encode") { args ->
-                    val data = args.getOrNull(0)?.toString() ?: ""
-                    runCatching {
-                        pluginBase64Encode(data)
-                    }.getOrDefault("")
-                }
-
-                function("__crypto_base64_decode") { args ->
-                    val data = args.getOrNull(0)?.toString() ?: ""
-                    runCatching {
-                        pluginBase64Decode(data)
-                    }.getOrDefault("")
-                }
-
-                function("__crypto_utf8_to_hex") { args ->
-                    val data = args.getOrNull(0)?.toString() ?: ""
-                    runCatching {
-                        pluginUtf8ToHex(data)
-                    }.getOrDefault("")
-                }
-
-                function("__crypto_hex_to_utf8") { args ->
-                    val data = args.getOrNull(0)?.toString() ?: ""
-                    runCatching {
-                        pluginHexToUtf8(data)
-                    }.getOrDefault("")
-                }
-
-                function("__parse_url") { args ->
-                    parseUrl(args.getOrNull(0)?.toString() ?: "")
-                }
-
-                function("__cheerio_load") { args ->
-                    val html = args.getOrNull(0)?.toString() ?: ""
-                    val docId = "doc_${idCounter++}_${Random.nextInt(0, Int.MAX_VALUE)}"
-                    documentCache[docId] = Ksoup.parse(html)
-                    docId
-                }
-
-                function("__cheerio_select") { args ->
-                    val docId = args.getOrNull(0)?.toString() ?: ""
-                    var selector = args.getOrNull(1)?.toString() ?: ""
-                    val doc = documentCache[docId] ?: return@function "[]"
-                    try {
-                        selector = selector.replace(containsRegex, ":contains($1)")
-                        val elements = if (selector.isEmpty()) Elements() else doc.select(selector)
-                        val ids = elements.mapIndexed { index, el ->
-                            val id = "$docId:$index:${el.hashCode()}"
-                            elementCache[id] = el
-                            id
-                        }
-                        "[" + ids.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" } + "]"
-                    } catch (_: Exception) {
-                        "[]"
-                    }
-                }
-
-                function("__cheerio_find") { args ->
-                    val docId = args.getOrNull(0)?.toString() ?: ""
-                    val elementId = args.getOrNull(1)?.toString() ?: ""
-                    var selector = args.getOrNull(2)?.toString() ?: ""
-                    val element = elementCache[elementId] ?: return@function "[]"
-                    try {
-                        selector = selector.replace(containsRegex, ":contains($1)")
-                        val elements = element.select(selector)
-                        val ids = elements.mapIndexed { index, el ->
-                            val id = "$docId:find:$index:${el.hashCode()}"
-                            elementCache[id] = el
-                            id
-                        }
-                        "[" + ids.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" } + "]"
-                    } catch (_: Exception) {
-                        "[]"
-                    }
-                }
-
-                function("__cheerio_text") { args ->
-                    val elementIds = args.getOrNull(1)?.toString() ?: ""
-                    elementIds.split(",")
-                        .filter { it.isNotEmpty() }
-                        .mapNotNull { elementCache[it]?.text() }
-                        .joinToString(" ")
-                }
-
-                function("__cheerio_html") { args ->
-                    val docId = args.getOrNull(0)?.toString() ?: ""
-                    val elementId = args.getOrNull(1)?.toString() ?: ""
-                    if (elementId.isEmpty()) {
-                        documentCache[docId]?.html() ?: ""
-                    } else {
-                        elementCache[elementId]?.html() ?: ""
-                    }
-                }
-
-                function("__cheerio_inner_html") { args ->
-                    val elementId = args.getOrNull(1)?.toString() ?: ""
-                    elementCache[elementId]?.html() ?: ""
-                }
-
-                function("__cheerio_attr") { args ->
-                    val elementId = args.getOrNull(1)?.toString() ?: ""
-                    val attrName = args.getOrNull(2)?.toString() ?: ""
-                    val value = elementCache[elementId]?.attr(attrName)
-                    if (value.isNullOrEmpty()) "__UNDEFINED__" else value
-                }
-
-                function("__cheerio_next") { args ->
-                    val docId = args.getOrNull(0)?.toString() ?: ""
-                    val elementId = args.getOrNull(1)?.toString() ?: ""
-                    val element = elementCache[elementId] ?: return@function "__NONE__"
-                    val next = element.nextElementSibling() ?: return@function "__NONE__"
-                    val nextId = "$docId:next:${next.hashCode()}"
-                    elementCache[nextId] = next
-                    nextId
-                }
-
-                function("__cheerio_prev") { args ->
-                    val docId = args.getOrNull(0)?.toString() ?: ""
-                    val elementId = args.getOrNull(1)?.toString() ?: ""
-                    val element = elementCache[elementId] ?: return@function "__NONE__"
-                    val prev = element.previousElementSibling() ?: return@function "__NONE__"
-                    val prevId = "$docId:prev:${prev.hashCode()}"
-                    elementCache[prevId] = prev
-                    prevId
-                }
+            quickJs(runtimeDispatcher) {
+                applyPluginRuntimeLimits()
+                registerPluginBindings(scraperId, dom)
 
                 function("__capture_result") { args ->
                     resultJson = args.getOrNull(0)?.toString() ?: "[]"
@@ -358,102 +219,310 @@ internal object PluginRuntime {
                 }
 
                 val settingsJson = toJsonElement(scraperSettings).toString()
-                val polyfillCode = buildPolyfillCode(scraperId, settingsJson)
-                evaluate<Any?>(polyfillCode)
-
-                val wrappedCode = """
-                    var module = { exports: {} };
-                    var exports = module.exports;
-                    (function() {
-                        $code
-                    })();
-                """.trimIndent()
-                evaluate<Any?>(wrappedCode)
+                evaluate<Any?>(buildPolyfillCode(scraperId, settingsJson))
+                evaluate<Any?>(wrapPluginModule(code))
 
                 val tmdbIdArg = JsonPrimitive(tmdbId).toString()
                 val mediaTypeArg = JsonPrimitive(mediaType).toString()
                 val seasonArg = season?.toString() ?: "undefined"
                 val episodeArg = episode?.toString() ?: "undefined"
-                val callCode = """
-                    (async function() {
-                        try {
-                            var getStreams = module.exports.getStreams || globalThis.getStreams;
-                            if (!getStreams) {
-                                console.error("getStreams function not found on module.exports or globalThis");
+                evaluate<Any?>(
+                    """
+                        (async function() {
+                            try {
+                                var getStreams = module.exports.getStreams || globalThis.getStreams;
+                                if (!getStreams) {
+                                    console.error("getStreams function not found on module.exports or globalThis");
+                                    __capture_result(JSON.stringify([]));
+                                    return;
+                                }
+                                var result = await getStreams($tmdbIdArg, $mediaTypeArg, $seasonArg, $episodeArg);
+                                __capture_result(JSON.stringify(result || []));
+                            } catch (e) {
+                                console.error("getStreams error:", e && e.message ? e.message : e, e && e.stack ? e.stack : "");
                                 __capture_result(JSON.stringify([]));
-                                return;
                             }
-                            var result = await getStreams($tmdbIdArg, $mediaTypeArg, $seasonArg, $episodeArg);
-                            __capture_result(JSON.stringify(result || []));
-                        } catch (e) {
-                            console.error("getStreams error:", e && e.message ? e.message : e, e && e.stack ? e.stack : "");
-                            __capture_result(JSON.stringify([]));
-                        }
-                    })();
-                """.trimIndent()
-                evaluate<Any?>(callCode)
+                        })();
+                    """.trimIndent(),
+                )
             }
 
             return parseJsonResults(resultJson, scraperId)
         } finally {
-            documentCache.clear()
-            elementCache.clear()
+            dom.clear()
         }
     }
 
-    private fun performNativeFetch(
+    private fun QuickJs.applyPluginRuntimeLimits() {
+        memoryLimit = PLUGIN_MEMORY_LIMIT_BYTES
+        evaluationTimeoutMillis = PLUGIN_JS_EXECUTION_TIMEOUT_MS
+    }
+
+    private fun wrapPluginModule(code: String): String = """
+        var module = { exports: {} };
+        var exports = module.exports;
+        (function() {
+            $code
+        })();
+    """.trimIndent()
+
+    /** Everything the polyfill in [buildPolyfillCode] expects to find on the host side. */
+    private fun QuickJs.registerPluginBindings(scraperId: String, dom: PluginDomCache) {
+        define("console") {
+            function("log") { args ->
+                log.d { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }
+                null
+            }
+            function("error") { args ->
+                log.e { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }
+                null
+            }
+            function("warn") { args ->
+                log.w { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }
+                null
+            }
+            function("info") { args ->
+                log.i { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }
+                null
+            }
+            function("debug") { args ->
+                log.d { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }
+                null
+            }
+        }
+
+        // Async, not a blocking binding: this returns a JS promise, so the plugin's own
+        // Promise.all over several providers actually runs in parallel instead of being flattened
+        // into one request at a time, and the thread is free while the network is in flight.
+        asyncFunction("__native_fetch") { args ->
+            val url = args.getOrNull(0)?.toString() ?: ""
+            val method = args.getOrNull(1)?.toString() ?: "GET"
+            val headersJson = args.getOrNull(2)?.toString() ?: "{}"
+            val body = args.getOrNull(3)?.toString() ?: ""
+            val followRedirects = args.getOrNull(4) as? Boolean ?: true
+            try {
+                performNativeFetch(url, method, headersJson, body, followRedirects)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                log.e(error) { "Plugin:$scraperId fetch failed for $method $url" }
+                JsonObject(
+                    mapOf(
+                        "ok" to JsonPrimitive(false),
+                        "status" to JsonPrimitive(0),
+                        "statusText" to JsonPrimitive(error.message ?: "Fetch failed"),
+                        "url" to JsonPrimitive(url),
+                        "body" to JsonPrimitive(""),
+                        "headers" to JsonObject(emptyMap()),
+                    ),
+                ).toString()
+            }
+        }
+
+        function("__crypto_digest_hex") { args ->
+            val algorithm = args.getOrNull(0)?.toString() ?: "SHA256"
+            val data = args.getOrNull(1)?.toString() ?: ""
+            runCatching { pluginDigestHex(algorithm, data) }.getOrDefault("")
+        }
+
+        function("__crypto_hmac_hex") { args ->
+            val algorithm = args.getOrNull(0)?.toString() ?: "SHA256"
+            val key = args.getOrNull(1)?.toString() ?: ""
+            val data = args.getOrNull(2)?.toString() ?: ""
+            runCatching { pluginHmacHex(algorithm, key, data) }.getOrDefault("")
+        }
+
+        function("__crypto_base64_encode") { args ->
+            val data = args.getOrNull(0)?.toString() ?: ""
+            runCatching { pluginBase64Encode(data) }.getOrDefault("")
+        }
+
+        function("__crypto_base64_decode") { args ->
+            val data = args.getOrNull(0)?.toString() ?: ""
+            runCatching { pluginBase64Decode(data) }.getOrDefault("")
+        }
+
+        function("__crypto_utf8_to_hex") { args ->
+            val data = args.getOrNull(0)?.toString() ?: ""
+            runCatching { pluginUtf8ToHex(data) }.getOrDefault("")
+        }
+
+        function("__crypto_hex_to_utf8") { args ->
+            val data = args.getOrNull(0)?.toString() ?: ""
+            runCatching { pluginHexToUtf8(data) }.getOrDefault("")
+        }
+
+        function("__parse_url") { args ->
+            parseUrl(args.getOrNull(0)?.toString() ?: "")
+        }
+
+        function("__cheerio_load") { args ->
+            dom.load(args.getOrNull(0)?.toString() ?: "")
+        }
+
+        function("__cheerio_select") { args ->
+            dom.select(
+                docId = args.getOrNull(0)?.toString() ?: "",
+                selector = args.getOrNull(1)?.toString() ?: "",
+            )
+        }
+
+        function("__cheerio_find") { args ->
+            dom.find(
+                docId = args.getOrNull(0)?.toString() ?: "",
+                elementId = args.getOrNull(1)?.toString() ?: "",
+                selector = args.getOrNull(2)?.toString() ?: "",
+            )
+        }
+
+        function("__cheerio_text") { args ->
+            dom.text(args.getOrNull(1)?.toString() ?: "")
+        }
+
+        function("__cheerio_html") { args ->
+            dom.outerHtml(
+                docId = args.getOrNull(0)?.toString() ?: "",
+                elementId = args.getOrNull(1)?.toString() ?: "",
+            )
+        }
+
+        function("__cheerio_inner_html") { args ->
+            dom.innerHtml(args.getOrNull(1)?.toString() ?: "")
+        }
+
+        function("__cheerio_attr") { args ->
+            dom.attr(
+                elementId = args.getOrNull(1)?.toString() ?: "",
+                attrName = args.getOrNull(2)?.toString() ?: "",
+            )
+        }
+
+        function("__cheerio_next") { args ->
+            dom.sibling(
+                docId = args.getOrNull(0)?.toString() ?: "",
+                elementId = args.getOrNull(1)?.toString() ?: "",
+                forward = true,
+            )
+        }
+
+        function("__cheerio_prev") { args ->
+            dom.sibling(
+                docId = args.getOrNull(0)?.toString() ?: "",
+                elementId = args.getOrNull(1)?.toString() ?: "",
+                forward = false,
+            )
+        }
+    }
+
+    /**
+     * Ksoup documents and elements stay on the Kotlin side; JavaScript only ever sees opaque ids.
+     * One instance per QuickJS runtime, so it needs no synchronization — bindings for a given
+     * runtime are only ever invoked from that runtime's own evaluation.
+     */
+    private class PluginDomCache {
+        private val documents = mutableMapOf<String, Document>()
+        private val elements = mutableMapOf<String, Element>()
+        private var idCounter = 0
+
+        fun load(html: String): String {
+            val docId = "doc_${idCounter++}_${Random.nextInt(0, Int.MAX_VALUE)}"
+            documents[docId] = Ksoup.parse(html)
+            return docId
+        }
+
+        fun select(docId: String, selector: String): String {
+            val doc = documents[docId] ?: return "[]"
+            return runCatching {
+                val normalized = selector.replace(CHEERIO_CONTAINS_REGEX, ":contains($1)")
+                val matches = if (normalized.isEmpty()) Elements() else doc.select(normalized)
+                encodeIds(matches.mapIndexed { index, el -> remember("$docId:$index:${el.hashCode()}", el) })
+            }.getOrDefault("[]")
+        }
+
+        fun find(docId: String, elementId: String, selector: String): String {
+            val element = elements[elementId] ?: return "[]"
+            return runCatching {
+                val normalized = selector.replace(CHEERIO_CONTAINS_REGEX, ":contains($1)")
+                val matches = element.select(normalized)
+                encodeIds(matches.mapIndexed { index, el -> remember("$docId:find:$index:${el.hashCode()}", el) })
+            }.getOrDefault("[]")
+        }
+
+        fun text(elementIds: String): String = elementIds.split(",")
+            .filter { it.isNotEmpty() }
+            .mapNotNull { elements[it]?.text() }
+            .joinToString(" ")
+
+        fun outerHtml(docId: String, elementId: String): String = if (elementId.isEmpty()) {
+            documents[docId]?.html().orEmpty()
+        } else {
+            elements[elementId]?.html().orEmpty()
+        }
+
+        fun innerHtml(elementId: String): String = elements[elementId]?.html().orEmpty()
+
+        fun attr(elementId: String, attrName: String): String {
+            val value = elements[elementId]?.attr(attrName)
+            return if (value.isNullOrEmpty()) "__UNDEFINED__" else value
+        }
+
+        fun sibling(docId: String, elementId: String, forward: Boolean): String {
+            val element = elements[elementId] ?: return "__NONE__"
+            val sibling = if (forward) element.nextElementSibling() else element.previousElementSibling()
+            if (sibling == null) return "__NONE__"
+            val key = if (forward) "next" else "prev"
+            return remember("$docId:$key:${sibling.hashCode()}", sibling)
+        }
+
+        fun clear() {
+            documents.clear()
+            elements.clear()
+        }
+
+        private fun remember(id: String, element: Element): String {
+            elements[id] = element
+            return id
+        }
+
+        private fun encodeIds(ids: List<String>): String =
+            "[" + ids.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" } + "]"
+    }
+
+    private suspend fun performNativeFetch(
         url: String,
         method: String,
         headersJson: String,
         body: String,
         followRedirects: Boolean,
     ): String {
-        return try {
-            val headers = sanitizePluginRequestHeaders(parseHeaders(headersJson)).toMutableMap()
-            if (headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
-                headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-
-            val response = runBlocking {
-                httpRequestRaw(
-                    method = method,
-                    url = url,
-                    headers = headers,
-                    body = body,
-                    followRedirects = followRedirects,
-                )
-            }
-
-            val truncated = response.body.length > MAX_FETCH_BODY_CHARS
-            val responseHeaders = response.headers
-                .mapKeys { (key, _) -> key.lowercase() }
-                .mapValues { (_, value) -> truncateString(value, MAX_FETCH_HEADER_VALUE_CHARS) }
-            val result = JsonObject(
-                mapOf(
-                    "ok" to JsonPrimitive(response.status in 200..299),
-                    "status" to JsonPrimitive(response.status),
-                    "statusText" to JsonPrimitive(response.statusText),
-                    "url" to JsonPrimitive(response.url),
-                    "body" to JsonPrimitive(truncateString(response.body, MAX_FETCH_BODY_CHARS)),
-                    "headers" to JsonObject(responseHeaders.mapValues { JsonPrimitive(it.value) }),
-                    "truncated" to JsonPrimitive(truncated),
-                ),
-            )
-            result.toString()
-        } catch (error: Throwable) {
-            log.e(error) { "Fetch error for $method $url" }
-            JsonObject(
-                mapOf(
-                    "ok" to JsonPrimitive(false),
-                    "status" to JsonPrimitive(0),
-                    "statusText" to JsonPrimitive(error.message ?: "Fetch failed"),
-                    "url" to JsonPrimitive(url),
-                    "body" to JsonPrimitive(""),
-                    "headers" to JsonObject(emptyMap()),
-                ),
-            )
-                .toString()
+        val headers = sanitizePluginRequestHeaders(parseHeaders(headersJson)).toMutableMap()
+        if (headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
+            headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
+
+        val response = httpRequestRaw(
+            method = method,
+            url = url,
+            headers = headers,
+            body = body,
+            followRedirects = followRedirects,
+        )
+
+        val truncated = response.body.length > MAX_FETCH_BODY_CHARS
+        val responseHeaders = response.headers
+            .mapKeys { (key, _) -> key.lowercase() }
+            .mapValues { (_, value) -> truncateString(value, MAX_FETCH_HEADER_VALUE_CHARS) }
+        return JsonObject(
+            mapOf(
+                "ok" to JsonPrimitive(response.status in 200..299),
+                "status" to JsonPrimitive(response.status),
+                "statusText" to JsonPrimitive(response.statusText),
+                "url" to JsonPrimitive(response.url),
+                "body" to JsonPrimitive(truncateString(response.body, MAX_FETCH_BODY_CHARS)),
+                "headers" to JsonObject(responseHeaders.mapValues { JsonPrimitive(it.value) }),
+                "truncated" to JsonPrimitive(truncated),
+            ),
+        ).toString()
     }
 
     private fun parseHeaders(headersJson: String): Map<String, String> {
@@ -548,7 +617,7 @@ internal object PluginRuntime {
                     .takeIf { it.isNotEmpty() }
 
                 PluginRuntimeResult(
-                    title = item.stringOrNull("title") ?: item.stringOrNull("name") ?: runBlocking { getString(Res.string.generic_unknown) },
+                    title = item.stringOrNull("title") ?: item.stringOrNull("name") ?: unknownResultTitle(),
                     name = item.stringOrNull("name"),
                     url = url,
                     quality = item.stringOrNull("quality"),
@@ -563,6 +632,15 @@ internal object PluginRuntime {
                 )
             }.filter { it.url.isNotBlank() }
     }
+
+    // Resolved once instead of per untitled result: getString is a suspend resource lookup, and
+    // blocking on it inside the per-item mapping meant one runBlocking per stream, per scraper.
+    @Volatile
+    private var cachedUnknownResultTitle: String? = null
+
+    private fun unknownResultTitle(): String =
+        cachedUnknownResultTitle
+            ?: runBlocking { getString(Res.string.generic_unknown) }.also { cachedUnknownResultTitle = it }
 
     private fun JsonObject.stringOrNull(key: String): String? =
         this[key]?.jsonPrimitive?.contentOrNull
@@ -615,7 +693,7 @@ internal object PluginRuntime {
                 var headers = options.headers || {};
                 var body = options.body || '';
                 var followRedirects = options.redirect !== 'manual';
-                var result = __native_fetch(url, method, JSON.stringify(headers), body, followRedirects);
+                var result = await __native_fetch(url, method, JSON.stringify(headers), body, followRedirects);
                 var parsed = JSON.parse(result);
                 return {
                     ok: parsed.ok,

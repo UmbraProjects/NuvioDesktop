@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.p2p_consent_body
 import nuvio.composeapp.generated.resources.p2p_consent_cancel
@@ -37,13 +38,7 @@ fun P2pConsentDialog(
     onDismiss: () -> Unit,
 ) {
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(24.dp),
-            tonalElevation = 6.dp,
-            shadowElevation = 12.dp,
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(20.dp),
             ) {

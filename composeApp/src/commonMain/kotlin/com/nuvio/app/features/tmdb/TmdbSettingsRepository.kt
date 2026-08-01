@@ -26,6 +26,7 @@ object TmdbSettingsRepository {
     private var useCollections = true
     private var libraryPosterEnabled = false
     private var libraryPosterUrlTemplate = ""
+    private var resolveFilenameCatalogs = true
     private var heroImageSource = HeroImageSource.Addon
 
     fun ensureLoaded() {
@@ -173,6 +174,13 @@ object TmdbSettingsRepository {
         TmdbSettingsStorage.saveLibraryPosterEnabled(value)
     }
 
+    fun setResolveFilenameCatalogs(value: Boolean) = setBoolean(
+        current = resolveFilenameCatalogs,
+        next = value,
+        update = { resolveFilenameCatalogs = it },
+        persist = TmdbSettingsStorage::saveResolveFilenameCatalogs,
+    )
+
     fun setHeroImageSource(source: HeroImageSource) {
         ensureLoaded()
         if (heroImageSource == source) return
@@ -224,6 +232,7 @@ object TmdbSettingsRepository {
         libraryPosterUrlTemplate = TmdbSettingsStorage.loadLibraryPosterUrlTemplate()?.trim().orEmpty()
         libraryPosterEnabled = (TmdbSettingsStorage.loadLibraryPosterEnabled() ?: false) &&
             libraryPosterUrlTemplate.isNotBlank()
+        resolveFilenameCatalogs = TmdbSettingsStorage.loadResolveFilenameCatalogs() ?: true
         heroImageSource = TmdbSettingsStorage.loadHeroImageSource()
             ?.let { name -> HeroImageSource.entries.firstOrNull { it.name == name } }
             ?: HeroImageSource.Addon
@@ -248,6 +257,7 @@ object TmdbSettingsRepository {
             useCollections = useCollections,
             libraryPosterEnabled = libraryPosterEnabled,
             libraryPosterUrlTemplate = libraryPosterUrlTemplate,
+            resolveFilenameCatalogs = resolveFilenameCatalogs,
             heroImageSource = heroImageSource,
         )
     }

@@ -26,7 +26,9 @@ import com.nuvio.app.features.trakt.shouldUseTraktMoreLikeThis
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -34,6 +36,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import nuvio.composeapp.generated.resources.*
@@ -51,9 +55,6 @@ object MetaDetailsRepository {
     private val _uiState = MutableStateFlow(MetaDetailsUiState())
     val uiState: StateFlow<MetaDetailsUiState> = _uiState.asStateFlow()
     private var activeRequestKey: String? = null
-    // Local files are a playback preference of the catalog entry used to reach this detail page,
-    // not a global replacement for streams from search, home, or related-content pages.
-    private var activeLocalStreamsAllowed = false
     // Bounded so a long session of browsing detail pages can't grow this map without limit.
     // Confined to the Main dispatcher (see `scope`), so a plain insertion-order LinkedHashMap that
     // drops its eldest entry past the cap is safe — no synchronization needed. 80 entries is far
@@ -63,10 +64,9 @@ object MetaDetailsRepository {
             size > 80
     }
 
-    fun load(type: String, id: String, preferLocalStreams: Boolean = false) {
+    fun load(type: String, id: String) {
         log.d { "load() called — type=$type id=$id" }
         val requestKey = "$type:$id"
-        activeLocalStreamsAllowed = preferLocalStreams
 
         // Unmatched local-library items have no addon meta; serve a synthesized one so the details
         // page still opens and plays the local file(s). (Matched items use their real tt/tmdb meta.)
@@ -233,15 +233,23 @@ object MetaDetailsRepository {
             }
             .toMap()
 
+    /** Series name for [episodeTitlesByCoordinate]'s companion check: an episode title that merely
+     * repeats it identifies no particular episode and must not be matched against stream text. */
+    fun seriesTitleFor(type: String, id: String): String? =
+        peek(type, id)?.name?.trim()?.takeIf { it.isNotBlank() }
+
     fun clear() {
         activeRequestKey = null
         cachedMetaByRequestKey.clear()
         _uiState.value = MetaDetailsUiState()
     }
 
-    suspend fun fetch(type: String, id: String, enrichTmdb: Boolean = true): MetaDetails? {
+    suspend fun fetch(type: String, id: String, enrichTmdb: Boolean = true, forceRefresh: Boolean = false): MetaDetails? {
         val requestKey = "$type:$id:enrich=$enrichTmdb"
-        cachedMetaByRequestKey[requestKey]?.let { return it.baseMeta }
+        // forceRefresh bypasses the LRU so a background sweep (library auto-download) sees newly
+        // aired episodes instead of a stale cached video list — same class of bug the binge
+        // terminal-empty-state fix addressed, so the force path exists from day one.
+        if (!forceRefresh) cachedMetaByRequestKey[requestKey]?.let { return it.baseMeta }
 
         val metaLookupId = resolveMetaLookupId(itemId = id, itemType = type)
         val manifests = findMetaManifests(type = type, id = metaLookupId)
@@ -273,6 +281,12 @@ object MetaDetailsRepository {
     // main detail-page cache (which the full fetch() path writes to).
     private val lightweightMetaCache = mutableMapOf<String, MetaDetails>()
 
+    // Guards lightweightMetaCache and inFlightLightweightMeta. Unlike cachedMetaByRequestKey,
+    // this path is reached from arbitrary dispatchers (hero enrichment, catalog rows, detail
+    // prefetch), so it can't rely on Main confinement.
+    private val lightweightMetaMutex = Mutex()
+    private val inFlightLightweightMeta = mutableMapOf<String, Deferred<MetaDetails?>>()
+
     // Lightweight fetch for hero enrichment — returns the first non-null addon result
     // without requiring a video list for series. Uses its own cache so LaunchedEffect
     // restarts (triggered by library reloads) return instantly on the second pass.
@@ -300,8 +314,45 @@ object MetaDetailsRepository {
         if (!preferTmdbImages) {
             cachedMetaByRequestKey["$type:$id"]?.let { return it.baseMeta }
         }
-        lightweightMetaCache[requestKey]?.let { return it }
 
+        // Single-flight. The cache is only populated once a fetch finishes, so on startup the
+        // hero, home enrichment and every row showing the same title all missed it at the same
+        // instant and each launched its own fetch — one show was fetched 7 times in a single
+        // startup. Callers racing on the same key now share one request.
+        //
+        // The shared job runs in `scope` rather than in the caller's coroutine: a LaunchedEffect
+        // being torn down (hero rotation, navigating away) no longer discards a fetch the other
+        // callers are awaiting, and the result still reaches the cache for whoever asks next.
+        val request = lightweightMetaMutex.withLock {
+            lightweightMetaCache[requestKey]?.let { return it }
+            inFlightLightweightMeta.getOrPut(requestKey) {
+                scope.async {
+                    try {
+                        runLightweightMetaFetch(
+                            type = type,
+                            id = id,
+                            preferTmdbImages = preferTmdbImages,
+                            requestKey = requestKey,
+                        )
+                    } finally {
+                        // A failed fetch must not leave its Deferred behind for later callers to
+                        // await forever, so the removal has to survive cancellation too.
+                        withContext(NonCancellable) {
+                            lightweightMetaMutex.withLock { inFlightLightweightMeta.remove(requestKey) }
+                        }
+                    }
+                }
+            }
+        }
+        return request.await()
+    }
+
+    private suspend fun runLightweightMetaFetch(
+        type: String,
+        id: String,
+        preferTmdbImages: Boolean,
+        requestKey: String,
+    ): MetaDetails? {
         val heroImageSource = TmdbSettingsRepository.snapshot().heroImageSource
         val isTvType = type.equals("series", ignoreCase = true) || type.equals("anime", ignoreCase = true)
         val tvdbApiKeyPresent = TvdbSettingsRepository.snapshot().hasApiKey
@@ -329,7 +380,7 @@ object MetaDetailsRepository {
             if (result != null) {
                 if (!preferTmdbImages) {
                     // Standard path: first result wins.
-                    lightweightMetaCache[requestKey] = result
+                    cacheLightweightMeta(requestKey, result)
                     return result
                 }
                 if (addonResult == null) addonResult = result
@@ -337,7 +388,7 @@ object MetaDetailsRepository {
                 // Without this guard, AIOMetadata's TMDB-sourced image.tmdb.org URLs cause an
                 // early return that skips TVDB completely.
                 if (!tvdbActiveForType && result.background?.contains("image.tmdb.org") == true) {
-                    lightweightMetaCache[requestKey] = result
+                    cacheLightweightMeta(requestKey, result)
                     return result
                 }
                 break  // Collected text metadata; proceed to image source resolution.
@@ -449,8 +500,12 @@ object MetaDetailsRepository {
                 )
             }
         }
-        merged?.let { lightweightMetaCache[requestKey] = it }
+        merged?.let { cacheLightweightMeta(requestKey, it) }
         return merged
+    }
+
+    private suspend fun cacheLightweightMeta(requestKey: String, meta: MetaDetails) {
+        lightweightMetaMutex.withLock { lightweightMetaCache[requestKey] = meta }
     }
 
     private const val FETCH_TIMEOUT_MS = 5_000L
@@ -795,8 +850,6 @@ object MetaDetailsRepository {
     }
 
    
-    fun prefersLocalStreams(): Boolean = activeLocalStreamsAllowed
-
     fun findEmbeddedStreams(videoId: String): List<com.nuvio.app.features.streams.StreamItem> {
         val meta = _uiState.value.meta ?: return emptyList()
         val addonStreams = findAddonEmbeddedStreams(meta, videoId)

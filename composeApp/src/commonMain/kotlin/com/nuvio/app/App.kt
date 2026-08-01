@@ -2,6 +2,7 @@ package com.nuvio.app
 
 import co.touchlab.kermit.Logger
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.animateDpAsState
@@ -39,6 +40,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -94,6 +98,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -134,6 +139,8 @@ import com.nuvio.app.core.sync.SyncManager
 import com.nuvio.app.core.ui.NuvioNavigationBar
 import com.nuvio.app.core.ui.NuvioContinueWatchingActionSheet
 import com.nuvio.app.core.ui.NuvioPosterActionSheet
+import com.nuvio.app.core.ui.PosterZoomAnchor
+import com.nuvio.app.core.ui.PosterZoomAnchorHolder
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.DesktopNavigationGestureBridge
 import com.nuvio.app.core.ui.DesktopBackRequestSource
@@ -142,6 +149,7 @@ import com.nuvio.app.core.ui.platformExitApp
 import com.nuvio.app.core.ui.configurePlatformImageLoader
 import com.nuvio.app.core.ui.TransientImageErrorRetryInterceptor
 import com.nuvio.app.core.ui.NuvioToastHost
+import com.nuvio.app.core.ui.LocalOpenMetaDetails
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.NuvioFloatingPrompt
 import com.nuvio.app.core.ui.NuvioResumePromptDialog
@@ -156,6 +164,8 @@ import com.nuvio.app.core.ui.NativeTabBridge
 import com.nuvio.app.core.ui.isLiquidGlassNativeTabBarSupported
 import com.nuvio.app.core.ui.localizedContinueWatchingSubtitle
 import com.nuvio.app.core.ui.nuvio
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import com.nuvio.app.features.auth.AuthScreen
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.calendar.CalendarScreen
@@ -194,15 +204,23 @@ import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.components.HomeHeroTrailerGate
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.library.LibraryItem
+import com.nuvio.app.features.library.LibraryNavigationContextMenu
+import com.nuvio.app.features.library.LibraryNavMenuWidth
+import com.nuvio.app.features.library.LibrarySortMenuPanel
+import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.LibrarySourceMode
 import com.nuvio.app.features.library.LibraryScreen
 import com.nuvio.app.features.library.toLibraryItem
 import com.nuvio.app.features.library.toMetaPreview
+import com.nuvio.app.features.locallibrary.FilenameParser
+import com.nuvio.app.features.locallibrary.LocalLibraryRepository
+import com.nuvio.app.features.locallibrary.LocalLibraryPlaybackPreference
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
 import com.nuvio.app.features.p2p.P2pConsentDialog
 import com.nuvio.app.features.p2p.P2pSettingsRepository
+import com.nuvio.app.features.player.PlaybackStartTrace
 import com.nuvio.app.features.player.PlayerAutoPlayMode
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.LocalFileDrop
@@ -222,6 +240,7 @@ import com.nuvio.app.features.player.playerSourceIdentityKey
 import com.nuvio.app.features.player.SubtitleLanguageOption
 import com.nuvio.app.features.player.sanitizePlaybackHeaders
 import com.nuvio.app.features.player.sanitizePlaybackResponseHeaders
+import com.nuvio.app.features.player.skip.SkipDbDumpRepository
 import com.nuvio.app.features.profiles.ActiveProfileMiniAvatar
 import com.nuvio.app.features.profiles.AvatarCatalogItem
 import com.nuvio.app.features.profiles.AvatarRepository
@@ -234,6 +253,7 @@ import com.nuvio.app.features.profiles.SidebarProfileSwitcherStack
 import com.nuvio.app.features.profiles.profileAvatarImageUrl
 import com.nuvio.app.features.search.SearchScreen
 import com.nuvio.app.features.search.SearchRepository
+import com.nuvio.app.features.search.discoverCatalogDisplayLabels
 import com.nuvio.app.features.settings.ApiKeysOnboardingHost
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.features.settings.HomescreenSettingsScreen
@@ -255,7 +275,7 @@ import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsSyncService
 import com.nuvio.app.features.collection.FolderDetailScreen
 import com.nuvio.app.features.collection.FolderDetailRepository
-import com.nuvio.app.features.streams.StreamAutoPlayPolicy
+import com.nuvio.app.features.collection.clearFolderScrollSession
 import com.nuvio.app.features.streams.BingeGroupCacheRepository
 import com.nuvio.app.features.streams.StreamBehaviorHints
 import com.nuvio.app.features.streams.StreamItem
@@ -267,11 +287,51 @@ import com.nuvio.app.features.streams.StreamsScreen
 import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.simkl.SimklAuthRepository
+import com.nuvio.app.features.simkl.SimklConnectionMode
+import com.nuvio.app.features.simkl.SimklDailyVisit
+import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.simkl.SimklSettingsRepository
+import com.nuvio.app.features.mdblist.MdbListScrobbleAdapter
+import com.nuvio.app.features.mdblist.MdbListLibraryAdapter
+import com.nuvio.app.features.mdblist.MdbListTrackingAuthProvider
+import com.nuvio.app.features.mdblist.MdbListWatchedAdapter
+import com.nuvio.app.features.mdblist.MdbListHistoryWriter
+import com.nuvio.app.features.mdblist.MdbListRatingWriter
+import com.nuvio.app.features.simkl.SimklScrobbleAdapter
+import com.nuvio.app.features.simkl.SimklLibraryAdapter
+import com.nuvio.app.features.simkl.SimklTrackingAuthProvider
+import com.nuvio.app.features.simkl.SimklWatchedAdapter
+import com.nuvio.app.features.simkl.SimklHistoryWriter
+import com.nuvio.app.features.simkl.SimklRatingWriter
+import com.nuvio.app.features.tracking.CalendarSourceRepository
+import com.nuvio.app.features.tracking.ContinueWatchingSource
+import com.nuvio.app.features.tracking.ContinueWatchingSourceRepository
+import com.nuvio.app.features.tracking.RatingPromptHost
+import com.nuvio.app.features.tracking.RatingPromptRepository
+import com.nuvio.app.features.tracking.LibrarySourceRepository
+import com.nuvio.app.features.tracking.migratedCalendarSource
+import com.nuvio.app.features.tracking.migratedContinueWatchingSource
+import com.nuvio.app.features.tracking.migratedLibrarySource
+import com.nuvio.app.features.tracking.TrackingProviderRegistry
+import com.nuvio.app.features.tracking.TrackingScrobbleAction
+import com.nuvio.app.features.tracking.TrackingScrobbleCoordinator
+import com.nuvio.app.features.tracking.TrackingScrobbleEvent
+import com.nuvio.app.features.tracking.buildTrackingMediaReference
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktListTab
-import com.nuvio.app.features.trakt.TraktScrobbleRepository
+import com.nuvio.app.features.trakt.TraktScrobbleAdapter
+import com.nuvio.app.features.trakt.TraktLibraryAdapter
 import com.nuvio.app.features.trakt.TraktSettingsRepository
+import com.nuvio.app.features.trakt.WatchProgressSource
+import com.nuvio.app.features.trakt.TraktTrackingAuthProvider
+import com.nuvio.app.features.trakt.TraktHistoryWriter
+import com.nuvio.app.features.yamtrack.YamtrackScrobbleAdapter
+import com.nuvio.app.features.yamtrack.YamtrackHistoryWriter
+import com.nuvio.app.features.yamtrack.YamtrackLibraryAdapter
+import com.nuvio.app.features.yamtrack.YamtrackWatchedAdapter
+import com.nuvio.app.features.yamtrack.YamtrackRatingWriter
+import com.nuvio.app.features.yamtrack.YamtrackTrackingAuthProvider
+import kotlin.concurrent.Volatile
 import com.nuvio.app.features.updater.AppUpdaterHost
 import com.nuvio.app.features.updater.rememberAppUpdaterController
 import com.nuvio.app.features.watched.WatchedRepository
@@ -284,6 +344,7 @@ import com.nuvio.app.features.watchprogress.nextUpDismissKey
 import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import com.nuvio.app.features.watching.application.WatchingActions
 import com.nuvio.app.features.watching.application.WatchingState
+import io.ktor.http.Url
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -316,7 +377,6 @@ object TabsRoute
 data class DetailRoute(
     val type: String,
     val id: String,
-    val preferLocalStreams: Boolean = false,
 )
 
 @Serializable
@@ -396,6 +456,7 @@ data class CatalogRoute(
     val manifestUrl: String? = null,
     val addonCatalogId: String? = null,
     val genre: String? = null,
+    val searchQuery: String? = null,
     val librarySectionType: String? = null,
     val collectionId: String? = null,
     val folderId: String? = null,
@@ -418,6 +479,7 @@ data class CatalogRoute(
         manifestUrl = (target as? CatalogTarget.Addon)?.manifestUrl,
         addonCatalogId = (target as? CatalogTarget.Addon)?.catalogId,
         genre = (target as? CatalogTarget.Addon)?.genre,
+        searchQuery = (target as? CatalogTarget.Addon)?.searchQuery,
         librarySectionType = (target as? CatalogTarget.Library)?.sectionType,
         collectionId = (target as? CatalogTarget.CollectionSource)?.collectionId,
         folderId = (target as? CatalogTarget.CollectionSource)?.folderId,
@@ -431,6 +493,7 @@ data class CatalogRoute(
                 contentType = contentType,
                 catalogId = requireNotNull(addonCatalogId),
                 genre = genre,
+                searchQuery = searchQuery,
                 supportsPagination = supportsPagination,
             )
 
@@ -462,6 +525,15 @@ enum class AppScreenTab {
     Settings,
 }
 
+internal fun rootTabHistoryAfterNavigation(
+    history: List<AppScreenTab>,
+    current: AppScreenTab,
+    target: AppScreenTab,
+): List<AppScreenTab> {
+    if (current == target || history.lastOrNull() == current) return history
+    return (history + current).takeLast(16)
+}
+
 private val DesktopSidebarCollapsedWidth = 76.dp
 private val DesktopSidebarExpandedContentWidth = 144.dp
 private val DesktopSidebarIconSlotSize = 36.dp
@@ -491,6 +563,30 @@ private fun PlayerLaunch.toExternalPlayerPlaybackRequest(): ExternalPlayerPlayba
         episode = episodeNumber,
         episodeTitle = episodeTitle,
     )
+
+/**
+ * Recovers the display file name for a directly opened media URI (dropped local file or a pasted
+ * HTTP(S) stream). Cloud/debrid links routinely use an opaque object id as the final path segment
+ * and carry the real release name in a `filename=` query parameter, so that parameter is preferred
+ * for web streams before falling back to the last path segment. Returns null when nothing usable
+ * can be recovered. The extension is left intact for [FilenameParser] to strip.
+ */
+private fun directPlayMediaName(mediaUri: String, isWebStream: Boolean): String? {
+    if (isWebStream) {
+        runCatching { Url(mediaUri) }.getOrNull()
+            ?.parameters?.get("filename")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+    }
+    return mediaUri
+        .substringBefore('?')
+        .substringBefore('#')
+        .substringAfterLast('\\')
+        .substringAfterLast('/')
+        .trim()
+        .takeIf { it.isNotBlank() }
+}
 
 private enum class AppGateScreen {
     Loading,
@@ -524,7 +620,73 @@ private inline fun startupWarmStep(
     }
 }
 
+private val trackingRegistrationLock = Any()
+
+@Volatile
+private var trackingProvidersRegistered = false
+
+/**
+ * Publishes the tracking ports once per process.
+ *
+ * Registration is provider identity, not profile state, so it must not be repeated on a profile
+ * switch — and it has to happen before the first scrobble regardless of whether a given provider's
+ * repositories are warmed in the critical or the deferred pass.
+ */
+private fun registerTrackingProviders() {
+    synchronized(trackingRegistrationLock) {
+        if (trackingProvidersRegistered) return
+        trackingProvidersRegistered = true
+    }
+    // Read once, only if no single selection has been stored yet, so an upgrading user keeps
+    // whatever they were actually seeing before the three per-provider flags were collapsed.
+    LibrarySourceRepository.legacyMigrationProbe = {
+        migratedLibrarySource(
+            simklWasLibrarySource = SimklSettingsRepository.isSimklLibrarySource(),
+            storedMode = TraktSettingsRepository.uiState.value.librarySourceMode
+                .takeIf { TraktAuthRepository.isAuthenticated.value }
+                ?: LibrarySourceMode.LOCAL,
+        )
+    }
+    ContinueWatchingSourceRepository.legacyMigrationProbe = {
+        migratedContinueWatchingSource(
+            mdbListWasCwSource = MdbListSettingsRepository.isMdbListCwSource(),
+            simklWasCwSource = SimklSettingsRepository.isSimklCwSource(),
+            traktWasCwSource = TraktAuthRepository.isAuthenticated.value &&
+                TraktSettingsRepository.uiState.value.watchProgressSource == WatchProgressSource.TRAKT,
+        )
+    }
+    CalendarSourceRepository.legacyMigrationProbe = {
+        migratedCalendarSource(
+            mdbListWasCalendarSource = MdbListSettingsRepository.isMdbListCalendarSource(),
+            simklWasCalendarSource = SimklSettingsRepository.isSimklCalendarSource(),
+        )
+    }
+    TrackingProviderRegistry.register(TraktTrackingAuthProvider)
+    TrackingProviderRegistry.registerLibraryProvider(TraktLibraryAdapter)
+    TrackingProviderRegistry.registerHistoryWriter(TraktHistoryWriter)
+    TrackingProviderRegistry.registerScrobbler(TraktScrobbleAdapter)
+    TrackingProviderRegistry.register(SimklTrackingAuthProvider)
+    TrackingProviderRegistry.registerLibraryProvider(SimklLibraryAdapter)
+    TrackingProviderRegistry.registerHistoryWriter(SimklHistoryWriter)
+    TrackingProviderRegistry.registerRatingWriter(SimklRatingWriter)
+    TrackingProviderRegistry.registerScrobbler(SimklScrobbleAdapter)
+    TrackingProviderRegistry.registerWatchedProvider(SimklWatchedAdapter)
+    TrackingProviderRegistry.register(MdbListTrackingAuthProvider)
+    TrackingProviderRegistry.registerLibraryProvider(MdbListLibraryAdapter)
+    TrackingProviderRegistry.registerHistoryWriter(MdbListHistoryWriter)
+    TrackingProviderRegistry.registerRatingWriter(MdbListRatingWriter)
+    TrackingProviderRegistry.registerScrobbler(MdbListScrobbleAdapter)
+    TrackingProviderRegistry.registerWatchedProvider(MdbListWatchedAdapter)
+    TrackingProviderRegistry.register(YamtrackTrackingAuthProvider)
+    TrackingProviderRegistry.registerScrobbler(YamtrackScrobbleAdapter)
+    TrackingProviderRegistry.registerHistoryWriter(YamtrackHistoryWriter)
+    TrackingProviderRegistry.registerRatingWriter(YamtrackRatingWriter)
+    TrackingProviderRegistry.registerLibraryProvider(YamtrackLibraryAdapter)
+    TrackingProviderRegistry.registerWatchedProvider(YamtrackWatchedAdapter)
+}
+
 private suspend fun warmProfileStartupRepositories() {
+    registerTrackingProviders()
     withContext(Dispatchers.Default) {
         val startedAt = System.currentTimeMillis()
         appStartupLog.i { "critical profile warm started" }
@@ -547,6 +709,7 @@ private suspend fun warmProfileDeferredRepositories() {
         val startedAt = System.currentTimeMillis()
         appStartupLog.i { "deferred profile warm started" }
         startupWarmStep("downloads load", rethrow = false) { DownloadsRepository.ensureLoaded() }
+        startupWarmStep("library pvr load", rethrow = false) { com.nuvio.app.features.librarypvr.LibraryPvrRepository.ensureLoaded() }
         startupWarmStep("episode notifications load", rethrow = false) { EpisodeReleaseNotificationsRepository.ensureLoaded() }
         startupWarmStep("library load", rethrow = false) { LibraryRepository.ensureLoaded() }
         startupWarmStep("discord presence settings load", rethrow = false) { DiscordPresenceSettingsRepository.ensureLoaded() }
@@ -554,10 +717,21 @@ private suspend fun warmProfileDeferredRepositories() {
         startupWarmStep("simkl auth load", rethrow = false) { SimklAuthRepository.ensureLoaded() }
         startupWarmStep("tvdb settings load", rethrow = false) { com.nuvio.app.features.tvdb.TvdbSettingsRepository.ensureLoaded() }
         startupWarmStep("collection sync observer start", rethrow = false) { CollectionSyncService.startObserving() }
+        if (AppFeaturePolicy.downloadsEnabled) {
+            startupWarmStep("library auto-download scheduler start", rethrow = false) {
+                com.nuvio.app.features.librarypvr.LibraryPvrScheduler.start()
+            }
+        }
         startupWarmStep("home catalog sync observer start", rethrow = false) { HomeCatalogSettingsSyncService.startObserving() }
         startupWarmStep("profile settings sync observer start", rethrow = false) { ProfileSettingsSync.startObserving() }
         startupWarmStep("anime id mapping warm start", rethrow = false) {
             com.nuvio.app.features.metadata.AnimeIdMappingRepository.warmAsync()
+        }
+        // Connected tracking services are the user's own accounts, independent of whether they
+        // signed into Nuvio — and `SyncManager.pullAllForProfile` runs neither for a signed-out
+        // user nor on a warm start, so this is the only place their watched history is imported.
+        startupWarmStep("tracking provider watched history import", rethrow = false) {
+            WatchedRepository.pullConnectedProviderHistory(ProfileRepository.activeProfileId)
         }
         val continueWatchingSyncStartedAt = System.currentTimeMillis()
         runCatching {
@@ -576,6 +750,30 @@ private suspend fun warmProfileDeferredRepositories() {
         }
         appStartupLog.i { "deferred profile warm completed in ${System.currentTimeMillis() - startedAt}ms" }
     }
+}
+
+/**
+ * Optional SIMKL reminder: opens simkl.com in the default browser on the first app start of each
+ * UTC day so the user keeps the visit streak that unlocks free SIMKL Pro. Off by default, and only
+ * while SIMKL is actually connected. The day stamp is written after the browser hand-off succeeds,
+ * so a failed launch retries on the next start instead of burning the day.
+ */
+private suspend fun openSimklDailyVisitIfDue(openUri: (String) -> Unit) {
+    val due = withContext(Dispatchers.Default) {
+        runCatching {
+            SimklSettingsRepository.ensureLoaded()
+            SimklAuthRepository.ensureLoaded()
+            SimklAuthRepository.uiState.value.mode == SimklConnectionMode.CONNECTED &&
+                SimklSettingsRepository.isDailyVisitDue(System.currentTimeMillis())
+        }.getOrDefault(false)
+    }
+    if (!due) return
+    runCatching { openUri(SimklDailyVisit.URL) }
+        .onSuccess {
+            appStartupLog.i { "simkl daily visit opened" }
+            SimklSettingsRepository.markDailyVisitOpened(System.currentTimeMillis())
+        }
+        .onFailure { error -> appStartupLog.e(error) { "simkl daily visit open failed" } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -612,6 +810,17 @@ fun App() {
             NetworkStatusRepository.ensureStarted()
             ProfileRepository.loadCachedProfiles()
             AvatarRepository.fetchAvatars()
+        }
+
+        // SkipDB publishes its whole database as one file rebuilt daily, so it is kept locally and
+        // refreshed at most once a day rather than queried per episode. Deliberately off the
+        // startup path and not awaited: playback answers from the previous copy meanwhile, and a
+        // user who has turned skip detection off should not be downloading it at all.
+        LaunchedEffect(Unit) {
+            PlayerSettingsRepository.ensureLoaded()
+            if (PlayerSettingsRepository.uiState.value.skipIntroEnabled) {
+                SkipDbDumpRepository.syncInBackground()
+            }
         }
 
         val authState by AuthRepository.state.collectAsStateWithLifecycle()
@@ -921,6 +1130,7 @@ private fun MainAppContent(
         val hapticFeedback = LocalHapticFeedback.current
         val coroutineScope = rememberCoroutineScope()
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
+        var rootTabBackStack by remember { mutableStateOf<List<AppScreenTab>>(emptyList()) }
         var searchFocusRequestCount by remember { mutableStateOf(0) }
         var navigateToContentCount by remember { mutableStateOf(0) }
         var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -937,6 +1147,10 @@ private fun MainAppContent(
         LaunchedEffect(Unit) {
             warmProfileDeferredRepositories()
         }
+        val uriHandler = LocalUriHandler.current
+        LaunchedEffect(Unit) {
+            openSimklDailyVisitIfDue(uriHandler::openUri)
+        }
         val currentBackStackEntry by navController.currentBackStackEntryAsState()
         var lastPlayerExitBackMark by remember { mutableStateOf<TimeMark?>(null) }
         BindDiscordBrowsingPresence(
@@ -946,7 +1160,7 @@ private fun MainAppContent(
             searchQuery = searchQuery,
             submittedSearchQuery = submittedSearchQuery,
         )
-        LaunchedEffect(navController) {
+        LaunchedEffect(navController, selectedTab, rootTabBackStack, searchOverlayActive) {
             DesktopNavigationGestureBridge.backRequests.collect { source ->
                 // The native player WebView handles Mouse Back itself. On some Windows setups the
                 // same physical click also reaches AWT; accepting both requests pops the player and
@@ -966,7 +1180,27 @@ private fun MainAppContent(
                 ) {
                     return@collect
                 }
-                if (navController.previousBackStackEntry != null) {
+                if (navController.currentDestination?.hasRoute<TabsRoute>() == true) {
+                    when {
+                        searchOverlayActive -> {
+                            searchOverlayActive = false
+                            searchDiscoverActive = false
+                            navigateToContentCount++
+                        }
+                        rootTabBackStack.isNotEmpty() -> {
+                            val target = rootTabBackStack.last()
+                            rootTabBackStack = rootTabBackStack.dropLast(1)
+                            selectedTab = target
+                            if (target != AppScreenTab.Search) {
+                                searchDiscoverActive = false
+                            }
+                        }
+                        selectedTab != AppScreenTab.Home -> {
+                            selectedTab = AppScreenTab.Home
+                            searchDiscoverActive = false
+                        }
+                    }
+                } else if (navController.previousBackStackEntry != null) {
                     navController.popBackStack()
                 }
             }
@@ -983,7 +1217,10 @@ private fun MainAppContent(
         val liquidGlassNativeTabBarSupported = remember { isLiquidGlassNativeTabBarSupported() }
         var showExitConfirmation by rememberSaveable { mutableStateOf(false) }
         var selectedPosterActionTarget by remember { mutableStateOf<PosterActionTarget?>(null) }
+        var selectedPosterAnchor by remember { mutableStateOf<PosterZoomAnchor?>(null) }
+        val posterOverlayHazeState = rememberHazeState()
         var selectedContinueWatchingForActions by remember { mutableStateOf<ContinueWatchingItem?>(null) }
+        var selectedContinueWatchingAnchor by remember { mutableStateOf<PosterZoomAnchor?>(null) }
         var requestedSettingsPageName by rememberSaveable { mutableStateOf<String?>(null) }
         var showLibraryListPicker by remember { mutableStateOf(false) }
         var pickerItem by remember { mutableStateOf<LibraryItem?>(null) }
@@ -993,14 +1230,21 @@ private fun MainAppContent(
         var pickerPending by remember { mutableStateOf(false) }
         var pickerError by remember { mutableStateOf<String?>(null) }
         val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
-        val libraryUiState by LibraryRepository.uiState.collectAsStateWithLifecycle()
+    val libraryUiState by LibraryRepository.uiState.collectAsStateWithLifecycle()
+    val localLibraryUiState by remember {
+        LocalLibraryRepository.ensureLoaded()
+        LocalLibraryRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val downloadsUiState by remember {
+        DownloadsRepository.ensureLoaded()
+        DownloadsRepository.uiState
+    }.collectAsStateWithLifecycle()
         val authState by AuthRepository.state.collectAsStateWithLifecycle()
         val profileState by ProfileRepository.state.collectAsStateWithLifecycle()
     val playerSettingsUiState by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
     val homeCatalogSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     val p2pSettingsUiState by P2pSettingsRepository.uiState.collectAsStateWithLifecycle()
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
-    val downloadsUiState by DownloadsRepository.uiState.collectAsStateWithLifecycle()
     val networkStatusUiState by remember {
         NetworkStatusRepository.uiState
     }.collectAsStateWithLifecycle()
@@ -1011,9 +1255,8 @@ private fun MainAppContent(
     val cloudLibraryPlayFailedText = stringResource(Res.string.cloud_library_play_failed)
     val cloudLibraryPlayDisabledText = stringResource(Res.string.cloud_library_play_disabled)
     val cloudLibraryPlayNotConnectedText = stringResource(Res.string.cloud_library_play_not_connected)
-    val isTraktLibrarySource = libraryUiState.sourceMode == LibrarySourceMode.TRAKT
+    val isRemoteLibrarySource = libraryUiState.sourceMode != LibrarySourceMode.LOCAL
     var initialHomeReady by rememberSaveable { mutableStateOf(false) }
-    var offlineLaunchRouteHandled by rememberSaveable { mutableStateOf(false) }
     var networkToastBaselineReady by rememberSaveable { mutableStateOf(false) }
     var lastNetworkToastCondition by rememberSaveable { mutableStateOf(NetworkCondition.Unknown.name) }
 
@@ -1023,6 +1266,11 @@ private fun MainAppContent(
             searchDiscoverActive = false
         }
         if (selectedTab != tab) {
+            rootTabBackStack = rootTabHistoryAfterNavigation(
+                history = rootTabBackStack,
+                current = selectedTab,
+                target = tab,
+            )
             selectedTab = tab
             if (tab == AppScreenTab.Search) searchFocusRequestCount++
             return
@@ -1188,41 +1436,6 @@ private fun MainAppContent(
         lastNetworkToastCondition = condition.name
     }
 
-    LaunchedEffect(
-        initialHomeReady,
-        offlineLaunchRouteHandled,
-        networkStatusUiState.condition,
-        downloadsUiState.completedItems,
-    ) {
-        if (!initialHomeReady || offlineLaunchRouteHandled) return@LaunchedEffect
-
-        when (networkStatusUiState.condition) {
-            NetworkCondition.Unknown,
-            NetworkCondition.Checking,
-            -> return@LaunchedEffect
-
-            NetworkCondition.Online -> {
-                offlineLaunchRouteHandled = true
-            }
-
-            NetworkCondition.NoInternet,
-            NetworkCondition.ServersUnreachable,
-            -> {
-                offlineLaunchRouteHandled = true
-                if (!AppFeaturePolicy.downloadsEnabled) return@LaunchedEffect
-                val hasPlayableDownload = downloadsUiState.completedItems.any {
-                    DownloadsRepository.playableLocalFileUri(it) != null
-                }
-                if (hasPlayableDownload) {
-                    selectedTab = AppScreenTab.Settings
-                    navController.navigate(DownloadsSettingsRoute) {
-                        launchSingleTop = true
-                    }
-                }
-            }
-        }
-    }
-
     LaunchedEffect(authState, profileState.activeProfile?.profileIndex) {
         val authenticatedState = authState as? AuthState.Authenticated ?: return@LaunchedEffect
         if (authenticatedState.isAnonymous) return@LaunchedEffect
@@ -1247,8 +1460,11 @@ private fun MainAppContent(
                 } else {
                     null
                 }
-                if (TraktAuthRepository.isAuthenticated.value && progressPercent != null) {
-                    val scrobbleItem = TraktScrobbleRepository.buildItem(
+                if (progressPercent != null) {
+                    // Previously Trakt-only, so an external-player watch never reached SIMKL. Going
+                    // through the coordinator fans it out to every connected provider, which is the
+                    // behaviour the in-app player already had.
+                    val media = buildTrackingMediaReference(
                         contentType = lastExternalPlayerLaunch?.parentMetaType ?: "",
                         parentMetaId = lastExternalPlayerLaunch?.parentMetaId ?: "",
                         videoId = lastExternalPlayerLaunch?.videoId,
@@ -1257,13 +1473,15 @@ private fun MainAppContent(
                         episodeNumber = lastExternalPlayerLaunch?.episodeNumber,
                         episodeTitle = lastExternalPlayerLaunch?.episodeTitle,
                     )
-                    if (scrobbleItem != null) {
-                        runCatching {
-                            TraktScrobbleRepository.scrobbleStop(
-                                item = scrobbleItem,
-                                progressPercent = progressPercent,
-                            )
-                        }
+                    runCatching {
+                        TrackingScrobbleCoordinator.scrobble(
+                            profileId = ProfileRepository.activeProfileId,
+                            action = TrackingScrobbleAction.STOP,
+                            event = TrackingScrobbleEvent(
+                                media = media,
+                                progressPercent = progressPercent.toDouble(),
+                            ),
+                        )
                     }
                 }
                 lastExternalPlayerLaunch?.let { playerLaunch ->
@@ -1364,21 +1582,42 @@ private fun MainAppContent(
                     }
                     val isWebStream = mediaUri.startsWith("https://", ignoreCase = true) ||
                         mediaUri.startsWith("http://", ignoreCase = true)
-                    val filename = mediaUri
-                        .substringBefore('?')
-                        .substringBefore('#')
-                        .substringAfterLast('\\')
-                        .substringAfterLast('/')
-                        .substringBeforeLast('.')
-                        .ifBlank { if (isWebStream) "Web Stream" else "Local File" }
                     val provider = if (isWebStream) "Web Stream" else "Local File"
+                    val fallbackTitle = if (isWebStream) "Web Stream" else "Local File"
+
+                    // Cloud/debrid links commonly use an opaque object id as the path segment and
+                    // carry the real release name in a `filename=` query param, so recover the name
+                    // and run it through the local-library filename parser for a human title (+ the
+                    // season/episode coordinates that give the player HUD and Discord presence a
+                    // proper episode line) instead of surfacing the raw id.
+                    val rawName = directPlayMediaName(mediaUri, isWebStream)
+                    val parsedEpisode = rawName?.let { FilenameParser.parseEpisode(it) }
+                    val hasEpisode = parsedEpisode?.episode != null
+                    val parsedTitle = rawName?.let { FilenameParser.parseTitle(it) }
+                    val movieTitle = parsedTitle?.title?.takeIf { it.isNotBlank() }
+                    val displayTitle = when {
+                        hasEpisode -> parsedEpisode?.showTitle?.takeIf { it.isNotBlank() }
+                            ?: movieTitle
+                        else -> movieTitle
+                    } ?: fallbackTitle
+                    val streamLabel = rawName
+                        ?.let { FilenameParser.cleanTitle(it) }
+                        ?.takeIf { it.isNotBlank() }
+                        ?: displayTitle
+
                     val playerLaunch = PlayerLaunch(
-                        title = filename,
+                        title = displayTitle,
                         sourceUrl = mediaUri,
-                        streamTitle = filename,
+                        streamTitle = streamLabel,
                         providerName = provider,
                         parentMetaId = "",
-                        parentMetaType = "movie",
+                        parentMetaType = if (hasEpisode) "series" else "movie",
+                        seasonNumber = parsedEpisode?.season,
+                        episodeNumber = parsedEpisode?.episode,
+                        episodeTitle = parsedEpisode?.episodeTitle?.takeIf { it.isNotBlank() },
+                        // Movie year disambiguates the artwork lookup (remakes); series filenames
+                        // rarely carry a reliable year, so only thread it for the movie path.
+                        releaseYear = if (hasEpisode) null else parsedTitle?.year,
                         disableProgressTracking = true,
                     )
                     val launchId = PlayerLaunchStore.put(playerLaunch)
@@ -1500,7 +1739,7 @@ private fun MainAppContent(
             pauseDescription: String?,
             resumePositionMs: Long?,
             resumeProgressFraction: Float?,
-            manualSelection: Boolean,
+            useAlternateBehavior: Boolean,
             startFromBeginning: Boolean,
             watchProgressSource: String? = null,
             streamVideoId: String? = null,
@@ -1509,15 +1748,41 @@ private fun MainAppContent(
         ) {
             val targetResumePositionMs = if (startFromBeginning) 0L else (resumePositionMs ?: 0L)
             val targetResumeProgressFraction = if (startFromBeginning) null else resumeProgressFraction
+            val releaseInfo = MetaDetailsRepository.peek(parentMetaType, parentMetaId)?.releaseInfo
+                ?: MetaDetailsRepository.uiState.value.meta
+                    ?.takeIf { it.id == parentMetaId }
+                    ?.releaseInfo
+            val releaseYear = releaseInfo
+                ?.let { Regex("""\b(19|20)\d{2}\b""").find(it)?.value?.toIntOrNull() }
 
-            if (!manualSelection && AppFeaturePolicy.downloadsEnabled) {
-                val downloadedItem = DownloadsRepository.findPlayableDownload(
+            PlaybackStartTrace.beginPending("playClicked type=$type id=$videoId")
+
+            val configuredBehavior = localLibraryUiState.playbackPreference
+            val requestedBehavior = configuredBehavior.behaviorFor(useAlternateBehavior)
+            val requestedLocalPlayback =
+                requestedBehavior == LocalLibraryPlaybackPreference.LOCAL_LIBRARY &&
+                    AppFeaturePolicy.downloadsEnabled
+            val downloadedItem = if (requestedLocalPlayback) {
+                DownloadsRepository.findPlayableDownload(
                     parentMetaId = parentMetaId,
                     seasonNumber = seasonNumber,
                     episodeNumber = episodeNumber,
                     videoId = videoId,
                 )
-                val localSourceUrl = downloadedItem?.let(DownloadsRepository::playableLocalFileUri)
+            } else {
+                null
+            }
+            val localSourceUrl = downloadedItem?.let(DownloadsRepository::playableLocalFileUri)
+            val hasLocalLibraryStream = requestedLocalPlayback &&
+                LocalLibraryRepository.localStreamsFor(parentMetaId, videoId).isNotEmpty()
+            val prefersLocalStreams =
+                requestedLocalPlayback && (!localSourceUrl.isNullOrBlank() || hasLocalLibraryStream)
+            // "Source picker" is deliberately manual even when stream auto-play is configured.
+            // A requested local file that disappeared since the menu was opened falls back to the
+            // same picker instead of silently auto-playing an unrelated external source.
+            val manualSelection = !prefersLocalStreams
+
+            if (prefersLocalStreams && downloadedItem != null) {
                 if (!localSourceUrl.isNullOrBlank()) {
                     val playerLaunch = PlayerLaunch(
                             title = title,
@@ -1531,6 +1796,7 @@ private fun MainAppContent(
                             episodeNumber = episodeNumber,
                             episodeTitle = episodeTitle,
                             episodeThumbnail = episodeThumbnail,
+                            releaseYear = releaseYear,
                             streamTitle = downloadedItem.streamTitle.ifBlank { title },
                             streamSubtitle = downloadedItem.streamSubtitle,
                             pauseDescription = pauseDescription,
@@ -1568,6 +1834,7 @@ private fun MainAppContent(
                     logo = logo,
                     poster = poster,
                     background = background,
+                    releaseYear = releaseYear,
                     seasonNumber = seasonNumber,
                     episodeNumber = episodeNumber,
                     episodeTitle = episodeTitle,
@@ -1576,16 +1843,18 @@ private fun MainAppContent(
                     resumePositionMs = if (startFromBeginning) 0L else resumePositionMs,
                     resumeProgressFraction = targetResumeProgressFraction,
                     manualSelection = manualSelection,
+                    preferLocalStreams = prefersLocalStreams,
                     startFromBeginning = startFromBeginning,
                     disableProgressTracking = disableProgressTracking,
                     autoPlayMode = autoPlayMode,
-                    sourceAffinity = if (MetaDetailsRepository.prefersLocalStreams()) {
+                    sourceAffinity = if (prefersLocalStreams) {
                         PlayerSourceAffinity.Local
                     } else {
                         PlayerSourceAffinity.Stream
                     },
                 ),
             )
+            PlaybackStartTrace.markPending("navigate:streamRoute")
             navController.navigate(
                 StreamRoute(launchId = streamLaunchId),
             )
@@ -1609,12 +1878,12 @@ private fun MainAppContent(
                     pauseDescription = pauseDescription,
                     resumePositionMs = resumePositionMs,
                     resumeProgressFraction = null,
-                    manualSelection = false,
+                    useAlternateBehavior = false,
                     startFromBeginning = false,
                 )
             }
 
-        val onPlayManually: (String, String, String, String, String, String?, String?, String?, Int?, Int?, String?, String?, String?, Long?) -> Unit =
+        val onPlayAlternate: (String, String, String, String, String, String?, String?, String?, Int?, Int?, String?, String?, String?, Long?) -> Unit =
             { type, videoId, parentMetaId, parentMetaType, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail, pauseDescription, resumePositionMs ->
                 launchPlaybackWithDownloadPreference(
                     type = type,
@@ -1632,7 +1901,7 @@ private fun MainAppContent(
                     pauseDescription = pauseDescription,
                     resumePositionMs = resumePositionMs,
                     resumeProgressFraction = null,
-                    manualSelection = true,
+                    useAlternateBehavior = true,
                     startFromBeginning = false,
                 )
             }
@@ -1655,7 +1924,7 @@ private fun MainAppContent(
                     pauseDescription = pauseDescription,
                     resumePositionMs = null,
                     resumeProgressFraction = null,
-                    manualSelection = false,
+                    useAlternateBehavior = false,
                     startFromBeginning = true,
                     disableProgressTracking = true,
                     autoPlayMode = PlayerAutoPlayMode.RandomEpisode,
@@ -1703,7 +1972,7 @@ private fun MainAppContent(
             )
         }
 
-        val openContinueWatching: (ContinueWatchingItem, Boolean, Boolean) -> Unit = { item, manualSelection, startFromBeginning ->
+        val openContinueWatching: (ContinueWatchingItem, Boolean, Boolean) -> Unit = { item, useAlternateBehavior, startFromBeginning ->
             resumePromptItem = null
             if (item.isCloudLibraryContinueWatchingItem()) {
                 coroutineScope.launch {
@@ -1762,7 +2031,7 @@ private fun MainAppContent(
                     pauseDescription = item.pauseDescription,
                     resumePositionMs = item.resumePositionMs,
                     resumeProgressFraction = item.resumeProgressFraction,
-                    manualSelection = manualSelection,
+                    useAlternateBehavior = useAlternateBehavior,
                     startFromBeginning = startFromBeginning,
                     watchProgressSource = item.source,
                 )
@@ -1777,12 +2046,13 @@ private fun MainAppContent(
             openContinueWatching(item, false, true)
         }
 
-        val onContinueWatchingPlayManually: (ContinueWatchingItem) -> Unit = { item ->
+        val onContinueWatchingPlayAlternate: (ContinueWatchingItem) -> Unit = { item ->
             openContinueWatching(item, true, false)
         }
 
         val onContinueWatchingLongPress: (ContinueWatchingItem) -> Unit = { item ->
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            selectedContinueWatchingAnchor = PosterZoomAnchorHolder.consume()
             selectedContinueWatchingForActions = item
         }
 
@@ -1813,7 +2083,26 @@ private fun MainAppContent(
                     true
                 },
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (selectedPosterActionTarget != null || selectedContinueWatchingForActions != null) {
+                            Modifier.hazeSource(posterOverlayHazeState)
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .background(MaterialTheme.nuvio.colors.background),
+            ) {
             SharedTransitionLayout {
+                // Settings-hosted screens (local library, monitored titles) need to reach details
+                // but are composed nowhere near the routes that can navigate there.
+                CompositionLocalProvider(
+                    LocalOpenMetaDetails provides { type, id ->
+                        navController.navigateIfResumed(DetailRoute(type = type, id = id))
+                    },
+                ) {
                 NavHost(
                     navController = navController,
                     startDestination = TabsRoute,
@@ -1823,10 +2112,27 @@ private fun MainAppContent(
                     PlatformBackHandler(
                         enabled = true,
                         onBack = {
-                            if (selectedTab != AppScreenTab.Home) {
-                                selectedTab = AppScreenTab.Home
-                            } else {
-                                showExitConfirmation = !showExitConfirmation
+                            when {
+                                searchOverlayActive -> {
+                                    searchOverlayActive = false
+                                    searchDiscoverActive = false
+                                    navigateToContentCount++
+                                }
+                                rootTabBackStack.isNotEmpty() -> {
+                                    val target = rootTabBackStack.last()
+                                    rootTabBackStack = rootTabBackStack.dropLast(1)
+                                    selectedTab = target
+                                    if (target != AppScreenTab.Search) {
+                                        searchDiscoverActive = false
+                                    }
+                                }
+                                selectedTab != AppScreenTab.Home -> {
+                                    selectedTab = AppScreenTab.Home
+                                    searchDiscoverActive = false
+                                }
+                                else -> {
+                                    showExitConfirmation = !showExitConfirmation
+                                }
                             }
                         },
                     )
@@ -1887,12 +2193,15 @@ private fun MainAppContent(
                                             icon = Res.drawable.sidebar_search,
                                             contentDescription = stringResource(Res.string.compose_nav_search),
                                         )
-                                        NavItem(
-                                            selected = selectedTab == AppScreenTab.Library,
-                                            onClick = { handleRootTabClick(AppScreenTab.Library) },
-                                            icon = Res.drawable.sidebar_library,
-                                            contentDescription = stringResource(Res.string.compose_nav_library),
-                                        )
+                                        LibraryNavigationContextMenu(modifier = Modifier.width(64.dp)) { contextModifier ->
+                                            NavItem(
+                                                selected = selectedTab == AppScreenTab.Library,
+                                                onClick = { handleRootTabClick(AppScreenTab.Library) },
+                                                icon = Res.drawable.sidebar_library,
+                                                contentDescription = stringResource(Res.string.compose_nav_library),
+                                                modifier = contextModifier,
+                                            )
+                                        }
                                         NavItem(
                                             selected = selectedTab == AppScreenTab.Settings,
                                             onClick = { handleRootTabClick(AppScreenTab.Settings) },
@@ -1952,20 +2261,22 @@ private fun MainAppContent(
                                         },
                                         onPosterLongClick = { meta ->
                                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            selectedPosterAnchor = PosterZoomAnchorHolder.consume()
                                             selectedPosterActionTarget = PosterActionTarget(preview = meta)
                                         },
                                         onLibraryPosterClick = { item ->
                                             navController.navigateIfResumed(
-                                                DetailRoute(type = item.type, id = item.id, preferLocalStreams = true),
+                                                DetailRoute(type = item.type, id = item.id),
                                             )
                                         },
                                         onLocalLibraryPosterClick = { meta ->
                                             navController.navigateIfResumed(
-                                                DetailRoute(type = meta.type, id = meta.id, preferLocalStreams = true),
+                                                DetailRoute(type = meta.type, id = meta.id),
                                             )
                                         },
                                         onLibraryPosterLongClick = { item, section ->
                                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            selectedPosterAnchor = PosterZoomAnchorHolder.consume()
                                             selectedPosterActionTarget = PosterActionTarget(
                                                 preview = item.toMetaPreview(),
                                                 libraryItem = item,
@@ -2087,9 +2398,7 @@ private fun MainAppContent(
                                             searchDiscoverActive = false
                                             submittedSearchQuery = trimmed
                                             searchOverlayActive = false
-                                            if (selectedTab != AppScreenTab.Search) {
-                                                selectedTab = AppScreenTab.Search
-                                            }
+                                            handleRootTabClick(AppScreenTab.Search)
                                             navigateToContentCount++
                                         },
                                         onDiscoverSubmit = {
@@ -2097,12 +2406,18 @@ private fun MainAppContent(
                                             submittedSearchQuery = ""
                                             searchDiscoverActive = true
                                             searchOverlayActive = false
-                                            if (selectedTab != AppScreenTab.Search) {
-                                                selectedTab = AppScreenTab.Search
-                                            }
+                                            handleRootTabClick(AppScreenTab.Search)
                                             navigateToContentCount++
                                         },
                                         onNavigateToContent = { navigateToContentCount++ },
+                                    )
+                                }
+                                if (isDesktop) {
+                                    DesktopFullscreenHoverButton(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 12.dp, end = 12.dp)
+                                            .zIndex(NuvioTokens.Z.navigation + 1f),
                                     )
                                 }
 
@@ -2128,10 +2443,9 @@ private fun MainAppContent(
                         MetaDetailsScreen(
                         type = route.type,
                         id = route.id,
-                        preferLocalStreams = route.preferLocalStreams,
                         onBack = onBackFromDetail,
                         onPlay = onPlay,
-                        onPlayManually = onPlayManually,
+                        onPlayAlternate = onPlayAlternate,
                         onPlayRandomEpisode = onPlayRandomEpisode,
                         onPlayTrailer = { trailerLaunch ->
                             if (playerSettingsUiState.externalPlayerEnabled) {
@@ -2427,6 +2741,7 @@ private fun MainAppContent(
                             logo = launch.logo,
                             poster = launch.poster,
                             background = launch.background,
+                            releaseYear = launch.releaseYear,
                             seasonNumber = canonicalSeasonNumber,
                             episodeNumber = canonicalEpisodeNumber,
                             episodeTitle = launch.episodeTitle,
@@ -2639,6 +2954,7 @@ private fun MainAppContent(
                                             season = streamLookupSeasonNumber,
                                             episode = streamLookupEpisodeNumber,
                                             manualSelection = launch.manualSelection,
+                                            preferLocalStreams = launch.preferLocalStreams,
                                         )
                                     }
                                     return@LaunchedEffect
@@ -2785,6 +3101,7 @@ private fun MainAppContent(
                                                 season = streamLookupSeasonNumber,
                                                 episode = streamLookupEpisodeNumber,
                                                 manualSelection = launch.manualSelection,
+                                                preferLocalStreams = launch.preferLocalStreams,
                                             )
                                         }
                                     }
@@ -2840,6 +3157,7 @@ private fun MainAppContent(
                             logo = launch.logo,
                             poster = launch.poster,
                             background = launch.background,
+                            releaseYear = launch.releaseYear,
                             seasonNumber = canonicalSeasonNumber,
                             episodeNumber = canonicalEpisodeNumber,
                             episodeTitle = launch.episodeTitle,
@@ -2900,6 +3218,7 @@ private fun MainAppContent(
                             logo = launch.logo,
                             poster = launch.poster,
                             background = launch.background,
+                            releaseYear = launch.releaseYear,
                             seasonNumber = canonicalSeasonNumber,
                             episodeNumber = canonicalEpisodeNumber,
                             episodeTitle = launch.episodeTitle,
@@ -2907,6 +3226,7 @@ private fun MainAppContent(
                             resumePositionMs = launch.resumePositionMs,
                             resumeProgressFraction = launch.resumeProgressFraction,
                             manualSelection = launch.manualSelection,
+                            preferLocalStreams = launch.preferLocalStreams,
                             startFromBeginning = launch.startFromBeginning,
                             onStreamSelected = { stream, resolvedResumePositionMs, resolvedResumeProgressFraction ->
                                 openSelectedStream(
@@ -2995,6 +3315,12 @@ private fun MainAppContent(
                         Box(modifier = Modifier.fillMaxSize())
                         return@composable
                     }
+                    DisposableEffect(route.launchId) {
+                        com.nuvio.app.features.librarypvr.LibraryPvrScheduler.setPlaybackActive(true)
+                        onDispose {
+                            com.nuvio.app.features.librarypvr.LibraryPvrScheduler.setPlaybackActive(false)
+                        }
+                    }
                     LaunchedEffect(launch.videoId) {
                         launch.videoId?.let { ResumePromptRepository.markPlayerEntered(it) }
                     }
@@ -3022,6 +3348,7 @@ private fun MainAppContent(
                         episodeNumber = launch.episodeNumber,
                         episodeTitle = launch.episodeTitle,
                         episodeThumbnail = launch.episodeThumbnail,
+                        releaseYear = launch.releaseYear,
                         streamTitle = launch.streamTitle,
                         streamSubtitle = launch.streamSubtitle,
                         sourceIdentityKey = launch.sourceIdentityKey,
@@ -3115,6 +3442,7 @@ private fun MainAppContent(
                         },
                         onPosterLongClick = { meta ->
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            selectedPosterAnchor = PosterZoomAnchorHolder.consume()
                             selectedPosterActionTarget = if (target is CatalogTarget.Library) {
                                 PosterActionTarget(
                                     preview = meta,
@@ -3285,8 +3613,10 @@ private fun MainAppContent(
                         FolderDetailRepository.initialize(route.collectionId, route.folderId)
                     }
                     FolderDetailScreen(
+                        entryKey = backStackEntry.id,
                         onBack = {
                             FolderDetailRepository.clear()
+                            clearFolderScrollSession(backStackEntry.id)
                             navController.popBackStack()
                         },
                         onCatalogClick = onCatalogClick,
@@ -3294,9 +3624,17 @@ private fun MainAppContent(
                         onPosterClick = { meta ->
                             navController.navigateIfResumed(DetailRoute(type = meta.type, id = meta.id))
                         },
+                        onPosterLongClick = { meta ->
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            selectedPosterAnchor = PosterZoomAnchorHolder.consume()
+                            selectedPosterActionTarget = PosterActionTarget(preview = meta)
+                        },
                     )
                 }
                 }
+                }
+            }
+
             }
 
             NuvioPosterActionSheet(
@@ -3310,13 +3648,26 @@ private fun MainAppContent(
                         item = preview,
                     )
                 } == true,
-                onDismiss = { selectedPosterActionTarget = null },
+                onDismiss = {
+                    selectedPosterActionTarget = null
+                    selectedPosterAnchor = null
+                },
+                // Only offered for titles that actually have a local copy — the page it opens is
+                // the local library list, which would be meaningless for a streaming-only title.
+                onOpenInLocalLibrary = selectedPosterActionTarget?.preview
+                    ?.let { preview -> LocalLibraryRepository.itemForContentId(preview.id) }
+                    ?.let {
+                        {
+                            requestedSettingsPageName = "LocalLibrary"
+                            selectedTab = AppScreenTab.Settings
+                        }
+                    },
                 onToggleLibrary = {
                     selectedPosterActionTarget?.let { target ->
                         val preview = target.preview
                         val libraryItem = target.libraryItem ?: preview.toLibraryItem(savedAtEpochMs = 0L)
                         if (target.libraryItem != null) {
-                            if (isTraktLibrarySource) {
+                            if (isRemoteLibrarySource) {
                                 coroutineScope.launch {
                                     runCatching {
                                         val listKey = target.libraryListKey
@@ -3339,7 +3690,7 @@ private fun MainAppContent(
                                 LibraryRepository.remove(libraryItem.id)
                             }
                         } else {
-                            if (!isTraktLibrarySource) {
+                            if (!isRemoteLibrarySource) {
                                 LibraryRepository.toggleSaved(libraryItem)
                             } else {
                                 pickerItem = libraryItem
@@ -3373,13 +3724,61 @@ private fun MainAppContent(
                         }
                     }
                 },
+                zoomAnchor = selectedPosterAnchor,
+                zoomHazeState = posterOverlayHazeState,
             )
+
+            val selectedContinueWatching = selectedContinueWatchingForActions
+            val selectedContinueWatchingHasLocalPlayback = remember(
+                selectedContinueWatching,
+                localLibraryUiState.items,
+                downloadsUiState.items,
+            ) {
+                selectedContinueWatching?.let { item ->
+                    val playableDownload = DownloadsRepository.findPlayableDownload(
+                        parentMetaId = item.parentMetaId,
+                        seasonNumber = item.seasonNumber,
+                        episodeNumber = item.episodeNumber,
+                        videoId = item.videoId,
+                    )?.let(DownloadsRepository::playableLocalFileUri)
+                    AppFeaturePolicy.downloadsEnabled &&
+                        (
+                            !playableDownload.isNullOrBlank() ||
+                                LocalLibraryRepository.localStreamsFor(
+                                    item.parentMetaId,
+                                    item.videoId,
+                                ).isNotEmpty()
+                            )
+                } == true
+            }
+            val continueWatchingAlternatePlayLabel = selectedContinueWatching
+                ?.takeUnless { it.isCloudLibraryContinueWatchingItem() }
+                ?.takeIf {
+                    localLibraryUiState.playbackPreference.canOfferAlternate(
+                        selectedContinueWatchingHasLocalPlayback,
+                    )
+                }
+                ?.let {
+                    stringResource(
+                        if (
+                            localLibraryUiState.playbackPreference ==
+                                LocalLibraryPlaybackPreference.LOCAL_LIBRARY
+                        ) {
+                            Res.string.play_choose_source
+                        } else {
+                            Res.string.play_local_file
+                        },
+                    )
+                }
 
             NuvioContinueWatchingActionSheet(
                 item = selectedContinueWatchingForActions,
-                showManualPlayOption = StreamAutoPlayPolicy.isEffectivelyEnabled(playerSettingsUiState),
+                alternatePlayLabel = continueWatchingAlternatePlayLabel,
                 showDetailsOption = selectedContinueWatchingForActions?.isCloudLibraryContinueWatchingItem() != true,
-                onDismiss = { selectedContinueWatchingForActions = null },
+                onDismiss = {
+                    selectedContinueWatchingForActions = null
+                    selectedContinueWatchingAnchor = null
+                },
                 onOpenDetails = {
                     selectedContinueWatchingForActions?.let { item ->
                         navController.navigateIfResumed(
@@ -3393,8 +3792,9 @@ private fun MainAppContent(
                 onStartFromBeginning = selectedContinueWatchingForActions
                     ?.takeIf { !it.isNextUp }
                     ?.let { item -> { onContinueWatchingStartFromBeginning(item) } },
-                onPlayManually = selectedContinueWatchingForActions
-                    ?.let { item -> { onContinueWatchingPlayManually(item) } },
+                onAlternatePlay = selectedContinueWatchingForActions
+                    ?.takeIf { continueWatchingAlternatePlayLabel != null }
+                    ?.let { item -> { onContinueWatchingPlayAlternate(item) } },
                 onResync = {
                     coroutineScope.launch {
                         runCatching {
@@ -3416,10 +3816,12 @@ private fun MainAppContent(
                                 ),
                             )
                         } else {
-                            WatchProgressRepository.removeProgress(contentId = item.parentMetaId)
+                            WatchProgressRepository.removeContinueWatchingItem(item)
                         }
                     }
                 },
+                zoomAnchor = selectedContinueWatchingAnchor,
+                zoomHazeState = posterOverlayHazeState,
             )
 
             TraktListPickerDialog(
@@ -3522,6 +3924,13 @@ private fun MainAppContent(
                     }
                 },
                 onDismiss = { resumePromptItem = null },
+            )
+
+            // Held back while the player is on screen: the prompt is queued the moment a title
+            // finishes, which during a binge is mid auto-play into the next episode.
+            RatingPromptHost(
+                isSuppressed = currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true ||
+                    currentBackStackEntry?.destination?.hasRoute<StreamRoute>() == true,
             )
 
             NuvioToastHost(
@@ -3830,7 +4239,9 @@ private fun AppTabHost(
                             isSearch -> searchScrollToTopRequests
                             else -> homeScrollToTopRequests
                         },
-                        onCatalogClick = if (!isSearch && !isLib) onCatalogClick else null,
+                        // Search and Library need this too: with "See more arrows" on, their rows
+                        // render a capped preview whose arrow opens the full catalog.
+                        onCatalogClick = onCatalogClick,
                         onCastClick = onCastClick,
                         onPosterClick = { meta ->
                             if (meta.type.equals(CloudLibraryContentType, ignoreCase = true)) {
@@ -3886,6 +4297,47 @@ private fun AppTabHost(
                         onNavigateToHome = onNavigateToHome,
                         onNavigateToSearch = onNavigateToSearchTab,
                         onNavigateToLibrary = onNavigateToLibrary,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopFullscreenHoverButton(
+    modifier: Modifier = Modifier,
+) {
+    var hovered by remember { mutableStateOf(false) }
+    val fullscreen = isAppFullscreen()
+
+    Box(
+        modifier = modifier
+            .size(52.dp)
+            .onPointerEvent(PointerEventType.Enter) { hovered = true }
+            .onPointerEvent(PointerEventType.Exit) { hovered = false },
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedVisibility(
+            visible = hovered,
+            enter = fadeIn(tween(120)),
+            exit = fadeOut(tween(120)),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.nuvio.colors.surfaceCard.copy(alpha = 0.88f),
+                contentColor = MaterialTheme.nuvio.colors.textPrimary,
+            ) {
+                IconButton(onClick = ::toggleAppFullscreen) {
+                    Icon(
+                        imageVector = if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                        contentDescription = stringResource(
+                            if (fullscreen) {
+                                Res.string.action_exit_fullscreen
+                            } else {
+                                Res.string.action_enter_fullscreen
+                            },
+                        ),
                     )
                 }
             }
@@ -3991,18 +4443,21 @@ private fun DesktopHoverSidebar(
                         tint = color,
                     )
                 }
-                DesktopSidebarItem(
-                    label = stringResource(Res.string.compose_nav_library),
-                    selected = selectedTab == AppScreenTab.Library,
-                    expanded = false,
-                    onClick = { selectTab(AppScreenTab.Library) },
-                ) { color ->
-                    Icon(
-                        painter = painterResource(Res.drawable.sidebar_library),
-                        contentDescription = stringResource(Res.string.compose_nav_library),
-                        modifier = Modifier.size(NuvioTokens.Space.s20),
-                        tint = color,
-                    )
+                LibraryNavigationContextMenu(modifier = Modifier.fillMaxWidth()) { contextModifier ->
+                    DesktopSidebarItem(
+                        label = stringResource(Res.string.compose_nav_library),
+                        selected = selectedTab == AppScreenTab.Library,
+                        expanded = false,
+                        onClick = { selectTab(AppScreenTab.Library) },
+                        modifier = contextModifier,
+                    ) { color ->
+                        Icon(
+                            painter = painterResource(Res.drawable.sidebar_library),
+                            contentDescription = stringResource(Res.string.compose_nav_library),
+                            modifier = Modifier.size(NuvioTokens.Space.s20),
+                            tint = color,
+                        )
+                    }
                 }
                 DesktopSidebarItem(
                     label = stringResource(Res.string.compose_settings_page_root),
@@ -4082,6 +4537,7 @@ private fun DesktopSidebarItem(
     selected: Boolean,
     expanded: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     icon: @Composable (Color) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -4089,7 +4545,7 @@ private fun DesktopSidebarItem(
     val iconColor = if (selected) tokens.colors.onAccent else contentColor
 
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(52.dp)
             .padding(horizontal = 10.dp, vertical = 4.dp)
@@ -4144,6 +4600,30 @@ private enum class SearchPickerMode {
     Genres,
 }
 
+private sealed interface SearchPickerEntry {
+    val key: String
+    val label: String
+
+    data class History(val query: String) : SearchPickerEntry {
+        override val key: String = "history:$query"
+        override val label: String = query
+    }
+
+    data class Catalog(
+        val catalogKey: String,
+        override val label: String,
+    ) : SearchPickerEntry {
+        override val key: String = "catalog:$catalogKey"
+    }
+
+    data class Genre(
+        val genre: String?,
+        override val label: String,
+    ) : SearchPickerEntry {
+        override val key: String = "genre:${genre ?: "<all>"}"
+    }
+}
+
 @Composable
 private fun TabletFloatingTopBar(
     selectedTab: AppScreenTab,
@@ -4168,8 +4648,13 @@ private fun TabletFloatingTopBar(
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var activationZoneHovered by remember { mutableStateOf(false) }
     val isSearchActive = searchOverlayActive || selectedTab == AppScreenTab.Search
+    // Right-clicking the Library quadrant hangs the sort menu off the bar the same way the
+    // discover picker does. Only the nav row can open it, so entering search closes it.
+    var librarySortMenuVisible by remember(isSearchActive) { mutableStateOf(false) }
     val barAlpha by animateFloatAsState(
-        targetValue = if (dimUntilHovered && !isSearchActive && !activationZoneHovered) 0f else 1f,
+        // The menu is a popup, so it isn't covered by this alpha: let the bar dim out from under
+        // it and the menu is left floating over nothing.
+        targetValue = if (dimUntilHovered && !isSearchActive && !activationZoneHovered && !librarySortMenuVisible) 0f else 1f,
         animationSpec = tween(durationMillis = 200),
     )
 
@@ -4226,18 +4711,39 @@ private fun TabletFloatingTopBar(
             }
         }
     }
-    val pickerItemCount = when (pickerMode) {
-        SearchPickerMode.History -> visibleHistory.size
-        SearchPickerMode.Catalogs -> visibleCatalogs.size
-        SearchPickerMode.Genres -> visibleGenres.size
+    // Render and activate one immutable snapshot. A separate count plus live-list indexing allowed
+    // discovery refreshes and mode changes to invalidate an index while LazyColumn was measuring.
+    val pickerEntries = remember(
+        pickerMode,
+        visibleHistory,
+        visibleCatalogs,
+        visibleGenres,
+        allGenresLabel,
+    ) {
+        when (pickerMode) {
+            SearchPickerMode.History -> visibleHistory.map(SearchPickerEntry::History)
+            SearchPickerMode.Catalogs -> {
+                val labels = discoverCatalogDisplayLabels(visibleCatalogs)
+                visibleCatalogs.mapIndexed { index, catalog ->
+                    SearchPickerEntry.Catalog(catalogKey = catalog.key, label = labels[index])
+                }
+            }
+            SearchPickerMode.Genres -> visibleGenres.map { genre ->
+                SearchPickerEntry.Genre(genre = genre, label = genre ?: allGenresLabel)
+            }
+        }
     }
+    val pickerItemCount = pickerEntries.size
     val pickerVisible = isSearchActive &&
         (pickerMode != SearchPickerMode.History || searchBarHasFocus) &&
         (pickerMode != SearchPickerMode.History || visibleHistory.isNotEmpty())
     var historyShapeVisible by remember { mutableStateOf(false) }
+    val attachedPanelVisible = historyShapeVisible || librarySortMenuVisible
 
-    LaunchedEffect(searchHistory, searchQuery, pickerMode) {
-        pickerSelectedIndex = -1
+    LaunchedEffect(pickerEntries) {
+        if (pickerSelectedIndex !in pickerEntries.indices) {
+            pickerSelectedIndex = -1
+        }
     }
 
     LaunchedEffect(pickerVisible) {
@@ -4275,13 +4781,15 @@ private fun TabletFloatingTopBar(
     }
 
     val pickerListState = rememberLazyListState()
-    LaunchedEffect(pickerSelectedIndex, pickerMode) {
+    LaunchedEffect(pickerSelectedIndex, pickerMode, pickerEntries) {
         if (pickerSelectedIndex < 0) {
-            pickerListState.scrollToItem(0)
+            if (pickerEntries.isNotEmpty()) {
+                pickerListState.scrollToItem(0)
+            }
             return@LaunchedEffect
         }
         val headerOffset = if (pickerMode == SearchPickerMode.History) 0 else 1
-        val targetIndex = pickerSelectedIndex + headerOffset
+        val targetIndex = pickerSelectedIndex.coerceIn(pickerEntries.indices) + headerOffset
         val layoutInfo = pickerListState.layoutInfo
         val targetInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex }
         val fullyVisible = targetInfo != null &&
@@ -4299,18 +4807,16 @@ private fun TabletFloatingTopBar(
         onDiscoverSubmit()
     }
 
-    fun activatePickerItem(index: Int) {
-        when (pickerMode) {
-            SearchPickerMode.History -> {
-                val query = visibleHistory.getOrNull(index) ?: return
-                onSearchQueryChange(query)
+    fun activatePickerItem(entry: SearchPickerEntry) {
+        when (entry) {
+            is SearchPickerEntry.History -> {
+                onSearchQueryChange(entry.query)
                 focusManager.clearFocus()
-                onSearchSubmit(query)
+                onSearchSubmit(entry.query)
             }
 
-            SearchPickerMode.Catalogs -> {
-                val catalog = visibleCatalogs.getOrNull(index) ?: return
-                SearchRepository.selectDiscoverCatalog(catalog.key)
+            is SearchPickerEntry.Catalog -> {
+                SearchRepository.selectDiscoverCatalog(entry.catalogKey)
                 // Always advance to a confirmation/filter level. Catalogs without genre filters
                 // expose one "All Genres" entry instead of closing the picker immediately.
                 searchFieldState = TextFieldValue("")
@@ -4320,9 +4826,8 @@ private fun TabletFloatingTopBar(
                 try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
             }
 
-            SearchPickerMode.Genres -> {
-                val genre = visibleGenres.getOrNull(index) ?: if (index in visibleGenres.indices) null else return
-                SearchRepository.selectDiscoverGenre(genre)
+            is SearchPickerEntry.Genre -> {
+                SearchRepository.selectDiscoverGenre(entry.genre)
                 submitDiscovery()
             }
         }
@@ -4347,9 +4852,9 @@ private fun TabletFloatingTopBar(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Surface(
             color = floatingSearchSurfaceColor,
-            shape = if (historyShapeVisible) androidx.compose.foundation.shape.RoundedCornerShape(topStartPercent = 50, topEndPercent = 50) else tokens.shapes.chip,
-            tonalElevation = if (historyShapeVisible) 0.dp else tokens.elevation.playerControls,
-            shadowElevation = if (historyShapeVisible) 0.dp else tokens.elevation.overlay,
+            shape = if (attachedPanelVisible) androidx.compose.foundation.shape.RoundedCornerShape(topStartPercent = 50, topEndPercent = 50) else tokens.shapes.chip,
+            tonalElevation = if (attachedPanelVisible) 0.dp else tokens.elevation.playerControls,
+            shadowElevation = if (attachedPanelVisible) 0.dp else tokens.elevation.overlay,
             border = BorderStroke(0.5.dp, dividerColor),
             modifier = Modifier
                 .height(44.dp)
@@ -4408,7 +4913,8 @@ private fun TabletFloatingTopBar(
                                         Key.Enter -> {
                                             if (event.type == KeyEventType.KeyUp) {
                                                 if (pickerSelectedIndex in 0 until pickerItemCount) {
-                                                    activatePickerItem(pickerSelectedIndex)
+                                                    pickerEntries.getOrNull(pickerSelectedIndex)
+                                                        ?.let(::activatePickerItem)
                                                 } else if (pickerMode == SearchPickerMode.History) {
                                                     focusManager.clearFocus()
                                                     onSearchSubmit(searchQuery)
@@ -4437,8 +4943,10 @@ private fun TabletFloatingTopBar(
                                         Key.DirectionDown -> {
                                             if (event.type == KeyEventType.KeyDown && isSearchActive && pickerItemCount > 0) {
                                                 pickerSelectedIndex = (pickerSelectedIndex + 1).coerceAtMost(pickerItemCount - 1)
-                                                if (pickerMode == SearchPickerMode.History) {
-                                                    val query = visibleHistory[pickerSelectedIndex]
+                                                val historyEntry = pickerEntries.getOrNull(pickerSelectedIndex)
+                                                    as? SearchPickerEntry.History
+                                                if (historyEntry != null) {
+                                                    val query = historyEntry.query
                                                     searchFieldState = searchFieldState.copy(text = query, selection = TextRange(query.length))
                                                 }
                                                 return@onPreviewKeyEvent true
@@ -4449,8 +4957,10 @@ private fun TabletFloatingTopBar(
                                             if (event.type == KeyEventType.KeyDown && isSearchActive && pickerItemCount > 0) {
                                                 if (pickerSelectedIndex > -1) {
                                                     pickerSelectedIndex--
-                                                    if (pickerMode == SearchPickerMode.History && pickerSelectedIndex > -1) {
-                                                        val query = visibleHistory[pickerSelectedIndex]
+                                                    val historyEntry = pickerEntries.getOrNull(pickerSelectedIndex)
+                                                        as? SearchPickerEntry.History
+                                                    if (historyEntry != null) {
+                                                        val query = historyEntry.query
                                                         searchFieldState = searchFieldState.copy(text = query, selection = TextRange(query.length))
                                                     }
                                                     return@onPreviewKeyEvent true
@@ -4530,7 +5040,7 @@ private fun TabletFloatingTopBar(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Explore,
-                                contentDescription = "Browse catalogs (Tab)",
+                                contentDescription = stringResource(Res.string.cd_browse_catalogs),
                                 tint = if (pickerMode != SearchPickerMode.History) activeIconTint else inactiveIconTint,
                                 modifier = Modifier.size(16.dp),
                             )
@@ -4541,7 +5051,7 @@ private fun TabletFloatingTopBar(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Close,
-                                contentDescription = "Exit search",
+                                contentDescription = stringResource(Res.string.cd_exit_search),
                                 tint = inactiveIconTint,
                                 modifier = Modifier.size(16.dp),
                             )
@@ -4579,6 +5089,7 @@ private fun TabletFloatingTopBar(
                             selected = selectedTab == AppScreenTab.Library,
                             activeColor = activeQuadColor,
                             onClick = { onTabSelected(AppScreenTab.Library) },
+                            onSecondaryClick = { librarySortMenuVisible = true },
                         ) {
                             Icon(
                                 painter = painterResource(Res.drawable.sidebar_library),
@@ -4606,7 +5117,26 @@ private fun TabletFloatingTopBar(
                 }
             }
         } // closes Surface
-        
+
+        // A Popup, not a sibling in this Column, so a click anywhere else dismisses it. The
+        // offset hangs it off the bottom edge of the 44dp bar, overlapping the hairline border
+        // by half a pixel so the two surfaces read as one shape.
+        if (librarySortMenuVisible) {
+            val density = LocalDensity.current
+            Popup(
+                alignment = Alignment.TopCenter,
+                offset = IntOffset(0, with(density) { (44.dp - 0.5.dp).roundToPx() }),
+                properties = PopupProperties(focusable = true),
+                onDismissRequest = { librarySortMenuVisible = false },
+            ) {
+                LibrarySortMenuPanel(
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                    modifier = Modifier.width(LibraryNavMenuWidth),
+                    onDismissRequest = { librarySortMenuVisible = false },
+                )
+            }
+        }
+
         androidx.compose.animation.AnimatedVisibility(
                 visible = pickerVisible,
                 enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(expandFrom = Alignment.Top),
@@ -4641,7 +5171,7 @@ private fun TabletFloatingTopBar(
                                 )
                             }
                         }
-                        if (pickerItemCount == 0 && pickerMode != SearchPickerMode.History) {
+                        if (pickerEntries.isEmpty() && pickerMode != SearchPickerMode.History) {
                             item(key = "picker_empty_$pickerMode") {
                                 Text(
                                     text = stringResource(Res.string.discover_empty_no_catalogs_title),
@@ -4652,26 +5182,16 @@ private fun TabletFloatingTopBar(
                             }
                         }
                         items(
-                            count = pickerItemCount,
-                            key = { index -> "$pickerMode:$index" },
-                        ) { index ->
-                            val label = when (pickerMode) {
-                                SearchPickerMode.History -> visibleHistory[index]
-                                SearchPickerMode.Catalogs -> visibleCatalogs[index].catalogName
-                                SearchPickerMode.Genres -> visibleGenres[index] ?: allGenresLabel
-                            }
-                            val subtitle = if (pickerMode == SearchPickerMode.Catalogs) {
-                                val catalog = visibleCatalogs[index]
-                                "${catalog.addonName} • ${catalog.type}"
-                            } else {
-                                null
-                            }
+                            items = pickerEntries,
+                            key = SearchPickerEntry::key,
+                        ) { entry ->
+                            val index = pickerEntries.indexOf(entry)
                             val isSelected = index == pickerSelectedIndex
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(if (isSelected) Color.White.copy(alpha = 0.1f) else Color.Transparent)
-                                    .clickable { activatePickerItem(index) }
+                                    .clickable { activatePickerItem(entry) }
                                     .padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -4683,22 +5203,13 @@ private fun TabletFloatingTopBar(
                                     tint = inactiveIconTint,
                                 )
                                 androidx.compose.material3.Text(
-                                    text = label,
+                                    text = entry.label,
                                     modifier = Modifier.weight(1f),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = activeIconTint,
                                     maxLines = 1,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 )
-                                if (subtitle != null) {
-                                    Text(
-                                        text = subtitle,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = inactiveIconTint,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
                             }
                         }
                     }
@@ -4713,13 +5224,16 @@ private fun RowScope.NavQuadrant(
     selected: Boolean,
     activeColor: Color,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onSecondaryClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .weight(1f)
             .fillMaxHeight()
             .background(if (selected) activeColor else Color.Transparent)
+            .then(if (onSecondaryClick != null) Modifier.secondaryClick(onSecondaryClick) else Modifier)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

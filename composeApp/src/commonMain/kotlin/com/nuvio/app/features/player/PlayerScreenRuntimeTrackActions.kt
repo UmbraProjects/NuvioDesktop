@@ -29,6 +29,13 @@ internal val PlayerScreenRuntime.visibleSubtitleTracks: List<SubtitleTrack>
         selectedIndex = selectedSubtitleIndex,
     )
 
+internal val PlayerScreenRuntime.visibleAudioTracks: List<AudioTrack>
+    get() = filterAudioTracksForSettings(
+        tracks = audioTracks,
+        settings = playerSettingsUiState,
+        selectedIndex = selectedAudioIndex,
+    )
+
 internal val PlayerScreenRuntime.selectedAddonSubtitle: AddonSubtitle?
     get() = addonSubtitles.firstOrNull { subtitle ->
         subtitle.id == selectedAddonSubtitleId || subtitle.url == selectedAddonSubtitleId
@@ -185,18 +192,34 @@ internal fun PlayerScreenRuntime.refreshTracks() {
             preferredAudioLanguage = playerSettingsUiState.preferredAudioLanguage,
             secondaryPreferredAudioLanguage = playerSettingsUiState.secondaryPreferredAudioLanguage,
             deviceLanguages = DeviceLanguagePreferences.preferredLanguageCodes(),
+            originalLanguage = OriginalLanguageCache.languageFor(args.parentMetaId),
         )
-        if (preferredAudioTargets.isEmpty()) {
+        if (preferredAudioTargets.isEmpty() && playerSettingsUiState.rejectedAudioKeywords.isEmpty()) {
             preferredAudioSelectionApplied = true
         } else if (audioTracks.isNotEmpty()) {
             val preferredAudioIndex = findPreferredTrackIndex(
                 tracks = audioTracks,
                 targets = preferredAudioTargets,
                 language = { track -> track.language },
+                isRejected = { track -> playerSettingsUiState.rejectsAudioTrack(track) },
             )
-            if (preferredAudioIndex >= 0 && preferredAudioIndex != selectedAudioIndex) {
-                playerController?.selectAudioTrack(preferredAudioIndex)
-                selectedAudioIndex = preferredAudioIndex
+            val audioIndexToApply = if (preferredAudioIndex >= 0) {
+                preferredAudioIndex
+            } else {
+                // No language matched, but the player (or mpv's own alang pass) may still be sitting
+                // on a commentary or audio-description track. Move off it to the first track that
+                // isn't rejected; if every track is rejected, leave the selection alone rather than
+                // trading a wrong track for no audio.
+                val selected = audioTracks.firstOrNull { it.index == selectedAudioIndex || it.isSelected }
+                if (selected != null && playerSettingsUiState.rejectsAudioTrack(selected)) {
+                    audioTracks.indexOfFirst { !playerSettingsUiState.rejectsAudioTrack(it) }
+                } else {
+                    -1
+                }
+            }
+            if (audioIndexToApply >= 0 && audioIndexToApply != selectedAudioIndex) {
+                playerController?.selectAudioTrack(audioIndexToApply)
+                selectedAudioIndex = audioIndexToApply
             }
             preferredAudioSelectionApplied = true
         }
@@ -215,6 +238,7 @@ internal fun PlayerScreenRuntime.refreshTracks() {
                 playerSettingsUiState.secondaryPreferredSubtitleLanguage
             },
             deviceLanguages = DeviceLanguagePreferences.preferredLanguageCodes(),
+            originalLanguage = OriginalLanguageCache.languageFor(args.parentMetaId),
         )
 
         if (preferredSubtitleTargets.isEmpty()) {
@@ -229,6 +253,7 @@ internal fun PlayerScreenRuntime.refreshTracks() {
             val preferredSubtitleIndex = findPreferredSubtitleTrackIndex(
                 tracks = subtitleTracks,
                 targets = preferredSubtitleTargets,
+                isRejected = { track -> playerSettingsUiState.rejectsSubtitleTrack(track) },
             )
             val nativePreferredSelectionConfirmed = preferredSubtitleIndex >= 0 &&
                 subtitleTracks.firstOrNull { it.index == preferredSubtitleIndex }?.isSelected == true
@@ -247,7 +272,13 @@ internal fun PlayerScreenRuntime.refreshTracks() {
                 preferredSubtitleIndex < 0 &&
                 (subtitleStyle.useForcedSubtitles ||
                     normalizeLanguageCode(playerSettingsUiState.preferredSubtitleLanguage) ==
-                    SubtitleLanguageOption.FORCED)
+                    SubtitleLanguageOption.FORCED ||
+                    // Nothing acceptable matched and mpv's own slang pass left a rejected track
+                    // showing (a signs/songs or forced track). Turning subtitles off is the honest
+                    // outcome — the alternative is displaying exactly what was ruled out.
+                    subtitleTracks.any {
+                        it.isSelected && playerSettingsUiState.rejectsSubtitleTrack(it)
+                    })
             ) {
                 if (selectedSubtitleIndex != -1 || subtitleTracks.any { it.isSelected }) {
                     playerController?.selectSubtitleTrack(-1)
@@ -298,13 +329,19 @@ internal fun PlayerScreenRuntime.applyPreferredAddonSubtitleIfReady() {
     }
     // A late native track refresh may have discovered a matching built-in track; never let an
     // addon replace it merely because the network response arrived afterward.
-    if (findPreferredSubtitleTrackIndex(subtitleTracks, targets) >= 0) {
+    if (findPreferredSubtitleTrackIndex(
+            tracks = subtitleTracks,
+            targets = targets,
+            isRejected = { track -> playerSettingsUiState.rejectsSubtitleTrack(track) },
+        ) >= 0
+    ) {
         preferredSubtitleSelectionApplied = true
         return
     }
     val addon = targets.firstNotNullOfOrNull { target ->
         addonSubtitles.firstOrNull { subtitle ->
-            languageMatchesPreference(subtitle.language, target)
+            !playerSettingsUiState.rejectsAddonSubtitle(subtitle) &&
+                languageMatchesPreference(subtitle.language, target)
         }
     }
     if (addon != null) {
@@ -348,6 +385,7 @@ internal fun PlayerScreenRuntime.applySecondarySubtitleSelectionIfNeeded() {
     val candidatePosition = findPreferredSubtitleTrackIndex(
         tracks = candidates,
         targets = listOf(secondaryLanguage),
+        isRejected = { track -> playerSettingsUiState.rejectsSubtitleTrack(track) },
     )
     val secondaryTrack = candidates.getOrNull(candidatePosition)
     controller.selectSecondarySubtitleTrack(secondaryTrack?.index ?: -1)
@@ -356,9 +394,12 @@ internal fun PlayerScreenRuntime.applySecondarySubtitleSelectionIfNeeded() {
 
 internal fun PlayerScreenRuntime.cycleAudioTrackFromKeyboard() {
     refreshTracks()
-    if (audioTracks.isEmpty()) return
-    val currentIndex = audioTracks.indexOfFirst { it.index == selectedAudioIndex || it.isSelected }
-    val next = audioTracks[(currentIndex + 1).mod(audioTracks.size)]
+    // Cycle over the same list the modal shows, so rejected tracks (commentary, audio description)
+    // are skipped here too.
+    val tracks = visibleAudioTracks
+    if (tracks.isEmpty()) return
+    val currentIndex = tracks.indexOfFirst { it.index == selectedAudioIndex || it.isSelected }
+    val next = tracks[(currentIndex + 1).mod(tracks.size)]
     selectedAudioIndex = next.index
     persistAudioPreference(next)
     playerController?.selectAudioTrack(next.index)

@@ -16,7 +16,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,12 +36,18 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -62,9 +68,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import co.touchlab.kermit.Logger
-import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.i18n.localizedSeasonEpisodeCode
 import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
+import com.nuvio.app.core.ui.NuvioCardDepthSurface
+import com.nuvio.app.core.ui.nuvioCardDepth
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.core.ui.NuvioShelfItemSlot
 import com.nuvio.app.core.ui.desktopHorizontalListNavigation
@@ -90,7 +97,6 @@ import com.nuvio.app.features.watching.application.WatchingState
 import kotlinx.coroutines.runBlocking
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -133,6 +139,24 @@ fun DetailSeriesContent(
 ) {
     val hasVideos = meta.videos.isNotEmpty()
     if (meta.type != "series" && !hasVideos) return
+
+    // Resolve through the same video-id-aware path used by playback. Anime can use bare absolute
+    // episode numbers (no season), and sibling Kitsu/MAL entries can map onto one franchise; a
+    // plain season/episode set loses both of those identities and omits the downloaded badge.
+    val localLibraryState by LocalLibraryRepository.uiState.collectAsStateWithLifecycle()
+    val downloadedEpisodeVideoIds = remember(localLibraryState.items, meta.id, meta.videos) {
+        meta.videos.mapNotNullTo(mutableSetOf()) { episode ->
+            val videoId = episode.playbackVideoId(meta.id)
+            videoId.takeIf {
+                LocalLibraryRepository.hasLocalFileForEpisode(
+                    metaId = meta.id,
+                    videoId = episode.id,
+                    season = episode.effectiveSeasonNumber(),
+                    episode = episode.effectiveEpisodeNumber(),
+                )
+            }
+        }
+    }
 
     if (meta.videos.isEmpty()) {
         DetailSection(
@@ -393,6 +417,7 @@ fun DetailSeriesContent(
                             progressByVideoId = progressByVideoId,
                             episodeRatings = episodeRatings,
                             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+                            downloadedEpisodeVideoIds = downloadedEpisodeVideoIds,
                             // Only resume-scroll to the preferred episode on the season the
                             // user is actually up to; other seasons should start at episode 1.
                             // Absolute-numbered anime often carry no season on their episodes, so the
@@ -424,6 +449,7 @@ fun DetailSeriesContent(
                                         fallbackImage = meta.background ?: meta.poster,
                                         progressEntry = episodeProgressEntry,
                                         imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
+                                        isDownloaded = episode.playbackVideoId(meta.id) in downloadedEpisodeVideoIds,
                                         isWatched = episodeProgressEntry?.isEffectivelyCompleted == true ||
                                             WatchingState.isEpisodeWatched(
                                                 watchedKeys = watchedKeys,
@@ -900,6 +926,8 @@ private fun EpisodeHorizontalRow(
     progressByVideoId: Map<String, WatchProgressEntry>,
     episodeRatings: Map<Pair<Int, Int>, Double>,
     blurUnwatchedEpisodes: Boolean,
+    /** Playback video ids that resolve to a file in the local library. */
+    downloadedEpisodeVideoIds: Set<String>,
     preferredEpisodeNumber: Int? = null,
     focusedEpisodeIndex: Int? = null,
     compactDesktopLayout: Boolean = false,
@@ -949,6 +977,7 @@ private fun EpisodeHorizontalRow(
                 listState,
                 scrollStepPx = itemExtentPx,
                 treatPlainScrollAsHorizontal = compactDesktopLayout,
+                handlePageAndEdgeKeys = true,
             ),
         contentPadding = PaddingValues(
             start = 0.dp,
@@ -977,6 +1006,7 @@ private fun EpisodeHorizontalRow(
                     fallbackImage = fallbackImage,
                     progressEntry = episodeProgressEntry,
                     imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
+                    isDownloaded = episodeVideoId in downloadedEpisodeVideoIds,
                     isWatched = episodeProgressEntry?.isEffectivelyCompleted == true ||
                         WatchingState.isEpisodeWatched(
                             watchedKeys = watchedKeys,
@@ -1002,6 +1032,7 @@ private fun EpisodeHorizontalCard(
     progressEntry: WatchProgressEntry?,
     imdbRating: Double?,
     isWatched: Boolean,
+    isDownloaded: Boolean,
     blurUnwatchedEpisodes: Boolean,
     metrics: EpisodeHorizontalCardMetrics,
     onClick: (() -> Unit)? = null,
@@ -1016,6 +1047,7 @@ private fun EpisodeHorizontalCard(
             .height(metrics.cardHeight)
             .clip(cardShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .nuvioCardDepth(cardShape, NuvioCardDepthSurface.Episodes)
             .border(
                 width = 1.dp,
                 color = Color.White.copy(alpha = 0.12f),
@@ -1055,6 +1087,16 @@ private fun EpisodeHorizontalCard(
                     ),
                 ),
         )
+
+        // Its own overlay rather than a slot in the top row: the date and episode badges either
+        // side are different widths, so anything inside that row would sit off-centre.
+        if (isDownloaded) {
+            EpisodeDownloadedBadge(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(metrics.contentPadding),
+            )
+        }
 
         Row(
             modifier = Modifier
@@ -1104,17 +1146,32 @@ private fun EpisodeHorizontalCard(
             ),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = video.title,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontSize = metrics.titleTextSize,
-                    fontWeight = FontWeight.ExtraBold,
-                    lineHeight = metrics.titleLineHeight,
-                ),
-                color = Color.White,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = video.title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = metrics.titleTextSize,
+                        fontWeight = FontWeight.ExtraBold,
+                        lineHeight = metrics.titleLineHeight,
+                    ),
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                ratingLabel?.let { rating ->
+                    ImdbEpisodeRatingBadge(
+                        rating = rating,
+                        logoWidth = metrics.imdbLogoWidth,
+                        logoHeight = metrics.imdbLogoHeight,
+                        textSize = metrics.metaTextSize,
+                    )
+                }
+            }
 
             if (!video.overview.isNullOrBlank()) {
                 Text(
@@ -1129,20 +1186,6 @@ private fun EpisodeHorizontalCard(
                 )
             }
 
-            if (ratingLabel != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ImdbEpisodeRatingBadge(
-                        rating = ratingLabel,
-                        logoWidth = metrics.imdbLogoWidth,
-                        logoHeight = metrics.imdbLogoHeight,
-                        textSize = metrics.metaTextSize,
-                    )
-                }
-            }
         }
 
         progressEntry
@@ -1728,6 +1771,27 @@ private fun CompactLandscapeTopMetaRow(
     }
 }
 
+/** Marks an episode that already exists in the local library. */
+@Composable
+private fun EpisodeDownloadedBadge(
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .size(18.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.62f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Download,
+            contentDescription = stringResource(Res.string.episodes_cd_downloaded),
+            tint = Color.White,
+            modifier = Modifier.size(12.dp),
+        )
+    }
+}
+
 @Composable
 private fun CardOverlayBadge(
     text: String,
@@ -1782,40 +1846,58 @@ private fun ImdbEpisodeRatingBadge(
     logoHeight: Dp,
     textSize: androidx.compose.ui.unit.TextUnit,
 ) {
+    val chipShape = RoundedCornerShape(4.dp)
     Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .height(logoHeight + 4.dp)
+            .clip(chipShape)
+            .background(Color.Black.copy(alpha = 0.72f))
+            .border(
+                width = 0.75.dp,
+                color = Color.White.copy(alpha = 0.18f),
+                shape = chipShape,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (AppFeaturePolicy.imdbRatingLogoEnabled) {
-            Image(
-                painter = painterResource(Res.drawable.rating_imdb),
-                contentDescription = stringResource(Res.string.source_imdb),
-                modifier = Modifier
-                    .width(logoWidth)
-                    .height(logoHeight),
-                contentScale = ContentScale.Fit,
-            )
-        } else {
+        Box(
+            modifier = Modifier
+                .widthIn(min = logoWidth + 4.dp)
+                .fillMaxHeight()
+                .background(Color(0xFFF5C518)),
+            contentAlignment = Alignment.Center,
+        ) {
             Text(
                 text = stringResource(Res.string.source_imdb),
                 style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = textSize,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.sp,
+                    fontSize = textSize * 0.74f,
+                    lineHeight = textSize * 0.74f,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = (-0.2).sp,
                 ),
-                color = Color.White.copy(alpha = 0.78f),
+                color = Color.Black,
                 maxLines = 1,
+                textAlign = TextAlign.Center,
             )
         }
-        Text(
-            text = rating,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = textSize,
-                fontWeight = FontWeight.SemiBold,
-            ),
-            color = Color(0xFFF5C518),
-            maxLines = 1,
-        )
+        Box(
+            modifier = Modifier
+                .width(logoWidth + 2.dp)
+                .fillMaxHeight(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = rating,
+                modifier = Modifier.offset(y = (-1).dp),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = textSize,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = textSize,
+                ),
+                color = Color.White.copy(alpha = 0.96f),
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 
@@ -1827,6 +1909,7 @@ private fun EpisodeListCard(
     progressEntry: WatchProgressEntry?,
     imdbRating: Double?,
     isWatched: Boolean,
+    isDownloaded: Boolean,
     blurUnwatchedEpisodes: Boolean,
     sizing: SeriesContentSizing,
     modifier: Modifier = Modifier,
@@ -1883,6 +1966,14 @@ private fun EpisodeListCard(
                     )
                 }
 
+                if (isDownloaded) {
+                    EpisodeDownloadedBadge(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(sizing.badgeVerticalPadding),
+                    )
+                }
+
                 EpisodeCodeBadge(
                     text = video.episodeBadge(),
                     textSize = sizing.badgeTextSize,
@@ -1915,20 +2006,35 @@ private fun EpisodeListCard(
                     ),
                 verticalArrangement = Arrangement.spacedBy(sizing.contentSpacing),
             ) {
-                Text(
-                    text = video.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = sizing.titleTextSize,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = sizing.titleLineHeight,
-                        letterSpacing = 0.sp,
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = sizing.titleMaxLines,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = video.title,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = sizing.titleTextSize,
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = sizing.titleLineHeight,
+                            letterSpacing = 0.sp,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    ratingLabel?.let { rating ->
+                        ImdbEpisodeRatingBadge(
+                            rating = rating,
+                            logoWidth = 24.dp,
+                            logoHeight = 12.dp,
+                            textSize = sizing.metaTextSize,
+                        )
+                    }
+                }
 
-                if (formattedDate != null || ratingLabel != null) {
+                if (formattedDate != null) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1943,14 +2049,6 @@ private fun EpisodeListCard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        ratingLabel?.let { rating ->
-                            ImdbEpisodeRatingBadge(
-                                rating = rating,
-                                logoWidth = 24.dp,
-                                logoHeight = 12.dp,
-                                textSize = sizing.metaTextSize,
                             )
                         }
                     }
@@ -2208,6 +2306,14 @@ private fun MetaVideo.seasonEpisodeKey(): Pair<Int, Int>? {
     val episodeNumber = effectiveEpisodeNumber() ?: return null
     return seasonNumber to episodeNumber
 }
+
+private fun MetaVideo.playbackVideoId(parentMetaId: String): String =
+    buildPlaybackVideoId(
+        parentMetaId = parentMetaId,
+        seasonNumber = effectiveSeasonNumber(),
+        episodeNumber = effectiveEpisodeNumber(),
+        fallbackVideoId = id,
+    )
 
 private fun formatEpisodeRating(rating: Double): String {
     val roundedTenths = (rating * 10.0).roundToInt()

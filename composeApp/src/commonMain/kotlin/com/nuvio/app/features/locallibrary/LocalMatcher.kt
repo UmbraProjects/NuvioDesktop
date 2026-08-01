@@ -3,6 +3,9 @@ package com.nuvio.app.features.locallibrary
 import com.nuvio.app.features.kitsu.KitsuSearchResult
 import com.nuvio.app.features.kitsu.KitsuService
 import com.nuvio.app.features.metadata.AnimeIdMappingRepository
+import com.nuvio.app.features.metadata.pickBestTmdbMatch
+import com.nuvio.app.features.metadata.titleSimilarity
+import com.nuvio.app.features.metadata.yearMismatchPenalty
 import com.nuvio.app.features.tmdb.TmdbSearchResult
 import com.nuvio.app.features.tmdb.TmdbService
 
@@ -41,9 +44,19 @@ internal object LocalMatcher {
         return item.applyKitsuMatch(kitsuId = best.id, poster = best.poster, state = LocalMatchState.AUTO)
     }
 
-    /** Text search for the Fix-match dialog. Anime items search Kitsu; everything else TMDB. */
+    /** Compatibility entry point for callers whose provider still follows the target folder. */
     suspend fun search(query: String, type: LocalFolderType, isAnime: Boolean): List<LocalMatchCandidate> {
-        if (isAnime) {
+        val provider = if (isAnime) LocalMatchProvider.KITSU else LocalMatchProvider.TMDB
+        return search(query, type, provider)
+    }
+
+    /** Text search using the provider explicitly selected in the Fix-match dialog. */
+    suspend fun search(
+        query: String,
+        type: LocalFolderType,
+        provider: LocalMatchProvider,
+    ): List<LocalMatchCandidate> {
+        if (provider == LocalMatchProvider.KITSU) {
             return runCatching { KitsuService.searchTitles(query, preferMovie = type == LocalFolderType.MOVIES) }
                 .getOrDefault(emptyList())
                 .map { result ->
@@ -74,44 +87,61 @@ internal object LocalMatcher {
 
     /** Applies a chosen TMDB id (from a candidate or a rescan) and back-fills the IMDb id + poster. */
     suspend fun applyTmdbId(item: LocalMediaItem, tmdbId: Int, state: LocalMatchState): LocalMediaItem =
-        item.applyTmdbMatch(tmdbId = tmdbId, posterPath = null, state = state)
+        item.applyTmdbMatch(
+            tmdbId = tmdbId,
+            posterPath = null,
+            state = state,
+            replaceNativeAnimeIdentity = true,
+        )
 
     /** Applies a chosen Kitsu id (from a candidate) and back-fills imdb/tmdb from the anime mapping. */
     suspend fun applyKitsuId(item: LocalMediaItem, kitsuId: Int, poster: String?, state: LocalMatchState): LocalMediaItem =
         item.applyKitsuMatch(kitsuId = kitsuId, poster = poster, state = state)
 
     /**
-     * Parses a user-pasted id into an override. Accepts `tt1234567`, `tmdb:1234`, `kitsu:1234`,
-     * `mal:1234`, a bare TMDB number, or a themoviedb.org URL. Returns null when nothing
-     * recognisable is present.
+     * Resolves an ID entered into the unified search field. Explicit IDs override the selected
+     * text-search provider. A bare number keeps the old ID box's TMDB meaning only while TMDB is
+     * selected, allowing numeric anime titles such as "86" to remain searchable through Kitsu.
      */
-    suspend fun applyPastedId(item: LocalMediaItem, raw: String): LocalMediaItem? {
-        val text = raw.trim()
-        if (text.isBlank()) return null
-
-        nativeAnimeIdRegex.find(text)?.let { match ->
-            val namespace = match.groupValues[1].lowercase()
-            val id = match.groupValues[2].toIntOrNull() ?: return@let
-            return when (namespace) {
-                "kitsu" -> item.applyKitsuMatch(kitsuId = id, poster = null, state = LocalMatchState.MANUAL)
-                else -> item.copy(malId = id, isAnime = true, matchState = LocalMatchState.MANUAL)
-            }
-        }
-
-        imdbIdRegex.find(text)?.value?.let { imdb ->
+    suspend fun applySearchInput(
+        item: LocalMediaItem,
+        raw: String,
+        provider: LocalMatchProvider,
+    ): LocalMediaItem? = when (val parsed = parseLocalMatchId(raw, provider)) {
+        is LocalMatchInputId.Kitsu ->
+            item.applyKitsuMatch(parsed.id, poster = null, state = LocalMatchState.MANUAL)
+        is LocalMatchInputId.Mal ->
+            item.copy(
+                kitsuId = null,
+                malId = parsed.id,
+                isAnime = true,
+                matchState = LocalMatchState.MANUAL,
+            )
+        is LocalMatchInputId.Imdb -> {
             val mediaType = item.tmdbMediaType()
-            val tmdb = runCatching { TmdbService.ensureTmdbId(imdb, mediaType)?.toIntOrNull() }.getOrNull()
-            return item.copy(
-                imdbId = imdb,
-                tmdbId = tmdb ?: item.tmdbId,
+            val tmdb = runCatching {
+                TmdbService.ensureTmdbId(parsed.id, mediaType)?.toIntOrNull()
+            }.getOrNull()
+            item.withFranchiseIdentity(
+                imdbId = parsed.id,
+                tmdbId = tmdb,
                 poster = tmdb?.let { posterFromTmdb(it, mediaType) } ?: item.poster,
                 matchState = LocalMatchState.MANUAL,
             )
         }
-
-        val tmdbId = tmdbFromText(text) ?: return null
-        return item.applyTmdbMatch(tmdbId = tmdbId, posterPath = null, state = LocalMatchState.MANUAL)
+        is LocalMatchInputId.Tmdb ->
+            item.applyTmdbMatch(
+                tmdbId = parsed.id,
+                posterPath = null,
+                state = LocalMatchState.MANUAL,
+                replaceNativeAnimeIdentity = true,
+            )
+        null -> null
     }
+
+    /** Retained for non-UI callers; bare numeric input historically meant TMDB here. */
+    suspend fun applyPastedId(item: LocalMediaItem, raw: String): LocalMediaItem? =
+        applySearchInput(item, raw, LocalMatchProvider.TMDB)
 
     /**
      * Resolves a Kitsu id to a full local match: sets the native kitsu id and back-fills the
@@ -145,16 +175,26 @@ internal object LocalMatcher {
         tmdbId: Int,
         posterPath: String?,
         state: LocalMatchState,
+        replaceNativeAnimeIdentity: Boolean = false,
     ): LocalMediaItem {
         val mediaType = tmdbMediaType()
         val imdb = runCatching { TmdbService.tmdbToImdb(tmdbId, mediaType) }.getOrNull()
         val poster = TmdbService.tmdbImageUrl(posterPath) ?: posterFromTmdb(tmdbId, mediaType) ?: poster
-        return copy(
-            tmdbId = tmdbId,
-            imdbId = imdb ?: imdbId,
-            poster = poster,
-            matchState = state,
-        )
+        return if (replaceNativeAnimeIdentity) {
+            withFranchiseIdentity(
+                imdbId = imdb,
+                tmdbId = tmdbId,
+                poster = poster,
+                matchState = state,
+            )
+        } else {
+            copy(
+                tmdbId = tmdbId,
+                imdbId = imdb ?: imdbId,
+                poster = poster,
+                matchState = state,
+            )
+        }
     }
 
     private suspend fun posterFromTmdb(tmdbId: Int, mediaType: String): String? =
@@ -165,12 +205,12 @@ internal object LocalMatcher {
 
     private fun pickBestKitsu(item: LocalMediaItem, results: List<KitsuSearchResult>): KitsuSearchResult? {
         if (results.isEmpty()) return null
-        val target = normalize(item.title)
+        val target = normalizeLocalMatchTitle(item.title)
         val wantMovie = item.type == LocalFolderType.MOVIES
         val scored = results.mapNotNull { result ->
             // Score against the best-matching title variant — a folder may use romaji or English.
             val similarity = result.matchTitles
-                .map { normalize(it) }
+                .map { normalizeLocalMatchTitle(it) }
                 .filter { it.isNotBlank() }
                 .maxOfOrNull { titleSimilarity(target, it) }
                 ?: return@mapNotNull null
@@ -184,60 +224,69 @@ internal object LocalMatcher {
         return best.first.takeIf { best.second >= 0.72 }
     }
 
-    private fun pickBest(item: LocalMediaItem, results: List<TmdbSearchResult>): TmdbSearchResult? {
-        if (results.isEmpty()) return null
-        val target = normalize(item.title)
-        val scored = results.mapNotNull { result ->
-            val candidate = normalize(result.displayTitle)
-            if (candidate.isBlank()) return@mapNotNull null
-            val similarity = titleSimilarity(target, candidate)
-            val yearPenalty = yearMismatchPenalty(item.year, result.year)
-            (result to (similarity - yearPenalty))
-        }
-        val best = scored.maxByOrNull { it.second } ?: return null
-        // Require a strong title match to auto-accept; borderline cases stay unmatched for the user.
-        return best.first.takeIf { best.second >= 0.72 }
-    }
+    // Requires a strong title match to auto-accept; borderline cases stay unmatched for the user.
+    private fun pickBest(item: LocalMediaItem, results: List<TmdbSearchResult>): TmdbSearchResult? =
+        pickBestTmdbMatch(title = item.title, year = item.year, results = results)
 
-    private fun yearMismatchPenalty(a: Int?, b: Int?): Double {
-        if (a == null || b == null) return 0.0
-        return when (kotlin.math.abs(a - b)) {
-            // A ±1 gap is a match — a local library and TMDB routinely disagree by a year
-            // (festival vs wide release). Only larger gaps count against the candidate.
-            0, 1 -> 0.0
-            2 -> 0.2
-            else -> 0.45
-        }
-    }
-
-    private fun titleSimilarity(a: String, b: String): Double {
-        if (a == b) return 1.0
-        val tokensA = a.split(' ').filter { it.isNotBlank() }.toSet()
-        val tokensB = b.split(' ').filter { it.isNotBlank() }.toSet()
-        if (tokensA.isEmpty() || tokensB.isEmpty()) return 0.0
-        val intersection = tokensA.intersect(tokensB).size.toDouble()
-        val union = tokensA.union(tokensB).size.toDouble()
-        val jaccard = intersection / union
-        val containment = if (b.startsWith(a) || a.startsWith(b)) 0.15 else 0.0
-        return (jaccard + containment).coerceAtMost(1.0)
-    }
-
-    private fun normalize(value: String): String =
-        value.lowercase()
-            .map { if (it.isLetterOrDigit()) it else ' ' }
-            .joinToString("")
-            .split(' ')
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-
-    private val nativeAnimeIdRegex = Regex("""(?i)\b(kitsu|mal|myanimelist)[:/](\d+)""")
-    private val imdbIdRegex = Regex("""tt\d{6,9}""", RegexOption.IGNORE_CASE)
-    private val tmdbUrlRegex = Regex("""themoviedb\.org/(?:movie|tv)/(\d+)""", RegexOption.IGNORE_CASE)
-    private val tmdbPrefixRegex = Regex("""(?i)tmdb[:/](\d+)""")
-    private val bareNumberRegex = Regex("""^\d{1,9}$""")
-
-    private fun tmdbFromText(text: String): Int? =
-        tmdbUrlRegex.find(text)?.groupValues?.get(1)?.toIntOrNull()
-            ?: tmdbPrefixRegex.find(text)?.groupValues?.get(1)?.toIntOrNull()
-            ?: bareNumberRegex.find(text.trim())?.value?.toIntOrNull()
 }
+
+enum class LocalMatchProvider {
+    KITSU,
+    TMDB,
+}
+
+internal sealed interface LocalMatchInputId {
+    data class Imdb(val id: String) : LocalMatchInputId
+    data class Tmdb(val id: Int) : LocalMatchInputId
+    data class Kitsu(val id: Int) : LocalMatchInputId
+    data class Mal(val id: Int) : LocalMatchInputId
+}
+
+private val nativeAnimeIdRegex = Regex("""(?i)^\s*(kitsu|mal|myanimelist)[:/](\d+)\s*$""")
+private val imdbIdRegex = Regex("""(?i)^\s*(tt\d{6,9})\s*$""")
+private val tmdbUrlRegex =
+    Regex("""(?i)^\s*(?:https?://)?(?:www\.)?themoviedb\.org/(?:movie|tv)/(\d+)(?:[-/?#].*)?\s*$""")
+private val tmdbPrefixRegex = Regex("""(?i)^\s*tmdb[:/](\d+)\s*$""")
+private val bareNumberRegex = Regex("""^\s*(\d{1,9})\s*$""")
+
+internal fun parseLocalMatchId(
+    raw: String,
+    provider: LocalMatchProvider,
+): LocalMatchInputId? {
+    nativeAnimeIdRegex.matchEntire(raw)?.let { match ->
+        val id = match.groupValues[2].toIntOrNull() ?: return null
+        return if (match.groupValues[1].equals("kitsu", ignoreCase = true)) {
+            LocalMatchInputId.Kitsu(id)
+        } else {
+            LocalMatchInputId.Mal(id)
+        }
+    }
+    imdbIdRegex.matchEntire(raw)?.let { match ->
+        return LocalMatchInputId.Imdb(match.groupValues[1].lowercase())
+    }
+    val tmdb = tmdbUrlRegex.matchEntire(raw)?.groupValues?.get(1)?.toIntOrNull()
+        ?: tmdbPrefixRegex.matchEntire(raw)?.groupValues?.get(1)?.toIntOrNull()
+    if (tmdb != null) return LocalMatchInputId.Tmdb(tmdb)
+    if (provider != LocalMatchProvider.TMDB) return null
+    val bare = bareNumberRegex.matchEntire(raw)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+    return LocalMatchInputId.Tmdb(bare)
+}
+
+/**
+ * An explicitly selected IMDb/TMDB identity means the user wants franchise season coordinates,
+ * even when the folder is marked as anime. Native ids must be removed because [LocalMediaItem.contentId]
+ * deliberately gives Kitsu/MAL priority for entry-relative numbering.
+ */
+internal fun LocalMediaItem.withFranchiseIdentity(
+    imdbId: String?,
+    tmdbId: Int?,
+    poster: String?,
+    matchState: LocalMatchState,
+): LocalMediaItem = copy(
+    imdbId = imdbId,
+    tmdbId = tmdbId,
+    kitsuId = null,
+    malId = null,
+    poster = poster,
+    matchState = matchState,
+)

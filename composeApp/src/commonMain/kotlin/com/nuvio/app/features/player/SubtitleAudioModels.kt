@@ -58,7 +58,16 @@ data class SubtitleStyleState(
     val outlineWidth: Int = 2,
     // Drop shadow behind the subtitle text (mpv sub-shadow-offset). Independent of the outline.
     val shadowEnabled: Boolean = false,
+    // Shadow colour + intensity. The alpha channel is the "intensity"; the default #66000000 is a
+    // soft black (0x66 ≈ 40% opacity). Only takes visible effect on a transparent background — mpv
+    // aliases sub-shadow-color to sub-back-color, so an opaque background wins (see applySubtitleStyle).
+    val shadowColor: Color = Color(0x66000000),
+    // Shadow offset in tenths of a scaled pixel (15 = 1.5 px). Divided by 10 for mpv sub-shadow-offset.
+    val shadowOffset: Int = SUBTITLE_SHADOW_OFFSET_DEFAULT,
+    // Gaussian edge blur (mpv sub-blur). 0 = crisp edges.
+    val blur: Int = 0,
     val bold: Boolean = false,
+    val italic: Boolean = false,
     val fontSizeSp: Int = 18,
     val bottomOffset: Int = 20,
     // Subtitle font family. Empty = player default. Values are resolved by the platform's
@@ -70,6 +79,23 @@ data class SubtitleStyleState(
     companion object {
         val DEFAULT = SubtitleStyleState()
     }
+}
+
+// Shadow offset is stored in tenths so it can round-trip through the integer settings store while
+// still expressing sub-pixel offsets. The default mirrors the long-standing hardcoded 1.5 px offset.
+const val SUBTITLE_SHADOW_OFFSET_DEFAULT = 15
+const val SUBTITLE_SHADOW_OFFSET_MIN = 0
+const val SUBTITLE_SHADOW_OFFSET_MAX = 60
+const val SUBTITLE_SHADOW_OFFSET_STEP = 5
+const val SUBTITLE_OUTLINE_WIDTH_MIN = 0
+const val SUBTITLE_OUTLINE_WIDTH_MAX = 6
+const val SUBTITLE_BLUR_MIN = 0
+const val SUBTITLE_BLUR_MAX = 10
+
+/** Formats a tenths-of-a-pixel shadow offset (15 -> "1.5") for display and for mpv. */
+fun subtitleShadowOffsetLabel(offsetTenths: Int): String {
+    val clamped = offsetTenths.coerceIn(SUBTITLE_SHADOW_OFFSET_MIN, SUBTITLE_SHADOW_OFFSET_MAX)
+    return "${clamped / 10}.${clamped % 10}"
 }
 
 /**
@@ -136,6 +162,18 @@ val SubtitleBackgroundColorSwatches = listOf(
     Color(0xFF7F1D1D).copy(alpha = 0.68f),
     Color(0xFF064E3B).copy(alpha = 0.68f),
     Color(0xFF1E3A8A).copy(alpha = 0.68f),
+)
+
+// Shadow colour swatches keep the RGB only; the drop-shadow intensity is controlled separately via
+// the alpha stepper, so these are shown at full opacity and the current alpha is preserved on pick.
+val SubtitleShadowColorSwatches = listOf(
+    Color.Black,
+    Color(0xFF1F2937),
+    Color(0xFF4B5563),
+    Color(0xFF3B82F6),
+    Color(0xFF7C3AED),
+    Color(0xFFDC2626),
+    Color.White,
 )
 
 fun Color.toStorageHexString(): String {

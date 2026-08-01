@@ -76,10 +76,13 @@ import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioBottomSheetDivider
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.mdblist.MdbListCalendarRepository
 import com.nuvio.app.features.trakt.TraktCalendarEntry
-import com.nuvio.app.features.simkl.SimklAuthRepository
 import com.nuvio.app.features.simkl.SimklCalendarRepository
-import com.nuvio.app.features.simkl.SimklSettingsRepository
+import com.nuvio.app.features.tracking.CalendarSource
+import com.nuvio.app.features.tracking.CalendarSourceRepository
+import com.nuvio.app.features.tracking.TrackingProviderRegistry
+import com.nuvio.app.features.tracking.resolveCalendarSource
 import com.nuvio.app.features.trakt.TraktCalendarRepository
 import com.nuvio.app.features.trakt.TraktPlatformClock
 import com.nuvio.app.features.trakt.addMonth
@@ -88,6 +91,7 @@ import com.nuvio.app.features.trakt.dayOfWeekSundayZero
 import com.nuvio.app.features.trakt.epochMsToUtcDate
 import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.calendar_connect_mdblist
 import nuvio.composeapp.generated.resources.calendar_connect_trakt
 import nuvio.composeapp.generated.resources.calendar_load_failed
 import nuvio.composeapp.generated.resources.calendar_next_month
@@ -121,16 +125,31 @@ fun CalendarScreen(
     onNavigateHome: (() -> Unit)? = null,
     onItemClick: ((TraktCalendarEntry) -> Unit)? = null,
 ) {
-    val useSimkl = remember {
-        SimklAuthRepository.isAuthenticated.value && SimklSettingsRepository.isSimklCalendarSource()
+    val selectedCalendarSource by remember {
+        CalendarSourceRepository.ensureLoaded()
+        CalendarSourceRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val connectedProviderIds by TrackingProviderRegistry.connectedProviderIds
+        .collectAsStateWithLifecycle()
+    val calendarSource = remember(selectedCalendarSource, connectedProviderIds) {
+        resolveCalendarSource(selectedCalendarSource) { providerId ->
+            providerId in connectedProviderIds
+        }
     }
-    val uiState by remember(useSimkl) {
-        if (useSimkl) {
-            SimklCalendarRepository.ensureLoaded()
-            SimklCalendarRepository.uiState
-        } else {
-            TraktCalendarRepository.ensureLoaded()
-            TraktCalendarRepository.uiState
+    val uiState by remember(calendarSource) {
+        when (calendarSource) {
+            CalendarSource.MDBLIST -> {
+                MdbListCalendarRepository.ensureLoaded()
+                MdbListCalendarRepository.uiState
+            }
+            CalendarSource.SIMKL -> {
+                SimklCalendarRepository.ensureLoaded()
+                SimklCalendarRepository.uiState
+            }
+            CalendarSource.TRAKT -> {
+                TraktCalendarRepository.ensureLoaded()
+                TraktCalendarRepository.uiState
+            }
         }
     }.collectAsStateWithLifecycle()
 
@@ -179,9 +198,15 @@ fun CalendarScreen(
     }
 
     // Page months in on demand so the user can go arbitrarily far forward/back.
-    LaunchedEffect(displayYear, displayMonth, useSimkl) {
-        if (useSimkl) SimklCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
-        else TraktCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
+    LaunchedEffect(displayYear, displayMonth, calendarSource) {
+        when (calendarSource) {
+            CalendarSource.MDBLIST ->
+                MdbListCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
+            CalendarSource.SIMKL ->
+                SimklCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
+            CalendarSource.TRAKT ->
+                TraktCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
+        }
     }
 
     // Keyboard-focus keeper. On fast back-navigation the focus node may not be attached yet, or
@@ -265,8 +290,14 @@ fun CalendarScreen(
             when {
                 !uiState.isAuthenticated && uiState.hasLoaded -> {
                     CalendarMessage(
-                        if (useSimkl) "Connect your SIMKL account to see your calendar."
-                        else stringResource(Res.string.calendar_connect_trakt)
+                        when (calendarSource) {
+                            CalendarSource.MDBLIST ->
+                                stringResource(Res.string.calendar_connect_mdblist)
+                            CalendarSource.SIMKL ->
+                                "Connect your SIMKL account to see your calendar."
+                            CalendarSource.TRAKT ->
+                                stringResource(Res.string.calendar_connect_trakt)
+                        },
                     )
                 }
 

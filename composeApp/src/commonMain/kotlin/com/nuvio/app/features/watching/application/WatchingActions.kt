@@ -8,6 +8,11 @@ import com.nuvio.app.features.watched.WatchedItem
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watched.episodePlaybackIds
 import com.nuvio.app.features.watched.releasedMainSeasonEpisodes
+import com.nuvio.app.features.tracking.RatingPromptReason
+import com.nuvio.app.features.tracking.RatingPromptRepository
+import com.nuvio.app.features.tracking.RatingPromptRequest
+import com.nuvio.app.features.tracking.ratingPromptReasonFor
+import com.nuvio.app.features.watched.seasonEpisodeNumbers
 import com.nuvio.app.features.watched.toEpisodeWatchedItem
 import com.nuvio.app.features.watched.toSeriesWatchedItem
 import com.nuvio.app.features.watched.toWatchedItem
@@ -55,6 +60,9 @@ object WatchingActions {
 
         if (isCurrentlyWatched) {
             WatchedRepository.unmarkWatched(seriesItems)
+            WatchProgressRepository.clearProgress(
+                releasedMainEpisodes.flatMap(meta::episodePlaybackIds),
+            )
         } else {
             WatchedRepository.markWatched(seriesItems)
             WatchProgressRepository.clearProgress(
@@ -71,6 +79,7 @@ object WatchingActions {
         val watchedItem = meta.toEpisodeWatchedItem(episode)
         if (isCurrentlyWatched) {
             WatchedRepository.unmarkWatched(watchedItem)
+            WatchProgressRepository.clearProgress(meta.episodePlaybackIds(episode))
         } else {
             WatchedRepository.markWatched(watchedItem)
             WatchProgressRepository.clearProgress(meta.episodePlaybackIds(episode))
@@ -133,7 +142,18 @@ object WatchingActions {
         )
         WatchedRepository.markWatchedFromPlaybackCompletion(watchedItem, syncRemote = syncRemote)
 
-        if (!syncRemote || !entry.isEpisode) return
+        // `syncRemote` is what separates playback the user just finished here from progress
+        // reconstructed out of a remote snapshot. Only the former should ask for a rating.
+        if (!syncRemote) return
+        if (!entry.isEpisode) {
+            offerRatingPrompt(
+                contentId = entry.parentMetaId,
+                contentType = entry.parentMetaType,
+                title = entry.title,
+                reason = RatingPromptReason.MOVIE,
+            )
+            return
+        }
         actionScope.launch {
             val meta = runCatching {
                 MetaDetailsRepository.fetch(
@@ -143,7 +163,44 @@ object WatchingActions {
             }.getOrNull() ?: return@launch
 
             reconcileSeriesWatchedState(meta = meta)
+
+            val reason = ratingPromptReasonFor(
+                contentType = meta.type,
+                seasonNumber = entry.seasonNumber,
+                episodeNumber = entry.episodeNumber,
+                seasonEpisodeNumbers = meta.seasonEpisodeNumbers(),
+                seriesStatus = meta.status,
+            ) ?: return@launch
+            offerRatingPrompt(
+                contentId = meta.id,
+                contentType = meta.type,
+                title = meta.name,
+                reason = reason,
+                seasonNumber = entry.seasonNumber,
+                releaseInfo = meta.releaseInfo,
+            )
         }
+    }
+
+    private fun offerRatingPrompt(
+        contentId: String,
+        contentType: String,
+        title: String,
+        reason: RatingPromptReason,
+        seasonNumber: Int? = null,
+        releaseInfo: String? = null,
+    ) {
+        if (title.isBlank()) return
+        RatingPromptRepository.offer(
+            RatingPromptRequest(
+                contentId = contentId,
+                contentType = contentType,
+                title = title,
+                reason = reason,
+                seasonNumber = seasonNumber,
+                releaseInfo = releaseInfo,
+            ),
+        )
     }
 
     private fun toggleEpisodesWatched(
@@ -155,6 +212,7 @@ object WatchingActions {
         val watchedItems = episodes.map(meta::toEpisodeWatchedItem)
         if (areCurrentlyWatched) {
             WatchedRepository.unmarkWatched(watchedItems)
+            WatchProgressRepository.clearProgress(episodes.flatMap(meta::episodePlaybackIds))
         } else {
             WatchedRepository.markWatched(watchedItems)
             WatchProgressRepository.clearProgress(episodes.flatMap(meta::episodePlaybackIds))

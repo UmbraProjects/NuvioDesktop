@@ -64,6 +64,8 @@ import com.nuvio.app.features.details.resolveSeriesEpisodePosition
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.streams.StreamCard
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamScoreContext
+import com.nuvio.app.features.streams.StreamScoreContexts
 import com.nuvio.app.features.streams.StreamsUiState
 import com.nuvio.app.features.streams.isSelectableForPlayback
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
@@ -142,6 +144,8 @@ fun PlayerEpisodesPanel(
                     if (episodeStreamsState.showStreams) {
                         EpisodeStreamsSubView(
                             state = episodeStreamsState,
+                            parentMetaId = parentMetaId,
+                            parentMetaType = parentMetaType,
                             onFilterSelected = onEpisodeStreamFilterSelected,
                             onStreamSelected = onEpisodeStreamSelected,
                             onBack = onBackToEpisodes,
@@ -475,6 +479,8 @@ private fun EpisodeRow(
 @Composable
 private fun EpisodeStreamsSubView(
     state: EpisodeStreamsPanelState,
+    parentMetaId: String,
+    parentMetaType: String,
     onFilterSelected: (String?) -> Unit,
     onStreamSelected: (StreamItem, MetaVideo) -> Unit,
     onBack: () -> Unit,
@@ -638,6 +644,11 @@ private fun EpisodeStreamsSubView(
                                 !debridSettings.hasCustomStreamFormatting,
                             showFileSizeBadges = streamBadgeSettings.showFileSizeBadges,
                             showAddonLogo = streamBadgeSettings.showAddonLogo,
+                            scoreContext = StreamScoreContexts.forPlayback(
+                                isEpisode = true,
+                                contentId = parentMetaId,
+                                contentType = parentMetaType,
+                            ),
                             badgePlacement = streamBadgeSettings.badgePlacement,
                             onClick = { onStreamSelected(stream, episode) },
                         )

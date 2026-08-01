@@ -1,9 +1,15 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.core.storage.DesktopStorage
 import java.awt.Desktop
 import java.io.File
 import java.net.URI
 import java.util.Locale
+import java.util.concurrent.TimeUnit
+import javax.swing.JFileChooser
+import javax.swing.SwingUtilities
+import javax.swing.UIManager
+import javax.swing.filechooser.FileNameExtensionFilter
 
 private data class DesktopExternalPlayerIntent(
     val request: ExternalPlayerPlaybackRequest,
@@ -14,8 +20,8 @@ private data class DesktopExternalPlayerIntent(
  * A known desktop media player and how to launch it.
  *
  * [candidatePaths] are absolute exe locations (with `%ENV%` placeholders expanded at lookup
- * time). [onPathExe] provides a subprocess-free fallback for non-standard installations whose
- * installer added the player to PATH.
+ * time). [executableNames] also identifies a registered default player and provides a
+ * subprocess-free PATH fallback for non-standard installations.
  * [buildArgs] produces the command-line arguments (after the exe and the URL) for a request,
  * using only options the player reliably supports.
  */
@@ -23,12 +29,14 @@ private class DesktopPlayerDefinition(
     val id: String,
     val displayName: String,
     val candidatePaths: List<String>,
-    val onPathExe: String? = null,
+    val executableNames: List<String>,
     val buildArgs: (ExternalPlayerPlaybackRequest) -> List<String>,
 )
 
 internal actual object ExternalPlayerPlatform {
     private const val systemPlayerId = "system"
+    private val isWindows = System.getProperty("os.name").orEmpty().lowercase(Locale.ROOT).contains("win")
+    private val customPlayerStore = DesktopStorage.store("nuvio_external_players")
 
     private val definitions: List<DesktopPlayerDefinition> = listOf(
         DesktopPlayerDefinition(
@@ -39,7 +47,7 @@ internal actual object ExternalPlayerPlatform {
                 "%ProgramFiles%\\mpv.net\\mpvnet.exe",
                 "%LOCALAPPDATA%\\Programs\\mpv.net\\mpvnet.exe",
             ),
-            onPathExe = "mpv.exe",
+            executableNames = listOf("mpv.exe", "mpvnet.exe"),
             buildArgs = { request ->
                 buildList {
                     request.buildPlayerTitle(includeEpisodeTitle = true)
@@ -60,7 +68,7 @@ internal actual object ExternalPlayerPlatform {
                 "%ProgramFiles%\\VideoLAN\\VLC\\vlc.exe",
                 "%ProgramFiles(x86)%\\VideoLAN\\VLC\\vlc.exe",
             ),
-            onPathExe = "vlc.exe",
+            executableNames = listOf("vlc.exe"),
             buildArgs = { request ->
                 buildList {
                     request.buildPlayerTitle(includeEpisodeTitle = true)
@@ -85,10 +93,16 @@ internal actual object ExternalPlayerPlatform {
                 "%ProgramFiles%\\MPC-HC64\\mpc-hc64.exe",
                 "%ProgramFiles%\\K-Lite Codec Pack\\MPC-HC64\\mpc-hc64.exe",
             ),
-            onPathExe = "mpc-hc64.exe",
+            executableNames = listOf("mpc-hc64.exe", "mpc-hc.exe"),
             buildArgs = { request ->
-                // MPC-HC takes the resume position in milliseconds via /start.
-                if (request.resumePositionMs > 0) listOf("/start", request.resumePositionMs.toString()) else emptyList()
+                buildList {
+                    // MPC-HC takes the resume position in milliseconds via /start.
+                    if (request.resumePositionMs > 0) {
+                        add("/start")
+                        add(request.resumePositionMs.toString())
+                    }
+                    addAll(request.mpcSubtitleArgs())
+                }
             },
         ),
         DesktopPlayerDefinition(
@@ -96,11 +110,23 @@ internal actual object ExternalPlayerPlatform {
             displayName = "MPC-BE",
             candidatePaths = listOf(
                 "%ProgramFiles%\\MPC-BE\\mpc-be64.exe",
+                "%ProgramFiles%\\MPC-BE x64\\mpc-be64.exe",
+                "%ProgramFiles%\\MPC-BE\\mpc-be.exe",
                 "%ProgramFiles(x86)%\\MPC-BE\\mpc-be.exe",
+                "%ProgramFiles(x86)%\\MPC-BE x86\\mpc-be.exe",
+                "%LOCALAPPDATA%\\Programs\\MPC-BE\\mpc-be64.exe",
+                "%LOCALAPPDATA%\\Programs\\MPC-BE x64\\mpc-be64.exe",
+                "%USERPROFILE%\\scoop\\apps\\mpc-be\\current\\mpc-be64.exe",
             ),
-            onPathExe = "mpc-be64.exe",
+            executableNames = listOf("mpc-be64.exe", "mpc-be.exe"),
             buildArgs = { request ->
-                if (request.resumePositionMs > 0) listOf("/start", request.resumePositionMs.toString()) else emptyList()
+                buildList {
+                    if (request.resumePositionMs > 0) {
+                        add("/start")
+                        add(request.resumePositionMs.toString())
+                    }
+                    addAll(request.mpcSubtitleArgs())
+                }
             },
         ),
         DesktopPlayerDefinition(
@@ -111,7 +137,7 @@ internal actual object ExternalPlayerPlatform {
                 "%ProgramFiles(x86)%\\DAUM\\PotPlayer\\PotPlayerMini.exe",
                 "%ProgramFiles%\\DAUM\\PotPlayer64\\PotPlayer64.exe",
             ),
-            onPathExe = "PotPlayerMini64.exe",
+            executableNames = listOf("PotPlayerMini64.exe", "PotPlayerMini.exe", "PotPlayer64.exe"),
             buildArgs = { request ->
                 buildList {
                     if (request.resumePositionMs > 0) {
@@ -128,6 +154,9 @@ internal actual object ExternalPlayerPlatform {
                     if (otherHeaders.isNotEmpty()) {
                         add("/headers=$otherHeaders")
                     }
+                    // Documented in PotPlayer's own CmdLine64.txt: /sub="subfile" loads the
+                    // specified subtitle(s) from the given paths or URLs.
+                    request.subtitles.orEmpty().forEach { add("/sub=${it.url}") }
                 }
             },
         ),
@@ -135,24 +164,65 @@ internal actual object ExternalPlayerPlatform {
 
     /** Resolved only when a specific player is needed; startup no longer scans every player. */
     private val resolvedPaths = mutableMapOf<String, String?>()
+    private val defaultMediaAssociation: WindowsMediaAssociation? by lazy {
+        if (isWindows) detectWindowsDefaultMediaAssociation() else null
+    }
 
     private fun resolvedPath(def: DesktopPlayerDefinition): String? = synchronized(resolvedPaths) {
         if (resolvedPaths.containsKey(def.id)) return@synchronized resolvedPaths[def.id]
-        resolveExecutable(def).also { resolvedPaths[def.id] = it }
+        val customPath = customPlayerStore
+            .getString(customPlayerPathKey(def.id))
+            ?.let(::File)
+            ?.takeIf(File::isFile)
+            ?.absolutePath
+        val associatedPath = defaultMediaAssociation
+            ?.takeIf { association -> def.matchesExecutable(association.executablePath) }
+            ?.executablePath
+        (customPath ?: associatedPath ?: resolveExecutable(def)).also { resolvedPaths[def.id] = it }
     }
 
     actual fun defaultPlayerId(): String? =
-        definitions.firstOrNull { resolvedPath(it) != null }?.id ?: systemPlayerId
+        defaultMediaAssociation
+            ?.let { association -> definitions.firstOrNull { it.matchesExecutable(association.executablePath) } }
+            ?.also { def ->
+                synchronized(resolvedPaths) {
+                    resolvedPaths[def.id] = defaultMediaAssociation?.executablePath
+                }
+            }
+            ?.id
+            ?: definitions.firstOrNull { resolvedPath(it) != null }?.id
+            ?: systemPlayerId
 
     actual fun availablePlayers(): List<ExternalPlayerApp> =
         buildList {
             definitions.forEach { def ->
-                if (resolvedPath(def) != null) add(ExternalPlayerApp(def.id, def.displayName))
+                add(
+                    ExternalPlayerApp(
+                        id = def.id,
+                        name = def.displayName,
+                        isAvailable = resolvedPath(def) != null,
+                    ),
+                )
             }
             // Always offer the OS handler as a fallback (e.g. a player we don't detect, or the
             // user's own file/URL association). It hands the URL to whatever is registered.
-            add(ExternalPlayerApp(systemPlayerId, "System default"))
+            val defaultLabel = defaultMediaAssociation
+                ?.displayName
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "System default ($it)" }
+                ?: "System default"
+            add(ExternalPlayerApp(systemPlayerId, defaultLabel))
         }
+
+    actual fun configurePlayer(playerId: String): Boolean {
+        val def = definitions.firstOrNull { it.id == playerId } ?: return playerId == systemPlayerId
+        val selectedPath = pickPlayerExecutable(def) ?: return false
+        customPlayerStore.putString(customPlayerPathKey(def.id), selectedPath)
+        synchronized(resolvedPaths) {
+            resolvedPaths[def.id] = selectedPath
+        }
+        return true
+    }
 
     actual fun open(
         request: ExternalPlayerPlaybackRequest,
@@ -163,6 +233,15 @@ internal actual object ExternalPlayerPlatform {
         } ?: defaultPlayerId()
 
         if (effectiveId == null || effectiveId == systemPlayerId) {
+            defaultMediaAssociation?.let { association ->
+                val knownDefinition = definitions.firstOrNull { it.matchesExecutable(association.executablePath) }
+                val command = buildList {
+                    add(association.executablePath)
+                    if (knownDefinition != null) addAll(knownDefinition.buildArgs(request))
+                    add(request.sourceUrl)
+                }
+                if (launchDetached(command)) return ExternalPlayerOpenResult.Opened
+            }
             return if (openUri(request.sourceUrl)) ExternalPlayerOpenResult.Opened
             else ExternalPlayerOpenResult.Failed
         }
@@ -215,7 +294,7 @@ internal actual object ExternalPlayerPlatform {
             val expanded = expandEnvPlaceholders(candidate)
             if (expanded != null && File(expanded).isFile) return expanded
         }
-        def.onPathExe?.let { exe ->
+        def.executableNames.forEach { exe ->
             findOnPath(exe)?.let { return it }
         }
         return null
@@ -239,6 +318,119 @@ internal actual object ExternalPlayerPlatform {
             .map { File(it.trim(), exe) }
             .firstOrNull { it.isFile }
             ?.absolutePath
+    }
+
+    private fun DesktopPlayerDefinition.matchesExecutable(path: String): Boolean {
+        val fileName = File(path).name
+        return executableNames.any { it.equals(fileName, ignoreCase = true) }
+    }
+
+    private fun pickPlayerExecutable(def: DesktopPlayerDefinition): String? {
+        val holder = arrayOfNulls<String>(1)
+        val choose = Runnable {
+            runCatching { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()) }
+            val chooser = JFileChooser().apply {
+                dialogTitle = "Locate ${def.displayName}"
+                fileSelectionMode = JFileChooser.FILES_ONLY
+                isMultiSelectionEnabled = false
+                if (isWindows) {
+                    fileFilter = FileNameExtensionFilter("Applications (*.exe)", "exe")
+                }
+            }
+            if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                val selected = chooser.selectedFile?.takeIf(File::isFile)
+                val valid = selected != null && (
+                    !isWindows || def.executableNames.any { it.equals(selected.name, ignoreCase = true) }
+                )
+                if (valid) holder[0] = selected?.absolutePath
+            }
+        }
+        if (SwingUtilities.isEventDispatchThread()) {
+            choose.run()
+        } else {
+            runCatching { SwingUtilities.invokeAndWait(choose) }
+        }
+        return holder[0]
+    }
+
+    private fun customPlayerPathKey(playerId: String): String = "path.$playerId"
+
+    // --- Windows default media association ------------------------------------------------
+
+    /**
+     * Reads the current user's video association without probing or launching any player.
+     * `reg.exe` is invoked directly (never through cmd/PowerShell), read-only, at most once per
+     * process. This avoids executable crawling and extra native/JNA extraction that can look
+     * suspicious to endpoint protection.
+     */
+    private fun detectWindowsDefaultMediaAssociation(): WindowsMediaAssociation? {
+        val progId = listOf(".mkv", ".mp4")
+            .firstNotNullOfOrNull { extension ->
+                queryRegistryValue(
+                    key = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\$extension\\UserChoice",
+                    valueName = "ProgId",
+                )
+            }
+            ?: return null
+        val openCommand = queryRegistryValue(
+            key = "HKCR\\$progId\\shell\\open\\command",
+            valueName = null,
+        ) ?: return null
+        val executable = executableFromOpenCommand(openCommand)
+            ?.let(::expandEnvPlaceholders)
+            ?.let(::File)
+            ?.takeIf(File::isFile)
+            ?.absolutePath
+            ?: return null
+        val knownName = definitions
+            .firstOrNull { it.matchesExecutable(executable) }
+            ?.displayName
+        return WindowsMediaAssociation(
+            executablePath = executable,
+            displayName = knownName ?: File(executable).nameWithoutExtension,
+        )
+    }
+
+    private fun queryRegistryValue(key: String, valueName: String?): String? {
+        val systemRoot = System.getenv("SystemRoot") ?: return null
+        val regExe = File(systemRoot, "System32\\reg.exe").takeIf(File::isFile) ?: return null
+        val command = buildList {
+            add(regExe.absolutePath)
+            add("query")
+            add(key)
+            if (valueName == null) {
+                add("/ve")
+            } else {
+                add("/v")
+                add(valueName)
+            }
+        }
+        return runCatching {
+            val process = ProcessBuilder(command)
+                .redirectErrorStream(true)
+                .start()
+            if (!process.waitFor(2, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                return@runCatching null
+            }
+            if (process.exitValue() != 0) return@runCatching null
+            process.inputStream.bufferedReader().use { reader ->
+                reader.lineSequence()
+                    .mapNotNull { line ->
+                        REGISTRY_STRING_VALUE.find(line)?.groupValues?.getOrNull(1)?.trim()
+                    }
+                    .firstOrNull { it.isNotBlank() }
+            }
+        }.getOrNull()
+    }
+
+    private fun executableFromOpenCommand(command: String): String? {
+        val trimmed = command.trim()
+        if (trimmed.startsWith('"')) {
+            return trimmed.substringAfter('"').substringBefore('"').takeIf { it.isNotBlank() }
+        }
+        val exeEnd = trimmed.indexOf(".exe", ignoreCase = true)
+        return if (exeEnd >= 0) trimmed.substring(0, exeEnd + 4).trim() else null
     }
 
     // --- system-handler fallback (previous behaviour) -------------------------------------
@@ -272,7 +464,23 @@ internal actual object ExternalPlayerPlatform {
     }
 }
 
+private data class WindowsMediaAssociation(
+    val executablePath: String,
+    val displayName: String,
+)
+
+private val REGISTRY_STRING_VALUE = Regex("""(?i)\sREG_(?:EXPAND_)?SZ\s+(.+)$""")
+
 // --- header/format helpers ----------------------------------------------------------------
+
+/**
+ * MPC-HC and MPC-BE both document `/sub "subname"  Load an additional subtitle file` (verified
+ * against the switch list embedded in mpc-hc64.exe). The switch takes the path as a separate
+ * argument, and only local paths are reliable — which is why the desktop
+ * [SubtitleCacheProvider] downloads addon subtitles before launch.
+ */
+private fun ExternalPlayerPlaybackRequest.mpcSubtitleArgs(): List<String> =
+    subtitles.orEmpty().flatMap { listOf("/sub", it.url) }
 
 private fun Map<String, String>.headerValue(vararg names: String): String? {
     if (isEmpty()) return null

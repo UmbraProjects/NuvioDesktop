@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -118,7 +119,7 @@ fun SubtitleModal(
                             onClick = {},
                         ),
                 ) {
-                    Column {
+                    Column(modifier = Modifier.fillMaxHeight()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -140,6 +141,7 @@ fun SubtitleModal(
 
                         Column(
                             modifier = Modifier
+                                .weight(1f)
                                 .verticalScroll(rememberScrollState())
                                 .padding(horizontal = 20.dp)
                                 .padding(bottom = 20.dp),
@@ -235,11 +237,13 @@ private fun BuiltInSubtitleList(
     onTrackSelected: (Int) -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
+    val effectiveSelectedIndex = tracks.firstOrNull(SubtitleTrack::isSelected)?.index
+        ?: selectedIndex
 
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        val isNoneSelected = selectedIndex == -1
+        val isNoneSelected = effectiveSelectedIndex == -1
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -270,7 +274,7 @@ private fun BuiltInSubtitleList(
         }
 
         tracks.forEach { track ->
-            val isSelected = track.index == selectedIndex
+            val isSelected = track.index == effectiveSelectedIndex
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

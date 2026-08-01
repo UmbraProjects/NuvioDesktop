@@ -27,6 +27,7 @@ internal actual object TmdbSettingsStorage {
     private const val useCollectionsKey = "tmdb_use_collections"
     private const val libraryPosterEnabledKey = "tmdb_library_poster_enabled"
     private const val libraryPosterUrlTemplateKey = "tmdb_library_poster_url"
+    private const val resolveFilenameCatalogsKey = "tmdb_resolve_filename_catalogs"
     private const val heroImageSourceKey = "tmdb_hero_image_source"
     private val syncKeys = listOf(
         enabledKey,
@@ -45,6 +46,7 @@ internal actual object TmdbSettingsStorage {
         useCollectionsKey,
         libraryPosterEnabledKey,
         libraryPosterUrlTemplateKey,
+        resolveFilenameCatalogsKey,
     )
     private val store = DesktopStorage.store("nuvio_tmdb_settings")
 
@@ -80,6 +82,8 @@ internal actual object TmdbSettingsStorage {
     actual fun saveLibraryPosterEnabled(enabled: Boolean) = saveBoolean(libraryPosterEnabledKey, enabled)
     actual fun loadLibraryPosterUrlTemplate(): String? = loadString(libraryPosterUrlTemplateKey)
     actual fun saveLibraryPosterUrlTemplate(template: String) = saveString(libraryPosterUrlTemplateKey, template)
+    actual fun loadResolveFilenameCatalogs(): Boolean? = loadBoolean(resolveFilenameCatalogsKey)
+    actual fun saveResolveFilenameCatalogs(enabled: Boolean) = saveBoolean(resolveFilenameCatalogsKey, enabled)
     actual fun loadHeroImageSource(): String? = loadString(heroImageSourceKey)
     actual fun saveHeroImageSource(source: String) = saveString(heroImageSourceKey, source)
 
@@ -105,6 +109,7 @@ internal actual object TmdbSettingsStorage {
         loadUseCollections()?.let { put(useCollectionsKey, encodeSyncBoolean(it)) }
         loadLibraryPosterEnabled()?.let { put(libraryPosterEnabledKey, encodeSyncBoolean(it)) }
         loadLibraryPosterUrlTemplate()?.let { put(libraryPosterUrlTemplateKey, encodeSyncString(it)) }
+        loadResolveFilenameCatalogs()?.let { put(resolveFilenameCatalogsKey, encodeSyncBoolean(it)) }
     }
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
@@ -125,5 +130,6 @@ internal actual object TmdbSettingsStorage {
         payload.decodeSyncBoolean(useCollectionsKey)?.let(::saveUseCollections)
         payload.decodeSyncBoolean(libraryPosterEnabledKey)?.let(::saveLibraryPosterEnabled)
         payload.decodeSyncString(libraryPosterUrlTemplateKey)?.let(::saveLibraryPosterUrlTemplate)
+        payload.decodeSyncBoolean(resolveFilenameCatalogsKey)?.let(::saveResolveFilenameCatalogs)
     }
 }

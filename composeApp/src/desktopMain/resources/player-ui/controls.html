@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="controls.css?v=20260717-autosync-scroll">
+  <link rel="stylesheet" href="controls.css?v=20260728-submit-intro-action-1">
 </head>
 <body>
   <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
@@ -156,7 +156,6 @@
           </div>
         </section>
         <nav class="header-actions" aria-label="Player actions">
-          <button class="header-button" id="submitIntroButton" data-command="submitIntro" aria-label="Submit intro"><svg><use href="#icon-flag"></use></svg></button>
           <button class="header-button" id="lockButton" data-command="lock" aria-label="Lock controls"><svg><use id="lockIcon" href="#icon-lock"></use></svg></button>
           <button class="header-button" id="videoSettingsButton" data-command="videoSettings" aria-label="Video settings"><svg><use href="#icon-build"></use></svg></button>
           <button class="header-button" id="backButton" data-command="back" aria-label="Close player"><svg><use href="#icon-close"></use></svg></button>
@@ -165,7 +164,18 @@
           <time class="player-clock-time" id="playerClockTime"></time>
           <button class="player-end-time" id="playerEndTime" type="button" data-command="back"></button>
         </div>
+        <!-- Inside the header on purpose: it anchors to the header's bottom edge so it always sits
+             under the title/episode block instead of on top of it. Absolute, so it adds nothing to
+             the header's flex layout. -->
+        <section class="parental-guide" id="parentalGuide" aria-label="Parental guide" aria-hidden="true">
+          <div class="parental-guide-line" id="parentalGuideLine"></div>
+          <div class="parental-guide-list" id="parentalGuideList"></div>
+        </section>
       </header>
+
+      <aside class="playback-info" id="playbackInfoPanel" aria-label="Playback information" aria-hidden="true">
+        <div class="playback-info-rows" id="playbackInfoRows"></div>
+      </aside>
 
       <button class="episode-notch optional" id="episodeNotch" data-command="episodes" aria-label="Open episodes">
         <svg><use href="#icon-video"></use></svg>
@@ -175,11 +185,6 @@
         <svg><use href="#icon-swap"></use></svg>
         <span>Sources</span>
       </button>
-
-      <section class="parental-guide" id="parentalGuide" aria-label="Parental guide" aria-hidden="true">
-        <div class="parental-guide-line" id="parentalGuideLine"></div>
-        <div class="parental-guide-list" id="parentalGuideList"></div>
-      </section>
 
       <section class="center-status" id="bufferingStatus" aria-label="Buffering" aria-hidden="true">
         <span class="center-spinner" aria-hidden="true"></span>
@@ -200,9 +205,16 @@
           <div class="pause-kicker" id="pauseWatchingLabel">You're watching</div>
           <img class="pause-logo" id="pauseLogo" alt="">
           <div class="pause-title" id="pauseTitle"></div>
-          <div class="pause-episode-info" id="pauseEpisodeInfo"></div>
-          <div class="pause-episode-title" id="pauseEpisodeTitle"></div>
+          <div class="pause-episode-line" id="pauseEpisodeLine">
+            <span class="pause-episode-info" id="pauseEpisodeInfo"></span>
+            <span class="pause-episode-separator" id="pauseEpisodeSeparator">•</span>
+            <span class="pause-episode-title" id="pauseEpisodeTitle"></span>
+          </div>
           <div class="pause-description" id="pauseDescription"></div>
+          <div class="pause-source" id="pauseSource">
+            <span class="pause-source-title" id="pauseSourceTitle"></span>
+            <span class="pause-source-provider" id="pauseSourceProvider"></span>
+          </div>
         </div>
       </section>
 
@@ -268,8 +280,8 @@
             <button class="side-control episode-skip" data-command="nextEpisode" aria-label="Next episode"><svg><use href="#icon-next"></use></svg></button>
           </div>
           <div class="action-row">
-            <button class="action" data-command="resize" aria-label="Aspect ratio" title="Aspect ratio"><svg><use href="#icon-aspect"></use></svg><span id="resizeLabel">Fit</span></button>
-            <button class="action" id="speedButton" data-command="speed" aria-label="Playback speed" title="Playback speed"><svg><use href="#icon-speed"></use></svg><span id="speedLabel">1x</span></button>
+            <button class="action tertiary-action" data-command="resize" aria-label="Aspect ratio" title="Aspect ratio"><svg><use href="#icon-aspect"></use></svg><span id="resizeLabel">Fit</span></button>
+            <button class="action tertiary-action" id="speedButton" data-command="speed" aria-label="Playback speed" title="Playback speed"><svg><use href="#icon-speed"></use></svg><span id="speedLabel">1x</span></button>
             <button class="action" data-command="subtitles" aria-label="Subtitles" title="Subtitles"><svg><use href="#icon-subs"></use></svg><span id="subtitlesLabel">Subs</span></button>
             <button class="action" data-command="audio" aria-label="Audio tracks" title="Audio tracks"><svg><use href="#icon-audio"></use></svg><span id="audioLabel">Audio</span></button>
             <button class="action desktop-preset-action" data-command="keyboardCycleHdrMode" aria-label="Cycle HDR mode" title="HDR mode"><svg><use href="#icon-hdr"></use></svg><span>HDR</span></button>
@@ -278,6 +290,7 @@
             <button class="action desktop-preset-action" data-command="keyboardCycleAnimeSvp" aria-label="Toggle SVP" title="SVP interpolation"><svg><use href="#icon-svp"></use></svg><span>SVP</span></button>
             <button class="action optional" id="sourcesButton" data-command="sources"><svg><use href="#icon-swap"></use></svg><span id="sourcesLabel">Sources</span></button>
             <button class="action optional" id="episodesButton" data-command="episodes" hidden><svg><use href="#icon-video"></use></svg><span id="episodesLabel">Episodes</span></button>
+            <button class="action" id="submitIntroButton" data-command="submitIntro" aria-label="Submit intro" title="Submit intro"><svg><use href="#icon-flag"></use></svg><span>Submit</span></button>
             <button class="action pip-action" id="pictureInPictureButton" data-command="pictureInPicture" aria-label="Picture in picture" title="Picture in picture"><svg><use href="#icon-pip"></use></svg><span>PiP</span></button>
           </div>
         </div>
@@ -345,12 +358,48 @@
                 <button class="panel-button" id="outlineToggle" type="button">On</button>
               </div>
               <div class="style-row">
+                <span class="style-label" id="outlineWidthLabel">Outline Width</span>
+                <div class="stepper">
+                  <button class="round-step" id="outlineWidthMinus" type="button">-</button>
+                  <span class="stepper-value" id="outlineWidthValue">2</span>
+                  <button class="round-step" id="outlineWidthPlus" type="button">+</button>
+                </div>
+              </div>
+              <div class="style-row">
                 <span class="style-label" id="shadowLabel">Shadow</span>
                 <button class="panel-button" id="shadowToggle" type="button">Off</button>
               </div>
               <div class="style-row">
+                <span class="style-label" id="shadowOffsetLabel">Shadow Offset</span>
+                <div class="stepper">
+                  <button class="round-step" id="shadowOffsetMinus" type="button">-</button>
+                  <span class="stepper-value" id="shadowOffsetValue">1.5</span>
+                  <button class="round-step" id="shadowOffsetPlus" type="button">+</button>
+                </div>
+              </div>
+              <div class="style-row">
+                <span class="style-label" id="shadowIntensityLabel">Shadow Intensity</span>
+                <div class="stepper">
+                  <button class="round-step" id="shadowIntensityMinus" type="button">-</button>
+                  <span class="stepper-value" id="shadowIntensityValue">40%</span>
+                  <button class="round-step" id="shadowIntensityPlus" type="button">+</button>
+                </div>
+              </div>
+              <div class="style-row">
+                <span class="style-label" id="blurLabel">Blur</span>
+                <div class="stepper">
+                  <button class="round-step" id="blurMinus" type="button">-</button>
+                  <span class="stepper-value" id="blurValue">0</span>
+                  <button class="round-step" id="blurPlus" type="button">+</button>
+                </div>
+              </div>
+              <div class="style-row">
                 <span class="style-label" id="boldLabel">Bold</span>
                 <button class="panel-button" id="boldToggle" type="button">Off</button>
+              </div>
+              <div class="style-row">
+                <span class="style-label" id="italicLabel">Italic</span>
+                <button class="panel-button" id="italicToggle" type="button">Off</button>
               </div>
               <div class="style-row">
                 <span class="style-label" id="bottomOffsetLabel">Bottom Offset</span>
@@ -375,6 +424,14 @@
               <div class="swatch-section">
                 <span class="style-label" id="outlineColorLabel">Outline Color</span>
                 <div class="swatch-row" id="outlineColorSwatches"></div>
+              </div>
+              <div class="swatch-section">
+                <span class="style-label" id="backgroundColorLabel">Background Color</span>
+                <div class="swatch-row" id="backgroundColorSwatches"></div>
+              </div>
+              <div class="swatch-section">
+                <span class="style-label" id="shadowColorLabel">Shadow Color</span>
+                <div class="swatch-row" id="shadowColorSwatches"></div>
               </div>
               <div class="style-row">
                 <span></span>
@@ -438,6 +495,7 @@
                 <button class="segment-button selected" id="segmentIntroButton" type="button" data-segment="intro">Intro</button>
                 <button class="segment-button" id="segmentRecapButton" type="button" data-segment="recap">Recap</button>
                 <button class="segment-button" id="segmentOutroButton" type="button" data-segment="outro">Outro</button>
+                <button class="segment-button" id="segmentPreviewButton" type="button" data-segment="preview">Preview</button>
               </div>
             </div>
             <div class="time-field-row">
@@ -497,6 +555,6 @@
     <div class="pip-resize-handle pip-resize-nw" data-pip-resize="8"></div>
   </div>
 
-  <script src="controls.js?v=20260717-autosync-scroll"></script>
+  <script src="controls.js?v=20260728-submit-intro-action-1"></script>
 </body>
 </html>

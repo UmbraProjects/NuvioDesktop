@@ -2,6 +2,8 @@ package com.nuvio.app.features.collection
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.ScrollableState
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -88,7 +90,10 @@ import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.canOpenCatalog
+import com.nuvio.app.features.home.usesInfiniteHomeRow
 import com.nuvio.app.features.home.stableKey
+import com.nuvio.app.features.home.components.PAGE_ITEM_STEP
+import com.nuvio.app.features.home.components.PAGE_SECTION_STEP
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
 import com.nuvio.app.features.home.immersiveCatalogPosterBaseWidthDp
@@ -96,6 +101,8 @@ import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeHeroTrailerManualTrigger
 import com.nuvio.app.features.home.components.HomeTvKey
 import com.nuvio.app.features.home.components.HomeTvKeyboardBridge
+import com.nuvio.app.features.home.components.HomeTvRowDot
+import com.nuvio.app.features.home.components.HomeTvRowDotStrip
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watching.application.WatchingState
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -117,34 +124,98 @@ private const val FolderAdaptiveHeroItemLimit = 8
 private const val FolderCatalogPreviewLimit = 18
 
 /**
- * Session-scoped memory of the Collection (folder) detail's scroll position — the mirror of
- * HomeScrollMemory for the immersive/adaptive collection layouts. Lets the user return to the
- * catalog row (and the focused item within it) they were on after opening and closing the
- * details screen, instead of resetting to the top. Keyed by folder so switching to a different
- * folder starts fresh. In-memory only: a fresh app launch starts at the top.
+ * Back-stack-entry-scoped memory for Collection detail focus. A fresh navigation entry always
+ * starts at the top, even when it opens the same folder again; returning from a title's details
+ * page keeps the position because it resumes the same entry.
  */
 private object FolderScrollMemory {
-    var folderKey: String? = null
-    var immersiveRowIndex: Int = 0
-    var immersiveItemIndex: Int = 0
+    data class Position(
+        var rowIndex: Int = 0,
+        var itemIndex: Int = 0,
+    )
 
-    /** Reset the remembered position when we're now viewing a different folder. */
-    fun syncFolder(key: String?) {
-        if (folderKey != key) {
-            folderKey = key
-            immersiveRowIndex = 0
-            immersiveItemIndex = 0
+    private val positions = mutableMapOf<String, Position>()
+    private val composedEntries = mutableSetOf<String>()
+
+    fun markComposed(entryKey: String): Boolean {
+        positions.getOrPut(entryKey) { Position() }
+        return composedEntries.add(entryKey)
+    }
+
+    fun position(entryKey: String): Position =
+        positions.getOrPut(entryKey) { Position() }
+
+    fun update(entryKey: String, rowIndex: Int, itemIndex: Int) {
+        position(entryKey).apply {
+            this.rowIndex = rowIndex
+            this.itemIndex = itemIndex
         }
     }
+
+    fun clear(entryKey: String) {
+        positions.remove(entryKey)
+        composedEntries.remove(entryKey)
+    }
+}
+
+internal fun clearFolderScrollSession(entryKey: String) {
+    FolderScrollMemory.clear(entryKey)
+}
+
+/**
+ * Page Up/Down and Home/End for the Default-mode folder layouts. The hero layouts move a TV focus
+ * cursor instead (see their `handleTvKey`); here there is no cursor, so the keys scroll the list
+ * itself — a page steps just under one viewport so the rows at the seam stay visible.
+ *
+ * Key events only reach a focused node, so the returned modifier also takes focus on entry and on
+ * any click inside the content.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun rememberFolderPageScrollKeys(
+    scrollState: ScrollableState,
+    viewportHeightPx: () -> Int,
+    jumpToEdge: suspend (toStart: Boolean) -> Unit,
+): Modifier {
+    val coroutineScope = rememberCoroutineScope()
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        runCatching { focusRequester.requestFocus() }
+    }
+    return Modifier
+        .focusRequester(focusRequester)
+        .focusable()
+        .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
+            runCatching { focusRequester.requestFocus() }
+        }
+        .onPreviewKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            when (val key = event.navigationKey()) {
+                Key.PageDown, Key.PageUp -> {
+                    val page = viewportHeightPx() * 0.9f
+                    if (page <= 0f) return@onPreviewKeyEvent false
+                    val delta = if (key == Key.PageDown) page else -page
+                    coroutineScope.launch { scrollState.animateScrollBy(delta) }
+                    true
+                }
+                Key.MoveHome, Key.MoveEnd -> {
+                    coroutineScope.launch { jumpToEdge(key == Key.MoveHome) }
+                    true
+                }
+                else -> false
+            }
+        }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun FolderDetailScreen(
+    entryKey: String,
     onBack: () -> Unit,
     onCatalogClick: (HomeCatalogSection) -> Unit,
     onCastClick: (HeroCastMember) -> Unit,
     onPosterClick: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
     val uiState by FolderDetailRepository.uiState.collectAsState()
     val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
@@ -179,31 +250,32 @@ fun FolderDetailScreen(
         folder?.coverImageUrl?.takeIf { it.isNotBlank() }
     }
 
-    // Scope the remembered scroll position to this folder so returning from details lands where
-    // the user was, while opening a different folder still starts at the top.
-    val folderKey = folder?.id ?: uiState.collectionTitle
-    remember(folderKey) { FolderScrollMemory.syncFolder(folderKey); folderKey }
+    val isFreshEntry = remember(entryKey) { FolderScrollMemory.markComposed(entryKey) }
 
     if (showImmersiveCollection) {
         ImmersiveCollectionContent(
+            sessionKey = entryKey,
             sections = collectionSections,
             watchedKeys = watchedUiState.watchedKeys,
             onBack = onBack,
             onCatalogClick = onCatalogClick,
             onCastClick = onCastClick,
             onPosterClick = onPosterClick,
+            onPosterLongClick = onPosterLongClick,
         )
         return
     }
 
     if (showAdaptiveCollection) {
         AdaptiveCollectionContent(
+            sessionKey = entryKey,
             sections = collectionSections,
             watchedKeys = watchedUiState.watchedKeys,
             onBack = onBack,
             onCatalogClick = onCatalogClick,
             onCastClick = onCastClick,
             onPosterClick = onPosterClick,
+            onPosterLongClick = onPosterLongClick,
         )
         return
     }
@@ -290,57 +362,112 @@ fun FolderDetailScreen(
 
         when (uiState.viewMode) {
             FolderViewMode.TABBED_GRID -> TabbedGridContent(
+                sessionKey = entryKey,
+                resetToTop = isFreshEntry,
                 uiState = uiState,
                 watchedKeys = watchedUiState.watchedKeys,
                 modifier = Modifier.weight(1f).then(contentModifier),
                 onTabSelected = { FolderDetailRepository.selectTab(it) },
                 onPosterClick = onPosterClick,
+                onPosterLongClick = onPosterLongClick,
             )
             FolderViewMode.ROWS -> RowsContent(
+                sessionKey = entryKey,
+                resetToTop = isFreshEntry,
                 uiState = uiState,
                 watchedKeys = watchedUiState.watchedKeys,
                 modifier = Modifier.weight(1f).then(contentModifier),
                 onCatalogClick = onCatalogClick,
                 onPosterClick = onPosterClick,
+                onPosterLongClick = onPosterLongClick,
             )
             FolderViewMode.FOLLOW_LAYOUT -> RowsContent(
+                sessionKey = entryKey,
+                resetToTop = isFreshEntry,
                 uiState = uiState,
                 watchedKeys = watchedUiState.watchedKeys,
                 modifier = Modifier.weight(1f).then(contentModifier),
                 onCatalogClick = onCatalogClick,
                 onPosterClick = onPosterClick,
+                onPosterLongClick = onPosterLongClick,
             )
         }
     }
 }
 
+
+// 1-based position of each rendered collection row, mirroring Home's optional "Trending • 3"
+// header suffix (HomeCatalogSettings.catalogRowNumbersEnabled). Rows that render nothing take no
+// number, so the sequence matches what the user actually sees.
+private fun collectionRowNumbers(sections: List<HomeCatalogSection>): Map<String, Int> =
+    buildMap {
+        var nextRowNumber = 1
+        sections.forEach { section ->
+            if (section.items.isNotEmpty()) put(section.key, nextRowNumber++)
+        }
+    }
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun ImmersiveCollectionContent(
+    sessionKey: String,
     sections: List<HomeCatalogSection>,
     watchedKeys: Set<String>,
     onBack: () -> Unit,
     onCatalogClick: (HomeCatalogSection) -> Unit,
     onCastClick: (HeroCastMember) -> Unit,
     onPosterClick: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)?,
 ) {
     val focusRequester = remember { FocusRequester() }
+    val rowNumbers = remember(sections) { collectionRowNumbers(sections) }
     val coroutineScope = rememberCoroutineScope()
-    // Seed from the session-scoped holder so returning from the details screen restores the row
-    // (and the focused item within it) the user was on. Persisted below whenever it changes.
-    var activeRowIndex by remember { mutableIntStateOf(FolderScrollMemory.immersiveRowIndex) }
-    var activeItemIndex by remember { mutableIntStateOf(FolderScrollMemory.immersiveItemIndex) }
+    val restoredPosition = remember(sessionKey) { FolderScrollMemory.position(sessionKey) }
+    var activeRowIndex by remember(sessionKey) { mutableIntStateOf(restoredPosition.rowIndex) }
+    var activeItemIndex by remember(sessionKey) { mutableIntStateOf(restoredPosition.itemIndex) }
     var wheelLocked by remember { mutableStateOf(false) }
     var backButtonHovered by remember { mutableStateOf(false) }
     var activeHeroBackdrop by remember { mutableStateOf<String?>(null) }
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
     val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     val ambientBackgroundEnabled = homeSettings.heroAmbientBackgroundEnabled
+    val catalogSeeMoreEnabled = homeSettings.catalogSeeMoreEnabled
     val heroTrailerShowing by HomeHeroTrailerManualTrigger.active.collectAsStateWithLifecycle()
     val backButtonAlpha by animateFloatAsState(
         targetValue = if (backButtonHovered) 1f else 0f,
         label = "collection_back_button_alpha",
     )
+    val rowDots = remember(sections, rowNumbers, homeSettings.catalogRowNumbersEnabled) {
+        sections.map { section ->
+            val rowNumber = rowNumbers[section.key]
+            HomeTvRowDot(
+                rowKey = section.key,
+                label = if (rowNumber != null && homeSettings.catalogRowNumbersEnabled) {
+                    "${section.title} • $rowNumber"
+                } else {
+                    section.title
+                },
+            )
+        }
+    }
+    val rowDotsListState = rememberLazyListState()
+    val rowDotsContent: (@Composable () -> Unit)? =
+        if (homeSettings.tvRowDotsEnabled && rowDots.size > 1) {
+            {
+                HomeTvRowDotStrip(
+                    dots = rowDots,
+                    activeIndex = activeRowIndex,
+                    onDotClick = { rowIndex ->
+                        activeRowIndex = rowIndex
+                        activeItemIndex = 0
+                    },
+                    listState = rowDotsListState,
+                    anchor = homeSettings.tvRowDotsAnchor,
+                )
+            }
+        } else {
+            null
+        }
 
     LaunchedEffect(sections) {
         activeRowIndex = activeRowIndex.coerceIn(0, sections.lastIndex.coerceAtLeast(0))
@@ -351,9 +478,8 @@ private fun ImmersiveCollectionContent(
     }
     // Mirror the live position into the session-scoped holder so it survives leaving and
     // returning to this screen (e.g. the details view).
-    LaunchedEffect(activeRowIndex, activeItemIndex) {
-        FolderScrollMemory.immersiveRowIndex = activeRowIndex
-        FolderScrollMemory.immersiveItemIndex = activeItemIndex
+    LaunchedEffect(sessionKey, activeRowIndex, activeItemIndex) {
+        FolderScrollMemory.update(sessionKey, activeRowIndex, activeItemIndex)
     }
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -361,7 +487,8 @@ private fun ImmersiveCollectionContent(
 
     val activeSection = sections.getOrNull(activeRowIndex) ?: return
     val activeEntries = activeSection.items.take(FolderCatalogPreviewLimit)
-    val activeRowEntries = if (activeSection.paginates) {
+    val activeUsesInfiniteScroll = activeSection.usesInfiniteHomeRow(catalogSeeMoreEnabled)
+    val activeRowEntries = if (activeUsesInfiniteScroll) {
         activeSection.items
     } else {
         activeEntries
@@ -403,6 +530,18 @@ private fun ImmersiveCollectionContent(
         }
         HomeTvKey.Left -> {
             activeItemIndex = (activeItemIndex - 1).coerceAtLeast(0)
+            true
+        }
+        // TV mode shows one row at a time, so a page is a run of posters along it.
+        HomeTvKey.PageDown, HomeTvKey.PageUp -> {
+            val delta = if (key == HomeTvKey.PageDown) PAGE_ITEM_STEP else -PAGE_ITEM_STEP
+            activeItemIndex = (activeItemIndex + delta)
+                .coerceIn(0, (activeRowEntries.size - 1).coerceAtLeast(0))
+            true
+        }
+        HomeTvKey.Home, HomeTvKey.End -> {
+            activeRowIndex = if (key == HomeTvKey.Home) 0 else sections.lastIndex.coerceAtLeast(0)
+            activeItemIndex = 0
             true
         }
         HomeTvKey.Select -> {
@@ -468,6 +607,10 @@ private fun ImmersiveCollectionContent(
                     Key.DirectionUp -> handleTvKey(HomeTvKey.Up)
                     Key.DirectionRight -> handleTvKey(HomeTvKey.Right)
                     Key.DirectionLeft -> handleTvKey(HomeTvKey.Left)
+                    Key.PageDown -> handleTvKey(HomeTvKey.PageDown)
+                    Key.PageUp -> handleTvKey(HomeTvKey.PageUp)
+                    Key.MoveHome -> handleTvKey(HomeTvKey.Home)
+                    Key.MoveEnd -> handleTvKey(HomeTvKey.End)
                     Key.Enter, Key.NumPadEnter -> handleTvKey(HomeTvKey.Select)
                     Key.T -> handleTvKey(HomeTvKey.ToggleTrailer)
                     Key.Escape -> handleTvKey(HomeTvKey.Dismiss)
@@ -540,20 +683,23 @@ private fun ImmersiveCollectionContent(
                 focusedItemIndex = activeItemIndex,
                 onHoverItem = { itemIndex -> activeItemIndex = itemIndex },
                 onViewAllClick = if (
-                    !activeSection.paginates &&
+                    !activeUsesInfiniteScroll &&
                     activeSection.canOpenCatalog(FolderCatalogPreviewLimit)
                 ) {
                     { onCatalogClick(activeSection) }
                 } else {
                     null
                 },
-                onLoadMore = if (activeSection.paginates) {
+                onLoadMore = if (activeUsesInfiniteScroll) {
                     { FolderDetailRepository.loadMoreCatalogRow(activeSection) }
                 } else {
                     null
                 },
                 isLoadingMore = activeSection.isLoadingMore,
+                rowNumber = rowNumbers[activeSection.key],
+                headerTrailingContent = rowDotsContent,
                 onPosterClick = onPosterClick,
+                onPosterLongClick = onPosterLongClick,
             )
         }
 
@@ -575,20 +721,25 @@ private fun ImmersiveCollectionContent(
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun AdaptiveCollectionContent(
+    sessionKey: String,
     sections: List<HomeCatalogSection>,
     watchedKeys: Set<String>,
     onBack: () -> Unit,
     onCatalogClick: (HomeCatalogSection) -> Unit,
     onCastClick: (HeroCastMember) -> Unit,
     onPosterClick: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)?,
 ) {
     val focusRequester = remember { FocusRequester() }
+    val rowNumbers = remember(sections) { collectionRowNumbers(sections) }
     val coroutineScope = rememberCoroutineScope()
-    val lazyListState = rememberLazyListState()
-    // Seed from the session-scoped holder so returning from the details screen restores the row
-    // (and the focused item within it) the user was on. Persisted below whenever it changes.
-    var activeRowIndex by remember { mutableIntStateOf(FolderScrollMemory.immersiveRowIndex) }
-    var activeItemIndex by remember { mutableIntStateOf(FolderScrollMemory.immersiveItemIndex) }
+    // Scope the lazy state to the back-stack entry. Without this key, a newly opened
+    // collection can draw one frame using the previous entry's scroll position before the
+    // reset effect runs, which makes the content visibly jump back to the top.
+    val lazyListState = androidx.compose.runtime.key(sessionKey) { rememberLazyListState() }
+    val restoredPosition = remember(sessionKey) { FolderScrollMemory.position(sessionKey) }
+    var activeRowIndex by remember(sessionKey) { mutableIntStateOf(restoredPosition.rowIndex) }
+    var activeItemIndex by remember(sessionKey) { mutableIntStateOf(restoredPosition.itemIndex) }
     // The mouse cursor stays at whatever screen position it was at on Home when the user
     // clicked into this collection. Since this screen always mounts scrolled to the top,
     // Compose Desktop's hit-testing fires a synthetic hover "Enter" for whichever row now
@@ -603,6 +754,7 @@ private fun AdaptiveCollectionContent(
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
     val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     val ambientBackgroundEnabled = homeSettings.heroAmbientBackgroundEnabled
+    val catalogSeeMoreEnabled = homeSettings.catalogSeeMoreEnabled
     val heroTrailerShowing by HomeHeroTrailerManualTrigger.active.collectAsStateWithLifecycle()
     val backButtonAlpha by animateFloatAsState(
         targetValue = if (backButtonHovered) 1f else 0f,
@@ -616,20 +768,29 @@ private fun AdaptiveCollectionContent(
             (sections.getOrNull(activeRowIndex)?.items?.size?.minus(1) ?: 0).coerceAtLeast(0),
         )
     }
+    // The screen mounts with however many rows have loaded so far and the rest stream in. A row
+    // that renders under a stationary cursor fires a hover Enter exactly like a real one, which
+    // snaps the active row off the top — the same problem the mount-time guard above solves, just
+    // arriving later, which is why a collection sometimes opened one row down and sometimes did
+    // not. Re-arm the guard for every new row; a genuine mouse move still re-enables hover.
+    LaunchedEffect(sections.size) {
+        mouseActivity.onKeyboardNavigation()
+    }
     // Mirror the live position into the session-scoped holder so it survives leaving and
     // returning to this screen (e.g. the details view).
-    LaunchedEffect(activeRowIndex, activeItemIndex) {
-        FolderScrollMemory.immersiveRowIndex = activeRowIndex
-        FolderScrollMemory.immersiveItemIndex = activeItemIndex
+    LaunchedEffect(sessionKey, activeRowIndex, activeItemIndex) {
+        FolderScrollMemory.update(sessionKey, activeRowIndex, activeItemIndex)
     }
     // On return, bring the restored row into view (the LazyColumn otherwise starts at the top).
-    LaunchedEffect(Unit) {
-        val target = FolderScrollMemory.immersiveRowIndex
+    LaunchedEffect(sessionKey) {
+        val target = FolderScrollMemory.position(sessionKey).rowIndex
         if (target > 0) {
             withTimeoutOrNull(4000) {
                 snapshotFlow { lazyListState.layoutInfo.totalItemsCount }.first { it > target }
             }
             runCatching { lazyListState.scrollToItem(target) }
+        } else {
+            runCatching { lazyListState.scrollToItem(0) }
         }
     }
     LaunchedEffect(Unit) {
@@ -638,7 +799,8 @@ private fun AdaptiveCollectionContent(
 
     val activeSection = sections.getOrNull(activeRowIndex) ?: return
     val activeEntries = activeSection.items.take(FolderCatalogPreviewLimit)
-    val activeRowEntries = if (activeSection.paginates) {
+    val activeUsesInfiniteScroll = activeSection.usesInfiniteHomeRow(catalogSeeMoreEnabled)
+    val activeRowEntries = if (activeUsesInfiniteScroll) {
         activeSection.items
     } else {
         activeEntries
@@ -679,6 +841,23 @@ private fun AdaptiveCollectionContent(
         }
         HomeTvKey.Left -> {
             activeItemIndex = (activeItemIndex - 1).coerceAtLeast(0)
+            true
+        }
+        // Everywhere else the folder is a vertical list of rows, so a page is a run of rows.
+        HomeTvKey.PageDown, HomeTvKey.PageUp -> {
+            val delta = if (key == HomeTvKey.PageDown) PAGE_SECTION_STEP else -PAGE_SECTION_STEP
+            activeRowIndex = (activeRowIndex + delta).coerceIn(0, sections.lastIndex.coerceAtLeast(0))
+            activeItemIndex = activeItemIndex.coerceIn(
+                0,
+                (sections[activeRowIndex].items.size - 1).coerceAtLeast(0),
+            )
+            coroutineScope.launch { lazyListState.animateScrollToItem(activeRowIndex) }
+            true
+        }
+        HomeTvKey.Home, HomeTvKey.End -> {
+            activeRowIndex = if (key == HomeTvKey.Home) 0 else sections.lastIndex.coerceAtLeast(0)
+            activeItemIndex = 0
+            coroutineScope.launch { lazyListState.animateScrollToItem(activeRowIndex) }
             true
         }
         HomeTvKey.Select -> {
@@ -730,6 +909,10 @@ private fun AdaptiveCollectionContent(
                     Key.DirectionUp -> handleTvKey(HomeTvKey.Up)
                     Key.DirectionRight -> handleTvKey(HomeTvKey.Right)
                     Key.DirectionLeft -> handleTvKey(HomeTvKey.Left)
+                    Key.PageDown -> handleTvKey(HomeTvKey.PageDown)
+                    Key.PageUp -> handleTvKey(HomeTvKey.PageUp)
+                    Key.MoveHome -> handleTvKey(HomeTvKey.Home)
+                    Key.MoveEnd -> handleTvKey(HomeTvKey.End)
                     Key.Enter, Key.NumPadEnter -> handleTvKey(HomeTvKey.Select)
                     Key.T -> handleTvKey(HomeTvKey.ToggleTrailer)
                     Key.Escape -> handleTvKey(HomeTvKey.Dismiss)
@@ -782,7 +965,8 @@ private fun AdaptiveCollectionContent(
             LazyColumn(state = lazyListState, modifier = Modifier.weight(1f)) {
                 sections.forEachIndexed { rowIndex, section ->
                     val previewEntries = section.items.take(FolderCatalogPreviewLimit)
-                    val entries = if (section.paginates) {
+                    val usesInfiniteScroll = section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
+                    val entries = if (usesInfiniteScroll) {
                         section.items
                     } else {
                         previewEntries
@@ -800,20 +984,22 @@ private fun AdaptiveCollectionContent(
                                 }
                             },
                             onViewAllClick = if (
-                                !section.paginates &&
+                                !usesInfiniteScroll &&
                                 section.canOpenCatalog(FolderCatalogPreviewLimit)
                             ) {
                                 { onCatalogClick(section) }
                             } else {
                                 null
                             },
-                            onLoadMore = if (section.paginates) {
+                            onLoadMore = if (usesInfiniteScroll) {
                                 { FolderDetailRepository.loadMoreCatalogRow(section) }
                             } else {
                                 null
                             },
                             isLoadingMore = section.isLoadingMore,
+                            rowNumber = rowNumbers[section.key],
                             onPosterClick = onPosterClick,
+                            onPosterLongClick = onPosterLongClick,
                         )
                     }
                 }
@@ -840,13 +1026,24 @@ private fun FolderCoverImage(
 
 @Composable
 private fun TabbedGridContent(
+    sessionKey: String,
+    resetToTop: Boolean,
     uiState: FolderDetailUiState,
     watchedKeys: Set<String>,
     modifier: Modifier = Modifier,
     onTabSelected: (Int) -> Unit,
     onPosterClick: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)?,
 ) {
-    val gridState = rememberLazyGridState()
+    // Reset synchronously when a new back-stack entry is composed, rather than showing the
+    // previous entry's position until the LaunchedEffect below gets its first turn.
+    val gridState = androidx.compose.runtime.key(sessionKey) { rememberLazyGridState() }
+
+    LaunchedEffect(sessionKey, resetToTop) {
+        if (resetToTop) {
+            gridState.scrollToItem(0)
+        }
+    }
 
     LaunchedEffect(gridState, uiState.selectedTabIndex, uiState.selectedTabCanLoadMore, uiState.selectedTabIsLoadingMore) {
         snapshotFlow { gridState.layoutInfo }
@@ -861,7 +1058,18 @@ private fun TabbedGridContent(
             }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    val selectedTabItemCount = uiState.tabs.getOrNull(uiState.selectedTabIndex)?.items?.size ?: 0
+    val pageScrollKeys = rememberFolderPageScrollKeys(
+        scrollState = gridState,
+        viewportHeightPx = { gridState.layoutInfo.viewportSize.height },
+        jumpToEdge = { toStart ->
+            gridState.animateScrollToItem(
+                if (toStart) 0 else (selectedTabItemCount - 1).coerceAtLeast(0),
+            )
+        },
+    )
+
+    Column(modifier = modifier.fillMaxSize().then(pageScrollKeys)) {
         if (uiState.tabs.size > 1) {
             CompositionLocalProvider(LocalRippleConfiguration provides null) {
                 ScrollableTabRow(
@@ -933,6 +1141,7 @@ private fun TabbedGridContent(
                                     item = item,
                                 ),
                                 onClick = { onPosterClick(item) },
+                                onLongClick = onPosterLongClick?.let { { it(item) } },
                             )
                         }
 
@@ -950,13 +1159,29 @@ private fun TabbedGridContent(
 
 @Composable
 private fun RowsContent(
+    sessionKey: String,
+    resetToTop: Boolean,
     uiState: FolderDetailUiState,
     watchedKeys: Set<String>,
     modifier: Modifier = Modifier,
     onCatalogClick: (HomeCatalogSection) -> Unit,
     onPosterClick: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)?,
 ) {
+    // Reset synchronously when a new back-stack entry is composed, rather than showing the
+    // previous entry's position until the LaunchedEffect below gets its first turn.
+    val listState = androidx.compose.runtime.key(sessionKey) { rememberLazyListState() }
+    val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val catalogSeeMoreEnabled = homeSettings.catalogSeeMoreEnabled
+
+    LaunchedEffect(sessionKey, resetToTop) {
+        if (resetToTop) {
+            listState.scrollToItem(0)
+        }
+    }
+
     val sections = FolderDetailRepository.getCatalogSectionsForRows()
+    val rowNumbers = remember(sections) { collectionRowNumbers(sections) }
 
     if (uiState.isLoading && sections.isEmpty()) {
         LoadingIndicator()
@@ -968,8 +1193,17 @@ private fun RowsContent(
         return
     }
 
+    val pageScrollKeys = rememberFolderPageScrollKeys(
+        scrollState = listState,
+        viewportHeightPx = { listState.layoutInfo.viewportSize.height },
+        jumpToEdge = { toStart ->
+            listState.animateScrollToItem(if (toStart) 0 else (sections.size - 1).coerceAtLeast(0))
+        },
+    )
+
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        state = listState,
+        modifier = modifier.fillMaxSize().then(pageScrollKeys),
         contentPadding = PaddingValues(
             bottom = nuvioSafeBottomPadding(18.dp),
         ),
@@ -980,7 +1214,8 @@ private fun RowsContent(
             key = { it.lazyKey },
         ) { keyedSection ->
             val section = keyedSection.value
-            val entries = if (section.paginates) {
+            val usesInfiniteScroll = section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
+            val entries = if (usesInfiniteScroll) {
                 section.items
             } else {
                 section.items.take(FolderCatalogPreviewLimit)
@@ -989,21 +1224,23 @@ private fun RowsContent(
                 section = section,
                 entries = entries,
                 onViewAllClick = if (
-                    !section.paginates &&
+                    !usesInfiniteScroll &&
                     section.canOpenCatalog(FolderCatalogPreviewLimit)
                 ) {
                     { onCatalogClick(section) }
                 } else {
                     null
                 },
-                onLoadMore = if (section.paginates) {
+                onLoadMore = if (usesInfiniteScroll) {
                     { FolderDetailRepository.loadMoreCatalogRow(section) }
                 } else {
                     null
                 },
                 isLoadingMore = section.isLoadingMore,
                 watchedKeys = watchedKeys,
+                rowNumber = rowNumbers[section.key],
                 onPosterClick = { onPosterClick(it) },
+                onPosterLongClick = onPosterLongClick,
             )
         }
     }

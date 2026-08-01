@@ -37,7 +37,9 @@ internal fun SettingsSecretTextField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
+        // Tracked here rather than at each call site: an API key containing "h" would otherwise
+        // navigate to Home mid-typing. Every secret field gets the suppression for free.
+        modifier = modifier.trackSettingsTextFocus(),
         isError = isError,
         singleLine = true,
         label = { Text(label) },

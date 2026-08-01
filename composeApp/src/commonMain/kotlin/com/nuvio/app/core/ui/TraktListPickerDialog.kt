@@ -53,11 +53,7 @@ fun TraktListPickerDialog(
     BasicAlertDialog(
         onDismissRequest = onDismiss,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = tokens.colors.surfaceDialog,
-            shape = RoundedCornerShape(NuvioTokens.Radius.xl),
-        ) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(tokens.spacing.cardPadding),
                 verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),

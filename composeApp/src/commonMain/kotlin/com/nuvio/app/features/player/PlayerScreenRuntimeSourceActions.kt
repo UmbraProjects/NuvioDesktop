@@ -13,7 +13,13 @@ import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.p2p.P2pStreamingEngine
 import com.nuvio.app.features.player.skip.NextEpisodeInfo
+import com.nuvio.app.features.streams.StreamDebridCacheState
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamScorer
+import com.nuvio.app.features.streams.StreamScoreRepository
+import com.nuvio.app.features.streams.StreamScoreProfile
+import com.nuvio.app.features.streams.StreamScoreContext
+import com.nuvio.app.features.streams.StreamScoreContexts
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
@@ -55,13 +61,44 @@ internal fun PlayerScreenRuntime.p2pSentinelUrl(infoHash: String, fileIdx: Int?)
 internal fun PlayerScreenRuntime.isP2pStream(stream: StreamItem): Boolean =
     stream.needsLocalDebridResolve && stream.p2pInfoHash != null
 
+/**
+ * A stable identity for "the same source", used to mark the playing row and to remember which
+ * sources failover has already tried.
+ *
+ * The ordering below goes from most to least durable, and deliberately avoids two things that look
+ * identifying but are not:
+ *
+ *  - **Display strings.** `streamLabel`/`streamSubtitle` are formatter output. They carry seeder
+ *    counts, release age in days and cache indicators, all of which drift between the moment
+ *    playback starts and the moment the sources panel is rebuilt. Keying on them meant the playing
+ *    row silently stopped being recognised.
+ *  - **The playback URL.** Proxying addons (AIOStreams among them) hand out per-request signed URLs,
+ *    so the same file gets a different URL on every fetch.
+ *
+ * Filename plus size is what actually identifies a release across re-fetches, so it sits near the
+ * top. Two distinct sources sharing both are treated as one — acceptable, since they are the same
+ * file and would fail the same way.
+ */
 internal fun StreamItem.playerSourceIdentityKey(): String? {
     p2pInfoHash?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { hash ->
         return "torrent:$hash:${p2pFileIdx ?: -1}"
     }
 
+    val raw = clientResolve?.stream?.raw
+    val contentName = listOfNotNull(
+        behaviorHints.filename,
+        clientResolve?.filename,
+        raw?.filename,
+        raw?.torrentName,
+        clientResolve?.torrentName,
+        debridCacheStatus?.cachedName,
+    ).firstOrNull { it.isNotBlank() }
+    if (contentName != null) {
+        val size = behaviorHints.videoSize ?: raw?.size ?: debridCacheStatus?.cachedSize
+        return "file:$addonId:${contentName.trim().lowercase()}:${size ?: ""}"
+    }
+
     clientResolve?.let { resolve ->
-        val raw = resolve.stream?.raw
         val keyParts = listOf(
             addonId,
             resolve.service,
@@ -69,15 +106,8 @@ internal fun StreamItem.playerSourceIdentityKey(): String? {
             resolve.infoHash?.trim()?.lowercase(),
             resolve.fileIdx?.toString(),
             resolve.magnetUri,
-            resolve.torrentName,
-            resolve.filename,
-            raw?.torrentName,
-            raw?.filename,
             raw?.size?.toString(),
-            behaviorHints.filename,
             behaviorHints.videoSize?.toString(),
-            streamLabel,
-            streamSubtitle,
         ).map { it.orEmpty().trim() }
         if (keyParts.any { it.isNotBlank() }) {
             return "resolve:${keyParts.joinToString("|")}"
@@ -166,7 +196,6 @@ internal fun PlayerScreenRuntime.switchToP2pSourceStream(stream: StreamItem) {
         season = activeSeasonNumber,
         episode = activeEpisodeNumber,
     )
-    activeSourceUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
     activeSourceResponseHeaders = emptyMap()
@@ -185,6 +214,8 @@ internal fun PlayerScreenRuntime.switchToP2pSourceStream(stream: StreamItem) {
     activeInitialProgressFraction = null
     showSourcesPanel = false
     controlsVisible = true
+    beginPlaybackAttempt()
+    activeSourceUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
 }
 
 internal fun PlayerScreenRuntime.switchToP2pEpisodeStream(
@@ -211,7 +242,6 @@ internal fun PlayerScreenRuntime.switchToP2pEpisodeStream(
         season = seasonNumber,
         episode = episodeNumber,
     )
-    activeSourceUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
     activeSourceResponseHeaders = emptyMap()
@@ -221,6 +251,8 @@ internal fun PlayerScreenRuntime.switchToP2pEpisodeStream(
     activeTorrentFilename = stream.behaviorHints.filename
     activeTorrentTrackers = stream.p2pTrackers
     applyEpisodeStreamMetadata(stream, episode, resume)
+    beginPlaybackAttempt()
+    activeSourceUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
 }
 
 internal fun PlayerScreenRuntime.switchToSource(
@@ -271,7 +303,6 @@ internal fun PlayerScreenRuntime.switchToSource(
     if (playerSettingsUiState.streamReuseLastLinkEnabled && currentVideoId != null) {
         saveDirectStreamForReuse(stream, url, currentVideoId, activeSeasonNumber, activeEpisodeNumber)
     }
-    activeSourceUrl = url
     activeSourceAudioUrl = null
     activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
@@ -286,6 +317,8 @@ internal fun PlayerScreenRuntime.switchToSource(
     activeInitialProgressFraction = null
     showSourcesPanel = false
     controlsVisible = true
+    beginPlaybackAttempt()
+    activeSourceUrl = url
 }
 
 /** Selects a source explicitly chosen by the user and starts a fresh automatic-failover budget. */
@@ -347,12 +380,13 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     if (playerSettingsUiState.streamReuseLastLinkEnabled) {
         saveDirectStreamForReuse(stream, url, epVideoId, seasonNumber, episodeNumber)
     }
-    activeSourceUrl = url
     activeSourceAudioUrl = null
     activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
     activeStreamType = stream.streamType
     applyEpisodeStreamMetadata(stream, episode, resume, sourceIdentityKey)
+    beginPlaybackAttempt()
+    activeSourceUrl = url
 }
 
 internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: DownloadItem, episode: MetaVideo) {
@@ -377,7 +411,6 @@ internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: Downloa
         ?.let { (it / 100f).coerceIn(0f, 1f) }
     val epResumePositionMs = epEntry?.lastPositionMs?.takeIf { it > 0L } ?: 0L
 
-    activeSourceUrl = localFileUri
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
     activeSourceResponseHeaders = emptyMap()
@@ -400,6 +433,8 @@ internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: Downloa
     activeInitialProgressFraction = epResumeFraction
     resetFailoverBudget()
     controlsVisible = true
+    beginPlaybackAttempt()
+    activeSourceUrl = localFileUri
 }
 
 private const val STREAM_FAILOVER_POLL_COUNT = 40
@@ -429,7 +464,13 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
         return true
     }
     val currentVideoId = activeVideoId ?: return false
+    val failedAttemptId = playbackAttemptId
+    val failedSourceUrl = activeSourceUrl
     val failedIdentityKey = activeSourceIdentityKey
+    // Candidates are inserted into the tried set before switchToSource. Membership here therefore
+    // distinguishes an automatically selected replacement from the user's original source.
+    val failedSourceWasSelectedByFailover =
+        isAutomaticFailoverReplacement(failedIdentityKey, failoverTriedIdentityKeys)
     failedIdentityKey?.let { failoverTriedIdentityKeys.add(it) }
     // Scope a rate limit to the throttled provider: skip candidates that resolve to the same
     // provider (they'd 429 again) but still try other providers, even ones served by the same addon.
@@ -449,8 +490,11 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
     playerController?.showTransientMessage(tryingNextToast, "")
     // A rate-limited link isn't a bad link, just throttled — keep it cached so a later retry (once
     // the throttle clears) can reuse it instead of forcing a fresh resolve that may 429 again.
-    if (!rateLimited) removeFailedStreamFromCache()
+    if (!rateLimited && trigger != StreamFailoverTrigger.StartupTimeout) {
+        removeFailedStreamFromCache()
+    }
     StreamFailoverLog.event("attempt_started", buildJsonObject {
+        put("attemptId", failedAttemptId)
         put("trigger", trigger.wireName)
         put("contentType", contentType ?: parentMetaType)
         put("videoId", currentVideoId)
@@ -471,6 +515,41 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
 
     failoverJob = scope.launch {
         try {
+            fun failedAttemptStillCurrent(): Boolean =
+                playbackAttemptId == failedAttemptId &&
+                    activeVideoId == currentVideoId &&
+                    activeSourceUrl == failedSourceUrl
+
+            fun cancelSupersededFailover(): Boolean {
+                if (failedAttemptStillCurrent()) return false
+                StreamFailoverLog.event("attempt_cancelled", buildJsonObject {
+                    put("attemptId", failedAttemptId)
+                    put("trigger", trigger.wireName)
+                    put("reason", "superseded_playback_attempt")
+                    put("activeAttemptId", playbackAttemptId)
+                    put("triedSourceCount", failoverTriedIdentityKeys.size)
+                })
+                return true
+            }
+
+            fun originalStartupRecovered(): Boolean =
+                trigger == StreamFailoverTrigger.StartupTimeout &&
+                    failedAttemptStillCurrent() &&
+                    playerStartedSourceUrl == failedSourceUrl &&
+                    playerStartedAttemptId == failedAttemptId
+
+            fun cancelRecoveredStartupFailover(): Boolean {
+                if (!originalStartupRecovered()) return false
+                failedIdentityKey?.let(failoverTriedIdentityKeys::remove)
+                StreamFailoverLog.event("attempt_cancelled", buildJsonObject {
+                    put("attemptId", failedAttemptId)
+                    put("trigger", trigger.wireName)
+                    put("reason", "original_source_started")
+                    put("triedSourceCount", failoverTriedIdentityKeys.size)
+                })
+                return true
+            }
+
             // Calling this unconditionally is important: the repository request key makes the call
             // a no-op for the active item, but replaces a non-empty source list left over from a
             // previously played episode.
@@ -486,6 +565,7 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
             var next: StreamItem? = null
             var poll = 0
             while (poll < STREAM_FAILOVER_POLL_COUNT && next == null) {
+                if (cancelSupersededFailover()) return@launch
                 val state = PlayerStreamsRepository.sourceState.value
                 val streams = state.groups.flatMap { it.streams }
                 val activeKey = activeSourceIdentityKey
@@ -500,6 +580,19 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
                         activeIdentityKey = activeKey,
                         triedIdentityKeys = failoverTriedIdentityKeys,
                         excludeScopeKey = rateLimitScopeKey,
+                        preferredAudioLanguages = resolvePreferredAudioLanguageTargets(
+                            preferredAudioLanguage = playerSettingsUiState.preferredAudioLanguage,
+                            secondaryPreferredAudioLanguage =
+                                playerSettingsUiState.secondaryPreferredAudioLanguage,
+                            deviceLanguages = DeviceLanguagePreferences.preferredLanguageCodes(),
+                            originalLanguage = OriginalLanguageCache.languageFor(parentMetaId),
+                        ),
+                        scoreProfile = StreamScoreRepository.profile,
+                        scoreContext = StreamScoreContexts.forPlayback(
+                            isEpisode = activeEpisodeNumber != null,
+                            contentId = parentMetaId,
+                            contentType = contentType ?: parentMetaType,
+                        ),
                     )
                 } else {
                     null
@@ -510,11 +603,33 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
                 delay(STREAM_FAILOVER_POLL_INTERVAL_MS)
                 poll++
             }
+            if (cancelSupersededFailover()) return@launch
+            // Source discovery is asynchronous. A slow stream can finish opening while providers
+            // are still returning fallback rows; keep it instead of replacing healthy playback
+            // with a candidate selected from a timeout that is no longer true.
+            if (cancelRecoveredStartupFailover()) return@launch
             val chosen = next
             if (chosen == null) {
+                if (cancelRecoveredStartupFailover()) return@launch
+                if (
+                    trigger == StreamFailoverTrigger.StartupTimeout &&
+                    !failedSourceWasSelectedByFailover
+                ) {
+                    // A timeout is advisory while the original player is still alive. If every
+                    // remaining row is uncached or unplayable, there is no safer recovery to make:
+                    // keep waiting instead of closing a source that may still finish opening.
+                    failedIdentityKey?.let(failoverTriedIdentityKeys::remove)
+                    StreamFailoverLog.event("attempt_cancelled", buildJsonObject {
+                        put("trigger", trigger.wireName)
+                        put("reason", "no_safe_fallback")
+                        put("triedSourceCount", failoverTriedIdentityKeys.size)
+                    })
+                    return@launch
+                }
                 // Nothing left to try — fall back to the normal unrecoverable-failure exit.
                 StreamFailoverLog.event("sources_exhausted", buildJsonObject {
                     put("trigger", trigger.wireName)
+                    put("failedSourceWasSelectedByFailover", failedSourceWasSelectedByFailover)
                     put("triedSourceCount", failoverTriedIdentityKeys.size)
                     put("loadedSourceCount", PlayerStreamsRepository.sourceState.value.groups.sumOf { it.streams.size })
                 })
@@ -525,9 +640,11 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
             val chosenIndex = orderedStreams.indexOfFirst {
                 it.playerSourceIdentityKey() == chosen.playerSourceIdentityKey()
             }
-            chosen.playerSourceIdentityKey()?.let { failoverTriedIdentityKeys.add(it) }
             val sourceFields = StreamFailoverLog.sourceFields(chosen, chosenIndex)
+            if (cancelRecoveredStartupFailover()) return@launch
+            chosen.playerSourceIdentityKey()?.let { failoverTriedIdentityKeys.add(it) }
             StreamFailoverLog.event("source_selected", buildJsonObject {
+                put("attemptId", failedAttemptId)
                 put("trigger", trigger.wireName)
                 sourceFields.forEach { (key, value) -> put(key, value) }
                 put("triedSourceCount", failoverTriedIdentityKeys.size)
@@ -543,6 +660,17 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
                 title = tryingNextToast,
                 value = chosen.addonName.ifBlank { chosen.streamLabel },
             )
+            if (cancelRecoveredStartupFailover()) {
+                chosen.playerSourceIdentityKey()?.let(failoverTriedIdentityKeys::remove)
+                return@launch
+            }
+            if (cancelSupersededFailover()) {
+                chosen.playerSourceIdentityKey()?.let(failoverTriedIdentityKeys::remove)
+                return@launch
+            }
+            if (!rateLimited && trigger == StreamFailoverTrigger.StartupTimeout) {
+                removeFailedStreamFromCache()
+            }
             switchToSource(chosen, resumePositionOverrideMs = failoverResumePositionMs)
         } finally {
             failoverInProgress = false
@@ -557,26 +685,139 @@ internal fun nextFailoverStream(
     activeIdentityKey: String?,
     triedIdentityKeys: Set<String>,
     excludeScopeKey: String? = null,
+    preferredAudioLanguages: List<String> = emptyList(),
+    scoreProfile: StreamScoreProfile = StreamScoreProfile(),
+    scoreContext: StreamScoreContext = StreamScoreContext.MOVIE,
 ): StreamItem? {
     // The repository order is the quality/ranking order. Always restart at its top and exclude the
     // failed/tried identities, rather than starting after the failed stream's old index. Autoplay or
     // source affinity can select a stream far down the list; the old walk then skipped every better
     // fallback above it.
-    return streams.firstOrNull { stream ->
+    val playableCandidates = streams.filter { stream ->
         val key = stream.playerSourceIdentityKey()
-        if (key == null || key == activeIdentityKey || key in triedIdentityKeys) return@firstOrNull false
+        if (key == null || key == activeIdentityKey || key in triedIdentityKeys) return@filter false
         val isPlayable = !stream.playableDirectUrl.isNullOrBlank() ||
             (stream.needsLocalDebridResolve && stream.p2pInfoHash != null)
-        if (!isPlayable) return@firstOrNull false
+        if (!isPlayable) return@filter false
+        if (!stream.isSafeAutomaticFailoverSource()) return@filter false
         // Rate-limit scoping: skip a candidate that resolves to the SAME provider as the throttled
         // source — it would just 429 again. Only excludes on a confident match; a candidate whose
         // provider can't be determined is let through rather than assumed to share the throttle.
         if (excludeScopeKey != null && stream.rateLimitScopeKey() == excludeScopeKey) {
-            return@firstOrNull false
+            return@filter false
         }
         true
     }
+    // Scoring replaces the repository order as the within-tier tiebreak, and drops anything below
+    // the profile's minimum so failover cannot land on a release the user has effectively banned.
+    val ordered = if (scoreProfile.appliesToFailover()) {
+        StreamScorer.rank(playableCandidates, scoreProfile, scoreContext)
+    } else {
+        playableCandidates
+    }
+    // Language tier still wins over score: a source which explicitly advertises the
+    // primary/secondary audio language is safer than an unknown source, and an unknown source is
+    // safer than one explicitly advertising a different language. minByOrNull keeps the first
+    // minimum, so within a tier the order above decides.
+    return ordered.minByOrNull { stream ->
+        stream.preferredAudioLanguageRank(preferredAudioLanguages)
+    }
 }
+
+internal fun isAutomaticFailoverReplacement(
+    sourceIdentityKey: String?,
+    triedIdentityKeys: Set<String>,
+): Boolean = sourceIdentityKey != null && sourceIdentityKey in triedIdentityKeys
+
+/**
+ * Automatic failover must never knowingly start a debrid download. Uncached AIOStreams/TorBox rows can
+ * return a short "file is being downloaded" status video, which looks playable to mpv and can
+ * trigger completion, resume and video-filter logic for the wrong media. Manual selection remains
+ * available; this restriction applies only to unattended recovery. A cached flag is still only a
+ * hint because addon caches can be stale, so the per-source first-frame watchdog remains the final
+ * runtime authority for every candidate accepted here.
+ */
+internal fun StreamItem.isSafeAutomaticFailoverSource(): Boolean {
+    if (streamType.equals("usenet", ignoreCase = true) ||
+        streamData?.type.equals("usenet", ignoreCase = true)
+    ) {
+        return true
+    }
+    when (debridCacheStatus?.state) {
+        StreamDebridCacheState.NOT_CACHED,
+        StreamDebridCacheState.CHECKING,
+        StreamDebridCacheState.UNKNOWN,
+        -> return false
+        StreamDebridCacheState.CACHED -> return true
+        null -> Unit
+    }
+    if (needsLocalDebridResolve) {
+        return debridCacheStatus?.state == StreamDebridCacheState.CACHED
+    }
+    if (clientResolve?.type.equals("debrid", ignoreCase = true)) {
+        return clientResolve?.isCached == true
+    }
+    if (streamData?.type.equals("debrid", ignoreCase = true)) {
+        return streamData?.serviceCached == true
+    }
+    return true
+}
+
+internal fun StreamItem.preferredAudioLanguageRank(preferredAudioLanguages: List<String>): Int {
+    val targets = preferredAudioLanguages.mapNotNull(::normalizeLanguageCode).distinct()
+    if (targets.isEmpty()) return 0
+
+    val advertised = advertisedAudioLanguages()
+    if (advertised.isEmpty()) return targets.size
+    if ("multi" in advertised || "mul" in advertised) return 0
+
+    val preferredRank = targets.indices.firstOrNull { index ->
+        advertised.any { language -> languageMatchesPreference(language, targets[index]) }
+    }
+    return preferredRank ?: (targets.size + 1)
+}
+
+internal fun StreamItem.advertisedAudioLanguages(): Set<String> {
+    val structured = audioLanguages +
+        clientResolve?.stream?.raw?.parsed?.languages.orEmpty()
+    val supportedCodes = AvailableLanguageOptions
+        .mapNotNull { option -> normalizeLanguageCode(option.code) }
+        .map { it.substringBefore('-') }
+        .toSet() + setOf("multi", "mul")
+
+    val normalizedStructured = structured
+        .mapNotNull(::normalizeLanguageCode)
+        .filter { it.substringBefore('-') in supportedCodes }
+
+    // Some addons only put language information in their display text. Language names are safe to
+    // recognize there; short lowercase tokens are deliberately ignored to avoid treating ordinary
+    // words such as "it" as Italian.
+    val displayFields = listOfNotNull(
+        name,
+        title,
+        description,
+        behaviorHints.filename,
+        clientResolve?.filename,
+        clientResolve?.torrentName,
+        clientResolve?.stream?.raw?.filename,
+        clientResolve?.stream?.raw?.torrentName,
+    )
+    val normalizedDisplayNames = displayFields
+        .mapNotNull(::normalizeLanguageCode)
+        .filter { normalized ->
+            normalized.substringBefore('-') in supportedCodes &&
+                normalized.length <= 5
+        }
+    val normalizedUppercaseCodes = displayFields
+        .flatMap { field -> languageTokenRegex.findAll(field).map { it.value }.toList() }
+        .filter { token -> token.length in 2..3 && token == token.uppercase() }
+        .mapNotNull(::normalizeLanguageCode)
+        .filter { it.substringBefore('-') in supportedCodes }
+
+    return (normalizedStructured + normalizedDisplayNames + normalizedUppercaseCodes).toSet()
+}
+
+private val languageTokenRegex = Regex("""[\p{L}]{2,20}""")
 
 internal fun selectFailoverResumePositionMs(
     lastTrustedPositionMs: Long,
@@ -606,6 +847,7 @@ internal fun PlayerScreenRuntime.playNextEpisode() {
     // Engage the advance latch for every path (auto and manual) so a stale end-of-file can't
     // trigger a second advance and skip an episode. Cleared once the new episode is playing.
     nextEpisodeAdvanceInProgress = true
+    nextEpisodeAdvanceTargetVideoId = nextVideo.id
     // Surface the next-episode card as loading feedback while streams resolve. Harmless on the
     // auto-advance path (same episode, card already shown); the win is the manual next-episode
     // button mid-episode, where nothing was shown before. Cleared when the switch resolves.

@@ -26,9 +26,15 @@ import kotlin.random.Random
 @Serializable
 private data class LocalConfigPayload(
     val folders: List<LocalFolder> = emptyList(),
-    val mode: LocalLibraryMode = LocalLibraryMode.BASIC,
     val catalogs: List<LocalCatalog> = emptyList(),
+    val hideEmptyCatalogs: Boolean = false,
+    val playbackPreference: LocalLibraryPlaybackPreference =
+        LocalLibraryPlaybackPreference.SOURCE_PICKER,
     val assignments: Map<String, String> = emptyMap(),
+    // Item keys the auto-filer has already considered. null = pre-feature payload: everything
+    // already cached is treated as considered on load, so we never retroactively file old items
+    // (only genuinely new scans get auto-filed). Absent on fresh installs (empty cache) too.
+    val autoFiledKeys: Set<String>? = null,
 )
 
 @Serializable
@@ -54,11 +60,16 @@ object LocalLibraryRepository {
     private var profileId: Int = 1
     private var hasLoaded = false
     private var folders: List<LocalFolder> = emptyList()
-    private var mode: LocalLibraryMode = LocalLibraryMode.BASIC
     private var catalogs: List<LocalCatalog> = emptyList()
+    private var hideEmptyCatalogs: Boolean = false
+    private var playbackPreference: LocalLibraryPlaybackPreference =
+        LocalLibraryPlaybackPreference.SOURCE_PICKER
     private var assignmentsByKey: Map<String, String> = emptyMap()
     private var overridesByKey: Map<String, LocalMatchOverride> = emptyMap()
     private var itemsByKey: Map<String, LocalMediaItem> = emptyMap()
+    // Keys the auto-filer has already considered — so an item the user deliberately moves to
+    // Unsorted isn't re-filed on the next rescan, and pre-existing items aren't filed retroactively.
+    private var autoConsideredKeys: Set<String> = emptySet()
     private var scanJob: Job? = null
 
     fun ensureLoaded() {
@@ -81,8 +92,10 @@ object LocalLibraryRepository {
         val config = LocalLibraryStorage.loadConfig(profileId)
             ?.let { runCatching { json.decodeFromString<LocalConfigPayload>(it) }.getOrNull() }
         folders = config?.folders.orEmpty()
-        mode = config?.mode ?: LocalLibraryMode.BASIC
         catalogs = config?.catalogs.orEmpty()
+        hideEmptyCatalogs = config?.hideEmptyCatalogs ?: false
+        playbackPreference = config?.playbackPreference
+            ?: LocalLibraryPlaybackPreference.SOURCE_PICKER
         assignmentsByKey = config?.assignments.orEmpty()
         overridesByKey = LocalLibraryStorage.loadOverrides(profileId)
             ?.let { runCatching { json.decodeFromString<LocalOverridesPayload>(it).overrides }.getOrNull() }
@@ -93,6 +106,14 @@ object LocalLibraryRepository {
             .orEmpty()
             .filter { it.folderId in folders.map(LocalFolder::id) }
             .associateBy { it.key }
+        // A null set means a pre-feature (or fresh) payload: treat everything already cached as
+        // considered, so upgrading never sweeps existing Unsorted items into their type catalogs.
+        autoConsideredKeys = config?.autoFiledKeys ?: itemsByKey.keys
+        // The four default catalogs always exist (there is no longer a Basic/Advanced mode). This
+        // both creates them for a fresh install and migrates an old Basic user into the catalog view;
+        // persist immediately so the generated catalog ids (and any migration assignments) are stable
+        // across launches rather than being regenerated each time.
+        if (ensureDefaultCatalogs()) persistConfig()
 
         publish(isScanning = false)
     }
@@ -122,9 +143,18 @@ object LocalLibraryRepository {
         folders = folders.filterNot { it.id == folderId }
         itemsByKey = itemsByKey.filterValues { it.folderId != folderId }
         assignmentsByKey = assignmentsByKey.filterKeys { itemsByKey.containsKey(it) }
+        autoConsideredKeys = autoConsideredKeys intersect itemsByKey.keys
         persistConfig()
         persistCache()
         publish(isScanning = false)
+    }
+
+    fun setPlaybackPreference(preference: LocalLibraryPlaybackPreference) {
+        ensureLoaded()
+        if (playbackPreference == preference) return
+        playbackPreference = preference
+        persistConfig()
+        publish(isScanning = _uiState.value.isScanning)
     }
 
     fun rescan() {
@@ -167,6 +197,7 @@ object LocalLibraryRepository {
             }
 
             itemsByKey = merged.associateBy { it.key }
+            if (autoAssignNewItems()) persistConfig()
             persistCache()
             publish(isScanning = true, errorMessage = firstError)
 
@@ -189,8 +220,32 @@ object LocalLibraryRepository {
         }
     }
 
+    /**
+     * Pre-seeds a match override for a title we are about to place into a local folder by download
+     * (library auto-download / "Add to library"). Keyed by the scanner's stable item key — see
+     * [com.nuvio.app.features.librarypvr.LibraryFileNaming.expectedItemKey] — so the next scan
+     * attaches the known ids to the file instead of re-deriving them. Callers trigger [rescan]
+     * afterwards (or the scan already scheduled by the download completion). MANUAL state is used so
+     * the override survives subsequent rescans, matching the Fix-match contract.
+     */
+    fun preseedMatchOverride(override: LocalMatchOverride) {
+        ensureLoaded()
+        overridesByKey = overridesByKey + (override.key to override)
+        persistOverrides()
+        // If the item is already scanned in (a later re-download of an existing title), apply now.
+        itemsByKey[override.key]?.let { existing ->
+            updateItem(applyOverride(existing))
+            persistCache()
+        }
+    }
+
     /** Applies a user chosen match (from the Fix-match dialog) and persists it as an override. */
     fun applyManualMatch(item: LocalMediaItem, resolved: LocalMediaItem) {
+        val existingMapping = overridesByKey[item.key]?.episodeMappings
+            ?.takeIf {
+                resolved.kitsuId == item.kitsuId &&
+                    resolved.malId == item.malId
+            }
         val override = LocalMatchOverride(
             key = item.key,
             imdbId = resolved.imdbId,
@@ -200,11 +255,57 @@ object LocalLibraryRepository {
             title = resolved.title.takeIf { it != item.title },
             poster = resolved.poster,
             background = resolved.background,
+            episodeMappings = existingMapping,
             matchState = LocalMatchState.MANUAL,
         )
         overridesByKey = overridesByKey + (item.key to override)
         persistOverrides()
         updateItem(applyOverride(resolved.copy(matchState = LocalMatchState.MANUAL)))
+        persistCache()
+    }
+
+    /**
+     * Persists entry-relative episode assignments without changing anything on disk. Scanner
+     * coordinates remain on each file; [applyOverride] overlays this map after every rescan.
+     */
+    fun applyEpisodeMappings(item: LocalMediaItem, mappings: List<LocalEpisodeMapping>) {
+        ensureLoaded()
+        if (mappings.none { it.included && it.episode != null }) return
+        val existing = overridesByKey[item.key]
+        val override = (existing ?: LocalMatchOverride(
+            key = item.key,
+            imdbId = item.imdbId,
+            tmdbId = item.tmdbId,
+            kitsuId = item.kitsuId,
+            malId = item.malId,
+            poster = item.poster,
+            background = item.background,
+            posterRefreshToken = item.posterRefreshToken,
+            matchState = item.matchState,
+        )).copy(episodeMappings = mappings)
+        overridesByKey = overridesByKey + (item.key to override)
+        persistOverrides()
+        val scannerView = item.copy(
+            files = item.files.map {
+                it.copy(mappedEpisode = null, excludedFromEpisodeMapping = false)
+            },
+        )
+        updateItem(applyOverride(scannerView))
+        persistCache()
+    }
+
+    fun clearEpisodeMappings(item: LocalMediaItem) {
+        ensureLoaded()
+        val existing = overridesByKey[item.key] ?: return
+        overridesByKey = overridesByKey + (item.key to existing.copy(episodeMappings = null))
+        persistOverrides()
+        updateItem(
+            item.copy(
+                files = item.files.map {
+                    it.copy(mappedEpisode = null, excludedFromEpisodeMapping = false)
+                },
+            ),
+        )
         persistCache()
     }
 
@@ -242,37 +343,72 @@ object LocalLibraryRepository {
         }
     }
 
-    // --- Advanced mode: library grouping + catalogs ---
+    // --- Catalogs: the four undeletable defaults, plus user-created ones ---
 
-    fun setMode(newMode: LocalLibraryMode) {
-        ensureLoaded()
-        if (mode == newMode) return
-        mode = newMode
-        // Inherit the Basic grouping the first time Advanced is enabled: seed Movies/Shows catalogs
-        // and file everything into them, so the user customizes from a populated starting point
-        // rather than an empty screen.
-        if (newMode == LocalLibraryMode.ADVANCED && catalogs.isEmpty() && itemsByKey.isNotEmpty()) {
-            seedCatalogsFromBasic()
+    /** The type bucket an item belongs to, used for both default-catalog seeding and auto-filing. */
+    private fun bucketOf(item: LocalMediaItem): LocalLibraryBucket = when {
+        item.isAnime && item.type == LocalFolderType.SERIES -> LocalLibraryBucket.ANIME_SERIES
+        item.isAnime -> LocalLibraryBucket.ANIME_MOVIES
+        item.type == LocalFolderType.SERIES -> LocalLibraryBucket.SHOWS
+        else -> LocalLibraryBucket.MOVIES
+    }
+
+    private fun defaultCatalogFor(bucket: LocalLibraryBucket, stamp: Long): LocalCatalog = when (bucket) {
+        LocalLibraryBucket.MOVIES -> LocalCatalog("cat-$stamp-movies", "Movies", 0, 0xFF29B6F6, bucket)
+        LocalLibraryBucket.SHOWS -> LocalCatalog("cat-$stamp-shows", "Shows", 1, 0xFFAB47BC, bucket)
+        LocalLibraryBucket.ANIME_MOVIES -> LocalCatalog("cat-$stamp-anime-movies", "Anime Movies", 2, 0xFFEC407A, bucket)
+        LocalLibraryBucket.ANIME_SERIES -> LocalCatalog("cat-$stamp-anime-series", "Anime Series", 3, 0xFFFF7043, bucket)
+    }
+
+    /**
+     * Guarantees the four default (undeletable) catalogs exist — there is no longer a Basic/Advanced
+     * mode. Fresh install: creates them empty. Migrating an old Basic user (no catalogs but items
+     * present): also files every existing item into its type bucket. A user who already has catalogs
+     * only gets any missing default bucket added, leaving their renamed/recoloured ones untouched.
+     * Mutates state only and returns whether anything changed; the caller persists + publishes.
+     */
+    private fun ensureDefaultCatalogs(): Boolean {
+        val present = catalogs.mapNotNull { it.defaultBucket }.toSet()
+        val missing = LocalLibraryBucket.entries.filter { it !in present }
+        if (missing.isEmpty()) return false
+        val migrateExistingItems = catalogs.isEmpty() && itemsByKey.isNotEmpty()
+        val stamp = TraktPlatformClock.nowEpochMs()
+        catalogs = catalogs + missing.map { defaultCatalogFor(it, stamp) }
+        if (migrateExistingItems) {
+            val byBucket = catalogs.mapNotNull { c -> c.defaultBucket?.let { it to c.id } }.toMap()
+            assignmentsByKey = itemsByKey.values.associate { item -> item.key to byBucket.getValue(bucketOf(item)) }
+            autoConsideredKeys = autoConsideredKeys + itemsByKey.keys
         }
+        return true
+    }
+
+    fun setHideEmptyCatalogs(hide: Boolean) {
+        ensureLoaded()
+        if (hideEmptyCatalogs == hide) return
+        hideEmptyCatalogs = hide
         persistConfig()
         publish(isScanning = _uiState.value.isScanning)
     }
 
-    private fun seedCatalogsFromBasic() {
-        val stamp = TraktPlatformClock.nowEpochMs()
-        val moviesCatalog = LocalCatalog(id = "cat-$stamp-movies", name = "Movies", order = 0, color = 0xFF29B6F6)
-        val showsCatalog = LocalCatalog(id = "cat-$stamp-shows", name = "Shows", order = 1, color = 0xFFAB47BC)
-        val animeMoviesCatalog = LocalCatalog(id = "cat-$stamp-anime-movies", name = "Anime Movies", order = 2, color = 0xFFEC407A)
-        val animeSeriesCatalog = LocalCatalog(id = "cat-$stamp-anime-series", name = "Anime Series", order = 3, color = 0xFFFF7043)
-        fun catalogFor(item: LocalMediaItem): LocalCatalog = when {
-            item.isAnime && item.type == LocalFolderType.SERIES -> animeSeriesCatalog
-            item.isAnime -> animeMoviesCatalog
-            item.type == LocalFolderType.SERIES -> showsCatalog
-            else -> moviesCatalog
+    /**
+     * Files newly scanned items into the catalog seeded for their type bucket, when one exists. Only
+     * genuinely new keys (never considered before) are touched, so an item the user deliberately left
+     * in — or moved to — Unsorted is never re-filed. Returns true when any assignment changed.
+     */
+    private fun autoAssignNewItems(): Boolean {
+        val newKeys = itemsByKey.keys - autoConsideredKeys
+        if (newKeys.isEmpty()) return false
+        val catalogByBucket = catalogs.mapNotNull { c -> c.defaultBucket?.let { it to c.id } }.toMap()
+        var assignments = assignmentsByKey
+        for (key in newKeys) {
+            val item = itemsByKey[key] ?: continue
+            if (key in assignments) continue
+            catalogByBucket[bucketOf(item)]?.let { assignments = assignments + (key to it) }
         }
-        val seeded = listOf(moviesCatalog, showsCatalog, animeMoviesCatalog, animeSeriesCatalog)
-        catalogs = seeded.filter { catalog -> itemsByKey.values.any { catalogFor(it).id == catalog.id } }
-        assignmentsByKey = itemsByKey.values.associate { item -> item.key to catalogFor(item).id }
+        assignmentsByKey = assignments
+        // Growing the considered set is itself worth persisting, so the set survives a restart.
+        autoConsideredKeys = autoConsideredKeys + newKeys
+        return true
     }
 
     fun setCatalogColor(catalogId: String, color: Long?) {
@@ -310,6 +446,10 @@ object LocalLibraryRepository {
 
     fun removeCatalog(catalogId: String) {
         ensureLoaded()
+        // The four default (type-bucket) catalogs are permanent — they can be renamed/recoloured but
+        // not deleted, since they are where new scans auto-file. The UI hides their delete control;
+        // this guards against any other path.
+        if (catalogs.firstOrNull { it.id == catalogId }?.defaultBucket != null) return
         catalogs = catalogs.filterNot { it.id == catalogId }
         assignmentsByKey = assignmentsByKey.filterValues { it != catalogId }
         persistConfig()
@@ -344,6 +484,24 @@ object LocalLibraryRepository {
                 // mapping links them, so the item also surfaces on sibling-season anime pages.
                 LocalAnimeEpisodeMatcher.matchesFranchiseMeta(item, metaId)
         }
+
+    /**
+     * Whether an episode thumbnail is backed by a file in the local library.
+     *
+     * A directly mapped item is the source of truth: absolute-numbered anime files already use
+     * the entry-relative episode numbers shown by that Kitsu/MAL page, so no franchise remapping
+     * is needed. Anime translation is retained only for sibling/franchise pages whose id differs
+     * from the item's own [LocalMediaItem.contentId].
+     */
+    fun hasLocalFileForEpisode(
+        metaId: String,
+        videoId: String,
+        season: Int?,
+        episode: Int?,
+    ): Boolean = itemsForContentId(metaId).any { item ->
+        item.hasDirectMappedEpisode(metaId, season, episode) == true ||
+            (item.isAnime && LocalAnimeEpisodeMatcher.matchFiles(item, videoId)?.isNotEmpty() == true)
+    }
 
     /**
      * Local file streams for a content id + video id, used to serve local playback through the
@@ -382,7 +540,8 @@ object LocalLibraryRepository {
                     val matched = videoId?.let { LocalAnimeEpisodeMatcher.matchFiles(item, it) }
                     when {
                         matched != null -> matched.map { it.toStreamItem() }
-                        (videoId == null || item.ownsVideoId(videoId)) && item.files.size == 1 ->
+                        (videoId == null || item.ownsVideoId(videoId)) &&
+                            item.files.singleOrNull()?.isEpisodePlayable == true ->
                             item.files.map { it.toStreamItem() }
                         else -> emptyList()
                     }
@@ -409,11 +568,21 @@ object LocalLibraryRepository {
      * `<contentId>:season:episode` shape.
      */
     private fun LocalMediaItem.episodeVideoId(file: LocalMediaFile): String = when {
-        isAnime && file.season == null -> "$contentId:${file.episode ?: 1}"
-        else -> "$contentId:${file.season ?: 1}:${file.episode ?: 1}"
+        isAnime && file.effectiveSeason == null -> "$contentId:${file.effectiveEpisode ?: 1}"
+        else -> "$contentId:${file.effectiveSeason ?: 1}:${file.effectiveEpisode ?: 1}"
     }
 
     /** A minimal MetaDetails for an unmatched `local:` id so the details page still opens/plays. */
+    /**
+     * The local item backing [contentId], or null when the title has no local copy. Matches on the
+     * item's own resolved id, so a title saved under any of its id namespaces still resolves.
+     */
+    fun itemForContentId(contentId: String): LocalMediaItem? {
+        val wanted = contentId.trim().takeIf { it.isNotBlank() } ?: return null
+        return uiState.value.items.firstOrNull { it.contentId.equals(wanted, ignoreCase = true) }
+            ?: uiState.value.items.firstOrNull { it.ownsVideoId(wanted) }
+    }
+
     fun syntheticMetaFor(localId: String): MetaDetails? {
         if (!localId.isLocalLibraryId()) return null
         val key = localId.removePrefix(LOCAL_ID_PREFIX)
@@ -428,17 +597,18 @@ object LocalLibraryRepository {
                     streams = item.files.map { it.toStreamItem() },
                 ),
             )
-            LocalFolderType.SERIES -> item.files.map { file ->
+            LocalFolderType.SERIES -> item.files.filter { it.isEpisodePlayable }.map { file ->
                 MetaVideo(
                     id = item.episodeVideoId(file),
                     title = when {
-                        file.season != null && file.episode != null -> "S${file.season} E${file.episode}"
+                        file.effectiveSeason != null && file.effectiveEpisode != null ->
+                            "S${file.effectiveSeason} E${file.effectiveEpisode}"
                         // Absolute-numbered anime (no season parsed from the file name).
-                        item.isAnime && file.episode != null -> "Episode ${file.episode}"
+                        item.isAnime && file.effectiveEpisode != null -> "Episode ${file.effectiveEpisode}"
                         else -> file.fileName
                     },
-                    season = file.season,
-                    episode = file.episode,
+                    season = file.effectiveSeason,
+                    episode = file.effectiveEpisode,
                     streams = listOf(file.toStreamItem()),
                 )
             }
@@ -455,7 +625,24 @@ object LocalLibraryRepository {
     }
 
     private fun applyOverride(item: LocalMediaItem): LocalMediaItem {
-        val override = overridesByKey[item.key] ?: return item
+        val override = overridesByKey[item.key]
+            // Compatibility for automatic downloads created before their pre-seeded override used
+            // the scanner's folder-scoped key. Series keys also used to retain a year that the
+            // scanner intentionally omits, so compare the persisted title as a second fallback.
+            ?: overridesByKey.values.firstOrNull { candidate ->
+                ':' !in candidate.key &&
+                    (
+                        candidate.key == item.key.substringAfter(':') ||
+                            candidate.title?.let { title ->
+                                FilenameParser.normalizeKey(
+                                    title,
+                                    item.year.takeIf { item.type == LocalFolderType.MOVIES },
+                                ) == item.key.substringAfter(':')
+                            } == true
+                        )
+            }
+            ?: return item
+        val mappedFiles = override.episodeMappings?.let(item.files::withEpisodeMappings) ?: item.files
         return item.copy(
             imdbId = override.imdbId,
             tmdbId = override.tmdbId,
@@ -465,6 +652,7 @@ object LocalLibraryRepository {
             poster = override.poster ?: item.poster,
             background = override.background ?: item.background,
             posterRefreshToken = override.posterRefreshToken ?: item.posterRefreshToken,
+            files = mappedFiles,
             matchState = override.matchState,
         )
     }
@@ -479,8 +667,9 @@ object LocalLibraryRepository {
             folders = folders.sortedBy { it.displayName.lowercase() },
             // catalogId is derived from assignments at publish time, not stored on the item.
             items = itemsByKey.values.map { it.copy(catalogId = assignmentsByKey[it.key]) },
-            mode = mode,
             catalogs = catalogs,
+            hideEmptyCatalogs = hideEmptyCatalogs,
+            playbackPreference = playbackPreference,
             isLoaded = true,
             isScanning = isScanning,
             errorMessage = errorMessage,
@@ -493,9 +682,11 @@ object LocalLibraryRepository {
             json.encodeToString(
                 LocalConfigPayload(
                     folders = folders,
-                    mode = mode,
                     catalogs = catalogs,
+                    hideEmptyCatalogs = hideEmptyCatalogs,
+                    playbackPreference = playbackPreference,
                     assignments = assignmentsByKey,
+                    autoFiledKeys = autoConsideredKeys,
                 ),
             ),
         )
@@ -529,5 +720,38 @@ object LocalLibraryRepository {
         val episode = parts[parts.lastIndex].toIntOrNull() ?: return null
         val season = parts[parts.lastIndex - 1].toIntOrNull() ?: return null
         return season to episode
+    }
+}
+
+internal fun List<LocalMediaFile>.withEpisodeMappings(
+    mappings: List<LocalEpisodeMapping>,
+): List<LocalMediaFile> = map { file ->
+    val mapping = mappings.firstOrNull { it.path.equals(file.path, ignoreCase = true) }
+    file.copy(
+        // Keep an excluded row's edited coordinate so reopening the dialog is lossless. Playback
+        // and metadata still ignore it through excludedFromEpisodeMapping.
+        mappedEpisode = mapping?.episode,
+        // A saved map is complete: unticked and newly discovered files wait for explicit review.
+        excludedFromEpisodeMapping = mapping?.included != true || mapping.episode == null,
+    )
+}
+
+/** Null means [metaId] is not this item's primary mapping and needs cross-id translation. */
+internal fun LocalMediaItem.hasDirectMappedEpisode(
+    metaId: String,
+    season: Int?,
+    episode: Int?,
+): Boolean? {
+    if (!contentId.equals(metaId, ignoreCase = true)) return null
+    val wantedEpisode = episode ?: return false
+    return files.any { file ->
+        file.isEpisodePlayable &&
+            file.effectiveEpisode == wantedEpisode &&
+            when {
+                // Kitsu/MAL series entries and bare anime filenames are both entry-relative.
+                isAnime && file.effectiveSeason == null -> true
+                season != null -> file.effectiveSeason == season
+                else -> file.effectiveSeason == null
+            }
     }
 }

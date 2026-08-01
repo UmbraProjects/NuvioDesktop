@@ -49,6 +49,7 @@ import com.nuvio.app.features.mdblist.MdbListMetadataService.PROVIDER_AUDIENCE
 import com.nuvio.app.features.mdblist.MdbListMetadataService.PROVIDER_IMDB
 import com.nuvio.app.features.mdblist.MdbListMetadataService.PROVIDER_LETTERBOXD
 import com.nuvio.app.features.mdblist.MdbListMetadataService.PROVIDER_METACRITIC
+import com.nuvio.app.features.mdblist.MdbListMetadataService.PROVIDER_MAL
 import com.nuvio.app.features.mdblist.MdbListMetadataService.PROVIDER_TMDB
 import com.nuvio.app.features.mdblist.MdbListMetadataService.PROVIDER_TOMATOES
 import com.nuvio.app.features.mdblist.MdbListMetadataService.PROVIDER_TRAKT
@@ -56,6 +57,7 @@ import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.rating_audience_score
 import nuvio.composeapp.generated.resources.rating_imdb
 import nuvio.composeapp.generated.resources.rating_letterboxd
+import nuvio.composeapp.generated.resources.rating_myanimelist
 import nuvio.composeapp.generated.resources.rating_metacritic
 import nuvio.composeapp.generated.resources.rating_rotten_tomatoes
 import nuvio.composeapp.generated.resources.rating_tmdb
@@ -63,6 +65,7 @@ import nuvio.composeapp.generated.resources.rating_trakt
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.imageResource
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.runBlocking
 import kotlin.math.absoluteValue
@@ -232,7 +235,13 @@ internal fun RatingsRow(
                         storeTextStyle = ratingTextStyle,
                         storeTextColor = visuals.valueColor,
                     )
-                } else {
+                } else if (visuals.logo != null && visuals.vectorLogo) {
+                    Image(
+                        painter = painterResource(visuals.logo),
+                        contentDescription = visuals.displayName,
+                        modifier = Modifier.size(width = visuals.logoWidth, height = 16.dp),
+                    )
+                } else if (visuals.logo != null) {
                     Image(
                         bitmap = imageResource(visuals.logo),
                         contentDescription = visuals.displayName,
@@ -240,6 +249,11 @@ internal fun RatingsRow(
                         // The logos are large source PNGs scaled down ~18x; the default Low
                         // (bilinear) filter makes them look soft. High gives a crisp downscale.
                         filterQuality = FilterQuality.High,
+                    )
+                } else {
+                    MalRatingSourceLabel(
+                        storeTextStyle = ratingTextStyle,
+                        storeTextColor = visuals.valueColor,
                     )
                 }
                 Spacer(modifier = Modifier.width(4.dp))
@@ -279,6 +293,29 @@ private fun ImdbRatingSourceLabel(
             text = stringResource(Res.string.source_imdb),
             style = storeTextStyle,
             color = storeTextColor,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun MalRatingSourceLabel(
+    storeTextStyle: TextStyle,
+    storeTextColor: Color,
+) {
+    Surface(
+        shape = RoundedCornerShape(3.dp),
+        color = storeTextColor,
+    ) {
+        Text(
+            text = "MAL",
+            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+            style = storeTextStyle.copy(
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.sp,
+            ),
+            color = Color.White,
             maxLines = 1,
         )
     }
@@ -334,8 +371,9 @@ private val ImdbBlack = Color(0xFF000000)
 private data class RatingVisuals(
     val source: String,
     val displayName: String,
-    val logo: DrawableResource,
+    val logo: DrawableResource?,
     val logoWidth: androidx.compose.ui.unit.Dp,
+    val vectorLogo: Boolean = false,
     val valueColor: Color,
     val format: (Double) -> String,
 )
@@ -387,6 +425,15 @@ private val ratingVisuals = listOf(
         logo = Res.drawable.rating_letterboxd,
         logoWidth = 16.dp,
         valueColor = Color(0xFF00E054),
+        format = ::formatOneDecimal,
+    ),
+    RatingVisuals(
+        source = PROVIDER_MAL,
+        displayName = "MyAnimeList",
+        logo = Res.drawable.rating_myanimelist,
+        logoWidth = 16.dp,
+        vectorLogo = true,
+        valueColor = Color(0xFF2E51A2),
         format = ::formatOneDecimal,
     ),
     RatingVisuals(

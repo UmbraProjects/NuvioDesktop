@@ -53,7 +53,7 @@ private val desktopHttpClient = OkHttpClient.Builder()
     .build()
 
 private const val MAX_RAW_RESPONSE_BODY_BYTES = 1024 * 1024
-private const val RAW_RESPONSE_TRUNCATION_SUFFIX = "\n...[truncated]"
+private const val RAW_RESPONSE_TRUNCATION_SUFFIX = "\n$RAW_HTTP_TRUNCATION_MARKER"
 
 actual suspend fun httpGetText(url: String): String =
     executeTextRequest("GET", url, mapOf("Accept" to "application/json"))
@@ -104,6 +104,32 @@ actual suspend fun httpRequestRaw(
                 .mapValues { (_, values) -> values.joinToString(",") }
                 .mapKeys { (name, _) -> name.lowercase() },
         )
+    }
+}
+
+actual suspend fun httpGetFileRevalidated(
+    url: String,
+    etag: String?,
+): RevalidatedFileResponse = withContext(Dispatchers.IO) {
+    val headers = buildMap {
+        put("Accept", "application/json")
+        if (!etag.isNullOrBlank()) put("If-None-Match", etag)
+    }
+    try {
+        desktopHttpClient.newCall(buildDesktopRequest("GET", url, headers, "")).execute().use { response ->
+            when {
+                response.code == 304 -> RevalidatedFileResponse.NotModified
+                !response.isSuccessful -> RevalidatedFileResponse.Failed(response.code, response.message)
+                else -> RevalidatedFileResponse.Downloaded(
+                    body = readResponseBody(response.body),
+                    // The etag belongs to whatever actually served the bytes, which for a file
+                    // parked behind a redirect is the storage host rather than the API.
+                    etag = response.header("ETag"),
+                )
+            }
+        }
+    } catch (error: Exception) {
+        RevalidatedFileResponse.Failed(status = null, message = error.message)
     }
 }
 

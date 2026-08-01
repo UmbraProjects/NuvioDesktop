@@ -52,6 +52,9 @@ data class PlayerSettingsUiState(
     val mouseMoveRevealsControlsEnabled: Boolean = true,
     val desktopLegacyHudEnabled: Boolean = false,
     val desktopAlwaysShowClockEnabled: Boolean = false,
+    // Adds the playing source (release name + provider) as the bottom row of the paused metadata
+    // overlay. Off by default: the raw release strings are noisy, and only some viewers want them.
+    val desktopPauseOverlaySourceEnabled: Boolean = false,
     // When true, the desktop speed button / speed keyboard shortcuts step by 0.1 instead of
     // jumping between the coarse preset stages (1, 1.25, 1.5, 2, 3, 4).
     val desktopPlaybackSpeedFineIncrementsEnabled: Boolean = false,
@@ -60,6 +63,7 @@ data class PlayerSettingsUiState(
     val desktopVerboseMpvLoggingEnabled: Boolean = false,
     // Extra user UI-scale for the desktop/legacy player HUD, in percent (-50..50); 0 = unchanged.
     val desktopUiScalePercent: Int = 0,
+    val desktopSourceNotchPosition: DesktopSourceNotchPosition = DesktopSourceNotchPosition.Right,
     val externalPlayerEnabled: Boolean = false,
     val externalPlayerForwardSubtitles: Boolean = false,
     val externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId(),
@@ -70,6 +74,11 @@ data class PlayerSettingsUiState(
     val dualSubtitlesEnabled: Boolean = false,
     val subtitleStyle: SubtitleStyleState = SubtitleStyleState.DEFAULT,
     val addonSubtitleStartupMode: AddonSubtitleStartupMode = AddonSubtitleStartupMode.ALL_SUBTITLES,
+    // Track kinds ruled out by name — signs/songs/karaoke/forced subtitles, commentary and
+    // audio-description tracks. Rejected tracks are hidden from the player's lists and never
+    // selected automatically. See PlayerTrackRejectKeywords.kt.
+    val rejectedSubtitleKeywords: Set<SubtitleRejectKeyword> = emptySet(),
+    val rejectedAudioKeywords: Set<AudioRejectKeyword> = emptySet(),
     val streamReuseLastLinkEnabled: Boolean = false,
     val streamReuseLastLinkCacheHours: Int = 24,
     val decoderPriority: Int = 1,
@@ -87,6 +96,7 @@ data class PlayerSettingsUiState(
     val animeSkipEnabled: Boolean = false,
     val animeSkipClientId: String = "",
     val introDbApiKey: String = "",
+    val skipDbApiKey: String = "",
     val introSubmitEnabled: Boolean = false,
     val streamAutoPlayNextEpisodeEnabled: Boolean = false,
     val streamAutoPlayPreferBingeGroup: Boolean = true,
@@ -122,6 +132,10 @@ data class PlayerSettingsUiState(
     val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Off,
     val desktopAnimeModeAutoEnabled: Boolean = false,
     val desktopAnimeSvpEnabled: Boolean = false,
+    // Draws SVP's own method/frame-rate overlay on the filtered video (DEBUG_OVERLAY in svp.conf).
+    val desktopAnimeSvpDebugOverlayEnabled: Boolean = false,
+    // Opt-in summary of what the pipeline is actually doing, shown when playback starts.
+    val desktopPlaybackInfoPanelEnabled: Boolean = false,
     // In-memory only (never persisted): F10/shader-menu force for the current playback session.
     // Non-null bypasses the auto-detect gate entirely; cleared when the player disposes.
     val desktopAnimeSessionOverride: DesktopAnimeSessionOverride? = null,
@@ -156,9 +170,11 @@ object PlayerSettingsRepository {
     private var mouseMoveRevealsControlsEnabled = true
     private var desktopLegacyHudEnabled = false
     private var desktopAlwaysShowClockEnabled = false
+    private var desktopPauseOverlaySourceEnabled = false
     private var desktopPlaybackSpeedFineIncrementsEnabled = false
     private var desktopVerboseMpvLoggingEnabled = false
     private var desktopUiScalePercent = 0
+    private var desktopSourceNotchPosition = DesktopSourceNotchPosition.Right
     private var externalPlayerEnabled = false
     private var externalPlayerForwardSubtitles = false
     private var externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId()
@@ -169,6 +185,8 @@ object PlayerSettingsRepository {
     private var dualSubtitlesEnabled = false
     private var subtitleStyle = SubtitleStyleState.DEFAULT
     private var addonSubtitleStartupMode = AddonSubtitleStartupMode.ALL_SUBTITLES
+    private var rejectedSubtitleKeywords: Set<SubtitleRejectKeyword> = emptySet()
+    private var rejectedAudioKeywords: Set<AudioRejectKeyword> = emptySet()
     private var streamReuseLastLinkEnabled = false
     private var streamReuseLastLinkCacheHours = 24
     private var decoderPriority = 1
@@ -186,6 +204,7 @@ object PlayerSettingsRepository {
     private var animeSkipEnabled = false
     private var animeSkipClientId = ""
     private var introDbApiKey = ""
+    private var skipDbApiKey = ""
     private var introSubmitEnabled = false
     private var streamAutoPlayNextEpisodeEnabled = false
     private var streamAutoPlayPreferBingeGroup = true
@@ -219,6 +238,8 @@ object PlayerSettingsRepository {
     private var desktopAnimeMode = DesktopAnimeMode.Off
     private var desktopAnimeModeAutoEnabled = false
     private var desktopAnimeSvpEnabled = false
+    private var desktopAnimeSvpDebugOverlayEnabled = false
+    private var desktopPlaybackInfoPanelEnabled = false
     // Session-only state; deliberately has no PlayerSettingsStorage backing.
     private var desktopAnimeSessionOverride: DesktopAnimeSessionOverride? = null
     private var desktopAnimeSvpSessionForced = false
@@ -251,9 +272,11 @@ object PlayerSettingsRepository {
         mouseMoveRevealsControlsEnabled = true
         desktopLegacyHudEnabled = false
         desktopAlwaysShowClockEnabled = false
+        desktopPauseOverlaySourceEnabled = false
         desktopPlaybackSpeedFineIncrementsEnabled = false
         desktopVerboseMpvLoggingEnabled = false
         desktopUiScalePercent = 0
+        desktopSourceNotchPosition = DesktopSourceNotchPosition.Right
         externalPlayerEnabled = false
         externalPlayerForwardSubtitles = false
         externalPlayerId = ExternalPlayerPlatform.defaultPlayerId()
@@ -264,6 +287,8 @@ object PlayerSettingsRepository {
         dualSubtitlesEnabled = false
         subtitleStyle = SubtitleStyleState.DEFAULT
         addonSubtitleStartupMode = AddonSubtitleStartupMode.ALL_SUBTITLES
+        rejectedSubtitleKeywords = emptySet()
+        rejectedAudioKeywords = emptySet()
         streamReuseLastLinkEnabled = false
         streamReuseLastLinkCacheHours = 24
         decoderPriority = 1
@@ -281,6 +306,7 @@ object PlayerSettingsRepository {
         animeSkipEnabled = false
         animeSkipClientId = ""
         introDbApiKey = ""
+        skipDbApiKey = ""
         introSubmitEnabled = false
         streamAutoPlayNextEpisodeEnabled = false
         streamAutoPlayPreferBingeGroup = true
@@ -314,6 +340,8 @@ object PlayerSettingsRepository {
         desktopAnimeMode = DesktopAnimeMode.Off
         desktopAnimeModeAutoEnabled = false
         desktopAnimeSvpEnabled = false
+        desktopAnimeSvpDebugOverlayEnabled = false
+        desktopPlaybackInfoPanelEnabled = false
         desktopAnimeSessionOverride = null
         desktopAnimeSvpSessionForced = false
         desktopCustomShaderPaths = ""
@@ -340,10 +368,14 @@ object PlayerSettingsRepository {
         mouseMoveRevealsControlsEnabled = PlayerSettingsStorage.loadMouseMoveRevealsControlsEnabled() ?: true
         desktopLegacyHudEnabled = PlayerSettingsStorage.loadDesktopLegacyHudEnabled() ?: false
         desktopAlwaysShowClockEnabled = PlayerSettingsStorage.loadDesktopAlwaysShowClockEnabled() ?: false
+        desktopPauseOverlaySourceEnabled = PlayerSettingsStorage.loadDesktopPauseOverlaySourceEnabled() ?: false
         desktopPlaybackSpeedFineIncrementsEnabled =
             PlayerSettingsStorage.loadDesktopPlaybackSpeedFineIncrementsEnabled() ?: false
         desktopVerboseMpvLoggingEnabled = PlayerSettingsStorage.loadDesktopVerboseMpvLoggingEnabled() ?: false
         desktopUiScalePercent = (PlayerSettingsStorage.loadDesktopUiScalePercent() ?: 0).coerceIn(-50, 50)
+        desktopSourceNotchPosition = DesktopSourceNotchPosition.fromStorage(
+            PlayerSettingsStorage.loadDesktopSourceNotchPosition(),
+        )
         externalPlayerEnabled = PlayerSettingsStorage.loadExternalPlayerEnabled() ?: false
         externalPlayerForwardSubtitles = PlayerSettingsStorage.loadExternalPlayerForwardSubtitles() ?: false
         externalPlayerId = PlayerSettingsStorage.loadExternalPlayerId()
@@ -372,8 +404,16 @@ object PlayerSettingsRepository {
                 ?: SubtitleStyleState.DEFAULT.outlineWidth,
             shadowEnabled = PlayerSettingsStorage.loadSubtitleShadowEnabled()
                 ?: SubtitleStyleState.DEFAULT.shadowEnabled,
+            shadowColor = subtitleColorFromStorage(PlayerSettingsStorage.loadSubtitleShadowColor())
+                ?: SubtitleStyleState.DEFAULT.shadowColor,
+            shadowOffset = PlayerSettingsStorage.loadSubtitleShadowOffset()
+                ?: SubtitleStyleState.DEFAULT.shadowOffset,
+            blur = PlayerSettingsStorage.loadSubtitleBlur()
+                ?: SubtitleStyleState.DEFAULT.blur,
             bold = PlayerSettingsStorage.loadSubtitleBold()
                 ?: SubtitleStyleState.DEFAULT.bold,
+            italic = PlayerSettingsStorage.loadSubtitleItalic()
+                ?: SubtitleStyleState.DEFAULT.italic,
             fontSizeSp = PlayerSettingsStorage.loadSubtitleFontSizeSp()
                 ?: SubtitleStyleState.DEFAULT.fontSizeSp,
             bottomOffset = PlayerSettingsStorage.loadSubtitleBottomOffset()
@@ -388,6 +428,10 @@ object PlayerSettingsRepository {
         addonSubtitleStartupMode = PlayerSettingsStorage.loadAddonSubtitleStartupMode()
             ?.let { runCatching { AddonSubtitleStartupMode.valueOf(it) }.getOrNull() }
             ?: AddonSubtitleStartupMode.ALL_SUBTITLES
+        rejectedSubtitleKeywords =
+            parseSubtitleRejectKeywords(PlayerSettingsStorage.loadRejectedSubtitleKeywords())
+        rejectedAudioKeywords =
+            parseAudioRejectKeywords(PlayerSettingsStorage.loadRejectedAudioKeywords())
         streamReuseLastLinkEnabled = PlayerSettingsStorage.loadStreamReuseLastLinkEnabled() ?: false
         streamReuseLastLinkCacheHours = PlayerSettingsStorage.loadStreamReuseLastLinkCacheHours() ?: 24
         decoderPriority = PlayerSettingsStorage.loadDecoderPriority() ?: 1
@@ -429,6 +473,7 @@ object PlayerSettingsRepository {
         animeSkipEnabled = PlayerSettingsStorage.loadAnimeSkipEnabled() ?: false
         animeSkipClientId = PlayerSettingsStorage.loadAnimeSkipClientId() ?: ""
         introDbApiKey = PlayerSettingsStorage.loadIntroDbApiKey() ?: ""
+        skipDbApiKey = PlayerSettingsStorage.loadSkipDbApiKey() ?: ""
         introSubmitEnabled = PlayerSettingsStorage.loadIntroSubmitEnabled() ?: false
         streamAutoPlayNextEpisodeEnabled = PlayerSettingsStorage.loadStreamAutoPlayNextEpisodeEnabled() ?: false
         streamAutoPlayPreferBingeGroup = PlayerSettingsStorage.loadStreamAutoPlayPreferBingeGroup() ?: true
@@ -498,6 +543,10 @@ object PlayerSettingsRepository {
             desktopAnimeModeAutoEnabled = PlayerSettingsStorage.loadDesktopAnimeModeAutoEnabled() ?: false
         }
         desktopAnimeSvpEnabled = PlayerSettingsStorage.loadDesktopAnimeSvpEnabled() ?: false
+        desktopAnimeSvpDebugOverlayEnabled =
+            PlayerSettingsStorage.loadDesktopAnimeSvpDebugOverlayEnabled() ?: false
+        desktopPlaybackInfoPanelEnabled =
+            PlayerSettingsStorage.loadDesktopPlaybackInfoPanelEnabled() ?: false
         desktopCustomShaderPaths = PlayerSettingsStorage.loadDesktopCustomShaderPaths().orEmpty()
         desktopCustomShaderSelectedPath = PlayerSettingsStorage.loadDesktopCustomShaderSelectedPath().orEmpty()
         val legacyCustomShadersEnabled = PlayerSettingsStorage.loadDesktopCustomShadersEnabled() ?: false
@@ -573,6 +622,14 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveDesktopAlwaysShowClockEnabled(enabled)
     }
 
+    fun setDesktopPauseOverlaySourceEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopPauseOverlaySourceEnabled == enabled) return
+        desktopPauseOverlaySourceEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopPauseOverlaySourceEnabled(enabled)
+    }
+
     fun setDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean) {
         ensureLoaded()
         if (desktopPlaybackSpeedFineIncrementsEnabled == enabled) return
@@ -596,6 +653,14 @@ object PlayerSettingsRepository {
         desktopUiScalePercent = clamped
         publish()
         PlayerSettingsStorage.saveDesktopUiScalePercent(clamped)
+    }
+
+    fun setDesktopSourceNotchPosition(position: DesktopSourceNotchPosition) {
+        ensureLoaded()
+        if (desktopSourceNotchPosition == position) return
+        desktopSourceNotchPosition = position
+        publish()
+        PlayerSettingsStorage.saveDesktopSourceNotchPosition(position.name)
     }
 
     fun setExternalPlayerEnabled(enabled: Boolean) {
@@ -685,8 +750,12 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveSubtitleOutlineColor(style.outlineColor.toStorageHexString())
         PlayerSettingsStorage.saveSubtitleOutlineEnabled(style.outlineEnabled)
         PlayerSettingsStorage.saveSubtitleShadowEnabled(style.shadowEnabled)
+        PlayerSettingsStorage.saveSubtitleShadowColor(style.shadowColor.toStorageHexString())
+        PlayerSettingsStorage.saveSubtitleShadowOffset(style.shadowOffset)
+        PlayerSettingsStorage.saveSubtitleBlur(style.blur)
         PlayerSettingsStorage.saveSubtitleOutlineWidth(style.outlineWidth)
         PlayerSettingsStorage.saveSubtitleBold(style.bold)
+        PlayerSettingsStorage.saveSubtitleItalic(style.italic)
         PlayerSettingsStorage.saveSubtitleFontSizeSp(style.fontSizeSp)
         PlayerSettingsStorage.saveSubtitleBottomOffset(style.bottomOffset)
         PlayerSettingsStorage.saveSubtitleFontFamily(style.fontFamily)
@@ -700,6 +769,22 @@ object PlayerSettingsRepository {
         addonSubtitleStartupMode = mode
         publish()
         PlayerSettingsStorage.saveAddonSubtitleStartupMode(mode.name)
+    }
+
+    fun setRejectedSubtitleKeywords(keywords: Set<SubtitleRejectKeyword>) {
+        ensureLoaded()
+        if (rejectedSubtitleKeywords == keywords) return
+        rejectedSubtitleKeywords = keywords
+        publish()
+        PlayerSettingsStorage.saveRejectedSubtitleKeywords(keywords.map { it.storageValue }.toSet())
+    }
+
+    fun setRejectedAudioKeywords(keywords: Set<AudioRejectKeyword>) {
+        ensureLoaded()
+        if (rejectedAudioKeywords == keywords) return
+        rejectedAudioKeywords = keywords
+        publish()
+        PlayerSettingsStorage.saveRejectedAudioKeywords(keywords.map { it.storageValue }.toSet())
     }
 
     fun setStreamReuseLastLinkEnabled(enabled: Boolean) {
@@ -838,6 +923,14 @@ object PlayerSettingsRepository {
         introDbApiKey = apiKey
         publish()
         PlayerSettingsStorage.saveIntroDbApiKey(apiKey)
+    }
+
+    fun setSkipDbApiKey(apiKey: String) {
+        ensureLoaded()
+        if (skipDbApiKey == apiKey) return
+        skipDbApiKey = apiKey
+        publish()
+        PlayerSettingsStorage.saveSkipDbApiKey(apiKey)
     }
 
     fun setIntroSubmitEnabled(enabled: Boolean) {
@@ -1102,9 +1195,11 @@ object PlayerSettingsRepository {
             mouseMoveRevealsControlsEnabled = mouseMoveRevealsControlsEnabled,
             desktopLegacyHudEnabled = desktopLegacyHudEnabled,
             desktopAlwaysShowClockEnabled = desktopAlwaysShowClockEnabled,
+            desktopPauseOverlaySourceEnabled = desktopPauseOverlaySourceEnabled,
             desktopPlaybackSpeedFineIncrementsEnabled = desktopPlaybackSpeedFineIncrementsEnabled,
             desktopVerboseMpvLoggingEnabled = desktopVerboseMpvLoggingEnabled,
             desktopUiScalePercent = desktopUiScalePercent,
+            desktopSourceNotchPosition = desktopSourceNotchPosition,
             externalPlayerEnabled = externalPlayerEnabled,
             externalPlayerForwardSubtitles = externalPlayerForwardSubtitles,
             externalPlayerId = externalPlayerId,
@@ -1115,6 +1210,8 @@ object PlayerSettingsRepository {
             dualSubtitlesEnabled = dualSubtitlesEnabled,
             subtitleStyle = subtitleStyle,
             addonSubtitleStartupMode = addonSubtitleStartupMode,
+            rejectedSubtitleKeywords = rejectedSubtitleKeywords,
+            rejectedAudioKeywords = rejectedAudioKeywords,
             streamReuseLastLinkEnabled = streamReuseLastLinkEnabled,
             streamReuseLastLinkCacheHours = streamReuseLastLinkCacheHours,
             decoderPriority = decoderPriority,
@@ -1132,6 +1229,7 @@ object PlayerSettingsRepository {
             animeSkipEnabled = animeSkipEnabled,
             animeSkipClientId = animeSkipClientId,
             introDbApiKey = introDbApiKey,
+            skipDbApiKey = skipDbApiKey,
             introSubmitEnabled = introSubmitEnabled,
             streamAutoPlayNextEpisodeEnabled = streamAutoPlayNextEpisodeEnabled,
             streamAutoPlayPreferBingeGroup = streamAutoPlayPreferBingeGroup,
@@ -1165,6 +1263,8 @@ object PlayerSettingsRepository {
             desktopAnimeMode = desktopAnimeMode,
             desktopAnimeModeAutoEnabled = desktopAnimeModeAutoEnabled,
             desktopAnimeSvpEnabled = desktopAnimeSvpEnabled,
+            desktopAnimeSvpDebugOverlayEnabled = desktopAnimeSvpDebugOverlayEnabled,
+            desktopPlaybackInfoPanelEnabled = desktopPlaybackInfoPanelEnabled,
             desktopAnimeSessionOverride = desktopAnimeSessionOverride,
             desktopAnimeSvpSessionForced = desktopAnimeSvpSessionForced,
             desktopCustomShaderPaths = desktopCustomShaderPaths,
@@ -1235,6 +1335,22 @@ object PlayerSettingsRepository {
         desktopAnimeSvpEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopAnimeSvpEnabled(enabled)
+    }
+
+    fun setDesktopPlaybackInfoPanelEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopPlaybackInfoPanelEnabled == enabled) return
+        desktopPlaybackInfoPanelEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopPlaybackInfoPanelEnabled(enabled)
+    }
+
+    fun setDesktopAnimeSvpDebugOverlayEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopAnimeSvpDebugOverlayEnabled == enabled) return
+        desktopAnimeSvpDebugOverlayEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopAnimeSvpDebugOverlayEnabled(enabled)
     }
 
     // Session-only anime state below: published through uiState but deliberately never persisted.

@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.NuvioToastController
@@ -39,10 +40,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.random.Random
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+
+/**
+ * How long a community skip lookup waits for the player to report a runtime before giving up and
+ * asking without one. Sized for a slow debrid or P2P start rather than a local file.
+ */
+private const val SKIP_LOOKUP_DURATION_TIMEOUT_MS = 30_000L
 
 @Composable
 internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
@@ -78,10 +87,9 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         errorMessage = null
         playbackFailureExitRequested = false
         playbackSourceFailureActive = false
-        playerController = null
-        playerControllerSourceUrl = null
-        playbackSnapshot = PlayerPlaybackSnapshot()
-        lastTrustedPlaybackPositionMs = 0L
+        // Core playback state is invalidated synchronously by beginPlaybackAttempt before this
+        // effect can observe the new URL. Resetting it here would race the replacement's early
+        // attach/first-frame callbacks and could erase their attempt markers.
         isScrubbingTimeline = false
         scrubbingPositionMs = null
         liveGestureFeedback = null
@@ -91,11 +99,6 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         credentialRefreshJob = null
         credentialRefreshAttemptedSourceUrl = null
         providerDiagnosticRecoveryAttemptedSourceUrl = null
-        initialLoadCompleted = false
-        defaultPlaybackSpeedApplied = false
-        lastProgressPersistEpochMs = 0L
-        previousIsPlaying = false
-        pendingScrobbleStartAfterSeek = false
         seekProgressSyncJob?.cancel()
         seekProgressSyncJob = null
         accumulatedSeekResetJob?.cancel()
@@ -176,6 +179,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     }
 
     LaunchedEffect(
+        playbackAttemptId,
         activeTorrentInfoHash,
         activeTorrentFileIdx,
         activeTorrentFilename,
@@ -196,6 +200,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         val requestedFileIdx = activeTorrentFileIdx
         val requestedFilename = activeTorrentFilename
         val requestedTrackers = activeTorrentTrackers
+        val requestedAttemptId = playbackAttemptId
         errorMessage = null
         playerController = null
         playerControllerSourceUrl = null
@@ -211,7 +216,11 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
                     trackers = requestedTrackers,
                 ),
             )
-            if (activeTorrentInfoHash == infoHash && activeTorrentFileIdx == requestedFileIdx) {
+            if (
+                playbackAttemptId == requestedAttemptId &&
+                activeTorrentInfoHash == infoHash &&
+                activeTorrentFileIdx == requestedFileIdx
+            ) {
                 activeSourceAudioUrl = null
                 activeSourceHeaders = emptyMap()
                 activeSourceResponseHeaders = emptyMap()
@@ -436,6 +445,25 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
         }
     }
 
+    // Metadata-less direct playback (a pasted stream URL / dropped file) carries no poster, so its
+    // Discord presence would fall back to the Nuvio logo. Best-effort resolve real art from the
+    // parsed title via the user's search addons so it matches how library playback presents.
+    LaunchedEffect(parentMetaId, title, parentMetaType, activeEpisodeNumber) {
+        adHocArtworkImageUrl = null
+        val hasArgArtwork = listOf(poster, background).any {
+            it?.trim()?.let { url -> url.startsWith("https://") || url.startsWith("http://") } == true
+        }
+        if (parentMetaId.isNotBlank() || hasArgArtwork) return@LaunchedEffect
+        val lookupTitle = title.trim().takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val isSeries = parentMetaType.equals("series", ignoreCase = true) || activeEpisodeNumber != null
+        val resolved = PlaybackArtworkResolver.resolvePosterUrl(
+            title = lookupTitle,
+            year = releaseYear,
+            isSeries = isSeries,
+        )
+        if (resolved != null) adHocArtworkImageUrl = resolved
+    }
+
     LaunchedEffect(
         discordSettings.showPlaybackPresence,
         title,
@@ -449,6 +477,7 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
         poster,
         activeEpisodeThumbnail,
         background,
+        adHocArtworkImageUrl,
         playbackSnapshot.isLoading,
         playbackSnapshot.isPlaying,
         playbackSnapshot.isEnded,
@@ -526,6 +555,7 @@ private const val INITIAL_TRACK_RESTORE_POLL_ATTEMPTS = 60
 @Composable
 private fun PlayerScreenRuntime.BindStreamFailoverWatchdogEffect() {
     LaunchedEffect(
+        playbackAttemptId,
         activeSourceUrl,
         playerSettingsUiState.streamFailoverEnabled,
         playerSettingsUiState.streamFailoverTimeoutSeconds,
@@ -534,23 +564,51 @@ private fun PlayerScreenRuntime.BindStreamFailoverWatchdogEffect() {
         if (!playerSettingsUiState.streamFailoverEnabled) return@LaunchedEffect
         if (activeSourceUrl.isBlank() || isProviderDiagnosticVideoPlayback) return@LaunchedEffect
         val watchedUrl = activeSourceUrl
+        val watchedAttemptId = playbackAttemptId
         val timeoutMs = playerSettingsUiState.streamFailoverTimeoutSeconds.coerceAtLeast(1) * 1000L
+        // The desktop controller is created before its native Canvas has received a full-size
+        // paint. Do not count that UI lifecycle wait against the source: no loadfile request exists
+        // until the platform surface reports that this exact URL is being attached.
+        while (
+            playerAttachedSourceUrl != watchedUrl ||
+            playerAttachedAttemptId != watchedAttemptId
+        ) {
+            if (
+                playbackAttemptId != watchedAttemptId ||
+                activeSourceUrl != watchedUrl ||
+                errorMessage != null ||
+                failoverInProgress
+            ) {
+                return@LaunchedEffect
+            }
+            delay(STREAM_FAILOVER_WATCHDOG_STEP_MS)
+        }
         var elapsed = 0L
         var started = false
         while (elapsed < timeoutMs) {
-            if (initialLoadCompleted || playbackSnapshot.positionMs > 0L) {
+            // A debrid URL can open and publish duration/position while waiting for the actual
+            // torrent. Only mpv's first rendered-frame event proves this source really started.
+            if (
+                playerStartedSourceUrl == watchedUrl &&
+                playerStartedAttemptId == watchedAttemptId
+            ) {
                 started = true
                 break
             }
             // The error path or a source change already took over.
-            if (activeSourceUrl != watchedUrl || errorMessage != null || failoverInProgress) return@LaunchedEffect
+            if (
+                playbackAttemptId != watchedAttemptId ||
+                activeSourceUrl != watchedUrl ||
+                errorMessage != null ||
+                failoverInProgress
+            ) return@LaunchedEffect
             delay(STREAM_FAILOVER_WATCHDOG_STEP_MS)
             elapsed += STREAM_FAILOVER_WATCHDOG_STEP_MS
         }
         if (!started &&
+            playbackAttemptId == watchedAttemptId &&
             activeSourceUrl == watchedUrl &&
-            !initialLoadCompleted &&
-            playbackSnapshot.positionMs <= 0L &&
+            playerStartedAttemptId != watchedAttemptId &&
             errorMessage == null &&
             !failoverInProgress
         ) {
@@ -569,6 +627,7 @@ private fun PlayerScreenRuntime.BindStreamFailoverWatchdogEffect() {
         // rebuffer resets it because the playback was not continuous.
         var sustainedPlaybackMs = 0L
         while (
+            playbackAttemptId == watchedAttemptId &&
             activeSourceUrl == watchedUrl &&
             playerSettingsUiState.streamFailoverEnabled &&
             failoverTriedIdentityKeys.isNotEmpty()
@@ -583,6 +642,7 @@ private fun PlayerScreenRuntime.BindStreamFailoverWatchdogEffect() {
             }
             if (sustainedPlaybackMs >= STREAM_FAILOVER_SUSTAINED_PLAYBACK_RESET_MS) {
                 StreamFailoverLog.event("playback_stabilized", buildJsonObject {
+                    put("attemptId", watchedAttemptId)
                     put("continuousPlaybackMs", sustainedPlaybackMs)
                     put("clearedTriedSourceCount", failoverTriedIdentityKeys.size)
                 })
@@ -594,18 +654,20 @@ private fun PlayerScreenRuntime.BindStreamFailoverWatchdogEffect() {
 }
 
 private fun PlayerScreenRuntime.discordPresenceImageUrl(): String? =
-    listOf(poster, activeEpisodeThumbnail, background)
+    listOf(poster, activeEpisodeThumbnail, background, adHocArtworkImageUrl)
         .firstOrNull { url ->
             url?.trim()?.let { it.startsWith("https://") || it.startsWith("http://") } == true
         }
         ?.trim()
 
-private fun PlayerScreenRuntime.discordPresenceImageFit(): DiscordRichPresenceImageFit =
-    if (poster?.trim()?.let { it.startsWith("https://") || it.startsWith("http://") } == true) {
-        DiscordRichPresenceImageFit.Contain
-    } else {
-        DiscordRichPresenceImageFit.Cover
-    }
+private fun PlayerScreenRuntime.discordPresenceImageFit(): DiscordRichPresenceImageFit {
+    // Posters (args or resolved for ad-hoc playback) are portrait and must not be centre-cropped;
+    // episode thumbnails and backdrops are landscape and fill the square cleanly.
+    val chosen = discordPresenceImageUrl()
+    val isPortraitPoster = chosen != null &&
+        (chosen == poster?.trim() || chosen == adHocArtworkImageUrl?.trim())
+    return if (isPortraitPoster) DiscordRichPresenceImageFit.Contain else DiscordRichPresenceImageFit.Cover
+}
 
 private fun PlayerScreenRuntime.discordPresenceSubtitle(releaseYear: String?): String? {
     val episodeLabel = discordPresenceEpisodeLabel()
@@ -663,7 +725,10 @@ private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
         // controls, and letting them time out again is what allows the paused metadata overlay
         // (gated on !controlsVisible) to reappear. Keeping controls pinned while paused was the
         // reason any mouse movement made the overlay effectively unreachable.
-        delay(5500)
+        // Paused hides sooner: the chrome is only in the way of the metadata overlay that follows
+        // it, so the whole sequence lands faster. Playback keeps the longer grace period (and the
+        // web HUD's own auto-hide timer is on the same 5.5s).
+        delay(if (playbackSnapshot.isPlaying) 5500 else 3500)
         controlsVisible = false
     }
 
@@ -726,15 +791,17 @@ private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
                     lastTrustedPositionMs = lastTrustedPlaybackPositionMs,
                 )
             ) {
-                flushWatchProgress()
+                // Playing to not-playing without ending is a pause, not a stop. Providers with a
+                // distinct pause action keep the session resumable instead of closing it.
+                flushWatchProgress(paused = true)
             }
         }
 
         if (playbackSnapshot.isPlaying && pendingScrobbleStartAfterSeek) {
             pendingScrobbleStartAfterSeek = false
-            emitTraktScrobbleStart()
+            emitTrackingScrobbleStart()
         } else if (!previousIsPlaying && playbackSnapshot.isPlaying) {
-            emitTraktScrobbleStart()
+            emitTrackingScrobbleStart()
         }
 
         if (!playbackSnapshot.isLoading) {
@@ -783,16 +850,33 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
 
         val season = activeSeasonNumber
         val episode = activeEpisodeNumber
-        val vid = activeVideoId
-        if (season == null || episode == null || vid == null) return@LaunchedEffect
+        val vid = activeVideoId ?: return@LaunchedEffect
 
         launch {
             val imdbId = vid.split(":").firstOrNull()?.takeIf { it.startsWith("tt") }
-            val intervals = SkipIntroRepository.getSkipIntervals(
-                imdbId = imdbId,
-                season = season,
-                episode = episode,
-            )
+            // SkipDB matches its timings against the runtime of the exact cut being played, so wait
+            // for the player to report one instead of asking straight away. Without a runtime every
+            // answer is duration-agnostic and a re-cut release is indistinguishable from the one the
+            // timings came from. Waiting cannot cost a prompt: playback only reaches a segment well
+            // after the duration is known, and a source that never reports one still falls through.
+            val durationSeconds = withTimeoutOrNull(SKIP_LOOKUP_DURATION_TIMEOUT_MS) {
+                snapshotFlow { playbackSnapshot.durationMs }.first { it > 0L }
+            }?.let { durationMs -> durationMs / 1000L }
+            // A film has no season or episode to look up by, and only SkipDB carries anything for
+            // one, so it takes a separate path rather than the episode chain.
+            val intervals = if (season != null && episode != null) {
+                SkipIntroRepository.getSkipIntervals(
+                    imdbId = imdbId,
+                    season = season,
+                    episode = episode,
+                    durationSeconds = durationSeconds,
+                )
+            } else {
+                SkipIntroRepository.getMovieSkipIntervals(
+                    imdbId = imdbId,
+                    durationSeconds = durationSeconds,
+                )
+            }
             communitySkipIntervals = intervals
             skipIntervals = mergeCommunityAndChapterSkipIntervals(
                 communityIntervals = intervals,
@@ -1002,14 +1086,31 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
     // Release the auto-advance latch once the new episode is actually playing (not just selected,
     // and not in the stale-ended loading gap), so the next end can advance exactly once.
     LaunchedEffect(
+        playbackAttemptId,
+        playerStartedAttemptId,
+        activeVideoId,
+        nextEpisodeAdvanceTargetVideoId,
         playbackSnapshot.isEnded,
         playbackSnapshot.positionMs >= NEXT_EPISODE_ADVANCE_RESET_POSITION_MS,
     ) {
-        if (!playbackSnapshot.isEnded && playbackSnapshot.positionMs >= NEXT_EPISODE_ADVANCE_RESET_POSITION_MS) {
-            if (nextEpisodeAdvanceInProgress) {
-                BingeAdvanceLog.i { "advance latch released (next episode playing) pos=${playbackSnapshot.positionMs}" }
+        if (
+            shouldReleaseNextEpisodeAdvanceLatch(
+                advanceInProgress = nextEpisodeAdvanceInProgress,
+                targetVideoId = nextEpisodeAdvanceTargetVideoId,
+                activeVideoId = activeVideoId,
+                activeAttemptId = playbackAttemptId,
+                startedAttemptId = playerStartedAttemptId,
+                isEnded = playbackSnapshot.isEnded,
+                positionMs = playbackSnapshot.positionMs,
+                minimumPositionMs = NEXT_EPISODE_ADVANCE_RESET_POSITION_MS,
+            )
+        ) {
+            BingeAdvanceLog.i {
+                "advance latch released (next episode playing) " +
+                    "attemptId=$playbackAttemptId videoId=$activeVideoId pos=${playbackSnapshot.positionMs}"
             }
             nextEpisodeAdvanceInProgress = false
+            nextEpisodeAdvanceTargetVideoId = null
         }
     }
 
@@ -1024,6 +1125,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         delay(NEXT_EPISODE_ADVANCE_LATCH_SAFETY_TIMEOUT_MS)
         BingeAdvanceLog.i { "advance latch force-released after safety timeout (advance likely bailed out)" }
         nextEpisodeAdvanceInProgress = false
+        nextEpisodeAdvanceTargetVideoId = null
     }
 }
 
@@ -1117,6 +1219,7 @@ internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message:
     if (credentialRefreshAttemptedSourceUrl == failedUrl) return false
 
     val currentVideoId = activeVideoId ?: return false
+    val failedAttemptId = playbackAttemptId
     credentialRefreshAttemptedSourceUrl = failedUrl
     removeFailedStreamFromCache()
 
@@ -1146,6 +1249,11 @@ internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message:
         var refreshedStream: StreamItem? = null
         var pollCount = 0
         while (pollCount < CREDENTIAL_REFRESH_POLL_COUNT && refreshedStream == null) {
+            if (
+                playbackAttemptId != failedAttemptId ||
+                activeVideoId != currentVideoId ||
+                activeSourceUrl != failedUrl
+            ) return@launch
             val state = PlayerStreamsRepository.sourceState.value
             refreshedStream = findCredentialRefreshCandidate(
                 streams = state.groups.flatMap { it.streams },
@@ -1167,6 +1275,11 @@ internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message:
         }
 
         val stream = refreshedStream
+        if (
+            playbackAttemptId != failedAttemptId ||
+            activeVideoId != currentVideoId ||
+            activeSourceUrl != failedUrl
+        ) return@launch
         if (stream == null) {
             errorMessage = message
             controlsVisible = !playerControlsLocked
@@ -1182,7 +1295,6 @@ internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message:
 
         flushWatchProgress()
         stopActiveP2pStream()
-        activeSourceUrl = refreshedUrl
         activeSourceAudioUrl = null
         activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
         activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
@@ -1197,6 +1309,8 @@ internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message:
         activeInitialProgressFraction = null
         showSourcesPanel = false
         controlsVisible = true
+        beginPlaybackAttempt()
+        activeSourceUrl = refreshedUrl
     }
     return true
 }

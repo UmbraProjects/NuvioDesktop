@@ -26,7 +26,7 @@ internal fun rememberHomePosterCardStyleUiState(): PosterCardStyleUiState {
     val base = rememberPosterCardStyleUiState()
     val tvModeEnabled by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     return if (tvModeEnabled.tvModeEnabled) {
-        base.copy(catalogLandscapeModeEnabled = false, hideLabelsEnabled = true)
+        base.copy(catalogLandscapeModeEnabled = false)
     } else {
         base
     }

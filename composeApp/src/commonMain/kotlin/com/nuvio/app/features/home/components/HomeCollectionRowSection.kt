@@ -49,6 +49,9 @@ fun HomeCollectionRowSection(
     rowState: LazyListState? = null,
     onHoverItem: ((Int) -> Unit)? = null,
     isKeyboardNavigation: Boolean = false,
+    rowNumber: Int? = null,
+    // TV Mode's row-jump dots, rendered on the header line next to the title. Null everywhere else.
+    headerTrailingContent: (@Composable () -> Unit)? = null,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
 ) {
     if (collection.folders.isEmpty()) return
@@ -65,6 +68,8 @@ fun HomeCollectionRowSection(
             rowState = effectiveRowState,
             onHoverItem = onHoverItem,
             isKeyboardNavigation = isKeyboardNavigation,
+            rowNumber = rowNumber,
+            headerTrailingContent = headerTrailingContent,
             onFolderClick = onFolderClick,
         )
     } else {
@@ -79,6 +84,8 @@ fun HomeCollectionRowSection(
                 rowState = effectiveRowState,
                 onHoverItem = onHoverItem,
                 isKeyboardNavigation = isKeyboardNavigation,
+                rowNumber = rowNumber,
+                headerTrailingContent = headerTrailingContent,
                 onFolderClick = onFolderClick,
             )
         }
@@ -96,6 +103,8 @@ private fun HomeCollectionRowSectionContent(
     rowState: LazyListState,
     onHoverItem: ((Int) -> Unit)?,
     isKeyboardNavigation: Boolean,
+    rowNumber: Int?,
+    headerTrailingContent: (@Composable () -> Unit)?,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)?,
 ) {
     val homeCatalogSettings by remember {
@@ -103,8 +112,15 @@ private fun HomeCollectionRowSectionContent(
         HomeCatalogSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
 
+    // Same "Trending • 3" suffix catalog rows get; a collection occupies a row slot too.
+    val headerTitle = if (rowNumber != null && homeCatalogSettings.catalogRowNumbersEnabled) {
+        "${collection.title} • $rowNumber"
+    } else {
+        collection.title
+    }
+
     NuvioShelfSection(
-        title = collection.title,
+        title = headerTitle,
         entries = collection.folders,
         modifier = modifier,
         headerHorizontalPadding = sectionPadding,
@@ -113,6 +129,7 @@ private fun HomeCollectionRowSectionContent(
         focusedItemIndex = focusedItemIndex,
         onHoverItem = onHoverItem,
         isKeyboardNavigation = isKeyboardNavigation,
+        headerTrailingContent = headerTrailingContent,
         key = { folder -> "collection_${collection.id}_folder_${folder.id}" },
         rowState = rowState,
     ) { folder ->

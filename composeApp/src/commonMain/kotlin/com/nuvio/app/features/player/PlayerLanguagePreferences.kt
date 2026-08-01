@@ -84,6 +84,7 @@ import nuvio.composeapp.generated.resources.settings_playback_option_default
 import nuvio.composeapp.generated.resources.settings_playback_option_device_language
 import nuvio.composeapp.generated.resources.settings_playback_option_forced
 import nuvio.composeapp.generated.resources.settings_playback_option_none
+import nuvio.composeapp.generated.resources.settings_playback_option_original
 import nuvio.composeapp.generated.resources.subtitle_language_unknown
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
@@ -94,15 +95,25 @@ data class LanguagePreferenceOption(
     val labelRes: StringResource,
 )
 
+/**
+ * "The language this title was made in" — Spanish for a Spanish film, Japanese for an anime —
+ * rather than one fixed choice for everything. Resolved per title from TMDB's original language
+ * (see [OriginalLanguageCache]), so it only does anything once a TMDB key is configured; without
+ * one it falls through to the secondary preference like any other unresolvable choice.
+ */
+const val ORIGINAL_LANGUAGE_OPTION = "original"
+
 object AudioLanguageOption {
     const val DEFAULT = "default"
     const val DEVICE = "device"
+    const val ORIGINAL = ORIGINAL_LANGUAGE_OPTION
 }
 
 object SubtitleLanguageOption {
     const val NONE = "none"
     const val DEVICE = "device"
     const val FORCED = "forced"
+    const val ORIGINAL = ORIGINAL_LANGUAGE_OPTION
 }
 
 val AvailableLanguageOptions: List<LanguagePreferenceOption> = listOf(
@@ -463,6 +474,8 @@ fun languageLabelForCode(code: String?): String = when {
     code.equals(AudioLanguageOption.DEVICE, ignoreCase = true) ||
         code.equals(SubtitleLanguageOption.DEVICE, ignoreCase = true) ->
         stringResource(Res.string.settings_playback_option_device_language)
+    code.equals(ORIGINAL_LANGUAGE_OPTION, ignoreCase = true) ->
+        stringResource(Res.string.settings_playback_option_original)
     else -> languageLabelResForCode(code)?.let { stringResource(it) }
         ?: stringResource(Res.string.subtitle_language_unknown)
 }
@@ -477,14 +490,22 @@ suspend fun getLanguageLabelForCode(code: String?): String = when {
     code.equals(AudioLanguageOption.DEVICE, ignoreCase = true) ||
         code.equals(SubtitleLanguageOption.DEVICE, ignoreCase = true) ->
         getString(Res.string.settings_playback_option_device_language)
+    code.equals(ORIGINAL_LANGUAGE_OPTION, ignoreCase = true) ->
+        getString(Res.string.settings_playback_option_original)
     else -> languageLabelResForCode(code)?.let { getString(it) }
         ?: getString(Res.string.subtitle_language_unknown)
 }
 
+/**
+ * [originalLanguage] is the current title's own language, and is what the "Original" choice
+ * resolves to. Null (no TMDB metadata, or none fetched yet) makes that choice contribute nothing,
+ * leaving the secondary preference to answer — never a silently wrong language.
+ */
 fun resolvePreferredAudioLanguageTargets(
     preferredAudioLanguage: String,
     secondaryPreferredAudioLanguage: String?,
     deviceLanguages: List<String>,
+    originalLanguage: String? = null,
 ): List<String> {
     fun normalize(language: String?): String? {
         val normalized = normalizeLanguageCode(language)
@@ -495,6 +516,7 @@ fun resolvePreferredAudioLanguageTargets(
             SubtitleLanguageOption.NONE,
             SubtitleLanguageOption.FORCED,
             -> null
+            ORIGINAL_LANGUAGE_OPTION -> normalizeLanguageCode(originalLanguage)
             else -> normalized
         }
     }
@@ -518,10 +540,12 @@ fun resolvePreferredAudioLanguageTargets(
     }
 }
 
+/** See [resolvePreferredAudioLanguageTargets] for how [originalLanguage] is used. */
 fun resolvePreferredSubtitleLanguageTargets(
     preferredSubtitleLanguage: String,
     secondaryPreferredSubtitleLanguage: String?,
     deviceLanguages: List<String>,
+    originalLanguage: String? = null,
 ): List<String> {
     fun normalize(language: String?): String? {
         val normalized = normalizeLanguageCode(language)
@@ -530,6 +554,7 @@ fun resolvePreferredSubtitleLanguageTargets(
             SubtitleLanguageOption.NONE,
             -> null
             AudioLanguageOption.DEFAULT -> null
+            ORIGINAL_LANGUAGE_OPTION -> normalizeLanguageCode(originalLanguage)
             else -> normalized
         }
     }

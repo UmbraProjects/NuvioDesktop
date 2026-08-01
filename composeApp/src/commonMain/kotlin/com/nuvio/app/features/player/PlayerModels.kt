@@ -44,6 +44,9 @@ data class PlayerLaunch(
     val episodeNumber: Int? = null,
     val episodeTitle: String? = null,
     val episodeThumbnail: String? = null,
+    // Canonical metadata year, or a best-effort filename parse for metadata-less direct playback.
+    // It disambiguates artwork lookup and library download names.
+    val releaseYear: Int? = null,
     val streamTitle: String,
     val streamSubtitle: String? = null,
     val sourceIdentityKey: String? = null,
@@ -187,7 +190,24 @@ enum class DesktopColorProfile(val label: String, val description: String) {
     Vivid("Vivid", "Boosted contrast and saturation for a punchier image."),
 }
 
+enum class DesktopSourceNotchPosition {
+    Right,
+    Left,
+    Hidden,
+    ;
+
+    companion object {
+        fun fromStorage(value: String?): DesktopSourceNotchPosition =
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: Right
+    }
+}
+
 enum class DesktopBufferPreset(val label: String, val description: String) {
+    Metered(
+        "Metered",
+        "Smallest buffer, and pausing stops the download instead of filling the buffer. " +
+            "For capped or metered connections; high-bitrate files may stall.",
+    ),
     LowData("Low Data", "Minimizes network and memory use with a short playback buffer."),
     Balanced("Balanced", "Keeps a moderate buffer for reliable playback without excessive read-ahead."),
     Resilient("Resilient", "Uses a large buffer for unstable or high-latency connections."),

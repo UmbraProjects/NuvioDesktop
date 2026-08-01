@@ -31,9 +31,17 @@ data class CloudLibraryItem(
     val sizeBytes: Long? = null,
     val progressFraction: Float? = null,
     val files: List<CloudLibraryFile> = emptyList(),
+    // Display-only metadata recovered from the torrent name by FilenameMetaResolver — the provider
+    // knows nothing about what the file contains, so without this a row is a raw release name.
+    val resolvedName: String? = null,
+    val resolvedPoster: String? = null,
+    val resolvedBackdrop: String? = null,
 ) {
     val stableKey: String
         get() = "$providerId:${type.name}:$id"
+
+    val displayName: String
+        get() = resolvedName?.takeIf { it.isNotBlank() } ?: name
 
     val playableFiles: List<CloudLibraryFile>
         get() = files.filter { it.playable }

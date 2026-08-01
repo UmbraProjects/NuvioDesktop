@@ -304,7 +304,8 @@ button:disabled {
 }
 
 .context-menu-group:hover > .context-menu-submenu,
-.context-menu-group:focus-within > .context-menu-submenu {
+.context-menu-group:focus-within > .context-menu-submenu,
+.context-menu-group.is-open > .context-menu-submenu {
   visibility: visible;
   opacity: 1;
   transform: translateX(0);
@@ -317,7 +318,8 @@ button:disabled {
 }
 
 .context-menu.context-menu-left .context-menu-group:hover > .context-menu-submenu,
-.context-menu.context-menu-left .context-menu-group:focus-within > .context-menu-submenu {
+.context-menu.context-menu-left .context-menu-group:focus-within > .context-menu-submenu,
+.context-menu.context-menu-left .context-menu-group.is-open > .context-menu-submenu {
   transform: translateX(0);
 }
 
@@ -332,7 +334,8 @@ button:disabled {
     transform: translateX(4px);
   }
   .context-menu-group:hover > .context-menu-submenu,
-  .context-menu-group:focus-within > .context-menu-submenu {
+  .context-menu-group:focus-within > .context-menu-submenu,
+  .context-menu-group.is-open > .context-menu-submenu {
     transform: translateX(0);
   }
 }
@@ -608,9 +611,12 @@ button:disabled {
 }
 
 .parental-guide {
+  /* Anchored to the bottom edge of .header (its offset parent), so it lands under the title block
+     whatever height that block happens to be — it used to be pinned near the top of the frame and
+     printed straight over the content name. Absolute, so it never widens the header's flex row. */
   position: absolute;
-  top: calc(var(--slider-bottom) + env(safe-area-inset-top));
-  left: var(--hp);
+  top: calc(100% + var(--user-scale) * 6px);
+  left: 0;
   z-index: 5;
   display: flex;
   align-items: flex-start;
@@ -1252,7 +1258,12 @@ button:disabled {
 
 .pause-logo[hidden],
 .pause-title[hidden],
+.pause-source[hidden],
+.pause-source-title[hidden],
+.pause-source-provider[hidden],
+.pause-episode-line[hidden],
 .pause-episode-info[hidden],
+.pause-episode-separator[hidden],
 .pause-episode-title[hidden],
 .pause-description[hidden] {
   display: none;
@@ -1272,25 +1283,33 @@ button:disabled {
   -webkit-box-orient: vertical;
 }
 
-.pause-episode-info {
-  margin-top: 8px;
-  color: #ccc;
-  font-size: 18px;
-  line-height: 1.3;
-}
-
-.pause-episode-title {
+/* S02E05 • Episode title share a line, so the clamp and spacing live on the wrapper and the two
+   pieces are plain inline runs that wrap together. */
+.pause-episode-line {
   max-width: 62%;
   margin-top: 12px;
-  color: #fff;
   font-size: 22px;
   line-height: 1.25;
-  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+.pause-episode-info,
+.pause-episode-separator {
+  color: #ccc;
+  font-weight: 500;
+}
+
+.pause-episode-separator {
+  margin: 0 6px;
+}
+
+.pause-episode-title {
+  color: #fff;
+  font-weight: 700;
 }
 
 .pause-description {
@@ -1306,14 +1325,41 @@ button:disabled {
   -webkit-box-orient: vertical;
 }
 
+/* Opt-in bottom row. Release names run long and ugly, so it sits quieter than the synopsis above
+   it and truncates on one line rather than pushing the card taller. */
+.pause-source {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 62%;
+  min-width: 0;
+  margin-top: 14px;
+  color: rgba(255, 255, 255, .55);
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.pause-source-title,
+.pause-source-provider {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pause-source-provider {
+  flex: none;
+  max-width: 40%;
+  font-style: italic;
+}
+
 @media (max-height: 419px) {
   .pause-metadata-content {
     padding-top: 24px;
     padding-bottom: 40px;
   }
 
-  .pause-kicker,
-  .pause-episode-info {
+  .pause-kicker {
     font-size: 16px;
   }
 
@@ -1329,13 +1375,10 @@ button:disabled {
     -webkit-line-clamp: 1;
   }
 
-  .pause-episode-info {
-    margin-top: 6px;
-  }
-
-  .pause-episode-title {
+  .pause-episode-line {
     max-width: 82%;
     margin-top: 8px;
+    font-size: 18px;
     -webkit-line-clamp: 1;
   }
 
@@ -1345,6 +1388,12 @@ button:disabled {
     font-size: 16px;
     line-height: 20px;
     -webkit-line-clamp: 2;
+  }
+
+  .pause-source {
+    width: 82%;
+    margin-top: 10px;
+    font-size: 14px;
   }
 }
 
@@ -1719,6 +1768,73 @@ button:disabled {
 
 .timeline-time-current { text-align: left; }
 .timeline-time-duration { text-align: right; }
+
+/* Playback info panel -----------------------------------------------------
+ * Opt-in "what is actually running" summary: a compact glass strip centred over the frame, one
+ * self-describing line per fact, shown for a few seconds when playback starts. Deliberately
+ * NOT part of the chrome fade — it has its own lifetime and goes away on its own timer whether
+ * or not the controls are up. */
+.playback-info {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: calc(var(--user-scale) * 320px);
+  padding: calc(var(--user-scale) * 9px) calc(var(--user-scale) * 13px);
+  border: 1px solid rgba(255, 255, 255, .15);
+  border-radius: calc(var(--user-scale) * 12px);
+  /* Glass: a diagonal sheen over a blurred, slightly saturated backdrop, with an inset top
+   * highlight for the lit-edge look. The dark base carries most of the weight and the sheen is
+   * kept faint — the text is white, and a centred panel lands on white logos often enough that a
+   * lighter fill loses the words entirely. */
+  background:
+    linear-gradient(148deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, .035) 48%, rgba(255, 255, 255, .015)),
+    rgba(10, 10, 14, .68);
+  box-shadow:
+    0 calc(var(--user-scale) * 16px) calc(var(--user-scale) * 40px) rgba(0, 0, 0, .52),
+    inset 0 1px 0 rgba(255, 255, 255, .14);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  /* Rises into place rather than dropping, so the motion reads as arriving at the centre. */
+  transform: translate(-50%, -50%) translateY(calc(var(--user-scale) * 10px)) scale(.96);
+  transition:
+    opacity 240ms ease,
+    transform 380ms var(--ease-out);
+}
+
+.playback-info.visible {
+  opacity: 1;
+  transform: translate(-50%, -50%);
+}
+
+.playback-info-rows {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--user-scale) * 6px);
+}
+
+.playback-info-row {
+  min-width: 0;
+  font-size: calc(var(--user-scale) * 14px);
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* No room for it in the compact window, and it must never sit over a lock/opening takeover. */
+.player.pip-active .playback-info,
+.player.locked .playback-info,
+.player.opening-active .playback-info {
+  opacity: 0;
+}
 
 .episode-notch {
   position: absolute;
@@ -2575,6 +2691,30 @@ button:disabled {
   color: var(--theme-on-accent);
 }
 
+/* Stream scoring's diagnostic badge. Shares the status-chip geometry so a row carrying both
+   "Playing" and a score still reads as one line of chips. */
+.score-chip {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 10px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: 0;
+  background: rgba(255, 255, 255, .12);
+  color: rgba(255, 255, 255, .68);
+}
+
+.score-chip.positive {
+  background: color-mix(in srgb, var(--theme-accent) 22%, transparent);
+  color: var(--theme-accent);
+}
+
+.score-chip.negative {
+  background: rgba(226, 88, 118, .20);
+  color: rgb(240, 128, 152);
+}
+
 .episode-thumb {
   position: relative;
   width: 82px;
@@ -3311,6 +3451,22 @@ svg {
   opacity: .92;
   box-shadow: -5px 0 16px rgba(0,0,0,.28), inset 1px 0 0 rgba(255,255,255,.16);
 }
+.player.source-notch-left .source-notch {
+  left: 0;
+  right: auto;
+}
+.player.source-notch-left .source-notch::after {
+  left: 0;
+  right: auto;
+  border-right: 1px solid rgba(255,255,255,.16);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: linear-gradient(to right, rgba(255,255,255,.14), rgba(255,255,255,.045));
+  box-shadow: 4px 0 14px rgba(0,0,0,.24), inset -1px 0 0 rgba(255,255,255,.10);
+}
+.player.source-notch-left .source-notch:hover::after {
+  box-shadow: 5px 0 16px rgba(0,0,0,.28), inset -1px 0 0 rgba(255,255,255,.16);
+}
 #sourcesButton { display: none !important; }
 
 /* Keep desktop sheets visually separated from the video beneath them. */
@@ -3826,8 +3982,7 @@ svg {
     calc(var(--user-scale) * 120px)
     calc(var(--hp) + env(safe-area-inset-left) + calc(var(--user-scale) * 48px));
 }
-.pause-kicker,
-.pause-episode-info { font-size: calc(var(--user-scale) * 18px); }
+.pause-kicker { font-size: calc(var(--user-scale) * 18px); }
 .pause-logo {
   width: min(calc(var(--user-scale) * 360px), 62vw);
   height: calc(var(--user-scale) * 96px);
@@ -3837,15 +3992,20 @@ svg {
   margin-top: calc(var(--user-scale) * 12px);
   font-size: max(calc(var(--title) * 1.8), calc(var(--user-scale) * 32px));
 }
-.pause-episode-info { margin-top: calc(var(--user-scale) * 8px); }
-.pause-episode-title {
+.pause-episode-line {
   margin-top: calc(var(--user-scale) * 12px);
   font-size: calc(var(--user-scale) * 22px);
 }
+.pause-episode-separator { margin: 0 calc(var(--user-scale) * 6px); }
 .pause-description {
   margin-top: calc(var(--user-scale) * 16px);
   font-size: calc(var(--user-scale) * 18px);
   line-height: calc(var(--user-scale) * 24px);
+}
+.pause-source {
+  gap: calc(var(--user-scale) * 8px);
+  margin-top: calc(var(--user-scale) * 14px);
+  font-size: calc(var(--user-scale) * 15px);
 }
 
 .play-control {
@@ -3969,6 +4129,9 @@ svg {
   border-radius: calc(var(--user-scale) * 8px) 0 0 calc(var(--user-scale) * 8px);
 }
 .source-notch:hover::after { height: calc(var(--user-scale) * 136px); }
+.player.source-notch-left .source-notch::after {
+  border-radius: 0 calc(var(--user-scale) * 8px) calc(var(--user-scale) * 8px) 0;
+}
 
 .opening-back {
   top: calc(calc(var(--user-scale) * 20px) + env(safe-area-inset-top));
@@ -4258,4 +4421,56 @@ svg {
 .hero-trailer-volume::-webkit-slider-thumb {
   width: calc(var(--user-scale) * 13px);
   height: calc(var(--user-scale) * 13px);
+}
+
+/* Progressive window-size reduction. JS assigns these tiers after accounting for the proportional
+   HUD scale, so a normal full-screen viewport retains the complete layout on every desktop DPI. */
+.player:not(.legacy-hud):not(.pip-active).hud-medium .desktop-preset-action {
+  display: none;
+}
+
+.player:not(.legacy-hud):not(.pip-active).hud-compact .tertiary-action,
+.player:not(.legacy-hud):not(.pip-active).hud-compact .player-volume-control,
+.player:not(.legacy-hud):not(.pip-active).hud-compact .pause-source {
+  display: none;
+}
+.player:not(.legacy-hud):not(.pip-active).hud-compact .desktop-control-row {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.player:not(.legacy-hud):not(.pip-active).hud-small .episode-skip,
+.player:not(.legacy-hud):not(.pip-active).hud-small .action.optional,
+.player:not(.legacy-hud):not(.pip-active).hud-small .pip-action,
+.player:not(.legacy-hud):not(.pip-active).hud-small .time-cluster {
+  display: none !important;
+}
+.player:not(.legacy-hud):not(.pip-active).hud-small .desktop-control-row {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.player:not(.legacy-hud):not(.pip-active).hud-minimal .seek-control,
+.player:not(.legacy-hud):not(.pip-active).hud-minimal .action-row,
+.player:not(.legacy-hud):not(.pip-active).hud-minimal .timeline-time,
+.player:not(.legacy-hud):not(.pip-active).hud-minimal .metadata,
+.player:not(.legacy-hud):not(.pip-active).hud-minimal #lockButton,
+.player:not(.legacy-hud):not(.pip-active).hud-minimal #videoSettingsButton,
+.player:not(.legacy-hud):not(.pip-active).hud-minimal .player-clock,
+.player:not(.legacy-hud):not(.pip-active).hud-minimal .episode-notch,
+.player:not(.legacy-hud):not(.pip-active).hud-minimal .source-notch {
+  display: none !important;
+}
+.player:not(.legacy-hud):not(.pip-active).hud-minimal .header-actions {
+  display: flex;
+  margin-right: 0;
+}
+.player:not(.legacy-hud):not(.pip-active).hud-minimal #backButton {
+  display: grid !important;
+}
+.player:not(.legacy-hud):not(.pip-active).hud-minimal .desktop-control-row {
+  display: flex;
+  justify-content: center;
+  min-height: calc(var(--user-scale) * 48px);
+}
+.player:not(.legacy-hud):not(.pip-active).hud-minimal .timeline-row {
+  grid-template-columns: minmax(0, 1fr);
 }

@@ -13,6 +13,7 @@ import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.HomeRepository
 import com.nuvio.app.core.ui.PosterCardStyleRepository
+import com.nuvio.app.features.library.LibraryDisplaySettingsRepository
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
@@ -24,6 +25,11 @@ import com.nuvio.app.features.settings.SettingsCategoryOrderRepository
 import com.nuvio.app.features.settings.SettingsFavoritesRepository
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
+import com.nuvio.app.features.streams.StreamScoreRepository
+import com.nuvio.app.features.tracking.CalendarSourceRepository
+import com.nuvio.app.features.tracking.RatingPromptRepository
+import com.nuvio.app.features.tracking.ContinueWatchingSourceRepository
+import com.nuvio.app.features.tracking.LibrarySourceRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
@@ -169,6 +175,7 @@ object ProfileRepository {
         persist()
         WatchedRepository.onProfileChanged(profileIndex)
         TraktSettingsRepository.onProfileChanged()
+        TraktAuthRepository.onProfileChanged(profileIndex)
         LibraryRepository.onProfileChanged(profileIndex)
         WatchProgressRepository.onProfileChanged(profileIndex)
         AddonRepository.onProfileChanged(profileIndex)
@@ -179,9 +186,11 @@ object ProfileRepository {
         SettingsCategoryOrderRepository.onProfileChanged()
         SettingsFavoritesRepository.onProfileChanged()
         PosterCardStyleRepository.onProfileChanged()
+        LibraryDisplaySettingsRepository.onProfileChanged()
         PlayerSettingsRepository.onProfileChanged()
         com.nuvio.app.features.player.onPlayerShortcutsProfileChanged()
         StreamBadgeSettingsRepository.onProfileChanged()
+        StreamScoreRepository.reload()
         P2pSettingsRepository.onProfileChanged()
         HomeCatalogSettingsRepository.onProfileChanged()
         HomeRepository.clear()
@@ -190,11 +199,15 @@ object ProfileRepository {
         EpisodeReleaseNotificationsRepository.onProfileChanged()
         TmdbSettingsRepository.onProfileChanged()
         MdbListSettingsRepository.onProfileChanged()
-        TraktAuthRepository.onProfileChanged()
+        CalendarSourceRepository.onProfileChanged()
+        ContinueWatchingSourceRepository.onProfileChanged()
+        LibrarySourceRepository.onProfileChanged()
+        RatingPromptRepository.onProfileChanged()
         SearchHistoryRepository.onProfileChanged()
         CollectionRepository.onProfileChanged()
         CollectionMobileSettingsRepository.onProfileChanged()
         DownloadsRepository.onProfileChanged()
+        com.nuvio.app.features.librarypvr.LibraryPvrRepository.onProfileChanged()
     }
 
     suspend fun pushProfiles(profiles: List<ProfilePushPayload>) {

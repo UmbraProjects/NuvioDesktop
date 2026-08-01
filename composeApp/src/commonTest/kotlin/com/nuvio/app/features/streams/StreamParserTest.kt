@@ -195,6 +195,36 @@ class StreamParserTest {
     }
 
     @Test
+    fun `parse keeps AIOStreams release identities used for season follow-up searches`() {
+        val stream = StreamParser.parse(
+            payload =
+                """
+                {
+                  "streams": [
+                    {
+                      "url": "https://aio.example/playback/episode",
+                      "streamData": {
+                        "type": "usenet",
+                        "nzbUrl": "https://aio.example/nzb/release",
+                        "releaseKey": "wd1:u:release",
+                        "service": {"id": "aiostreams", "cached": true},
+                        "torrent": {"infoHash": "0123456789abcdef0123456789abcdef01234567", "fileIdx": 4}
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            addonName = "AIOStreams",
+            addonId = "addon:aio",
+        ).single()
+
+        assertEquals("https://aio.example/nzb/release", stream.streamData?.nzbUrl)
+        assertEquals("wd1:u:release", stream.streamData?.releaseKey)
+        assertEquals("0123456789abcdef0123456789abcdef01234567", stream.p2pInfoHash)
+        assertEquals(4, stream.p2pFileIdx)
+    }
+
+    @Test
     fun `parse normalizes streamType casing and whitespace`() {
         val streams = StreamParser.parse(
             payload =

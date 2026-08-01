@@ -54,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import com.nuvio.app.features.settings.trackSettingsTextFocus
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -377,12 +378,12 @@ private sealed interface AddonInstallModalState {
     }
 }
 
-private enum class DesktopAddonSort(val label: String) {
-    Order("Order"),
-    Name("Name"),
-    Resources("Resources"),
-    Catalogs("Catalogs"),
-    Status("Status"),
+private enum class DesktopAddonSort(val labelRes: org.jetbrains.compose.resources.StringResource) {
+    Order(Res.string.addons_sort_order),
+    Name(Res.string.addons_sort_name),
+    Resources(Res.string.addons_overview_resources),
+    Catalogs(Res.string.addons_overview_catalogs),
+    Status(Res.string.addons_sort_status),
 }
 
 private data class DesktopAddonRow(
@@ -459,7 +460,7 @@ private fun DesktopAddonsManager(
                     maxLines = 1,
                 )
                 Text(
-                    text = "${addons.size} installed",
+                    text = stringResource(Res.string.addons_installed_count, addons.size),
                     style = MaterialTheme.typography.bodyMedium,
                     color = tokens.colors.textMuted,
                     modifier = Modifier.padding(bottom = 2.dp),
@@ -538,9 +539,9 @@ private fun DesktopSegmentedFilters(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            DesktopSegmentedFilterSegment("Active", activeOnly) { onActiveOnlyChange(!activeOnly) }
-            DesktopSegmentedFilterSegment("Catalogs", catalogsOnly) { onCatalogsOnlyChange(!catalogsOnly) }
-            DesktopSegmentedFilterSegment("Configurable", configurableOnly) { onConfigurableOnlyChange(!configurableOnly) }
+            DesktopSegmentedFilterSegment(stringResource(Res.string.addons_badge_active), activeOnly) { onActiveOnlyChange(!activeOnly) }
+            DesktopSegmentedFilterSegment(stringResource(Res.string.addons_overview_catalogs), catalogsOnly) { onCatalogsOnlyChange(!catalogsOnly) }
+            DesktopSegmentedFilterSegment(stringResource(Res.string.addons_badge_configurable), configurableOnly) { onConfigurableOnlyChange(!configurableOnly) }
         }
     }
 }
@@ -619,7 +620,8 @@ private fun DesktopAddonSearchField(
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(focusRequester)
-                    .onFocusChanged { focused = it.isFocused },
+                    .onFocusChanged { focused = it.isFocused }
+                    .trackSettingsTextFocus(),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.colors.textPrimary),
                 cursorBrush = SolidColor(tokens.colors.accent),
@@ -627,7 +629,7 @@ private fun DesktopAddonSearchField(
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (value.isBlank()) {
                             Text(
-                                text = "Filter installed addons",
+                                text = stringResource(Res.string.addons_filter_placeholder),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = tokens.colors.textMuted,
                                 maxLines = 1,
@@ -667,7 +669,7 @@ private fun DesktopAddAddonButton(
                 modifier = Modifier.size(20.dp),
             )
             Text(
-                text = "Add Addon",
+                text = stringResource(Res.string.addons_section_add_addon),
                 style = MaterialTheme.typography.bodyLarge,
                 color = tokens.colors.background,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
@@ -701,7 +703,7 @@ private fun DesktopAddonSortMenu(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = sort.label,
+                    text = stringResource(sort.labelRes),
                     style = MaterialTheme.typography.bodyMedium,
                     color = tokens.colors.textPrimary,
                     maxLines = 1,
@@ -724,7 +726,7 @@ private fun DesktopAddonSortMenu(
                 DropdownMenuItem(
                     text = {
                         Text(
-                            text = option.label,
+                            text = stringResource(option.labelRes),
                             color = if (isSelected) tokens.colors.accent else tokens.colors.textPrimary,
                             fontWeight = if (isSelected) {
                                 androidx.compose.ui.text.font.FontWeight.SemiBold
@@ -812,8 +814,8 @@ private fun DesktopAddonsTable(
                 )
             } else if (rows.isEmpty()) {
                 DesktopAddonsEmptyTable(
-                    title = "No addons match these filters",
-                    subtitle = "Clear the search or filter chips to show installed addons.",
+                    title = stringResource(Res.string.addons_filtered_empty_title),
+                    subtitle = stringResource(Res.string.addons_filtered_empty_subtitle),
                 )
             } else {
                 rows.forEachIndexed { visibleIndex, row ->
@@ -840,11 +842,11 @@ private fun DesktopAddonTableHeader() {
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DesktopHeaderText("Addon", Modifier.weight(1.85f), tokens.colors.textMuted)
-        DesktopHeaderText("Resources", Modifier.weight(0.6f), tokens.colors.textMuted, TextAlign.Center)
-        DesktopHeaderText("Catalogs", Modifier.weight(0.6f), tokens.colors.textMuted, TextAlign.Center)
-        DesktopHeaderText("Status", Modifier.weight(0.72f), tokens.colors.textMuted, TextAlign.Center)
-        DesktopHeaderText("Actions", Modifier.weight(1.7f), tokens.colors.textMuted, TextAlign.Center)
+        DesktopHeaderText(stringResource(Res.string.addons_table_addon), Modifier.weight(1.85f), tokens.colors.textMuted)
+        DesktopHeaderText(stringResource(Res.string.addons_overview_resources), Modifier.weight(0.6f), tokens.colors.textMuted, TextAlign.Center)
+        DesktopHeaderText(stringResource(Res.string.addons_overview_catalogs), Modifier.weight(0.6f), tokens.colors.textMuted, TextAlign.Center)
+        DesktopHeaderText(stringResource(Res.string.addons_sort_status), Modifier.weight(0.72f), tokens.colors.textMuted, TextAlign.Center)
+        DesktopHeaderText(stringResource(Res.string.addons_table_actions), Modifier.weight(1.7f), tokens.colors.textMuted, TextAlign.Center)
     }
 }
 

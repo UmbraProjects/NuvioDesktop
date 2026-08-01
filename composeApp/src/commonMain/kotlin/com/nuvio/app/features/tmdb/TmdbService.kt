@@ -19,6 +19,21 @@ object TmdbService {
     private val tmdbToImdbCache = linkedMapOf<String, String>()
     private val cacheMutex = Mutex()
 
+    // One lock per external id being resolved. The cache alone doesn't help a fan-out, because it
+    // is only populated once a lookup finishes: a plugin repository with 60+ scrapers resolves the
+    // same title 60+ times in parallel, all missing the cache and all issuing the same TMDB /find
+    // request — enough to draw a rate limit, which then resolves to null and hands scrapers an
+    // IMDB id they can't use. Followers wait for the first lookup and read its cached answer.
+    private val externalIdLookupLocks = mutableMapOf<String, Mutex>()
+
+    private suspend fun <T> withExternalIdLookupLock(cacheKey: String, block: suspend () -> T): T {
+        val lock = cacheMutex.withLock { externalIdLookupLocks.getOrPut(cacheKey) { Mutex() } }
+        return lock.withLock { block() }
+    }
+
+    private suspend fun cachedTmdbId(cacheKey: String): String? =
+        cacheMutex.withLock { imdbToTmdbCache[cacheKey] }
+
     suspend fun ensureTmdbId(videoId: String, mediaType: String): String? {
         val apiKey = currentApiKey() ?: return null
 
@@ -47,26 +62,29 @@ object TmdbService {
     private suspend fun tvdbToTmdb(tvdbId: String, mediaType: String, apiKey: String): String? {
         val normalizedType = normalizeMediaType(mediaType)
         val cacheKey = "tvdb:$tvdbId:$normalizedType"
-        cacheMutex.withLock {
-            imdbToTmdbCache[cacheKey]?.let { return it }
+        cachedTmdbId(cacheKey)?.let { return it }
+
+        return withExternalIdLookupLock(cacheKey) {
+            // Re-check: whoever held the lock may have resolved this while we queued behind them.
+            cachedTmdbId(cacheKey)?.let { return@withExternalIdLookupLock it }
+
+            val body = fetch<TmdbFindResponse>(
+                endpoint = "find/$tvdbId",
+                apiKey = apiKey,
+                query = mapOf("external_source" to "tvdb_id"),
+            ) ?: return@withExternalIdLookupLock null
+
+            val resultId = when (normalizedType) {
+                "movie" -> body.movieResults.firstOrNull()?.id
+                "tv" -> body.tvResults.firstOrNull()?.id
+                else -> body.tvResults.firstOrNull()?.id ?: body.movieResults.firstOrNull()?.id
+            }?.takeIf { it > 0 }?.toString()
+
+            if (resultId != null) {
+                cacheMutex.withLock { imdbToTmdbCache[cacheKey] = resultId }
+            }
+            resultId
         }
-
-        val body = fetch<TmdbFindResponse>(
-            endpoint = "find/$tvdbId",
-            apiKey = apiKey,
-            query = mapOf("external_source" to "tvdb_id"),
-        ) ?: return null
-
-        val resultId = when (normalizedType) {
-            "movie" -> body.movieResults.firstOrNull()?.id
-            "tv" -> body.tvResults.firstOrNull()?.id
-            else -> body.tvResults.firstOrNull()?.id ?: body.movieResults.firstOrNull()?.id
-        }?.takeIf { it > 0 }?.toString()
-
-        if (resultId != null) {
-            cacheMutex.withLock { imdbToTmdbCache[cacheKey] = resultId }
-        }
-        return resultId
     }
 
     suspend fun tmdbToImdb(tmdbId: Int, mediaType: String): String? {
@@ -294,32 +312,35 @@ object TmdbService {
     private suspend fun imdbToTmdb(imdbId: String, mediaType: String, apiKey: String): String? {
         val normalizedType = normalizeMediaType(mediaType)
         val cacheKey = "$imdbId:$normalizedType"
-        cacheMutex.withLock {
-            imdbToTmdbCache[cacheKey]?.let { return it }
-        }
+        cachedTmdbId(cacheKey)?.let { return it }
 
-        val body = fetch<TmdbFindResponse>(
-            endpoint = "find/$imdbId",
-            apiKey = apiKey,
-            query = mapOf("external_source" to "imdb_id"),
-        ) ?: return null
+        return withExternalIdLookupLock(cacheKey) {
+            // Re-check: whoever held the lock may have resolved this while we queued behind them.
+            cachedTmdbId(cacheKey)?.let { return@withExternalIdLookupLock it }
 
-        val resultId = when (normalizedType) {
-            "movie" -> body.movieResults.firstOrNull()?.id
-            "tv" -> body.tvResults.firstOrNull()?.id
-            else -> body.movieResults.firstOrNull()?.id ?: body.tvResults.firstOrNull()?.id
-        }?.takeIf { it > 0 }?.toString()
+            val body = fetch<TmdbFindResponse>(
+                endpoint = "find/$imdbId",
+                apiKey = apiKey,
+                query = mapOf("external_source" to "imdb_id"),
+            ) ?: return@withExternalIdLookupLock null
 
-        if (resultId != null) {
-            cacheMutex.withLock {
-                imdbToTmdbCache[cacheKey] = resultId
-                tmdbToImdbCache["$resultId:$normalizedType"] = imdbId
+            val resultId = when (normalizedType) {
+                "movie" -> body.movieResults.firstOrNull()?.id
+                "tv" -> body.tvResults.firstOrNull()?.id
+                else -> body.movieResults.firstOrNull()?.id ?: body.tvResults.firstOrNull()?.id
+            }?.takeIf { it > 0 }?.toString()
+
+            if (resultId != null) {
+                cacheMutex.withLock {
+                    imdbToTmdbCache[cacheKey] = resultId
+                    tmdbToImdbCache["$resultId:$normalizedType"] = imdbId
+                }
+            } else {
+                log.d { "No TMDB ID found for $imdbId ($normalizedType)" }
             }
-        } else {
-            log.d { "No TMDB ID found for $imdbId ($normalizedType)" }
-        }
 
-        return resultId
+            resultId
+        }
     }
 
     private suspend inline fun <reified T> fetch(
@@ -485,6 +506,7 @@ data class TmdbSearchResult(
     val name: String? = null,
     val overview: String? = null,
     @SerialName("poster_path") val posterPath: String? = null,
+    @SerialName("backdrop_path") val backdropPath: String? = null,
     @SerialName("release_date") val releaseDate: String? = null,
     @SerialName("first_air_date") val firstAirDate: String? = null,
     val popularity: Double = 0.0,

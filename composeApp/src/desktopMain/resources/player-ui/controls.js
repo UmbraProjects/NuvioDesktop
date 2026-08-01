@@ -31,7 +31,12 @@ const pauseMetadataOverlay = document.getElementById("pauseMetadataOverlay");
 const pauseWatchingLabel = document.getElementById("pauseWatchingLabel");
 const pauseLogo = document.getElementById("pauseLogo");
 const pauseTitle = document.getElementById("pauseTitle");
+const pauseSource = document.getElementById("pauseSource");
+const pauseSourceTitle = document.getElementById("pauseSourceTitle");
+const pauseSourceProvider = document.getElementById("pauseSourceProvider");
+const pauseEpisodeLine = document.getElementById("pauseEpisodeLine");
 const pauseEpisodeInfo = document.getElementById("pauseEpisodeInfo");
+const pauseEpisodeSeparator = document.getElementById("pauseEpisodeSeparator");
 const pauseEpisodeTitle = document.getElementById("pauseEpisodeTitle");
 const pauseDescription = document.getElementById("pauseDescription");
 const toggle = document.getElementById("toggle");
@@ -125,10 +130,28 @@ const fontSizePlus = document.getElementById("fontSizePlus");
 const fontFamilySelect = document.getElementById("fontFamilySelect");
 const outlineLabel = document.getElementById("outlineLabel");
 const outlineToggle = document.getElementById("outlineToggle");
+const outlineWidthLabel = document.getElementById("outlineWidthLabel");
+const outlineWidthMinus = document.getElementById("outlineWidthMinus");
+const outlineWidthValue = document.getElementById("outlineWidthValue");
+const outlineWidthPlus = document.getElementById("outlineWidthPlus");
 const shadowLabel = document.getElementById("shadowLabel");
 const shadowToggle = document.getElementById("shadowToggle");
+const shadowOffsetLabel = document.getElementById("shadowOffsetLabel");
+const shadowOffsetMinus = document.getElementById("shadowOffsetMinus");
+const shadowOffsetValue = document.getElementById("shadowOffsetValue");
+const shadowOffsetPlus = document.getElementById("shadowOffsetPlus");
+const shadowIntensityLabel = document.getElementById("shadowIntensityLabel");
+const shadowIntensityMinus = document.getElementById("shadowIntensityMinus");
+const shadowIntensityValue = document.getElementById("shadowIntensityValue");
+const shadowIntensityPlus = document.getElementById("shadowIntensityPlus");
+const blurLabel = document.getElementById("blurLabel");
+const blurMinus = document.getElementById("blurMinus");
+const blurValue = document.getElementById("blurValue");
+const blurPlus = document.getElementById("blurPlus");
 const boldLabel = document.getElementById("boldLabel");
 const boldToggle = document.getElementById("boldToggle");
+const italicLabel = document.getElementById("italicLabel");
+const italicToggle = document.getElementById("italicToggle");
 const bottomOffsetLabel = document.getElementById("bottomOffsetLabel");
 const bottomOffsetMinus = document.getElementById("bottomOffsetMinus");
 const bottomOffsetValue = document.getElementById("bottomOffsetValue");
@@ -141,6 +164,10 @@ const textOpacityValue = document.getElementById("textOpacityValue");
 const textOpacityPlus = document.getElementById("textOpacityPlus");
 const outlineColorLabel = document.getElementById("outlineColorLabel");
 const outlineColorSwatches = document.getElementById("outlineColorSwatches");
+const backgroundColorLabel = document.getElementById("backgroundColorLabel");
+const backgroundColorSwatches = document.getElementById("backgroundColorSwatches");
+const shadowColorLabel = document.getElementById("shadowColorLabel");
+const shadowColorSwatches = document.getElementById("shadowColorSwatches");
 const subtitleStyleReset = document.getElementById("subtitleStyleReset");
 const sourceModal = document.getElementById("sourceModal");
 const sourcePanel = sourceModal ? sourceModal.querySelector(".track-panel") : null;
@@ -169,6 +196,10 @@ const segmentTypeLabel = document.getElementById("segmentTypeLabel");
 const segmentIntroButton = document.getElementById("segmentIntroButton");
 const segmentRecapButton = document.getElementById("segmentRecapButton");
 const segmentOutroButton = document.getElementById("segmentOutroButton");
+const segmentPreviewButton = document.getElementById("segmentPreviewButton");
+// Order matters: the index of a button here is what "submitIntroSegment" sends to Kotlin, which
+// resolves it against the same list of segment kinds.
+const segmentButtons = [segmentIntroButton, segmentRecapButton, segmentOutroButton, segmentPreviewButton];
 const startTimeLabel = document.getElementById("startTimeLabel");
 const endTimeLabel = document.getElementById("endTimeLabel");
 const submitIntroStartInput = document.getElementById("submitIntroStartInput");
@@ -195,6 +226,7 @@ let state = {
   pauseOverlayEpisodeInfo: "",
   pauseOverlayEpisodeTitle: "",
   pauseOverlayDescription: "",
+  pauseOverlaySourceEnabled: false,
   resizeModeLabel: "Fit",
   playbackSpeedLabel: "1x",
   playbackSpeedFineIncrementsEnabled: false,
@@ -216,6 +248,7 @@ let state = {
   desktopColorProfileLabel: "Neutral",
   desktopAnimeModeLabel: "Off",
   desktopAnimeSvpEnabled: false,
+  seekThumbnailsEnabled: true,
   tapToUnlockLabel: "Tap to unlock",
   playbackErrorTitle: "Playback error",
   playbackErrorMessage: "",
@@ -236,6 +269,7 @@ let state = {
   submitIntroSegmentIntroLabel: "Intro",
   submitIntroSegmentRecapLabel: "Recap",
   submitIntroSegmentOutroLabel: "Outro",
+  submitIntroSegmentPreviewLabel: "Preview",
   submitIntroStartTimeLabel: "START TIME (MM:SS)",
   submitIntroEndTimeLabel: "END TIME (MM:SS)",
   submitIntroCaptureLabel: "Capture",
@@ -288,9 +322,12 @@ let state = {
   mouseMoveRevealsControlsEnabled: false,
   legacyHudEnabled: false,
   alwaysShowClock: false,
+  playbackInfoPanelEnabled: false,
+  activeSubtitleLabel: "",
   appFullscreenKeyCode: 122,
   playerShortcutKeyCodes: {},
   uiScalePercent: 0,
+  sourceNotchPosition: "right",
   parentalWarnings: [],
   showParentalGuide: false,
   showOpeningOverlay: false,
@@ -344,6 +381,10 @@ let state = {
   // live native track list, so "Show Only Preferred Languages" applies to embedded subs too.
   builtInSubtitleFilterActive: false,
   builtInSubtitleItems: [],
+  // Same arrangement for audio: when true, render the app-pushed list with the rejected tracks
+  // (commentary, audio description) already removed.
+  audioTrackFilterActive: false,
+  audioTrackItems: [],
   isLoadingAddonSubtitles: false,
   selectedAddonSubtitleId: "",
   useCustomSubtitles: false,
@@ -356,14 +397,23 @@ let state = {
   subtitleStyle: {
     textColor: "#FFFFFFFF",
     outlineColor: "#FF000000",
+    backgroundColor: "#00000000",
     outlineEnabled: true,
+    outlineWidth: 2,
+    shadowEnabled: false,
+    shadowColor: "#66000000",
+    shadowOffset: 15,
+    blur: 0,
     bold: false,
+    italic: false,
     fontSizeSp: 18,
     bottomOffset: 20,
     fontFamily: "",
   },
   subtitleFontFamilies: [],
   subtitleColorSwatches: [],
+  subtitleBackgroundColorSwatches: [],
+  subtitleShadowColorSwatches: [],
   closeModalsToken: 0,
 };
 let isScrubbing = false;
@@ -437,17 +487,35 @@ function applyUserUiScale(percent) {
 
 function updateViewportUiScale() {
   const userScale = 1;
-  // The native WebView zoom is now the only scale. Keeping these multipliers neutral avoids the
-  // old double-scaling path while preserving the variables consumed throughout the stylesheet.
-  const autoScale = 1;
+  // Native zoom owns DPI normalization and the user's preference. This second factor is strictly
+  // viewport-responsive: a 960x540 CSS viewport (typical 1080p desktop after the 2x baseline zoom)
+  // receives a 0.5 HUD, matching the authored 1920x1080 proportions.
+  const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+  const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+  const proportionalScale = Math.min(viewportWidth / 1920, viewportHeight / 1080, 1);
+  // Below this, further shrinking would make targets unreadable. Compactness tiers remove controls
+  // instead while preserving play/pause and the timeline.
+  const autoScale = Math.max(0.5, proportionalScale);
   const combined = userScale * autoScale;
 
-  const panelScale = 1;
+  const panelScale = Math.max(0.72, Math.min(1, autoScale));
 
-  const feedbackViewportScale = 1;
+  const feedbackViewportScale = Math.max(0.65, Math.min(1, autoScale));
   const feedbackScale = feedbackViewportScale * userScale;
 
-  const signature = `${combined}|${panelScale}|${feedbackScale}`;
+  // Measure the space available after proportional scaling. Full-screen 1080p therefore behaves
+  // like the 1920px reference rather than prematurely losing controls because of browser zoom.
+  const layoutWidth = Math.min(
+    viewportWidth / autoScale,
+    (viewportHeight / autoScale) * (16 / 9),
+  );
+  const tier = layoutWidth < 680 ? "minimal"
+    : layoutWidth < 900 ? "small"
+    : layoutWidth < 1220 ? "compact"
+    : layoutWidth < 1500 ? "medium"
+    : "full";
+
+  const signature = `${combined}|${panelScale}|${feedbackScale}|${tier}`;
   if (signature === appliedScaleSignature) return;
   appliedScaleSignature = signature;
   appliedCombinedUserScale = combined;
@@ -457,6 +525,10 @@ function updateViewportUiScale() {
   rootStyle.setProperty("--panel-scale", String(panelScale));
   rootStyle.setProperty("--feedback-scale", String(feedbackScale));
   rootStyle.setProperty("--feedback-hidden-scale", String(feedbackScale * 0.85));
+  root.classList.toggle("hud-medium", tier !== "full");
+  root.classList.toggle("hud-compact", tier === "compact" || tier === "small" || tier === "minimal");
+  root.classList.toggle("hud-small", tier === "small" || tier === "minimal");
+  root.classList.toggle("hud-minimal", tier === "minimal");
 }
 
 const prefersReducedMotion = window.matchMedia &&
@@ -724,6 +796,7 @@ const hideSeekThumbnail = () => {
 };
 
 const showSeekThumbnailAt = event => {
+  if (!state.seekThumbnailsEnabled) return hideSeekThumbnail();
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
   const rect = seek.getBoundingClientRect();
   if (durationMs <= 0 || rect.width <= 0) return hideSeekThumbnail();
@@ -758,6 +831,7 @@ const showSeekThumbnailAt = event => {
 };
 
 window.nuvioSeekThumbnailReady = (positionMs, dataUrl) => {
+  if (!state.seekThumbnailsEnabled) return;
   const position = Number(positionMs) || 0;
   const url = String(dataUrl || "");
   if (!url) return;
@@ -885,7 +959,12 @@ const resetPauseMetadataTimer = () => {
 
 const syncPauseMetadataTimer = showOpening => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
-  const eligible = Boolean(!state.isPlaying && !state.isLoading && durationMs > 0 && !showOpening);
+  // The countdown starts only once the chrome is already hidden, so the sequence stays
+  // chrome fades out -> beat -> overlay fades in. Counting from the pause itself made both
+  // land together (the host hides controls on a near-identical delay) with no gap between them.
+  const eligible = Boolean(
+    !state.isPlaying && !state.isLoading && durationMs > 0 && !showOpening && !state.controlsVisible,
+  );
   const key = eligible ? `${Math.round(durationMs)}:${state.title || ""}:${state.pauseOverlayEpisodeInfo || ""}` : "";
   if (!eligible) {
     resetPauseMetadataTimer();
@@ -899,7 +978,7 @@ const syncPauseMetadataTimer = showOpening => {
     pauseMetadataTimer = 0;
     pauseMetadataReady = true;
     renderChrome();
-  }, prefersReducedMotion ? 1 : 5000);
+  }, prefersReducedMotion ? 1 : 4000);
 };
 
 const renderPauseMetadataOverlay = showOpening => {
@@ -922,12 +1001,24 @@ const renderPauseMetadataOverlay = showOpening => {
   pauseLogo.hidden = !logoUrl;
   pauseTitle.textContent = titleText;
   pauseTitle.hidden = Boolean(logoUrl || !titleText);
+  // S02E05 and the episode title share one line; the bullet only earns its place when both sides
+  // of it are present.
   pauseEpisodeInfo.textContent = episodeInfo;
   pauseEpisodeInfo.hidden = !episodeInfo;
   pauseEpisodeTitle.textContent = episodeTitleText;
   pauseEpisodeTitle.hidden = !episodeTitleText;
+  pauseEpisodeSeparator.hidden = !(episodeInfo && episodeTitleText);
+  pauseEpisodeLine.hidden = !(episodeInfo || episodeTitleText);
   pauseDescription.textContent = descriptionText;
   pauseDescription.hidden = !descriptionText;
+  // Opt-in source row, reusing the same strings the header meta-row shows during playback.
+  const sourceTitleText = state.pauseOverlaySourceEnabled ? String(state.streamTitle || "").trim() : "";
+  const sourceProviderText = state.pauseOverlaySourceEnabled ? String(state.providerName || "").trim() : "";
+  pauseSourceTitle.textContent = sourceTitleText;
+  pauseSourceTitle.hidden = !sourceTitleText;
+  pauseSourceProvider.textContent = sourceProviderText;
+  pauseSourceProvider.hidden = !sourceProviderText;
+  pauseSource.hidden = !(sourceTitleText || sourceProviderText);
   pauseMetadataOverlay.classList.toggle("visible", showOverlay);
   pauseMetadataOverlay.setAttribute("aria-hidden", showOverlay ? "false" : "true");
   // The clock is part of the chrome that hides when the pause overlay appears; flag the overlay so
@@ -1112,8 +1203,25 @@ const contextMenuItems = [
         label: "Style",
         children: [
           { label: "Outline", action: "subtitleStyle:outline", toggleKey: "outlineEnabled" },
+          { label: "Outline width", children: [
+            { label: "Increase", action: "send:subtitleOutlineWidthDelta:1" },
+            { label: "Decrease", action: "send:subtitleOutlineWidthDelta:-1" },
+          ] },
           { label: "Shadow", action: "subtitleStyle:shadow", toggleKey: "shadowEnabled" },
+          { label: "Shadow offset", children: [
+            { label: "Increase", action: "send:subtitleShadowOffsetDelta:5" },
+            { label: "Decrease", action: "send:subtitleShadowOffsetDelta:-5" },
+          ] },
+          { label: "Shadow intensity", children: [
+            { label: "Increase", action: "subtitleShadowOpacity:10" },
+            { label: "Decrease", action: "subtitleShadowOpacity:-10" },
+          ] },
+          { label: "Blur", children: [
+            { label: "Increase", action: "send:subtitleBlurDelta:1" },
+            { label: "Decrease", action: "send:subtitleBlurDelta:-1" },
+          ] },
           { label: "Bold", action: "subtitleStyle:bold", toggleKey: "bold" },
+          { label: "Italic", action: "subtitleStyle:italic", toggleKey: "italic" },
           { label: "Font", dynamicKey: "fontFamilies", children: [] },
           { label: "Text color", dynamicKey: "subtitleColors", children: [] },
           { label: "Outline color", dynamicKey: "outlineColors", children: [] },
@@ -1202,6 +1310,7 @@ let localVolume = 100;
 let localMuted = false;
 let mpvDiagnosticsEnabled = false;
 const contextMenuDynamicSubmenus = new Map();
+const contextMenuDynamicSignatures = new Map();
 
 // Single toggle path for the MPV diagnostics overlay: used by the context-menu entry and
 // invoked directly from Kotlin for the rebindable keyboard shortcut, so the menu indicator,
@@ -1241,7 +1350,7 @@ const contextMenuValue = key => {
   if (key === "closeMenuOnSelect") return closeMenuOnSelect;
   if (key === "uiScalePercentValue") return String(Number(state.uiScalePercent) || 0);
   if (key === "playbackSpeedValue") return parsedPlaybackSpeed().toFixed(1);
-  if (key === "outlineEnabled" || key === "shadowEnabled" || key === "bold") {
+  if (key === "outlineEnabled" || key === "shadowEnabled" || key === "bold" || key === "italic") {
     return Boolean(state.subtitleStyle && state.subtitleStyle[key]);
   }
   return state[key];
@@ -1259,7 +1368,7 @@ const applyOptimisticContextSelection = button => {
   if (!toggleKey || toggleKey === "closeMenuOnSelect") return;
   if (toggleKey === "localMuted") {
     localMuted = !localMuted;
-  } else if (toggleKey === "outlineEnabled" || toggleKey === "shadowEnabled" || toggleKey === "bold") {
+  } else if (toggleKey === "outlineEnabled" || toggleKey === "shadowEnabled" || toggleKey === "bold" || toggleKey === "italic") {
     const style = { ...(state.subtitleStyle || {}) };
     style[toggleKey] = !style[toggleKey];
     state = { ...state, subtitleStyle: style };
@@ -1289,7 +1398,6 @@ const refreshContextMenuIndicators = () => {
 const setContextMenuDynamicItems = (key, items) => {
   const submenu = contextMenuDynamicSubmenus.get(key);
   if (!submenu) return;
-  submenu.textContent = "";
   const normalized = Array.isArray(items) ? items : [];
   const entries = key === "subtitleTracks"
     ? [{
@@ -1298,6 +1406,16 @@ const setContextMenuDynamicItems = (key, items) => {
         selected: !normalized.some(item => Boolean(item.selected)),
       }, ...normalized]
     : normalized;
+  // Track and colour lists are pushed on every player tick, not only when they change. Rebuilding
+  // the DOM under the cursor tore the hovered row out from under a :hover-driven flyout, which is
+  // what made an open submenu collapse mid-interaction. Only touch the DOM when it would differ.
+  const signature = JSON.stringify(entries);
+  if (contextMenuDynamicSignatures.get(key) === signature) {
+    refreshContextMenuIndicators();
+    return;
+  }
+  contextMenuDynamicSignatures.set(key, signature);
+  submenu.textContent = "";
   buildContextMenu(entries.map((item, index) => ({
     label: String(item.label || item.display || item.languageLabel || item.title || "Option"),
     action: item.action || (key === "subtitleTracks"
@@ -1328,6 +1446,7 @@ const setContextMenuDynamicItems = (key, items) => {
 const closeContextMenu = () => {
   if (!contextMenuOpen) return;
   contextMenuOpen = false;
+  clearOpenContextMenuGroups();
   if (contextMenu) contextMenu.hidden = true;
   // The menu suppressed chrome auto-hide while open; resume normal fading now.
   renderChrome();
@@ -1449,6 +1568,7 @@ const executeContextAction = action => {
     if (command === "outline") send("subtitleOutlineToggle", 0);
     if (command === "shadow") send("subtitleShadowToggle", 0);
     if (command === "bold") send("subtitleBoldToggle", 0);
+    if (command === "italic") send("subtitleItalicToggle", 0);
     return;
   }
   if (kind === "subtitleOpacity") {
@@ -1456,6 +1576,34 @@ const executeContextAction = action => {
     const next = Math.max(0, Math.min(100, Math.round(currentAlpha / 255 * 100) + Number(parts.shift() || 0)));
     send("subtitleTextOpacity", next);
   }
+  if (kind === "subtitleShadowOpacity") {
+    const currentAlpha = parseArgb((state.subtitleStyle || {}).shadowColor).alpha;
+    const next = Math.max(0, Math.min(100, Math.round(currentAlpha / 255 * 100) + Number(parts.shift() || 0)));
+    send("subtitleShadowOpacity", next);
+  }
+};
+
+// Flyouts used to be purely :hover / :focus-within driven, so anything that momentarily stole the
+// hover state — a submenu rebuilt under the cursor, or the native video surface swallowing a
+// pointer event while mpv reconfigures after a colour/subtitle change — collapsed the submenu the
+// user was still clicking through. Latch the entered group open instead and only release it when
+// the pointer commits to a different group at the same level.
+const openContextMenuGroup = group => {
+  const parent = group.parentElement;
+  if (!parent) return;
+  Array.from(parent.children).forEach(sibling => {
+    if (sibling === group || !sibling.classList.contains("context-menu-group")) return;
+    sibling.classList.remove("is-open");
+    sibling.querySelectorAll(".context-menu-group.is-open")
+      .forEach(nested => nested.classList.remove("is-open"));
+  });
+  group.classList.add("is-open");
+};
+
+const clearOpenContextMenuGroups = () => {
+  if (!contextMenu) return;
+  contextMenu.querySelectorAll(".context-menu-group.is-open")
+    .forEach(group => group.classList.remove("is-open"));
 };
 
 // Positions a submenu flyout so it stays inside the viewport. Leaf submenus (plain lists with
@@ -1552,6 +1700,10 @@ const buildContextMenu = (items, parent) => {
       }
       group.appendChild(button);
     }
+    // Every row latches, not just the ones with flyouts, so stepping onto a leaf row is what
+    // releases whichever sibling flyout was open.
+    group.addEventListener("mouseenter", () => openContextMenuGroup(group));
+    group.addEventListener("focusin", () => openContextMenuGroup(group));
     parent.appendChild(group);
   });
 };
@@ -1648,6 +1800,7 @@ const openContextMenu = event => {
   event.preventDefault();
   event.stopPropagation();
   closePlayerModal(false, false);
+  clearOpenContextMenuGroups();
   contextMenu.hidden = false;
   contextMenuOpen = true;
   // Keep the chrome (and cursor) up while the menu is open so the fade timer can't
@@ -1687,9 +1840,39 @@ document.addEventListener("pointerdown", event => {
 const normalizeTracks = tracks =>
   Array.isArray(tracks) ? tracks.filter(track => track && typeof track === "object") : [];
 
-const trackIdValue = track => {
-  const parsed = Number(track && track.id);
-  return Number.isFinite(parsed) ? parsed : -1;
+// The audio list the overlay should show. With keyword rejection on, the app pushes a pre-filtered
+// list (index + label); selection still comes from the live native list, which is the authoritative
+// source for the selected flag on every playerUpdate tick — the app-pushed state can lag it.
+const visibleAudioTracks = () => {
+  const nativeTracks = normalizeTracks(state.audioTracks);
+  if (!state.audioTrackFilterActive) return nativeTracks;
+  const items = normalizeItems(state.audioTrackItems);
+  // The two lists arrive on separate channels. An empty filtered list against a non-empty native
+  // one means the app state has not caught up yet, not that every track was rejected — Kotlin never
+  // filters the list down to nothing — so show the native list rather than "no audio tracks".
+  if (items.length === 0 && nativeTracks.length > 0) return nativeTracks;
+  const nativeSelectionByIndex = new Map(
+    nativeTracks.map(track => [Number(track.index) || 0, Boolean(track.selected)]),
+  );
+  return items.map(item => {
+    const index = Number(item.index) || 0;
+    return {
+      index,
+      label: item.label || "",
+      language: "",
+      selected: nativeSelectionByIndex.has(index)
+        ? nativeSelectionByIndex.get(index)
+        : Boolean(item.isSelected),
+    };
+  });
+};
+
+// selectAudioTrack takes the track's logical index (0-based, as the app and the context menu both
+// use), not mpv's own track id — the two differ whenever mpv numbers its ids from 1, which is
+// always. Reading `id` here selected the track after the one that was clicked.
+const trackIndexValue = track => {
+  const parsed = Number(track && track.index);
+  return Number.isFinite(parsed) ? parsed : 0;
 };
 
 const buildCheckIcon = () => {
@@ -1728,7 +1911,7 @@ const appendEmptyTrackState = (container, label) => {
 
 const renderAudioTrackList = () => {
   audioTrackList.textContent = "";
-  const tracks = normalizeTracks(state.audioTracks);
+  const tracks = visibleAudioTracks();
   if (audioPanel) {
     const canvas = renderAudioTrackList.canvas || (renderAudioTrackList.canvas = document.createElement("canvas"));
     const context = canvas.getContext("2d");
@@ -1751,24 +1934,31 @@ const renderAudioTrackList = () => {
       audioTrackList,
       track.label || track.language || `Track ${Number(track.index || 0) + 1}`,
       Boolean(track.selected),
-      () => send("selectAudioTrack", trackIdValue(track)),
+      () => send("selectAudioTrack", trackIndexValue(track)),
     );
   });
 };
 
 const renderSubtitleTrackList = () => {
   subtitleTrackList.textContent = "";
+  const nativeTracks = normalizeTracks(state.subtitleTracks);
+  const nativeSelectionByIndex = new Map(
+    nativeTracks.map(track => [Number(track.index) || 0, Boolean(track.selected)]),
+  );
   // With "Show Only Preferred Languages" on, the app pushes a pre-filtered built-in list (index +
-  // label + isSelected); otherwise fall back to the live native track list. Either way each entry
-  // carries the native track index that selectBuiltInSubtitleTrack expects.
+  // label). Selection must still come from the live native list: the app-pushed controls state is
+  // structural and can lag behind mpv after automatic/persisted track selection, while
+  // playerUpdate receives the authoritative selected flag on every native controls sync.
   const tracks = state.builtInSubtitleFilterActive
     ? normalizeItems(state.builtInSubtitleItems).map(item => ({
         index: Number(item.index) || 0,
         label: item.label || "",
         language: "",
-        selected: Boolean(item.isSelected),
+        selected: nativeSelectionByIndex.has(Number(item.index) || 0)
+          ? nativeSelectionByIndex.get(Number(item.index) || 0)
+          : Boolean(item.isSelected),
       }))
-    : normalizeTracks(state.subtitleTracks);
+    : nativeTracks;
   const hasSelected = tracks.some(track => Boolean(track.selected));
   appendTrackRow(
     subtitleTrackList,
@@ -1863,9 +2053,9 @@ const sameRgb = (left, right) => {
   return a.red === b.red && a.green === b.green && a.blue === b.blue;
 };
 
-const renderSwatches = (container, selectedColor, eventType) => {
+const renderSwatches = (container, selectedColor, eventType, availableColors = state.subtitleColorSwatches) => {
   container.textContent = "";
-  const colors = Array.isArray(state.subtitleColorSwatches) ? state.subtitleColorSwatches : [];
+  const colors = Array.isArray(availableColors) ? availableColors : [];
   colors.forEach((color, index) => {
     const parsed = parseArgb(color);
     const swatch = document.createElement("button");
@@ -1965,12 +2155,24 @@ const renderSubtitleStylePanel = () => {
   outlineLabel.textContent = state.outlineLabel || "Outline";
   outlineToggle.textContent = style.outlineEnabled ? (state.onLabel || "On") : (state.offLabel || "Off");
   outlineToggle.classList.toggle("primary", Boolean(style.outlineEnabled));
+  outlineWidthLabel.textContent = state.outlineWidthLabel || "Outline Width";
+  outlineWidthValue.textContent = String(Number(style.outlineWidth) || 0);
   shadowLabel.textContent = state.shadowLabel || "Shadow";
   shadowToggle.textContent = style.shadowEnabled ? (state.onLabel || "On") : (state.offLabel || "Off");
   shadowToggle.classList.toggle("primary", Boolean(style.shadowEnabled));
+  shadowOffsetLabel.textContent = state.shadowOffsetLabel || "Shadow Offset";
+  shadowOffsetValue.textContent = (Number(style.shadowOffset) / 10).toFixed(1);
+  shadowIntensityLabel.textContent = state.shadowIntensityLabel || "Shadow Intensity";
+  const shadowAlpha = Math.round((parseArgb(style.shadowColor).alpha / 255) * 100);
+  shadowIntensityValue.textContent = `${shadowAlpha}%`;
+  blurLabel.textContent = state.blurLabel || "Blur";
+  blurValue.textContent = String(Number(style.blur) || 0);
   boldLabel.textContent = state.boldLabel || "Bold";
   boldToggle.textContent = style.bold ? (state.onLabel || "On") : (state.offLabel || "Off");
   boldToggle.classList.toggle("primary", Boolean(style.bold));
+  italicLabel.textContent = state.italicLabel || "Italic";
+  italicToggle.textContent = style.italic ? (state.onLabel || "On") : (state.offLabel || "Off");
+  italicToggle.classList.toggle("primary", Boolean(style.italic));
   bottomOffsetLabel.textContent = state.bottomOffsetLabel || "Bottom Offset";
   bottomOffsetValue.textContent = String(Number(style.bottomOffset) || 0);
   subtitleColorLabel.textContent = state.colorLabel || "Color";
@@ -1978,9 +2180,23 @@ const renderSubtitleStylePanel = () => {
   const textAlpha = Math.round((parseArgb(style.textColor).alpha / 255) * 100);
   textOpacityValue.textContent = `${textAlpha}%`;
   outlineColorLabel.textContent = state.outlineColorLabel || "Outline Color";
+  backgroundColorLabel.textContent = state.backgroundColorLabel || "Background Color";
+  shadowColorLabel.textContent = state.shadowColorLabel || "Shadow Color";
   subtitleStyleReset.textContent = state.resetDefaultsLabel || "Reset Defaults";
   renderSwatches(subtitleColorSwatches, style.textColor, "subtitleTextColor");
   renderSwatches(outlineColorSwatches, style.outlineColor, "subtitleOutlineColor");
+  renderSwatches(
+    backgroundColorSwatches,
+    style.backgroundColor,
+    "subtitleBackgroundColor",
+    state.subtitleBackgroundColorSwatches,
+  );
+  renderSwatches(
+    shadowColorSwatches,
+    style.shadowColor,
+    "subtitleShadowColor",
+    state.subtitleShadowColorSwatches,
+  );
   renderAutoSyncCues();
 };
 
@@ -2122,6 +2338,16 @@ const buildSourceRow = (item, onSelect) => {
     chip.className = "status-chip";
     chip.textContent = state.playingLabel || "Playing";
     top.appendChild(chip);
+  }
+  // Diagnostic score badge. The field is omitted entirely unless the badge is switched on, so
+  // presence alone decides whether to render — a score of 0 is meaningful and must still show.
+  if (typeof item.score === "number") {
+    const scoreChip = document.createElement("span");
+    const tone = item.scoreRejected || item.score < 0 ? " negative" : item.score > 0 ? " positive" : "";
+    scoreChip.className = `score-chip${tone}`;
+    scoreChip.textContent = item.score > 0 ? `+${item.score}` : String(item.score);
+    if (item.scoreRejected) scoreChip.title = "Below the minimum score";
+    top.appendChild(scoreChip);
   }
   let subtitle = null;
   if (item.subtitle) {
@@ -2612,6 +2838,7 @@ const renderSubmitIntroModal = () => {
   segmentIntroButton.textContent = state.submitIntroSegmentIntroLabel || "Intro";
   segmentRecapButton.textContent = state.submitIntroSegmentRecapLabel || "Recap";
   segmentOutroButton.textContent = state.submitIntroSegmentOutroLabel || "Outro";
+  segmentPreviewButton.textContent = state.submitIntroSegmentPreviewLabel || "Preview";
   startTimeLabel.textContent = state.submitIntroStartTimeLabel || "START TIME (MM:SS)";
   endTimeLabel.textContent = state.submitIntroEndTimeLabel || "END TIME (MM:SS)";
   captureStartButton.textContent = state.submitIntroCaptureLabel || "Capture";
@@ -2622,7 +2849,7 @@ const renderSubmitIntroModal = () => {
     : (state.submitIntroSubmitLabel || "Submit");
   submitIntroSubmitButton.disabled = Boolean(state.isSubmitIntroSubmitting);
 
-  [segmentIntroButton, segmentRecapButton, segmentOutroButton].forEach(button => {
+  segmentButtons.forEach(button => {
     button.classList.toggle("selected", button.dataset.segment === submitIntroDraft.segmentType);
   });
   setInputValue(submitIntroStartInput, submitIntroDraft.startTime);
@@ -2650,6 +2877,7 @@ const renderActiveModal = () => {
 window.nuvioNativeViewportChanged = () => {
   root.classList.add("native-resizing");
   window.clearTimeout(nativeViewportTimer);
+  updateViewportUiScale();
   nativeViewportTimer = window.setTimeout(() => {
     root.classList.remove("native-resizing");
   }, 180);
@@ -2795,8 +3023,19 @@ const isOpeningOverlayActive = () =>
 const isChromeInteractionTarget = target =>
   Boolean(target && target.closest && target.closest(chromeInteractionSelector));
 
+const hasKeyboardVisibleChromeFocus = () => Boolean(
+  isChromeFocusInside &&
+  document.activeElement &&
+  document.activeElement.matches &&
+  document.activeElement.matches(":focus-visible"),
+);
+
+// Hover and pointer-acquired button focus are activity, but not ongoing interaction. Treating
+// either as ongoing pins the HUD forever when the mouse is parked over the controls or after a
+// button click (the focused button remains document.activeElement). Pointer movement already
+// refreshes the inactivity timer; only a held pointer/drag or keyboard-visible focus should pause it.
 const isInteractingWithChrome = () =>
-  Boolean(isChromePointerInside || isChromePointerDown || isChromeFocusInside);
+  Boolean(isChromePointerDown || hasKeyboardVisibleChromeFocus());
 
 const canAutoHideChrome = showOpening => Boolean(
   state.controlsVisible &&
@@ -2947,7 +3186,11 @@ const renderChrome = () => {
   setVisible(sourcesButton, Boolean(state.showSources));
   setVisible(episodesButton, Boolean(state.showEpisodes));
   setVisible(episodeNotch, Boolean(state.showEpisodes));
-  setVisible(sourceNotch, Boolean(state.showSources));
+  const sourceNotchPosition = ["left", "hidden"].includes(state.sourceNotchPosition)
+    ? state.sourceNotchPosition
+    : "right";
+  root.classList.toggle("source-notch-left", sourceNotchPosition === "left");
+  setVisible(sourceNotch, Boolean(state.showSources) && sourceNotchPosition !== "hidden");
   document.querySelectorAll(".episode-skip").forEach(button => setVisible(button, Boolean(state.showEpisodes)));
 
   const playPauseLabel = isPlaying ? state.pauseLabel : state.playLabel;
@@ -2960,7 +3203,11 @@ const renderChrome = () => {
   lockButton.setAttribute("aria-label", state.isLocked ? state.unlockLabel : state.lockLabel);
   lockIcon.setAttribute("href", state.isLocked ? "#icon-lock-open" : "#icon-lock");
   backButton.setAttribute("aria-label", state.closeLabel || "Close player");
-  submitIntroButton.setAttribute("aria-label", state.submitIntroLabel || "Submit Intro");
+  const submitIntroButtonLabel = state.submitIntroLabel || "Submit Intro";
+  submitIntroButton.setAttribute("aria-label", submitIntroButtonLabel);
+  // The action-row tooltip text is snapshotted into dataset.tooltip at load, so refresh it here
+  // too or the hover tooltip keeps the pre-localised label.
+  submitIntroButton.dataset.tooltip = submitIntroButtonLabel;
   videoSettingsButton.setAttribute("aria-label", state.videoSettingsLabel || "Video settings");
   const pictureInPictureLabel = state.pictureInPictureActive
     ? "Exit picture in picture"
@@ -2986,6 +3233,7 @@ const renderChrome = () => {
   }
   syncChromeAutoHideTimer(showOpening);
   updatePlayerClock();
+  renderPlaybackInfoPanel();
 };
 
 const playerClockFormatter = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
@@ -3362,6 +3610,101 @@ window.nuvioSyncMute = muted => {
   syncPlayerVolumeControl();
 };
 
+// Playback info panel ------------------------------------------------------
+// Two halves meet here: the pipeline rows (HDR / SVP / shader-or-preset) are pushed from the
+// desktop video-profile pass via nuvioSetPlaybackInfo, because only that pass knows what mpv
+// actually ended up doing; the subtitle row rides the ordinary controls state, because it is
+// owned by common code and can change mid-playback.
+const playbackInfoPanel = document.getElementById("playbackInfoPanel");
+const playbackInfoRows = document.getElementById("playbackInfoRows");
+const PLAYBACK_INFO_HOLD_MS = 6500;
+let playbackInfo = { session: "", hdr: "", svp: false, video: "", shader: "" };
+// The session this panel has already been shown for. Showing is per playback attempt: a new file
+// (next episode, source switch) is a new start of playback and earns the panel again, while a
+// settings change that merely re-pushes the same session must not pop it back up.
+let playbackInfoShownSession = null;
+let playbackInfoSignature = "";
+let playbackInfoHideTimer = 0;
+
+// One self-describing line per fact, in a fixed order so a row that only sometimes applies can
+// never shuffle the ones above it. No captions: a colour preset, a subtitle language and a shader
+// name all say what they are, and the two that would not ("HDR …", "SVP On") carry the word in the
+// value instead. The two near-constant rows lead; the conditional ones stay at the bottom.
+const playbackInfoEntries = () => {
+  if (!state.playbackInfoPanelEnabled) return [];
+  const entries = [];
+  const push = value => {
+    const text = String(value == null ? "" : value).trim();
+    if (text) entries.push(text);
+  };
+  push(playbackInfo.video);
+  push(state.activeSubtitleLabel);
+  push(playbackInfo.hdr);
+  push(playbackInfo.shader);
+  push(playbackInfo.svp ? "SVP On" : "");
+  return entries;
+};
+
+const hidePlaybackInfoPanel = () => {
+  window.clearTimeout(playbackInfoHideTimer);
+  playbackInfoHideTimer = 0;
+  if (!playbackInfoPanel) return;
+  playbackInfoPanel.classList.remove("visible");
+  playbackInfoPanel.setAttribute("aria-hidden", "true");
+};
+
+// Called from renderChrome (i.e. on every position tick), so every DOM write is behind a
+// signature check — the rows only change when the pipeline or the subtitle selection does.
+const renderPlaybackInfoPanel = () => {
+  if (!playbackInfoPanel || !playbackInfoRows) return;
+  const entries = playbackInfoEntries();
+  const signature = entries.join("|");
+  if (signature !== playbackInfoSignature) {
+    playbackInfoSignature = signature;
+    playbackInfoRows.replaceChildren();
+    entries.forEach(entry => {
+      const row = document.createElement("div");
+      row.className = "playback-info-row";
+      row.textContent = entry;
+      row.title = entry;
+      playbackInfoRows.appendChild(row);
+    });
+  }
+  if (!entries.length) {
+    hidePlaybackInfoPanel();
+    return;
+  }
+  // Wait for playback to actually be running: the profile pass can land while the opening
+  // overlay is still up, and the panel is meant to greet the first frame, not the spinner.
+  const readyToShow = Boolean(
+    playbackInfo.session &&
+    playbackInfo.session !== playbackInfoShownSession &&
+    state.isPlaying &&
+    !state.isLoading &&
+    !state.isLocked &&
+    !state.pictureInPictureActive &&
+    hasReceivedPlayerControls,
+  );
+  if (!readyToShow) return;
+  playbackInfoShownSession = playbackInfo.session;
+  playbackInfoPanel.classList.add("visible");
+  playbackInfoPanel.setAttribute("aria-hidden", "false");
+  window.clearTimeout(playbackInfoHideTimer);
+  playbackInfoHideTimer = window.setTimeout(hidePlaybackInfoPanel, PLAYBACK_INFO_HOLD_MS);
+};
+
+window.nuvioSetPlaybackInfo = payload => {
+  const next = payload || {};
+  playbackInfo = {
+    session: String(next.session == null ? "" : next.session),
+    hdr: String(next.hdr == null ? "" : next.hdr),
+    svp: Boolean(next.svp),
+    video: String(next.video == null ? "" : next.video),
+    shader: String(next.shader == null ? "" : next.shader),
+  };
+  renderPlaybackInfoPanel();
+};
+
 const presetPill = document.getElementById("presetPill");
 const presetPillTitle = document.getElementById("presetPillTitle");
 const presetPillValue = document.getElementById("presetPillValue");
@@ -3644,13 +3987,51 @@ outlineToggle.addEventListener("click", event => {
   event.stopPropagation();
   send("subtitleOutlineToggle", 0);
 });
+outlineWidthMinus.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleOutlineWidthDelta", -1);
+});
+outlineWidthPlus.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleOutlineWidthDelta", 1);
+});
 shadowToggle.addEventListener("click", event => {
   event.stopPropagation();
   send("subtitleShadowToggle", 0);
 });
+shadowOffsetMinus.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleShadowOffsetDelta", -5);
+});
+shadowOffsetPlus.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleShadowOffsetDelta", 5);
+});
+shadowIntensityMinus.addEventListener("click", event => {
+  event.stopPropagation();
+  const current = Math.round((parseArgb((state.subtitleStyle || {}).shadowColor).alpha / 255) * 100);
+  send("subtitleShadowOpacity", Math.max(0, current - 10));
+});
+shadowIntensityPlus.addEventListener("click", event => {
+  event.stopPropagation();
+  const current = Math.round((parseArgb((state.subtitleStyle || {}).shadowColor).alpha / 255) * 100);
+  send("subtitleShadowOpacity", Math.min(100, current + 10));
+});
+blurMinus.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleBlurDelta", -1);
+});
+blurPlus.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleBlurDelta", 1);
+});
 boldToggle.addEventListener("click", event => {
   event.stopPropagation();
   send("subtitleBoldToggle", 0);
+});
+italicToggle.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleItalicToggle", 0);
 });
 bottomOffsetMinus.addEventListener("click", event => {
   event.stopPropagation();
@@ -3780,7 +4161,7 @@ const updateSubmitSegment = segment => {
   renderSubmitIntroModal();
 };
 
-[segmentIntroButton, segmentRecapButton, segmentOutroButton].forEach(button => {
+segmentButtons.forEach(button => {
   button.addEventListener("click", event => {
     event.stopPropagation();
     updateSubmitSegment(button.dataset.segment || "intro");
@@ -3838,7 +4219,7 @@ submitIntroSubmitButton.addEventListener("click", event => {
     renderSubmitIntroModal();
     return;
   }
-  const segmentIndex = submitIntroDraft.segmentType === "recap" ? 1 : (submitIntroDraft.segmentType === "outro" ? 2 : 0);
+  const segmentIndex = Math.max(0, segmentButtons.findIndex(button => button.dataset.segment === submitIntroDraft.segmentType));
   submitIntroDraft.status = "";
   send("submitIntroSegment", segmentIndex);
   send("submitIntroStart", start);
@@ -4037,7 +4418,7 @@ window.playerUpdate = update => {
     subtitleTracks,
   };
   setContextMenuDynamicItems("subtitleTracks", subtitleTracks);
-  setContextMenuDynamicItems("audioTracks", audioTracks);
+  setContextMenuDynamicItems("audioTracks", visibleAudioTracks());
   renderChrome();
   if ((audioTracksChanged && activeModal === "audio") ||
       (subtitleTracksChanged && activeModal === "subtitles")) {
@@ -4048,9 +4429,17 @@ window.playerUpdate = update => {
 window.playerControls = nextState => {
   const previousCloseToken = Number(state.closeModalsToken) || 0;
   state = { ...state, ...nextState };
+  if (!state.seekThumbnailsEnabled) {
+    hideSeekThumbnail();
+    seekThumbnailCache.clear();
+    seekThumbnailImage.removeAttribute("src");
+  }
   refreshContextMenuIndicators();
   if (contextMenuOpen) refreshSubtitleStyleContextSubmenus();
   setContextMenuDynamicItems("addonSubtitles", state.addonSubtitleItems);
+  // The rejected-keyword audio list arrives on this channel, not with the native track push, so
+  // the menu has to be rebuilt here too or it keeps showing the unfiltered list until the next tick.
+  setContextMenuDynamicItems("audioTracks", visibleAudioTracks());
   hasReceivedPlayerControls = true;
   const closeToken = Number(state.closeModalsToken) || 0;
   if (closeToken !== previousCloseToken) {

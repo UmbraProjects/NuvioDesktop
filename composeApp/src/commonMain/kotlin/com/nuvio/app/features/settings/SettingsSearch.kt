@@ -62,7 +62,12 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 internal sealed class SettingsSearchTarget {
-    data class Page(val page: SettingsPage, val anchor: String? = null) : SettingsSearchTarget()
+    data class Page(
+        val page: SettingsPage,
+        val anchor: String? = null,
+        val fallbackAnchor: String? = null,
+        val fallbackTitle: String? = null,
+    ) : SettingsSearchTarget()
     object Downloads : SettingsSearchTarget()
     object SwitchProfile : SettingsSearchTarget()
     object CheckForUpdates : SettingsSearchTarget()
@@ -85,6 +90,7 @@ internal data class SettingsSearchEntry(
     val contextLabel: String = listOf(page, section)
         .filter { it.isNotBlank() }
         .distinct()
+        .map(::settingsTitleCase)
         .joinToString(separator = " - ")
 }
 
@@ -108,6 +114,7 @@ internal fun settingsSearchEntries(
     val advancedPage = stringResource(Res.string.compose_settings_page_advanced)
     val contentDiscoveryPage = stringResource(Res.string.compose_settings_page_content_discovery)
     val downloadsPage = stringResource(Res.string.compose_settings_root_downloads_title)
+    val autoDownloadsPage = stringResource(Res.string.compose_settings_page_auto_downloads)
     val playbackPage = stringResource(Res.string.compose_settings_page_playback)
     val streamsPage = stringResource(Res.string.compose_settings_page_streams)
     val integrationsPage = stringResource(Res.string.compose_settings_page_integrations)
@@ -123,6 +130,7 @@ internal fun settingsSearchEntries(
     val collectionsPage = stringResource(Res.string.collections_header)
     val tmdbPage = stringResource(Res.string.compose_settings_page_tmdb_enrichment)
     val mdbListPage = stringResource(Res.string.compose_settings_page_mdblist_ratings)
+    val qualiCachePage = stringResource(Res.string.compose_settings_page_qualicache)
     val simklPage = stringResource(Res.string.compose_settings_page_simkl)
 
     val entries = mutableListOf<SettingsSearchEntry>()
@@ -178,6 +186,12 @@ internal fun settingsSearchEntries(
         category: String = generalCategory,
         icon: ImageVector,
         anchor: String? = null,
+        fallbackAnchor: String? = if (section.isBlank()) {
+            null
+        } else {
+            SettingsScrollAnchor.section(section)
+        },
+        fallbackTitle: String? = section.takeIf { it.isNotBlank() },
     ) {
         add(
             key = key,
@@ -187,7 +201,12 @@ internal fun settingsSearchEntries(
             section = section,
             category = category,
             icon = icon,
-            target = SettingsSearchTarget.Page(page, anchor ?: SettingsScrollAnchor.searchKey(key)),
+            target = SettingsSearchTarget.Page(
+                page = page,
+                anchor = anchor ?: SettingsScrollAnchor.searchKey(key),
+                fallbackAnchor = fallbackAnchor,
+                fallbackTitle = fallbackTitle,
+            ),
         )
     }
 
@@ -242,6 +261,13 @@ internal fun settingsSearchEntries(
         icon = Icons.Rounded.Extension,
     )
     if (downloadsEnabled) {
+        addPage(
+            page = SettingsPage.AutoDownloads,
+            key = "auto-downloads",
+            title = autoDownloadsPage,
+            description = stringResource(Res.string.settings_auto_downloads_description),
+            icon = Icons.Rounded.CloudDownload,
+        )
         add(
             key = "downloads",
             title = downloadsPage,
@@ -272,21 +298,60 @@ internal fun settingsSearchEntries(
         description = stringResource(Res.string.compose_settings_root_integrations_description),
         icon = Icons.Rounded.Link,
     )
+    addRow(
+        page = SettingsPage.Integrations,
+        key = "library-source",
+        title = stringResource(Res.string.settings_library_source_title),
+        description = stringResource(Res.string.settings_library_source_description),
+        pageLabel = integrationsPage,
+        section = stringResource(Res.string.settings_library_source_section),
+        icon = Icons.Rounded.Link,
+        anchor = SettingsScrollAnchor.searchKey("library-source"),
+    )
+    addRow(
+        page = SettingsPage.Integrations,
+        key = "rating-prompt",
+        title = stringResource(Res.string.settings_rating_prompt_title),
+        description = stringResource(Res.string.settings_rating_prompt_description),
+        pageLabel = integrationsPage,
+        section = stringResource(Res.string.settings_library_source_section),
+        icon = Icons.Rounded.Link,
+        anchor = SettingsScrollAnchor.searchKey("library-source"),
+    )
+    addRow(
+        page = SettingsPage.Integrations,
+        key = "calendar-source",
+        title = stringResource(Res.string.settings_calendar_source_title),
+        description = stringResource(Res.string.settings_calendar_source_description),
+        pageLabel = integrationsPage,
+        section = stringResource(Res.string.settings_calendar_source_section),
+        icon = Icons.Rounded.Link,
+        anchor = SettingsScrollAnchor.searchKey("calendar-source"),
+    )
     if (isDesktop) {
         addPage(
             page = SettingsPage.KeyboardShortcuts,
             key = "keyboard-shortcuts",
             title = stringResource(Res.string.compose_settings_page_keyboard_shortcuts),
-            description = "Hotkeys and key bindings for navigation and the video player.",
+            description = stringResource(Res.string.settings_shortcuts_search_description),
             icon = Icons.Rounded.Keyboard,
         )
     }
     if (isDesktop) {
         addRow(
+            page = SettingsPage.Appearance,
+            key = "start-windowed",
+            title = stringResource(Res.string.settings_appearance_start_windowed),
+            description = stringResource(Res.string.settings_appearance_start_windowed_description),
+            pageLabel = layoutPage,
+            section = stringResource(Res.string.settings_appearance_section_display),
+            icon = Icons.Rounded.Palette,
+        )
+        addRow(
             page = SettingsPage.Integrations,
             key = "discord-presence",
-            title = "Discord Rich Presence",
-            description = "Show the title and episode you are watching on your Discord profile.",
+            title = stringResource(Res.string.settings_discord_presence),
+            description = stringResource(Res.string.settings_discord_presence_search_description),
             pageLabel = integrationsPage,
             section = stringResource(Res.string.settings_integrations_section_title),
             icon = Icons.Rounded.Link,
@@ -427,7 +492,7 @@ internal fun settingsSearchEntries(
             page = SettingsPage.Appearance,
             key = "desktop-navigation",
             title = stringResource(Res.string.settings_appearance_desktop_navigation),
-            description = "Choose between the top bar and sidebar desktop navigation.",
+            description = stringResource(Res.string.settings_desktop_navigation_search_description),
             pageLabel = layoutPage,
             section = stringResource(Res.string.settings_appearance_section_display),
             icon = Icons.Rounded.Palette,
@@ -588,6 +653,12 @@ internal fun settingsSearchEntries(
                 anchor = SettingsScrollAnchor.MouseMove,
             ) else null,
             if (isDesktop) PlaybackSearchRow(
+                "source-notch",
+                stringResource(Res.string.settings_playback_source_notch),
+                stringResource(Res.string.settings_playback_source_notch_description),
+                anchor = SettingsScrollAnchor.SourceNotch,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
                 "desktop-hdr",
                 stringResource(Res.string.settings_playback_desktop_hdr_mode),
                 anchor = SettingsScrollAnchor.HdrMode,
@@ -618,12 +689,24 @@ internal fun settingsSearchEntries(
                 stringResource(Res.string.settings_playback_desktop_anime_auto),
                 stringResource(Res.string.settings_playback_desktop_anime_auto_desc),
                 anchor = SettingsScrollAnchor.AnimeAutoApply,
+                fallbackAnchor = SettingsScrollAnchor.AnimeEnhancements,
+                fallbackTitle = stringResource(Res.string.settings_playback_desktop_anime_mode),
             ) else null,
             if (isDesktop) PlaybackSearchRow(
                 "desktop-anime-svp",
                 stringResource(Res.string.settings_playback_desktop_anime_svp),
                 stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
                 anchor = SettingsScrollAnchor.AnimeSvp,
+                fallbackAnchor = SettingsScrollAnchor.AnimeEnhancements,
+                fallbackTitle = stringResource(Res.string.settings_playback_desktop_anime_mode),
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "desktop-anime-svp-overlay",
+                stringResource(Res.string.settings_playback_desktop_anime_svp_overlay),
+                stringResource(Res.string.settings_playback_desktop_anime_svp_overlay_desc),
+                anchor = SettingsScrollAnchor.AnimeSvpOverlay,
+                fallbackAnchor = SettingsScrollAnchor.AnimeSvp,
+                fallbackTitle = stringResource(Res.string.settings_playback_desktop_anime_svp),
             ) else null,
             if (isDesktop) PlaybackSearchRow(
                 "nvidia-rtx-hdr",
@@ -647,6 +730,16 @@ internal fun settingsSearchEntries(
                 stringResource(Res.string.settings_playback_dual_subtitles),
                 stringResource(Res.string.settings_playback_dual_subtitles_description),
             ) else null,
+            PlaybackSearchRow(
+                "reject-subtitle-keywords",
+                stringResource(Res.string.settings_playback_reject_subtitle_keywords),
+                stringResource(Res.string.settings_playback_reject_subtitle_keywords_description),
+            ),
+            PlaybackSearchRow(
+                "reject-audio-keywords",
+                stringResource(Res.string.settings_playback_reject_audio_keywords),
+                stringResource(Res.string.settings_playback_reject_audio_keywords_description),
+            ),
         ),
     )
     addPlaybackRows(
@@ -661,6 +754,11 @@ internal fun settingsSearchEntries(
                 stringResource(Res.string.settings_playback_reuse_last_link_description),
             ),
             PlaybackSearchRow("last-link-cache", stringResource(Res.string.settings_playback_last_link_cache_duration)),
+            PlaybackSearchRow(
+                "pause-overlay-source",
+                stringResource(Res.string.settings_playback_pause_overlay_source),
+                stringResource(Res.string.settings_playback_pause_overlay_source_description),
+            ),
         ),
     )
     addPlaybackRows(
@@ -697,9 +795,21 @@ internal fun settingsSearchEntries(
         rows = listOf(
             PlaybackSearchRow("skip-intro", stringResource(Res.string.settings_playback_skip_intro_outro_recap), stringResource(Res.string.settings_playback_skip_intro_outro_recap_description)),
             PlaybackSearchRow("anime-skip", stringResource(Res.string.settings_playback_anime_skip), stringResource(Res.string.settings_playback_anime_skip_description)),
-            PlaybackSearchRow("anime-skip-client", stringResource(Res.string.settings_playback_anime_skip_client_id), stringResource(Res.string.settings_playback_anime_skip_client_id_description)),
+            PlaybackSearchRow(
+                "anime-skip-client",
+                stringResource(Res.string.settings_playback_anime_skip_client_id),
+                stringResource(Res.string.settings_playback_anime_skip_client_id_description),
+                fallbackAnchor = SettingsScrollAnchor.searchKey("anime-skip"),
+                fallbackTitle = stringResource(Res.string.settings_playback_anime_skip),
+            ),
             PlaybackSearchRow("intro-submit", stringResource(Res.string.settings_playback_intro_submit_enabled), stringResource(Res.string.settings_playback_intro_submit_enabled_description)),
-            PlaybackSearchRow("introdb-key", stringResource(Res.string.settings_playback_introdb_api_key), stringResource(Res.string.settings_playback_introdb_api_key_description)),
+            PlaybackSearchRow(
+                "introdb-key",
+                stringResource(Res.string.settings_playback_introdb_api_key),
+                stringResource(Res.string.settings_playback_introdb_api_key_description),
+                fallbackAnchor = SettingsScrollAnchor.searchKey("intro-submit"),
+                fallbackTitle = stringResource(Res.string.settings_playback_intro_submit_enabled),
+            ),
         ),
     )
     addPlaybackRows(
@@ -719,13 +829,20 @@ internal fun settingsSearchEntries(
     addContinueWatchingRows(
         addRow = ::addRow,
         pageLabel = continueWatchingPage,
-        section = stringResource(Res.string.settings_continue_watching_section_visibility),
+        section = stringResource(Res.string.settings_cw_source_section),
         icon = Icons.Rounded.Style,
         rows = listOf(
             PlaybackSearchRow(
-                "show-continue-watching",
-                stringResource(Res.string.settings_continue_watching_show_title),
-                stringResource(Res.string.settings_continue_watching_show_description),
+                "source",
+                stringResource(Res.string.settings_cw_source_title),
+                stringResource(Res.string.settings_appearance_continue_watching_description),
+                anchor = SettingsScrollAnchor.searchKey("continue-watching-source"),
+            ),
+            PlaybackSearchRow(
+                "window",
+                stringResource(Res.string.settings_cw_window_title),
+                stringResource(Res.string.settings_cw_window_description),
+                anchor = SettingsScrollAnchor.searchKey("continue-watching-window"),
             ),
         ),
     )
@@ -735,6 +852,11 @@ internal fun settingsSearchEntries(
         section = stringResource(Res.string.settings_continue_watching_section_up_next_behavior),
         icon = Icons.Rounded.Style,
         rows = listOf(
+            PlaybackSearchRow(
+                "show-continue-watching",
+                stringResource(Res.string.settings_continue_watching_show_title),
+                stringResource(Res.string.settings_continue_watching_show_description),
+            ),
             PlaybackSearchRow("episode-thumbnails", stringResource(Res.string.settings_continue_watching_use_episode_thumbnails_title), stringResource(Res.string.settings_continue_watching_use_episode_thumbnails_description)),
             PlaybackSearchRow("up-next", stringResource(Res.string.settings_continue_watching_up_next_title), stringResource(Res.string.settings_continue_watching_up_next_description)),
             PlaybackSearchRow("unaired-next-up", stringResource(Res.string.settings_continue_watching_show_unaired_next_up_title), stringResource(Res.string.settings_continue_watching_show_unaired_next_up_description)),
@@ -792,6 +914,9 @@ internal fun settingsSearchEntries(
         PlaybackSearchRow("home-hero-trailer-search", "Trailers in Search", "Allow focused search results to play hero trailers.", anchor = SettingsScrollAnchor.TrailerSearch),
         PlaybackSearchRow("home-adaptive-hero-position", "Backdrop vertical position", "Manually tune how adaptive hero backdrops crop vertically.", anchor = SettingsScrollAnchor.AdaptiveHeroPosition),
         PlaybackSearchRow("home-adaptive-hero-height", "Hero height", "Set how much of the window the adaptive hero occupies.", anchor = SettingsScrollAnchor.AdaptiveHeroHeight),
+        PlaybackSearchRow("home-catalog-row-numbers", "Number catalog rows", "Append each row's position to its name, including collections."),
+        PlaybackSearchRow("home-tv-row-dots", "Row jump dots", "Click a dot beside the TV Mode row name to jump straight to that catalog."),
+        PlaybackSearchRow("home-tv-row-dots-anchor", "Row jump dot position", "Put the TV Mode jump dots on the row name's line or over the backdrop."),
         PlaybackSearchRow("home-hero-sources", stringResource(Res.string.settings_homescreen_section_hero_sources)),
         PlaybackSearchRow("home-catalogs", stringResource(Res.string.settings_homescreen_section_catalogs)),
     ).forEach { row ->
@@ -838,6 +963,13 @@ internal fun settingsSearchEntries(
         icon = Icons.Rounded.Link,
     )
     addPage(
+        page = SettingsPage.QualiCache,
+        key = "qualicache",
+        title = qualiCachePage,
+        description = stringResource(Res.string.settings_integrations_qualicache_description),
+        icon = Icons.Rounded.Link,
+    )
+    addPage(
         page = SettingsPage.Debrid,
         key = "debrid",
         title = debridPage,
@@ -851,6 +983,7 @@ internal fun settingsSearchEntries(
         PlaybackSearchRow("tvdb-api-key", stringResource(Res.string.settings_licenses_attributions_tvdb_title), stringResource(Res.string.settings_licenses_attributions_tvdb_body), stringResource(Res.string.settings_tmdb_section_credentials), anchor = SettingsScrollAnchor.TvdbApiKey),
         PlaybackSearchRow("tmdb-hero-images", "Hero backdrop & logo", "Choose addon artwork, TMDB artwork, or TVDB artwork for TV and anime.", "HERO BACKDROP & LOGO", anchor = SettingsScrollAnchor.TmdbHeroImages),
         PlaybackSearchRow("tmdb-language", stringResource(Res.string.settings_tmdb_preferred_language), stringResource(Res.string.settings_tmdb_preferred_language_description), stringResource(Res.string.settings_tmdb_section_localization)),
+        PlaybackSearchRow("tmdb-filename-catalogs", "Resolve filenames via TMDB", "Look up catalog rows that arrive as raw release filenames (TorBox, AIOStreams library) by name and year.", "FILENAME-ONLY CATALOGS"),
         PlaybackSearchRow("tmdb-trailers", stringResource(Res.string.settings_tmdb_module_trailers), stringResource(Res.string.settings_tmdb_module_trailers_description), tmdbModulesSection),
         PlaybackSearchRow("tmdb-artwork", stringResource(Res.string.settings_tmdb_module_artwork), stringResource(Res.string.settings_tmdb_module_artwork_description), tmdbModulesSection),
         PlaybackSearchRow("tmdb-basic-info", stringResource(Res.string.settings_tmdb_module_basic_info), stringResource(Res.string.settings_tmdb_module_basic_info_description), tmdbModulesSection),
@@ -892,6 +1025,25 @@ internal fun settingsSearchEntries(
             description = row.description,
             pageLabel = mdbListPage,
             section = row.sectionOverride ?: stringResource(Res.string.settings_mdb_section_title),
+            icon = Icons.Rounded.Link,
+        )
+    }
+
+    listOf(
+        PlaybackSearchRow("qualicache-enable", "Show quality badges", "Highlight notable release quality on the Home hero, from your QualiCache server.", "QUALICACHE"),
+        PlaybackSearchRow("qualicache-url", "Server address", "Where your QualiCache instance is reachable.", "SERVER"),
+        PlaybackSearchRow("qualicache-access-key", "Access key", "Only needed if you set ACCESS_KEY on the server.", "SERVER"),
+        PlaybackSearchRow("qualicache-resolution", "Resolution", "The 4K disc and stream badges", "BADGES"),
+        PlaybackSearchRow("qualicache-dynamic-range", "Dynamic range", "Dolby Vision, HDR", "BADGES"),
+        PlaybackSearchRow("qualicache-audio", "Audio", "Dolby Atmos, DTS", "BADGES"),
+    ).forEach { row ->
+        addRow(
+            page = SettingsPage.QualiCache,
+            key = row.key,
+            title = row.title,
+            description = row.description,
+            pageLabel = qualiCachePage,
+            section = row.sectionOverride ?: "QUALICACHE",
             icon = Icons.Rounded.Link,
         )
     }
@@ -951,9 +1103,7 @@ internal fun settingsSearchEntries(
         icon = Icons.Rounded.Link,
     )
     listOf(
-        PlaybackSearchRow("trakt-library-source", stringResource(Res.string.trakt_library_source_title), stringResource(Res.string.trakt_library_source_subtitle)),
         PlaybackSearchRow("trakt-watch-progress", stringResource(Res.string.trakt_watch_progress_title), stringResource(Res.string.trakt_watch_progress_subtitle)),
-        PlaybackSearchRow("trakt-continue-watching-window", stringResource(Res.string.trakt_continue_watching_window), stringResource(Res.string.trakt_continue_watching_subtitle)),
         PlaybackSearchRow("trakt-comments", stringResource(Res.string.settings_trakt_comments), stringResource(Res.string.settings_trakt_comments_description)),
         PlaybackSearchRow("trakt-more-like-this-source", stringResource(Res.string.trakt_more_like_this_source_title), stringResource(Res.string.trakt_more_like_this_source_subtitle)),
     ).forEach { row ->
@@ -980,10 +1130,7 @@ internal fun settingsSearchEntries(
     listOf(
         PlaybackSearchRow("simkl-client-id", stringResource(Res.string.settings_simkl_client_id), stringResource(Res.string.settings_simkl_credentials_description), stringResource(Res.string.settings_simkl_section_credentials)),
         PlaybackSearchRow("simkl-connect", stringResource(Res.string.settings_simkl_connect), stringResource(Res.string.settings_simkl_description), stringResource(Res.string.settings_simkl_section_auth)),
-        PlaybackSearchRow("simkl-library-source", stringResource(Res.string.settings_simkl_library_source), stringResource(Res.string.settings_simkl_library_source_desc), stringResource(Res.string.settings_simkl_section_sources)),
-        PlaybackSearchRow("simkl-continue-watching", stringResource(Res.string.settings_simkl_cw_source), stringResource(Res.string.settings_simkl_cw_source_desc), stringResource(Res.string.settings_simkl_section_sources)),
-        PlaybackSearchRow("simkl-continue-watching-window", stringResource(Res.string.settings_simkl_cw_window), stringResource(Res.string.settings_simkl_cw_window_subtitle), stringResource(Res.string.settings_simkl_section_sources)),
-        PlaybackSearchRow("simkl-calendar", stringResource(Res.string.settings_simkl_calendar_source), stringResource(Res.string.settings_simkl_calendar_source_desc), stringResource(Res.string.settings_simkl_section_sources)),
+        PlaybackSearchRow("simkl-daily-visit", stringResource(Res.string.settings_simkl_daily_visit), stringResource(Res.string.settings_simkl_daily_visit_desc), stringResource(Res.string.settings_simkl_section_daily_visit)),
     ).forEach { row ->
         addRow(
             page = SettingsPage.SimklAuthentication,
@@ -1006,6 +1153,8 @@ private data class PlaybackSearchRow(
     val description: String = "",
     val sectionOverride: String? = null,
     val anchor: String? = null,
+    val fallbackAnchor: String? = null,
+    val fallbackTitle: String? = null,
 )
 
 private fun addPlaybackRows(
@@ -1019,6 +1168,8 @@ private fun addPlaybackRows(
         category: String,
         icon: ImageVector,
         anchor: String?,
+        fallbackAnchor: String?,
+        fallbackTitle: String?,
     ) -> Unit,
     pageLabel: String,
     section: String,
@@ -1038,6 +1189,8 @@ private fun addPlaybackRows(
             "",
             icon,
             row.anchor,
+            row.fallbackAnchor ?: SettingsScrollAnchor.section(section),
+            row.fallbackTitle ?: section,
         )
     }
 }
@@ -1053,6 +1206,8 @@ private fun addContinueWatchingRows(
         category: String,
         icon: ImageVector,
         anchor: String?,
+        fallbackAnchor: String?,
+        fallbackTitle: String?,
     ) -> Unit,
     pageLabel: String,
     section: String,
@@ -1070,6 +1225,8 @@ private fun addContinueWatchingRows(
             "",
             icon,
             row.anchor,
+            row.fallbackAnchor ?: SettingsScrollAnchor.section(section),
+            row.fallbackTitle ?: section,
         )
     }
 }

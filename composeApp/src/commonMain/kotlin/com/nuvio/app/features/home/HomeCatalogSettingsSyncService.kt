@@ -37,6 +37,7 @@ data class SyncCatalogItem(
     val enabled: Boolean = true,
     val order: Int = 0,
     @SerialName("custom_title") val customTitle: String = "",
+    @SerialName("marker_color") val markerColor: String? = null,
     @SerialName("is_collection") val isCollection: Boolean = false,
     @SerialName("collection_id") val collectionId: String = "",
 )

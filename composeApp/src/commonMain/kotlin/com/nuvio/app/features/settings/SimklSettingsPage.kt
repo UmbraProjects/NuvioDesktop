@@ -1,6 +1,5 @@
 package com.nuvio.app.features.settings
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,7 +17,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,13 +30,14 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.nuvio.app.features.simkl.SIMKL_CW_DAYS_CAP_ALL
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.features.simkl.SimklAuthRepository
 import com.nuvio.app.features.simkl.SimklAuthUiState
 import com.nuvio.app.features.simkl.SimklConnectionMode
 import com.nuvio.app.features.simkl.SimklSettingsRepository
 import com.nuvio.app.features.simkl.SimklSettingsUiState
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.settings_simkl_connect
 import nuvio.composeapp.generated.resources.settings_simkl_connected_as
 import nuvio.composeapp.generated.resources.settings_simkl_credentials_clear
@@ -53,17 +52,9 @@ import nuvio.composeapp.generated.resources.settings_simkl_pin_instruction
 import nuvio.composeapp.generated.resources.settings_simkl_pin_title
 import nuvio.composeapp.generated.resources.settings_simkl_section_auth
 import nuvio.composeapp.generated.resources.settings_simkl_section_credentials
-import nuvio.composeapp.generated.resources.settings_simkl_section_sources
-import nuvio.composeapp.generated.resources.settings_simkl_library_source
-import nuvio.composeapp.generated.resources.settings_simkl_library_source_desc
-import nuvio.composeapp.generated.resources.settings_simkl_cw_source
-import nuvio.composeapp.generated.resources.settings_simkl_cw_source_desc
-import nuvio.composeapp.generated.resources.settings_simkl_cw_window
-import nuvio.composeapp.generated.resources.settings_simkl_cw_window_all
-import nuvio.composeapp.generated.resources.settings_simkl_cw_window_days
-import nuvio.composeapp.generated.resources.settings_simkl_cw_window_subtitle
-import nuvio.composeapp.generated.resources.settings_simkl_calendar_source
-import nuvio.composeapp.generated.resources.settings_simkl_calendar_source_desc
+import nuvio.composeapp.generated.resources.settings_simkl_daily_visit
+import nuvio.composeapp.generated.resources.settings_simkl_daily_visit_desc
+import nuvio.composeapp.generated.resources.settings_simkl_section_daily_visit
 import org.jetbrains.compose.resources.stringResource
 
 internal fun LazyListScope.simklSettingsContent(
@@ -103,43 +94,17 @@ internal fun LazyListScope.simklSettingsContent(
     if (uiState.mode == SimklConnectionMode.CONNECTED) {
         item {
             SettingsSection(
-                title = stringResource(Res.string.settings_simkl_section_sources),
+                title = stringResource(Res.string.settings_simkl_section_daily_visit),
                 isTablet = isTablet,
             ) {
                 SettingsGroup(isTablet = isTablet) {
                     SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_simkl_library_source),
-                        description = stringResource(Res.string.settings_simkl_library_source_desc),
-                        checked = settingsUiState.simklAsLibrarySource,
+                        title = stringResource(Res.string.settings_simkl_daily_visit),
+                        description = stringResource(Res.string.settings_simkl_daily_visit_desc),
+                        checked = settingsUiState.simklOpenDailyOnStartup,
                         isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-library-source")),
-                        onCheckedChange = SimklSettingsRepository::setAsLibrarySource,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_simkl_cw_source),
-                        description = stringResource(Res.string.settings_simkl_cw_source_desc),
-                        checked = settingsUiState.simklAsCwSource,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-continue-watching")),
-                        onCheckedChange = SimklSettingsRepository::setAsCwSource,
-                    )
-                    if (settingsUiState.simklAsCwSource) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SimklCwWindowRow(
-                            isTablet = isTablet,
-                            daysCap = settingsUiState.simklContinueWatchingDaysCap,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-continue-watching-window")),
-                        )
-                    }
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_simkl_calendar_source),
-                        description = stringResource(Res.string.settings_simkl_calendar_source_desc),
-                        checked = settingsUiState.simklAsCalendarSource,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-calendar")),
-                        onCheckedChange = SimklSettingsRepository::setAsCalendarSource,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-daily-visit")),
+                        onCheckedChange = SimklSettingsRepository::setOpenDailyOnStartup,
                     )
                 }
             }
@@ -182,7 +147,7 @@ private fun SimklCredentialsCard(
         OutlinedTextField(
             value = clientId,
             onValueChange = { clientId = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
             singleLine = true,
             label = { Text(stringResource(Res.string.settings_simkl_client_id)) },
             colors = OutlinedTextFieldDefaults.colors(
@@ -264,7 +229,7 @@ private fun SimklConnectionCard(
             SimklConnectionMode.CONNECTED -> {
                 uiState.username?.let { name ->
                     Text(
-                        text = "${stringResource(Res.string.settings_simkl_connected_as)} $name",
+                        text = stringResource(Res.string.settings_simkl_connected_as_format, name),
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -303,7 +268,7 @@ private fun SimklConnectionCard(
             showPinDialog = false
             SimklAuthRepository.onDisconnectRequested()
         }) {
-            Surface(shape = MaterialTheme.shapes.large) {
+            NuvioDialogSurface {
                 Column(
                     modifier = Modifier.padding(24.dp).widthIn(max = 360.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -345,100 +310,6 @@ private fun SimklConnectionCard(
                         colors = ButtonDefaults.outlinedButtonColors(),
                     ) {
                         Text(stringResource(Res.string.settings_simkl_pin_cancel))
-                    }
-                }
-            }
-        }
-    }
-}
-
-private val SIMKL_CW_DAY_OPTIONS = listOf(14, 30, 60, 90, 180, 365, SIMKL_CW_DAYS_CAP_ALL)
-
-@Composable
-private fun simklCwWindowLabel(days: Int): String =
-    if (days == SIMKL_CW_DAYS_CAP_ALL) stringResource(Res.string.settings_simkl_cw_window_all)
-    else stringResource(Res.string.settings_simkl_cw_window_days, days)
-
-@Composable
-private fun SimklCwWindowRow(
-    isTablet: Boolean,
-    daysCap: Int,
-    modifier: Modifier = Modifier,
-) {
-    var showDialog by rememberSaveable { mutableStateOf(false) }
-    val label = simklCwWindowLabel(daysCap)
-    SettingsNavigationRow(
-        title = stringResource(Res.string.settings_simkl_cw_window),
-        description = "${stringResource(Res.string.settings_simkl_cw_window_subtitle)} $label",
-        isTablet = isTablet,
-        modifier = modifier,
-        onClick = { showDialog = true },
-    )
-    if (showDialog) {
-        SimklCwWindowDialog(
-            selectedDaysCap = daysCap,
-            onDaysCapSelected = {
-                SimklSettingsRepository.setSimklContinueWatchingDaysCap(it)
-                showDialog = false
-            },
-            onDismiss = { showDialog = false },
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SimklCwWindowDialog(
-    selectedDaysCap: Int,
-    onDaysCapSelected: (Int) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    BasicAlertDialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = stringResource(Res.string.settings_simkl_cw_window),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = stringResource(Res.string.settings_simkl_cw_window_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    SIMKL_CW_DAY_OPTIONS.forEach { days ->
-                        val selected = days == selectedDaysCap
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onDaysCapSelected(days) }
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            androidx.compose.material3.RadioButton(
-                                selected = selected,
-                                onClick = { onDaysCapSelected(days) },
-                            )
-                            Text(
-                                text = simklCwWindowLabel(days),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = if (selected) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
                     }
                 }
             }

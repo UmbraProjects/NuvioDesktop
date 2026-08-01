@@ -43,6 +43,14 @@ internal object SimklAuthRepository {
         publishState()
     }
 
+    fun onProfileChanged() {
+        pinPollJob?.cancel()
+        pinPollJob = null
+        loaded = false
+        authState = SimklAuthState()
+        ensureLoaded()
+    }
+
     /** Returns the headers needed for authenticated SIMKL API calls, or null if not connected. */
     fun authorizedHeaders(): Map<String, String>? {
         val token = authState.accessToken?.takeIf { it.isNotBlank() } ?: return null

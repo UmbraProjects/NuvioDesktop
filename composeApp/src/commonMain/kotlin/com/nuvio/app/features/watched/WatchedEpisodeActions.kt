@@ -2,6 +2,8 @@ package com.nuvio.app.features.watched
 
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.details.effectiveEpisodeNumber
+import com.nuvio.app.features.details.effectiveSeasonNumber
 import com.nuvio.app.features.details.normalizeSeasonNumber
 import com.nuvio.app.features.details.sortedPlayableEpisodes
 import com.nuvio.app.features.watching.domain.WatchingContentRef
@@ -31,10 +33,26 @@ fun MetaDetails.toEpisodeWatchedItem(
         name = video.title.ifBlank { name },
         poster = video.thumbnail ?: background ?: poster,
         releaseInfo = releaseInfo,
-        season = video.season,
-        episode = video.episode,
+        season = video.effectiveSeasonNumber(),
+        episode = video.effectiveEpisodeNumber(),
         markedAtEpochMs = markedAtEpochMs,
     )
+
+/**
+ * Every main-season episode number this show is known to have, keyed by season.
+ *
+ * Includes episodes that have not aired yet — the caller deciding what a finale is needs the whole
+ * season, not the part released so far. Specials (season 0) are excluded.
+ */
+fun MetaDetails.seasonEpisodeNumbers(): Map<Int, Set<Int>> =
+    sortedPlayableEpisodes()
+        .mapNotNull { episode ->
+            val season = episode.effectiveSeasonNumber()?.takeIf { it > 0 } ?: return@mapNotNull null
+            val number = episode.effectiveEpisodeNumber() ?: return@mapNotNull null
+            season to number
+        }
+        .groupBy({ (season, _) -> season }, { (_, number) -> number })
+        .mapValues { (_, numbers) -> numbers.toSet() }
 
 fun MetaDetails.releasedPlayableEpisodes(todayIsoDate: String): List<MetaVideo> {
     val domainEpisodes = releasedEpisodes(
@@ -70,7 +88,7 @@ fun MetaDetails.releasedEpisodesForSeason(
 ): List<MetaVideo> {
     val normalizedSeason = normalizeSeasonNumber(seasonNumber)
     return releasedPlayableEpisodes(todayIsoDate)
-        .filter { episode -> normalizeSeasonNumber(episode.season) == normalizedSeason }
+        .filter { episode -> normalizeSeasonNumber(episode.effectiveSeasonNumber()) == normalizedSeason }
 }
 
 fun MetaDetails.hasWatchedAllMainSeasonEpisodes(
@@ -87,8 +105,8 @@ fun MetaDetails.hasWatchedAllMainSeasonEpisodes(
 fun MetaDetails.episodePlaybackId(video: MetaVideo): String =
     buildPlaybackVideoId(
         content = WatchingContentRef(type = type, id = id),
-        seasonNumber = video.season,
-        episodeNumber = video.episode,
+        seasonNumber = video.effectiveSeasonNumber(),
+        episodeNumber = video.effectiveEpisodeNumber(),
         fallbackVideoId = video.id,
     )
 
@@ -106,8 +124,8 @@ fun MetaDetails.episodePlaybackIds(video: MetaVideo): List<String> =
 private fun MetaVideo.toDomainReleasedEpisode(): WatchingReleasedEpisode =
     WatchingReleasedEpisode(
         videoId = id,
-        seasonNumber = season,
-        episodeNumber = episode,
+        seasonNumber = effectiveSeasonNumber(),
+        episodeNumber = effectiveEpisodeNumber(),
         title = title,
         thumbnail = thumbnail,
         releasedDate = released,

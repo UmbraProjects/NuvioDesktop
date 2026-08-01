@@ -26,6 +26,19 @@ object HeroTrailerMetadataService {
     private val inFlightRequests = mutableMapOf<String, CompletableDeferred<TrailerPlaybackSource?>>()
     private val cache = mutableMapOf<String, CachedTrailer>()
 
+    /**
+     * Drops the cached resolution for [type]/[id] so the next [resolve] re-extracts from YouTube.
+     *
+     * Needed because what is cached here is not "this item has a trailer" but a pair of resolved
+     * googlevideo media URLs, and those can be rejected (403) by the time — or from the moment —
+     * mpv asks for them. Without this the [FOUND_TTL_MS] entry would hand the same dead URLs to
+     * every later attempt, so an item that failed once stayed silent on the home hero for two hours
+     * while the details screen (which always re-extracts) played it fine.
+     */
+    suspend fun invalidate(type: String, id: String) {
+        cacheMutex.withLock { cache.remove(cacheKey(type, id)) }
+    }
+
     /** Returns a cached, still-valid resolved trailer source if present, else null. */
     fun peek(type: String, id: String): TrailerPlaybackSource? {
         val entry = cache[cacheKey(type, id)] ?: return null

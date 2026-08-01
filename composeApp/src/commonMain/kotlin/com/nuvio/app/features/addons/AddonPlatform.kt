@@ -30,6 +30,15 @@ expect suspend fun httpPostJsonWithHeaders(
     headers: Map<String, String>,
 ): String
 
+/**
+ * Marker appended to a [RawHttpResponse.body] that hit the platform's response size cap.
+ *
+ * A truncated body is still valid text but no longer valid JSON, so a caller parsing one sees a
+ * confusing "unexpected end of input" rather than "the response was too big". Callers that page
+ * through large collections should check for this and say so.
+ */
+const val RAW_HTTP_TRUNCATION_MARKER = "...[truncated]"
+
 expect suspend fun httpRequestRaw(
     method: String,
     url: String,
@@ -37,3 +46,29 @@ expect suspend fun httpRequestRaw(
     body: String,
     followRedirects: Boolean = true,
 ): RawHttpResponse
+
+/** True when this body was cut short by the response size cap; see [RAW_HTTP_TRUNCATION_MARKER]. */
+val RawHttpResponse.isTruncated: Boolean
+    get() = body.endsWith(RAW_HTTP_TRUNCATION_MARKER)
+
+/**
+ * One revalidated download of a whole file.
+ *
+ * Unlike [httpRequestRaw] the body is not size-capped, because the callers here are fetching bulk
+ * data files rather than addon replies — a truncated one is useless, not merely shortened. Pass the
+ * [etag] kept from the previous download to turn an unchanged file into an empty 304 instead of
+ * transferring it again.
+ */
+expect suspend fun httpGetFileRevalidated(
+    url: String,
+    etag: String?,
+): RevalidatedFileResponse
+
+sealed interface RevalidatedFileResponse {
+    /** The file is unchanged since [httpGetFileRevalidated] was last given this etag. */
+    data object NotModified : RevalidatedFileResponse
+
+    data class Downloaded(val body: String, val etag: String?) : RevalidatedFileResponse
+
+    data class Failed(val status: Int?, val message: String?) : RevalidatedFileResponse
+}

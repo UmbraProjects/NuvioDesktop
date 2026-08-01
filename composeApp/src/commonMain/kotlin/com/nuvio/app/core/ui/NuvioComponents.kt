@@ -82,25 +82,32 @@ fun NuvioScreen(
     topPadding: Dp? = null,
     backgroundColor: Color? = null,
     listState: LazyListState = rememberLazyListState(),
+    showDesktopScrollbar: Boolean = true,
     content: LazyListScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
     val resolvedBackgroundColor = backgroundColor ?: tokens.colors.background
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    LazyColumn(
-        state = listState,
-        modifier = modifier
-            .fillMaxSize()
-            .background(resolvedBackgroundColor),
-        contentPadding = PaddingValues(
-            start = horizontalPadding,
-            top = topPadding ?: tokens.spacing.screenTop + statusBarTop + nuvioPlatformExtraTopPadding,
-            end = horizontalPadding,
-            bottom = nuvioSafeBottomPadding(tokens.spacing.screenBottom),
-        ),
-        verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
-        content = content,
-    )
+    Box(modifier = modifier.fillMaxSize().background(resolvedBackgroundColor)) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = horizontalPadding,
+                top = topPadding ?: tokens.spacing.screenTop + statusBarTop + nuvioPlatformExtraTopPadding,
+                end = horizontalPadding,
+                bottom = nuvioSafeBottomPadding(tokens.spacing.screenBottom),
+            ),
+            verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
+            content = content,
+        )
+        if (showDesktopScrollbar) {
+            NuvioDesktopVerticalScrollbar(
+                state = listState,
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 3.dp),
+            )
+        }
+    }
 }
 
 internal fun Modifier.nuvioConsumePointerEvents(): Modifier =
@@ -429,11 +436,7 @@ fun NuvioStatusModal(
             }
         },
     ) {
-        Surface(
-            modifier = modifier.fillMaxWidth(),
-            color = tokens.colors.surfaceDialog,
-            shape = tokens.shapes.dialog,
-        ) {
+        NuvioDialogSurface(modifier = modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(tokens.spacing.dialogPadding),
             ) {

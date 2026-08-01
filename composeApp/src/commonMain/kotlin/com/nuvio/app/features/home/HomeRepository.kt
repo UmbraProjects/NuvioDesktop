@@ -49,6 +49,16 @@ internal fun CollectionFolder.homeHeroPreview(collection: Collection): MetaPrevi
     )
 }
 
+/**
+ * A completed empty response is still a cached catalog result. Re-fetching empty rows on every
+ * home/settings synchronization can turn an upstream quota error into a request loop. Explicit
+ * refreshes continue to bypass the session cache.
+ */
+internal fun shouldFetchHomeCatalog(
+    force: Boolean,
+    cachedSection: HomeCatalogSection?,
+): Boolean = force || cachedSection == null
+
 object HomeRepository {
     private val log = Logger.withTag("HomeRepository")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -95,10 +105,8 @@ object HomeRepository {
         val activeRequestKeys = requests
             .filter(HomeCatalogDefinition::isActiveInHome)
             .mapTo(mutableSetOf(), HomeCatalogDefinition::key)
-        val allRenderableRowsCached = activeRequestKeys.all { key ->
-            cachedSections[key]?.items?.isNotEmpty() == true
-        }
-        if (!force && requestKey == lastRequestKey && allRenderableRowsCached) {
+        val allActiveCatalogsFetched = activeRequestKeys.all(cachedSections::containsKey)
+        if (!force && requestKey == lastRequestKey && allActiveCatalogsFetched) {
             if (_uiState.value.sections.isEmpty() || _uiState.value.heroItems.isEmpty()) {
                 applyCurrentSettings()
             }
@@ -134,7 +142,10 @@ object HomeRepository {
                 snapshot = snapshot,
             )
             val pendingRequests = prioritizedRequests.filter { definition ->
-                force || cachedSections[definition.key]?.items?.isNotEmpty() != true
+                shouldFetchHomeCatalog(
+                    force = force,
+                    cachedSection = cachedSections[definition.key],
+                )
             }
             log.i {
                 "Home refresh: definitions=${requests.size}, enabled=${prioritizedRequests.size}, " +

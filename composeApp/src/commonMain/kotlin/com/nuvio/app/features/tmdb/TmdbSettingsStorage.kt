@@ -35,6 +35,8 @@ internal expect object TmdbSettingsStorage {
     fun saveLibraryPosterEnabled(enabled: Boolean)
     fun loadLibraryPosterUrlTemplate(): String?
     fun saveLibraryPosterUrlTemplate(template: String)
+    fun loadResolveFilenameCatalogs(): Boolean?
+    fun saveResolveFilenameCatalogs(enabled: Boolean)
     fun loadHeroImageSource(): String?
     fun saveHeroImageSource(source: String)
     fun exportToSyncPayload(): JsonObject

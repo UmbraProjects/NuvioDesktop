@@ -3,7 +3,6 @@ package com.nuvio.app.features.home.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -48,13 +47,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.ExtraLargePosterCardWidthDp
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioProgressBar
+import com.nuvio.app.core.ui.NuvioCardDepthSurface
+import com.nuvio.app.core.ui.nuvioCardDepth
 import com.nuvio.app.core.ui.NuvioShelfSection
 import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.landscapePosterHeightForWidth
 import com.nuvio.app.core.ui.landscapePosterWidth
 import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.core.ui.rememberHomePosterCardStyleUiState
-import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.cloud.cloudLibraryDisplayArtworkUrl
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
@@ -195,6 +195,9 @@ internal fun HomeContinueWatchingSection(
     focusedItemIndex: Int? = null,
     rowState: androidx.compose.foundation.lazy.LazyListState? = null,
     onHoverItem: ((Int) -> Unit)? = null,
+    isKeyboardNavigation: Boolean = false,
+    // TV Mode's row-jump dots, rendered on the header line next to the title. Null everywhere else.
+    headerTrailingContent: (@Composable () -> Unit)? = null,
     onItemClick: ((ContinueWatchingItem) -> Unit)? = null,
     onItemLongPress: ((ContinueWatchingItem) -> Unit)? = null,
 ) {
@@ -213,6 +216,8 @@ internal fun HomeContinueWatchingSection(
             focusedItemIndex = focusedItemIndex,
             rowState = effectiveRowState,
             onHoverItem = onHoverItem,
+            isKeyboardNavigation = isKeyboardNavigation,
+            headerTrailingContent = headerTrailingContent,
             onItemClick = onItemClick,
             onItemLongPress = onItemLongPress,
         )
@@ -229,6 +234,8 @@ internal fun HomeContinueWatchingSection(
                 focusedItemIndex = focusedItemIndex,
                 rowState = effectiveRowState,
                 onHoverItem = onHoverItem,
+                isKeyboardNavigation = isKeyboardNavigation,
+                headerTrailingContent = headerTrailingContent,
                 onItemClick = onItemClick,
                 onItemLongPress = onItemLongPress,
             )
@@ -248,6 +255,8 @@ private fun HomeContinueWatchingSectionContent(
     focusedItemIndex: Int?,
     rowState: androidx.compose.foundation.lazy.LazyListState,
     onHoverItem: ((Int) -> Unit)?,
+    isKeyboardNavigation: Boolean,
+    headerTrailingContent: (@Composable () -> Unit)?,
     onItemClick: ((ContinueWatchingItem) -> Unit)?,
     onItemLongPress: ((ContinueWatchingItem) -> Unit)?,
 ) {
@@ -278,6 +287,8 @@ private fun HomeContinueWatchingSectionContent(
             showHeaderAccent = !homeCatalogSettings.hideCatalogUnderline,
             focusedItemIndex = focusedItemIndex,
             onHoverItem = onHoverItem,
+            isKeyboardNavigation = isKeyboardNavigation,
+            headerTrailingContent = headerTrailingContent,
             key = { item -> item.videoId },
             rowState = rowState,
         ) { item ->
@@ -653,7 +664,13 @@ private fun ContinueWatchingCard(
             .aspectRatio(PosterLandscapeAspectRatio)
             .clip(RoundedCornerShape(cardMetrics.cornerRadius))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
+            .nuvioCardDepth(RoundedCornerShape(cardMetrics.cornerRadius), NuvioCardDepthSurface.ContinueWatching)
+            .posterCardClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                zoomImageUrl = imageUrl?.let(::cloudLibraryDisplayArtworkUrl),
+                zoomCornerRadius = cardMetrics.cornerRadius,
+            ),
     ) {
         if (imageUrl != null) {
             AsyncImage(
@@ -817,6 +834,7 @@ private fun ContinueWatchingWideCard(
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
 ) {
+    val artworkUrl = item.continueWatchingArtworkUrl(useEpisodeThumbnails)
     Row(
         modifier = Modifier
             .width(layout.wideCardWidth)
@@ -828,15 +846,14 @@ private fun ContinueWatchingWideCard(
                 color = Color.White.copy(alpha = 0.15f),
                 shape = RoundedCornerShape(layout.cardRadius),
             )
-            .combinedClickable(
-                enabled = onClick != null || onLongClick != null,
-                onClick = { onClick?.invoke() },
+            .posterCardClickable(
+                onClick = onClick,
                 onLongClick = onLongClick,
-            )
-            .secondaryClick(onLongClick),
+                zoomImageUrl = artworkUrl?.let(::cloudLibraryDisplayArtworkUrl),
+                zoomCornerRadius = layout.cardRadius,
+            ),
     ) {
         val shouldBlurArtwork = blurNextUp && useEpisodeThumbnails && item.isNextUp
-        val artworkUrl = item.continueWatchingArtworkUrl(useEpisodeThumbnails)
         ArtworkPanel(
             imageUrl = artworkUrl,
             width = layout.widePosterStripWidth,
@@ -945,6 +962,7 @@ private fun ContinueWatchingPosterCard(
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
 ) {
+    val posterArtworkUrl = item.continueWatchingPosterArtworkUrl(useEpisodeThumbnails)
     Column(
         modifier = Modifier.width(layout.posterCardWidth),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -955,9 +973,15 @@ private fun ContinueWatchingPosterCard(
                 .height(layout.posterCardHeight)
                 .clip(RoundedCornerShape(layout.cardRadius))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .posterCardClickable(onClick = onClick, onLongClick = onLongClick),
+                .nuvioCardDepth(RoundedCornerShape(layout.cardRadius), NuvioCardDepthSurface.ContinueWatching)
+                .posterCardClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                    zoomImageUrl = posterArtworkUrl?.let(::cloudLibraryDisplayArtworkUrl),
+                    zoomCornerRadius = layout.cardRadius,
+                ),
         ) {
-            val imageUrl = item.continueWatchingPosterArtworkUrl(useEpisodeThumbnails)
+            val imageUrl = posterArtworkUrl
             val shouldBlurArtwork = blurNextUp &&
                 useEpisodeThumbnails &&
                 item.isNextUp &&

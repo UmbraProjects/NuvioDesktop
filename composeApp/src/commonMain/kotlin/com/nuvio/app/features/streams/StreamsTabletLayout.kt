@@ -54,6 +54,8 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 internal fun TabletStreamsLayout(
     isEpisode: Boolean,
+    contentId: String?,
+    contentType: String?,
     title: String,
     logo: String?,
     poster: String?,
@@ -73,6 +75,9 @@ internal fun TabletStreamsLayout(
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
     onStreamLongPress: (StreamItem) -> Unit,
     modifier: Modifier = Modifier,
+    // See StreamList: the screen owns this so navigation and rendering share one ordering.
+    displayGroups: List<AddonStreamGroup>? = null,
+    showHtpcChip: Boolean = false,
 ) {
     val hazeState = rememberHazeState()
     val tabletBackdrop = remember(background, poster) {
@@ -207,6 +212,7 @@ internal fun TabletStreamsLayout(
                             selectedFilter = uiState.selectedFilter,
                             listState = providerListState,
                             onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
+                            showHtpcChip = showHtpcChip,
                         )
 
                         ActiveScrapersStatusBlock(
@@ -216,6 +222,7 @@ internal fun TabletStreamsLayout(
 
                         StreamList(
                             uiState = uiState,
+                            displayGroups = displayGroups,
                             debridEnabled = debridEnabled,
                             appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
                             onStreamSelected = onStreamSelected,
@@ -224,6 +231,9 @@ internal fun TabletStreamsLayout(
                             resumeProgressFraction = resumeProgressFraction,
                             listState = streamListState,
                             focusedStream = focusedStream,
+                            isEpisode = isEpisode,
+                            contentId = contentId,
+                            contentType = contentType,
                             modifier = Modifier.weight(1f),
                         )
                     }

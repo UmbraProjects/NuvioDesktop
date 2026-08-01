@@ -33,7 +33,7 @@ object TraktWatchedSyncAdapter : WatchedSyncAdapter {
         profileId: Int,
         pageSize: Int,
     ): List<WatchedItem> {
-        val headers = TraktAuthRepository.authorizedHeaders() ?: return emptyList()
+        val headers = TraktAuthRepository.authorizedHeaders(profileId) ?: return emptyList()
 
         val (moviesPayload, showsPayload) = coroutineScope {
             val movies = async {
@@ -128,7 +128,7 @@ object TraktWatchedSyncAdapter : WatchedSyncAdapter {
         items: Collection<WatchedItem>,
     ) {
         if (items.isEmpty()) return
-        val headers = TraktAuthRepository.authorizedHeaders() ?: return
+        val headers = TraktAuthRepository.authorizedHeaders(profileId) ?: return
 
         val movies = mutableListOf<TraktHistoryMovieRequestDto>()
         val shows = mutableListOf<TraktHistoryShowRequestDto>()
@@ -324,7 +324,7 @@ object TraktWatchedSyncAdapter : WatchedSyncAdapter {
         items: Collection<WatchedItem>,
     ) {
         if (items.isEmpty()) return
-        val headers = TraktAuthRepository.authorizedHeaders() ?: return
+        val headers = TraktAuthRepository.authorizedHeaders(profileId) ?: return
 
         val movies = mutableListOf<TraktHistoryMovieRequestDto>()
         val shows = mutableListOf<TraktHistoryShowRequestDto>()
