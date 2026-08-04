@@ -42,6 +42,7 @@ class MetaDetailsParserTest {
                 "_imdbId": "tt3950102",
                 "_malId": "40907",
                 "_tmdbId": "61628",
+                "_tvdbId": "368613",
                 "certification": "TV-14"
               }
             }
@@ -51,6 +52,7 @@ class MetaDetailsParserTest {
         assertEquals("tt3950102", result.imdbId)
         assertEquals("40907", result.malId)
         assertEquals(61628, result.tmdbId)
+        assertEquals("368613", result.tvdbId)
         assertEquals("TV-14", result.ageRating)
     }
 }

@@ -1190,10 +1190,14 @@ internal class NativePlayerController(
             )
         }
 
-    override fun selectAudioTrack(index: Int) {
-        val current = handle.takeIf { it != 0L } ?: return
-        val trackId = resolveTrackId(index, decodeTracks { NativePlayerBridge.audioTracksJson(it) }) ?: return
-        NativePlayerBridge.selectAudioTrack(current, trackId)
+    override fun selectAudioTrack(index: Int): Boolean {
+        val current = handle.takeIf { it != 0L } ?: return false
+        val trackId = resolveTrackId(index, decodeTracks { NativePlayerBridge.audioTracksJson(it) }) ?: return false
+        val selected = NativePlayerBridge.selectAudioTrack(current, trackId)
+        if (!selected) {
+            showPresetPill("Audio track", "Stream is rate-limited - try again shortly")
+        }
+        return selected
     }
 
     override fun selectSubtitleTrack(index: Int): Boolean {

@@ -416,11 +416,26 @@ object TmdbService {
         path?.takeIf { it.isNotBlank() }?.let { "https://image.tmdb.org/t/p/$size$it" }
 
     /** Poster URL for a TMDB id, used when a match was made by id (no poster path in hand). */
-    suspend fun fetchPosterUrl(tmdbId: Int, mediaType: String, size: String = "w500"): String? {
+    suspend fun fetchPosterUrl(tmdbId: Int, mediaType: String, size: String = "w500"): String? =
+        fetchArtwork(tmdbId, mediaType, posterSize = size)?.poster
+
+    /**
+     * Poster + backdrop for a TMDB id in one request. Callers that need both (the local library,
+     * whose rows render as landscape cards) would otherwise pay for the same detail lookup twice.
+     */
+    suspend fun fetchArtwork(
+        tmdbId: Int,
+        mediaType: String,
+        posterSize: String = "w500",
+        backdropSize: String = "w1280",
+    ): TmdbArtwork? {
         val apiKey = currentApiKey() ?: return null
         val endpoint = if (normalizeMediaType(mediaType) == "tv") "tv/$tmdbId" else "movie/$tmdbId"
         val body = fetch<TmdbPosterResponse>(endpoint = endpoint, apiKey = apiKey) ?: return null
-        return tmdbImageUrl(body.posterPath, size)
+        return TmdbArtwork(
+            poster = tmdbImageUrl(body.posterPath, posterSize),
+            backdrop = tmdbImageUrl(body.backdropPath, backdropSize),
+        )
     }
 
     private fun currentApiKey(): String? =
@@ -497,6 +512,13 @@ private data class TmdbSearchResponse(
 @Serializable
 private data class TmdbPosterResponse(
     @SerialName("poster_path") val posterPath: String? = null,
+    @SerialName("backdrop_path") val backdropPath: String? = null,
+)
+
+/** Ready-to-use image URLs for a TMDB title. */
+data class TmdbArtwork(
+    val poster: String?,
+    val backdrop: String?,
 )
 
 @Serializable

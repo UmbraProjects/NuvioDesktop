@@ -203,6 +203,10 @@ import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.components.HomeHeroTrailerGate
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.HomeRepository
+import com.nuvio.app.features.home.RandomPlayAction
+import com.nuvio.app.features.home.pickRandomPlayItem
+import com.nuvio.app.features.home.randomPlayCategoryOrNull
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryNavigationContextMenu
 import com.nuvio.app.features.library.LibraryNavMenuWidth
@@ -377,6 +381,7 @@ object TabsRoute
 data class DetailRoute(
     val type: String,
     val id: String,
+    val autoPlay: Boolean = false,
 )
 
 @Serializable
@@ -1762,7 +1767,7 @@ private fun MainAppContent(
             val requestedLocalPlayback =
                 requestedBehavior == LocalLibraryPlaybackPreference.LOCAL_LIBRARY &&
                     AppFeaturePolicy.downloadsEnabled
-            val downloadedItem = if (requestedLocalPlayback) {
+            val downloadedItem = if (AppFeaturePolicy.downloadsEnabled) {
                 DownloadsRepository.findPlayableDownload(
                     parentMetaId = parentMetaId,
                     seasonNumber = seasonNumber,
@@ -1773,14 +1778,19 @@ private fun MainAppContent(
                 null
             }
             val localSourceUrl = downloadedItem?.let(DownloadsRepository::playableLocalFileUri)
-            val hasLocalLibraryStream = requestedLocalPlayback &&
+            val hasLocalLibraryStream = AppFeaturePolicy.downloadsEnabled &&
                 LocalLibraryRepository.localStreamsFor(parentMetaId, videoId).isNotEmpty()
+            val hasLocalPlayback = !localSourceUrl.isNullOrBlank() || hasLocalLibraryStream
             val prefersLocalStreams =
-                requestedLocalPlayback && (!localSourceUrl.isNullOrBlank() || hasLocalLibraryStream)
+                requestedLocalPlayback && hasLocalPlayback
             // "Source picker" is deliberately manual even when stream auto-play is configured.
-            // A requested local file that disappeared since the menu was opened falls back to the
-            // same picker instead of silently auto-playing an unrelated external source.
-            val manualSelection = !prefersLocalStreams
+            // Without a local source this preference is irrelevant and normal online auto-play
+            // remains active. An alternate local action whose file disappeared still falls back
+            // to the picker instead of silently auto-playing an unrelated external source.
+            val manualSelection = configuredBehavior.shouldUseManualStreamSelection(
+                useAlternate = useAlternateBehavior,
+                hasLocalFile = hasLocalPlayback,
+            )
 
             if (prefersLocalStreams && downloadedItem != null) {
                 if (!localSourceUrl.isNullOrBlank()) {
@@ -2256,10 +2266,37 @@ private fun MainAppContent(
                                         onContinueWatchingHeroDismiss = { continueWatchingHeroDismissed = true },
                                         onCatalogClick = onCatalogClick,
                                         onCastClick = onHeroCastClick,
-                                        onPosterClick = { meta ->
+                                        onPosterClick = posterClick@{ meta ->
+                                            val randomCategory = meta.randomPlayCategoryOrNull()
+                                            if (randomCategory != null) {
+                                                val randomSettings = HomeCatalogSettingsRepository.uiState.value
+                                                val selected = pickRandomPlayItem(
+                                                    category = randomCategory,
+                                                    sourceSections = HomeRepository.uiState.value.sections,
+                                                    settings = randomSettings,
+                                                    watchedKeys = WatchedRepository.uiState.value.watchedKeys,
+                                                )
+                                                if (selected == null) {
+                                                    coroutineScope.launch {
+                                                        NuvioToastController.show(
+                                                            getString(Res.string.random_play_no_matches),
+                                                        )
+                                                    }
+                                                } else {
+                                                    navController.navigateIfResumed(
+                                                        DetailRoute(
+                                                            type = selected.type,
+                                                            id = selected.id,
+                                                            autoPlay = randomSettings.randomPlayAction == RandomPlayAction.Play,
+                                                        ),
+                                                    )
+                                                }
+                                                return@posterClick
+                                            }
                                             navController.navigateIfResumed(DetailRoute(type = meta.type, id = meta.id))
                                         },
-                                        onPosterLongClick = { meta ->
+                                        onPosterLongClick = posterLongClick@{ meta ->
+                                            if (meta.randomPlayCategoryOrNull() != null) return@posterLongClick
                                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                             selectedPosterAnchor = PosterZoomAnchorHolder.consume()
                                             selectedPosterActionTarget = PosterActionTarget(preview = meta)
@@ -2427,6 +2464,8 @@ private fun MainAppContent(
                 }
                 composable<DetailRoute> { backStackEntry ->
                     val route = backStackEntry.toRoute<DetailRoute>()
+                    val randomPlayAutoPlayConsumed =
+                        backStackEntry.savedStateHandle.get<Boolean>(DETAIL_AUTO_PLAY_CONSUMED_KEY) == true
                     val directorRole = stringResource(Res.string.person_role_director)
                     val writerRole = stringResource(Res.string.person_role_writer)
                     val creatorRole = stringResource(Res.string.person_role_creator)
@@ -2443,6 +2482,13 @@ private fun MainAppContent(
                         MetaDetailsScreen(
                         type = route.type,
                         id = route.id,
+                        autoPlayOnLoad = route.autoPlay && !randomPlayAutoPlayConsumed,
+                        onAutoPlayOnLoadConsumed = {
+                            // The typed route remains autoPlay=true for the lifetime of this entry.
+                            // Persist consumption on the entry before navigating so returning from
+                            // streams/player cannot re-arm the one-shot request.
+                            backStackEntry.savedStateHandle[DETAIL_AUTO_PLAY_CONSUMED_KEY] = true
+                        },
                         onBack = onBackFromDetail,
                         onPlay = onPlay,
                         onPlayAlternate = onPlayAlternate,
@@ -3975,6 +4021,7 @@ private fun rememberGuardedPopBackStack(
 }
 
 private const val PLAYER_BACK_DUPLICATE_WINDOW_MS = 750L
+private const val DETAIL_AUTO_PLAY_CONSUMED_KEY = "detailAutoPlayConsumed"
 
 @Composable
 private fun BindDiscordBrowsingPresence(

@@ -6,7 +6,6 @@ import com.nuvio.app.features.locallibrary.FilenameParser
 import com.nuvio.app.features.metadata.pickBestTmdbMatch
 import com.nuvio.app.features.tmdb.TmdbSearchResult
 import com.nuvio.app.features.tmdb.TmdbService
-import com.nuvio.app.features.tmdb.TmdbSettings
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.tmdb.customPosterTemplateNeedsImdbId
 import com.nuvio.app.features.tmdb.customPosterUrl
@@ -46,6 +45,10 @@ internal object FilenameMetaResolver {
         val posterFallback: String?,
         val backdrop: String?,
         val overview: String?,
+        /** Metadata identity of the matched title — see [MetaPreview.metaLookupId]. */
+        val lookupId: String,
+        val lookupType: String,
+        val imdbId: String?,
     )
 
     // null value = a confirmed miss, cached so scrolling a 100-item cloud library doesn't re-ask
@@ -109,6 +112,9 @@ internal object FilenameMetaResolver {
                         backdrop = match.backdrop,
                         year = match.year,
                         overview = match.overview,
+                        lookupId = match.lookupId,
+                        lookupType = match.lookupType,
+                        imdbId = match.imdbId,
                     ),
                 )
             }
@@ -182,7 +188,13 @@ internal object FilenameMetaResolver {
     private suspend fun TmdbSearchResult.toResolvedTitle(): ResolvedTitle {
         val settings = TmdbSettingsRepository.snapshot()
         val tmdbPoster = TmdbService.tmdbImageUrl(posterPath)
-        val custom = customPosterUrl(settings, imdbId = imdbIdForPosterTemplate(settings), tmdbId = id.toString(), type = posterType())
+        val imdbId = resolveImdbId()
+        val custom = customPosterUrl(
+            settings,
+            imdbId = imdbId.takeIf { settings.customPosterTemplateNeedsImdbId() },
+            tmdbId = id.toString(),
+            type = posterType(),
+        )
         return ResolvedTitle(
             title = displayTitle,
             year = year,
@@ -191,15 +203,23 @@ internal object FilenameMetaResolver {
             posterFallback = tmdbPoster.takeIf { custom != null },
             backdrop = TmdbService.tmdbImageUrl(backdropPath, size = "w1280"),
             overview = overview?.takeIf { it.isNotBlank() },
+            // IMDb first: it is the id every meta addon, MDBList and the metahub art host speak, so
+            // a row carrying one enriches through exactly the same path as an ordinary catalog row.
+            lookupId = imdbId ?: "tmdb:$id",
+            lookupType = posterType(),
+            imdbId = imdbId,
         )
     }
 
-    /** Only worth a /find round-trip when the user's template actually has an `{imdb_id}` slot. */
-    private suspend fun TmdbSearchResult.imdbIdForPosterTemplate(settings: TmdbSettings): String? {
-        if (!settings.customPosterTemplateNeedsImdbId()) return null
-        return runCatching { TmdbService.tmdbToImdb(tmdbId = id, mediaType = if (isTv) "tv" else "movie") }
+    /**
+     * One cached `/external_ids` round-trip per distinct matched title. Previously this was skipped
+     * unless the user's poster template had an `{imdb_id}` slot; the IMDb id is now the row's whole
+     * metadata identity (ratings, genres, synopsis, cast all key off it), so it is always worth it.
+     */
+    private suspend fun TmdbSearchResult.resolveImdbId(): String? =
+        runCatching { TmdbService.tmdbToImdb(tmdbId = id, mediaType = if (isTv) "tv" else "movie") }
             .getOrNull()
-    }
+            ?.takeIf { it.isNotBlank() }
 
     private fun TmdbSearchResult.posterType(): String = if (isTv) "series" else "movie"
 
@@ -216,9 +236,20 @@ internal object FilenameMetaResolver {
             // A TMDB poster is portrait. These catalogs often declare landscape/square shapes for
             // what were file thumbnails, and leaving that in place crops the poster in half.
             posterShape = if (match.poster != null) PosterShape.Poster else posterShape,
-            banner = banner ?: match.backdrop,
-            description = description?.takeIf { it.isNotBlank() } ?: match.overview,
+            // Once the filename has a confident TMDB match, its real backdrop outranks any
+            // release thumbnail/banner supplied by the cloud catalog. Landscape cards consume
+            // this field directly; retaining the source image here made filename resolution look
+            // ineffective even though the title and poster had resolved correctly.
+            banner = match.backdrop ?: banner,
+            // The cloud catalog's own "description" describes the *file* ("📦 36.3 GB • 📁 1 files •
+            // 🖥️ 1080p"), so once the title is identified the synopsis has to win. Only a real
+            // synopsis displaces it — a TMDB miss on the overview leaves the file line in place.
+            description = match.overview ?: description?.takeIf { it.isNotBlank() },
             releaseInfo = releaseInfo?.takeIf { it.isNotBlank() } ?: match.year?.toString(),
+            // Hands the row a metadata identity: its own id addresses a file in the user's account
+            // and resolves to nothing, so without this the hero has no genres, synopsis or ratings.
+            metaLookupId = match.lookupId,
+            metaLookupType = match.lookupType,
         )
 
     // --- Parsing / detection (pure, unit-tested) ---
@@ -243,8 +274,6 @@ internal object FilenameMetaResolver {
 
     // `Show.Name.S01E02` / `Show_Name_S01E02` — separators where spaces belong is itself a filename
     // tell, and paired with an episode marker it is enough on its own.
-    private val separatorNameRegex = Regex("""^\S+[._]\S*[._]\S+$""")
-
     /**
      * True when a catalog item's name reads as a release filename rather than a title. Requires an
      * unambiguous signal — a video extension, release vocabulary, or an episode marker in a
@@ -258,7 +287,9 @@ internal object FilenameMetaResolver {
         // Archive-style dumps carry no quality tags at all — `friends-1994-2004-full-series_20250419`.
         // A whole-run year range or a "complete series" tag is just as unambiguous.
         if (yearRangeRegex.containsMatchIn(trimmed) || completeRunRegex.containsMatchIn(trimmed)) return true
-        return seasonEpisodeMarkerRegex.containsMatchIn(trimmed) && separatorNameRegex.matches(trimmed)
+        // Debrid APIs frequently normalize release separators to spaces (`Hanna S01E07`). The
+        // season/episode coordinate is already an unambiguous media signal on its own.
+        return seasonEpisodeMarkerRegex.containsMatchIn(trimmed)
     }
 
     // Tracker/site stamps glued to the front of a torrent name (`www.UIndex.org   -   Show S01E01`).
@@ -392,6 +423,10 @@ internal data class ResolvedName(
     val backdrop: String?,
     val year: Int?,
     val overview: String?,
+    /** Metadata identity of the matched title — see [com.nuvio.app.features.home.MetaPreview.metaLookupId]. */
+    val lookupId: String,
+    val lookupType: String,
+    val imdbId: String?,
 )
 
 internal data class FilenameQuery(

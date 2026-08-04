@@ -28,6 +28,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_rating
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
 import nuvio.composeapp.generated.resources.compose_settings_page_notifications
 import nuvio.composeapp.generated.resources.compose_settings_page_playback
+import nuvio.composeapp.generated.resources.random_play_title
 import nuvio.composeapp.generated.resources.compose_settings_page_qualicache
 import nuvio.composeapp.generated.resources.compose_settings_page_plugins
 import nuvio.composeapp.generated.resources.compose_settings_page_poster_customization
@@ -79,6 +80,11 @@ internal enum class SettingsPage(
     ),
     Playback(
         titleRes = Res.string.compose_settings_page_playback,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
+    RandomPlay(
+        titleRes = Res.string.random_play_title,
         category = SettingsCategory.General,
         parentPage = Root,
     ),

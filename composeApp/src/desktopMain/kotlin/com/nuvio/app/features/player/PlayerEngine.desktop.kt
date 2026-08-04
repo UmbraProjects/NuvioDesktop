@@ -699,6 +699,17 @@ private fun applyDesktopVideoProfile(
  *
  * SVP / motion interpolation from Kai is intentionally not ported (it needs a paid external runtime).
  */
+internal fun shouldEnableDesktopRtxSuperResolution(
+    enabled: Boolean,
+    isHdr: Boolean?,
+    isEffectivelyAnime: Boolean,
+    scale: Double?,
+): Boolean = enabled &&
+    isHdr == false &&
+    !isEffectivelyAnime &&
+    scale != null &&
+    scale > 1.01
+
 private fun applyDesktopAnimeProfile(
     controller: NativePlayerController,
     mode: DesktopAnimeMode,
@@ -748,10 +759,15 @@ private fun applyDesktopAnimeProfile(
     // branches below drop baselineVf entirely, but the SVP-only path reuses it, so gate both
     // off for any effectively anime session here too. (True HDR's AI SDR->HDR pass tends to
     // over-saturate/band flat cel-shaded anime and fights the SDR-tuned colour presets.)
-    val vsrActive = nvidiaRtxSuperResolutionEnabled &&
-        !isEffectivelyAnime &&
-        nvidiaRtxSuperResolutionScale != null &&
-        nvidiaRtxSuperResolutionScale > 1.01
+    // Native HDR, especially Dolby Vision decoded as P010, can turn into a solid green video
+    // plane when passed through NVIDIA's d3d11vpp VSR scaler. Wait for positive SDR detection;
+    // unknown/HDR content stays on gpu-next's normal colour-managed path.
+    val vsrActive = shouldEnableDesktopRtxSuperResolution(
+        enabled = nvidiaRtxSuperResolutionEnabled,
+        isHdr = isHdr,
+        isEffectivelyAnime = isEffectivelyAnime,
+        scale = nvidiaRtxSuperResolutionScale,
+    )
     // RTX True HDR requires mpv master ≥ Feb 19 2026: mpv sets IMGFMT_X2BGR10 output
     // automatically when nvidia-true-hdr is present, and uses ID3D11VideoContext1 for
     // proper DXGI HDR colour-space signalling. Init-time d3d11-output-csp=auto and
@@ -918,7 +934,7 @@ private class DesktopStubPlayerController : PlayerEngineController {
     override fun setPlaybackSpeed(speed: Float) = Unit
     override fun getAudioTracks(): List<AudioTrack> = emptyList()
     override fun getSubtitleTracks(): List<SubtitleTrack> = emptyList()
-    override fun selectAudioTrack(index: Int) = Unit
+    override fun selectAudioTrack(index: Int): Boolean = false
     override fun selectSubtitleTrack(index: Int): Boolean = false
     override fun setSubtitleUri(url: String) = Unit
     override fun clearExternalSubtitle() = Unit

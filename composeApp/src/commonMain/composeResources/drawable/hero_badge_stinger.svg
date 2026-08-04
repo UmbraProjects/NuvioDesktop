@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" width="100" height="100"><g transform="translate(-1.7500 -1.7500) scale(1.035000)">
+  <g id="Medals">
+    <g id="Stinger" data-name="Post-credits Stinger">
+      <path d="M35 4 h30 a4 4 0 0 1 0 8 h-30 a4 4 0 0 1 0-8 Z M27.5 17 h45 a4 4 0 0 1 0 8 h-45 a4 4 0 0 1 0-8 Z M20 30 h60 a4 4 0 0 1 0 8 h-60 a4 4 0 0 1 0-8 Z M12 43 h76 a4 4 0 0 1 0 8 h-76 a4 4 0 0 1 0-8 Z M50 59 L54.94 72.21 L69.02 72.82 L57.99 81.60 L61.76 95.18 L50 87.40 L38.24 95.18 L42.01 81.60 L30.98 72.82 L45.06 72.21 Z" fill="#fff" />
+    </g>
+  </g>
+</g></svg>

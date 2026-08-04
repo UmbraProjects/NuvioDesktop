@@ -22,10 +22,31 @@ data class MetaPreview(
     val runtime: String? = null,
     val genres: List<String> = emptyList(),
     val cast: List<HeroCastMember> = emptyList(),
+    // Used by virtual catalog cards that compose several loaded posters into one piece of art.
+    val posterCollage: List<String> = emptyList(),
     // Navigation provenance, not content metadata. A title can appear in both a local-library
     // catalog and a remote watchlist, so the playback policy must follow the row that was opened.
     val preferLocalStreams: Boolean = false,
-)
+    // Metadata identity for rows whose own [id] addresses a *file* rather than a title. Cloud
+    // library catalogs (AIOStreams, TorBox) list account contents, so a row arrives as
+    // `aiostreams::library.…` / `type=library` and resolves to no metadata anywhere — no genres,
+    // no synopsis, no ratings. FilenameMetaResolver fills these in from the release name it
+    // matched, and every metadata lookup (hero enrichment, MDBList ratings, cast, quality badges)
+    // uses them in place of [id]/[type].
+    //
+    // Deliberately NOT used for navigation, streams or playback: those must keep addressing the
+    // provider's own row, which is the whole point of a cloud-library catalog.
+    val metaLookupId: String? = null,
+    val metaLookupType: String? = null,
+) {
+    /** The id metadata lookups should use — the resolved title's, when the row's own id is a file. */
+    val metadataId: String
+        get() = metaLookupId?.takeIf { it.isNotBlank() } ?: id
+
+    /** The type metadata lookups should use; a cloud-library row's own type is `library`. */
+    val metadataType: String
+        get() = metaLookupType?.takeIf { it.isNotBlank() } ?: type
+}
 
 data class HeroCastMember(
     val name: String,

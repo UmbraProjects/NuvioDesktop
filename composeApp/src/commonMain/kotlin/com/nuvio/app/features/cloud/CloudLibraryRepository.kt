@@ -147,7 +147,7 @@ object CloudLibraryRepository {
      * moment later instead of waiting on TMDB. Every failure leaves the raw names in place.
      */
     private fun resolveDisplayNames(state: CloudLibraryUiState) {
-        val names = state.items.map { it.name }.filter { it.isNotBlank() }.distinct()
+        val names = state.filenameResolutionCandidateNames()
         if (names.isEmpty()) return
         resolveNamesJob?.cancel()
         resolveNamesJob = scope.launch {
@@ -324,18 +324,36 @@ internal fun CloudLibraryUiState.withResolvedNames(
     var didUpdate = false
     val updatedProviders = providers.map { providerState ->
         val updatedItems = providerState.items.map { item ->
-            val match = resolved[item.name] ?: return@map item
+            val match = resolved[item.name]
+                ?: item.playableFiles.firstNotNullOfOrNull { file -> resolved[file.name] }
+                ?: return@map item
             didUpdate = true
             item.copy(
                 resolvedName = match.displayName,
                 resolvedPoster = match.poster ?: match.posterFallback,
                 resolvedBackdrop = match.backdrop,
+                resolvedDescription = match.overview,
+                resolvedLookupId = match.lookupId,
+                resolvedLookupType = match.lookupType,
+                resolvedImdbId = match.imdbId,
             )
         }
         providerState.copy(items = updatedItems)
     }
     return if (didUpdate) copy(providers = updatedProviders) else this
 }
+
+/**
+ * Debrid providers often expose a cleaned torrent label (for example, `Hanna S01E07`) while the
+ * playable filename still contains the release tokens needed for safe TMDB matching. Try both.
+ */
+internal fun CloudLibraryUiState.filenameResolutionCandidateNames(): List<String> =
+    items.flatMap { item ->
+        buildList {
+            item.name.takeIf(String::isNotBlank)?.let(::add)
+            item.playableFiles.mapTo(this) { it.name }
+        }
+    }.filter(String::isNotBlank).distinct()
 
 internal fun CloudLibraryUiState.withResolvedPlaybackUrl(
     item: CloudLibraryItem,

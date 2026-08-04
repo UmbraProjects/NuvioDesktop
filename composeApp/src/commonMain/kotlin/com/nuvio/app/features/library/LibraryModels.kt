@@ -31,6 +31,10 @@ data class LibraryItem(
     // Bumped when the user asks to refresh this item's poster; appended as a URL fragment so the
     // image loader re-requests even the poster-service (PostersPlus/RPDB) URL, which is keyed by id.
     val posterRefreshToken: Long? = null,
+    // Set only for rows whose [id] addresses a file rather than a title (the built-in debrid cloud
+    // library, whose ids are provider download keys). See [MetaPreview.metaLookupId].
+    val metaLookupId: String? = null,
+    val metaLookupType: String? = null,
     val savedAtEpochMs: Long,
 )
 
@@ -99,6 +103,8 @@ fun LocalMediaItem.toLibraryItem(): LibraryItem =
         type = contentType,
         name = title,
         poster = poster,
+        // Landscape cards and the TV hero read this; without it they stretch the portrait poster.
+        banner = background,
         posterShape = PosterShape.Poster,
         imdbId = imdbId,
         tmdbId = tmdbId,
@@ -115,15 +121,30 @@ fun LibraryItem.toMetaPreview(): MetaPreview {
         name = name,
         poster = resolvedPoster,
         posterFallback = if (resolvedPoster != resolvedFallback) resolvedFallback else null,
-        banner = if (imdbId != null) "https://images.metahub.space/background/medium/$imdbId/img" else banner,
-        logo = if (imdbId != null) "https://images.metahub.space/logo/medium/$imdbId/img" else logo,
+        // Metahub is a guess — a URL built from the IMDb id that may or may not resolve — so art
+        // the item actually carries from a metadata provider (the local library's TMDB backdrop)
+        // outranks it. Anything else keeps metahub as the id-derived fallback.
+        banner = banner.takeIfProviderArt()
+            ?: imdbId?.let { "https://images.metahub.space/background/medium/$it/img" }
+            ?: banner,
+        logo = logo.takeIfProviderArt()
+            ?: imdbId?.let { "https://images.metahub.space/logo/medium/$it/img" }
+            ?: logo,
         posterShape = posterShape,
         description = description,
         releaseInfo = releaseInfo,
         runtime = runtime,
         imdbRating = imdbRating,
         genres = genres,
+        metaLookupId = metaLookupId,
+        metaLookupType = metaLookupType,
     )
+}
+
+/** Art fetched from TMDB/TVDB (or per-season anime art), as opposed to an id-derived guess. */
+private fun String?.takeIfProviderArt(): String? = this?.takeIf { url ->
+    url.contains("image.tmdb.org", ignoreCase = true) ||
+        url.contains("artworks.thetvdb.com", ignoreCase = true)
 }
 
 /**

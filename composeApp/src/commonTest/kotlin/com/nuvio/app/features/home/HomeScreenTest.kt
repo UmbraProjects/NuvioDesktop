@@ -10,12 +10,105 @@ import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watched.WatchedItem
+import com.nuvio.app.features.tracking.ContinueWatchingSource
+import com.nuvio.app.features.tracking.TrackingProviderId
 import com.nuvio.app.features.trakt.TRAKT_CONTINUE_WATCHING_DAYS_CAP_ALL
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class HomeScreenTest {
+
+    @Test
+    fun `search library card uses enriched backdrop without replacing row provenance`() {
+        val raw = MetaPreview(
+            id = "tt0193676",
+            type = "series",
+            name = "Freaks and Geeks",
+            poster = "poster-provider",
+            banner = "catalog-art",
+            logo = "catalog-logo",
+            preferLocalStreams = true,
+        )
+        val enriched = raw.copy(
+            banner = "tmdb-backdrop",
+            logo = "tmdb-logo",
+            preferLocalStreams = false,
+        )
+
+        val result = mergeSearchLibraryCardEnrichment(raw, enriched)
+
+        assertEquals("tmdb-backdrop", result.banner)
+        assertEquals("tmdb-logo", result.logo)
+        assertEquals("poster-provider", result.poster)
+        assertEquals(true, result.preferLocalStreams)
+    }
+
+    @Test
+    fun `pending landscape card suppresses original artwork until enrichment arrives`() {
+        val raw = MetaPreview(
+            id = "tt0193676",
+            type = "series",
+            name = "Freaks and Geeks",
+            poster = "original-poster",
+            posterFallback = "poster-fallback",
+            banner = "original-catalog-art",
+            logo = "original-logo",
+            preferLocalStreams = true,
+        )
+
+        val result = mergeSearchLibraryCardEnrichment(
+            raw = raw,
+            enriched = null,
+            suppressPendingArtwork = true,
+        )
+
+        assertEquals(null, result.poster)
+        assertEquals(null, result.posterFallback)
+        assertEquals(null, result.banner)
+        assertEquals(null, result.logo)
+        assertEquals(true, result.preferLocalStreams)
+    }
+
+    @Test
+    fun `filename resolved TMDB backdrop bypasses pending landscape placeholder`() {
+        val resolved = MetaPreview(
+            id = "cloud-file-id",
+            type = "movie",
+            name = "Arrival",
+            poster = "https://image.tmdb.org/t/p/w500/poster.jpg",
+            banner = "https://image.tmdb.org/t/p/w1280/backdrop.jpg",
+        )
+
+        val result = mergeSearchLibraryCardEnrichment(
+            raw = resolved,
+            enriched = null,
+            suppressPendingArtwork = true,
+        )
+
+        assertEquals(resolved.poster, result.poster)
+        assertEquals(resolved.banner, result.banner)
+    }
+
+    @Test
+    fun `filename resolved poster bypasses pending landscape placeholder without a backdrop`() {
+        val resolved = MetaPreview(
+            id = "cloud-file-id",
+            type = "movie",
+            name = "Arrival",
+            poster = "https://image.tmdb.org/t/p/w500/poster.jpg",
+            banner = null,
+        )
+
+        val result = mergeSearchLibraryCardEnrichment(
+            raw = resolved,
+            enriched = null,
+            suppressPendingArtwork = true,
+        )
+
+        assertEquals(resolved.poster, result.poster)
+    }
 
     @Test
     fun `home trakt continue watching candidate limits match TV`() {
@@ -328,6 +421,30 @@ class HomeScreenTest {
             durationMs = 0L,
             progressFraction = 0f,
         )
+
+    @Test
+    fun `a disconnected continue watching provider is not an active remote source`() {
+        // The repository resolves a disconnected selection back to Nuvio Sync and shows local rows.
+        // Treating it as remote here dropped the watched seeds those rows need for Up Next.
+        assertFalse(
+            isContinueWatchingRemoteSourceActive(
+                source = ContinueWatchingSource.SIMKL,
+                connectedProviderIds = emptySet(),
+            ),
+        )
+        assertTrue(
+            isContinueWatchingRemoteSourceActive(
+                source = ContinueWatchingSource.SIMKL,
+                connectedProviderIds = setOf(TrackingProviderId.SIMKL),
+            ),
+        )
+        assertFalse(
+            isContinueWatchingRemoteSourceActive(
+                source = ContinueWatchingSource.LOCAL,
+                connectedProviderIds = setOf(TrackingProviderId.SIMKL),
+            ),
+        )
+    }
 
     private fun watchedItem(
         id: String,

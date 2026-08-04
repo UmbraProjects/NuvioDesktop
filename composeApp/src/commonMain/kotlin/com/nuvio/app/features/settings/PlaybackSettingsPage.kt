@@ -1931,6 +1931,12 @@ private fun PlaybackSettingsSection(
                     showExternalPlayerAppDialog = false
                 }
             },
+            onPlayerConfigured = { player ->
+                if (ExternalPlayerPlatform.configurePlayer(player.id)) {
+                    PlayerSettingsRepository.setExternalPlayerId(player.id)
+                    showExternalPlayerAppDialog = false
+                }
+            },
             onDismiss = { showExternalPlayerAppDialog = false },
         )
     }
@@ -2177,6 +2183,7 @@ private fun ExternalPlayerSelectionDialog(
     players: List<ExternalPlayerApp>,
     selectedPlayerId: String?,
     onPlayerSelected: (ExternalPlayerApp) -> Unit,
+    onPlayerConfigured: (ExternalPlayerApp) -> Unit,
     onDismiss: () -> Unit,
 ) {
     BasicAlertDialog(
@@ -2234,12 +2241,29 @@ private fun ExternalPlayerSelectionDialog(
                                             style = MaterialTheme.typography.bodyLarge,
                                             color = MaterialTheme.colorScheme.onSurface,
                                         )
-                                        if (!player.isAvailable) {
+                                        if (player.executablePath != null) {
+                                            Text(
+                                                text = player.executablePath,
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    fontFamily = FontFamily.Monospace,
+                                                ),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        } else if (!player.isAvailable) {
                                             Text(
                                                 text = stringResource(Res.string.settings_playback_external_player_locate),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
+                                        }
+                                        if (player.isAvailable && player.canConfigure) {
+                                            TextButton(
+                                                onClick = { onPlayerConfigured(player) },
+                                            ) {
+                                                Text(stringResource(Res.string.settings_playback_external_player_change))
+                                            }
                                         }
                                     }
                                     Box(

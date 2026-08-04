@@ -3,6 +3,7 @@ package com.nuvio.app.core.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 
@@ -14,20 +15,24 @@ internal fun rememberPosterCardStyleUiState(): PosterCardStyleUiState {
 }
 
 /**
- * Variant for Home/Search/Library/Collections' TV Mode shelf and continue-watching rendering.
- * Landscape-poster mode and hidden labels assume a flexible flat grid, not TV Mode's uniform
- * shelf, and produce broken layouts when combined — force them off/on while TV Mode is active
- * instead of respecting the (non-TV-Mode) saved preference. This only adjusts the value
- * returned here, it never writes back to [PosterCardStyleRepository], so the user's actual
- * preference is untouched and reapplies as soon as TV Mode is turned back off.
+ * Poster styling shared by the Home, Search, Library, and Collections surfaces.
+ * TV Mode always suppresses below-card labels without changing the saved desktop preference.
  */
 @Composable
 internal fun rememberHomePosterCardStyleUiState(): PosterCardStyleUiState {
     val base = rememberPosterCardStyleUiState()
-    val tvModeEnabled by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
-    return if (tvModeEnabled.tvModeEnabled) {
-        base.copy(catalogLandscapeModeEnabled = false)
-    } else {
-        base
-    }
+    val homeSettings by remember {
+        HomeCatalogSettingsRepository.snapshot()
+        HomeCatalogSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
+    return effectiveHomePosterCardStyle(
+        base = base,
+        tvModeEnabled = homeSettings.tvModeEnabled,
+    )
 }
+
+internal fun effectiveHomePosterCardStyle(
+    base: PosterCardStyleUiState,
+    tvModeEnabled: Boolean,
+): PosterCardStyleUiState =
+    if (tvModeEnabled) base.copy(hideLabelsEnabled = true) else base

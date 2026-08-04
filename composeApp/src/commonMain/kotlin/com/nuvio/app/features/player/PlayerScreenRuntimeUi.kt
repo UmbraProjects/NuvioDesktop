@@ -1093,9 +1093,10 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         }
         "selectAudioTrack" -> {
             val index = value.toInt()
-            selectedAudioIndex = index
-            persistAudioPreference(audioTracks.firstOrNull { it.index == index })
-            playerController?.selectAudioTrack(index)
+            if (playerController?.selectAudioTrack(index) == true) {
+                selectedAudioIndex = index
+                persistAudioPreference(audioTracks.firstOrNull { it.index == index })
+            }
         }
         "fetchAddonSubtitles" -> fetchAddonSubtitlesForActiveItem()
         "selectAddonSubtitle" -> {
@@ -1914,12 +1915,13 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
         audioTracks = visibleAudioTracks,
         selectedAudioIndex = selectedAudioIndex,
         onAudioTrackSelected = { index ->
-            selectedAudioIndex = index
-            persistAudioPreference(audioTracks.firstOrNull { it.index == index })
-            playerController?.selectAudioTrack(index)
-            scope.launch {
-                kotlinx.coroutines.delay(200)
-                showAudioModal = false
+            if (playerController?.selectAudioTrack(index) == true) {
+                selectedAudioIndex = index
+                persistAudioPreference(audioTracks.firstOrNull { it.index == index })
+                scope.launch {
+                    kotlinx.coroutines.delay(200)
+                    showAudioModal = false
+                }
             }
         },
         onAudioModalDismissed = { showAudioModal = false },

@@ -16,6 +16,15 @@ data class WatchedItem(
     val season: Int? = null,
     val episode: Int? = null,
     val markedAtEpochMs: Long,
+    /**
+     * Storage id of the tracking provider this row was imported from, or null for the user's own
+     * tick — local playback, an explicit mark, or Nuvio Sync.
+     *
+     * Recorded so an import can be withdrawn again. A provider's history is imported only while it
+     * owns Continue Watching, and without provenance the rows it left behind were indistinguishable
+     * from local ones, so they kept seeding Up Next long after the source moved elsewhere.
+     */
+    val importedFrom: String? = null,
 )
 
 data class WatchedUiState(

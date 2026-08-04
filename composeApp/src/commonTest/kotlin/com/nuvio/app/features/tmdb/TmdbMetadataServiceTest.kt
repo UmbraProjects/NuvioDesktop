@@ -4,10 +4,61 @@ import com.nuvio.app.features.details.MetaCompany
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaPerson
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.details.quarantineMismatchedImdbTmdbIdentity
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 
 class TmdbMetadataServiceTest {
+    @Test
+    fun `confirmed id mismatch quarantines provider derived fields but keeps addon content`() {
+        val base = MetaDetails(
+            id = "tt0314979",
+            type = "series",
+            name = "The Shiny Group",
+            tmdbId = 71365,
+            imdbId = "tt0314979",
+            tvdbId = "439981",
+            poster = "battlestar-poster",
+            background = "battlestar-background",
+            logo = "battlestar-logo",
+            description = "The Kingdom of Huanxi held a court musician selection competition.",
+            releaseInfo = "2023",
+            imdbRating = "8.5",
+            cast = listOf(MetaPerson(name = "Wang Yijin")),
+            videos = listOf(MetaVideo(id = "tt0314979:1:1", title = "Episode 1", season = 1, episode = 1)),
+        )
+
+        val result = base.quarantineMismatchedImdbTmdbIdentity()
+
+        assertFalse(result.imdbTmdbIdentityTrusted)
+        assertNull(result.tmdbId)
+        assertNull(result.imdbId)
+        assertNull(result.poster)
+        assertNull(result.background)
+        assertNull(result.logo)
+        assertNull(result.imdbRating)
+        assertEquals("439981", result.tvdbId)
+        assertEquals(base.description, result.description)
+        assertEquals(base.cast, result.cast)
+        assertEquals(base.videos, result.videos)
+        assertEquals(base.id, result.id)
+    }
+
+    @Test
+    fun `shiny group and battlestar are detected as different identities`() {
+        assertEquals(
+            true,
+            TmdbMetadataService.looksLikeDifferentTitle(
+                titleA = "The Shiny Group",
+                releaseInfoA = "2023",
+                titleB = "Battlestar Galactica",
+                releaseInfoB = "2003-12-08",
+            ),
+        )
+    }
+
     @Test
     fun `buildStandaloneMeta maps tmdb enrichment without addon meta`() {
         val enrichment = TmdbEnrichment(

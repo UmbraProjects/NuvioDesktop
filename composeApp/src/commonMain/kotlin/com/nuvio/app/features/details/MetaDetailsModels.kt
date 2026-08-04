@@ -47,6 +47,29 @@ data class MetaDetails(
     val trailers: List<MetaTrailer> = emptyList(),
     val links: List<MetaLink> = emptyList(),
     val videos: List<MetaVideo> = emptyList(),
+    /** False after a provider lookup proves that this record's IMDb/TMDB ids belong to another title. */
+    val imdbTmdbIdentityTrusted: Boolean = true,
+)
+
+/**
+ * Keeps the addon's title-specific text, cast, and episodes, but removes fields commonly derived
+ * from a poisoned IMDb/TMDB join. The route [MetaDetails.id] is retained for addon playback.
+ */
+internal fun MetaDetails.quarantineMismatchedImdbTmdbIdentity(): MetaDetails = copy(
+    tmdbId = null,
+    imdbId = null,
+    imdbTmdbIdentityTrusted = false,
+    poster = null,
+    background = null,
+    logo = null,
+    imdbRating = null,
+    externalRatings = emptyList(),
+    mdblistKeywords = emptyList(),
+    moreLikeThis = emptyList(),
+    moreLikeThisSource = null,
+    collectionName = null,
+    collectionItems = emptyList(),
+    trailers = emptyList(),
 )
 
 enum class MoreLikeThisSource {

@@ -34,13 +34,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.build.AppFeaturePolicy
+import com.nuvio.app.core.ui.rememberNuvioDownscaledPainter
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaExternalRating
 import com.nuvio.app.features.details.formatRuntimeForDisplay
@@ -243,12 +243,14 @@ internal fun RatingsRow(
                     )
                 } else if (visuals.logo != null) {
                     Image(
-                        bitmap = imageResource(visuals.logo),
+                        // 48px sources drawn at 16.dp — a 3x reduction at the density a 1080p
+                        // window runs at. No FilterQuality setting fixes that on its own: every
+                        // one of them is a single unmipped sample, so the reduction drops most of
+                        // the source and stair-steps these logos' fine shapes. The shared painter
+                        // box-halves first, which is what actually makes them clean.
+                        painter = rememberNuvioDownscaledPainter(imageResource(visuals.logo)),
                         contentDescription = visuals.displayName,
                         modifier = Modifier.size(width = visuals.logoWidth, height = 16.dp),
-                        // The logos are large source PNGs scaled down ~18x; the default Low
-                        // (bilinear) filter makes them look soft. High gives a crisp downscale.
-                        filterQuality = FilterQuality.High,
                     )
                 } else {
                     MalRatingSourceLabel(

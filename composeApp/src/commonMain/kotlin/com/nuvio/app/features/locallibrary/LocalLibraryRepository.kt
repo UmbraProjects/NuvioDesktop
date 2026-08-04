@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -217,7 +218,36 @@ object LocalLibraryRepository {
             jobs.forEach { it.join() }
             persistCache()
             publish(isScanning = false, errorMessage = firstError)
+            backfillBackdrops()
         }
+    }
+
+    /**
+     * Fills in landscape art for items matched before backdrops were fetched (or whose match
+     * predates this feature). Runs after the scan has already published, so it only ever upgrades a
+     * library that is on screen; a library where everything has one costs nothing.
+     */
+    private suspend fun backfillBackdrops() {
+        val missing = itemsByKey.values.filter { it.background.isNullOrBlank() && it.tmdbId != null }
+        if (missing.isEmpty()) return
+        val sem = Semaphore(4)
+        coroutineScope {
+            missing.map { item ->
+                launch {
+                    sem.withPermit {
+                        val backdrop = runCatching {
+                            TmdbService.fetchArtwork(
+                                tmdbId = item.tmdbId ?: return@withPermit,
+                                mediaType = item.contentType,
+                            )
+                        }.getOrNull()?.backdrop ?: return@withPermit
+                        updateItem((itemsByKey[item.key] ?: item).copy(background = backdrop))
+                    }
+                }
+            }.forEach { it.join() }
+        }
+        persistCache()
+        publish(isScanning = false)
     }
 
     /**

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Favorite
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Style
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -116,6 +118,7 @@ internal fun settingsSearchEntries(
     val downloadsPage = stringResource(Res.string.compose_settings_root_downloads_title)
     val autoDownloadsPage = stringResource(Res.string.compose_settings_page_auto_downloads)
     val playbackPage = stringResource(Res.string.compose_settings_page_playback)
+    val randomPlayPage = stringResource(Res.string.random_play_title)
     val streamsPage = stringResource(Res.string.compose_settings_page_streams)
     val integrationsPage = stringResource(Res.string.compose_settings_page_integrations)
     val debridPage = stringResource(Res.string.compose_settings_page_debrid)
@@ -285,6 +288,13 @@ internal fun settingsSearchEntries(
         icon = Icons.Rounded.PlayArrow,
     )
     addPage(
+        page = SettingsPage.RandomPlay,
+        key = "random-play",
+        title = randomPlayPage,
+        description = stringResource(Res.string.random_play_settings_description),
+        icon = Icons.Rounded.Casino,
+    )
+    addPage(
         page = SettingsPage.Streams,
         key = "streams",
         title = streamsPage,
@@ -451,6 +461,88 @@ internal fun settingsSearchEntries(
         icon = Icons.Rounded.AccountCircle,
     )
 
+    val synchronizationSection = stringResource(Res.string.settings_sync_section)
+    addRow(
+        page = SettingsPage.Account,
+        key = "sync-appearance",
+        title = stringResource(Res.string.settings_sync_appearance),
+        description = stringResource(Res.string.settings_sync_appearance_description),
+        pageLabel = accountPage,
+        section = synchronizationSection,
+        category = accountCategory,
+        icon = Icons.Rounded.Sync,
+    )
+    addRow(
+        page = SettingsPage.Account,
+        key = "sync-home-catalogs",
+        title = stringResource(Res.string.settings_sync_home_catalogs),
+        description = stringResource(Res.string.settings_sync_home_catalogs_description),
+        pageLabel = accountPage,
+        section = synchronizationSection,
+        category = accountCategory,
+        icon = Icons.Rounded.Sync,
+    )
+    addRow(
+        page = SettingsPage.Account,
+        key = "sync-stream-display",
+        title = stringResource(Res.string.settings_sync_stream_display),
+        description = stringResource(Res.string.settings_sync_stream_display_description),
+        pageLabel = accountPage,
+        section = synchronizationSection,
+        category = accountCategory,
+        icon = Icons.Rounded.Sync,
+    )
+    addRow(
+        page = SettingsPage.Account,
+        key = "sync-debrid",
+        title = stringResource(Res.string.settings_sync_debrid),
+        description = stringResource(Res.string.settings_sync_debrid_description),
+        pageLabel = accountPage,
+        section = synchronizationSection,
+        category = accountCategory,
+        icon = Icons.Rounded.Sync,
+    )
+    addRow(
+        page = SettingsPage.Account,
+        key = "sync-metadata",
+        title = stringResource(Res.string.settings_sync_metadata),
+        description = stringResource(Res.string.settings_sync_metadata_description),
+        pageLabel = accountPage,
+        section = synchronizationSection,
+        category = accountCategory,
+        icon = Icons.Rounded.Sync,
+    )
+    addRow(
+        page = SettingsPage.Account,
+        key = "sync-content-preferences",
+        title = stringResource(Res.string.settings_sync_content_preferences),
+        description = stringResource(Res.string.settings_sync_content_preferences_description),
+        pageLabel = accountPage,
+        section = synchronizationSection,
+        category = accountCategory,
+        icon = Icons.Rounded.Sync,
+    )
+    addRow(
+        page = SettingsPage.Account,
+        key = "sync-trakt",
+        title = stringResource(Res.string.settings_sync_trakt),
+        description = stringResource(Res.string.settings_sync_trakt_description),
+        pageLabel = accountPage,
+        section = synchronizationSection,
+        category = accountCategory,
+        icon = Icons.Rounded.Sync,
+    )
+    addRow(
+        page = SettingsPage.Account,
+        key = "sync-notifications",
+        title = stringResource(Res.string.settings_sync_notifications),
+        description = stringResource(Res.string.settings_sync_notifications_description),
+        pageLabel = accountPage,
+        section = synchronizationSection,
+        category = accountCategory,
+        icon = Icons.Rounded.Sync,
+    )
+
     addRow(
         page = SettingsPage.Appearance,
         key = "theme",
@@ -525,6 +617,16 @@ internal fun settingsSearchEntries(
         key = "clear-cw-cache",
         title = stringResource(Res.string.settings_advanced_clear_cw_cache),
         description = stringResource(Res.string.settings_advanced_clear_cw_cache_subtitle),
+        pageLabel = continueWatchingPage,
+        section = stringResource(Res.string.settings_advanced_section_cache),
+        category = generalCategory,
+        icon = Icons.Rounded.Tune,
+    )
+    addRow(
+        page = SettingsPage.ContinueWatching,
+        key = "continue-watching-withdraw-imported-history",
+        title = stringResource(Res.string.settings_cw_withdraw_imported_title),
+        description = stringResource(Res.string.settings_cw_withdraw_imported_subtitle),
         pageLabel = continueWatchingPage,
         section = stringResource(Res.string.settings_advanced_section_cache),
         category = generalCategory,

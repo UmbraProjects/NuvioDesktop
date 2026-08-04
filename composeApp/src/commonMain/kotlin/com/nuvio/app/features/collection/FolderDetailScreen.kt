@@ -80,6 +80,7 @@ import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioPosterCard
 import com.nuvio.app.core.ui.HeroAmbientBackdrop
 import com.nuvio.app.core.ui.NuvioPosterShape
+import com.nuvio.app.core.ui.rememberHomePosterCardStyleUiState
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.MouseActivityState
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
@@ -97,6 +98,7 @@ import com.nuvio.app.features.home.components.PAGE_SECTION_STEP
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
 import com.nuvio.app.features.home.immersiveCatalogPosterBaseWidthDp
+import com.nuvio.app.features.home.immersiveShelfHeightDp
 import com.nuvio.app.features.home.components.HomeHeroSection
 import com.nuvio.app.features.home.components.HomeHeroTrailerManualTrigger
 import com.nuvio.app.features.home.components.HomeTvKey
@@ -627,16 +629,19 @@ private fun ImmersiveCollectionContent(
             )
         }
 
-        val shelfHeight = (maxHeight * 0.43f).coerceIn(300.dp, 440.dp)
-        // Fill-the-shelf poster sizing, matching HomeScreen's TV Mode shelf. Without the
-        // override the row below fell back to the saved poster width preference, which
-        // account sync can overwrite with a mobile-sized value.
-        val shelfPosterBaseWidthDp = remember(maxWidth, shelfHeight) {
+        val posterCardStyle = rememberHomePosterCardStyleUiState()
+        val landscapeMode = posterCardStyle.catalogLandscapeModeEnabled
+        val shelfHeight = immersiveShelfHeightDp(
+            viewportHeightDp = maxHeight.value,
+            landscapeMode = landscapeMode,
+        ).dp
+        val shelfPosterBaseWidthDp = remember(maxWidth, shelfHeight, landscapeMode) {
             immersiveCatalogPosterBaseWidthDp(
                 maxWidthDp = maxWidth.value,
                 shelfHeightDp = shelfHeight.value,
                 sectionPaddingDp = homeSectionHorizontalPaddingForWidth(maxWidth.value).value,
                 hideLabels = true,
+                landscapeMode = landscapeMode,
             )
         }
         HomeHeroSection(
@@ -674,6 +679,7 @@ private fun ImmersiveCollectionContent(
                     ),
                 )
                 .padding(top = 68.dp, bottom = 12.dp),
+            contentAlignment = if (landscapeMode) Alignment.BottomStart else Alignment.TopStart,
         ) {
             HomeCatalogRowSection(
                 section = activeSection,

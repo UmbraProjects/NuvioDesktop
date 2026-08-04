@@ -24,6 +24,8 @@ import nuvio.composeapp.generated.resources.settings_poster_card_width
 import nuvio.composeapp.generated.resources.settings_poster_description
 import nuvio.composeapp.generated.resources.settings_poster_hide_labels
 import nuvio.composeapp.generated.resources.settings_poster_landscape_mode
+import nuvio.composeapp.generated.resources.settings_poster_landscape_text_titles
+import nuvio.composeapp.generated.resources.settings_poster_landscape_text_titles_description
 import nuvio.composeapp.generated.resources.settings_poster_radius_classic
 import nuvio.composeapp.generated.resources.settings_poster_radius_pill
 import nuvio.composeapp.generated.resources.settings_poster_radius_rounded
@@ -72,11 +74,13 @@ internal fun LazyListScope.posterCustomizationSettingsContent(
                     widthDp = uiState.widthDp,
                     cornerRadiusDp = uiState.cornerRadiusDp,
                     catalogLandscapeModeEnabled = uiState.catalogLandscapeModeEnabled,
+                    landscapeTextTitlesEnabled = uiState.landscapeTextTitlesEnabled,
                     hideLabelsEnabled = uiState.hideLabelsEnabled,
                     zoomActionPreviewEnabled = uiState.zoomActionPreviewEnabled,
                     onWidthSelected = PosterCardStyleRepository::setWidthDp,
                     onCornerRadiusSelected = PosterCardStyleRepository::setCornerRadiusDp,
                     onCatalogLandscapeModeChange = PosterCardStyleRepository::setCatalogLandscapeModeEnabled,
+                    onLandscapeTextTitlesChange = PosterCardStyleRepository::setLandscapeTextTitlesEnabled,
                     onHideLabelsChange = PosterCardStyleRepository::setHideLabelsEnabled,
                 )
             }
@@ -103,11 +107,13 @@ internal fun PosterCardStyleControls(
     widthDp: Int,
     cornerRadiusDp: Int,
     catalogLandscapeModeEnabled: Boolean,
+    landscapeTextTitlesEnabled: Boolean,
     hideLabelsEnabled: Boolean,
     zoomActionPreviewEnabled: Boolean,
     onWidthSelected: (Int) -> Unit,
     onCornerRadiusSelected: (Int) -> Unit,
     onCatalogLandscapeModeChange: (Boolean) -> Unit,
+    onLandscapeTextTitlesChange: (Boolean) -> Unit,
     onHideLabelsChange: (Boolean) -> Unit,
 ) {
     val widthOptions = listOf(
@@ -165,6 +171,18 @@ internal fun PosterCardStyleControls(
             isTablet = isTablet,
             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-landscape")),
             onCheckedChange = onCatalogLandscapeModeChange,
+        )
+        SettingsGroupDivider(isTablet = isTablet)
+        SettingsSwitchRow(
+            title = stringResource(Res.string.settings_poster_landscape_text_titles),
+            description = stringResource(Res.string.settings_poster_landscape_text_titles_description),
+            checked = landscapeTextTitlesEnabled,
+            enabled = catalogLandscapeModeEnabled,
+            isTablet = isTablet,
+            modifier = Modifier.settingsScrollAnchor(
+                SettingsScrollAnchor.searchKey("poster-landscape-text-titles"),
+            ),
+            onCheckedChange = onLandscapeTextTitlesChange,
         )
         SettingsGroupDivider(isTablet = isTablet)
         SettingsSwitchRow(

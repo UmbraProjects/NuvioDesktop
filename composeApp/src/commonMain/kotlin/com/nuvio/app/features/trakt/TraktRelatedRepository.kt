@@ -30,6 +30,7 @@ object TraktRelatedRepository {
         fallbackItemType: String? = null,
         forceRefresh: Boolean = false,
     ): List<MetaPreview> {
+        if (!meta.imdbTmdbIdentityTrusted) return emptyList()
         val headers = TraktAuthRepository.authorizedHeaders() ?: return emptyList()
         val target = resolveRelatedTarget(
             meta = meta,

@@ -4247,6 +4247,10 @@ p2pConsentEnableButton.addEventListener("click", event => {
 
 skipPrompt.addEventListener("click", event => {
   event.stopPropagation();
+  // The prompt disappears as soon as Kotlin accepts the seek. If it remains the focused element,
+  // :focus-visible keeps reporting an active chrome interaction even though the button is gone,
+  // so the HUD auto-hide timer can never restart.
+  focusShortcutRoot();
   send("skipInterval", 0);
 });
 

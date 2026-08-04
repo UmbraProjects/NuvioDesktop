@@ -10,6 +10,7 @@ import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.metadata.animeMovieTmdbFallbackId
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.simkl.SIMKL_CW_DAYS_CAP_ALL
@@ -249,7 +250,23 @@ object WatchProgressRepository {
         }
 
         syncScope.launch {
+            var handledInitialSourceEmission = false
             ContinueWatchingSourceRepository.uiState.collectLatest {
+                // Watched history follows the source as well: withdraw the rows imported from the
+                // provider that just lost Continue Watching and import the new one's, or Up Next
+                // keeps seeding from a service the user has moved away from. Forced only for a real
+                // change — the startup import has already run by then, and every provider read costs
+                // a request against a shared daily budget.
+                runCatching {
+                    WatchedRepository.pullConnectedProviderHistory(
+                        profileId = ProfileRepository.activeProfileId,
+                        force = handledInitialSourceEmission,
+                    )
+                }.onFailure { e ->
+                    if (e is CancellationException) throw e
+                    log.w { "Failed to reconcile imported watched history after source change: ${e.message}" }
+                }
+                handledInitialSourceEmission = true
                 // Switching source has to pull the new one immediately, or Continue Watching shows
                 // an empty list until something else happens to trigger a refresh.
                 when (activeContinueWatchingSource()) {
@@ -787,7 +804,7 @@ object WatchProgressRepository {
                 .filter {
                     it.poster.isNullOrBlank() ||
                         it.background.isNullOrBlank() ||
-                        (it.contentType == "series" && !it.episodeTitle.isNullOrBlank())
+                        (it.contentType == "series" && it.episodeTitle.isNullOrBlank())
                 }
         } else emptyList()
         val missingMetadataEntries = localMissing + mdbListMissing + simklMissing
@@ -815,7 +832,7 @@ object WatchProgressRepository {
                 val (metaId, metaType) = key
                 providerReadiness.providers.any { provider ->
                     provider.supportsMetaRequest(type = metaType, id = metaId)
-                }
+                } || hasTmdbAnimeMovieFallback(type = metaType, id = metaId)
             }
             if (supportedNeedsResolution.isEmpty()) return@launch
 
@@ -1516,6 +1533,16 @@ object WatchProgressRepository {
 
     private fun AddonManifest.hasMetaResource(): Boolean =
         resources.any { resource -> resource.name == "meta" }
+
+    /**
+     * True when `MetaDetailsRepository` can still resolve this id even though no installed addon
+     * declares it — a native anime movie id it translates to TMDB through the anime-list mapping.
+     * SIMKL Continue Watching addresses anime movies by `kitsu:`/`mal:`/`simkl:` id, which only a
+     * Kitsu-capable meta addon serves, so without this the group is dropped here and the card never
+     * gets artwork on a TMDB-based setup.
+     */
+    private fun hasTmdbAnimeMovieFallback(type: String, id: String): Boolean =
+        type.equals("movie", ignoreCase = true) && id.animeMovieTmdbFallbackId() != null
 
     private fun AddonManifest.supportsMetaRequest(type: String, id: String): Boolean =
         resources.any { resource ->

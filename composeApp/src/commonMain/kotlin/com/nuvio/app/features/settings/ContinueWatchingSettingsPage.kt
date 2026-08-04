@@ -22,6 +22,14 @@ import nuvio.composeapp.generated.resources.settings_cw_source_simkl
 import nuvio.composeapp.generated.resources.settings_cw_source_title
 import nuvio.composeapp.generated.resources.settings_cw_source_trakt
 import nuvio.composeapp.generated.resources.settings_cw_source_floppy
+import nuvio.composeapp.generated.resources.settings_cw_withdraw_imported_cancel
+import nuvio.composeapp.generated.resources.settings_cw_withdraw_imported_confirm_action
+import nuvio.composeapp.generated.resources.settings_cw_withdraw_imported_confirm_body
+import nuvio.composeapp.generated.resources.settings_cw_withdraw_imported_confirm_title
+import nuvio.composeapp.generated.resources.settings_cw_withdraw_imported_done
+import nuvio.composeapp.generated.resources.settings_cw_withdraw_imported_none
+import nuvio.composeapp.generated.resources.settings_cw_withdraw_imported_subtitle
+import nuvio.composeapp.generated.resources.settings_cw_withdraw_imported_title
 import nuvio.composeapp.generated.resources.settings_cw_window_all
 import nuvio.composeapp.generated.resources.settings_cw_window_days
 import nuvio.composeapp.generated.resources.settings_cw_window_title
@@ -57,7 +65,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.TextButton
+import com.nuvio.app.core.ui.NuvioAlertDialog
 import com.nuvio.app.core.ui.NuvioDialogSurface
+import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.home.components.ContinueWatchingStylePreview
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache
@@ -241,6 +252,7 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                         }
                     },
                 )
+                WithdrawImportedHistoryRow(isTablet = isTablet)
             }
         }
     }
@@ -586,6 +598,79 @@ private fun continueWatchingWindowLabel(days: Int): String =
         stringResource(Res.string.settings_cw_window_days, days)
     }
 
+
+/**
+ * Clears watched marks imported from services that do not provide Continue Watching.
+ *
+ * Only shown when such a service is connected, and only useful for imports made by builds that
+ * recorded no provenance — current ones are withdrawn automatically when the source changes. It
+ * deletes local watched marks, so it asks first and names what it will match against.
+ */
+@Composable
+private fun WithdrawImportedHistoryRow(isTablet: Boolean) {
+    val connectedProviders by TrackingProviderRegistry.connectedProviderIds.collectAsStateWithLifecycle()
+    val source by ContinueWatchingSourceRepository.uiState.collectAsStateWithLifecycle()
+    val foreignProviderNames = remember(connectedProviders, source) {
+        TrackingProviderRegistry.connectedWatchedProviders()
+            .filter { provider -> provider.providerId != source.providerId }
+            .mapNotNull { provider ->
+                TrackingProviderRegistry.authProvider(provider.providerId)?.descriptor?.displayName
+            }
+    }
+    if (foreignProviderNames.isEmpty()) return
+
+    val scope = rememberCoroutineScope()
+    var removedCount by remember { mutableStateOf<Int?>(null) }
+    var showConfirmation by rememberSaveable { mutableStateOf(false) }
+    val providerList = foreignProviderNames.joinToString(", ")
+
+    SettingsGroupDivider(isTablet = isTablet)
+    SettingsNavigationRow(
+        title = stringResource(Res.string.settings_cw_withdraw_imported_title),
+        description = removedCount?.let { count ->
+            if (count > 0) {
+                stringResource(Res.string.settings_cw_withdraw_imported_done, count)
+            } else {
+                stringResource(Res.string.settings_cw_withdraw_imported_none)
+            }
+        } ?: stringResource(Res.string.settings_cw_withdraw_imported_subtitle),
+        isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(
+            SettingsScrollAnchor.searchKey("continue-watching-withdraw-imported-history"),
+        ),
+        onClick = { showConfirmation = true },
+    )
+
+    if (!showConfirmation) return
+    NuvioAlertDialog(
+        onDismissRequest = { showConfirmation = false },
+        title = { Text(stringResource(Res.string.settings_cw_withdraw_imported_confirm_title)) },
+        text = {
+            Text(stringResource(Res.string.settings_cw_withdraw_imported_confirm_body, providerList))
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    showConfirmation = false
+                    scope.launch {
+                        removedCount = runCatching {
+                            WatchedRepository.withdrawImportedProviderHistory(
+                                ProfileRepository.activeProfileId,
+                            )
+                        }.getOrDefault(0)
+                    }
+                },
+            ) {
+                Text(stringResource(Res.string.settings_cw_withdraw_imported_confirm_action))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { showConfirmation = false }) {
+                Text(stringResource(Res.string.settings_cw_withdraw_imported_cancel))
+            }
+        },
+    )
+}
 
 /**
  * Whether Up Next may also draw on the Nuvio Sync watched history while another service is the

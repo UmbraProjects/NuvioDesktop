@@ -6,6 +6,7 @@ import com.nuvio.app.features.metadata.AnimeIdMappingRepository
 import com.nuvio.app.features.metadata.pickBestTmdbMatch
 import com.nuvio.app.features.metadata.titleSimilarity
 import com.nuvio.app.features.metadata.yearMismatchPenalty
+import com.nuvio.app.features.tmdb.TmdbArtwork
 import com.nuvio.app.features.tmdb.TmdbSearchResult
 import com.nuvio.app.features.tmdb.TmdbService
 
@@ -34,7 +35,12 @@ internal object LocalMatcher {
         val results = runCatching { TmdbService.searchTitles(item.title, mediaType) }
             .getOrDefault(emptyList())
         val best = pickBest(item, results) ?: return item
-        return item.applyTmdbMatch(tmdbId = best.id, posterPath = best.posterPath, state = LocalMatchState.AUTO)
+        return item.applyTmdbMatch(
+            tmdbId = best.id,
+            posterPath = best.posterPath,
+            backdropPath = best.backdropPath,
+            state = LocalMatchState.AUTO,
+        )
     }
 
     private suspend fun matchAnime(item: LocalMediaItem): LocalMediaItem? {
@@ -122,10 +128,12 @@ internal object LocalMatcher {
             val tmdb = runCatching {
                 TmdbService.ensureTmdbId(parsed.id, mediaType)?.toIntOrNull()
             }.getOrNull()
+            val artwork = tmdb?.let { artworkFromTmdb(it, mediaType) }
             item.withFranchiseIdentity(
                 imdbId = parsed.id,
                 tmdbId = tmdb,
-                poster = tmdb?.let { posterFromTmdb(it, mediaType) } ?: item.poster,
+                poster = artwork?.poster ?: item.poster,
+                background = artwork?.backdrop ?: item.background,
                 matchState = LocalMatchState.MANUAL,
             )
         }
@@ -157,9 +165,10 @@ internal object LocalMatcher {
         val mediaType = tmdbMediaType()
         val tmdb = if (type == LocalFolderType.SERIES) mapping?.tmdbTvId else mapping?.tmdbMovieIds?.firstOrNull()
         val imdb = mapping?.imdbIds?.firstOrNull()
-        val resolvedPoster = poster
-            ?: tmdb?.let { posterFromTmdb(it, mediaType) }
-            ?: this.poster
+        // Kitsu gives a poster but no backdrop; the mapped TMDB id supplies the landscape art.
+        val tmdbArtwork = tmdb?.takeIf { poster == null || background == null }
+            ?.let { artworkFromTmdb(it, mediaType) }
+        val resolvedPoster = poster ?: tmdbArtwork?.poster ?: this.poster
         return copy(
             kitsuId = kitsuId,
             malId = mapping?.malId ?: malId,
@@ -167,6 +176,7 @@ internal object LocalMatcher {
             imdbId = imdb ?: imdbId,
             isAnime = true,
             poster = resolvedPoster,
+            background = background ?: tmdbArtwork?.backdrop,
             matchState = state,
         )
     }
@@ -175,16 +185,30 @@ internal object LocalMatcher {
         tmdbId: Int,
         posterPath: String?,
         state: LocalMatchState,
+        backdropPath: String? = null,
         replaceNativeAnimeIdentity: Boolean = false,
     ): LocalMediaItem {
         val mediaType = tmdbMediaType()
         val imdb = runCatching { TmdbService.tmdbToImdb(tmdbId, mediaType) }.getOrNull()
-        val poster = TmdbService.tmdbImageUrl(posterPath) ?: posterFromTmdb(tmdbId, mediaType) ?: poster
+        // A search hit already carries both paths; an id typed into the Fix-match dialog carries
+        // neither, so fall back to a single detail lookup that returns both.
+        val searchPoster = TmdbService.tmdbImageUrl(posterPath)
+        val searchBackdrop = TmdbService.tmdbImageUrl(backdropPath, size = LOCAL_BACKDROP_SIZE)
+        val fetched = if (searchPoster == null || searchBackdrop == null) {
+            artworkFromTmdb(tmdbId, mediaType)
+        } else {
+            null
+        }
+        val poster = searchPoster ?: fetched?.poster ?: poster
+        // The local library renders as landscape cards and drives the TV-mode hero; without a
+        // backdrop both fall back to stretching the portrait poster.
+        val background = searchBackdrop ?: fetched?.backdrop ?: background
         return if (replaceNativeAnimeIdentity) {
             withFranchiseIdentity(
                 imdbId = imdb,
                 tmdbId = tmdbId,
                 poster = poster,
+                background = background,
                 matchState = state,
             )
         } else {
@@ -192,13 +216,19 @@ internal object LocalMatcher {
                 tmdbId = tmdbId,
                 imdbId = imdb ?: imdbId,
                 poster = poster,
+                background = background,
                 matchState = state,
             )
         }
     }
 
+    private suspend fun artworkFromTmdb(tmdbId: Int, mediaType: String): TmdbArtwork? =
+        runCatching {
+            TmdbService.fetchArtwork(tmdbId, mediaType, backdropSize = LOCAL_BACKDROP_SIZE)
+        }.getOrNull()
+
     private suspend fun posterFromTmdb(tmdbId: Int, mediaType: String): String? =
-        runCatching { TmdbService.fetchPosterUrl(tmdbId, mediaType) }.getOrNull()
+        artworkFromTmdb(tmdbId, mediaType)?.poster
 
     private fun LocalMediaItem.tmdbMediaType(): String =
         if (type == LocalFolderType.SERIES) "tv" else "movie"
@@ -282,11 +312,16 @@ internal fun LocalMediaItem.withFranchiseIdentity(
     tmdbId: Int?,
     poster: String?,
     matchState: LocalMatchState,
+    background: String? = this.background,
 ): LocalMediaItem = copy(
     imdbId = imdbId,
     tmdbId = tmdbId,
     kitsuId = null,
     malId = null,
     poster = poster,
+    background = background,
     matchState = matchState,
 )
+
+/** Landscape cards and the TV-mode hero both read this, so w1280 rather than a thumbnail size. */
+private const val LOCAL_BACKDROP_SIZE = "w1280"

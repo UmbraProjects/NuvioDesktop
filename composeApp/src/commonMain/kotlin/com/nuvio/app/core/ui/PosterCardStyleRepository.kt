@@ -30,6 +30,7 @@ private data class StoredPosterCardStylePreferences(
     val heightDp: Int = DefaultPosterCardHeightDp,
     val cornerRadiusDp: Int = DefaultPosterCardCornerRadiusDp,
     val catalogLandscapeModeEnabled: Boolean = false,
+    val landscapeTextTitlesEnabled: Boolean = false,
     val hideLabelsEnabled: Boolean = false,
     val depthEnabled: Boolean = false,
     val depthEdgeStrength: Int = 42,
@@ -48,6 +49,7 @@ data class PosterCardStyleUiState(
     val heightDp: Int = DefaultPosterCardHeightDp,
     val cornerRadiusDp: Int = DefaultPosterCardCornerRadiusDp,
     val catalogLandscapeModeEnabled: Boolean = false,
+    val landscapeTextTitlesEnabled: Boolean = false,
     val hideLabelsEnabled: Boolean = false,
     val depthEnabled: Boolean = false,
     val depthEdgeStrength: Int = 42,
@@ -116,6 +118,13 @@ object PosterCardStyleRepository {
         ensureLoaded()
         if (_uiState.value.hideLabelsEnabled == enabled) return
         _uiState.value = _uiState.value.copy(hideLabelsEnabled = enabled)
+        persist()
+    }
+
+    fun setLandscapeTextTitlesEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (_uiState.value.landscapeTextTitlesEnabled == enabled) return
+        _uiState.value = _uiState.value.copy(landscapeTextTitlesEnabled = enabled)
         persist()
     }
 
@@ -199,6 +208,7 @@ object PosterCardStyleRepository {
                 heightDp = heightDp,
                 cornerRadiusDp = cornerRadiusDp,
                 catalogLandscapeModeEnabled = stored.catalogLandscapeModeEnabled,
+                landscapeTextTitlesEnabled = stored.landscapeTextTitlesEnabled,
                 hideLabelsEnabled = stored.hideLabelsEnabled,
                 depthEnabled = stored.depthEnabled,
                 depthEdgeStrength = stored.depthEdgeStrength.coerceIn(0, 100),
@@ -224,6 +234,7 @@ object PosterCardStyleRepository {
                     heightDp = _uiState.value.heightDp,
                     cornerRadiusDp = _uiState.value.cornerRadiusDp,
                     catalogLandscapeModeEnabled = _uiState.value.catalogLandscapeModeEnabled,
+                    landscapeTextTitlesEnabled = _uiState.value.landscapeTextTitlesEnabled,
                     hideLabelsEnabled = _uiState.value.hideLabelsEnabled,
                     depthEnabled = _uiState.value.depthEnabled,
                     depthEdgeStrength = _uiState.value.depthEdgeStrength,

@@ -29,7 +29,9 @@ internal actual object TmdbSettingsStorage {
     private const val libraryPosterUrlTemplateKey = "tmdb_library_poster_url"
     private const val resolveFilenameCatalogsKey = "tmdb_resolve_filename_catalogs"
     private const val heroImageSourceKey = "tmdb_hero_image_source"
-    private val syncKeys = listOf(
+    // Custom library posters, filename catalog resolution, and hero image routing are desktop-fork
+    // features. Keep those keys local even when the portable TMDB group is enabled.
+    private val portableSyncKeys = listOf(
         enabledKey,
         apiKeyKey,
         languageKey,
@@ -44,9 +46,6 @@ internal actual object TmdbSettingsStorage {
         useSeasonPostersKey,
         useMoreLikeThisKey,
         useCollectionsKey,
-        libraryPosterEnabledKey,
-        libraryPosterUrlTemplateKey,
-        resolveFilenameCatalogsKey,
     )
     private val store = DesktopStorage.store("nuvio_tmdb_settings")
 
@@ -107,13 +106,10 @@ internal actual object TmdbSettingsStorage {
         loadUseSeasonPosters()?.let { put(useSeasonPostersKey, encodeSyncBoolean(it)) }
         loadUseMoreLikeThis()?.let { put(useMoreLikeThisKey, encodeSyncBoolean(it)) }
         loadUseCollections()?.let { put(useCollectionsKey, encodeSyncBoolean(it)) }
-        loadLibraryPosterEnabled()?.let { put(libraryPosterEnabledKey, encodeSyncBoolean(it)) }
-        loadLibraryPosterUrlTemplate()?.let { put(libraryPosterUrlTemplateKey, encodeSyncString(it)) }
-        loadResolveFilenameCatalogs()?.let { put(resolveFilenameCatalogsKey, encodeSyncBoolean(it)) }
     }
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
-        store.removeAll(syncKeys.map(ProfileScopedKey::of))
+        store.removeAll(portableSyncKeys.map(ProfileScopedKey::of))
         payload.decodeSyncBoolean(enabledKey)?.let(::saveEnabled)
         payload.decodeSyncString(apiKeyKey)?.let(::saveApiKey)
         payload.decodeSyncString(languageKey)?.let(::saveLanguage)
@@ -128,8 +124,5 @@ internal actual object TmdbSettingsStorage {
         payload.decodeSyncBoolean(useSeasonPostersKey)?.let(::saveUseSeasonPosters)
         payload.decodeSyncBoolean(useMoreLikeThisKey)?.let(::saveUseMoreLikeThis)
         payload.decodeSyncBoolean(useCollectionsKey)?.let(::saveUseCollections)
-        payload.decodeSyncBoolean(libraryPosterEnabledKey)?.let(::saveLibraryPosterEnabled)
-        payload.decodeSyncString(libraryPosterUrlTemplateKey)?.let(::saveLibraryPosterUrlTemplate)
-        payload.decodeSyncBoolean(resolveFilenameCatalogsKey)?.let(::saveResolveFilenameCatalogs)
     }
 }

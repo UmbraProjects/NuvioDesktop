@@ -137,6 +137,7 @@ private fun HomeCollectionRowSectionContent(
             folder = folder,
             basePosterWidthDpOverride = basePosterWidthDpOverride,
             animateGifs = animateGifs,
+            hideTitleBelow = homeCatalogSettings.tvModeEnabled,
             onClick = onFolderClick?.let { { it(collection.id, folder.id) } },
         )
     }
@@ -148,6 +149,7 @@ private fun CollectionFolderCard(
     modifier: Modifier = Modifier,
     basePosterWidthDpOverride: Int? = null,
     animateGifs: Boolean = true,
+    hideTitleBelow: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
     val posterCardStyle = rememberHomePosterCardStyleUiState()
@@ -230,7 +232,8 @@ private fun CollectionFolderCard(
             }
         }
 
-        if (!folder.hideTitle) {
+        // TV rows never show below-card labels; the hero needs the reclaimed vertical space.
+        if (!folder.hideTitle && !hideTitleBelow) {
             Text(
                 text = folder.title,
                 style = MaterialTheme.typography.bodyMedium,

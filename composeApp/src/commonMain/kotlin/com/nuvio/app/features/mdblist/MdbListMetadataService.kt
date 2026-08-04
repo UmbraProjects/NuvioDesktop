@@ -289,6 +289,8 @@ object MdbListMetadataService {
         source?.trim()?.lowercase()?.let(sourceToProvider::get)
 
     internal fun resolveLookup(meta: MetaDetails, fallbackItemId: String): MdbListLookup? {
+        if (!meta.imdbTmdbIdentityTrusted) return null
+
         sequenceOf(meta.id, meta.imdbId, fallbackItemId)
             .mapNotNull(::extractImdbId)
             .firstOrNull()

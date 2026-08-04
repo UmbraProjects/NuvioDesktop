@@ -77,6 +77,19 @@ enum class LocalLibraryPlaybackPreference {
         if (useAlternate) alternate() else this
 
     /**
+     * The local-library preference only replaces normal stream auto-play when this item actually
+     * has a local source. An explicitly requested alternate whose local source disappeared still
+     * opens the picker instead of silently auto-playing an unrelated online source.
+     */
+    fun shouldUseManualStreamSelection(
+        useAlternate: Boolean,
+        hasLocalFile: Boolean,
+    ): Boolean {
+        if (!hasLocalFile) return useAlternate
+        return behaviorFor(useAlternate) == SOURCE_PICKER
+    }
+
+    /**
      * The source picker is always a valid alternate. Local playback is only offered when the
      * selected movie/episode actually resolves to a file.
      */

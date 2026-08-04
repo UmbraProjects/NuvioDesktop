@@ -15,22 +15,23 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 object HeroDiscoveryMetadataService {
-    const val CACHE_VERSION = 15
+    const val CACHE_VERSION = 17
 
+    /**
+     * Turns a saved priority string into the slot list to evaluate.
+     *
+     * This only renames slots — it must never *add* one. Slots added after the setting shipped are
+     * migrated into the saved string once by HomeCatalogSettingsRepository instead. Adding here
+     * looked equivalent but silently overrode the user: the settings page edits the saved string,
+     * so an unticked slot came straight back on the next read and could never be turned off.
+     */
     internal fun normalizePriority(priority: String): List<String> {
         val slots = priority
             .split(',')
             .map(String::trim)
             .filter(String::isNotBlank)
             .toMutableList()
-        if ("emmy_noms" !in slots) {
-            val insertIndex = slots.indexOf("gg_noms").takeIf { it >= 0 }
-                ?.let { it + 1 }
-                ?: slots.indexOf("pic_noms").takeIf { it >= 0 }?.let { it + 1 }
-                ?: slots.size
-            slots.add(insertIndex, "emmy_noms")
-        }
-        // Migration: the single "structural" slot was split into three distinct badges.
+        // Rename: the single "structural" slot was split into three distinct badges.
         val structuralIndex = slots.indexOf("structural")
         if (structuralIndex >= 0) {
             slots.removeAt(structuralIndex)
@@ -108,6 +109,7 @@ object HeroDiscoveryMetadataService {
     }
 
     private suspend fun resolveTmdbId(meta: MetaDetails, fallbackItemId: String): Int? {
+        if (!meta.imdbTmdbIdentityTrusted) return null
         meta.id.extractTmdbId()?.let { return it }
         fallbackItemId.extractTmdbId()?.let { return it }
         val externalId = fallbackItemId.split("_").firstOrNull { it.startsWith("tt", ignoreCase = true) }
@@ -200,6 +202,11 @@ object HeroDiscoveryMetadataService {
 
         val isCult = "cult-classic" in keywordNames || "cult-film" in keywordNames
         val isTrueStory = "based-on-true-story" in keywordNames
+        // TMDB tags stingers as two independent keywords (ids 179430 / 179431) and MDBList passes
+        // them through verbatim. They are tagged per episode on TV, and MDBList only exposes
+        // series-level keywords, so this can only ever fire for movies.
+        val hasMidCreditsScene = "duringcreditsstinger" in keywordNames
+        val hasPostCreditsScene = "aftercreditsstinger" in keywordNames
         val isMetacriticMustSee = "metacritic-must-see" in keywordNames ||
             meta.externalRatings.isMetacriticMustSee()
         val discoveryConfig = HeroDiscoveryConfigRepository.snapshot()
@@ -255,7 +262,9 @@ object HeroDiscoveryMetadataService {
         // Driven purely by TMDB's typed digital/physical/TV dates (not year-only releaseInfo,
         // which can't distinguish streaming from cinema), so it never overlaps "in cinema".
         val wantsNewRelease = "new_release" in priority || "digital_release" in priority
-        val isNewRelease = wantsNewRelease && !isTv && tmdbId != null &&
+        val isNewRelease = wantsNewRelease &&
+            isRecentOriginalRelease(meta.releaseInfo) &&
+            !isTv && tmdbId != null &&
             isWithinDays(TmdbService.fetchMovieAvailabilityDate(tmdbId), NEW_RELEASE_WINDOW_DAYS)
         val releaseStatus = if (
             "release_status" in priority &&
@@ -289,6 +298,8 @@ object HeroDiscoveryMetadataService {
             isTrueStory = isTrueStory,
             isMetacriticMustSee = isMetacriticMustSee,
             isTrending = isTrending,
+            hasMidCreditsScene = hasMidCreditsScene && !isTv,
+            hasPostCreditsScene = hasPostCreditsScene && !isTv,
             releaseStatus = releaseStatus
         )
     }
@@ -385,6 +396,13 @@ object HeroDiscoveryMetadataService {
             "metacritic" -> if (meta.isMetacriticMustSee) "Must-See" else null
             "cult" -> if (meta.isCult) "Cult Classic" else null
             "true_story" -> if (meta.isTrueStory) "True Story" else null
+            // The two keywords are independent, so all three combinations are real.
+            "stinger" -> when {
+                meta.hasMidCreditsScene && meta.hasPostCreditsScene -> "Mid & Post-Credits"
+                meta.hasMidCreditsScene -> "Mid-Credits Scene"
+                meta.hasPostCreditsScene -> "Post-Credits Scene"
+                else -> null
+            }
             "short_film" -> if (meta.isShortFilm) "Short Film" else null
             "mini_series" -> if (meta.isMiniSeries) "Mini Series" else null
             "binge_ready" -> if (meta.isBingeReady) "Binge Ready" else null
@@ -418,6 +436,19 @@ object HeroDiscoveryMetadataService {
 
     private fun releaseYear(value: String?): Int? =
         value?.take(4)?.toIntOrNull()
+
+    /**
+     * A new regional streaming/reissue record must not turn an old catalogue title into a new
+     * release. Allow the current and previous release years so late digital windows still qualify.
+     */
+    internal fun isRecentOriginalRelease(
+        releaseInfo: String?,
+        todayIsoDate: String = com.nuvio.app.features.watchprogress.CurrentDateProvider.todayIsoDate(),
+    ): Boolean {
+        val releaseYear = releaseYear(releaseInfo) ?: return false
+        val currentYear = todayIsoDate.take(4).toIntOrNull() ?: return false
+        return releaseYear in (currentYear - NEW_RELEASE_ORIGINAL_YEAR_LOOKBACK)..currentYear
+    }
 
     private fun String.isEnglishLanguage(): Boolean {
         val normalized = trim().lowercase()
@@ -488,6 +519,7 @@ object HeroDiscoveryMetadataService {
         "new_release" to "alert",
         "metacritic" to "nom",
         "true_story" to "info",
+        "stinger" to "info",
         "short_film" to "info",
         "mini_series" to "info",
         "binge_ready" to "info",
@@ -498,6 +530,7 @@ object HeroDiscoveryMetadataService {
     private val UnavailableReleaseStatuses = setOf("Cinema", "Production")
     private const val RELEASE_STATUS_STALE_YEAR_GAP = 3
     private const val NEW_RELEASE_WINDOW_DAYS = 30
+    private const val NEW_RELEASE_ORIGINAL_YEAR_LOOKBACK = 1
     private const val MDBLIST_DISCOVERY_TIMEOUT_MS = 6_000L
     private const val METACRITIC_MUST_SEE_MIN_SCORE = 81.0
     private const val BINGE_READY_MAX_SEASONS = 3
@@ -597,6 +630,8 @@ data class DiscoveryMeta(
     val isTrueStory: Boolean,
     val isMetacriticMustSee: Boolean,
     val isTrending: Boolean = false,
+    val hasMidCreditsScene: Boolean = false,
+    val hasPostCreditsScene: Boolean = false,
     val releaseStatus: String?
 )
 

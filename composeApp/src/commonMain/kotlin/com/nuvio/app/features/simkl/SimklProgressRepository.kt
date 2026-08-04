@@ -3,6 +3,7 @@ package com.nuvio.app.features.simkl
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.RawHttpResponse
 import com.nuvio.app.features.addons.httpRequestRaw
+import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import kotlinx.coroutines.CancellationException
@@ -299,7 +300,7 @@ internal object SimklProgressRepository {
             videoId = videoId,
             title = s.title.orEmpty(),
             poster = posterUrl,
-            background = cachedMeta?.background ?: posterUrl,
+            background = cachedMeta?.backdropOrPoster(),
             seasonNumber = season,
             episodeNumber = episode,
             lastPositionMs = 0L,
@@ -343,7 +344,7 @@ internal object SimklProgressRepository {
                         ?.trim()?.takeIf(String::isNotBlank)
                         ?: cachedMeta?.name?.trim()?.takeIf(String::isNotBlank).orEmpty(),
                     poster = posterUrl,
-                    background = cachedMeta?.background ?: posterUrl,
+                    background = cachedMeta?.backdropOrPoster(),
                     lastPositionMs = 0L,
                     durationMs = 0L,
                     progressPercent = progress,
@@ -374,7 +375,7 @@ internal object SimklProgressRepository {
                     videoId = videoId,
                     title = s.title.orEmpty(),
                     poster = posterUrl,
-                    background = cachedMeta?.background ?: posterUrl,
+                    background = cachedMeta?.backdropOrPoster(),
                     seasonNumber = season,
                     episodeNumber = number,
                     episodeTitle = ep.title?.takeIf { it.isNotBlank() },
@@ -389,6 +390,18 @@ internal object SimklProgressRepository {
         }
     }
 }
+
+/**
+ * Backdrop for a row we already have metadata for.
+ *
+ * Deliberately never falls back to SIMKL's own poster: `background` doubles as the "this row still
+ * needs metadata resolution" signal in `WatchProgressRepository`, so filling it with a portrait
+ * poster tells that pass the row is done and permanently freezes the card at a SIMKL thumbnail with
+ * no backdrop, logo or plot. It bit anime movies hardest — nothing else in the app caches meta under
+ * a `kitsu:` id, so their `peek` always missed. Matches `MdbListProgressRepository`, and the card
+ * falls back to `poster` on its own while the backdrop is still unresolved.
+ */
+private fun MetaDetails.backdropOrPoster(): String? = background ?: poster
 
 /**
  * Drops cleared seeds, and forgets the suppression as soon as SIMKL reports a newer watch — which

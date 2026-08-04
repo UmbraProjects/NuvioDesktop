@@ -4,6 +4,8 @@ data class ExternalPlayerApp(
     val id: String,
     val name: String,
     val isAvailable: Boolean = true,
+    val executablePath: String? = null,
+    val canConfigure: Boolean = false,
 )
 
 data class SubtitleInput(

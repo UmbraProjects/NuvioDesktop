@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Info
@@ -119,6 +120,7 @@ import com.nuvio.app.features.discord.DiscordPresenceSettingsRepository
 import com.nuvio.app.features.home.HeroBadgePlacement
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.home.HomeCatalogSettingsUiState
 import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.librarypvr.libraryDownloadsSection
 import com.nuvio.app.features.mdblist.MdbListSettings
@@ -512,6 +514,7 @@ fun SettingsScreen(
                 homescreenHeroAmbientBackgroundEnabled = homescreenSettingsUiState.heroAmbientBackgroundEnabled,
                 homescreenTvModeEnabled = homescreenSettingsUiState.tvModeEnabled,
                 homescreenItems = homescreenSettingsUiState.items,
+                randomPlaySettingsUiState = homescreenSettingsUiState,
                 metaScreenSettingsUiState = metaScreenSettingsUiState,
                 continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
                 posterCardStyleUiState = posterCardStyleUiState,
@@ -588,6 +591,7 @@ fun SettingsScreen(
                 homescreenHeroAmbientBackgroundEnabled = homescreenSettingsUiState.heroAmbientBackgroundEnabled,
                 homescreenTvModeEnabled = homescreenSettingsUiState.tvModeEnabled,
                 homescreenItems = homescreenSettingsUiState.items,
+                randomPlaySettingsUiState = homescreenSettingsUiState,
                 metaScreenSettingsUiState = metaScreenSettingsUiState,
                 continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
                 posterCardStyleUiState = posterCardStyleUiState,
@@ -670,6 +674,7 @@ private fun MobileSettingsScreen(
     homescreenHeroAmbientBackgroundEnabled: Boolean,
     homescreenTvModeEnabled: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
+    randomPlaySettingsUiState: HomeCatalogSettingsUiState,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
     posterCardStyleUiState: PosterCardStyleUiState,
@@ -810,6 +815,7 @@ private fun MobileSettingsScreen(
                         settingsRootContent(
                             isTablet = false,
                             onPlaybackClick = { onPageChange(SettingsPage.Playback) },
+                            onRandomPlayClick = { onPageChange(SettingsPage.RandomPlay) },
                             onStreamsClick = { onPageChange(SettingsPage.Streams) },
                             onLocalLibraryClick = { onPageChange(SettingsPage.LocalLibrary) },
                             onAutoDownloadsClick = { onPageChange(SettingsPage.AutoDownloads) },
@@ -863,6 +869,10 @@ private fun MobileSettingsScreen(
                     tunnelingEnabled = tunnelingEnabled,
                     useLibass = useLibass,
                     libassRenderType = libassRenderType,
+                )
+                SettingsPage.RandomPlay -> randomPlaySettingsContent(
+                    isTablet = false,
+                    settings = randomPlaySettingsUiState,
                 )
                 SettingsPage.Streams -> streamsSettingsContent(
                     isTablet = false,
@@ -1118,6 +1128,7 @@ private fun TabletSettingsScreen(
     homescreenHeroAmbientBackgroundEnabled: Boolean,
     homescreenTvModeEnabled: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
+    randomPlaySettingsUiState: HomeCatalogSettingsUiState,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
     posterCardStyleUiState: PosterCardStyleUiState,
@@ -1378,6 +1389,7 @@ private fun TabletSettingsScreen(
                             settingsRootContent(
                                 isTablet = true,
                                 onPlaybackClick = { openInlinePage(SettingsPage.Playback) },
+                                onRandomPlayClick = { openInlinePage(SettingsPage.RandomPlay) },
                                 onStreamsClick = { openInlinePage(SettingsPage.Streams) },
                                 onLocalLibraryClick = { openInlinePage(SettingsPage.LocalLibrary) },
                                 onAutoDownloadsClick = { openInlinePage(SettingsPage.AutoDownloads) },
@@ -1435,6 +1447,10 @@ private fun TabletSettingsScreen(
                         tunnelingEnabled = tunnelingEnabled,
                         useLibass = useLibass,
                         libassRenderType = libassRenderType,
+                    )
+                    SettingsPage.RandomPlay -> randomPlaySettingsContent(
+                        isTablet = true,
+                        settings = randomPlaySettingsUiState,
                     )
                     SettingsPage.Streams -> streamsSettingsContent(
                         isTablet = true,
@@ -1657,6 +1673,11 @@ private fun desktopSettingsSidebarItems(): List<DesktopSettingsSidebarItem> = li
         page = SettingsPage.Playback,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.random_play_title),
+        icon = Icons.Rounded.Casino,
+        page = SettingsPage.RandomPlay,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_plugins),
         icon = Icons.Rounded.Settings,
         page = SettingsPage.Plugins,
@@ -1694,6 +1715,7 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.ContinueWatching -> SettingsPage.ContinueWatching
     SettingsPage.MetaScreen -> SettingsPage.MetaScreen
     SettingsPage.Playback -> SettingsPage.Playback
+    SettingsPage.RandomPlay -> SettingsPage.RandomPlay
     SettingsPage.Appearance,
     SettingsPage.PosterCustomization -> SettingsPage.Appearance
     SettingsPage.Homescreen -> SettingsPage.Homescreen

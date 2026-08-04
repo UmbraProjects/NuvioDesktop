@@ -39,11 +39,16 @@ import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -88,6 +93,7 @@ import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.ui.LocalNuvioDesktopCompactWindow
 import com.nuvio.app.core.ui.NuvioBackButton
+import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.TraktListPickerDialog
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
@@ -138,6 +144,7 @@ import com.nuvio.app.features.player.appShortcutMatches
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.tmdb.TmdbService
+import com.nuvio.app.features.settings.trackSettingsTextFocus
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktCommentReview
 import com.nuvio.app.features.trakt.TraktCommentsRepository
@@ -193,6 +200,8 @@ private fun Color.blendTowards(target: Color, fraction: Float): Color {
 fun MetaDetailsScreen(
     type: String,
     id: String,
+    autoPlayOnLoad: Boolean = false,
+    onAutoPlayOnLoadConsumed: (() -> Unit)? = null,
     onBack: () -> Unit,
     onPlay: ((type: String, videoId: String, parentMetaId: String, parentMetaType: String, title: String, logo: String?, poster: String?, background: String?, seasonNumber: Int?, episodeNumber: Int?, episodeTitle: String?, episodeThumbnail: String?, pauseDescription: String?, resumePositionMs: Long?) -> Unit)? = null,
     onPlayAlternate: ((type: String, videoId: String, parentMetaId: String, parentMetaType: String, title: String, logo: String?, poster: String?, background: String?, seasonNumber: Int?, episodeNumber: Int?, episodeTitle: String?, episodeThumbnail: String?, pauseDescription: String?, resumePositionMs: Long?) -> Unit)? = null,
@@ -248,6 +257,7 @@ fun MetaDetailsScreen(
     }.collectAsStateWithLifecycle()
     val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
     var autoLoadAttempted by remember(type, id) { mutableStateOf(false) }
+    var randomPlayAutoPlayHandled by remember(type, id, autoPlayOnLoad) { mutableStateOf(false) }
     var observedOfflineState by remember(type, id) { mutableStateOf(false) }
     var selectedEpisodeForActions by remember(type, id) { mutableStateOf<MetaVideo?>(null) }
     var selectedSeasonForActions by remember(type, id) { mutableStateOf<Int?>(null) }
@@ -274,6 +284,20 @@ fun MetaDetailsScreen(
     var episodeImdbRatings by remember(type, id) { mutableStateOf<Map<Pair<Int, Int>, Double>>(emptyMap()) }
     var deferredMetaWorkAllowed by remember(type, id) { mutableStateOf(false) }
     var heroDiscoveryFacts by remember(type, id) { mutableStateOf<List<HeroDiscoveryFact>>(emptyList()) }
+    var episodeSearchVisible by remember(type, id) { mutableStateOf(false) }
+    var episodeSearchQuery by remember(type, id) { mutableStateOf("") }
+    var episodeSearchInputReady by remember(type, id) { mutableStateOf(false) }
+    val episodeSearchFocusRequester = remember(type, id) { FocusRequester() }
+
+    LaunchedEffect(episodeSearchVisible) {
+        episodeSearchInputReady = false
+        if (episodeSearchVisible) {
+            // Keep the shortcut's key-down from becoming the first query character while focus
+            // moves from the details canvas into the newly composed text field.
+            delay(150)
+            episodeSearchInputReady = true
+        }
+    }
 
     val shouldShowComments = commentsEnabled &&
         traktAuthUiState.mode == TraktConnectionMode.CONNECTED &&
@@ -350,6 +374,10 @@ fun MetaDetailsScreen(
         }
         if (!deferredMetaWorkAllowed) return@LaunchedEffect
         if (metaForRatings == null || !metaForRatings.isSeriesLikeForEpisodeRatings()) {
+            episodeImdbRatings = emptyMap()
+            return@LaunchedEffect
+        }
+        if (!metaForRatings.imdbTmdbIdentityTrusted) {
             episodeImdbRatings = emptyMap()
             return@LaunchedEffect
         }
@@ -684,6 +712,14 @@ fun MetaDetailsScreen(
                 val hasEpisodes = meta.videos.any {
                     it.effectiveSeasonNumber() != null || it.effectiveEpisodeNumber() != null
                 }
+                val episodeSearchResults = remember(meta.videos, episodeSearchQuery) {
+                    meta.videos.matchingEpisodeSearch(episodeSearchQuery)
+                }
+                val episodeVideosForTv = if (episodeSearchQuery.isBlank()) {
+                    meta.videos
+                } else {
+                    episodeSearchResults
+                }
                 val hasProductionSection = remember(meta) {
                     meta.productionCompanies.isNotEmpty() ||
                         meta.networks.isNotEmpty() ||
@@ -982,6 +1018,21 @@ fun MetaDetailsScreen(
                         }
                     }
                 }
+                LaunchedEffect(
+                    autoPlayOnLoad,
+                    meta.id,
+                    seriesAction?.videoId,
+                    hasEpisodes,
+                ) {
+                    if (!autoPlayOnLoad || randomPlayAutoPlayHandled || onPlay == null) {
+                        return@LaunchedEffect
+                    }
+                    val isSeries = meta.type == "series" || hasEpisodes
+                    if (isSeries && seriesAction == null) return@LaunchedEffect
+                    randomPlayAutoPlayHandled = true
+                    onAutoPlayOnLoadConsumed?.invoke()
+                    onPrimaryPlayClick()
+                }
                 val alternatePlayHandler = onPlayAlternate
                 val primaryPlaybackVideoId =
                     if ((meta.type == "series" || hasEpisodes) && seriesAction != null) {
@@ -1179,16 +1230,16 @@ fun MetaDetailsScreen(
                 val tvCoroutineScope = rememberCoroutineScope()
                 val mouseActivity = rememberMouseActivityState()
 
-                val groupedEpisodesForTv = remember(meta.videos, meta.type) {
-                    val withSeasonOrEp = meta.videos.filter {
+                val groupedEpisodesForTv = remember(episodeVideosForTv, meta.type) {
+                    val withSeasonOrEp = episodeVideosForTv.filter {
                         it.effectiveSeasonNumber() != null || it.effectiveEpisodeNumber() != null
                     }
                     if (withSeasonOrEp.isNotEmpty()) {
                         withSeasonOrEp
                             .sortedWith(metaVideoSeasonEpisodeComparator)
                             .groupBy { normalizeSeasonNumber(it.effectiveSeasonNumber()) }
-                    } else if (meta.type != "series" && meta.videos.isNotEmpty()) {
-                        mapOf(normalizeSeasonNumber(null) to meta.videos)
+                    } else if (meta.type != "series" && episodeVideosForTv.isNotEmpty()) {
+                        mapOf(normalizeSeasonNumber(null) to episodeVideosForTv)
                     } else {
                         emptyMap()
                     }
@@ -1510,6 +1561,19 @@ fun MetaDetailsScreen(
                         .toPx()
                 }
                 var heroHeightPx by remember(meta.id) { mutableIntStateOf(0) }
+                LaunchedEffect(episodeSearchVisible, heroHeightPx) {
+                    if (!episodeSearchVisible) return@LaunchedEffect
+                    val episodesSection = tvSections.firstOrNull { it.kind == MetaTvSectionKind.EPISODES }
+                        ?: return@LaunchedEffect
+                    if (mergedDetailKeyboardNavigation) {
+                        listState.animateScrollToItem(index = 0, scrollOffset = heroHeightPx)
+                    } else {
+                        listState.animateScrollToItem(
+                            index = episodesSection.lazyItemIndex,
+                            scrollOffset = -with(density) { 96.dp.roundToPx() },
+                        )
+                    }
+                }
                 val thresholdPx = (heroHeightPx - safeAreaTopPx).coerceAtLeast(0f)
                 val detailScrollOffsetPx = if (listState.firstVisibleItemIndex == 0) {
                     listState.firstVisibleItemScrollOffset.toFloat()
@@ -1751,6 +1815,48 @@ fun MetaDetailsScreen(
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxSize()
+                        .onPreviewKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            if (episodeSearchVisible) {
+                                if (event.navigationKey() == Key.Escape) {
+                                    episodeSearchVisible = false
+                                    episodeSearchQuery = ""
+                                    episodeSearchInputReady = false
+                                    if (detailsKeyboardNavigationEnabled) {
+                                        try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                                    }
+                                    return@onPreviewKeyEvent true
+                                }
+                                // While the editor owns focus, ordinary letters (including other
+                                // one-key app shortcuts) are query text, not details navigation.
+                                return@onPreviewKeyEvent false
+                            }
+                            if (hasEpisodes && appShortcutMatches(AppShortcutAction.OpenSearch, event)) {
+                                episodeSearchVisible = true
+                                episodeSearchInputReady = false
+                                return@onPreviewKeyEvent true
+                            }
+                            if (!detailsKeyboardNavigationEnabled) return@onPreviewKeyEvent false
+                            if (appShortcutMatches(AppShortcutAction.TogglePeoplePanel, event)) {
+                                return@onPreviewKeyEvent handleDetailTvKey(DetailTvKey.TogglePeoplePanel)
+                            }
+                            if (appShortcutMatches(AppShortcutAction.ToggleTrailerMute, event)) {
+                                return@onPreviewKeyEvent handleDetailTvKey(DetailTvKey.ToggleMute)
+                            }
+                            val navKey = when (event.navigationKey()) {
+                                Key.Escape -> DetailTvKey.Dismiss
+                                Key.Backspace -> DetailTvKey.Back
+                                Key.DirectionDown -> DetailTvKey.Down
+                                Key.DirectionUp -> DetailTvKey.Up
+                                Key.DirectionRight -> DetailTvKey.Right
+                                Key.DirectionLeft -> DetailTvKey.Left
+                                Key.Enter, Key.NumPadEnter -> DetailTvKey.Select
+                                Key.LeftBracket -> DetailTvKey.VolumeDown
+                                Key.RightBracket -> DetailTvKey.VolumeUp
+                                else -> return@onPreviewKeyEvent false
+                            }
+                            handleDetailTvKey(navKey)
+                        }
                         .then(
                             if (detailsKeyboardNavigationEnabled) {
                                 Modifier
@@ -1758,28 +1864,6 @@ fun MetaDetailsScreen(
                                     .focusable()
                                     .onPointerEvent(PointerEventType.Move) { event ->
                                         mouseActivity.onMouseMoved(event.changes.first().position)
-                                    }
-                                    .onPreviewKeyEvent { event ->
-                                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                        if (appShortcutMatches(AppShortcutAction.TogglePeoplePanel, event)) {
-                                            return@onPreviewKeyEvent handleDetailTvKey(DetailTvKey.TogglePeoplePanel)
-                                        }
-                                        if (appShortcutMatches(AppShortcutAction.ToggleTrailerMute, event)) {
-                                            return@onPreviewKeyEvent handleDetailTvKey(DetailTvKey.ToggleMute)
-                                        }
-                                        val navKey = when (event.navigationKey()) {
-                                            Key.Escape -> DetailTvKey.Dismiss
-                                            Key.Backspace -> DetailTvKey.Back
-                                            Key.DirectionDown -> DetailTvKey.Down
-                                            Key.DirectionUp -> DetailTvKey.Up
-                                            Key.DirectionRight -> DetailTvKey.Right
-                                            Key.DirectionLeft -> DetailTvKey.Left
-                                            Key.Enter, Key.NumPadEnter -> DetailTvKey.Select
-                                            Key.LeftBracket -> DetailTvKey.VolumeDown
-                                            Key.RightBracket -> DetailTvKey.VolumeUp
-                                            else -> return@onPreviewKeyEvent false
-                                        }
-                                        handleDetailTvKey(navKey)
                                     }
                             } else {
                                 Modifier
@@ -2026,6 +2110,7 @@ fun MetaDetailsScreen(
                                                 MetaScreenSectionKey.MORE_LIKE_THIS in enabledHeroSections
                                             }.orEmpty(),
                                             onMoreLikeThisClick = { preview -> onOpenMeta?.invoke(preview) },
+                                            episodeSearchQuery = episodeSearchQuery,
                                         )
                                     } else if (showDesktopRelatedOverlay) {
                                         DetailCompactMediaSelector(
@@ -2089,6 +2174,7 @@ fun MetaDetailsScreen(
                                 showManualPlayOption = showManualPlayOption,
                                 preferredEpisodeSeasonNumber = preferredSeriesSeasonNumber,
                                 preferredEpisodeNumber = preferredSeriesEpisodeNumber,
+                                episodeSearchQuery = episodeSearchQuery,
                                 hasProductionSection = hasProductionSection,
                                 hasTrailersSection = hasTrailersSection,
                                 hasEpisodes = hasEpisodes,
@@ -2200,6 +2286,28 @@ fun MetaDetailsScreen(
                             onToggleSaved = toggleSaved,
                             modifier = Modifier.zIndex(2f),
                         )
+
+                        if (episodeSearchVisible) {
+                            EpisodeSearchOverlay(
+                                query = episodeSearchQuery,
+                                onQueryChange = { episodeSearchQuery = it },
+                                resultCount = episodeSearchResults.size,
+                                inputReady = episodeSearchInputReady,
+                                focusRequester = episodeSearchFocusRequester,
+                                onClear = { episodeSearchQuery = "" },
+                                onClose = {
+                                    episodeSearchVisible = false
+                                    episodeSearchQuery = ""
+                                    episodeSearchInputReady = false
+                                    if (detailsKeyboardNavigationEnabled) {
+                                        try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                                    }
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .zIndex(4f),
+                            )
+                        }
 
                         selectedEpisodeForActions?.let { selectedEpisode ->
                             val selectedSeasonNumber = selectedEpisode.effectiveSeasonNumber()
@@ -2684,6 +2792,7 @@ private fun LazyListScope.configuredMetaSectionItems(
     showManualPlayOption: Boolean,
     preferredEpisodeSeasonNumber: Int?,
     preferredEpisodeNumber: Int?,
+    episodeSearchQuery: String,
     hasProductionSection: Boolean,
     hasTrailersSection: Boolean,
     hasEpisodes: Boolean,
@@ -2770,6 +2879,7 @@ private fun LazyListScope.configuredMetaSectionItems(
                     showManualPlayOption = showManualPlayOption,
                     preferredEpisodeSeasonNumber = preferredEpisodeSeasonNumber,
                     preferredEpisodeNumber = preferredEpisodeNumber,
+                    episodeSearchQuery = episodeSearchQuery,
                     hasProductionSection = hasProductionSection,
                     hasTrailersSection = hasTrailersSection,
                     hasEpisodes = hasEpisodes,
@@ -2853,6 +2963,89 @@ private fun LazyListScope.configuredMetaSectionItems(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun EpisodeSearchOverlay(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    resultCount: Int,
+    inputReady: Boolean,
+    focusRequester: FocusRequester,
+    onClear: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LaunchedEffect(Unit) {
+        // Let the overlay enter composition before handing focus to its text editor.
+        delay(1)
+        try { focusRequester.requestFocus() } catch (_: Exception) {}
+    }
+
+    Column(
+        modifier = modifier
+            .padding(
+                start = 16.dp,
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 68.dp,
+                end = 16.dp,
+            )
+            .widthIn(max = 680.dp)
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+                shape = MaterialTheme.shapes.large,
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = stringResource(Res.string.details_episode_search_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = stringResource(Res.string.details_episode_search_matches, resultCount),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        NuvioInputField(
+            value = query,
+            onValueChange = onQueryChange,
+            placeholder = stringResource(Res.string.details_episode_search_placeholder),
+            readOnly = !inputReady,
+            modifier = Modifier
+                .focusRequester(focusRequester)
+                .trackSettingsTextFocus(),
+            trailingContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = onClear) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(Res.string.details_episode_search_clear),
+                            )
+                        }
+                    }
+                    TextButton(onClick = onClose) {
+                        Text(stringResource(Res.string.details_episode_search_close))
+                    }
+                }
+            },
+        )
     }
 }
 
@@ -2969,6 +3162,7 @@ private fun ConfiguredMetaSections(
     showManualPlayOption: Boolean,
     preferredEpisodeSeasonNumber: Int?,
     preferredEpisodeNumber: Int?,
+    episodeSearchQuery: String,
     hasProductionSection: Boolean,
     hasTrailersSection: Boolean,
     hasEpisodes: Boolean,
@@ -3173,6 +3367,7 @@ private fun ConfiguredMetaSections(
                         focusedSeasonIndex = tvFocus.focusedSeasonIndex,
                         focusedEpisodeIndex = tvFocus.focusedEpisodeIndex,
                         compactDesktopLayout = desktopTwoColumnLayout,
+                        episodeSearchQuery = episodeSearchQuery,
                     )
                 }
             }

@@ -44,13 +44,13 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.nuvio.app.core.ui.ExtraLargePosterCardWidthDp
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.core.ui.NuvioCardDepthSurface
 import com.nuvio.app.core.ui.nuvioCardDepth
 import com.nuvio.app.core.ui.NuvioShelfSection
 import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
+import com.nuvio.app.core.ui.ExtraLargePosterCardWidthDp
 import com.nuvio.app.core.ui.landscapePosterHeightForWidth
 import com.nuvio.app.core.ui.landscapePosterWidth
 import com.nuvio.app.core.ui.posterCardClickable
@@ -192,6 +192,7 @@ internal fun HomeContinueWatchingSection(
     modifier: Modifier = Modifier,
     sectionPadding: Dp? = null,
     layout: ContinueWatchingLayout? = null,
+    basePosterWidthDpOverride: Int? = null,
     focusedItemIndex: Int? = null,
     rowState: androidx.compose.foundation.lazy.LazyListState? = null,
     onHoverItem: ((Int) -> Unit)? = null,
@@ -213,6 +214,7 @@ internal fun HomeContinueWatchingSection(
             modifier = modifier.fillMaxWidth(),
             sectionPadding = sectionPadding,
             layout = layout,
+            basePosterWidthDpOverride = basePosterWidthDpOverride,
             focusedItemIndex = focusedItemIndex,
             rowState = effectiveRowState,
             onHoverItem = onHoverItem,
@@ -231,6 +233,7 @@ internal fun HomeContinueWatchingSection(
                 modifier = Modifier.fillMaxWidth(),
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
                 layout = rememberContinueWatchingLayout(maxWidth.value),
+                basePosterWidthDpOverride = basePosterWidthDpOverride,
                 focusedItemIndex = focusedItemIndex,
                 rowState = effectiveRowState,
                 onHoverItem = onHoverItem,
@@ -252,6 +255,7 @@ private fun HomeContinueWatchingSectionContent(
     modifier: Modifier,
     sectionPadding: Dp,
     layout: ContinueWatchingLayout,
+    basePosterWidthDpOverride: Int?,
     focusedItemIndex: Int?,
     rowState: androidx.compose.foundation.lazy.LazyListState,
     onHoverItem: ((Int) -> Unit)?,
@@ -264,13 +268,12 @@ private fun HomeContinueWatchingSectionContent(
         HomeCatalogSettingsRepository.snapshot()
         HomeCatalogSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
-    // TV Mode's shelf only supports the compact "Card" layout — Wide/Poster don't fit the
-    // fixed shelf sizing and cause layout issues there. Doesn't touch the saved preference.
-    val effectiveStyle = if (homeCatalogSettings.tvModeEnabled) {
-        ContinueWatchingSectionStyle.Card
-    } else {
-        style
-    }
+    val posterCardStyle = rememberHomePosterCardStyleUiState()
+    val effectiveStyle = effectiveContinueWatchingStyle(
+        requestedStyle = style,
+        tvModeEnabled = homeCatalogSettings.tvModeEnabled,
+        catalogLandscapeModeEnabled = posterCardStyle.catalogLandscapeModeEnabled,
+    )
 
     val itemOrderKey = remember(items) {
         items.joinToString(separator = "|") { item -> item.continueWatchingRowOrderKey() }
@@ -295,6 +298,7 @@ private fun HomeContinueWatchingSectionContent(
             when (effectiveStyle) {
                 ContinueWatchingSectionStyle.Card -> ContinueWatchingCard(
                     item = item,
+                    basePosterWidthDpOverride = basePosterWidthDpOverride,
                     useEpisodeThumbnails = useEpisodeThumbnails,
                     blurNextUp = blurNextUp,
                     onClick = onItemClick?.let { { it(item) } },
@@ -320,6 +324,24 @@ private fun HomeContinueWatchingSectionContent(
         }
     }
 }
+
+private val TvModeContinueWatchingStyles = setOf(
+    ContinueWatchingSectionStyle.Card,
+    ContinueWatchingSectionStyle.Wide,
+    ContinueWatchingSectionStyle.Poster,
+)
+
+/** TV Mode respects the saved choice unless its shorter landscape shelf requires landscape cards. */
+internal fun effectiveContinueWatchingStyle(
+    requestedStyle: ContinueWatchingSectionStyle,
+    tvModeEnabled: Boolean,
+    catalogLandscapeModeEnabled: Boolean,
+): ContinueWatchingSectionStyle =
+    when {
+        tvModeEnabled && catalogLandscapeModeEnabled -> ContinueWatchingSectionStyle.Card
+        !tvModeEnabled || requestedStyle in TvModeContinueWatchingStyles -> requestedStyle
+        else -> ContinueWatchingSectionStyle.Card
+    }
 
 private fun ContinueWatchingItem.continueWatchingRowOrderKey(): String =
     buildString {
@@ -561,8 +583,9 @@ private data class ContinueWatchingLandscapeCardMetrics(
 private fun continueWatchingLandscapeCardMetrics(
     basePosterWidthDp: Int,
     cornerRadiusDp: Int,
+    cardWidthOverride: Dp? = null,
 ): ContinueWatchingLandscapeCardMetrics {
-    val width = continueWatchingLandscapeCardWidth(basePosterWidthDp)
+    val width = cardWidthOverride ?: continueWatchingLandscapeCardWidth(basePosterWidthDp)
     return when {
         basePosterWidthDp <= 108 -> ContinueWatchingLandscapeCardMetrics(
             width = width,
@@ -616,20 +639,28 @@ private fun continueWatchingLandscapeCardMetrics(
 @Composable
 private fun ContinueWatchingCard(
     item: ContinueWatchingItem,
+    basePosterWidthDpOverride: Int?,
     useEpisodeThumbnails: Boolean,
     blurNextUp: Boolean,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
 ) {
     val posterCardStyle = rememberHomePosterCardStyleUiState()
-    val tvModeEnabled by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
-    // TV Mode's shelf reads much better with a bigger continue-watching card — force the
-    // "Extra Large" size instead of the (non-TV-Mode) saved poster size preference.
-    val effectiveWidthDp = if (tvModeEnabled.tvModeEnabled) ExtraLargePosterCardWidthDp else posterCardStyle.widthDp
-    val cardMetrics = remember(effectiveWidthDp, posterCardStyle.cornerRadiusDp) {
+    val homeCatalogSettings by remember {
+        HomeCatalogSettingsRepository.snapshot()
+        HomeCatalogSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val effectiveWidthDp = effectiveContinueWatchingCardBaseWidthDp(
+        basePosterWidthDpOverride = basePosterWidthDpOverride,
+        savedPosterWidthDp = posterCardStyle.widthDp,
+        tvModeEnabled = homeCatalogSettings.tvModeEnabled,
+    )
+    val cardWidthOverride = basePosterWidthDpOverride?.let(::landscapePosterWidth)
+    val cardMetrics = remember(effectiveWidthDp, posterCardStyle.cornerRadiusDp, cardWidthOverride) {
         continueWatchingLandscapeCardMetrics(
             basePosterWidthDp = effectiveWidthDp,
             cornerRadiusDp = posterCardStyle.cornerRadiusDp,
+            cardWidthOverride = cardWidthOverride,
         )
     }
     val todayIsoDate = CurrentDateProvider.todayIsoDate()
@@ -788,6 +819,13 @@ private fun ContinueWatchingCard(
         }
     }
 }
+
+internal fun effectiveContinueWatchingCardBaseWidthDp(
+    basePosterWidthDpOverride: Int?,
+    savedPosterWidthDp: Int,
+    tvModeEnabled: Boolean,
+): Int = basePosterWidthDpOverride
+    ?: if (tvModeEnabled) ExtraLargePosterCardWidthDp else savedPosterWidthDp
 
 @Composable
 private fun continueWatchingCardBadgeText(

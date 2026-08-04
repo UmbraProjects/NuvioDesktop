@@ -2,6 +2,7 @@ package com.nuvio.app.features.player.desktop
 
 import com.nuvio.app.features.player.DesktopMpvConfigMode
 import com.nuvio.app.features.player.DesktopBufferPreset
+import com.nuvio.app.features.player.shouldEnableDesktopRtxSuperResolution
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -145,5 +146,35 @@ class DesktopMpvRuntimeOverrideTest {
         assertEquals("64MiB", options["demuxer-max-back-bytes"])
         assertEquals("1MiB", options["stream-buffer-size"])
         assertEquals("0.5", options["cache-pause-wait"])
+    }
+
+    @Test
+    fun rtxSuperResolutionOnlyRunsOnConfirmedSdrVideo() {
+        assertTrue(
+            shouldEnableDesktopRtxSuperResolution(
+                enabled = true,
+                isHdr = false,
+                isEffectivelyAnime = false,
+                scale = 2.0,
+            ),
+        )
+        assertFalse(
+            shouldEnableDesktopRtxSuperResolution(
+                enabled = true,
+                isHdr = true,
+                isEffectivelyAnime = false,
+                scale = 2.0,
+            ),
+            "Native HDR/Dolby Vision must bypass d3d11vpp VSR to avoid green video output",
+        )
+        assertFalse(
+            shouldEnableDesktopRtxSuperResolution(
+                enabled = true,
+                isHdr = null,
+                isEffectivelyAnime = false,
+                scale = 2.0,
+            ),
+            "VSR must wait until the stream is positively identified as SDR",
+        )
     }
 }

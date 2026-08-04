@@ -1,6 +1,7 @@
 package com.nuvio.app.core.sync
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.isDesktop
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.build.AppFeaturePolicy
@@ -44,7 +45,9 @@ object SyncManager {
                 .onSuccess { log.i { "pullAllForProfile — addons pull completed" } }
                 .onFailure { log.e(it) { "Addon pull failed" } }
 
-            if (AppFeaturePolicy.pluginsEnabled) {
+            // Plugins are specific to the desktop fork and must never touch the official Nuvio
+            // sync tables used by mobile clients.
+            if (AppFeaturePolicy.pluginsEnabled && !isDesktop) {
                 log.i { "pullAllForProfile — pulling plugins (await)..." }
                 runCatching { PluginRepository.pullFromServer(profileId) }
                     .onSuccess { log.i { "pullAllForProfile — plugins pull completed" } }

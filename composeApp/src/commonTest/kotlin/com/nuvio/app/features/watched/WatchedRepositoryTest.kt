@@ -2,6 +2,8 @@ package com.nuvio.app.features.watched
 
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.tracking.ContinueWatchingSource
+import com.nuvio.app.features.tracking.TrackingProviderId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -240,6 +242,68 @@ class WatchedRepositoryTest {
         val merged = mergeWatchedItemsAdditively(listOf(local), listOf(olderRemote))
 
         assertEquals("Local", merged.getValue("series:show:1:1").name)
+    }
+
+    @Test
+    fun additiveProviderMerge_doesNotClaimOwnershipOfAnExistingLocalRow() {
+        // Refreshing a row the user already ticked here must not mark it as imported: withdrawing
+        // the import later would then delete their own watched history.
+        val local = WatchedItem("show", "series", "Local", season = 1, episode = 1, markedAtEpochMs = 5L)
+        val newerRemote = local.copy(name = "Remote", markedAtEpochMs = 9L, importedFrom = "simkl")
+
+        val merged = mergeWatchedItemsAdditively(listOf(local), listOf(newerRemote))
+
+        assertEquals(null, merged.getValue("series:show:1:1").importedFrom)
+        assertEquals(9L, merged.getValue("series:show:1:1").markedAtEpochMs)
+    }
+
+    @Test
+    fun watchedHistoryImport_followsTheContinueWatchingSource() {
+        // The reported symptom: SIMKL history arriving in Continue Watching while Nuvio Sync is the
+        // selected source, because the provider import never asked which source was selected.
+        assertEquals(
+            null,
+            watchedHistoryImportProviderId(ContinueWatchingSource.LOCAL) { true },
+        )
+        assertEquals(
+            TrackingProviderId.SIMKL,
+            watchedHistoryImportProviderId(ContinueWatchingSource.SIMKL) { true },
+        )
+        assertEquals(
+            null,
+            watchedHistoryImportProviderId(ContinueWatchingSource.SIMKL) { false },
+        )
+        assertEquals(
+            TrackingProviderId.TRAKT,
+            watchedHistoryImportProviderId(ContinueWatchingSource.TRAKT) { true },
+        )
+    }
+
+    @Test
+    fun foreignProviderImports_areWithdrawn_butLocalTicksAreKept() {
+        val localTick = WatchedItem("show", "series", "Local", season = 1, episode = 1, markedAtEpochMs = 1L)
+        val simklImport = localTick.copy(episode = 2, importedFrom = "simkl")
+        val mdbListImport = localTick.copy(episode = 3, importedFrom = "mdblist")
+
+        val retained = watchedItemsWithoutForeignImports(
+            items = listOf(localTick, simklImport, mdbListImport),
+            importProviderId = TrackingProviderId.MDBLIST,
+        )
+
+        assertEquals(listOf(localTick, mdbListImport), retained)
+    }
+
+    @Test
+    fun allProviderImports_areWithdrawn_forALocalSource() {
+        val localTick = WatchedItem("show", "series", "Local", season = 1, episode = 1, markedAtEpochMs = 1L)
+        val simklImport = localTick.copy(episode = 2, importedFrom = "simkl")
+
+        val retained = watchedItemsWithoutForeignImports(
+            items = listOf(localTick, simklImport),
+            importProviderId = null,
+        )
+
+        assertEquals(listOf(localTick), retained)
     }
 
     @Test

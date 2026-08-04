@@ -4,9 +4,23 @@ import com.nuvio.app.features.details.MetaDetails
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MdbListMetadataServiceTest {
+
+    @Test
+    fun `mismatched imdb tmdb identity is not used for ratings lookup`() {
+        val meta = MetaDetails(
+            id = "tt0314979",
+            type = "series",
+            name = "The Shiny Group",
+            imdbId = "tt0314979",
+            imdbTmdbIdentityTrusted = false,
+        )
+
+        assertNull(MdbListMetadataService.resolveLookup(meta, meta.id))
+    }
 
     @Test
     fun `normalizes mdblist myanimelist source to mal provider`() {

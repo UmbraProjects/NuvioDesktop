@@ -12,6 +12,7 @@ import com.nuvio.app.features.trakt.shouldUseTraktProgress
 import com.nuvio.app.features.watching.sync.SupabaseWatchedSyncAdapter
 import com.nuvio.app.features.watching.sync.TraktWatchedSyncAdapter
 import com.nuvio.app.features.watching.sync.WatchedDeltaEvent
+import com.nuvio.app.features.tracking.ContinueWatchingSource
 import com.nuvio.app.features.tracking.ContinueWatchingSourceRepository
 import com.nuvio.app.features.tracking.LibrarySourceRepository
 import com.nuvio.app.features.tracking.TrackingHistoryItem
@@ -19,6 +20,7 @@ import com.nuvio.app.features.tracking.TrackingMutationResult
 import com.nuvio.app.features.tracking.TrackingProviderId
 import com.nuvio.app.features.tracking.TrackingProviderRegistry
 import com.nuvio.app.features.tracking.buildTrackingMediaReference
+import com.nuvio.app.features.tracking.resolveContinueWatchingSource
 import com.nuvio.app.features.tracking.resolveLibrarySource
 import com.nuvio.app.features.tracking.trackingProvider
 import com.nuvio.app.features.watching.sync.WatchedSyncAdapter
@@ -166,44 +168,63 @@ object WatchedRepository {
     }
 
     /**
-     * Imports connected tracking-provider history without touching the Nuvio Sync store.
+     * Imports the Continue Watching provider's history without touching the Nuvio Sync store.
      *
      * SIMKL, MDBList and Floppy are the user's own connections and have nothing to do with whether
      * they signed into a Nuvio account. This was previously reachable only through [pullFromServer],
      * whose only caller returns early for anonymous and signed-out users, so "Continue without
      * account" meant provider history was never imported at all.
+     *
+     * [force] skips the request-budget interval for an explicit source change, where the whole point
+     * of the call is that the answer has just changed.
      */
-    suspend fun pullConnectedProviderHistory(profileId: Int) {
+    suspend fun pullConnectedProviderHistory(profileId: Int, force: Boolean = false) {
         ensureLoaded()
         if (profileId != currentProfileId) return
         providerHistoryPullLock.withLock {
             // A fresh sign-in reaches both this and the account sync within a second of each other,
             // and every provider read costs a request against a shared daily budget.
             val now = WatchedClock.nowEpochMs()
-            if (now - lastProviderHistoryPullAtMs < providerHistoryPullMinIntervalMs) return
+            if (!force && now - lastProviderHistoryPullAtMs < providerHistoryPullMinIntervalMs) return
             lastProviderHistoryPullAtMs = now
         }
         pullConnectedProviderHistoryAdditively(profileId)
     }
 
+    /**
+     * Imports history from the provider that owns Continue Watching, and withdraws what an earlier
+     * import brought in from any other one.
+     *
+     * This used to run for every connected provider. Watched history is not a private store: Up Next
+     * seeds off it, so a connected SIMKL account poured its entire history into Continue Watching
+     * while the selected source was Nuvio Sync — the single-source guarantee broken through the back
+     * door, by the one provider read that never asked which source was selected. Trakt has always
+     * followed the selection (see [activeRemoteWatchedAdapter]); the additive providers now do too.
+     */
     private suspend fun pullConnectedProviderHistoryAdditively(profileId: Int) {
-        val providers = TrackingProviderRegistry.connectedWatchedProviders()
-        if (providers.isEmpty()) return
-        var changed = false
-        providers.forEach { provider ->
+        val importProviderId = activeWatchedHistoryImportProviderId()
+        var changed = withdrawForeignImportedHistory(importProviderId)
+        val provider = TrackingProviderRegistry.connectedWatchedProviders()
+            .firstOrNull { candidate -> candidate.providerId == importProviderId }
+        if (provider != null) {
             val remoteItems = try {
                 provider.pull(profileId = profileId, pageSize = watchedItemsPageSize)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
                 log.w(error) { "Failed to pull watched history from ${provider.providerId.storageId}" }
-                return@forEach
+                null
             }
             if (profileId != currentProfileId) return
-            val merged = mergeWatchedItemsAdditively(itemsByKey.values, remoteItems)
-            if (merged.size != itemsByKey.size || merged != itemsByKey) {
-                itemsByKey = merged.toMutableMap()
-                changed = true
+            if (remoteItems != null) {
+                val imported = remoteItems.map { item ->
+                    item.copy(importedFrom = provider.providerId.storageId)
+                }
+                val merged = mergeWatchedItemsAdditively(itemsByKey.values, imported)
+                if (merged.size != itemsByKey.size || merged != itemsByKey) {
+                    itemsByKey = merged.toMutableMap()
+                    changed = true
+                }
             }
         }
         if (changed && profileId == currentProfileId) {
@@ -212,6 +233,75 @@ object WatchedRepository {
             persist()
         }
     }
+
+    /**
+     * Clears watched rows that came from a connected provider which does not own Continue Watching,
+     * and reports how many were removed.
+     *
+     * The automatic withdrawal above can only act on rows carrying [WatchedItem.importedFrom], which
+     * builds before this one never wrote — their imports are indistinguishable from the user's own
+     * ticks once stored. This asks each such provider what is in its history and removes those rows
+     * on the user's say-so, which is why it is an explicit action behind a confirmation rather than
+     * something that runs on its own: an episode the user watched here *and* has on that service
+     * goes too.
+     *
+     * Local only. The provider's own history is untouched — the user is clearing what was imported,
+     * not what they watched elsewhere.
+     */
+    suspend fun withdrawImportedProviderHistory(profileId: Int): Int {
+        ensureLoaded()
+        if (profileId != currentProfileId) return 0
+        val importProviderId = activeWatchedHistoryImportProviderId()
+        val foreignKeys = mutableSetOf<String>()
+        TrackingProviderRegistry.connectedWatchedProviders()
+            .filter { provider -> provider.providerId != importProviderId }
+            .forEach { provider ->
+                val remoteItems = try {
+                    provider.pull(profileId = profileId, pageSize = watchedItemsPageSize)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    log.w(error) { "Failed to read ${provider.providerId.storageId} history to withdraw it" }
+                    return@forEach
+                }
+                remoteItems.mapTo(foreignKeys) { item ->
+                    watchedItemKey(item.type, item.id, item.season, item.episode)
+                }
+            }
+        if (profileId != currentProfileId) return 0
+
+        val retained = watchedItemsWithoutForeignImports(itemsByKey.values, importProviderId)
+            .filterNot { item ->
+                watchedItemKey(item.type, item.id, item.season, item.episode) in foreignKeys
+            }
+        val removed = itemsByKey.size - retained.size
+        if (removed <= 0) return 0
+        itemsByKey = retained
+            .associateBy { item -> watchedItemKey(item.type, item.id, item.season, item.episode) }
+            .toMutableMap()
+        publish()
+        persist()
+        return removed
+    }
+
+    /** Drops rows imported from a provider that no longer owns Continue Watching. */
+    private fun withdrawForeignImportedHistory(importProviderId: TrackingProviderId?): Boolean {
+        val retained = watchedItemsWithoutForeignImports(
+            items = itemsByKey.values,
+            importProviderId = importProviderId,
+        )
+        if (retained.size == itemsByKey.size) return false
+        itemsByKey = retained
+            .associateBy { item -> watchedItemKey(item.type, item.id, item.season, item.episode) }
+            .toMutableMap()
+        return true
+    }
+
+    private fun activeWatchedHistoryImportProviderId(): TrackingProviderId? =
+        watchedHistoryImportProviderId(
+            selected = ContinueWatchingSourceRepository.selectedSource(),
+            isProviderAuthenticated = TrackingProviderRegistry::isAuthenticated,
+        )
 
     private suspend fun pullFullFromAdapter(
         adapter: WatchedSyncAdapter,
@@ -787,11 +877,45 @@ internal fun mergeWatchedItemsAdditively(
     remoteItems.map(WatchedItem::normalizedMarkedAt).forEach { remote ->
         val key = watchedItemKey(remote.type, remote.id, remote.season, remote.episode)
         val local = merged[key]
-        if (local == null || remote.markedAtEpochMs > local.markedAtEpochMs) {
+        if (local == null) {
             merged[key] = remote
+        } else if (remote.markedAtEpochMs > local.markedAtEpochMs) {
+            // Refreshing a row the store already had must not hand ownership of it to the provider.
+            // An episode the user watched here and the provider also knows about is still their own
+            // tick, and tagging it as imported would delete it the next time the source changes.
+            merged[key] = remote.copy(importedFrom = local.importedFrom)
         }
     }
     return merged
+}
+
+/**
+ * The provider whose watched history may be imported into the local store, or null for none.
+ *
+ * One rule for every provider: whoever owns Continue Watching, and only while connected. Watched
+ * history feeds Up Next seeding, so importing from an unselected provider puts that service's rows
+ * into Continue Watching — which is exactly what choosing a single source is meant to prevent.
+ */
+internal fun watchedHistoryImportProviderId(
+    selected: ContinueWatchingSource,
+    isProviderAuthenticated: (TrackingProviderId) -> Boolean,
+): TrackingProviderId? = resolveContinueWatchingSource(
+    selected = selected,
+    isProviderAuthenticated = isProviderAuthenticated,
+).providerId
+
+/**
+ * The store with every previously imported row from providers other than [importProviderId] removed.
+ *
+ * Rows the user marked themselves carry no provenance and are always kept, so switching sources
+ * withdraws the import without touching local history.
+ */
+internal fun watchedItemsWithoutForeignImports(
+    items: Collection<WatchedItem>,
+    importProviderId: TrackingProviderId?,
+): List<WatchedItem> = items.filter { item ->
+    val importedFrom = item.importedFrom ?: return@filter true
+    importedFrom.equals(importProviderId?.storageId, ignoreCase = true)
 }
 
 internal fun shouldPreserveLocalWatchedItem(

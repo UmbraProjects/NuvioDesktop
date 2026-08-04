@@ -23,10 +23,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.auth.ReauthenticationTrigger
+import com.nuvio.app.core.sync.ProfileSettingsSync
+import com.nuvio.app.core.sync.SynchronizationPreferencesRepository
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.features.profiles.ProfileRepository
+import com.nuvio.app.features.home.HomeCatalogSettingsSyncService
 import com.nuvio.app.features.updater.AppUpdaterPlatform
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
@@ -44,6 +47,25 @@ import nuvio.composeapp.generated.resources.settings_account_sign_out_confirm_ti
 import nuvio.composeapp.generated.resources.settings_account_status
 import nuvio.composeapp.generated.resources.settings_account_status_anonymous
 import nuvio.composeapp.generated.resources.settings_account_status_signed_in
+import nuvio.composeapp.generated.resources.settings_sync_appearance
+import nuvio.composeapp.generated.resources.settings_sync_appearance_description
+import nuvio.composeapp.generated.resources.settings_sync_content_preferences
+import nuvio.composeapp.generated.resources.settings_sync_content_preferences_description
+import nuvio.composeapp.generated.resources.settings_sync_debrid
+import nuvio.composeapp.generated.resources.settings_sync_debrid_description
+import nuvio.composeapp.generated.resources.settings_sync_description
+import nuvio.composeapp.generated.resources.settings_sync_fork_local_note
+import nuvio.composeapp.generated.resources.settings_sync_home_catalogs
+import nuvio.composeapp.generated.resources.settings_sync_home_catalogs_description
+import nuvio.composeapp.generated.resources.settings_sync_metadata
+import nuvio.composeapp.generated.resources.settings_sync_metadata_description
+import nuvio.composeapp.generated.resources.settings_sync_notifications
+import nuvio.composeapp.generated.resources.settings_sync_notifications_description
+import nuvio.composeapp.generated.resources.settings_sync_section
+import nuvio.composeapp.generated.resources.settings_sync_stream_display
+import nuvio.composeapp.generated.resources.settings_sync_stream_display_description
+import nuvio.composeapp.generated.resources.settings_sync_trakt
+import nuvio.composeapp.generated.resources.settings_sync_trakt_description
 import nuvio.composeapp.generated.resources.settings_updates_auto_install
 import nuvio.composeapp.generated.resources.settings_updates_auto_install_description
 import nuvio.composeapp.generated.resources.settings_updates_section
@@ -67,8 +89,17 @@ private fun AccountSettingsBody(
     rememberLastProfileEnabled: Boolean,
 ) {
     val authState by AuthRepository.state.collectAsStateWithLifecycle()
+    SynchronizationPreferencesRepository.ensureLoaded()
+    val synchronizationPreferences by
+        SynchronizationPreferencesRepository.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var showSignOutConfirm by remember { mutableStateOf(false) }
+    val pullPortableSettingsIfSignedIn: () -> Unit = {
+        val state = authState
+        if (state is AuthState.Authenticated && !state.isAnonymous) {
+            scope.launch { ProfileSettingsSync.pull(ProfileRepository.activeProfileId) }
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         NuvioSurfaceCard(
@@ -144,6 +175,125 @@ private fun AccountSettingsBody(
             NuvioPrimaryButton(
                 text = stringResource(Res.string.compose_auth_sign_in),
                 onClick = { ReauthenticationTrigger.trigger() },
+            )
+        }
+
+        SettingsSection(
+            title = stringResource(Res.string.settings_sync_section),
+            isTablet = isTablet,
+        ) {
+            Text(
+                text = stringResource(Res.string.settings_sync_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_sync_appearance),
+                    description = stringResource(Res.string.settings_sync_appearance_description),
+                    checked = synchronizationPreferences.appearanceEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("sync-appearance")),
+                    onCheckedChange = { enabled ->
+                        SynchronizationPreferencesRepository.setAppearanceEnabled(enabled)
+                        if (enabled) pullPortableSettingsIfSignedIn()
+                    },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_sync_home_catalogs),
+                    description = stringResource(Res.string.settings_sync_home_catalogs_description),
+                    checked = synchronizationPreferences.homeCatalogsEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("sync-home-catalogs")),
+                    onCheckedChange = { enabled ->
+                        SynchronizationPreferencesRepository.setHomeCatalogsEnabled(enabled)
+                        if (enabled) {
+                            scope.launch {
+                                HomeCatalogSettingsSyncService.pullFromServer(ProfileRepository.activeProfileId)
+                            }
+                        }
+                    },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_sync_stream_display),
+                    description = stringResource(Res.string.settings_sync_stream_display_description),
+                    checked = synchronizationPreferences.streamDisplayEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("sync-stream-display")),
+                    onCheckedChange = { enabled ->
+                        SynchronizationPreferencesRepository.setStreamDisplayEnabled(enabled)
+                        if (enabled) pullPortableSettingsIfSignedIn()
+                    },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_sync_debrid),
+                    description = stringResource(Res.string.settings_sync_debrid_description),
+                    checked = synchronizationPreferences.debridEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("sync-debrid")),
+                    onCheckedChange = { enabled ->
+                        SynchronizationPreferencesRepository.setDebridEnabled(enabled)
+                        if (enabled) pullPortableSettingsIfSignedIn()
+                    },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_sync_metadata),
+                    description = stringResource(Res.string.settings_sync_metadata_description),
+                    checked = synchronizationPreferences.metadataEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("sync-metadata")),
+                    onCheckedChange = { enabled ->
+                        SynchronizationPreferencesRepository.setMetadataEnabled(enabled)
+                        if (enabled) pullPortableSettingsIfSignedIn()
+                    },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_sync_content_preferences),
+                    description = stringResource(Res.string.settings_sync_content_preferences_description),
+                    checked = synchronizationPreferences.contentPreferencesEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("sync-content-preferences")),
+                    onCheckedChange = { enabled ->
+                        SynchronizationPreferencesRepository.setContentPreferencesEnabled(enabled)
+                        if (enabled) pullPortableSettingsIfSignedIn()
+                    },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_sync_trakt),
+                    description = stringResource(Res.string.settings_sync_trakt_description),
+                    checked = synchronizationPreferences.traktEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("sync-trakt")),
+                    onCheckedChange = { enabled ->
+                        SynchronizationPreferencesRepository.setTraktEnabled(enabled)
+                        if (enabled) pullPortableSettingsIfSignedIn()
+                    },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_sync_notifications),
+                    description = stringResource(Res.string.settings_sync_notifications_description),
+                    checked = synchronizationPreferences.notificationsEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("sync-notifications")),
+                    onCheckedChange = { enabled ->
+                        SynchronizationPreferencesRepository.setNotificationsEnabled(enabled)
+                        if (enabled) pullPortableSettingsIfSignedIn()
+                    },
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(Res.string.settings_sync_fork_local_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 

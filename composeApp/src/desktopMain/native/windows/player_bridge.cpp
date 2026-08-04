@@ -1828,11 +1828,22 @@ public:
         return json.str();
     }
 
-    void selectAudioTrackId(int trackId) {
+    bool selectAudioTrackId(int trackId) {
+        if (int64Property("aid", -1) == trackId) return true;
+        if (std::chrono::steady_clock::now() < audioTrackSwitchBlockedUntil.load()) {
+            nuvioMpvLogAppend("[nuvio] audio track switch deferred after HTTP 429\n");
+            return false;
+        }
         std::lock_guard<std::mutex> lock(mpvMutex);
-        if (!mpv) return;
+        if (!mpv) return false;
         int64_t id = trackId;
-        mpvApi().setProperty(mpv, "aid", MPV_FORMAT_INT64, &id);
+        const int result = mpvApi().setProperty(mpv, "aid", MPV_FORMAT_INT64, &id);
+        if (result < 0) {
+            nuvioMpvLogAppend("[nuvio] audio selection rejected aid=" +
+                std::to_string(trackId) + " (" + mpvApi().errorText(result) + ")\n");
+            return false;
+        }
+        return true;
     }
 
     bool selectSubtitleTrackId(int trackId) {
@@ -2303,6 +2314,13 @@ private:
     std::atomic<bool> playbackFailureDetected{false};
     std::string lastHttpPlaybackError;
     std::chrono::steady_clock::time_point lastHttpPlaybackErrorAt{};
+    // Switching embedded MKV audio tracks makes mpv refresh-seek the remote file. If that host has
+    // just returned 429, issuing the seek destroys the otherwise-playing demuxer and turns a user
+    // preference change into automatic stream failover. Refuse only during the known throttle
+    // window; the existing track keeps playing and the user can retry after the host recovers.
+    std::atomic<std::chrono::steady_clock::time_point> audioTrackSwitchBlockedUntil{
+        std::chrono::steady_clock::time_point{}
+    };
     int hlsSegmentFailureCount = 0;
     std::chrono::steady_clock::time_point hlsSegmentFailureWindowStartedAt{};
 
@@ -2680,6 +2698,7 @@ private:
         playbackFailureDetected.store(false);
         lastHttpPlaybackError.clear();
         lastHttpPlaybackErrorAt = {};
+        audioTrackSwitchBlockedUntil.store(std::chrono::steady_clock::time_point{});
         hlsSegmentFailureCount = 0;
         hlsSegmentFailureWindowStartedAt = {};
         {
@@ -3168,11 +3187,11 @@ private:
             layoutNativeSubviews();
             return;
         }
-        if (type == "selectAudioTrack") {
-            selectAudioTrackId((int)std::llround(value));
-            syncControls();
-            return;
-        }
+        // Audio rows send the app's zero-based logical track index. Forward that index to
+        // Kotlin, which resolves it against the live track list before calling
+        // selectAudioTrackId with mpv's (usually one-based, potentially sparse) track id.
+        // Handling it here treated index 1 as aid=1, so clicking the second row simply
+        // reselected the first audio track and also bypassed preference persistence.
         if (type == "selectSubtitleTrack") {
             selectSubtitleTrackId((int)std::llround(value));
             syncControls();
@@ -3423,6 +3442,10 @@ private:
                     if (prefix == "ffmpeg" && message.find("HTTP error") != std::string::npos) {
                         lastHttpPlaybackError = message;
                         lastHttpPlaybackErrorAt = std::chrono::steady_clock::now();
+                        if (message.find("HTTP error 429") != std::string::npos) {
+                            audioTrackSwitchBlockedUntil.store(
+                                lastHttpPlaybackErrorAt + std::chrono::seconds(10));
+                        }
                     }
                     const bool isHlsSegmentFailure = prefix == "ffmpeg/demuxer" &&
                         message.find("failed too many times, skipping") != std::string::npos;
@@ -3625,7 +3648,11 @@ private:
                 // Kotlin constructs the same canonical string later, so its profile refresh is a
                 // no-op instead of tearing down and rebuilding an active D3D11 video processor.
                 if (!initialAnimeContent && hdrStateKnown) {
-                    const bool vsrActive = initialRtxSuperResolutionEnabled && vsrScale > 1.01;
+                    // NVIDIA's d3d11vpp VSR path can output a solid green plane for native HDR,
+                    // particularly Dolby Vision P010. VSR is an SDR upscale enhancement here;
+                    // HDR remains on gpu-next's normal colour-managed path.
+                    const bool vsrActive = initialRtxSuperResolutionEnabled &&
+                        !resolvedHdr && vsrScale > 1.01;
                     const bool trueHdrActive = initialRtxHdrEnabled && !resolvedHdr;
                     std::string initialRtxFilters;
                     if (vsrActive || trueHdrActive) {
@@ -4414,10 +4441,10 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_chaptersJson(JNIEn
     return newJavaStringUtf8(env, player ? player->chaptersJson() : "[]");
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_selectAudioTrack(JNIEnv *, jobject, jlong handle, jint trackId) {
     auto player = playerFromHandle(handle);
-    if (player) player->selectAudioTrackId(trackId);
+    return (player && player->selectAudioTrackId(trackId)) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

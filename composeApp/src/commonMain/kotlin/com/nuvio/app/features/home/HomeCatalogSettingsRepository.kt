@@ -18,7 +18,60 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 
 private const val DEFAULT_HERO_INFO_PRIORITY =
-    "wins,gg_wins,festival,pic_noms,gg_noms,emmy_noms,studio,director,trending,cult,foreign,new_release,metacritic,true_story,short_film,mini_series,binge_ready,release_status"
+    "wins,gg_wins,festival,pic_noms,gg_noms,emmy_noms,studio,director,trending,cult,foreign,new_release,metacritic,true_story,stinger,short_film,mini_series,binge_ready,release_status"
+/**
+ * Badge slots that were added after the setting shipped, so saved priority strings predate them.
+ *
+ * Each is inserted into the saved string exactly once and then recorded, because a slot that is
+ * re-added whenever it is missing can never be switched off: the settings page edits the saved
+ * string, and the next read puts the slot straight back. [slot] is placed after the first [after]
+ * anchor present, or appended.
+ */
+internal data class HeroInfoPrioritySlotMigration(
+    val slot: String,
+    val after: List<String>,
+)
+
+internal val HERO_INFO_PRIORITY_SLOT_MIGRATIONS = listOf(
+    HeroInfoPrioritySlotMigration(slot = "emmy_noms", after = listOf("gg_noms", "pic_noms")),
+    HeroInfoPrioritySlotMigration(slot = "stinger", after = listOf("true_story")),
+)
+
+internal data class HeroInfoPriorityMigrationResult(
+    val priority: String,
+    val appliedMigrations: Set<String>,
+    val changed: Boolean,
+)
+
+internal fun migrateHeroInfoPrioritySlots(
+    priority: String,
+    appliedMigrations: Set<String>,
+    migrations: List<HeroInfoPrioritySlotMigration> = HERO_INFO_PRIORITY_SLOT_MIGRATIONS,
+): HeroInfoPriorityMigrationResult {
+    val applied = appliedMigrations.toMutableSet()
+    val slots = priority
+        .split(',')
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .toMutableList()
+    var changed = false
+    for (migration in migrations) {
+        if (!applied.add(migration.slot)) continue
+        changed = true
+        if (migration.slot in slots) continue
+        val insertIndex = migration.after
+            .firstNotNullOfOrNull { anchor -> slots.indexOf(anchor).takeIf { it >= 0 } }
+            ?.let { it + 1 }
+            ?: slots.size
+        slots.add(insertIndex, migration.slot)
+    }
+    return HeroInfoPriorityMigrationResult(
+        priority = if (changed) slots.joinToString(",") else priority,
+        appliedMigrations = applied,
+        changed = changed,
+    )
+}
+
 private const val HERO_INFO_LINES_MIN = 0
 private const val HERO_INFO_LINES_MAX = 6
 private const val HERO_BADGE_SCALE_MIN = 1f
@@ -68,6 +121,11 @@ data class HomeCatalogSettingsUiState(
     val catalogRowNumbersEnabled: Boolean = false,
     val tvRowDotsEnabled: Boolean = false,
     val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
+    val randomPlayEnabled: Boolean = false,
+    val randomPlayCategories: Set<RandomPlayCategory> = RandomPlayCategory.entries.toSet(),
+    val randomPlayGenres: Set<String> = RandomPlayGenres.toSet(),
+    val randomPlayMinimumImdbRating: Float = 0f,
+    val randomPlayAction: RandomPlayAction = RandomPlayAction.Details,
     val items: List<HomeCatalogSettingsItem> = emptyList(),
 ) {
     val signature: String
@@ -108,6 +166,16 @@ data class HomeCatalogSettingsUiState(
             append('|')
             append(tvRowDotsAnchor)
             append('|')
+            append(randomPlayEnabled)
+            append('|')
+            append(randomPlayCategories.joinToString())
+            append('|')
+            append(randomPlayGenres.joinToString())
+            append('|')
+            append(randomPlayMinimumImdbRating)
+            append('|')
+            append(randomPlayAction)
+            append('|')
             append(
                 items.joinToString(separator = "|") { item ->
                     "${item.key}:${item.order}:${item.enabled}:${item.heroSourceEnabled}:${item.customTitle}:${item.markerColor}"
@@ -137,6 +205,11 @@ internal data class HomeCatalogSettingsSnapshot(
     val adaptiveHeroHeightMultiplier: Float,
     val heroAmbientBackgroundEnabled: Boolean,
     val tvModeEnabled: Boolean,
+    val randomPlayEnabled: Boolean,
+    val randomPlayCategories: Set<RandomPlayCategory>,
+    val randomPlayGenres: Set<String>,
+    val randomPlayMinimumImdbRating: Float,
+    val randomPlayAction: RandomPlayAction,
     val preferences: Map<String, HomeCatalogPreference>,
 )
 
@@ -179,6 +252,7 @@ private data class StoredHomeCatalogSettingsPayload(
     val heroEnabled: Boolean = true,
     val heroInfoLines: Int = 2,
     val heroInfoPriority: String = DEFAULT_HERO_INFO_PRIORITY,
+    val heroInfoPrioritySlotMigrations: Set<String> = emptySet(),
     val heroBadgePlacement: HeroBadgePlacement = HeroBadgePlacement.BottomBackdrop,
     val heroBadgeScale: Float = 1f,
     val heroReleaseStatusUnavailableOnly: Boolean = true,
@@ -196,6 +270,11 @@ private data class StoredHomeCatalogSettingsPayload(
     val catalogRowNumbersEnabled: Boolean = false,
     val tvRowDotsEnabled: Boolean = false,
     val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
+    val randomPlayEnabled: Boolean = false,
+    val randomPlayCategories: Set<RandomPlayCategory> = RandomPlayCategory.entries.toSet(),
+    val randomPlayGenres: Set<String> = RandomPlayGenres.toSet(),
+    val randomPlayMinimumImdbRating: Float = 0f,
+    val randomPlayAction: RandomPlayAction = RandomPlayAction.Details,
     val items: List<StoredHomeCatalogPreference> = emptyList(),
 )
 
@@ -217,6 +296,7 @@ object HomeCatalogSettingsRepository {
     private var heroEnabled = true
     private var heroInfoLines = 2
     private var heroInfoPriority = DEFAULT_HERO_INFO_PRIORITY
+    private var heroInfoPrioritySlotMigrations: Set<String> = emptySet()
     private var heroBadgePlacement = HeroBadgePlacement.BottomBackdrop
     private var heroBadgeScale = 1f
     private var heroReleaseStatusUnavailableOnly = true
@@ -232,6 +312,11 @@ object HomeCatalogSettingsRepository {
     private var catalogRowNumbersEnabled = false
     private var tvRowDotsEnabled = false
     private var tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
+    private var randomPlayEnabled = false
+    private var randomPlayCategories = RandomPlayCategory.entries.toSet()
+    private var randomPlayGenres = RandomPlayGenres.toSet()
+    private var randomPlayMinimumImdbRating = 0f
+    private var randomPlayAction = RandomPlayAction.Details
 
     fun onProfileChanged() {
         hasLoaded = false
@@ -239,6 +324,8 @@ object HomeCatalogSettingsRepository {
         heroEnabled = true
         heroInfoLines = 2
         heroInfoPriority = DEFAULT_HERO_INFO_PRIORITY
+        // The default string already contains every migrated slot, so nothing is outstanding.
+        heroInfoPrioritySlotMigrations = HERO_INFO_PRIORITY_SLOT_MIGRATIONS.mapTo(mutableSetOf()) { it.slot }
         heroBadgePlacement = HeroBadgePlacement.BottomBackdrop
         heroBadgeScale = 1f
         heroReleaseStatusUnavailableOnly = true
@@ -254,6 +341,7 @@ object HomeCatalogSettingsRepository {
         catalogRowNumbersEnabled = false
         tvRowDotsEnabled = false
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
+        resetRandomPlaySettings()
         definitions = emptyList()
         collectionDefinitions = emptyList()
         lastSyncedCatalogKeys = null
@@ -269,6 +357,8 @@ object HomeCatalogSettingsRepository {
         heroEnabled = true
         heroInfoLines = 2
         heroInfoPriority = DEFAULT_HERO_INFO_PRIORITY
+        // The default string already contains every migrated slot, so nothing is outstanding.
+        heroInfoPrioritySlotMigrations = HERO_INFO_PRIORITY_SLOT_MIGRATIONS.mapTo(mutableSetOf()) { it.slot }
         heroBadgePlacement = HeroBadgePlacement.BottomBackdrop
         heroBadgeScale = 1f
         heroReleaseStatusUnavailableOnly = true
@@ -284,6 +374,7 @@ object HomeCatalogSettingsRepository {
         catalogRowNumbersEnabled = false
         tvRowDotsEnabled = false
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
+        resetRandomPlaySettings()
         _uiState.value = HomeCatalogSettingsUiState()
     }
 
@@ -340,6 +431,11 @@ object HomeCatalogSettingsRepository {
             adaptiveHeroHeightMultiplier = adaptiveHeroHeightMultiplier,
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
+            randomPlayEnabled = randomPlayEnabled,
+            randomPlayCategories = randomPlayCategories,
+            randomPlayGenres = randomPlayGenres,
+            randomPlayMinimumImdbRating = randomPlayMinimumImdbRating,
+            randomPlayAction = randomPlayAction,
             preferences = preferences.mapValues { (_, value) ->
                 HomeCatalogPreference(
                     customTitle = value.customTitle,
@@ -542,6 +638,49 @@ object HomeCatalogSettingsRepository {
         }
     }
 
+    fun setRandomPlayEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (randomPlayEnabled == enabled) return
+        randomPlayEnabled = enabled
+        publishAndPersistRandomPlay()
+    }
+
+    fun setRandomPlayCategoryEnabled(category: RandomPlayCategory, enabled: Boolean) {
+        ensureLoaded()
+        val next = randomPlayCategories.toMutableSet().apply {
+            if (enabled) add(category) else remove(category)
+        }.toSet()
+        if (next == randomPlayCategories) return
+        randomPlayCategories = next
+        publishAndPersistRandomPlay()
+    }
+
+    fun setRandomPlayGenreEnabled(genre: String, enabled: Boolean) {
+        ensureLoaded()
+        val canonical = RandomPlayGenres.firstOrNull { it.equals(genre, ignoreCase = true) } ?: return
+        val next = randomPlayGenres.toMutableSet().apply {
+            if (enabled) add(canonical) else remove(canonical)
+        }.toSet()
+        if (next == randomPlayGenres) return
+        randomPlayGenres = next
+        publishAndPersistRandomPlay()
+    }
+
+    fun setRandomPlayMinimumImdbRating(rating: Float) {
+        ensureLoaded()
+        val normalized = if (rating.isNaN()) 0f else (rating * 2f).toInt().div(2f).coerceIn(0f, 10f)
+        if (randomPlayMinimumImdbRating == normalized) return
+        randomPlayMinimumImdbRating = normalized
+        publishAndPersistRandomPlay()
+    }
+
+    fun setRandomPlayAction(action: RandomPlayAction) {
+        ensureLoaded()
+        if (randomPlayAction == action) return
+        randomPlayAction = action
+        publishAndPersistRandomPlay()
+    }
+
     fun setMarkerColor(key: String, markerColor: HomeCatalogMarkerColor?) {
         updatePreference(key) { preference ->
             preference.copy(markerColor = markerColor)
@@ -553,6 +692,8 @@ object HomeCatalogSettingsRepository {
         heroEnabled = true
         heroInfoLines = 2
         heroInfoPriority = DEFAULT_HERO_INFO_PRIORITY
+        // The default string already contains every migrated slot, so nothing is outstanding.
+        heroInfoPrioritySlotMigrations = HERO_INFO_PRIORITY_SLOT_MIGRATIONS.mapTo(mutableSetOf()) { it.slot }
         heroBadgePlacement = HeroBadgePlacement.BottomBackdrop
         heroBadgeScale = 1f
         heroReleaseStatusUnavailableOnly = true
@@ -568,6 +709,7 @@ object HomeCatalogSettingsRepository {
         catalogRowNumbersEnabled = false
         tvRowDotsEnabled = false
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
+        resetRandomPlaySettings()
         preferences.clear()
         normalizePreferences()
         publish()
@@ -657,9 +799,20 @@ object HomeCatalogSettingsRepository {
             catalogRowNumbersEnabled = parsedPayload.catalogRowNumbersEnabled
             tvRowDotsEnabled = parsedPayload.tvRowDotsEnabled
             tvRowDotsAnchor = parsedPayload.tvRowDotsAnchor
+            randomPlayEnabled = parsedPayload.randomPlayEnabled
+            randomPlayCategories = parsedPayload.randomPlayCategories
+            randomPlayGenres = parsedPayload.randomPlayGenres
+                .mapNotNullTo(linkedSetOf()) { stored ->
+                    RandomPlayGenres.firstOrNull { it.equals(stored, ignoreCase = true) }
+                }
+            randomPlayMinimumImdbRating = parsedPayload.randomPlayMinimumImdbRating.coerceIn(0f, 10f)
+            randomPlayAction = parsedPayload.randomPlayAction
+            heroInfoPrioritySlotMigrations = parsedPayload.heroInfoPrioritySlotMigrations
+            val migratedPriority = applyHeroInfoPrioritySlotMigrations()
             normalizeHeroModes()
             preferences = parsedPayload.items.associateBy { it.key }.toMutableMap()
             publish()
+            if (migratedPriority) persist()
             return
         }
 
@@ -795,6 +948,11 @@ object HomeCatalogSettingsRepository {
             // saved while the toggle sits disabled outside TV Mode; the shelf gates on the mode.
             tvRowDotsEnabled = tvRowDotsEnabled,
             tvRowDotsAnchor = tvRowDotsAnchor,
+            randomPlayEnabled = randomPlayEnabled,
+            randomPlayCategories = randomPlayCategories,
+            randomPlayGenres = randomPlayGenres,
+            randomPlayMinimumImdbRating = randomPlayMinimumImdbRating,
+            randomPlayAction = randomPlayAction,
             items = items,
         )
     }
@@ -822,20 +980,29 @@ object HomeCatalogSettingsRepository {
         if (multiplier.isNaN()) ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
         else multiplier.coerceIn(ADAPTIVE_HERO_HEIGHT_MULTIPLIER_MIN, ADAPTIVE_HERO_HEIGHT_MULTIPLIER_MAX)
 
-    private fun normalizeHeroInfoPriority(priority: String): String {
-        val slots = priority
+    private fun normalizeHeroInfoPriority(priority: String): String =
+        priority
             .split(',')
             .map(String::trim)
             .filter(String::isNotBlank)
-            .toMutableList()
-        if ("emmy_noms" in slots) return slots.joinToString(",")
+            .distinct()
+            .joinToString(",")
 
-        val insertIndex = slots.indexOf("gg_noms").takeIf { it >= 0 }
-            ?.let { it + 1 }
-            ?: slots.indexOf("pic_noms").takeIf { it >= 0 }?.let { it + 1 }
-            ?: slots.size
-        slots.add(insertIndex, "emmy_noms")
-        return slots.joinToString(",")
+    /**
+     * Adds any never-applied slot from [HERO_INFO_PRIORITY_SLOT_MIGRATIONS] to the saved priority
+     * string, once. Returns whether anything changed so the caller can persist the result — the
+     * point of the migration is that it lands in storage, so the settings page shows the slot as
+     * enabled and turning it off actually sticks.
+     */
+    private fun applyHeroInfoPrioritySlotMigrations(): Boolean {
+        val result = migrateHeroInfoPrioritySlots(
+            priority = heroInfoPriority,
+            appliedMigrations = heroInfoPrioritySlotMigrations,
+        )
+        if (!result.changed) return false
+        heroInfoPriority = result.priority
+        heroInfoPrioritySlotMigrations = result.appliedMigrations
+        return true
     }
 
     private fun persist() {
@@ -845,6 +1012,7 @@ object HomeCatalogSettingsRepository {
                     heroEnabled = heroEnabled,
                     heroInfoLines = heroInfoLines,
                     heroInfoPriority = heroInfoPriority,
+                    heroInfoPrioritySlotMigrations = heroInfoPrioritySlotMigrations,
                     heroBadgePlacement = heroBadgePlacement,
                     heroBadgeScale = heroBadgeScale,
                     heroReleaseStatusUnavailableOnly = heroReleaseStatusUnavailableOnly,
@@ -860,6 +1028,11 @@ object HomeCatalogSettingsRepository {
                     catalogRowNumbersEnabled = catalogRowNumbersEnabled,
                     tvRowDotsEnabled = tvRowDotsEnabled,
                     tvRowDotsAnchor = tvRowDotsAnchor,
+                    randomPlayEnabled = randomPlayEnabled,
+                    randomPlayCategories = randomPlayCategories,
+                    randomPlayGenres = randomPlayGenres,
+                    randomPlayMinimumImdbRating = randomPlayMinimumImdbRating,
+                    randomPlayAction = randomPlayAction,
                     items = preferences.values.sortedBy { it.order },
                 ),
             ),
@@ -876,6 +1049,20 @@ object HomeCatalogSettingsRepository {
         publish()
         persist()
         HomeRepository.applyCurrentSettings()
+    }
+
+    private fun publishAndPersistRandomPlay() {
+        publish()
+        persist()
+        HomeRepository.applyCurrentSettings()
+    }
+
+    private fun resetRandomPlaySettings() {
+        randomPlayEnabled = false
+        randomPlayCategories = RandomPlayCategory.entries.toSet()
+        randomPlayGenres = RandomPlayGenres.toSet()
+        randomPlayMinimumImdbRating = 0f
+        randomPlayAction = RandomPlayAction.Details
     }
 
     private fun selectedHeroSourceCount(excludingKey: String? = null): Int {

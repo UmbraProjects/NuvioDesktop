@@ -5,6 +5,7 @@ import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.sync.HOME_CATALOG_LEGACY_SYNC_PLATFORMS
 import com.nuvio.app.core.sync.HOME_CATALOG_SHARED_SYNC_PLATFORM
+import com.nuvio.app.core.sync.SynchronizationPreferencesRepository
 import com.nuvio.app.core.network.SupabaseProvider
 import com.nuvio.app.features.profiles.ProfileRepository
 import io.github.jan.supabase.postgrest.postgrest
@@ -106,10 +107,13 @@ object HomeCatalogSettingsSyncService {
 
     fun startObserving() {
         if (observeJob?.isActive == true) return
+        SynchronizationPreferencesRepository.ensureLoaded()
         observeLocalChangesAndPush()
     }
 
     suspend fun pullFromServer(profileId: Int) {
+        SynchronizationPreferencesRepository.ensureLoaded()
+        if (!SynchronizationPreferencesRepository.uiState.value.homeCatalogsEnabled) return
         runCatching {
             val pullToken = currentPullToken(profileId) ?: return
             val localPayload = HomeCatalogSettingsRepository.exportToSyncPayload()
@@ -140,6 +144,7 @@ object HomeCatalogSettingsSyncService {
     }
 
     fun triggerPush() {
+        if (!SynchronizationPreferencesRepository.uiState.value.homeCatalogsEnabled) return
         val requestedToken = currentPullToken()
         if (requestedToken == null || !hasCompletedInitialPull(requestedToken)) {
             log.d { "triggerPush — skipped before initial home catalog pull completed" }
@@ -155,6 +160,7 @@ object HomeCatalogSettingsSyncService {
     }
 
     private suspend fun pushToRemote(profileId: Int) {
+        if (!SynchronizationPreferencesRepository.uiState.value.homeCatalogsEnabled) return
         runCatching {
             val payload = HomeCatalogSettingsRepository.exportToSyncPayload()
             val jsonElement = mergedSharedPayloadJson(profileId, payload)
@@ -187,6 +193,9 @@ object HomeCatalogSettingsSyncService {
                 .distinctUntilChanged()
                 .debounce(PUSH_DEBOUNCE_MS)
                 .collect { change ->
+                    if (!SynchronizationPreferencesRepository.uiState.value.homeCatalogsEnabled) {
+                        return@collect
+                    }
                     val token = change.token ?: return@collect
                     val changeSignature = HomeCatalogChangeSignature(change.signature, token)
                     if (!change.initialPullCompleteAtEmission) {
@@ -228,6 +237,7 @@ object HomeCatalogSettingsSyncService {
         payload: SyncHomeCatalogPayload,
         token: PullToken,
     ) {
+        if (!SynchronizationPreferencesRepository.uiState.value.homeCatalogsEnabled) return
         isSyncingFromRemote = true
         try {
             HomeCatalogSettingsRepository.applyFromRemote(payload)

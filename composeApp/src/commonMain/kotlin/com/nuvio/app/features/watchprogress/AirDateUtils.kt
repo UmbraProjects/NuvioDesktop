@@ -64,10 +64,16 @@ fun parseReleaseDateToEpochMs(raw: String?): Long? {
 class ReleaseAlertState(
     val isReleaseAlert: Boolean,
     val isNewSeasonRelease: Boolean,
+    /**
+     * Why the badge was or was not awarded. Diagnostics only — never rendered.
+     *
+     * Every rule here is invisible from the outside: a missing badge and a suppressed one look
+     * identical on the card, which made "it shows on mobile but not here" reports unfalsifiable.
+     */
+    val reason: String = "",
 )
 
-private const val ReleaseAlertWindowMs = 60L * 24 * 60 * 60 * 1000
-private val NoReleaseAlertState = ReleaseAlertState(false, false)
+const val ReleaseAlertWindowMs = 60L * 24 * 60 * 60 * 1000
 
 fun calculateReleaseAlertState(
     seedLastUpdatedEpochMs: Long,
@@ -75,15 +81,32 @@ fun calculateReleaseAlertState(
     nextSeasonNumber: Int?,
     releasedIso: String?,
 ): ReleaseAlertState {
-    if (releasedIso.isNullOrBlank()) return NoReleaseAlertState
+    if (releasedIso.isNullOrBlank()) {
+        return ReleaseAlertState(false, false, "no-release-date")
+    }
 
     val releaseEpoch = parseReleaseDateToEpochMs(releasedIso)
-        ?: return NoReleaseAlertState
+        ?: return ReleaseAlertState(false, false, "unparseable-release-date=$releasedIso")
 
     val nowMs = WatchProgressClock.nowEpochMs()
-    if (nowMs < releaseEpoch) return NoReleaseAlertState
-    if (releaseEpoch <= seedLastUpdatedEpochMs) return NoReleaseAlertState
-    if (nowMs - releaseEpoch >= ReleaseAlertWindowMs) return NoReleaseAlertState
+    if (nowMs < releaseEpoch) {
+        return ReleaseAlertState(false, false, "not-aired-yet (air-date badge path instead)")
+    }
+    if (releaseEpoch <= seedLastUpdatedEpochMs) {
+        return ReleaseAlertState(
+            false,
+            false,
+            "seed-newer-than-release (watched the previous episode " +
+                "${(seedLastUpdatedEpochMs - releaseEpoch) / 86_400_000L}d after this one aired)",
+        )
+    }
+    if (nowMs - releaseEpoch >= ReleaseAlertWindowMs) {
+        return ReleaseAlertState(
+            false,
+            false,
+            "outside-60d-window (aired ${(nowMs - releaseEpoch) / 86_400_000L}d ago)",
+        )
+    }
 
     val isNewSeasonRelease =
         seedSeasonNumber != null &&
@@ -92,6 +115,11 @@ fun calculateReleaseAlertState(
 
     return ReleaseAlertState(
         isReleaseAlert = true,
-        isNewSeasonRelease = isNewSeasonRelease
+        isNewSeasonRelease = isNewSeasonRelease,
+        reason = if (isNewSeasonRelease) {
+            "NEW_SEASON (seed S$seedSeasonNumber -> next S$nextSeasonNumber)"
+        } else {
+            "NEW_EPISODE (aired ${(nowMs - releaseEpoch) / 86_400_000L}d ago)"
+        },
     )
 }

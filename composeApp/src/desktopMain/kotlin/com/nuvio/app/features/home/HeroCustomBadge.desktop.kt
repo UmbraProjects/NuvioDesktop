@@ -63,6 +63,19 @@ private fun customBadgeAliases(label: String, category: String): Set<String> =
             "mini_series" -> addAll(listOf("Mini Series", "Limited Series"))
             "binge_ready" -> addAll(listOf("Binge Ready", "Binge"))
             "true_story" -> addAll(listOf("True Story", "Based on a True Story"))
+            // The label varies with which stinger keywords matched, so accept every spelling
+            // rather than only the one this title happened to produce.
+            "stinger" -> addAll(
+                listOf(
+                    "Stinger",
+                    "Post-Credits Scene",
+                    "Post Credits",
+                    "After Credits",
+                    "Mid-Credits Scene",
+                    "Mid Credits",
+                    "Mid & Post-Credits",
+                ),
+            )
             "new_release", "digital_release" -> addAll(listOf("New Release", "New"))
             // Director label is "Directed by <Name>"; also match the bare director name so a
             // per-director image (e.g. "David Fincher.png") resolves.

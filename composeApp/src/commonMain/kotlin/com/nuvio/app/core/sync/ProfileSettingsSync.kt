@@ -94,6 +94,9 @@ object ProfileSettingsSync {
     private val syncPosterCardStyle: Boolean
         get() = !isDesktop
 
+    private val preferences: SynchronizationPreferencesUiState
+        get() = SynchronizationPreferencesRepository.uiState.value
+
     fun startObserving() {
         if (observeJob?.isActive == true) return
         ensureRepositoriesLoaded()
@@ -111,8 +114,16 @@ object ProfileSettingsSync {
                     log.i { "pull(profileId=$profileId) — no remote settings blob found" }
                     clearPreservedRemotePlayerSettings(profileId)
                     val localBlob = exportSettingsBlob(profileId)
-                    val localSignature = buildSignature(localBlob)
-                    if (localSignature != defaultSignature()) {
+                    // Only the sections the user opted into survive the unsynced-section filter, so
+                    // measure what would actually be written rather than the raw local blob. With
+                    // every permission off that collapses to defaults, and creating the profile's
+                    // first settings row from it would hand an all-default payload to the official
+                    // apps on their next pull.
+                    val blobToCreate = withUnsyncedSectionsFrom(
+                        blob = localBlob,
+                        remoteFeatures = MobileProfileSettingsFeatures(),
+                    )
+                    if (buildSignature(blobToCreate) != defaultSignature()) {
                         pushToRemoteLocked(profileId, localBlob)
                     }
                     return@withLock false
@@ -170,8 +181,8 @@ object ProfileSettingsSync {
     private fun observeLocalChangesAndPush() {
         val signatureFlows = buildList {
             add(ThemeSettingsRepository.selectedTheme.map { "theme" })
+            add(ThemeSettingsRepository.customTheme.map { "custom_theme" })
             add(ThemeSettingsRepository.amoledEnabled.map { "amoled" })
-            add(ThemeSettingsRepository.liquidGlassNativeTabBarEnabled.map { "liquid_glass_tab_bar" })
             add(PosterCardStyleRepository.uiState.map { "poster_card_style" })
             if (syncPlayerSettings) {
                 add(PlayerSettingsRepository.uiState.map { "player" })
@@ -190,8 +201,8 @@ object ProfileSettingsSync {
 
         observeJob = scope.launch {
             combine(signatureFlows) { currentObservedStateSignature() }
-                .drop(1)
                 .distinctUntilChanged()
+                .drop(1)
                 .debounce(PUSH_DEBOUNCE_MS)
                 .collect { signature ->
                     val authState = AuthRepository.state.value
@@ -207,7 +218,7 @@ object ProfileSettingsSync {
     }
 
     private suspend fun pushToRemoteLocked(profileId: Int, blob: MobileProfileSettingsBlob) {
-        val blobToPush = withPreservedDesktopOnlySettings(profileId, blob)
+        val blobToPush = withPreservedUnsyncedSettings(profileId, blob)
         val params = buildJsonObject {
             put("p_profile_id", profileId)
             put("p_platform", MOBILE_SYNC_PLATFORM)
@@ -241,8 +252,10 @@ object ProfileSettingsSync {
     }
 
     private fun applyRemoteBlob(profileId: Int, blob: MobileProfileSettingsBlob) {
-        ThemeSettingsStorage.replaceFromSyncPayload(blob.features.themeSettings)
-        ThemeSettingsRepository.onProfileChanged()
+        if (preferences.appearanceEnabled) {
+            ThemeSettingsStorage.replaceFromSyncPayload(blob.features.themeSettings)
+            ThemeSettingsRepository.onProfileChanged()
+        }
 
         if (syncPosterCardStyle) {
             PosterCardStyleStorage.savePayload(blob.features.posterCardStyleSettingsPayload)
@@ -256,38 +269,48 @@ object ProfileSettingsSync {
             preserveRemotePlayerSettings(profileId, blob)
         }
 
-        StreamBadgeSettingsStorage.replaceFromSyncPayload(blob.features.streamBadgeSettings)
-        StreamBadgeSettingsRepository.onProfileChanged()
+        if (preferences.streamDisplayEnabled) {
+            StreamBadgeSettingsStorage.replaceFromSyncPayload(blob.features.streamBadgeSettings)
+            StreamBadgeSettingsRepository.onProfileChanged()
+        }
 
-        DebridSettingsStorage.replaceFromSyncPayload(blob.features.debridSettings)
-        DebridSettingsRepository.onProfileChanged()
+        if (preferences.debridEnabled) {
+            DebridSettingsStorage.replaceFromSyncPayload(blob.features.debridSettings)
+            DebridSettingsRepository.onProfileChanged()
+        }
 
-        TmdbSettingsStorage.replaceFromSyncPayload(blob.features.tmdbSettings)
-        TmdbSettingsRepository.onProfileChanged()
+        if (preferences.metadataEnabled) {
+            TmdbSettingsStorage.replaceFromSyncPayload(blob.features.tmdbSettings)
+            TmdbSettingsRepository.onProfileChanged()
+            com.nuvio.app.features.tvdb.TvdbSettingsRepository.onProfileChanged()
+            MdbListSettingsStorage.replaceFromSyncPayload(blob.features.mdbListSettings)
+            MdbListSettingsRepository.onProfileChanged()
+        }
 
-        com.nuvio.app.features.tvdb.TvdbSettingsRepository.onProfileChanged()
+        if (preferences.contentPreferencesEnabled) {
+            MetaScreenSettingsStorage.savePayload(blob.features.metaScreenSettingsPayload)
+            MetaScreenSettingsRepository.onProfileChanged()
+            CollectionMobileSettingsStorage.savePayload(blob.features.collectionMobileSettingsPayload)
+            CollectionMobileSettingsRepository.onProfileChanged()
+            ContinueWatchingPreferencesStorage.savePayload(blob.features.continueWatchingSettingsPayload)
+            ContinueWatchingPreferencesRepository.onProfileChanged()
+        }
 
-        MdbListSettingsStorage.replaceFromSyncPayload(blob.features.mdbListSettings)
-        MdbListSettingsRepository.onProfileChanged()
+        if (preferences.traktEnabled) {
+            TraktSettingsRepository.replaceFromSyncPayload(blob.features.traktSettingsPayload)
+            TraktCommentsStorage.replaceFromSyncPayload(blob.features.traktCommentsSettings)
+            TraktCommentsSettings.onProfileChanged()
+        }
 
-        MetaScreenSettingsStorage.savePayload(blob.features.metaScreenSettingsPayload)
-        MetaScreenSettingsRepository.onProfileChanged()
-
-        CollectionMobileSettingsStorage.savePayload(blob.features.collectionMobileSettingsPayload)
-        CollectionMobileSettingsRepository.onProfileChanged()
-
-        ContinueWatchingPreferencesStorage.savePayload(blob.features.continueWatchingSettingsPayload)
-        ContinueWatchingPreferencesRepository.onProfileChanged()
-
-        TraktSettingsRepository.replaceFromSyncPayload(blob.features.traktSettingsPayload)
-
-        TraktCommentsStorage.replaceFromSyncPayload(blob.features.traktCommentsSettings)
-        TraktCommentsSettings.onProfileChanged()
-
-        EpisodeReleaseNotificationsRepository.applyFromSyncEnabled(blob.features.notificationsSettings.episodeReleaseAlertsEnabled)
+        if (preferences.notificationsEnabled) {
+            EpisodeReleaseNotificationsRepository.applyFromSyncEnabled(
+                blob.features.notificationsSettings.episodeReleaseAlertsEnabled,
+            )
+        }
     }
 
     private fun ensureRepositoriesLoaded() {
+        SynchronizationPreferencesRepository.ensureLoaded()
         ThemeSettingsRepository.ensureLoaded()
         PosterCardStyleRepository.ensureLoaded()
         if (syncPlayerSettings) {
@@ -312,25 +335,37 @@ object ProfileSettingsSync {
         buildSignature(MobileProfileSettingsBlob())
 
     private fun currentObservedStateSignature(): String = buildList {
-        add("theme=${ThemeSettingsRepository.selectedTheme.value.name}")
-        add("amoled=${ThemeSettingsRepository.amoledEnabled.value}")
-        add("liquid_glass_tab_bar=${ThemeSettingsRepository.liquidGlassNativeTabBarEnabled.value}")
+        if (preferences.appearanceEnabled) {
+            add("theme=${ThemeSettingsRepository.selectedTheme.value.name}")
+            add("custom_theme=${ThemeSettingsRepository.customTheme.value}")
+            add("amoled=${ThemeSettingsRepository.amoledEnabled.value}")
+        }
         if (syncPosterCardStyle) {
             add("poster_card_style=${PosterCardStyleRepository.uiState.value}")
         }
         if (syncPlayerSettings) {
             add("player=${PlayerSettingsRepository.uiState.value}")
         }
-        add("stream_badges=${StreamBadgeSettingsRepository.uiState.value}")
-        add("debrid=${DebridSettingsRepository.uiState.value}")
-        add("tmdb=${TmdbSettingsRepository.uiState.value}")
-        add("mdblist=${MdbListSettingsRepository.uiState.value}")
-        add("meta=${MetaScreenSettingsRepository.uiState.value}")
-        add("collection_mobile_settings=${CollectionMobileSettingsRepository.uiState.value}")
-        add("continue=${ContinueWatchingPreferencesRepository.uiState.value}")
-        add("trakt_settings=${TraktSettingsRepository.uiState.value}")
-        add("trakt_comments=${TraktCommentsSettings.enabled.value}")
-        add("episode_release_alerts=${EpisodeReleaseNotificationsRepository.uiState.value.isEnabled}")
+        if (preferences.streamDisplayEnabled) {
+            add("stream_badges=${StreamBadgeSettingsRepository.uiState.value}")
+        }
+        if (preferences.debridEnabled) add("debrid=${DebridSettingsRepository.uiState.value}")
+        if (preferences.metadataEnabled) {
+            add("tmdb=${TmdbSettingsRepository.uiState.value}")
+            add("mdblist=${MdbListSettingsRepository.uiState.value}")
+        }
+        if (preferences.contentPreferencesEnabled) {
+            add("meta=${MetaScreenSettingsRepository.uiState.value}")
+            add("collection_mobile_settings=${CollectionMobileSettingsRepository.uiState.value}")
+            add("continue=${ContinueWatchingPreferencesRepository.uiState.value}")
+        }
+        if (preferences.traktEnabled) {
+            add("trakt_settings=${TraktSettingsRepository.uiState.value}")
+            add("trakt_comments=${TraktCommentsSettings.enabled.value}")
+        }
+        if (preferences.notificationsEnabled) {
+            add("episode_release_alerts=${EpisodeReleaseNotificationsRepository.uiState.value.isEnabled}")
+        }
     }.joinToString(separator = "||")
 
     private fun exportPlayerSettingsPayload(profileId: Int): JsonObject =
@@ -358,44 +393,103 @@ object ProfileSettingsSync {
         preservedRemotePlayerSettings
             ?.takeIf { preservedRemotePlayerSettingsProfileId == profileId }
 
-    private suspend fun withPreservedDesktopOnlySettings(
+    private suspend fun withPreservedUnsyncedSettings(
         profileId: Int,
         blob: MobileProfileSettingsBlob,
     ): MobileProfileSettingsBlob {
-        if (syncPlayerSettings && syncPosterCardStyle) return blob
-
-        val remoteBlobResult = runCatching {
+        // Every section this device may not write is carried over from the profile as it stands,
+        // so without a readable remote blob there is no safe push to build. Failing here leaves
+        // the remote untouched; guessing would overwrite those sections with defaults.
+        val remoteBlob = runCatching {
             fetchRemoteSettingsJson(profileId)
                 ?.let { remoteJson ->
                     json.decodeFromJsonElement(MobileProfileSettingsBlob.serializer(), remoteJson)
                 }
-        }
-        val remoteBlob = remoteBlobResult.getOrNull()
-        val remotePlayerSettings = if (remoteBlobResult.isSuccess) {
-            remoteBlob?.features?.playerSettings ?: JsonObject(emptyMap())
-        } else {
-            val error = remoteBlobResult.exceptionOrNull()
-            if (error != null) {
-                log.e(error) { "pushToRemoteLocked(profileId=$profileId) — failed to preserve remote desktop-only settings" }
-            }
-            preservedRemotePlayerSettingsFor(profileId) ?: throw (error ?: IllegalStateException("Missing remote player settings"))
-        }
-        // On a transient fetch failure keep the local poster payload rather than risk wiping it.
-        val remotePosterCardStyle = if (remoteBlobResult.isSuccess) {
-            remoteBlob?.features?.posterCardStyleSettingsPayload.orEmpty()
-        } else {
-            blob.features.posterCardStyleSettingsPayload
+        }.getOrElse { error ->
+            log.e(error) { "pushToRemoteLocked(profileId=$profileId) — failed to read remote settings; skipping push" }
+            throw error
         }
 
+        val remoteFeatures = remoteBlob?.features ?: MobileProfileSettingsFeatures()
         preservedRemotePlayerSettingsProfileId = profileId
-        preservedRemotePlayerSettings = remotePlayerSettings
+        preservedRemotePlayerSettings = remoteFeatures.playerSettings
+        return withUnsyncedSectionsFrom(blob = blob, remoteFeatures = remoteFeatures)
+    }
+
+    /**
+     * Replaces every section this device is not allowed to write with the value already on the
+     * profile, so a push only ever carries the sections the user opted into.
+     */
+    private fun withUnsyncedSectionsFrom(
+        blob: MobileProfileSettingsBlob,
+        remoteFeatures: MobileProfileSettingsFeatures,
+    ): MobileProfileSettingsBlob {
         return blob.copy(
             features = blob.features.copy(
-                playerSettings = if (syncPlayerSettings) blob.features.playerSettings else remotePlayerSettings,
+                themeSettings = if (preferences.appearanceEnabled) {
+                    blob.features.themeSettings
+                } else {
+                    remoteFeatures.themeSettings
+                },
+                playerSettings = if (syncPlayerSettings) {
+                    blob.features.playerSettings
+                } else {
+                    remoteFeatures.playerSettings
+                },
                 posterCardStyleSettingsPayload = if (syncPosterCardStyle) {
                     blob.features.posterCardStyleSettingsPayload
                 } else {
-                    remotePosterCardStyle
+                    remoteFeatures.posterCardStyleSettingsPayload
+                },
+                streamBadgeSettings = if (preferences.streamDisplayEnabled) {
+                    blob.features.streamBadgeSettings
+                } else {
+                    remoteFeatures.streamBadgeSettings
+                },
+                debridSettings = if (preferences.debridEnabled) {
+                    blob.features.debridSettings
+                } else {
+                    remoteFeatures.debridSettings
+                },
+                tmdbSettings = if (preferences.metadataEnabled) {
+                    blob.features.tmdbSettings
+                } else {
+                    remoteFeatures.tmdbSettings
+                },
+                mdbListSettings = if (preferences.metadataEnabled) {
+                    blob.features.mdbListSettings
+                } else {
+                    remoteFeatures.mdbListSettings
+                },
+                metaScreenSettingsPayload = if (preferences.contentPreferencesEnabled) {
+                    blob.features.metaScreenSettingsPayload
+                } else {
+                    remoteFeatures.metaScreenSettingsPayload
+                },
+                collectionMobileSettingsPayload = if (preferences.contentPreferencesEnabled) {
+                    blob.features.collectionMobileSettingsPayload
+                } else {
+                    remoteFeatures.collectionMobileSettingsPayload
+                },
+                continueWatchingSettingsPayload = if (preferences.contentPreferencesEnabled) {
+                    blob.features.continueWatchingSettingsPayload
+                } else {
+                    remoteFeatures.continueWatchingSettingsPayload
+                },
+                traktSettingsPayload = if (preferences.traktEnabled) {
+                    blob.features.traktSettingsPayload
+                } else {
+                    remoteFeatures.traktSettingsPayload
+                },
+                traktCommentsSettings = if (preferences.traktEnabled) {
+                    blob.features.traktCommentsSettings
+                } else {
+                    remoteFeatures.traktCommentsSettings
+                },
+                notificationsSettings = if (preferences.notificationsEnabled) {
+                    blob.features.notificationsSettings
+                } else {
+                    remoteFeatures.notificationsSettings
                 },
             ),
         )

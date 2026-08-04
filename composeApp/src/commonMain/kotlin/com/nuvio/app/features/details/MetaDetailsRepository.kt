@@ -11,6 +11,7 @@ import com.nuvio.app.features.home.filterReleasedItems
 import com.nuvio.app.features.mdblist.MdbListMetadataService
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.metadata.AnimeArtworkService
+import com.nuvio.app.features.metadata.animeMovieTmdbFallbackId
 import com.nuvio.app.features.metadata.hasAnimeNamespacePrefix
 import com.nuvio.app.features.tmdb.TmdbMetadataService
 import com.nuvio.app.features.tmdb.HeroImageSource
@@ -387,13 +388,24 @@ object MetaDetailsRepository {
                 // In TVDB-for-TV mode: always break to TVDB regardless of what the addon provides.
                 // Without this guard, AIOMetadata's TMDB-sourced image.tmdb.org URLs cause an
                 // early return that skips TVDB completely.
-                if (!tvdbActiveForType && result.background?.contains("image.tmdb.org") == true) {
+                //
+                // The TMDB-art check short-circuits a redundant round-trip on the assumption that
+                // TMDB art implies TMDB text. That holds for an addon answering an imdb id, but not
+                // for a native anime id: the addon can identify the entry from an anime source and
+                // borrow only TMDB's images, returning art with no plot, genres, year or runtime.
+                // Short-circuiting there leaves the hero showing the title and nothing else, so
+                // require the text to actually be present before trusting the result as complete.
+                if (!tvdbActiveForType &&
+                    result.hasUsableHeroText() &&
+                    result.background?.contains("image.tmdb.org") == true
+                ) {
                     cacheLightweightMeta(requestKey, result)
                     return result
                 }
                 break  // Collected text metadata; proceed to image source resolution.
             }
         }
+        val imdbTmdbIdentityTrusted = addonResult?.imdbTmdbIdentityTrusted != false
 
         val tvdbResult: com.nuvio.app.features.details.MetaDetails? =
             if (tvdbActiveForType) {
@@ -418,7 +430,8 @@ object MetaDetailsRepository {
                     val knownTvdbId = addonResult?.tvdbId?.trim()?.takeIf(String::isNotBlank)
                     val images = runCatching {
                         if (knownTvdbId != null) TvdbImageService.fetchWithKnownTvdbId(knownTvdbId)
-                        else TvdbImageService.fetch(type, externalId)
+                        else if (imdbTmdbIdentityTrusted) TvdbImageService.fetch(type, externalId)
+                        else null
                     }.getOrNull()
                     images?.let { imgs ->
                         com.nuvio.app.features.details.MetaDetails(
@@ -438,9 +451,16 @@ object MetaDetailsRepository {
         val shouldUseTmdb = heroImageSource != HeroImageSource.Addon &&
             !(heroImageSource == HeroImageSource.TmdbMoviesTvdbShows && isTvType)
         val tvdbMissingAnyImage = tvdbResult?.background == null || tvdbResult?.logo == null
-        val needsTmdb = shouldUseTmdb || tvdbMissingAnyImage
+        val needsTmdb = imdbTmdbIdentityTrusted && (shouldUseTmdb || tvdbMissingAnyImage)
         val resolvedTmdbNumericId = if (needsTmdb) {
             TmdbService.ensureTmdbId(externalId, type)
+            // ensureTmdbId only parses tt/tvdb/bare-numeric ids — it reads `kitsu:395` as "kitsu"
+            // and gives up, which skips the entire TMDB branch below and leaves a native anime
+            // movie with whatever sparse text the addon returned. The anime-list mapping supplies
+            // the movie id it cannot derive.
+                ?: id.takeIf { type.equals("movie", ignoreCase = true) }
+                    ?.animeMovieTmdbFallbackId()
+                    ?.substringAfter(':')
         } else null
         val tmdbFallbackId = if (resolvedTmdbNumericId != null) "tmdb:$resolvedTmdbNumericId" else id
         val rawTmdbResult = if (needsTmdb && resolvedTmdbNumericId != null) {
@@ -462,7 +482,9 @@ object MetaDetailsRepository {
         // tvdb:-prefixed ids (e.g. movies, which TvdbImageService never images itself).
         val tvdbNativeId = addonResult?.tvdbId?.trim()?.takeIf(String::isNotBlank)
             ?: externalId.takeIf { it.startsWith("tvdb:", ignoreCase = true) }?.substringAfter(':')?.trim()
-        val imdbId = if (externalId.startsWith("tt")) {
+        val imdbId = if (!imdbTmdbIdentityTrusted) {
+            null
+        } else if (externalId.startsWith("tt")) {
             externalId
         } else if (resolvedTmdbNumericId != null) {
             TmdbService.tmdbToImdb(tmdbId = resolvedTmdbNumericId.toInt(), mediaType = type)
@@ -492,6 +514,9 @@ object MetaDetailsRepository {
                 description = addonResult.description ?: textSource?.description,
                 releaseInfo = addonResult.releaseInfo ?: textSource?.releaseInfo,
                 runtime = addonResult.runtime ?: textSource?.runtime,
+                // Same reasoning as the fields above: the hero prints a rating when it has one, and
+                // an addon that supplied none left a gap TMDB can fill.
+                imdbRating = addonResult.imdbRating?.takeIf { it.isNotBlank() } ?: textSource?.imdbRating,
             )
             else -> (tvdbResult ?: tmdbResult)?.let { img ->
                 img.copy(
@@ -507,6 +532,16 @@ object MetaDetailsRepository {
     private suspend fun cacheLightweightMeta(requestKey: String, meta: MetaDetails) {
         lightweightMetaMutex.withLock { lightweightMetaCache[requestKey] = meta }
     }
+
+    /**
+     * Whether this result carries the text the hero actually prints beneath the title — the
+     * synopsis, the genre line and the year. A result with none of them renders as a bare title
+     * plus its type, so it is not a complete answer no matter how good its artwork is.
+     */
+    private fun MetaDetails.hasUsableHeroText(): Boolean =
+        !description.isNullOrBlank() ||
+            genres.any { it.isNotBlank() } ||
+            !releaseInfo.isNullOrBlank()
 
     private const val FETCH_TIMEOUT_MS = 5_000L
     private const val TMDB_ENRICH_TIMEOUT_MS = 5_000L
@@ -595,14 +630,27 @@ object MetaDetailsRepository {
             ?: itemId
     }
 
-    private suspend fun tryFetchTmdbFallbackMeta(type: String, id: String): MetaDetails? =
-        withTimeoutOrNull(TMDB_ENRICH_TIMEOUT_MS) {
+    private suspend fun tryFetchTmdbFallbackMeta(type: String, id: String): MetaDetails? {
+        // TmdbMetadataService only understands `tmdb:` ids. A native anime movie id
+        // (`kitsu:`/`mal:`/`simkl:`, which is what SIMKL Continue Watching produces) can be
+        // translated through the anime-list mapping, so a setup whose anime metadata comes from
+        // TMDB still resolves it instead of showing a title with no artwork or text.
+        val lookupId = when {
+            id.startsWith("tmdb:", ignoreCase = true) -> id
+            type.equals("movie", ignoreCase = true) -> id.animeMovieTmdbFallbackId() ?: return null
+            else -> return null
+        }
+        val meta = withTimeoutOrNull(TMDB_ENRICH_TIMEOUT_MS) {
             TmdbMetadataService.fetchStandaloneMeta(
                 type = type,
-                id = id,
+                id = lookupId,
                 settings = TmdbSettingsRepository.snapshot(),
             )
-        }
+        } ?: return null
+        // The caller asked about the native id and everything downstream is keyed on it; only the
+        // lookup borrowed the TMDB id.
+        return if (lookupId == id) meta else meta.copy(id = id)
+    }
 
     private suspend fun publishLoadedMeta(
         requestKey: String,
@@ -666,7 +714,7 @@ object MetaDetailsRepository {
         // Apply TVDB and explicit Metahub fallbacks directly so that the Details screen
         // prioritizes them over TMDB images in exactly the same way fetchLightweightMeta does.
         val externalId = fallbackItemId.split("_").firstOrNull { it.startsWith("tt", ignoreCase = true) } ?: fallbackItemId
-        val imdbId = if (externalId.startsWith("tt")) externalId else null
+        val imdbId = if (meta.imdbTmdbIdentityTrusted && externalId.startsWith("tt")) externalId else null
 
         val heroImageSource = TmdbSettingsRepository.snapshot().heroImageSource
         val isTvType = fallbackItemType.equals("series", ignoreCase = true) || fallbackItemType.equals("anime", ignoreCase = true)
@@ -678,7 +726,8 @@ object MetaDetailsRepository {
                 val knownTvdbId = meta.tvdbId?.trim()?.takeIf(String::isNotBlank)
                 val images = runCatching {
                     if (knownTvdbId != null) TvdbImageService.fetchWithKnownTvdbId(knownTvdbId)
-                    else TvdbImageService.fetch(fallbackItemType, externalId)
+                    else if (meta.imdbTmdbIdentityTrusted) TvdbImageService.fetch(fallbackItemType, externalId)
+                    else null
                 }.getOrNull()
                 images?.let { imgs ->
                     MetaDetails(
@@ -704,7 +753,7 @@ object MetaDetailsRepository {
         }
 
         val enrichedMeta = moreLikeThisEnrichedMeta.copy(
-            background = meta.background ?: explicitMetahubBackground ?: tvdbResult?.background ?: moreLikeThisEnrichedMeta.background,
+            background = meta.background ?: tvdbResult?.background ?: explicitMetahubBackground ?: moreLikeThisEnrichedMeta.background,
             logo = tvdbResult?.logo ?: explicitMetahubLogo ?: moreLikeThisEnrichedMeta.logo,
         )
 
@@ -727,6 +776,9 @@ object MetaDetailsRepository {
         fallbackItemId: String,
         fallbackItemType: String,
     ): MetaDetails {
+        if (!meta.imdbTmdbIdentityTrusted) {
+            return meta.copy(moreLikeThis = emptyList(), moreLikeThisSource = null)
+        }
         TraktSettingsRepository.ensureLoaded()
         TraktAuthRepository.ensureLoaded()
         TmdbSettingsRepository.ensureLoaded()
@@ -780,6 +832,7 @@ object MetaDetailsRepository {
         fallbackItemId: String,
         settings: com.nuvio.app.features.mdblist.MdbListSettings,
     ): Boolean {
+        if (!meta.imdbTmdbIdentityTrusted && !meta.tvdbId.isNullOrBlank()) return true
         if (shouldFetchMdbListOnMetaScreen(meta, fallbackItemId, settings)) return true
         return shouldApplyMoreLikeThisSource(meta)
     }

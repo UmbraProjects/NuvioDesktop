@@ -105,8 +105,9 @@ internal fun PlayerScreenRuntime.restorePersistedTrackPreferenceIfNeeded() {
     if (audioTracks.isNotEmpty() && hasPersistedAudioPreference) {
         val restoredAudioIndex = findPersistedAudioTrackIndex(audioTracks, preference)
         if (restoredAudioIndex >= 0 && restoredAudioIndex != selectedAudioIndex) {
-            playerController?.selectAudioTrack(restoredAudioIndex)
-            selectedAudioIndex = restoredAudioIndex
+            if (playerController?.selectAudioTrack(restoredAudioIndex) == true) {
+                selectedAudioIndex = restoredAudioIndex
+            }
         }
         preferredAudioSelectionApplied = true
     }
@@ -218,8 +219,9 @@ internal fun PlayerScreenRuntime.refreshTracks() {
                 }
             }
             if (audioIndexToApply >= 0 && audioIndexToApply != selectedAudioIndex) {
-                playerController?.selectAudioTrack(audioIndexToApply)
-                selectedAudioIndex = audioIndexToApply
+                if (playerController?.selectAudioTrack(audioIndexToApply) == true) {
+                    selectedAudioIndex = audioIndexToApply
+                }
             }
             preferredAudioSelectionApplied = true
         }
@@ -400,10 +402,11 @@ internal fun PlayerScreenRuntime.cycleAudioTrackFromKeyboard() {
     if (tracks.isEmpty()) return
     val currentIndex = tracks.indexOfFirst { it.index == selectedAudioIndex || it.isSelected }
     val next = tracks[(currentIndex + 1).mod(tracks.size)]
-    selectedAudioIndex = next.index
-    persistAudioPreference(next)
-    playerController?.selectAudioTrack(next.index)
-    showGestureMessage("Audio: ${next.label.ifBlank { next.language ?: "Track ${next.index + 1}" }}")
+    if (playerController?.selectAudioTrack(next.index) == true) {
+        selectedAudioIndex = next.index
+        persistAudioPreference(next)
+        showGestureMessage("Audio: ${next.label.ifBlank { next.language ?: "Track ${next.index + 1}" }}")
+    }
 }
 
 internal fun PlayerScreenRuntime.cycleSubtitleTrackFromKeyboard() {

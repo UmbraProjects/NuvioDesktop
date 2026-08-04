@@ -35,6 +35,7 @@ internal object MetaDetailsParser {
             tmdbId = (meta.string("_tmdbId") ?: meta.string("tmdb_id"))?.toIntOrNull(),
             imdbId = meta.string("_imdbId") ?: meta.string("imdb_id"),
             malId = meta.string("_malId") ?: meta.string("mal_id"),
+            tvdbId = meta.string("_tvdbId") ?: meta.string("tvdb_id"),
             poster = meta.string("poster"),
             background = meta.string("background"),
             logo = meta.string("logo"),

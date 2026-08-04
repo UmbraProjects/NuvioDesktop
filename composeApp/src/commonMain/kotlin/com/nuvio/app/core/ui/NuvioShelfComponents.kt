@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -53,6 +54,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
@@ -66,6 +69,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -377,6 +381,7 @@ fun NuvioPosterCard(
     showTitleBelow: Boolean = true,
     bottomLeftLogoUrl: String? = null,
     bottomLeftText: String? = null,
+    artworkContent: (@Composable BoxScope.() -> Unit)? = null,
     isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
@@ -393,6 +398,7 @@ fun NuvioPosterCard(
         basePosterWidthDp = basePosterWidthDp,
         shape = shape,
     )
+    val hasArtwork = imageUrl != null || artworkContent != null
     val shouldShowTitleBelow = showTitleBelow && !posterCardStyle.hideLabelsEnabled
     // Upstream's 14sp label is balanced around its 126dp poster. This fork supports much larger
     // posters, so scale gently by the square root of the size ratio. The tight clamp preserves
@@ -416,14 +422,14 @@ fun NuvioPosterCard(
                 .aspectRatio(shape.aspectRatio)
                 .clip(cardShape)
                 .background(
-                    if (imageUrl == null) {
+                    if (!hasArtwork) {
                         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
                     } else {
                         tokens.colors.surface
                     },
                 )
                 .then(
-                    if (imageUrl == null) {
+                    if (!hasArtwork) {
                         Modifier.border(
                             width = 1.dp,
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
@@ -442,7 +448,9 @@ fun NuvioPosterCard(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            if (imageUrl != null) {
+            if (artworkContent != null) {
+                artworkContent()
+            } else if (imageUrl != null) {
                 var currentUrl by remember(imageUrl, fallbackImageUrl) { mutableStateOf(imageUrl) }
                 NuvioAsyncImage(
                     model = currentUrl,
@@ -467,7 +475,25 @@ fun NuvioPosterCard(
                 )
             }
 
-            if (!bottomLeftLogoUrl.isNullOrBlank() || !bottomLeftText.isNullOrBlank()) {
+            if (hasArtwork &&
+                (!bottomLeftLogoUrl.isNullOrBlank() || !bottomLeftText.isNullOrBlank())
+            ) {
+                if (shape == NuvioPosterShape.Landscape) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colorStops = arrayOf(
+                                        0f to Color.Transparent,
+                                        0.48f to Color.Transparent,
+                                        0.76f to Color.Black.copy(alpha = 0.34f),
+                                        1f to Color.Black.copy(alpha = 0.76f),
+                                    ),
+                                ),
+                            ),
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
@@ -485,7 +511,9 @@ fun NuvioPosterCard(
                     } else {
                         Text(
                             text = bottomLeftText.orEmpty(),
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                            ),
                             color = tokens.colors.textPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,

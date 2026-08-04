@@ -290,11 +290,13 @@ internal fun LazyListScope.appearanceSettingsContent(
                     widthDp = posterCardStyleUiState.widthDp,
                     cornerRadiusDp = posterCardStyleUiState.cornerRadiusDp,
                     catalogLandscapeModeEnabled = posterCardStyleUiState.catalogLandscapeModeEnabled,
+                    landscapeTextTitlesEnabled = posterCardStyleUiState.landscapeTextTitlesEnabled,
                     hideLabelsEnabled = posterCardStyleUiState.hideLabelsEnabled,
                     zoomActionPreviewEnabled = posterCardStyleUiState.zoomActionPreviewEnabled,
                     onWidthSelected = PosterCardStyleRepository::setWidthDp,
                     onCornerRadiusSelected = PosterCardStyleRepository::setCornerRadiusDp,
                     onCatalogLandscapeModeChange = PosterCardStyleRepository::setCatalogLandscapeModeEnabled,
+                    onLandscapeTextTitlesChange = PosterCardStyleRepository::setLandscapeTextTitlesEnabled,
                     onHideLabelsChange = PosterCardStyleRepository::setHideLabelsEnabled,
                 )
             }

@@ -127,6 +127,7 @@ object TraktCommentsRepository {
     }
 
     private suspend fun resolveCommentsTarget(meta: MetaDetails): ResolvedCommentsTarget? {
+        if (!meta.imdbTmdbIdentityTrusted) return null
         val type = resolveCommentsType(meta) ?: return null
         val directPathId = resolveDirectPathId(meta)
         if (!directPathId.isNullOrBlank()) {

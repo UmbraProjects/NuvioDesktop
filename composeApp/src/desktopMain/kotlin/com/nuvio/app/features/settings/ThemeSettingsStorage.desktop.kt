@@ -3,10 +3,8 @@ package com.nuvio.app.features.settings
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.core.storage.ProfileScopedKey
 import com.nuvio.app.core.sync.decodeSyncBoolean
-import com.nuvio.app.core.sync.decodeSyncInt
 import com.nuvio.app.core.sync.decodeSyncString
 import com.nuvio.app.core.sync.encodeSyncBoolean
-import com.nuvio.app.core.sync.encodeSyncInt
 import com.nuvio.app.core.sync.encodeSyncString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -27,18 +25,15 @@ internal actual object ThemeSettingsStorage {
     private const val desktopAppUiScalePercentKey = "desktop_app_ui_scale_percent"
     private const val desktopAppUiScaleAppliesToDetailsKey = "desktop_app_ui_scale_applies_to_details"
     private const val selectedAppLanguageKey = "selected_app_language"
-    private val profileScopedSyncKeys = listOf(
+    // Only keys understood by the official applications belong in the shared mobile payload.
+    // Desktop layout, scaling, navigation, and native-tab-bar flags remain device-local.
+    private val portableSyncKeys = listOf(
         selectedThemeKey,
         customThemeAccentKey,
         customThemeBackgroundKey,
         customThemeElevatedKey,
         customThemeCardKey,
         amoledEnabledKey,
-        liquidGlassNativeTabBarEnabledKey,
-        desktopColumnGuidesVisibleKey,
-        desktopNavigationLayoutKey,
-        desktopAppUiScalePercentKey,
-        desktopAppUiScaleAppliesToDetailsKey,
     )
     private val store = DesktopStorage.store("nuvio_theme_settings")
 
@@ -145,29 +140,16 @@ internal actual object ThemeSettingsStorage {
         loadCustomThemeElevated()?.let { put(customThemeElevatedKey, encodeSyncString(it)) }
         loadCustomThemeCard()?.let { put(customThemeCardKey, encodeSyncString(it)) }
         loadAmoledEnabled()?.let { put(amoledEnabledKey, encodeSyncBoolean(it)) }
-        loadLiquidGlassNativeTabBarEnabled()?.let { put(liquidGlassNativeTabBarEnabledKey, encodeSyncBoolean(it)) }
-        loadDesktopColumnGuidesVisible()?.let { put(desktopColumnGuidesVisibleKey, encodeSyncBoolean(it)) }
-        loadDesktopNavigationLayout()?.let { put(desktopNavigationLayoutKey, encodeSyncString(it)) }
-        loadDesktopAppUiScalePercent()?.let { put(desktopAppUiScalePercentKey, encodeSyncInt(it)) }
-        loadDesktopAppUiScaleAppliesToDetails()?.let {
-            put(desktopAppUiScaleAppliesToDetailsKey, encodeSyncBoolean(it))
-        }
     }
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
-        store.removeAll(profileScopedSyncKeys.map(ProfileScopedKey::of))
+        store.removeAll(portableSyncKeys.map(ProfileScopedKey::of))
         payload.decodeSyncString(selectedThemeKey)?.let(::saveSelectedTheme)
         payload.decodeSyncString(customThemeAccentKey)?.let(::saveCustomThemeAccent)
         payload.decodeSyncString(customThemeBackgroundKey)?.let(::saveCustomThemeBackground)
         payload.decodeSyncString(customThemeElevatedKey)?.let(::saveCustomThemeElevated)
         payload.decodeSyncString(customThemeCardKey)?.let(::saveCustomThemeCard)
         payload.decodeSyncBoolean(amoledEnabledKey)?.let(::saveAmoledEnabled)
-        payload.decodeSyncBoolean(liquidGlassNativeTabBarEnabledKey)?.let(::saveLiquidGlassNativeTabBarEnabled)
-        payload.decodeSyncBoolean(desktopColumnGuidesVisibleKey)?.let(::saveDesktopColumnGuidesVisible)
-        payload.decodeSyncString(desktopNavigationLayoutKey)?.let(::saveDesktopNavigationLayout)
-        payload.decodeSyncInt(desktopAppUiScalePercentKey)?.let(::saveDesktopAppUiScalePercent)
-        payload.decodeSyncBoolean(desktopAppUiScaleAppliesToDetailsKey)
-            ?.let(::saveDesktopAppUiScaleAppliesToDetails)
         applySelectedAppLanguage(loadSelectedAppLanguage() ?: AppLanguage.ENGLISH.code)
     }
 }

@@ -611,9 +611,14 @@ object LibraryRepository {
             name = displayName,
             poster = resolvedPoster,
             banner = resolvedBackdrop,
-            description = cloudLibraryDescription(),
+            // The provider knows the file, not the film: its own description is a size/status line,
+            // so the matched title's synopsis replaces it once the resolver reports back.
+            description = resolvedDescription ?: cloudLibraryDescription(),
             releaseInfo = providerName,
             posterShape = PosterShape.Poster,
+            imdbId = resolvedImdbId,
+            metaLookupId = resolvedLookupId,
+            metaLookupType = resolvedLookupType,
             savedAtEpochMs = LibraryClock.nowEpochMs(),
         )
 

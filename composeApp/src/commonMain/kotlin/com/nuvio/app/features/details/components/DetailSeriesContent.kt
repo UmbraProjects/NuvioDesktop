@@ -87,6 +87,7 @@ import com.nuvio.app.features.details.effectiveEpisodeNumber
 import com.nuvio.app.features.details.effectiveSeasonNumber
 import com.nuvio.app.features.details.formatRuntimeFromMinutes
 import com.nuvio.app.features.details.metaVideoSeasonEpisodeComparator
+import com.nuvio.app.features.details.matchingEpisodeSearch
 import com.nuvio.app.features.details.normalizeSeasonNumber
 import com.nuvio.app.features.details.progressForEpisodeVideo
 import com.nuvio.app.features.details.seasonSortKey
@@ -136,6 +137,7 @@ fun DetailSeriesContent(
     onCollectionItemClick: ((MetaPreview) -> Unit)? = null,
     moreLikeThis: List<MetaPreview> = emptyList(),
     onMoreLikeThisClick: ((MetaPreview) -> Unit)? = null,
+    episodeSearchQuery: String = "",
 ) {
     val hasVideos = meta.videos.isNotEmpty()
     if (meta.type != "series" && !hasVideos) return
@@ -156,6 +158,52 @@ fun DetailSeriesContent(
                 )
             }
         }
+    }
+
+    val normalizedEpisodeSearchQuery = episodeSearchQuery.trim()
+    val episodeSearchResults = remember(meta.videos, normalizedEpisodeSearchQuery) {
+        meta.videos.matchingEpisodeSearch(normalizedEpisodeSearchQuery)
+    }
+
+    if (normalizedEpisodeSearchQuery.isNotEmpty()) {
+        BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+            val containerWidthDp = maxWidth.value
+            Column(
+                verticalArrangement = Arrangement.spacedBy(if (compactDesktopLayout) 12.dp else 16.dp),
+            ) {
+                if (!compactDesktopLayout) {
+                    DetailSectionTitle(title = stringResource(Res.string.details_episode_search_results))
+                }
+                if (episodeSearchResults.isEmpty()) {
+                    Text(
+                        text = stringResource(
+                            Res.string.details_episode_search_no_results,
+                            normalizedEpisodeSearchQuery,
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    EpisodeHorizontalRow(
+                        episodes = episodeSearchResults,
+                        maxWidthDp = containerWidthDp,
+                        compactDesktopLayout = compactDesktopLayout,
+                        parentMetaId = meta.id,
+                        metaType = meta.type,
+                        watchedKeys = watchedKeys,
+                        fallbackImage = meta.background ?: meta.poster,
+                        progressByVideoId = progressByVideoId,
+                        episodeRatings = episodeRatings,
+                        blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+                        downloadedEpisodeVideoIds = downloadedEpisodeVideoIds,
+                        focusedEpisodeIndex = focusedEpisodeIndex,
+                        onEpisodeClick = onEpisodeClick,
+                        onEpisodeLongPress = onEpisodeLongPress,
+                    )
+                }
+            }
+        }
+        return
     }
 
     if (meta.videos.isEmpty()) {

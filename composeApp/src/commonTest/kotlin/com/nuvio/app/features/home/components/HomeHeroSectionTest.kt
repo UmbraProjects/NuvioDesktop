@@ -2,6 +2,7 @@ package com.nuvio.app.features.home.components
 
 import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.MetaPreview
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -29,6 +30,28 @@ class HomeHeroSectionTest {
 
         assertEquals(true, layout.isTablet)
         assertEquals(386.4f, layout.heroHeight.value, 0.001f)
+    }
+
+    @Test
+    fun `immersive backdrop reaches a shorter landscape shelf`() {
+        assertEquals(
+            expected = 832.dp,
+            actual = immersiveHeroBackdropHeight(
+                heroHeight = 1080.dp,
+                immersiveContentBottomPadding = 320.dp,
+            ),
+        )
+    }
+
+    @Test
+    fun `immersive backdrop preserves portrait minimum height`() {
+        assertEquals(
+            expected = 691.2.dp,
+            actual = immersiveHeroBackdropHeight(
+                heroHeight = 1080.dp,
+                immersiveContentBottomPadding = 420.dp,
+            ),
+        )
     }
 
     @Test

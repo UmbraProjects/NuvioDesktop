@@ -49,4 +49,60 @@ class LocalLibraryPlaybackPreferenceTest {
         assertTrue(LocalLibraryPlaybackPreference.LOCAL_LIBRARY.canOfferAlternate(false))
         assertTrue(LocalLibraryPlaybackPreference.LOCAL_LIBRARY.canOfferAlternate(true))
     }
+
+    @Test
+    fun `local preference only overrides normal autoplay when a local file exists`() {
+        assertFalse(
+            LocalLibraryPlaybackPreference.SOURCE_PICKER.shouldUseManualStreamSelection(
+                useAlternate = false,
+                hasLocalFile = false,
+            ),
+        )
+        assertTrue(
+            LocalLibraryPlaybackPreference.SOURCE_PICKER.shouldUseManualStreamSelection(
+                useAlternate = false,
+                hasLocalFile = true,
+            ),
+        )
+        assertFalse(
+            LocalLibraryPlaybackPreference.LOCAL_LIBRARY.shouldUseManualStreamSelection(
+                useAlternate = false,
+                hasLocalFile = false,
+            ),
+        )
+        assertFalse(
+            LocalLibraryPlaybackPreference.LOCAL_LIBRARY.shouldUseManualStreamSelection(
+                useAlternate = false,
+                hasLocalFile = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `alternate playback falls back to picker if its local file disappears`() {
+        assertTrue(
+            LocalLibraryPlaybackPreference.SOURCE_PICKER.shouldUseManualStreamSelection(
+                useAlternate = true,
+                hasLocalFile = false,
+            ),
+        )
+        assertFalse(
+            LocalLibraryPlaybackPreference.SOURCE_PICKER.shouldUseManualStreamSelection(
+                useAlternate = true,
+                hasLocalFile = true,
+            ),
+        )
+        assertTrue(
+            LocalLibraryPlaybackPreference.LOCAL_LIBRARY.shouldUseManualStreamSelection(
+                useAlternate = true,
+                hasLocalFile = false,
+            ),
+        )
+        assertTrue(
+            LocalLibraryPlaybackPreference.LOCAL_LIBRARY.shouldUseManualStreamSelection(
+                useAlternate = true,
+                hasLocalFile = true,
+            ),
+        )
+    }
 }

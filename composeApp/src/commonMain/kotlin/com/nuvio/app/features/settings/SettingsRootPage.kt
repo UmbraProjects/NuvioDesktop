@@ -9,6 +9,7 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Favorite
@@ -84,6 +85,8 @@ import nuvio.composeapp.generated.resources.settings_content_discovery_homescree
 import nuvio.composeapp.generated.resources.settings_content_discovery_meta_screen_description
 import nuvio.composeapp.generated.resources.settings_content_discovery_plugins_description
 import nuvio.composeapp.generated.resources.settings_playback_subtitle
+import nuvio.composeapp.generated.resources.random_play_title
+import nuvio.composeapp.generated.resources.random_play_settings_description
 import nuvio.composeapp.generated.resources.about_supporters_contributors_subtitle
 import nuvio.composeapp.generated.resources.about_licenses_attributions_subtitle
 import org.jetbrains.compose.resources.stringResource
@@ -91,6 +94,7 @@ import org.jetbrains.compose.resources.stringResource
 internal fun LazyListScope.settingsRootContent(
     isTablet: Boolean,
     onPlaybackClick: () -> Unit,
+    onRandomPlayClick: () -> Unit,
     onStreamsClick: () -> Unit,
     onLocalLibraryClick: () -> Unit,
     onAutoDownloadsClick: () -> Unit,
@@ -280,6 +284,14 @@ internal fun LazyListScope.settingsRootContent(
                         icon = Icons.Rounded.PlayArrow,
                         isTablet = isTablet,
                         onClick = onPlaybackClick,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.random_play_title),
+                        description = stringResource(Res.string.random_play_settings_description),
+                        icon = Icons.Rounded.Casino,
+                        isTablet = isTablet,
+                        onClick = onRandomPlayClick,
                     )
                     if (showPluginsEntry) {
                         SettingsGroupDivider(isTablet = isTablet)

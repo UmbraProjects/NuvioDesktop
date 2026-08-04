@@ -7,6 +7,7 @@ import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaPerson
 import com.nuvio.app.features.details.MetaTrailer
 import com.nuvio.app.features.details.MetaVideo
+import com.nuvio.app.features.details.quarantineMismatchedImdbTmdbIdentity
 import com.nuvio.app.features.details.MoreLikeThisSource
 import com.nuvio.app.features.details.PersonDetail
 import com.nuvio.app.features.home.MetaPreview
@@ -523,6 +524,7 @@ object TmdbMetadataService {
         settings: TmdbSettings,
     ): MetaDetails {
         if (!settings.enabled || !settings.hasApiKey) return meta
+        if (!meta.imdbTmdbIdentityTrusted) return meta
 
         val tmdbType = normalizeMetaType(meta.type)
         val tmdbId = TmdbService.ensureTmdbId(meta.id, tmdbType)
@@ -569,7 +571,7 @@ object TmdbMetadataService {
                     "'${meta.name}' (${meta.releaseInfo}) — got '${enrichment?.localizedTitle}' " +
                     "(${enrichment?.releaseInfo}); skipping enrichment to avoid mismatched metadata."
             }
-            return meta
+            return meta.quarantineMismatchedImdbTmdbIdentity()
         }
 
         return applyEnrichment(

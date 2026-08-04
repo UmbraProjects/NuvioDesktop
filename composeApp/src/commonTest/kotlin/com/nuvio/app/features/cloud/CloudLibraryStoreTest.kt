@@ -1,5 +1,6 @@
 package com.nuvio.app.features.cloud
 
+import com.nuvio.app.features.catalog.ResolvedName
 import com.nuvio.app.features.debrid.DebridProvider
 import com.nuvio.app.features.debrid.DebridProviderCapability
 import com.nuvio.app.features.debrid.DebridServiceCredential
@@ -10,6 +11,47 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CloudLibraryStoreTest {
+    @Test
+    fun `filename metadata from playable file enriches cleaned debrid item`() {
+        val provider = cloudProvider(id = "torbox", name = "TorBox")
+        val releaseFilename = "Hanna.S01E07.1080p.WEB-DL.mkv"
+        val item = CloudLibraryItem(
+            providerId = provider.id,
+            providerName = provider.displayName,
+            id = "hanna-episode",
+            type = CloudLibraryItemType.Torrent,
+            name = "Hanna S01E07",
+            files = listOf(CloudLibraryFile(id = "file", name = releaseFilename)),
+        )
+        val state = CloudLibraryUiState(
+            isLoaded = true,
+            providers = listOf(CloudLibraryProviderState(provider = provider, items = listOf(item))),
+        )
+        val match = ResolvedName(
+            displayName = "Hanna S01E07",
+            poster = "tmdb-poster",
+            posterFallback = null,
+            backdrop = "tmdb-backdrop",
+            year = 2019,
+            overview = "Overview",
+            lookupId = "tt7846844",
+            lookupType = "series",
+            imdbId = "tt7846844",
+        )
+
+        assertEquals(listOf("Hanna S01E07", releaseFilename), state.filenameResolutionCandidateNames())
+
+        val resolvedItem = state.withResolvedNames(mapOf(releaseFilename to match)).items.single()
+        assertEquals("tmdb-poster", resolvedItem.resolvedPoster)
+        assertEquals("tmdb-backdrop", resolvedItem.resolvedBackdrop)
+        // The identity is what lets the row's hero pull genres/synopsis/ratings — its provider id
+        // ("hanna-episode") addresses a download and resolves to no metadata anywhere.
+        assertEquals("tt7846844", resolvedItem.resolvedLookupId)
+        assertEquals("series", resolvedItem.resolvedLookupType)
+        assertEquals("tt7846844", resolvedItem.resolvedImdbId)
+        assertEquals("Overview", resolvedItem.resolvedDescription)
+    }
+
     @Test
     fun `refresh aggregates multiple providers without provider-specific assumptions`() = runBlocking {
         val firstProvider = cloudProvider(id = "alpha", name = "Alpha")

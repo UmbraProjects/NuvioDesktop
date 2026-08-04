@@ -1,6 +1,7 @@
 package com.nuvio.app.features.plugins
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.isDesktop
 import com.nuvio.app.core.network.SupabaseProvider
 import com.nuvio.app.features.addons.encodeUnsafeHttpUrlCharacters
 import com.nuvio.app.features.addons.httpGetText
@@ -96,6 +97,9 @@ actual object PluginRepository {
     }
 
     actual suspend fun pullFromServer(profileId: Int) {
+        // Plugin repositories are a fork-only feature. Keep them device-local even if this method
+        // is reached outside SyncManager so they can never affect an official client's database.
+        if (isDesktop) return
         val effectiveProfileId = resolveEffectiveProfileId(profileId)
         ensureStateLoadedForProfile(effectiveProfileId)
         runCatching {
@@ -438,6 +442,7 @@ actual object PluginRepository {
     }
 
     private fun pushToServer() {
+        if (isDesktop) return
         scope.launch {
             runCatching {
                 val repos = _uiState.value.repositories.mapIndexed { index, repo ->

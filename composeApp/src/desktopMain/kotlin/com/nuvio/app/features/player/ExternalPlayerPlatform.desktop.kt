@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import co.touchlab.kermit.Logger
 import com.nuvio.app.core.storage.DesktopStorage
 import java.awt.Desktop
 import java.io.File
@@ -10,6 +11,8 @@ import javax.swing.JFileChooser
 import javax.swing.SwingUtilities
 import javax.swing.UIManager
 import javax.swing.filechooser.FileNameExtensionFilter
+
+private val externalPlayerLog = Logger.withTag("ExternalPlayer")
 
 private data class DesktopExternalPlayerIntent(
     val request: ExternalPlayerPlaybackRequest,
@@ -178,7 +181,18 @@ internal actual object ExternalPlayerPlatform {
         val associatedPath = defaultMediaAssociation
             ?.takeIf { association -> def.matchesExecutable(association.executablePath) }
             ?.executablePath
-        (customPath ?: associatedPath ?: resolveExecutable(def)).also { resolvedPaths[def.id] = it }
+        val discoveredPath = if (customPath == null && associatedPath == null) resolveExecutable(def) else null
+        val resolved = customPath ?: associatedPath ?: discoveredPath
+        val source = when {
+            customPath != null -> "configured"
+            associatedPath != null -> "file-association"
+            discoveredPath != null -> "known-path-or-PATH"
+            else -> "not-found"
+        }
+        externalPlayerLog.i {
+            "Resolved external player id=${def.id} source=$source executable=${resolved ?: "none"}"
+        }
+        resolved.also { resolvedPaths[def.id] = it }
     }
 
     actual fun defaultPlayerId(): String? =
@@ -196,11 +210,14 @@ internal actual object ExternalPlayerPlatform {
     actual fun availablePlayers(): List<ExternalPlayerApp> =
         buildList {
             definitions.forEach { def ->
+                val executablePath = resolvedPath(def)
                 add(
                     ExternalPlayerApp(
                         id = def.id,
                         name = def.displayName,
-                        isAvailable = resolvedPath(def) != null,
+                        isAvailable = executablePath != null,
+                        executablePath = executablePath,
+                        canConfigure = true,
                     ),
                 )
             }
@@ -211,16 +228,27 @@ internal actual object ExternalPlayerPlatform {
                 ?.takeIf { it.isNotBlank() }
                 ?.let { "System default ($it)" }
                 ?: "System default"
-            add(ExternalPlayerApp(systemPlayerId, defaultLabel))
+            add(
+                ExternalPlayerApp(
+                    id = systemPlayerId,
+                    name = defaultLabel,
+                    executablePath = defaultMediaAssociation?.executablePath,
+                ),
+            )
         }
 
     actual fun configurePlayer(playerId: String): Boolean {
         val def = definitions.firstOrNull { it.id == playerId } ?: return playerId == systemPlayerId
-        val selectedPath = pickPlayerExecutable(def) ?: return false
+        val selectedPath = pickPlayerExecutable(def)
+        if (selectedPath == null) {
+            externalPlayerLog.i { "External player configuration cancelled id=$playerId" }
+            return false
+        }
         customPlayerStore.putString(customPlayerPathKey(def.id), selectedPath)
         synchronized(resolvedPaths) {
             resolvedPaths[def.id] = selectedPath
         }
+        externalPlayerLog.i { "Configured external player id=$playerId executable=$selectedPath" }
         return true
     }
 
@@ -228,9 +256,15 @@ internal actual object ExternalPlayerPlatform {
         request: ExternalPlayerPlaybackRequest,
         playerId: String?,
     ): ExternalPlayerOpenResult {
+        val sourceSummary = externalPlayerSourceSummary(request.sourceUrl)
         val effectiveId = playerId?.takeIf { id ->
             id == systemPlayerId || definitions.any { it.id == id }
         } ?: defaultPlayerId()
+        externalPlayerLog.i {
+            "External playback requested selected=${playerId ?: "auto"} effective=${effectiveId ?: "none"} " +
+                "source=$sourceSummary headers=${request.sourceHeaders.size} " +
+                "subtitles=${request.subtitles.orEmpty().size} resumeMs=${request.resumePositionMs}"
+        }
 
         if (effectiveId == null || effectiveId == systemPlayerId) {
             defaultMediaAssociation?.let { association ->
@@ -240,23 +274,37 @@ internal actual object ExternalPlayerPlatform {
                     if (knownDefinition != null) addAll(knownDefinition.buildArgs(request))
                     add(request.sourceUrl)
                 }
-                if (launchDetached(command)) return ExternalPlayerOpenResult.Opened
+                if (
+                    launchDetached(
+                        command = command,
+                        diagnosticContext = "player=system association=${knownDefinition?.id ?: "unknown"} source=$sourceSummary",
+                    )
+                ) return ExternalPlayerOpenResult.Opened
             }
-            return if (openUri(request.sourceUrl)) ExternalPlayerOpenResult.Opened
+            return if (openUri(request.sourceUrl, sourceSummary)) ExternalPlayerOpenResult.Opened
             else ExternalPlayerOpenResult.Failed
         }
 
-        val def = definitions.firstOrNull { it.id == effectiveId }
-            ?: return ExternalPlayerOpenResult.Failed
-        val exePath = resolvedPath(def)
-            ?: return ExternalPlayerOpenResult.NoPlayerAvailable
+        val def = definitions.firstOrNull { it.id == effectiveId } ?: run {
+            externalPlayerLog.w { "External playback rejected: unknown player id=$effectiveId" }
+            return ExternalPlayerOpenResult.Failed
+        }
+        val exePath = resolvedPath(def) ?: run {
+            externalPlayerLog.w { "External playback unavailable: no executable for player=$effectiveId" }
+            return ExternalPlayerOpenResult.NoPlayerAvailable
+        }
 
         val command = buildList {
             add(exePath)
             addAll(def.buildArgs(request))
             add(request.sourceUrl)
         }
-        return if (launchDetached(command)) ExternalPlayerOpenResult.Opened else ExternalPlayerOpenResult.Failed
+        return if (
+            launchDetached(
+                command = command,
+                diagnosticContext = "player=$effectiveId source=$sourceSummary",
+            )
+        ) ExternalPlayerOpenResult.Opened else ExternalPlayerOpenResult.Failed
     }
 
     /**
@@ -267,13 +315,32 @@ internal actual object ExternalPlayerPlatform {
      * frame. That surfaced as "mpv is a black screen" / "PotPlayer is unresponsive" even though the
      * same URL plays instantly when opened by hand. Discarding the streams removes the pipe.
      */
-    private fun launchDetached(command: List<String>): Boolean =
-        runCatching {
+    private fun launchDetached(
+        command: List<String>,
+        diagnosticContext: String,
+    ): Boolean {
+        val executable = command.firstOrNull() ?: "none"
+        externalPlayerLog.i {
+            "Starting external process $diagnosticContext executable=$executable argumentCount=${(command.size - 1).coerceAtLeast(0)}"
+        }
+        return runCatching {
             ProcessBuilder(command)
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start()
+        }.onSuccess { process ->
+            externalPlayerLog.i { "External process started $diagnosticContext pid=${process.pid()}" }
+            process.onExit().thenAccept { completed ->
+                externalPlayerLog.i {
+                    "External process exited $diagnosticContext pid=${completed.pid()} exitCode=${completed.exitValue()}"
+                }
+            }
+        }.onFailure { error ->
+            externalPlayerLog.e(error) {
+                "External process failed to start $diagnosticContext executable=$executable"
+            }
         }.isSuccess
+    }
 
     actual fun buildIntent(
         request: ExternalPlayerPlaybackRequest,
@@ -435,7 +502,7 @@ internal actual object ExternalPlayerPlatform {
 
     // --- system-handler fallback (previous behaviour) -------------------------------------
 
-    private fun openUri(rawUri: String): Boolean {
+    private fun openUri(rawUri: String, sourceSummary: String): Boolean {
         val uri = runCatching { URI(rawUri) }.getOrNull() ?: return false
         val desktop = runCatching { Desktop.getDesktop() }.getOrNull()
 
@@ -446,21 +513,25 @@ internal actual object ExternalPlayerPlatform {
                 } else {
                     desktop.browse(uri)
                 }
+            }.onSuccess {
+                externalPlayerLog.i { "Opened external source with Desktop API source=$sourceSummary" }
+            }.onFailure { error ->
+                externalPlayerLog.w(error) { "Desktop API failed to open external source=$sourceSummary" }
             }.isSuccess
             if (opened) return true
         }
 
-        return openWithPlatformCommand(rawUri)
+        return openWithPlatformCommand(rawUri, sourceSummary)
     }
 
-    private fun openWithPlatformCommand(rawUri: String): Boolean {
+    private fun openWithPlatformCommand(rawUri: String, sourceSummary: String): Boolean {
         val osName = System.getProperty("os.name").orEmpty().lowercase(Locale.ROOT)
         val command = when {
             osName.contains("mac") -> listOf("open", rawUri)
             osName.contains("win") -> listOf("rundll32", "url.dll,FileProtocolHandler", rawUri)
             else -> listOf("xdg-open", rawUri)
         }
-        return launchDetached(command)
+        return launchDetached(command, "player=system-handler source=$sourceSummary")
     }
 }
 
@@ -470,6 +541,15 @@ private data class WindowsMediaAssociation(
 )
 
 private val REGISTRY_STRING_VALUE = Regex("""(?i)\sREG_(?:EXPAND_)?SZ\s+(.+)$""")
+
+/** Returns only the source origin so diagnostic logs never contain path/query credentials. */
+internal fun externalPlayerSourceSummary(rawUri: String): String {
+    val uri = runCatching { URI(rawUri) }.getOrNull() ?: return "invalid-uri"
+    val scheme = uri.scheme?.lowercase(Locale.ROOT)?.takeIf { it.isNotBlank() } ?: "unknown"
+    val host = uri.host?.takeIf { it.isNotBlank() }
+    val port = uri.port.takeIf { it >= 0 }?.let { ":$it" }.orEmpty()
+    return if (host != null) "$scheme://$host$port" else "$scheme:(no-host)"
+}
 
 // --- header/format helpers ----------------------------------------------------------------
 

@@ -16,6 +16,8 @@ class FilenameMetaResolverTest {
             "Severance.S02E05.1080p.WEB-DL.DDP5.1.H.264-NTb",
             "Dune Part Two 2024 REMUX 2160p HDR",
             "Show.Name.S01E02.mp4",
+            "Friday Night Dinner S03E04",
+            "Hanna S01E07",
         ).forEach { name ->
             assertTrue(FilenameMetaResolver.looksLikeReleaseFilename(name), "expected filename: $name")
         }
@@ -62,6 +64,21 @@ class FilenameMetaResolverTest {
         assertEquals(2, query.season)
         assertEquals(5, query.episode)
         assertEquals("Severance S02E05", query.displayName("Severance"))
+    }
+
+    @Test
+    fun parsesCleanedDebridEpisodeLabel() {
+        val query = assertNotNull(
+            FilenameMetaResolver.parseFilenameQuery(
+                "Friday Night Dinner S03E04",
+                catalogType = "cloud",
+            ),
+        )
+
+        assertEquals("Friday Night Dinner", query.title)
+        assertEquals("tv", query.mediaType)
+        assertEquals(3, query.season)
+        assertEquals(4, query.episode)
     }
 
     @Test

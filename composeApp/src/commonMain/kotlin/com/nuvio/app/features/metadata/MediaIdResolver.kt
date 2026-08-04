@@ -553,6 +553,35 @@ internal fun String.hasAnimeNamespacePrefix(): Boolean =
         startsWith("anidb:", ignoreCase = true)
 
 /**
+ * The mapped TMDB **movie** id for a native anime (or `simkl:`) id, as a `tmdb:` content id.
+ *
+ * SIMKL hands out per-entry anime ids for anime movies too — the shape the anime pipeline needs,
+ * but one only a Kitsu-capable meta addon can answer. A user whose anime metadata comes from TMDB
+ * has nothing that resolves it, so the item never gets artwork or text at all. A movie is a single
+ * anime-list entry with no season/episode numbering to reconcile, so its mapped TMDB movie id
+ * addresses exactly the same title and is a safe *metadata-only* substitute.
+ *
+ * Metadata only: the native id stays the content id, because that is what stream scrapers and the
+ * tracking providers are keyed on. Series are deliberately excluded — a franchise TMDB tv id covers
+ * many entries, so the same substitution there would return another season's art and episode list.
+ */
+internal fun String.animeMovieTmdbFallbackId(): String? {
+    val base = nativeAnimeBase()
+    if (!base.hasNativeAnimePrefix()) return null
+    val parts = base.split(':')
+    val entryId = parts.getOrNull(1)?.toIntOrNull() ?: return null
+    val entry = when (parts[0].lowercase()) {
+        "kitsu" -> AnimeIdMappingRepository.entryForNativeIds(kitsu = entryId)
+        "mal", "myanimelist" -> AnimeIdMappingRepository.entryForNativeIds(mal = entryId)
+        "al", "anilist" -> AnimeIdMappingRepository.entryForNativeIds(anilist = entryId)
+        "anidb" -> AnimeIdMappingRepository.entryForNativeIds(anidb = entryId)
+        "simkl" -> AnimeIdMappingRepository.entryForNativeIds(simkl = entryId)
+        else -> null
+    } ?: return null
+    return entry.tmdbMovieIds.firstOrNull()?.let { "tmdb:$it" }
+}
+
+/**
  * Season/episode from an explicit 4-part franchise-numbered native id
  * (`prefix:entryId:season:episode`, AIOMetadata style), or null for any other shape.
  */

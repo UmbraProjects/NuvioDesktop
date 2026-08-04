@@ -110,6 +110,7 @@ import com.nuvio.app.features.qualicache.QualityInlineBadges
 import com.nuvio.app.features.qualicache.rememberQualityBadgesEnabled
 import com.nuvio.app.features.qualicache.rememberQualityHighlights
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.randomPlayCategoryOrNull
 import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.HeroBadgePlacement
 import com.nuvio.app.features.home.HeroDiscoveryFact
@@ -187,6 +188,7 @@ private val IMMERSIVE_HERO_CONTENT_MAX_HEIGHT = 420.dp
 private val IMMERSIVE_HERO_CONTENT_BOTTOM_PADDING = 44.dp
 private val IMMERSIVE_HERO_CONTENT_MIN_OFFSET_Y = 16.dp
 private val IMMERSIVE_HERO_CONTENT_MAX_OFFSET_Y = 42.dp
+private val IMMERSIVE_HERO_LANDSCAPE_SHELF_OVERLAP = 72.dp
 private val HERO_PEOPLE_TAB_HEIGHT = 40.dp
 private val HERO_DISCOVERY_PANEL_PADDING_HORIZONTAL = 20.dp
 private val HERO_DISCOVERY_BADGE_SIZE = 58.dp
@@ -240,7 +242,7 @@ fun HomeHeroSection(
     adaptiveHeroMode: Boolean = false,
     heroEnabled: Boolean = true,
     heroInfoLines: Int = 2,
-    heroInfoPriority: String = "wins,gg_wins,festival,pic_noms,gg_noms,emmy_noms,studio,director,trending,cult,foreign,new_release,metacritic,true_story,short_film,mini_series,binge_ready,release_status",
+    heroInfoPriority: String = "wins,gg_wins,festival,pic_noms,gg_noms,emmy_noms,studio,director,trending,cult,foreign,new_release,metacritic,true_story,stinger,short_film,mini_series,binge_ready,release_status",
     heroBadgePlacement: HeroBadgePlacement = HeroBadgePlacement.BottomBackdrop,
     heroReleaseStatusUnavailableOnly: Boolean = true,
     trailersEnabledInCurrentMode: Boolean = true,
@@ -336,11 +338,18 @@ fun HomeHeroSection(
             ?.let(items::get)
             ?: items[currentPage]
 
-        val focusedIndex = focusedItem?.let { focused -> items.indexOfFirst { it.id == focused.id } }
-            ?.takeIf { it >= 0 }
+        val focusedIndex = focusedItem?.let { focused ->
+            items.indexOfFirst { it.id == focused.id && it.type == focused.type }
+        }?.takeIf { it >= 0 }
         val displayItems = when {
             focusedItem == null -> items
-            focusedIndex != null -> items
+            // The carousel seed holds its *own* copy of an item — artwork stripped while its hero
+            // pass is pending, then refilled from whatever that pass found. The focused row item is
+            // the one the caller means, so it has to replace the seed copy rather than merely
+            // select it: otherwise the backdrop is read off the seed copy while the title, logo and
+            // cast come from the focused one, and the two disagree (typically a poster-shaped
+            // fallback sitting under the right title).
+            focusedIndex != null -> items.toMutableList().apply { set(focusedIndex, focusedItem) }
             else -> items + focusedItem
         }
         val displayVisiblePages = if (focusedItem != null) {
@@ -381,12 +390,15 @@ fun HomeHeroSection(
             for (target in metadataTargets) {
                 val key = "${target.type}:${target.id}"
                 val discoveryKey = "$key:heroDiscoveryV${HeroDiscoveryMetadataService.CACHE_VERSION}"
+                // Every lookup below goes through the item's metadata identity rather than its own
+                // id: a cloud-library row is listed under a provider download key that resolves to
+                // nothing anywhere, so without this it has no cast, no ratings and no badges.
                 if (!castCache.containsKey(key) && target.type != "collection") {
                     launch {
                         prefetchSlots.withPermit {
                             castCache[key] = HeroCastMetadataService.fetch(
-                                type = target.type,
-                                id = target.id,
+                                type = target.metadataType,
+                                id = target.metadataId,
                             )
                         }
                     }
@@ -395,8 +407,8 @@ fun HomeHeroSection(
                     launch {
                         prefetchSlots.withPermit {
                             discoveryCache[discoveryKey] = HeroDiscoveryMetadataService.fetch(
-                                type = target.type,
-                                id = target.id,
+                                type = target.metadataType,
+                                id = target.metadataId,
                                 priority = discoveryPriority,
                                 releaseStatusUnavailableOnly = heroReleaseStatusUnavailableOnly,
                             )
@@ -407,8 +419,8 @@ fun HomeHeroSection(
                     launch {
                         prefetchSlots.withPermit {
                             productionCache[key] = fetchHeroProductionCredits(
-                                type = target.type,
-                                id = target.id,
+                                type = target.metadataType,
+                                id = target.metadataId,
                             )
                         }
                     }
@@ -418,8 +430,12 @@ fun HomeHeroSection(
                     ratingsCache[key] = emptyList()
                     continue
                 }
-                val baseMeta = MetaDetails(id = target.id, type = target.type, name = target.name)
-                if (!MdbListMetadataService.shouldFetchForMeta(baseMeta, target.id, settings)) {
+                val baseMeta = MetaDetails(
+                    id = target.metadataId,
+                    type = target.metadataType,
+                    name = target.name,
+                )
+                if (!MdbListMetadataService.shouldFetchForMeta(baseMeta, target.metadataId, settings)) {
                     ratingsCache[key] = emptyList()
                     continue
                 }
@@ -427,7 +443,7 @@ fun HomeHeroSection(
                     prefetchSlots.withPermit {
                         val ratings = MdbListMetadataService.enrichMeta(
                             meta = baseMeta,
-                            fallbackItemId = target.id,
+                            fallbackItemId = target.metadataId,
                             settings = settings,
                         ).externalRatings
                         ratingsCache[key] = ratings
@@ -904,6 +920,10 @@ private fun DesktopHomeHeroFrame(
     DisposableEffect(Unit) {
         onDispose { HomeHeroTrailerManualTrigger.setActive(false) }
     }
+    val immersiveBackdropHeight = immersiveHeroBackdropHeight(
+        heroHeight = layout.heroHeight,
+        immersiveContentBottomPadding = immersiveContentBottomPadding,
+    )
 
     Box(
         modifier = Modifier
@@ -915,7 +935,7 @@ private fun DesktopHomeHeroFrame(
                 .align(if (immersiveMode) Alignment.TopEnd else Alignment.CenterEnd)
                 .then(
                     if (immersiveMode) {
-                        Modifier.height(layout.heroHeight * 0.64f)
+                        Modifier.height(immersiveBackdropHeight)
                     } else {
                         Modifier.fillMaxHeight()
                     },
@@ -989,7 +1009,7 @@ private fun DesktopHomeHeroFrame(
                         heroTrailerFullscreen -> Modifier.fillMaxSize()
                         immersiveMode -> Modifier
                             .align(Alignment.TopEnd)
-                            .height(layout.heroHeight * 0.64f)
+                            .height(immersiveBackdropHeight)
                             .fillMaxWidth()
                         else -> Modifier
                             .align(Alignment.CenterEnd)
@@ -1161,6 +1181,7 @@ private fun DesktopHomeHeroFrame(
                     placement = heroBadgePlacement,
                     immersiveMode = immersiveMode,
                     heroHeight = layout.heroHeight,
+                    immersiveBackdropHeight = immersiveBackdropHeight,
                 ),
                 contentAlignment = heroBadgePlacement.heroDiscoveryMedalAlignment(),
             ) {
@@ -1253,6 +1274,19 @@ private fun immersiveHeroContentOffsetY(heroHeight: Dp): Dp =
         IMMERSIVE_HERO_CONTENT_MIN_OFFSET_Y,
         IMMERSIVE_HERO_CONTENT_MAX_OFFSET_Y,
     )
+
+internal fun immersiveHeroBackdropHeight(
+    heroHeight: Dp,
+    immersiveContentBottomPadding: Dp,
+): Dp {
+    val portraitMinimum = heroHeight * 0.64f
+    val shelfBoundary = heroHeight - immersiveContentBottomPadding
+    return if (shelfBoundary > portraitMinimum) {
+        shelfBoundary + IMMERSIVE_HERO_LANDSCAPE_SHELF_OVERLAP
+    } else {
+        portraitMinimum
+    }
+}
 
 // Fixed top offset for the adaptive hero's metadata column so it sits in a consistent spot
 // without drifting as content height changes between items. Kept fairly high since this mode's
@@ -1531,8 +1565,8 @@ private fun DesktopHeroContentBlock(
         // title up.
         val qualityBadgesEnabled = rememberQualityBadgesEnabled()
         val qualityHighlights = rememberQualityHighlights(
-            type = item.type,
-            id = item.id,
+            type = item.metadataType,
+            id = item.metadataId,
             releaseDate = item.rawReleaseDate,
         )
         // With the quality badges on, the meta line splits in two the way the streaming apps lay it
@@ -2179,8 +2213,10 @@ private fun desktopHeroLogoSlotHeight(layout: HomeHeroLayout): Dp {
 
 private fun compactHeroMetaParts(item: MetaPreview): List<String> =
     buildList {
-        if (item.type != "collection") {
-            add(item.type.replaceFirstChar(Char::uppercase))
+        if (item.type != "collection" && item.randomPlayCategoryOrNull() == null) {
+            // metadataType, not type: a cloud-library row's own type is the addon's `library`, which
+            // would otherwise read as the literal word "Library" where the genres belong.
+            add(item.metadataType.replaceFirstChar(Char::uppercase))
         }
         item.genres.firstOrNull()
             ?.takeIf(String::isNotBlank)
@@ -2218,8 +2254,9 @@ private fun desktopHeroGenreText(
             }
         }
     }
-    if (values.isEmpty() && item.type == "collection") return ""
-    return values.joinToString(" • ").ifBlank { item.type.replaceFirstChar(Char::uppercase) }
+    if (values.isEmpty() && (item.type == "collection" || item.randomPlayCategoryOrNull() != null)) return ""
+    // metadataType, not type: see [compactHeroMetaParts].
+    return values.joinToString(" • ").ifBlank { item.metadataType.replaceFirstChar(Char::uppercase) }
 }
 
 @Composable
@@ -2432,12 +2469,13 @@ private fun BoxScope.heroDiscoveryMedalOverlayModifier(
     placement: HeroBadgePlacement,
     immersiveMode: Boolean,
     heroHeight: Dp,
+    immersiveBackdropHeight: Dp,
 ): Modifier =
     when (placement) {
         HeroBadgePlacement.BottomBackdrop -> if (immersiveMode) {
             Modifier
                 .align(Alignment.TopEnd)
-                .height(heroHeight * 0.64f)
+                .height(immersiveBackdropHeight)
                 .fillMaxWidth(HERO_BACKDROP_WIDTH_FRACTION)
                 .padding(bottom = HERO_DISCOVERY_MEDAL_EDGE_PADDING)
         } else {
@@ -2453,7 +2491,7 @@ private fun BoxScope.heroDiscoveryMedalOverlayModifier(
         HeroBadgePlacement.TopRightHorizontal,
         HeroBadgePlacement.TopRightVertical -> Modifier
             .align(Alignment.TopEnd)
-            .height(if (immersiveMode) heroHeight * 0.64f else heroHeight)
+            .height(if (immersiveMode) immersiveBackdropHeight else heroHeight)
             .fillMaxWidth(HERO_BACKDROP_WIDTH_FRACTION)
             .padding(
                 top = HERO_DISCOVERY_MEDAL_TOP_PADDING,
@@ -2801,7 +2839,7 @@ private fun HeroDiscoveryFact.heroDiscoveryAwardLabel(): String =
         "mini_series" -> "Mini Series"
         "binge_ready" -> "Binge Ready"
         "new_release", "digital_release" -> "New Release"
-        // festival, foreign:<lang>, director, studio, release_status carry a dynamic label.
+        // festival, foreign:<lang>, director, studio, release_status, stinger carry a dynamic label.
         else -> label
     }
 
@@ -2849,6 +2887,15 @@ private fun HeroDiscoveryFact.heroDiscoveryTooltipDescription(): String =
             }
         "true_story" ->
             "Detected from true-story metadata and keywords, meaning the title is based on real people, events, or reported history."
+        "stinger" ->
+            when {
+                label.startsWith("Mid &") ->
+                    "This film has an extra scene partway through the credits and another after they finish, so it is worth staying to the end."
+                label.startsWith("Mid-") ->
+                    "This film has an extra scene partway through the credits, so it is worth staying past the first block of names."
+                else ->
+                    "This film has an extra scene once the credits have finished, so it is worth staying to the very end."
+            }
         "studio", "prestige" ->
             "Highlights a favored or notable production company attached to the title."
         "director" ->
@@ -2908,6 +2955,7 @@ private fun heroDiscoveryBadgeResource(category: String, label: String): Drawabl
             "metacritic" -> Res.drawable.hero_badge_metacritic
             "cult" -> Res.drawable.hero_badge_cult
             "true_story" -> Res.drawable.hero_badge_true_story
+            "stinger" -> Res.drawable.hero_badge_stinger
             "new_release", "digital_release" -> Res.drawable.hero_badge_new_release
             "release_status", "alert" -> if (label.isUnavailableReleaseStatusLabel()) {
                 Res.drawable.hero_badge_release_status

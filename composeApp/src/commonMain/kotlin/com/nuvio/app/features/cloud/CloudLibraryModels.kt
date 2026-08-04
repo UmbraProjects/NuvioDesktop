@@ -36,6 +36,13 @@ data class CloudLibraryItem(
     val resolvedName: String? = null,
     val resolvedPoster: String? = null,
     val resolvedBackdrop: String? = null,
+    val resolvedDescription: String? = null,
+    // Metadata identity of the title behind the torrent, so the row's hero can pull genres, a
+    // synopsis and ratings the same way an ordinary catalog row does. The provider id it is
+    // listed under addresses a download, not a title, and resolves to no metadata anywhere.
+    val resolvedLookupId: String? = null,
+    val resolvedLookupType: String? = null,
+    val resolvedImdbId: String? = null,
 ) {
     val stableKey: String
         get() = "$providerId:${type.name}:$id"

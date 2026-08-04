@@ -26,7 +26,8 @@ interface PlayerEngineController {
      * platform players that cannot expose chapters simply retain the empty default.
      */
     fun getChapters(): List<PlayerChapter> = emptyList()
-    fun selectAudioTrack(index: Int)
+    /** Returns false when switching tracks would be unsafe or the native track is unavailable. */
+    fun selectAudioTrack(index: Int): Boolean
     /** Returns false when the platform has not published/resolved the requested native track yet. */
     fun selectSubtitleTrack(index: Int): Boolean
     fun selectSecondarySubtitleTrack(index: Int) {}
