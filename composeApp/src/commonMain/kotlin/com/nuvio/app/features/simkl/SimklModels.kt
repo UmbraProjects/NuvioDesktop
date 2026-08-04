@@ -89,32 +89,62 @@ internal data class SimklMediaIds(
     @SerialName("al") val anilist: String? = null,
 )
 
+/**
+ * SIMKL hands this imdb id back for anime it has no real imdb id for, so it appears on entries
+ * that have nothing to do with each other. Taking it at face value collapses them onto one title.
+ */
+private const val PLACEHOLDER_IMDB_ID = "tt2250192"
+
 /** Converts SIMKL ids to the app's preferred content id (imdb > tmdb > simkl). */
 internal fun SimklMediaIds.toBestContentId(): String? =
-    imdb?.takeIf { it.isNotBlank() && it != "tt2250192" }
+    imdb?.takeIf { it.isNotBlank() && it != PLACEHOLDER_IMDB_ID }
         ?: tmdb?.takeIf { it.isNotBlank() }?.let { "tmdb:$it" }
         ?: tvdb?.let { "tvdb:$it" }
         ?: simkl?.let { "simkl:$it" }
 
-internal fun SimklMediaIds.toBestAnimeContentId(): String? = toBestNativeAnimeContentId()
+internal fun SimklMediaIds.toBestAnimeContentId(): String? = toFranchiseFirstAnimeContentId("series")
 
-internal fun SimklMediaIds.toBestAnimeMovieContentId(): String? = toBestNativeAnimeContentId()
+internal fun SimklMediaIds.toBestAnimeMovieContentId(): String? = toFranchiseFirstAnimeContentId("movie")
 
-// SIMKL playback payloads are often sparse (just a simkl id + slug). A "simkl:" content id
-// is opaque to every downstream consumer — meta addons mangle it (some strip the prefix and
-// treat the number as a TMDB id, fetching a completely unrelated title) and stream scrapers
-// return nothing useful. Translate through the local anime-list first so the id we hand out
-// is one the pipeline actually understands (kitsu preferred, then mal).
-private fun SimklMediaIds.toBestNativeAnimeContentId(): String? =
-    kitsu?.takeIf { it.isNotBlank() }?.let { "kitsu:$it" }
-        ?: animeListEntry()?.let { entry ->
-            entry.kitsuId?.let { "kitsu:$it" } ?: entry.malId?.let { "mal:$it" }
-        }
-        ?: simkl?.let { "simkl:$it" }
+/**
+ * Anime content id, franchise-first — mirroring upstream's default `SimklAnimeIdPreference.IMDB`.
+ *
+ * A franchise id (imdb, then TMDB, then TVDB) is the only kind that ordinary meta addons, MDBList
+ * and TMDB can actually resolve. The fork previously put kitsu/mal first, which is upstream's
+ * opt-in mode: it gives each season its own identity, but leaves anime unresolvable on any addon
+ * that does not advertise a `kitsu` id prefix — which is most of them, including TMDB-backed ones.
+ * Native anime ids are kept as a genuine last resort for entries with no franchise id at all.
+ *
+ * The anime-list mapping is consulted before SIMKL's own ids because SIMKL playback payloads are
+ * routinely sparse (often nothing but a simkl id), and because the mapping's ids are namespace-
+ * correct where SIMKL's single `tmdb` field does not say whether it is a movie or a tv id.
+ */
+private fun SimklMediaIds.toFranchiseFirstAnimeContentId(contentType: String): String? {
+    animeListEntry()?.franchiseContentId(contentType)?.let { return it }
+    val isMovie = contentType.equals("movie", ignoreCase = true)
+    return imdb?.takeIf { it.isNotBlank() && it != PLACEHOLDER_IMDB_ID }
+        ?: tmdb?.takeIf { it.isNotBlank() }?.let { "tmdb:$it" }
+        ?: tvdb?.takeIf { !isMovie }?.let { "tvdb:$it" }
+        ?: kitsu?.takeIf { it.isNotBlank() }?.let { "kitsu:$it" }
         ?: mal?.takeIf { it.isNotBlank() }?.let { "mal:$it" }
-        ?: imdb?.takeIf { it.isNotBlank() && it != "tt2250192" }
-        ?: tvdb?.let { "tvdb:$it" }
-        ?: tmdb?.takeIf { it.isNotBlank() }?.let { "tmdb:$it" }
+        ?: anilist?.takeIf { it.isNotBlank() }?.let { "anilist:$it" }
+        ?: anidb?.takeIf { it.isNotBlank() }?.let { "anidb:$it" }
+        ?: simkl?.let { "simkl:$it" }
+}
+
+/**
+ * The franchise id this anime-list entry is addressable by, or null when it has none.
+ *
+ * TMDB movie and tv ids are separate namespaces, so a movie must never borrow the entry's tv id
+ * (or the reverse) merely because one exists. TVDB is series-only for the same reason: an anime
+ * film maps onto season 0 of its parent series' TVDB record, not onto a record of its own.
+ */
+private fun AnimeIdMapping.franchiseContentId(contentType: String): String? {
+    val isMovie = contentType.equals("movie", ignoreCase = true)
+    return imdbIds.firstOrNull()?.takeIf { it.isNotBlank() }
+        ?: (if (isMovie) tmdbMovieIds.firstOrNull() else tmdbTvId)?.let { "tmdb:$it" }
+        ?: tvdbId?.takeIf { !isMovie }?.let { "tvdb:$it" }
+}
 
 private fun SimklMediaIds.animeListEntry(): AnimeIdMapping? =
     AnimeIdMappingRepository.entryForNativeIds(
