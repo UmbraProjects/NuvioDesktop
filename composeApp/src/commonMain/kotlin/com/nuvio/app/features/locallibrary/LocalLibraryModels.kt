@@ -209,11 +209,20 @@ data class LocalMediaItem(
             else -> null
         }
 
-    /** Stremio-style content id used everywhere else in the app (library, details, scrobble). */
+    /**
+     * Stremio-style content id used everywhere else in the app (library, details, scrobble).
+     *
+     * Franchise-first, matching the SIMKL side: a `kitsu:`/`mal:` id is only answerable by an
+     * addon that advertises that prefix, so leading with it left matched local anime with no
+     * metadata at all on ordinary TMDB/TVDB-backed setups. [animeNativeBase] stays as the last
+     * resort for entries the anime-list has no franchise id for. Anime episodes are still
+     * addressed entry-relative off that base — see [LocalAnimeEpisodeMatcher], which converts
+     * between the two coordinate spaces rather than assuming either.
+     */
     val contentId: String
-        get() = animeNativeBase
-            ?: imdbId?.takeIf { it.isNotBlank() }
+        get() = imdbId?.takeIf { it.isNotBlank() }
             ?: tmdbId?.let { "tmdb:$it" }
+            ?: animeNativeBase
             ?: "$LOCAL_ID_PREFIX$key"
 
     val contentType: String

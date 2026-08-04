@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.kitsu.KitsuService
+import com.nuvio.app.features.metadata.hasAnimeNamespacePrefix
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.tmdb.TmdbService
@@ -778,8 +779,16 @@ internal fun LocalMediaItem.hasDirectMappedEpisode(
         file.isEpisodePlayable &&
             file.effectiveEpisode == wantedEpisode &&
             when {
-                // Kitsu/MAL series entries and bare anime filenames are both entry-relative.
-                isAnime && file.effectiveSeason == null -> true
+                // Kitsu/MAL series entries and bare anime filenames are both entry-relative, so
+                // the episode number is directly comparable and the absent file season is not a
+                // mismatch. That only holds while the page itself is entry-local: now that
+                // contentId is franchise-first, [metaId] is usually a franchise id whose episode
+                // numbers run across the whole show, and comparing an absolute file number to it
+                // while ignoring the season would report every season of a long-running franchise
+                // as available locally (Pokémon XYZ's 47 absolute files answering any season's
+                // episode 1). Franchise ids are left to LocalAnimeEpisodeMatcher, which converts
+                // the coordinates through the anime-list mapping instead of guessing.
+                isAnime && file.effectiveSeason == null -> metaId.hasAnimeNamespacePrefix()
                 season != null -> file.effectiveSeason == season
                 else -> file.effectiveSeason == null
             }

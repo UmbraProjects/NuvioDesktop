@@ -1,12 +1,17 @@
 package com.nuvio.app.features.locallibrary
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class LocalEpisodeAvailabilityTest {
 
+    /**
+     * Absolute-numbered files (no season) under a franchise identity — the shape that makes the
+     * entry-relative shortcut dangerous, since Pokémon spans many franchise seasons in one entry.
+     */
     private val xyz = LocalMediaItem(
         key = "folder:pokemon-xyz",
         folderId = "folder",
@@ -26,17 +31,37 @@ class LocalEpisodeAvailabilityTest {
         },
     )
 
+    /** The same title with no franchise id, so its own content id stays entry-local. */
+    private val xyzNativeOnly = xyz.copy(imdbId = null, tmdbId = null)
+
     @Test
-    fun `directly mapped anime trusts entry-relative local files`() {
+    fun `franchise ids win the content id, native ids remain the fallback`() {
+        assertEquals("tt0168366", xyz.contentId)
+        assertEquals("kitsu:11367", xyzNativeOnly.contentId)
+    }
+
+    @Test
+    fun `an entry-local page trusts entry-relative local files`() {
         // The details payload may label the episode as season 1, but Kitsu 11367 and the local
         // item both number XYZ relative to this entry. The absent file season must not hide it.
-        assertTrue(xyz.hasDirectMappedEpisode("kitsu:11367", season = 1, episode = 1) == true)
-        assertTrue(xyz.hasDirectMappedEpisode("kitsu:11367", season = 1, episode = 47) == true)
-        assertFalse(xyz.hasDirectMappedEpisode("kitsu:11367", season = 1, episode = 48) == true)
+        assertTrue(xyzNativeOnly.hasDirectMappedEpisode("kitsu:11367", season = 1, episode = 1) == true)
+        assertTrue(xyzNativeOnly.hasDirectMappedEpisode("kitsu:11367", season = 1, episode = 47) == true)
+        assertFalse(xyzNativeOnly.hasDirectMappedEpisode("kitsu:11367", season = 1, episode = 48) == true)
+    }
+
+    @Test
+    fun `a franchise page never matches absolute files by episode alone`() {
+        // XYZ is one entry covering franchise seasons 18-19. Comparing its absolute file numbers
+        // against franchise coordinates would advertise a local file for every season's episode 1.
+        // LocalAnimeEpisodeMatcher converts the coordinates instead; this path must decline.
+        assertFalse(xyz.hasDirectMappedEpisode("tt0168366", season = 1, episode = 1) == true)
+        assertFalse(xyz.hasDirectMappedEpisode("tt0168366", season = 18, episode = 1) == true)
+        assertFalse(xyz.hasDirectMappedEpisode("tt0168366", season = 25, episode = 1) == true)
     }
 
     @Test
     fun `different anime entry is left for cross mapping`() {
         assertNull(xyz.hasDirectMappedEpisode("kitsu:7850", season = 1, episode = 1))
+        assertNull(xyzNativeOnly.hasDirectMappedEpisode("kitsu:7850", season = 1, episode = 1))
     }
 }
