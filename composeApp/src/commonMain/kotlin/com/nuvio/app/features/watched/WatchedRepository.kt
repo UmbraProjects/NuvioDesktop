@@ -623,11 +623,15 @@ object WatchedRepository {
         val items = itemsByKey.values
             .map(WatchedItem::normalizedMarkedAt)
             .sortedByDescending { it.markedAtEpochMs }
+        val watchedKeys = items.mapTo(linkedSetOf()) {
+            watchedItemKey(it.type, it.id, it.season, it.episode)
+        }
+        // History keyed on a native anime id also answers under the franchise ids the same entry
+        // is known by, so switching content ids to franchise-first does not orphan it.
+        watchedKeys += animeAlternateWatchedKeys(items)
         _uiState.value = WatchedUiState(
             items = items,
-            watchedKeys = items.mapTo(linkedSetOf()) {
-                watchedItemKey(it.type, it.id, it.season, it.episode)
-            },
+            watchedKeys = watchedKeys,
             isLoaded = true,
         )
     }
