@@ -302,8 +302,9 @@ object TmdbCollectionSourceResolver {
             apiKey = apiKey,
             query = query,
         ) ?: error(getString(Res.string.collections_tmdb_discover_no_data))
+        val sourceDeclaresAnime = filters.declaresAnime()
         val items = body.results.orEmpty()
-            .mapNotNull { it.toPreview(mediaType) }
+            .mapNotNull { it.toPreview(mediaType, sourceDeclaresAnime = sourceDeclaresAnime) }
             .distinctBy { it.id }
         return CatalogPage(
             items = items,
@@ -392,7 +393,10 @@ object TmdbCollectionSourceResolver {
         return toPreview(contentType)
     }
 
-    private fun TmdbListItem.toPreview(mediaType: TmdbCollectionMediaType): MetaPreview? {
+    private fun TmdbListItem.toPreview(
+        mediaType: TmdbCollectionMediaType,
+        sourceDeclaresAnime: Boolean = false,
+    ): MetaPreview? {
         val title = title?.takeIf { it.isNotBlank() }
             ?: name?.takeIf { it.isNotBlank() }
             ?: originalTitle?.takeIf { it.isNotBlank() }
@@ -417,6 +421,13 @@ object TmdbCollectionSourceResolver {
             popularity = popularity,
             voteCount = voteCount,
             imdbRating = voteAverage?.let { ((it * 10).roundToInt() / 10.0).toString() },
+            animeType = collectionAnimeType(
+                mediaType = mediaType,
+                isAnimation = genreIds.orEmpty().contains(TMDB_ANIMATION_GENRE_ID),
+                originalLanguage = originalLanguage,
+                originCountries = originCountries.orEmpty(),
+                sourceDeclaresAnime = sourceDeclaresAnime,
+            ),
         )
     }
 
@@ -435,6 +446,12 @@ object TmdbCollectionSourceResolver {
             popularity = popularity,
             voteCount = voteCount,
             imdbRating = voteAverage?.let { ((it * 10).roundToInt() / 10.0).toString() },
+            animeType = collectionAnimeType(
+                mediaType = mediaType,
+                isAnimation = genreIds.orEmpty().contains(TMDB_ANIMATION_GENRE_ID),
+                originalLanguage = originalLanguage,
+                originCountries = originCountries.orEmpty(),
+            ),
         )
     }
 
@@ -705,6 +722,9 @@ private data class TmdbListItem(
     @SerialName("vote_average") val voteAverage: Double? = null,
     @SerialName("vote_count") val voteCount: Int? = null,
     val popularity: Double? = null,
+    @SerialName("genre_ids") val genreIds: List<Int>? = null,
+    @SerialName("original_language") val originalLanguage: String? = null,
+    @SerialName("origin_country") val originCountries: List<String>? = null,
 )
 
 @Serializable
@@ -718,4 +738,7 @@ private data class TmdbCollectionPart(
     @SerialName("vote_average") val voteAverage: Double? = null,
     @SerialName("vote_count") val voteCount: Int? = null,
     val popularity: Double? = null,
+    @SerialName("genre_ids") val genreIds: List<Int>? = null,
+    @SerialName("original_language") val originalLanguage: String? = null,
+    @SerialName("origin_country") val originCountries: List<String>? = null,
 )

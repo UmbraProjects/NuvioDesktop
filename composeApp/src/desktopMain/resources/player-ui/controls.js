@@ -230,6 +230,8 @@ let state = {
   resizeModeLabel: "Fit",
   playbackSpeedLabel: "1x",
   playbackSpeedFineIncrementsEnabled: false,
+  playbackSpeedToggleLow: 1,
+  playbackSpeedToggleHigh: 2,
   subtitlesLabel: "Subs",
   audioLabel: "Audio",
   sourcesLabel: "Sources",
@@ -282,6 +284,7 @@ let state = {
   subtitleBuiltInTabLabel: "Built-in",
   subtitleAddonsTabLabel: "Addons",
   subtitleStyleTabLabel: "Style",
+  downloadSubtitleLabel: "Download subtitle",
   noneLabel: "None",
   fetchSubtitlesLabel: "Tap to fetch subtitles",
   subtitleDelayLabel: "Subtitle Delay",
@@ -436,7 +439,9 @@ let keyboardSourceIndex = 0;
 let keyboardEpisodeIndex = 0;
 let keyboardEpisodeStreamIndex = 0;
 let keyboardEpisodeShowingStreams = false;
+let addonSubtitleListRenderKey = "";
 let episodeListRenderKey = "";
+let seasonFilterRenderKey = "";
 let episodeFocusPositionKey = "";
 const episodeArtworkPreloads = new Map();
 let submitIntroDraft = {
@@ -1884,6 +1889,41 @@ const buildCheckIcon = () => {
   return svg;
 };
 
+// Subtitle names carry the whole release name ("...S01E07 The One with the Blackout.DVDRip.HI.cc"),
+// which the row has to ellipsize. Rows tagged with data-full-text get a tooltip carrying the text in
+// full — but only while it genuinely does not fit, so rows that are already readable stay quiet.
+//
+// Measured on hover rather than after render: a list built while its modal is hidden has no layout
+// to measure, and re-measuring on every state push would cost a reflow per subtitle.
+const TRACK_ROW_OVERFLOW_SLACK_PX = 1;
+
+const updateRowOverflowTooltip = row => {
+  const parts = Array.from(row.querySelectorAll("[data-full-text]"));
+  if (parts.length === 0) return;
+  const overflows = parts.some(part => part.scrollWidth > part.clientWidth + TRACK_ROW_OVERFLOW_SLACK_PX);
+  const fullText = parts.map(part => part.dataset.fullText).filter(Boolean).join("\n");
+  if (overflows && fullText) {
+    if (row.title !== fullText) row.title = fullText;
+  } else if (row.hasAttribute("title")) {
+    row.removeAttribute("title");
+  }
+};
+
+const attachOverflowTooltips = container => {
+  if (!container) return;
+  container.addEventListener("pointerover", event => {
+    const row = event.target.closest(".track-row");
+    if (row && container.contains(row)) updateRowOverflowTooltip(row);
+  });
+};
+
+const setTrackRowTooltipText = (element, text) => {
+  const value = String(text || "").trim();
+  if (value) element.dataset.fullText = value;
+};
+
+[subtitleTrackList, addonSubtitleList, audioTrackList].forEach(attachOverflowTooltips);
+
 const appendTrackRow = (container, label, selected, onSelect, closeAfterSelect = true) => {
   const row = document.createElement("button");
   row.type = "button";
@@ -1897,8 +1937,35 @@ const appendTrackRow = (container, label, selected, onSelect, closeAfterSelect =
   const text = document.createElement("span");
   text.className = "track-label";
   text.textContent = label;
+  setTrackRowTooltipText(text, label);
   row.appendChild(text);
   row.appendChild(buildCheckIcon());
+  container.appendChild(row);
+};
+
+const appendSubtitleTrackRow = (container, label, detail, selected, onSelect) => {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = `track-row stream-row subtitle-track-row${selected ? " selected" : ""}`;
+  row.addEventListener("click", event => {
+    event.stopPropagation();
+    onSelect();
+  });
+  const copy = document.createElement("span");
+  copy.className = "track-copy";
+  const name = document.createElement("span");
+  name.className = "stream-name";
+  name.textContent = label;
+  setTrackRowTooltipText(name, label);
+  copy.appendChild(name);
+  if (detail) {
+    const metadata = document.createElement("span");
+    metadata.className = "stream-addon subtitle-track-detail";
+    metadata.textContent = detail;
+    setTrackRowTooltipText(metadata, detail);
+    copy.appendChild(metadata);
+  }
+  row.appendChild(copy);
   container.appendChild(row);
 };
 
@@ -1953,38 +2020,60 @@ const renderSubtitleTrackList = () => {
     ? normalizeItems(state.builtInSubtitleItems).map(item => ({
         index: Number(item.index) || 0,
         label: item.label || "",
-        language: "",
+        id: item.id || "",
+        language: item.languageLabel || "",
         selected: nativeSelectionByIndex.has(Number(item.index) || 0)
           ? nativeSelectionByIndex.get(Number(item.index) || 0)
           : Boolean(item.isSelected),
       }))
     : nativeTracks;
   const hasSelected = tracks.some(track => Boolean(track.selected));
-  appendTrackRow(
+  appendSubtitleTrackRow(
     subtitleTrackList,
     state.noneLabel || "None",
+    "",
     !hasSelected,
     () => send("selectBuiltInSubtitleTrack", -1),
-    false,
   );
   tracks.forEach(track => {
-    appendTrackRow(
+    const label = track.label || track.language || `Subtitle ${Number(track.index || 0) + 1}`;
+    const detail = [track.language, track.id ? `ID: ${track.id}` : ""].filter(Boolean).join(" · ");
+    appendSubtitleTrackRow(
       subtitleTrackList,
-      track.label || track.language || `Subtitle ${Number(track.index || 0) + 1}`,
+      label,
+      detail,
       Boolean(track.selected),
       () => send("selectBuiltInSubtitleTrack", Number(track.index) || 0),
-      false,
     );
   });
 };
 
 const renderAddonSubtitleList = () => {
+  const items = normalizeItems(state.addonSubtitleItems);
+  // Native player state is pushed repeatedly while this panel is open. Replacing unchanged rows
+  // cancels the browser's delayed overflow tooltip, drops keyboard focus, and causes a visible
+  // flash. Keep the existing DOM until something the Addons list actually renders has changed.
+  const nextRenderKey = JSON.stringify([
+    Boolean(state.isLoadingAddonSubtitles),
+    state.fetchSubtitlesLabel || "",
+    state.downloadSubtitleLabel || "",
+    items.map(item => [
+      item.index,
+      item.id,
+      item.display,
+      item.languageLabel,
+      item.addonName,
+      Boolean(item.isSelected),
+      Boolean(item.isDownloading),
+    ]),
+  ]);
+  if (nextRenderKey === addonSubtitleListRenderKey) return;
+  addonSubtitleListRenderKey = nextRenderKey;
   addonSubtitleList.textContent = "";
   if (state.isLoadingAddonSubtitles) {
     appendEmptyTrackState(addonSubtitleList, "Loading subtitles...");
     return;
   }
-  const items = normalizeItems(state.addonSubtitleItems);
   if (items.length === 0) {
     const row = document.createElement("button");
     row.type = "button";
@@ -2000,30 +2089,74 @@ const renderAddonSubtitleList = () => {
     addonSubtitleList.appendChild(row);
     return;
   }
+  const anyDownloadInProgress = items.some(candidate => Boolean(candidate.isDownloading));
   items.forEach(item => {
     const label = item.display || item.languageLabel || "Subtitle";
-    const secondary = [item.languageLabel, item.addonName].filter(Boolean).join(" • ");
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = `track-row stream-row${item.isSelected ? " selected" : ""}`;
+    const secondary = [item.languageLabel, item.addonName, item.id ? `ID: ${item.id}` : ""]
+      .filter(Boolean)
+      .join(" · ");
+    const row = document.createElement("div");
+    row.className = `track-row stream-row addon-subtitle-row${item.isSelected ? " selected" : ""}`;
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-selected", item.isSelected ? "true" : "false");
     row.addEventListener("click", event => {
       event.stopPropagation();
       send("selectAddonSubtitle", Number(item.index) || 0);
+    });
+    row.addEventListener("keydown", event => {
+      if (event.target !== row || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      send("selectAddonSubtitle", Number(item.index) || 0);
+    });
+    const downloadSubtitle = () => {
+      if (anyDownloadInProgress) return;
+      send("downloadAddonSubtitle", Number(item.index) || 0);
+    };
+    row.addEventListener("contextmenu", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      downloadSubtitle();
     });
     const copy = document.createElement("span");
     copy.className = "track-copy";
     const name = document.createElement("span");
     name.className = "stream-name";
     name.textContent = label;
+    setTrackRowTooltipText(name, label);
     copy.appendChild(name);
     if (secondary) {
       const detail = document.createElement("span");
       detail.className = "stream-addon";
       detail.textContent = secondary;
+      setTrackRowTooltipText(detail, secondary);
       copy.appendChild(detail);
     }
     row.appendChild(copy);
-    row.appendChild(buildCheckIcon());
+    const download = document.createElement("button");
+    download.type = "button";
+    download.className = "subtitle-download-button";
+    download.disabled = anyDownloadInProgress;
+    download.setAttribute("aria-label", state.downloadSubtitleLabel || "Download subtitle");
+    download.title = state.downloadSubtitleLabel || "Download subtitle";
+    download.addEventListener("click", event => {
+      event.stopPropagation();
+      downloadSubtitle();
+    });
+    if (item.isDownloading) {
+      const spinner = document.createElement("span");
+      spinner.className = "subtitle-download-spinner";
+      spinner.setAttribute("aria-hidden", "true");
+      download.appendChild(spinner);
+    } else {
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("aria-hidden", "true");
+      const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+      use.setAttribute("href", "#icon-download");
+      icon.appendChild(use);
+      download.appendChild(icon);
+    }
+    row.appendChild(download);
     addonSubtitleList.appendChild(row);
   });
 };
@@ -2616,6 +2749,24 @@ const ensureEpisodeSeason = () => {
   return selectedEpisodeSeason;
 };
 
+// The season strip scrolls horizontally once a show has more seasons than fit, so the selected
+// chip has to be pulled back into view after a rebuild or a keyboard hop. Mirrors the inset logic
+// in focusKeyboardEpisodeRow.
+const scrollSelectedSeasonIntoView = () => {
+  const chip = seasonFilterList.querySelector(".filter-chip.selected");
+  if (!chip) return;
+  const safeInset = 20;
+  const chipLeft = chip.offsetLeft;
+  const chipRight = chipLeft + chip.offsetWidth;
+  const visibleLeft = seasonFilterList.scrollLeft + safeInset;
+  const visibleRight = seasonFilterList.scrollLeft + seasonFilterList.clientWidth - safeInset;
+  if (chipLeft < visibleLeft) {
+    seasonFilterList.scrollLeft = Math.max(0, chipLeft - safeInset);
+  } else if (chipRight > visibleRight) {
+    seasonFilterList.scrollLeft = chipRight - seasonFilterList.clientWidth + safeInset;
+  }
+};
+
 const preloadEpisodeArtwork = items => {
   items.forEach(item => {
     const url = String(item && item.thumbnail || "").trim();
@@ -2647,17 +2798,28 @@ const renderEpisodeList = () => {
 
   const selectedSeason = ensureEpisodeSeason();
   const seasons = normalizeItems(state.episodeSeasons);
-  renderFilterRow(
-    seasonFilterList,
-    seasons.map(season => ({ id: String(season.season), label: season.label })),
-    selectedSeason == null ? "" : String(selectedSeason),
-    id => {
-      selectedEpisodeSeason = Number(id);
-      keyboardEpisodeIndex = 0;
-      renderEpisodeList();
-      window.requestAnimationFrame(() => { episodeList.scrollLeft = 0; });
-    },
-  );
+  // renderFilterRow rebuilds the strip from scratch, which resets its horizontal scroll — and
+  // renderEpisodeList runs on every position tick. Rebuild only when the seasons or the selection
+  // actually change, otherwise a scrolled-away strip would snap back to Season 1 once a second.
+  const nextSeasonKey = JSON.stringify([
+    selectedSeason,
+    seasons.map(season => [season.season, season.label]),
+  ]);
+  if (nextSeasonKey !== seasonFilterRenderKey) {
+    seasonFilterRenderKey = nextSeasonKey;
+    renderFilterRow(
+      seasonFilterList,
+      seasons.map(season => ({ id: String(season.season), label: season.label })),
+      selectedSeason == null ? "" : String(selectedSeason),
+      id => {
+        selectedEpisodeSeason = Number(id);
+        keyboardEpisodeIndex = 0;
+        renderEpisodeList();
+        window.requestAnimationFrame(() => { episodeList.scrollLeft = 0; });
+      },
+    );
+    window.requestAnimationFrame(scrollSelectedSeasonIntoView);
+  }
 
   let items = normalizeItems(state.episodeItems);
   if (selectedSeason != null) {
@@ -3519,6 +3681,7 @@ const shortcutCommandForEvent = event => {
     seek_forward: "keyboardSeekForward",
     speed_up: "keyboardSpeedUp",
     speed_down: "keyboardSpeedDown",
+    toggle_speed: "keyboardSpeedToggle",
     next_subtitle: "keyboardNextSubtitle",
     next_audio: "keyboardNextAudio",
     open_sources: "keyboardOpenSources",
@@ -4358,29 +4521,69 @@ episodeList.addEventListener("click", event => {
   }
 }, true);
 
-const playbackSpeedStages = [1, 1.25, 1.5, 2, 3, 4];
-// Fine mode steps by a flat 0.1 over a continuous range instead of hopping between the coarse
-// preset stages. Kept as 0.1-multiples with a rounding guard so repeated steps don't drift.
-const PLAYBACK_SPEED_FINE_STEP = 0.1;
-const PLAYBACK_SPEED_FINE_MIN = 0.1;
-const PLAYBACK_SPEED_FINE_MAX = 4;
-const stepPlaybackSpeed = direction => {
-  const current = parsedPlaybackSpeed();
-  let next;
-  if (state.playbackSpeedFineIncrementsEnabled) {
-    const stepped = current + direction * PLAYBACK_SPEED_FINE_STEP;
-    next = Math.min(PLAYBACK_SPEED_FINE_MAX, Math.max(PLAYBACK_SPEED_FINE_MIN, Math.round(stepped * 10) / 10));
-  } else {
-    const currentIndex = playbackSpeedStages.reduce((best, speed, index) =>
-      Math.abs(speed - current) < Math.abs(playbackSpeedStages[best] - current) ? index : best, 0);
-    const nextIndex = Math.max(0, Math.min(playbackSpeedStages.length - 1, currentIndex + direction));
-    next = playbackSpeedStages[nextIndex];
+// Same wheel-to-horizontal + drag-to-scroll treatment for the season strip. Without it a show with
+// more seasons than fit across the panel (Survivor, 40+) has no way to reach the later ones: the
+// wheel is vertical, the modal layer swallows it, and there is no visible scrollbar.
+let seasonRailPointerId = null;
+let seasonRailStartX = 0;
+let seasonRailStartScroll = 0;
+let seasonRailDragged = false;
+seasonFilterList.addEventListener("wheel", event => {
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+  if (delta === 0) return;
+  event.preventDefault();
+  seasonFilterList.scrollLeft += Math.sign(delta) * 160;
+}, { passive: false });
+seasonFilterList.addEventListener("pointerdown", event => {
+  if (event.button !== 0) return;
+  seasonRailPointerId = event.pointerId;
+  seasonRailStartX = event.clientX;
+  seasonRailStartScroll = seasonFilterList.scrollLeft;
+  seasonRailDragged = false;
+});
+seasonFilterList.addEventListener("pointermove", event => {
+  if (event.pointerId !== seasonRailPointerId) return;
+  const distance = event.clientX - seasonRailStartX;
+  if (!seasonRailDragged && Math.abs(distance) > 8) {
+    seasonRailDragged = true;
+    seasonFilterList.setPointerCapture(event.pointerId);
+    seasonFilterList.classList.add("is-dragging");
   }
-  const label = `${String(next).replace(/\.0$/, "")}x`;
-  state = { ...state, playbackSpeedLabel: label };
-  speedLabel.textContent = label;
-  window.nuvioShowPresetPill("Playback speed", label);
-  send("setPlaybackSpeed", next);
+  if (!seasonRailDragged) return;
+  event.preventDefault();
+  seasonFilterList.scrollLeft = seasonRailStartScroll - distance;
+});
+const finishSeasonRailDrag = event => {
+  if (event.pointerId !== seasonRailPointerId) return;
+  if (seasonFilterList.hasPointerCapture(event.pointerId)) seasonFilterList.releasePointerCapture(event.pointerId);
+  seasonRailPointerId = null;
+  seasonFilterList.classList.remove("is-dragging");
+};
+seasonFilterList.addEventListener("pointerup", finishSeasonRailDrag);
+seasonFilterList.addEventListener("pointercancel", finishSeasonRailDrag);
+seasonFilterList.addEventListener("click", event => {
+  if (seasonRailDragged) {
+    event.preventDefault();
+    event.stopPropagation();
+    seasonRailDragged = false;
+  }
+}, true);
+
+// Relative speed changes (the speed button, its right-click, and the step/toggle keys) send the
+// *intent* to Kotlin instead of computing the next speed here. These rules used to exist twice —
+// once in Kotlin against mpv's live speed, once here against `state.playbackSpeedLabel`, a mirror
+// this file also wrote to optimistically. Which copy ran depended on who held OS focus (any HUD
+// click hands it to the WebView, so a speed change made through the UI moved the keys onto this
+// copy), and a mirror that had drifted from mpv made the toggle flip against the wrong current
+// speed. One implementation now owns it — see adjustPlaybackSpeedStep / togglePlaybackSpeed in
+// PlayerScreenRuntimeGestureActions.kt — and the label and pill come back through the controls
+// push, so the two entry points can no longer disagree. Absolute picks (the context menu's
+// `speed:` items) still set the speed directly; they need no current-speed reading.
+const stepPlaybackSpeed = direction => {
+  send("keyboardSpeedStep", direction < 0 ? -1 : 1);
+};
+const togglePlaybackSpeed = () => {
+  send("keyboardSpeedToggle", 1);
 };
 speedButton.addEventListener("contextmenu", event => {
   event.preventDefault();
@@ -4654,6 +4857,9 @@ document.addEventListener("keydown", event => {
     return;
   } else if (command === "keyboardSpeedDown") {
     stepPlaybackSpeed(-1);
+    return;
+  } else if (command === "keyboardSpeedToggle") {
+    togglePlaybackSpeed();
     return;
   } else if (command === "keyboardOpenSources") {
     window.nuvioOpenKeyboardPanel("sources");

@@ -117,6 +117,28 @@ object NextUpDiagnostics {
         )
     }
 
+    /**
+     * Cards being re-resolved because their cached copy has no episode thumbnail.
+     *
+     * A still often lands days after the episode airs, and the cached card is what paints on
+     * launch — so "the thumbnail never arrives" is indistinguishable from "this episode has no
+     * still" without knowing whether a retry even ran. Logged once per pass.
+     */
+    fun logArtworkRetry(
+        contentIds: Collection<String>,
+        forcedMetaRefresh: Boolean,
+        withinBudget: Int,
+    ) {
+        if (!ENABLED || contentIds.isEmpty()) return
+        emit(
+            key = "artwork-retry",
+            line = "ARTWORK-RETRY ${contentIds.size} cached card(s) missing an episode thumbnail: " +
+                "${contentIds.sorted().joinToString()} | retryingNow=$withinBudget " +
+                "forceMetaRefresh=$forcedMetaRefresh " +
+                "(forced on startup and manual resync; otherwise the meta LRU serves the fetch)",
+        )
+    }
+
     /** Stages 5-7: the resolved card, its air-date inputs and the badge verdict. */
     fun logResolvedCard(
         contentId: String,

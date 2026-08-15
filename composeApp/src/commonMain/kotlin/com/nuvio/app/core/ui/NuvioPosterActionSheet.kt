@@ -21,13 +21,18 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,11 +64,16 @@ fun NuvioPosterZoomActionSheet(
     onDismiss: () -> Unit,
     onToggleLibrary: () -> Unit,
     onToggleWatched: () -> Unit,
+    onStartRewatch: (() -> Unit)? = null,
+    rewatchLabel: String = "",
     onOpenInLocalLibrary: (() -> Unit)? = null,
 ) {
     if (item == null) return
     NuvioPosterZoomActionOverlay(
         imageUrl = anchor?.imageUrl ?: item.poster,
+        // Without an anchor (keyboard/TV invocation) `item.poster` is the unresolved first choice,
+        // so it needs the same fallback the card would have used.
+        fallbackImageUrl = anchor?.fallbackImageUrl ?: item.posterFallback,
         title = item.name,
         subtitle = item.releaseInfo?.takeIf { it.isNotBlank() }?.let(::formatReleaseDateForDisplay)
             ?: item.type.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
@@ -77,6 +87,15 @@ fun NuvioPosterZoomActionSheet(
                     onSelected = onToggleLibrary,
                 ),
             )
+            onStartRewatch?.let { startRewatch ->
+                add(
+                    PosterZoomOverlayAction(
+                        icon = Icons.Default.Replay,
+                        label = rewatchLabel,
+                        onSelected = startRewatch,
+                    ),
+                )
+            }
             add(
                 PosterZoomOverlayAction(
                     icon = if (isWatched) Icons.Default.CheckCircle else Icons.Default.CheckCircleOutline,
@@ -108,6 +127,8 @@ fun NuvioPosterActionSheet(
     onDismiss: () -> Unit,
     onToggleLibrary: () -> Unit,
     onToggleWatched: () -> Unit,
+    onStartRewatch: (() -> Unit)? = null,
+    rewatchLabel: String = "",
     /**
      * Opens this title in the local library settings page. Null when it has no local copy, so the
      * row is only offered for titles that are actually on disk.
@@ -128,6 +149,8 @@ fun NuvioPosterActionSheet(
             onDismiss = onDismiss,
             onToggleLibrary = onToggleLibrary,
             onToggleWatched = onToggleWatched,
+            onStartRewatch = onStartRewatch,
+            rewatchLabel = rewatchLabel,
             onOpenInLocalLibrary = onOpenInLocalLibrary,
         )
         return
@@ -189,6 +212,19 @@ fun NuvioPosterActionSheet(
                     }
                 },
             )
+            onStartRewatch?.let { startRewatch ->
+                NuvioBottomSheetDivider()
+                NuvioBottomSheetActionRow(
+                    icon = Icons.Default.Replay,
+                    title = rewatchLabel,
+                    onClick = {
+                        startRewatch()
+                        coroutineScope.launch {
+                            dismissNuvioBottomSheet(sheetState = sheetState, onDismiss = onDismiss)
+                        }
+                    },
+                )
+            }
             onOpenInLocalLibrary?.let { openLocalLibrary ->
                 NuvioBottomSheetDivider()
                 NuvioBottomSheetActionRow(
@@ -265,6 +301,8 @@ private fun PosterSheetHeader(
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
     val tokens = MaterialTheme.nuvio
+    // Mirrors the shelf card's poster-service fallback — see PosterZoomAnchor.fallbackImageUrl.
+    var posterUrl by remember(item.poster, item.posterFallback) { mutableStateOf(item.poster) }
 
     Row(
         modifier = Modifier
@@ -280,12 +318,17 @@ private fun PosterSheetHeader(
                 .background(tokens.colors.surfaceCard),
             contentAlignment = Alignment.Center,
         ) {
-            if (item.poster != null) {
+            if (posterUrl != null) {
                 NuvioAsyncImage(
-                    model = item.poster,
+                    model = posterUrl,
                     contentDescription = item.name,
                     modifier = Modifier.matchParentSize(),
                     contentScale = ContentScale.Crop,
+                    onError = {
+                        if (item.posterFallback != null && posterUrl != item.posterFallback) {
+                            posterUrl = item.posterFallback
+                        }
+                    },
                 )
             } else {
                 Text(

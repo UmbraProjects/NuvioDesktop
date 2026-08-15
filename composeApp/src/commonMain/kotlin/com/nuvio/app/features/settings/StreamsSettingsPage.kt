@@ -48,6 +48,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.streams.STREAM_BADGE_IMPORT_LIMIT
 import com.nuvio.app.features.streams.StreamBadgeChip
 import com.nuvio.app.features.streams.StreamBadgeChipSize
@@ -240,7 +241,7 @@ private fun BadgeUrlManagerDialog(
                     draftUrl = it
                     errorMessage = null
                 },
-                modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
+                modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
                 label = { Text(stringResource(Res.string.settings_fusion_badge_url_label)) },
                 singleLine = false,
                 minLines = 2,
@@ -550,7 +551,7 @@ private fun SettingsDialogSurface(
     val tokens = MaterialTheme.nuvio
     NuvioDialogSurface(modifier = Modifier.fillMaxWidth(), shape = tokens.shapes.dialog) {
         Column(
-            modifier = Modifier.padding(tokens.spacing.dialogPadding),
+            modifier = Modifier.padding(start = tokens.spacing.dialogPadding, end = tokens.spacing.dialogPadding, top = tokens.spacing.dialogPadding, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
         ) {
             Text(

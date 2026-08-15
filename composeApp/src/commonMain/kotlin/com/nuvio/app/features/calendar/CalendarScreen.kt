@@ -166,7 +166,11 @@ fun CalendarScreen(
     // transition, covering both the normal (slow) and fast-back cases.
     LifecycleResumeEffect(Unit) {
         navigatingAway = false
-        onPauseOrDispose { }
+        onPauseOrDispose {
+            // Header/system Back does not pass through Calendar's key handler. Silence the focus
+            // keeper as soon as this destination starts leaving so it cannot steal focus from Home.
+            navigatingAway = true
+        }
     }
 
     // UTC "today", consistent with how the repository buckets entries.
@@ -272,7 +276,14 @@ fun CalendarScreen(
             title = stringResource(Res.string.calendar_title),
             includeStatusBarPadding = false,
             topPadding = 0.dp,
-            onBack = onBack,
+            onBack = onBack?.let { callback ->
+                {
+                    // Stop reclaiming focus immediately; lifecycle pause can arrive after the
+                    // navigation transition has already brought the destination on screen.
+                    navigatingAway = true
+                    callback()
+                }
+            },
         )
 
         Spacer(modifier = Modifier.height(8.dp))

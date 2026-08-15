@@ -13,4 +13,8 @@ sealed class HomeContentMode {
     object Normal : HomeContentMode()
     data class Search(val autoFocusCount: Int = 0) : HomeContentMode()
     object Library : HomeContentMode()
+    data class Catalogs(
+        val key: String,
+        val sections: List<HomeCatalogSection>,
+    ) : HomeContentMode()
 }

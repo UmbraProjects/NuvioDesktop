@@ -13,11 +13,15 @@ import kotlinx.serialization.json.Json
 private data class StoredContinueWatchingPreferences(
     val isVisible: Boolean = true,
     val style: ContinueWatchingSectionStyle = ContinueWatchingSectionStyle.Card,
+    @SerialName("click_action")
+    val clickAction: ContinueWatchingClickAction = ContinueWatchingClickAction.PLAY,
     val upNextFromFurthestEpisode: Boolean = true,
     @SerialName("use_episode_thumbnails_in_cw")
     val useEpisodeThumbnails: Boolean = true,
     @SerialName("show_unaired_next_up")
     val showUnairedNextUp: Boolean = true,
+    @SerialName("separate_next_up_row")
+    val separateNextUpRow: Boolean = false,
     val seedNextUpFromNuvioSync: Boolean = false,
     @SerialName("blur_continue_watching_next_up")
     val blurNextUp: Boolean = false,
@@ -94,9 +98,11 @@ object ContinueWatchingPreferencesRepository {
             ContinueWatchingPreferencesUiState(
                 isVisible = stored.isVisible,
                 style = stored.style,
+                clickAction = stored.clickAction,
                 upNextFromFurthestEpisode = stored.upNextFromFurthestEpisode,
                 useEpisodeThumbnails = stored.useEpisodeThumbnails,
                 showUnairedNextUp = stored.showUnairedNextUp,
+                separateNextUpRow = stored.separateNextUpRow,
                 seedNextUpFromNuvioSync = stored.seedNextUpFromNuvioSync,
                 blurNextUp = stored.blurNextUp,
                 dismissedNextUpKeys = stored.dismissedNextUpKeys,
@@ -117,6 +123,13 @@ object ContinueWatchingPreferencesRepository {
     fun setStyle(style: ContinueWatchingSectionStyle) {
         ensureLoaded()
         _uiState.value = _uiState.value.copy(style = style)
+        persist()
+    }
+
+    fun setClickAction(action: ContinueWatchingClickAction) {
+        ensureLoaded()
+        if (_uiState.value.clickAction == action) return
+        _uiState.value = _uiState.value.copy(clickAction = action)
         persist()
     }
 
@@ -141,6 +154,13 @@ object ContinueWatchingPreferencesRepository {
     fun setShowUnairedNextUp(enabled: Boolean) {
         ensureLoaded()
         _uiState.value = _uiState.value.copy(showUnairedNextUp = enabled)
+        persist()
+    }
+
+    fun setSeparateNextUpRow(enabled: Boolean) {
+        ensureLoaded()
+        if (_uiState.value.separateNextUpRow == enabled) return
+        _uiState.value = _uiState.value.copy(separateNextUpRow = enabled)
         persist()
     }
 
@@ -190,9 +210,11 @@ object ContinueWatchingPreferencesRepository {
                 StoredContinueWatchingPreferences(
                     isVisible = _uiState.value.isVisible,
                     style = _uiState.value.style,
+                    clickAction = _uiState.value.clickAction,
                     upNextFromFurthestEpisode = _uiState.value.upNextFromFurthestEpisode,
                     useEpisodeThumbnails = _uiState.value.useEpisodeThumbnails,
                     showUnairedNextUp = _uiState.value.showUnairedNextUp,
+                    separateNextUpRow = _uiState.value.separateNextUpRow,
                     seedNextUpFromNuvioSync = _uiState.value.seedNextUpFromNuvioSync,
                     blurNextUp = _uiState.value.blurNextUp,
                     dismissedNextUpKeys = _uiState.value.dismissedNextUpKeys,

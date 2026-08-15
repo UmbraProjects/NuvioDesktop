@@ -8,6 +8,7 @@ import com.nuvio.app.features.collection.CollectionSource
 import com.nuvio.app.features.collection.TmdbCollectionMediaType
 import com.nuvio.app.features.collection.TraktListSort
 import com.nuvio.app.features.collection.TraktSortHow
+import com.nuvio.app.features.collection.collectionAnimeType
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import io.ktor.http.encodeURLParameter
@@ -219,6 +220,12 @@ object TraktPublicListSourceResolver {
             rawReleaseDate = released,
             imdbRating = rating?.formatRating(),
             genres = genres.orEmpty(),
+            animeType = collectionAnimeType(
+                mediaType = TmdbCollectionMediaType.MOVIE,
+                genres = genres.orEmpty(),
+                originalLanguage = language,
+                originCountries = listOfNotNull(country),
+            ),
         )
     }
 
@@ -244,6 +251,12 @@ object TraktPublicListSourceResolver {
             rawReleaseDate = firstAired,
             imdbRating = rating?.formatRating(),
             genres = genres.orEmpty(),
+            animeType = collectionAnimeType(
+                mediaType = TmdbCollectionMediaType.TV,
+                genres = genres.orEmpty(),
+                originalLanguage = language,
+                originCountries = listOfNotNull(country),
+            ),
         )
     }
 
@@ -385,6 +398,8 @@ private data class PublicTraktMovieDto(
     val released: String? = null,
     val rating: Double? = null,
     val genres: List<String>? = null,
+    val language: String? = null,
+    val country: String? = null,
     val images: TraktImagesDto? = null,
 )
 
@@ -397,5 +412,7 @@ private data class PublicTraktShowDto(
     @SerialName("first_aired") val firstAired: String? = null,
     val rating: Double? = null,
     val genres: List<String>? = null,
+    val language: String? = null,
+    val country: String? = null,
     val images: TraktImagesDto? = null,
 )

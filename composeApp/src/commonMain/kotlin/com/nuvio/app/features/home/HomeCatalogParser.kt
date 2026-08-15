@@ -49,6 +49,7 @@ internal object HomeCatalogParser {
                     name = name,
                     poster = meta.string("poster"),
                     banner = meta.string("banner") ?: meta.string("background"),
+                    landscapePoster = meta.string("landscapePoster"),
                     logo = meta.string("logo"),
                     posterShape = meta.string("posterShape").toPosterShape(),
                     description = meta.string("description"),
@@ -63,6 +64,15 @@ internal object HomeCatalogParser {
                     cast = meta.stringListOrCsv("cast").ifEmpty {
                         meta.stringListOrCsv("actors")
                     }.map { name -> HeroCastMember(name = name) },
+                    defaultVideoId = (meta["behaviorHints"] as? JsonObject)
+                        ?.string("defaultVideoId")
+                        ?.takeIf(String::isNotBlank),
+                    animeType = (meta.string("animeType") ?: meta.string("anime_type"))
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank),
+                    carriesAnimeCatalogueId = ANIME_CATALOGUE_ID_FIELDS.any { field ->
+                        !meta.string(field).isNullOrBlank()
+                    },
                 )
                 if (seenKeys.add(item.stableKey())) {
                     add(item)
@@ -102,6 +112,24 @@ internal object HomeCatalogParser {
             else -> PosterShape.Poster
         }
 }
+
+/**
+ * Anime-catalogue ids as side fields. A Kitsu-backed meta carries `kitsu_id` next to `imdb_id`
+ * whichever of the two it is addressed by, so these keep saying "anime" after the primary id has
+ * been translated into a franchise namespace. Numbers and strings both read fine — the parser takes
+ * the primitive's content either way.
+ */
+private val ANIME_CATALOGUE_ID_FIELDS = listOf(
+    "kitsu_id",
+    "kitsuId",
+    "mal_id",
+    "malId",
+    "myanimelist_id",
+    "anilist_id",
+    "anilistId",
+    "anidb_id",
+    "anidbId",
+)
 
 data class ParsedCatalogResponse(
     val items: List<MetaPreview>,

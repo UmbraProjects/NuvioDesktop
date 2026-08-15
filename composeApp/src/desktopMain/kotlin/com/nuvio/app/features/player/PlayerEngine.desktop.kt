@@ -27,6 +27,7 @@ import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.player.desktop.DesktopAnimeShaders
 import com.nuvio.app.features.player.desktop.DesktopAnimeSvp
 import com.nuvio.app.features.player.desktop.DesktopCustomShaders
+import com.nuvio.app.features.player.desktop.DesktopWindowGeometryDiagnostics
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.DesktopPlayerLaunchShield
 import com.nuvio.app.features.player.desktop.NativePlayerController
@@ -198,7 +199,25 @@ private fun NativePlayerSurface(
         controller.setControlCallbacks(
             onAction = { action -> latestOnPlayerControlsAction.value(action) },
             onEvent = { type, value ->
-                if (type == "videoParams") {
+                if (type == "mediaPlay") {
+                    // Raised by the Windows media session (player_bridge.cpp), so these arrive
+                    // whether or not Nuvio has focus. SMTC gives us discrete Play/Pause rather
+                    // than one toggle, so honour the direction Windows asked for.
+                    controller.play()
+                    true
+                } else if (type == "mediaPause") {
+                    controller.pause()
+                    true
+                } else if (type == "mediaStop") {
+                    controller.pause()
+                    true
+                } else if (type == "mediaNext") {
+                    latestOnPlayerControlsEvent.value("nextEpisode", 0.0)
+                    true
+                } else if (type == "mediaPrevious") {
+                    latestOnPlayerControlsEvent.value("previousEpisode", 0.0)
+                    true
+                } else if (type == "videoParams") {
                     videoIsHdr.value = value != 0.0
                     true
                 } else if (type == "videoVsrScale") {
@@ -224,6 +243,16 @@ private fun NativePlayerSurface(
                     // native pre-roll transaction to the normal runtime profile owner.
                     videoPipelineReady.value = true
                     PlaybackStartTrace.complete("firstFrame")
+                    // Take the launch shield down as soon as there is a real frame behind it.
+                    // showForActiveWindow() re-arms a 3s fallback on every source change, but its
+                    // only early dismissal hangs off host.onFirstFullSizePaint, which fires once
+                    // per canvas peer — and an in-place source switch (next episode, source change)
+                    // reuses the same NativePlayerHost, so the canvas is never removed and that
+                    // callback never fires again. The shield then sat black over a playing file for
+                    // the full 3 seconds: audio running, frames rendering underneath, nothing
+                    // visible. This event is the frame-accurate signal the fallback was standing in
+                    // for. Harmless on a first load, where both paths simply restart the same timer.
+                    DesktopPlayerLaunchShield.hideAfter()
                     latestOnPlayerControlsEvent.value(type, value)
                     true
                 } else {
@@ -239,9 +268,15 @@ private fun NativePlayerSurface(
         PlayerShortcutsRepository.ensureLoaded()
         val dispatcher = KeyEventDispatcher { event ->
             if (event.id != KeyEvent.KEY_PRESSED) return@KeyEventDispatcher false
-            if (event.isMetaDown || event.isControlDown || event.isAltDown) return@KeyEventDispatcher false
+            if (event.isMetaDown || event.isControlDown || event.isAltDown || event.isShiftDown) {
+                return@KeyEventDispatcher false
+            }
             val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
             if (focusOwner is JTextComponent) return@KeyEventDispatcher false
+            // Media keys are deliberately NOT handled here. A KeyEventDispatcher only sees keys
+            // routed to a focused Nuvio window, which defeats the point of a media key; they are
+            // owned by the Windows media session in player_bridge.cpp and arrive as the
+            // "media*" events handled in setControlCallbacks above.
             val panelKey = when (event.keyCode) {
                 KeyEvent.VK_UP -> "ArrowUp"
                 KeyEvent.VK_DOWN -> "ArrowDown"
@@ -279,6 +314,7 @@ private fun NativePlayerSurface(
                 PlayerShortcutAction.SeekForward -> controller.dispatchKeyboardShortcut("keyboardSeekForward", 1.0)
                 PlayerShortcutAction.SpeedUp -> controller.dispatchKeyboardShortcut("keyboardSpeedStep", 1.0)
                 PlayerShortcutAction.SpeedDown -> controller.dispatchKeyboardShortcut("keyboardSpeedStep", -1.0)
+                PlayerShortcutAction.ToggleSpeed -> controller.dispatchKeyboardShortcut("keyboardSpeedToggle", 1.0)
                 PlayerShortcutAction.NextSubtitle -> controller.dispatchKeyboardShortcut("keyboardNextSubtitle", 1.0)
                 PlayerShortcutAction.NextAudio -> controller.dispatchKeyboardShortcut("keyboardNextAudio", 1.0)
                 PlayerShortcutAction.OpenSources -> controller.openKeyboardPanel("sources")
@@ -347,6 +383,11 @@ private fun NativePlayerSurface(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl,
             sourceHeaders = playbackHeaders,
+            mediaTitle = preferredMpvMediaTitle(
+                streamTitle = playerControlsState.streamTitle,
+                title = playerControlsState.title,
+                episodeText = playerControlsState.episodeText,
+            ),
             playWhenReady = playWhenReady,
             initialPositionMs = initialPositionMs,
             initialProgressFraction = initialProgressFraction ?: 0f,
@@ -517,6 +558,18 @@ private fun NativePlayerSurface(
                 delay(150)
                 controller.forceVideoRedraw()
             }
+    }
+
+    // Companion to the fullscreen sampling in Main.kt: that one runs before playback starts, so the
+    // native video surface isn't in the component tree yet. Sampling again once it has painted at
+    // full size shows whether the surface actually covers the window it was given — the edge strips
+    // in the "white lines / black bars in fullscreen" report are whatever the surface leaves bare.
+    LaunchedEffect(host, hostFirstFullSizePaintComplete.value) {
+        if (!hostFirstFullSizePaintComplete.value) return@LaunchedEffect
+        delay(750)
+        javax.swing.SwingUtilities.getWindowAncestor(host)?.let { window ->
+            DesktopWindowGeometryDiagnostics.log(window, "player surface painted")
+        }
     }
 
     LaunchedEffect(controller, playbackAttemptId, sourceUrl) {

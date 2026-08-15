@@ -27,6 +27,15 @@ internal fun LazyListScope.randomPlaySettingsContent(
                     onCheckedChange = HomeCatalogSettingsRepository::setRandomPlayEnabled,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.random_play_include_collections),
+                    description = stringResource(Res.string.random_play_include_collections_description),
+                    checked = settings.randomPlayIncludeCollections,
+                    enabled = settings.randomPlayEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = HomeCatalogSettingsRepository::setRandomPlayIncludeCollections,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
                 SettingsChoiceRow(
                     title = stringResource(Res.string.random_play_click_action),
                     description = stringResource(Res.string.random_play_click_action_description),

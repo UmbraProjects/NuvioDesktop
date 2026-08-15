@@ -60,7 +60,7 @@ import com.nuvio.app.core.ui.NuvioIconActionButton
 import com.nuvio.app.core.ui.NuvioInfoBadge
 import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioPrimaryButton
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.core.ui.NuvioSectionLabel
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.core.ui.nuvio
@@ -828,7 +828,7 @@ private fun DesktopPluginSearchField(
                     .weight(1f)
                     .focusRequester(focusRequester)
                     .onFocusChanged { focused = it.isFocused }
-                    .trackSettingsTextFocus(),
+                    .trackTextInputFocus(),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.colors.textPrimary),
                 cursorBrush = SolidColor(tokens.colors.accent),

@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.streams.StreamCard
@@ -229,15 +230,26 @@ fun PlayerSourcesPanel(
                                     currentName = currentStreamName,
                                 )
                                 val streams = prioritizeCurrentItem(allStreams) { it === currentStream }
+                                // Keys describe the row, not its position: sources keep arriving
+                                // while the panel is open, and an index in the key made every
+                                // arrival re-key the whole list and jerk the scroll position.
+                                // Duplicate identities still have to be split apart — a repeated
+                                // key crashes the app — so collisions take an occurrence suffix.
+                                val streamKeys = remember(streams) {
+                                    streams.withDuplicateSafeLazyKeys { stream ->
+                                        "${stream.addonId}::${stream.url ?: stream.infoHash ?: stream.clientResolve?.infoHash ?: stream.name}"
+                                    }
+                                }
                                 LazyColumn(
                                     modifier = Modifier.padding(horizontal = tokens.spacing.cardPadding),
                                     verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6),
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = tokens.spacing.cardPadding),
                                 ) {
-                                    itemsIndexed(
-                                        items = streams,
-                                        key = { index, stream -> "${stream.addonId}::${index}::${stream.url ?: stream.infoHash ?: stream.clientResolve?.infoHash ?: stream.name}" },
-                                    ) { _, stream ->
+                                    items(
+                                        items = streamKeys,
+                                        key = { it.lazyKey },
+                                    ) { entry ->
+                                        val stream = entry.value
                                         val isCurrent = stream === currentStream
                                         StreamCard(
                                             stream = stream,

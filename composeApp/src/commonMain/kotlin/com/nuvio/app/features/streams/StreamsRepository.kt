@@ -177,14 +177,18 @@ object StreamsRepository {
             parentMetaId?.let { BingeGroupCacheRepository.get(it) }
         } else null
 
-        // Enable direct auto-play flow if normal auto-play is enabled,
-        // OR if we have a persisted binge group in MANUAL mode
-        val bingeGroupDirectFlow = !manualSelection &&
-            persistedBingeGroup != null &&
-            autoPlayMode == StreamAutoPlayMode.MANUAL
         // A local file reached from Home/Search is an additional source, not a silent override
         // for add-on streams. Keep the picker open so the user can choose between them.
-        val isDirectAutoPlayFlow = !includeLocalInPicker && (isAutoPlayEnabled || bingeGroupDirectFlow)
+        //
+        // A persisted binge group used to force this flow on in MANUAL mode too. That defeated the
+        // one setting whose whole meaning is "always let me choose", and because the binge cache is
+        // keyed per show it only fired on titles played before — so Continue Watching auto-played
+        // some entries and opened the picker for others, with nothing on screen to explain the
+        // difference. Both binge toggles default to on while the mode defaults to MANUAL, so this
+        // hit a default install. Binge affinity still orders the picker and still drives the
+        // in-player next-episode pick (PlayerNextEpisodeAutoPlay, which uses PlayerStreamsRepository
+        // and is untouched by this); it just no longer starts playback by itself.
+        val isDirectAutoPlayFlow = !includeLocalInPicker && isAutoPlayEnabled
 
         if (isDirectAutoPlayFlow) {
             _uiState.value = StreamsUiState(

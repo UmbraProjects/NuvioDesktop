@@ -1,5 +1,6 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.features.player.PlayerSettingsUiState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -124,9 +125,28 @@ class StreamScoredAutoPlayTest {
         assertTrue(StreamAutoPlayPolicy.scoreOverridesBingeGroup(StreamAutoPlayMode.SCORED, overriding))
         // Not selected as the mode → the profile is not choosing, so binge affinity still rules.
         assertFalse(StreamAutoPlayPolicy.scoreOverridesBingeGroup(StreamAutoPlayMode.FIRST_STREAM, overriding))
-        // MANUAL means never pick for me; a persisted binge group is the only thing that auto-plays
-        // there, and taking it away would leave nothing.
+        // MANUAL means never pick for me, so nothing auto-plays there and there is no pick for
+        // scoring to take away from binge affinity.
         assertFalse(StreamAutoPlayPolicy.scoreOverridesBingeGroup(StreamAutoPlayMode.MANUAL, overriding))
+    }
+
+    @Test
+    fun theBingeGroupTogglesDoNotAutoPlayInManualMode() {
+        // Both default to on while the mode defaults to MANUAL, so treating them as auto-play made
+        // a stock install start playback from Continue Watching on any show it had a cached binge
+        // group for — and open the picker for every other one.
+        val settings = PlayerSettingsUiState(
+            streamAutoPlayMode = StreamAutoPlayMode.MANUAL,
+            streamAutoPlayPreferBingeGroup = true,
+            streamAutoPlayReuseBingeGroup = true,
+        )
+        assertFalse(StreamAutoPlayPolicy.isEffectivelyEnabled(settings))
+        // Reuse Last Link is the one that does say "auto-play" on the tin.
+        assertTrue(
+            StreamAutoPlayPolicy.isEffectivelyEnabled(
+                settings.copy(streamReuseLastLinkEnabled = true),
+            ),
+        )
     }
 
     @Test

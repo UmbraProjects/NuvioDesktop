@@ -19,6 +19,7 @@ import com.nuvio.app.features.watched.toWatchedItem
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
+import com.nuvio.app.features.simkl.SimklRewatchRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -145,6 +146,7 @@ object WatchingActions {
         // `syncRemote` is what separates playback the user just finished here from progress
         // reconstructed out of a remote snapshot. Only the former should ask for a rating.
         if (!syncRemote) return
+        SimklRewatchRepository.onPlaybackCompleted(entry)
         if (!entry.isEpisode) {
             offerRatingPrompt(
                 contentId = entry.parentMetaId,

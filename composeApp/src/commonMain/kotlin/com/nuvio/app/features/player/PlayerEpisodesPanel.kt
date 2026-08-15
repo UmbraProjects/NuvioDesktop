@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioTokens
+import com.nuvio.app.core.ui.desktopHorizontalListNavigation
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.details.MetaVideo
@@ -288,6 +289,10 @@ private fun EpisodesListSubView(
                 state = seasonListState,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .desktopHorizontalListNavigation(
+                        state = seasonListState,
+                        treatPlainScrollAsHorizontal = true,
+                    )
                     .padding(horizontal = tokens.spacing.sheetPadding)
                     .padding(bottom = tokens.spacing.listGap),
                 horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),

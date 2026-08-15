@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.animateDpAsState
 import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.core.ui.NuvioSurfaceCard
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableCollectionItemScope
@@ -195,7 +195,7 @@ internal fun CollectionImportDialog(
         onDismissRequest = onDismiss,
     ) {
         NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp)) {
                 Text(
                     text = stringResource(Res.string.collections_import_header),
                     style = MaterialTheme.typography.titleLarge,
@@ -214,7 +214,7 @@ internal fun CollectionImportDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(160.dp)
-                        .trackSettingsTextFocus(),
+                        .trackTextInputFocus(),
                     placeholder = {
                         Text(
                             stringResource(Res.string.collections_import_json_placeholder),

@@ -51,7 +51,7 @@ fun ApiKeysOnboardingHost(modifier: Modifier = Modifier) {
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)) {
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(

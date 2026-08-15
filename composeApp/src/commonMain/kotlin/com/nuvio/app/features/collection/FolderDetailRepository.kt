@@ -295,6 +295,7 @@ object FolderDetailRepository {
                     }
 
                     is CatalogTarget.Library -> false
+                    null -> false
                 }
         }
         if (tabIndex >= 0) {

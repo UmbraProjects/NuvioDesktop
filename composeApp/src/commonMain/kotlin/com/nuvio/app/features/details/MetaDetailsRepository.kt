@@ -520,6 +520,11 @@ object MetaDetailsRepository {
             )
             else -> (tvdbResult ?: tmdbResult)?.let { img ->
                 img.copy(
+                    // The TVDB branch above is an artwork carrier: it names itself from the addon
+                    // result, so with no addon result its name is empty. Callers treat this as the
+                    // title of the thing, so take the one source here that has a real name rather
+                    // than answering with a nameless title.
+                    name = img.name.takeIf { it.isNotBlank() } ?: tmdbResult?.name.orEmpty(),
                     background = tvdbResult?.background ?: explicitMetahubBackground ?: tmdbResult?.background,
                     logo = tvdbResult?.logo ?: explicitMetahubLogo ?: tmdbResult?.logo
                 )
@@ -546,6 +551,7 @@ object MetaDetailsRepository {
     private const val FETCH_TIMEOUT_MS = 5_000L
     private const val TMDB_ENRICH_TIMEOUT_MS = 5_000L
     private const val MDBLIST_ENRICH_TIMEOUT_MS = 5_000L
+    private const val LOGO_FALLBACK_TIMEOUT_MS = 5_000L
 
     private suspend fun tryFetchMeta(
         manifest: AddonManifest,
@@ -752,9 +758,46 @@ object MetaDetailsRepository {
             }
         }
 
+        val resolvedLogo = (tvdbResult?.logo ?: explicitMetahubLogo ?: moreLikeThisEnrichedMeta.logo)
+            ?.takeIf { it.isNotBlank() }
+
+        // Every source above can come up empty for reasons unrelated to the title actually lacking
+        // artwork: TMDB enrichment dropped by its 5s timeout or by the artwork toggle, or an addon
+        // that carried the logo but no episode list — mergeSupplementalMeta keeps only its trailers
+        // and links, so its images are discarded. The home hero resolves logos through
+        // fetchLightweightMeta and hits none of those, which is why a details page can show the
+        // title while the hero for the same item shows a logo. Reuse what that path already found
+        // rather than declaring the item logo-less. Its result is cached per id (and the home hero
+        // normally warmed it with these exact arguments), so this is usually a map read.
+        val fallbackLogo = if (resolvedLogo == null) {
+            runCatching {
+                withTimeoutOrNull(LOGO_FALLBACK_TIMEOUT_MS) {
+                    fetchLightweightMeta(
+                        type = fallbackItemType,
+                        id = fallbackItemId,
+                        preferTmdbImages = true,
+                    )
+                }?.logo?.takeIf { it.isNotBlank() }
+            }.getOrNull()
+        } else {
+            null
+        }
+
+        val finalLogo = resolvedLogo ?: fallbackLogo
+        log.d {
+            val source = when {
+                tvdbResult?.logo != null -> "tvdb"
+                explicitMetahubLogo != null -> "metahub"
+                resolvedLogo != null -> "addon/tmdb"
+                fallbackLogo != null -> "lightweight-fallback"
+                else -> "none"
+            }
+            "Detail logo for $fallbackItemId: source=$source url=${finalLogo?.substringBefore('?')?.take(500)}"
+        }
+
         val enrichedMeta = moreLikeThisEnrichedMeta.copy(
             background = meta.background ?: tvdbResult?.background ?: explicitMetahubBackground ?: moreLikeThisEnrichedMeta.background,
-            logo = tvdbResult?.logo ?: explicitMetahubLogo ?: moreLikeThisEnrichedMeta.logo,
+            logo = finalLogo,
         )
 
         cachedMetaByRequestKey[requestKey] = cachedMetaByRequestKey[requestKey]

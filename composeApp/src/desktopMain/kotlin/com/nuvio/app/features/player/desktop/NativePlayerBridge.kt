@@ -54,6 +54,21 @@ internal object NativePlayerBridge {
     external fun requestSeekThumbnail(handle: Long, positionMs: Long)
     external fun setCursorHidden(handle: Long, hidden: Boolean)
     external fun setPaused(handle: Long, paused: Boolean)
+
+    /** Title/subtitle/artwork shown in the Windows volume-flyout media widget for this session. */
+    external fun setMediaSessionMetadata(
+        handle: Long,
+        title: String,
+        subtitle: String,
+        artworkUrl: String,
+    )
+
+    /**
+     * Registers the process AppUserModelID and the matching Start Menu shortcut, without which
+     * Windows labels the media session "Unknown app" and shows no icon. Call once at startup.
+     */
+    external fun initializeAppIdentity()
+
     external fun completeSvpStartupProfile(handle: Long)
     external fun seekTo(handle: Long, positionMs: Long)
     external fun seekBy(handle: Long, offsetMs: Long)

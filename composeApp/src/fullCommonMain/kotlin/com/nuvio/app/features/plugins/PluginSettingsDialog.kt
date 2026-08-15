@@ -34,7 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.nuvio.app.core.ui.NuvioInputField
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -145,7 +145,7 @@ private fun PluginTextSetting(
             value = settings[key]?.jsonPrimitive?.contentOrNull.orEmpty(),
             onValueChange = { settings[key] = JsonPrimitive(it) },
             placeholder = field["placeholder"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            modifier = Modifier.trackSettingsTextFocus(),
+            modifier = Modifier.trackTextInputFocus(),
         )
         PluginSettingDescription(description)
     }

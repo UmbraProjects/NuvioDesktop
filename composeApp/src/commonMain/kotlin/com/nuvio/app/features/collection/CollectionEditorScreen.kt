@@ -64,7 +64,7 @@ import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.NuvioSectionLabel
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.PlatformBackHandler
@@ -196,7 +196,7 @@ fun CollectionEditorScreen(
                     value = state.title,
                     onValueChange = { CollectionEditorRepository.setTitle(it) },
                     placeholder = stringResource(Res.string.collections_editor_placeholder_name),
-                    modifier = Modifier.trackSettingsTextFocus(),
+                    modifier = Modifier.trackTextInputFocus(),
                 )
             }
 
@@ -205,7 +205,7 @@ fun CollectionEditorScreen(
                     value = state.backdropImageUrl,
                     onValueChange = { CollectionEditorRepository.setBackdropImageUrl(it) },
                     placeholder = stringResource(Res.string.collections_editor_placeholder_backdrop),
-                    modifier = Modifier.trackSettingsTextFocus(),
+                    modifier = Modifier.trackTextInputFocus(),
                 )
             }
 
@@ -599,7 +599,7 @@ private fun FolderEditorPage(
                             value = folder.title,
                             onValueChange = { CollectionEditorRepository.updateFolderTitle(it) },
                             placeholder = stringResource(Res.string.collections_editor_placeholder_folder),
-                            modifier = Modifier.trackSettingsTextFocus(),
+                            modifier = Modifier.trackTextInputFocus(),
                         )
                     }
                 }
@@ -651,7 +651,7 @@ private fun FolderEditorPage(
                                     value = folder.coverEmoji,
                                     onValueChange = { CollectionEditorRepository.updateFolderCoverEmoji(it) },
                                     placeholder = stringResource(Res.string.collections_editor_cover_emoji),
-                                    modifier = Modifier.width(100.dp).trackSettingsTextFocus(),
+                                    modifier = Modifier.width(100.dp).trackTextInputFocus(),
                                 )
                             }
 
@@ -660,7 +660,7 @@ private fun FolderEditorPage(
                                     value = folder.coverImageUrl,
                                     onValueChange = { CollectionEditorRepository.updateFolderCoverImage(it) },
                                     placeholder = stringResource(Res.string.collections_editor_cover_image_url),
-                                    modifier = Modifier.trackSettingsTextFocus(),
+                                    modifier = Modifier.trackTextInputFocus(),
                                 )
                             }
 
@@ -668,7 +668,7 @@ private fun FolderEditorPage(
                                 value = folder.focusGifUrl.orEmpty(),
                                 onValueChange = { CollectionEditorRepository.updateFolderFocusGifUrl(it) },
                                 placeholder = stringResource(Res.string.collections_editor_placeholder_gif),
-                                modifier = Modifier.trackSettingsTextFocus(),
+                                modifier = Modifier.trackTextInputFocus(),
                             )
                         }
                     }

@@ -4,7 +4,11 @@ import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.locallibrary.LocalMediaItem
+import com.nuvio.app.features.mdblist.MdbListSettingsRepository
+import com.nuvio.app.features.metadata.AnimeIdMappingRepository
+import com.nuvio.app.features.metadata.isAnimeNativeId
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import com.nuvio.app.features.tmdb.customPosterTemplateUsesNativeAnimeId
 import com.nuvio.app.features.tmdb.customPosterUrl
 import kotlinx.serialization.Serializable
 
@@ -28,6 +32,9 @@ data class LibraryItem(
     val imdbId: String? = null,
     val tmdbId: Int? = null,
     val traktId: Int? = null,
+    val anilistId: Int? = null,
+    val kitsuId: Int? = null,
+    val malId: Int? = null,
     // Bumped when the user asks to refresh this item's poster; appended as a URL fragment so the
     // image loader re-requests even the poster-service (PostersPlus/RPDB) URL, which is keyed by id.
     val posterRefreshToken: Long? = null,
@@ -97,8 +104,9 @@ fun MetaPreview.toLibraryItem(savedAtEpochMs: Long): LibraryItem =
         savedAtEpochMs = savedAtEpochMs,
     )
 
-fun LocalMediaItem.toLibraryItem(): LibraryItem =
-    LibraryItem(
+fun LocalMediaItem.toLibraryItem(): LibraryItem {
+    val animeIds = AnimeIdMappingRepository.entryForNativeIds(kitsu = kitsuId, mal = malId)
+    return LibraryItem(
         id = contentId,
         type = contentType,
         name = title,
@@ -108,12 +116,16 @@ fun LocalMediaItem.toLibraryItem(): LibraryItem =
         posterShape = PosterShape.Poster,
         imdbId = imdbId,
         tmdbId = tmdbId,
+        anilistId = animeIds?.anilistId,
+        kitsuId = kitsuId ?: animeIds?.kitsuId,
+        malId = malId ?: animeIds?.malId,
         posterRefreshToken = posterRefreshToken,
         savedAtEpochMs = 0L,
     )
+}
 
 fun LibraryItem.toMetaPreview(): MetaPreview {
-    val resolvedPoster = resolveLibraryPosterUrl(id = id, type = type, fallback = poster, refreshToken = posterRefreshToken)
+    val resolvedPoster = resolveLibraryPosterUrl()
     val resolvedFallback = poster.withPosterRefreshToken(posterRefreshToken)
     return MetaPreview(
         id = id,
@@ -150,20 +162,45 @@ private fun String?.takeIfProviderArt(): String? = this?.takeIf { url ->
 /**
  * Routes a library item's poster through the user's custom poster service when configured.
  *
- * The library isn't catalog-backed, so its posters are plain TMDB images. When a poster
- * template is set (e.g. PostersPlus / RPDB / a self-hosted service), this substitutes the
- * item's ids and type into the template. Placeholders: {imdb_id}, {tmdb_id}, {type}.
- * Whichever id the item lacks is substituted as empty (the service template decides what it
- * needs); if the item has no usable IMDb/TMDB id at all, the original poster is kept.
+ * The library isn't catalog-backed, so its posters are plain TMDB images. When a poster template is
+ * set (e.g. PostersPlus / RPDB / a self-hosted service), this substitutes the item's ids and type
+ * into it. Placeholders include the raw Stremio {id}, {imdb_id}, {tmdb_id}, {anilist_id},
+ * {kitsu_id}, {mal_id}, and {type}. A strict template placeholder naming an id this item does not
+ * have yields no URL and the original poster is kept; optional `{id?}` placeholders are replaced
+ * with an empty value — see [customPosterUrl].
+ *
+ * Both ids come from the item's own fields first, and only then from its content id. A content id
+ * is *either* a `tt…` or a `tmdb:…`, never both, so parsing it was structurally unable to fill a
+ * template that names both — which is every PostersPlus query-form template, and why they answered
+ * 400 to every library poster while a single-placeholder path template worked fine.
+ *
+ * Native anime ids continue to opt out for templates that only use IMDb/TMDB ids because those ids
+ * can describe a whole franchise rather than this item. Templates naming the raw Stremio id opt in
+ * and receive values such as `kitsu:395`; the older split AniList/Kitsu/MAL placeholders remain
+ * supported for other poster services.
  */
-private fun resolveLibraryPosterUrl(id: String, type: String, fallback: String?, refreshToken: Long?): String? {
-    val custom = customPosterUrl(
-        settings = TmdbSettingsRepository.snapshot(),
-        imdbId = id.takeIf { it.startsWith("tt") },
-        tmdbId = if (id.startsWith("tmdb:")) id.removePrefix("tmdb:").substringBefore(":") else null,
-        type = type,
-    )
-    return (custom ?: fallback).withPosterRefreshToken(refreshToken)
+private fun LibraryItem.resolveLibraryPosterUrl(): String? {
+    val settings = TmdbSettingsRepository.snapshot()
+    val custom = if (id.isAnimeNativeId() && !settings.customPosterTemplateUsesNativeAnimeId()) {
+        null
+    } else {
+        customPosterUrl(
+            settings = settings,
+            imdbId = imdbId?.takeIf { it.isNotBlank() } ?: id.takeIf { it.startsWith("tt") },
+            tmdbId = tmdbId?.toString()
+                ?: id.takeIf { it.startsWith("tmdb:") }?.removePrefix("tmdb:")?.substringBefore(":"),
+            type = type,
+            stremioId = id,
+            anilistId = anilistId?.toString()
+                ?: id.takeIf { it.startsWith("anilist:") }?.removePrefix("anilist:")?.substringBefore(":"),
+            kitsuId = kitsuId?.toString()
+                ?: id.takeIf { it.startsWith("kitsu:") }?.removePrefix("kitsu:")?.substringBefore(":"),
+            malId = malId?.toString()
+                ?: id.takeIf { it.startsWith("mal:") }?.removePrefix("mal:")?.substringBefore(":"),
+            mdbListApiKey = MdbListSettingsRepository.snapshot().apiKey,
+        )
+    }
+    return (custom ?: poster).withPosterRefreshToken(posterRefreshToken)
 }
 
 /**

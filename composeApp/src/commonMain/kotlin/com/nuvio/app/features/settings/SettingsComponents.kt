@@ -65,6 +65,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -83,6 +84,7 @@ import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.nuvioConsumePointerEvents
 import com.nuvio.app.core.ui.nuvioTypeScale
 import com.nuvio.app.core.ui.secondaryClick
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogMarkerColor
 import com.nuvio.app.features.home.composeColor
@@ -106,6 +108,8 @@ import nuvio.composeapp.generated.resources.settings_homescreen_reorder
 import nuvio.composeapp.generated.resources.settings_homescreen_visible
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableCollectionItemScope
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 internal data class SettingsChoiceOption<T>(
     val value: T,
@@ -134,6 +138,150 @@ internal fun settingsSliderColors() = SliderDefaults.colors(
     disabledInactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
 )
 
+/** Thumb radius shared by the settings sliders. The track is inset by it at both ends. */
+private val SettingsSliderThumbRadius = 9.dp
+
+/**
+ * The value under [x] on a track inset by [thumbRadiusPx] at each end.
+ *
+ * Shared by both settings sliders because both draw that inset: mapping the pointer across the full
+ * width instead made the rendered endpoints unreachable — grabbing the thumb exactly at maximum
+ * reported a value one thumb-radius short of it, and the drawn position then jumped away from the
+ * cursor. Fraction is measured over the same `trackStart`..`trackEnd` span the Canvas draws.
+ *
+ * Step selection rounds rather than truncating; `toInt()` biased every stepped slider downward and
+ * made the top step reachable only at the exact final pixel.
+ */
+internal fun settingsSliderValueForX(
+    x: Float,
+    widthPx: Int,
+    thumbRadiusPx: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+): Float {
+    val trackStart = thumbRadiusPx
+    val trackEnd = (widthPx.toFloat() - thumbRadiusPx).coerceAtLeast(trackStart)
+    val trackSpan = (trackEnd - trackStart).takeIf { it > 0f } ?: 1f
+    val fraction = ((x - trackStart) / trackSpan).coerceIn(0f, 1f)
+    val valueSpan = valueRange.endInclusive - valueRange.start
+    val resolvedFraction = if (steps <= 0) {
+        fraction
+    } else {
+        val totalIntervals = steps + 1
+        (fraction * totalIntervals).roundToInt().coerceIn(0, totalIntervals).toFloat() / totalIntervals
+    }
+    return (valueRange.start + valueSpan * resolvedFraction)
+        .coerceIn(valueRange.start, valueRange.endInclusive)
+}
+
+/**
+ * Two-thumb sibling of [SettingsModernSlider], drawn the same way so a range row sits alongside the
+ * single-value rows without looking like a different control. Material3's `RangeSlider` is not used
+ * for exactly that reason — the settings pages draw their own track.
+ *
+ * The thumb nearest the press is captured for the whole drag, so a thumb stays grabbed even when
+ * the pointer crosses the other one. Ordering and minimum separation are the caller's to enforce in
+ * [onValueChange]; this only reports what the user dragged to.
+ */
+@Composable
+internal fun SettingsModernRangeSlider(
+    lowValue: Float,
+    highValue: Float,
+    onValueChange: (low: Float, high: Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    steps: Int = 0,
+    onValueChangeFinished: () -> Unit = {},
+) {
+    val tokens = MaterialTheme.nuvio
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
+    val currentLow by rememberUpdatedState(lowValue)
+    val currentHigh by rememberUpdatedState(highValue)
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    // Which thumb the active drag owns. Set on press, held until release, so crossing the other
+    // thumb mid-drag doesn't hand the gesture over to it.
+    var draggingHighThumb by remember { mutableStateOf(false) }
+    val thumbRadiusPx = with(LocalDensity.current) { SettingsSliderThumbRadius.toPx() }
+
+    fun valueFromX(x: Float): Float = settingsSliderValueForX(
+        x = x,
+        widthPx = size.width.coerceAtLeast(1),
+        thumbRadiusPx = thumbRadiusPx,
+        valueRange = valueRange,
+        steps = steps,
+    )
+
+    fun reportDragTo(x: Float) {
+        val dragged = valueFromX(x)
+        if (draggingHighThumb) {
+            currentOnValueChange(currentLow, dragged)
+        } else {
+            currentOnValueChange(dragged, currentHigh)
+        }
+    }
+
+    val span = (valueRange.endInclusive - valueRange.start).takeIf { it != 0f } ?: 1f
+    val lowProgress = ((lowValue - valueRange.start) / span).coerceIn(0f, 1f)
+    val highProgress = ((highValue - valueRange.start) / span).coerceIn(0f, 1f)
+    val activeColor = tokens.colors.accent
+    val inactiveColor = tokens.colors.borderDefault.copy(alpha = 0.72f)
+
+    Box(
+        modifier = modifier
+            .height(28.dp)
+            .alpha(if (enabled) 1f else tokens.opacity.medium)
+            .onGloballyPositioned { size = it.size }
+            // Same caveat as SettingsModernSlider: keying this to the measured size would cancel an
+            // in-flight mouse gesture on recomposition and freeze the thumb until release.
+            .pointerInput(enabled, valueRange.start, valueRange.endInclusive, steps) {
+                if (!enabled) return@pointerInput
+                detectDragGestures(
+                    onDragEnd = { currentOnValueChangeFinished() },
+                    onDragCancel = { currentOnValueChangeFinished() },
+                    onDragStart = { offset ->
+                        val pressed = valueFromX(offset.x)
+                        draggingHighThumb =
+                            abs(pressed - currentHigh) <= abs(pressed - currentLow)
+                        reportDragTo(offset.x)
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        reportDragTo(change.position.x)
+                    },
+                )
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Canvas(modifier = Modifier.fillMaxWidth().height(24.dp)) {
+            val centerY = size.height / 2f
+            val thumbRadius = SettingsSliderThumbRadius.toPx()
+            val trackStart = thumbRadius
+            val trackEnd = (size.width.toFloat() - thumbRadius).coerceAtLeast(trackStart)
+            val lowX = trackStart + (trackEnd - trackStart) * lowProgress
+            val highX = trackStart + (trackEnd - trackStart) * highProgress
+            drawLine(
+                color = inactiveColor,
+                start = Offset(trackStart, centerY),
+                end = Offset(trackEnd, centerY),
+                strokeWidth = 3.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+            // Only the span between the thumbs is active: that band is the setting.
+            drawLine(
+                color = activeColor,
+                start = Offset(lowX, centerY),
+                end = Offset(highX, centerY),
+                strokeWidth = 3.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+            drawCircle(color = activeColor, radius = thumbRadius, center = Offset(lowX, centerY))
+            drawCircle(color = activeColor, radius = thumbRadius, center = Offset(highX, centerY))
+        }
+    }
+}
+
 @Composable
 internal fun SettingsModernSlider(
     value: Float,
@@ -148,18 +296,15 @@ internal fun SettingsModernSlider(
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
     var size by remember { mutableStateOf(IntSize.Zero) }
-    fun valueFromX(x: Float): Float {
-        val width = size.width.coerceAtLeast(1).toFloat()
-        val fraction = (x / width).coerceIn(0f, 1f)
-        val raw = valueRange.start + (valueRange.endInclusive - valueRange.start) * fraction
-        if (steps <= 0) return raw.coerceIn(valueRange.start, valueRange.endInclusive)
-        val totalIntervals = steps + 1
-        val snappedFraction = (fraction * totalIntervals).toInt()
-            .coerceIn(0, totalIntervals)
-            .toFloat() / totalIntervals
-        return (valueRange.start + (valueRange.endInclusive - valueRange.start) * snappedFraction)
-            .coerceIn(valueRange.start, valueRange.endInclusive)
-    }
+    val thumbRadiusPx = with(LocalDensity.current) { SettingsSliderThumbRadius.toPx() }
+
+    fun valueFromX(x: Float): Float = settingsSliderValueForX(
+        x = x,
+        widthPx = size.width.coerceAtLeast(1),
+        thumbRadiusPx = thumbRadiusPx,
+        valueRange = valueRange,
+        steps = steps,
+    )
 
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
     val progress = if (valueRange.endInclusive == valueRange.start) {
@@ -194,7 +339,7 @@ internal fun SettingsModernSlider(
     ) {
         Canvas(modifier = Modifier.fillMaxWidth().height(24.dp)) {
             val centerY = size.height / 2f
-            val thumbRadius = 9.dp.toPx()
+            val thumbRadius = SettingsSliderThumbRadius.toPx()
             val trackStart = thumbRadius
             val trackEnd = (size.width.toFloat() - thumbRadius).coerceAtLeast(trackStart)
             val thumbX = trackStart + (trackEnd - trackStart) * progress
@@ -1155,7 +1300,7 @@ internal fun HomescreenCatalogRow(
                 OutlinedTextField(
                     value = item.customTitle,
                     onValueChange = onTitleChange,
-                    modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
+                    modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
                     singleLine = true,
                     label = { Text(stringResource(Res.string.settings_homescreen_display_name)) },
                     placeholder = { Text(item.defaultTitle) },

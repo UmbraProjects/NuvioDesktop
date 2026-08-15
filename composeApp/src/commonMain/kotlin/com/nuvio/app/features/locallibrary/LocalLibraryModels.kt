@@ -1,5 +1,7 @@
 package com.nuvio.app.features.locallibrary
 
+import com.nuvio.app.features.metadata.AnimeIdPreference
+import com.nuvio.app.features.metadata.AnimeIdPreferenceRepository
 import kotlinx.serialization.Serializable
 
 /**
@@ -95,7 +97,47 @@ enum class LocalLibraryPlaybackPreference {
      */
     fun canOfferAlternate(hasLocalFile: Boolean): Boolean =
         this == LOCAL_LIBRARY || hasLocalFile
+
+    /**
+     * Resolves the complete click-time route in one place.
+     *
+     * A completed download and a scanned local-library stream are two representations of the same
+     * local source. Keeping their booleans separate in App.kt allowed the early completed-download
+     * shortcut to drift away from the source-picker decision. In particular, a stale composable
+     * callback could still enter the shortcut after the preference had changed to [SOURCE_PICKER].
+     * The caller now reads the repository's live preference and this decision makes it impossible
+     * to both request the picker and directly open a completed file.
+     */
+    fun resolvePlaybackRouting(
+        useAlternate: Boolean,
+        hasDownloadedFile: Boolean,
+        hasLocalLibraryStream: Boolean,
+    ): LocalPlaybackRoutingDecision {
+        val hasLocalPlayback = hasDownloadedFile || hasLocalLibraryStream
+        val requested = behaviorFor(useAlternate)
+        val manualSelection = shouldUseManualStreamSelection(
+            useAlternate = useAlternate,
+            hasLocalFile = hasLocalPlayback,
+        )
+        val preferLocalStreams = requested == LOCAL_LIBRARY && hasLocalPlayback
+        return LocalPlaybackRoutingDecision(
+            requestedBehavior = requested,
+            hasLocalPlayback = hasLocalPlayback,
+            manualSelection = manualSelection,
+            preferLocalStreams = preferLocalStreams,
+            playDownloadedFileDirectly =
+                !manualSelection && preferLocalStreams && hasDownloadedFile,
+        )
+    }
 }
+
+data class LocalPlaybackRoutingDecision(
+    val requestedBehavior: LocalLibraryPlaybackPreference,
+    val hasLocalPlayback: Boolean,
+    val manualSelection: Boolean,
+    val preferLocalStreams: Boolean,
+    val playDownloadedFileDirectly: Boolean,
+)
 
 /**
  * A user-created catalog (Advanced mode). [order] controls its position in the Library.
@@ -220,10 +262,34 @@ data class LocalMediaItem(
      * between the two coordinate spaces rather than assuming either.
      */
     val contentId: String
-        get() = imdbId?.takeIf { it.isNotBlank() }
+        get() = contentIdFor(AnimeIdPreferenceRepository.current())
+
+    /**
+     * [contentId] under an explicit preference. Separate so callers that must state the policy —
+     * tests especially — never depend on the live setting, which is per-profile user state.
+     */
+    internal fun contentIdFor(preference: AnimeIdPreference): String =
+        preferredNativeAnimeBase(preference)
+            ?: imdbId?.takeIf { it.isNotBlank() }
             ?: tmdbId?.let { "tmdb:$it" }
             ?: animeNativeBase
             ?: "$LOCAL_ID_PREFIX$key"
+
+    /**
+     * The per-entry id when the user asked anime to be addressed that way, else null.
+     *
+     * Same setting as the SIMKL chain, so a locally matched anime and its Continue Watching row
+     * agree about what the title is — which is why the setting is not SIMKL-scoped: the local
+     * library works with no SIMKL account at all. Read live rather than stored, since the id is
+     * derived on every access; the settings page rescans so a change lands without a restart.
+     */
+    private fun preferredNativeAnimeBase(preference: AnimeIdPreference): String? = when (preference) {
+        AnimeIdPreference.MAL ->
+            malId?.let { "mal:$it" } ?: kitsuId?.let { "kitsu:$it" }
+        AnimeIdPreference.KITSU ->
+            kitsuId?.let { "kitsu:$it" } ?: malId?.let { "mal:$it" }
+        AnimeIdPreference.IMDB -> null
+    }
 
     val contentType: String
         get() = if (type == LocalFolderType.SERIES) "series" else "movie"
@@ -235,16 +301,24 @@ data class LocalMediaItem(
      * check a stale or franchise-level meta can pull an unrelated title's local file into the
      * stream list (e.g. an anime movie answering a live-action show's episode id).
      */
-    fun ownsVideoId(videoId: String): Boolean {
-        val bases = buildList {
+    fun ownsVideoId(videoId: String): Boolean =
+        knownContentIds.any { base -> videoId == base || videoId.startsWith("$base:") }
+
+    /**
+     * Every content id this title is known by, not just the one [contentId] currently derives.
+     *
+     * Which id [contentId] returns depends on [com.nuvio.app.features.metadata.AnimeIdPreference],
+     * so anything comparing a stored id against it must compare against the whole set or it breaks
+     * when that preference changes.
+     */
+    val knownContentIds: Set<String>
+        get() = buildSet {
             add("$LOCAL_ID_PREFIX$key")
-            imdbId?.takeIf { it.isNotBlank() }?.let { add(it) }
+            imdbId?.takeIf { it.isNotBlank() }?.let(::add)
             tmdbId?.let { add("tmdb:$it") }
             kitsuId?.let { add("kitsu:$it") }
             malId?.let { add("mal:$it") }
         }
-        return bases.any { base -> videoId == base || videoId.startsWith("$base:") }
-    }
 
     val displayYear: String?
         get() = year?.takeIf { it in 1870..2100 }?.toString()

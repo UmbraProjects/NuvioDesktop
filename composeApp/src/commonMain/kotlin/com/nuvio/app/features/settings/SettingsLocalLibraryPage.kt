@@ -7,13 +7,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -71,6 +75,7 @@ import com.nuvio.app.core.ui.LocalOpenMetaDetails
 import com.nuvio.app.core.ui.NuvioAlertDialog
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioToastController
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.librarypvr.LibraryPvrRepository
 import com.nuvio.app.features.librarypvr.LibraryPvrScheduler
 import com.nuvio.app.features.librarypvr.MonitorMode
@@ -98,6 +103,7 @@ import nuvio.composeapp.generated.resources.settings_local_library_catalog_searc
 import nuvio.composeapp.generated.resources.settings_local_library_clear_match
 import nuvio.composeapp.generated.resources.settings_local_library_current_match
 import nuvio.composeapp.generated.resources.settings_local_library_filter_all
+import nuvio.composeapp.generated.resources.settings_local_library_folders_empty
 import nuvio.composeapp.generated.resources.settings_local_library_folders_title
 import nuvio.composeapp.generated.resources.settings_local_library_playback_title
 import nuvio.composeapp.generated.resources.settings_local_library_preferred_play_action
@@ -225,6 +231,9 @@ private fun LocalLibraryPlaybackSection(
                 isTablet = isTablet,
                 onSelected = LocalLibraryRepository::setPlaybackPreference,
             )
+            // Governs how matched local anime is addressed. Shares its value with the copy beside
+            // the Continue Watching source — one setting, reachable from either surface it affects.
+            AnimeIdPreferenceRow(isTablet = isTablet)
         }
     }
 }
@@ -267,24 +276,37 @@ private fun LocalLibraryFoldersSection(isTablet: Boolean) {
             }
         },
     ) {
-        SettingsGroup(isTablet = isTablet) {
-            // One heading per folder kind, each with its own "+", and its directories nested
-            // underneath. A kind with no directories simply shows nothing under its heading, so the
-            // four kinds always read as a stable menu rather than appearing and vanishing.
-            LOCAL_FOLDER_CATEGORIES.forEachIndexed { index, category ->
-                if (index > 0) SettingsGroupDivider(isTablet = isTablet)
-                val folders = state.folders.filter {
-                    it.type == category.type && it.isAnime == category.isAnime
+        // One tile per folder kind, each with its own "+", and its directories stacked inside it.
+        // A kind with no directories keeps its tile (showing an empty note), so the four kinds
+        // always read as a stable set rather than appearing and vanishing.
+        if (isTablet) {
+            // Four across. IntrinsicSize.Min + fillMaxHeight keeps every tile as tall as the
+            // fullest one, so the row reads as a single band instead of a ragged edge.
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                LOCAL_FOLDER_CATEGORIES.forEach { category ->
+                    LocalFolderCategoryTile(
+                        category = category,
+                        state = state,
+                        onAdd = { addFolder(category.type, category.isAnime) },
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
                 }
-                LocalFolderCategoryHeader(
-                    category = category,
-                    onAdd = { addFolder(category.type, category.isAnime) },
-                )
-                folders.forEach { folder ->
-                    LocalFolderRow(
-                        folder = folder,
-                        itemCount = state.items.count { it.folderId == folder.id },
-                        onRemove = { LocalLibraryRepository.removeFolder(folder.id) },
+            }
+        } else {
+            // Compact windows can't hold four columns; the same tiles simply stack.
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                LOCAL_FOLDER_CATEGORIES.forEach { category ->
+                    LocalFolderCategoryTile(
+                        category = category,
+                        state = state,
+                        onAdd = { addFolder(category.type, category.isAnime) },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -305,64 +327,113 @@ private val LOCAL_FOLDER_CATEGORIES = listOf(
     LocalFolderCategory(Res.string.settings_local_library_section_anime_series, LocalFolderType.SERIES, true),
 )
 
+/** One folder kind as a self-contained tile: heading, its own "+", and its directories. */
 @Composable
-private fun LocalFolderCategoryHeader(category: LocalFolderCategory, onAdd: () -> Unit) {
+private fun LocalFolderCategoryTile(
+    category: LocalFolderCategory,
+    state: LocalLibraryUiState,
+    onAdd: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val label = stringResource(category.titleRes)
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val folders = state.folders.filter { it.type == category.type && it.isAnime == category.isAnime }
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+            .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 12.dp),
     ) {
-        Icon(
-            imageVector = if (category.type == LocalFolderType.SERIES) Icons.Rounded.Tv else Icons.Rounded.Movie,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f),
-        )
-        IconButton(onClick = onAdd) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Icon(
-                Icons.Rounded.Add,
-                contentDescription = stringResource(Res.string.settings_local_library_add_folder_to, label),
-                tint = MaterialTheme.colorScheme.onSurface,
+                imageVector = if (category.type == LocalFolderType.SERIES) Icons.Rounded.Tv else Icons.Rounded.Movie,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onAdd, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Rounded.Add,
+                    contentDescription = stringResource(Res.string.settings_local_library_add_folder_to, label),
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        if (folders.isEmpty()) {
+            Text(
+                text = stringResource(Res.string.settings_local_library_folders_empty),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 6.dp, top = 6.dp),
+            )
+        } else {
+            folders.forEach { folder ->
+                LocalFolderTileRow(
+                    folder = folder,
+                    itemCount = state.items.count { it.folderId == folder.id },
+                    onRemove = { LocalLibraryRepository.removeFolder(folder.id) },
+                )
+            }
         }
     }
 }
 
-/** One directory under its category heading. Indented so it reads as a child of the heading. */
+/** One directory inside its category tile. */
 @Composable
-private fun LocalFolderRow(folder: LocalFolder, itemCount: Int, onRemove: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 48.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun LocalFolderTileRow(folder: LocalFolder, itemCount: Int, onRemove: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(end = 6.dp, top = 8.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                // Full path, so the drive is always visible — two drives can hold folders with
-                // identical names and the heading above already carries the type.
-                text = folder.path,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.width(8.dp))
         Text(
-            text = stringResource(Res.string.settings_local_library_items_count, itemCount),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // Full path, so the drive is always visible — two drives can hold folders with
+            // identical names and the tile heading already carries the type.
+            text = folder.path,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.width(8.dp))
-        TextButton(onClick = onRemove) {
-            Text(stringResource(Res.string.settings_local_library_remove))
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(Res.string.settings_local_library_items_count, itemCount),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+            )
+            Spacer(Modifier.width(8.dp))
+            // A bare label rather than a TextButton: the button's own min-width and padding don't
+            // fit a quarter-width tile.
+            Text(
+                text = stringResource(Res.string.settings_local_library_remove),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(onClick = onRemove)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
         }
     }
 }
@@ -411,111 +482,171 @@ private fun LocalLibraryCatalogsSection(isTablet: Boolean, titlesState: LocalLib
             }
         },
     ) {
-        SettingsGroup(isTablet = isTablet) {
-            if (showAddBox) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+        if (showAddBox) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text(stringResource(Res.string.settings_local_library_new_catalog_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f).trackTextInputFocus(),
+                )
+                OutlinedButton(
+                    enabled = newName.isNotBlank(),
+                    onClick = {
+                        LocalLibraryRepository.addCatalog(newName)
+                        newName = ""
+                        showAddBox = false
+                        // Release focus so the input tracker drops the shortcut lock.
+                        focusManager.clearFocus()
+                    },
                 ) {
-                    OutlinedTextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        label = { Text(stringResource(Res.string.settings_local_library_new_catalog_hint)) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f).trackSettingsTextFocus(),
-                    )
-                    OutlinedButton(
-                        enabled = newName.isNotBlank(),
-                        onClick = {
-                            LocalLibraryRepository.addCatalog(newName)
-                            newName = ""
-                            showAddBox = false
-                            // Release focus so the input tracker drops the shortcut lock.
-                            focusManager.clearFocus()
-                        },
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(Res.string.settings_local_library_add_catalog))
-                    }
+                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(Res.string.settings_local_library_add_catalog))
                 }
             }
+        }
 
-            // Unsorted is a first-class row in the list (items with no catalog); it follows the same
-            // hide-when-empty rule as the catalogs.
-            val unsortedCount = state.itemsInCatalog(null).size
-            if (unsortedCount > 0 || !state.hideEmptyCatalogs) {
-                CatalogFilterListRow(
-                    name = stringResource(Res.string.settings_local_library_unsorted),
-                    color = null,
-                    itemCount = unsortedCount,
-                    selected = titlesState.filter == FILTER_UNSORTED,
-                    onClick = { toggleFilter(FILTER_UNSORTED) },
-                )
-            }
-
+        // Same tile shape as the folders above, but the catalog count varies, so the tiles flow four
+        // to a row and wrap. A null entry is the Unsorted pseudo-catalog (items with no catalog),
+        // which leads the grid and follows the same hide-when-empty rule as the real ones.
+        val counts = state.sortedCatalogs.associate { it.id to state.itemsInCatalog(it.id).size }
+        val unsortedCount = state.itemsInCatalog(null).size
+        val entries: List<LocalCatalog?> = buildList {
+            if (unsortedCount > 0 || !state.hideEmptyCatalogs) add(null)
             state.sortedCatalogs.forEach { catalog ->
-                val count = state.itemsInCatalog(catalog.id).size
-                if (count == 0 && state.hideEmptyCatalogs) return@forEach
-                LocalCatalogRow(
-                    catalog = catalog,
-                    itemCount = count,
-                    selected = titlesState.filter == catalog.id,
-                    deletable = catalog.defaultBucket == null,
-                    onClick = { toggleFilter(catalog.id) },
-                    isEditing = editingId == catalog.id,
-                    editName = editName,
-                    onEditNameChange = { editName = it },
-                    onStartEdit = { editingId = catalog.id; editName = catalog.name },
-                    onSaveEdit = {
-                        LocalLibraryRepository.renameCatalog(catalog.id, editName)
-                        editingId = null
-                    },
-                    onPickColor = { LocalLibraryRepository.setCatalogColor(catalog.id, it) },
-                    onRemove = {
-                        if (editingId == catalog.id) editingId = null
-                        LocalLibraryRepository.removeCatalog(catalog.id)
-                    },
-                )
+                if (counts[catalog.id] != 0 || !state.hideEmptyCatalogs) add(catalog)
+            }
+        }
+        if (entries.isEmpty()) {
+            Text(
+                text = stringResource(Res.string.settings_local_library_catalogs_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            val columns = if (isTablet) 4 else 2
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                entries.chunked(columns).forEach { rowEntries ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        rowEntries.forEach { catalog ->
+                            val tileModifier = Modifier.weight(1f).fillMaxHeight()
+                            if (catalog == null) {
+                                CatalogFilterTile(
+                                    name = stringResource(Res.string.settings_local_library_unsorted),
+                                    color = null,
+                                    itemCount = unsortedCount,
+                                    selected = titlesState.filter == FILTER_UNSORTED,
+                                    onClick = { toggleFilter(FILTER_UNSORTED) },
+                                    modifier = tileModifier,
+                                )
+                            } else {
+                                LocalCatalogTile(
+                                    catalog = catalog,
+                                    itemCount = counts[catalog.id] ?: 0,
+                                    selected = titlesState.filter == catalog.id,
+                                    deletable = catalog.defaultBucket == null,
+                                    onClick = { toggleFilter(catalog.id) },
+                                    isEditing = editingId == catalog.id,
+                                    editName = editName,
+                                    onEditNameChange = { editName = it },
+                                    onStartEdit = { editingId = catalog.id; editName = catalog.name },
+                                    onSaveEdit = {
+                                        LocalLibraryRepository.renameCatalog(catalog.id, editName)
+                                        editingId = null
+                                    },
+                                    onPickColor = { LocalLibraryRepository.setCatalogColor(catalog.id, it) },
+                                    onRemove = {
+                                        if (editingId == catalog.id) editingId = null
+                                        LocalLibraryRepository.removeCatalog(catalog.id)
+                                    },
+                                    modifier = tileModifier,
+                                )
+                            }
+                        }
+                        // Pad a short final row so its tiles keep a full row's width instead of
+                        // stretching to fill the gap.
+                        repeat(columns - rowEntries.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
             }
         }
     }
 }
 
-/** A lightweight clickable filter row (used for the Unsorted entry) with a selection highlight. */
+/**
+ * Shared shell for a catalog tile. Selection is carried by the fill and border rather than a
+ * checkmark, since the tile's whole job is to scope the titles grid below.
+ */
 @Composable
-private fun CatalogFilterListRow(
+private fun CatalogTileFrame(
+    selected: Boolean,
+    onClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier = modifier
+            .clip(shape)
+            .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+            .border(
+                width = 1.dp,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                shape = shape,
+            )
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+        content = content,
+    )
+}
+
+/** The name/colour line every catalog tile opens with. */
+@Composable
+private fun CatalogTileTitle(name: String, color: Long?, modifier: Modifier = Modifier) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(color?.let { Color(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** A lightweight clickable filter tile (used for the Unsorted entry) with a selection highlight. */
+@Composable
+private fun CatalogFilterTile(
     name: String,
     color: Long?,
     itemCount: Int,
     selected: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(14.dp)
-                .clip(CircleShape)
-                .background(color?.let { Color(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant),
-        )
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = name,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+    CatalogTileFrame(selected = selected, onClick = onClick, modifier = modifier) {
+        CatalogTileTitle(name = name, color = color, modifier = Modifier.fillMaxWidth().padding(end = 6.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             text = stringResource(Res.string.settings_local_library_items_count, itemCount),
             style = MaterialTheme.typography.labelMedium,
@@ -526,7 +657,7 @@ private fun CatalogFilterListRow(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LocalCatalogRow(
+private fun LocalCatalogTile(
     catalog: LocalCatalog,
     itemCount: Int,
     selected: Boolean,
@@ -539,32 +670,30 @@ private fun LocalCatalogRow(
     onSaveEdit: () -> Unit,
     onPickColor: (Long?) -> Unit,
     onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
-            // Only the non-editing row toggles the filter; while editing, taps belong to the field.
-            .then(if (isEditing) Modifier else Modifier.clickable(onClick = onClick))
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+    CatalogTileFrame(
+        selected = selected,
+        // Only the non-editing tile toggles the filter; while editing, taps belong to the field.
+        onClick = if (isEditing) null else onClick,
+        modifier = modifier,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(14.dp)
-                    .clip(CircleShape)
-                    .background(catalog.color?.let { Color(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant),
-            )
-            Spacer(Modifier.width(12.dp))
-            if (isEditing) {
+        if (isEditing) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 OutlinedTextField(
                     value = editName,
                     onValueChange = onEditNameChange,
                     singleLine = true,
-                    modifier = Modifier.weight(1f).trackSettingsTextFocus(),
+                    modifier = Modifier.weight(1f).trackTextInputFocus(),
                 )
-                IconButton(onClick = onSaveEdit, enabled = editName.isNotBlank()) {
+                IconButton(
+                    onClick = onSaveEdit,
+                    enabled = editName.isNotBlank(),
+                    modifier = Modifier.size(32.dp),
+                ) {
                     Icon(
                         Icons.Rounded.Check,
                         contentDescription = stringResource(Res.string.settings_local_library_save),
@@ -572,48 +701,52 @@ private fun LocalCatalogRow(
                         modifier = Modifier.size(18.dp),
                     )
                 }
-            } else {
-                Text(
-                    text = catalog.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = stringResource(Res.string.settings_local_library_items_count, itemCount),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                IconButton(onClick = onStartEdit) {
-                    Icon(
-                        Icons.Rounded.Edit,
-                        contentDescription = stringResource(Res.string.settings_local_library_rename),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
             }
-            if (deletable) {
-                IconButton(onClick = onRemove) {
-                    Icon(
-                        Icons.Rounded.Close,
-                        contentDescription = stringResource(Res.string.settings_local_library_remove),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-        }
-        if (isEditing) {
             FlowRow(
-                modifier = Modifier.fillMaxWidth().padding(start = 26.dp, top = 6.dp),
+                modifier = Modifier.fillMaxWidth().padding(end = 6.dp, top = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 CATALOG_COLORS.forEach { color ->
                     ColorSwatch(color = color, selected = catalog.color == color, onClick = { onPickColor(color) })
+                }
+            }
+        } else {
+            CatalogTileTitle(
+                name = catalog.name,
+                color = catalog.color,
+                modifier = Modifier.fillMaxWidth().padding(end = 6.dp),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        // Count and the tile's own actions share the bottom line, so the tile stays two lines tall
+        // whether or not a catalog can be renamed or removed.
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(Res.string.settings_local_library_items_count, itemCount),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+            )
+            if (!isEditing) {
+                IconButton(onClick = onStartEdit, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        Icons.Rounded.Edit,
+                        contentDescription = stringResource(Res.string.settings_local_library_rename),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+            if (deletable) {
+                IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        Icons.Rounded.Close,
+                        contentDescription = stringResource(Res.string.settings_local_library_remove),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
                 }
             }
         }
@@ -680,7 +813,7 @@ private fun LazyListScope.localLibraryTitlesContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .trackSettingsTextFocus(),
+                .trackTextInputFocus(),
         )
     }
 
@@ -1124,7 +1257,7 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
                     onValueChange = { query = it },
                     label = { Text(searchHint) },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
+                    modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
                     trailingIcon = {
                         IconButton(onClick = { runSearch() }) {
                             Icon(Icons.Rounded.Refresh, contentDescription = searchHint)

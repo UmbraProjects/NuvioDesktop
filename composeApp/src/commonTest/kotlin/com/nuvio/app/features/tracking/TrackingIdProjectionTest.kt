@@ -30,6 +30,71 @@ class TrackingIdProjectionTest {
             isAnime = isAnime,
         )
 
+    // ── Native ids are dropped when the coordinates stayed franchise ───────────
+
+    @Test
+    fun `an unconvertible anime season drops the native ids`() {
+        // No simkl entry resolved, so entryLocalSeasonNumber has nothing to convert with and the
+        // franchise season passes through. Sending a per-entry id alongside season 3 describes an
+        // episode that does not exist — the franchise ids alone are the answerable request.
+        val ids = ResolvedMediaIds(
+            sourceId = "tt13293588",
+            contentType = "series",
+            imdb = "tt13293588",
+            kitsu = 49002,
+            isAnime = true,
+        )
+
+        val coordinates = ids.entryLocal(season = 3, episode = 1)
+
+        assertEquals(3, coordinates.season)
+        assertFalse(coordinates.retainsNativeAnimeIds)
+    }
+
+    @Test
+    fun `a converted anime season keeps the native ids`() {
+        // The mapped season collapses to the entry's own season 1, so the per-entry id and the
+        // coordinates now describe the same episode and may travel together.
+        val ids = ResolvedMediaIds(
+            sourceId = "tt13293588",
+            contentType = "series",
+            imdb = "tt13293588",
+            simkl = 2832226,
+            kitsu = 49002,
+            tvdbSeason = 3,
+            isAnime = true,
+        )
+
+        val coordinates = ids.entryLocal(season = 3, episode = 1)
+
+        assertEquals(1, coordinates.season)
+        assertTrue(coordinates.retainsNativeAnimeIds)
+    }
+
+    @Test
+    fun `a non-anime season is never treated as unconvertible`() {
+        val ids = ResolvedMediaIds(
+            sourceId = "tt0108778",
+            contentType = "series",
+            imdb = "tt0108778",
+        )
+
+        assertTrue(ids.entryLocal(season = 4, episode = 2, isAnime = false).retainsNativeAnimeIds)
+    }
+
+    @Test
+    fun `an anime movie has no season to contradict`() {
+        val ids = ResolvedMediaIds(
+            sourceId = "tt5544384",
+            contentType = "movie",
+            imdb = "tt5544384",
+            kitsu = 11423,
+            isAnime = true,
+        )
+
+        assertTrue(ids.entryLocal(season = null, episode = null).retainsNativeAnimeIds)
+    }
+
     // ── Ordinary content ──────────────────────────────────────────────────────
 
     @Test

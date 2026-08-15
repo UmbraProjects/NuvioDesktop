@@ -120,8 +120,7 @@ object SubtitleRepository {
     }
 }
 
-private fun canonicalSubtitleType(type: String): String =
-    if (type.equals("tv", ignoreCase = true)) "series" else type.lowercase()
+private fun canonicalSubtitleType(type: String): String = canonicalSubtitleRequestType(type)
 
 private fun String.isSubtitleResourceName(): Boolean =
     equals("subtitles", ignoreCase = true) || equals("subtitle", ignoreCase = true)

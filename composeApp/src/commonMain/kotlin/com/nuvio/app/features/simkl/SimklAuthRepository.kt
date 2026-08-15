@@ -41,6 +41,13 @@ internal object SimklAuthRepository {
         authState = if (raw.isBlank()) SimklAuthState()
         else runCatching { json.decodeFromString<SimklAuthState>(raw) }.getOrDefault(SimklAuthState())
         publishState()
+        if (authState.isAuthenticated && authState.accountType.isNullOrBlank()) {
+            scope.launch {
+                if (refreshUserSettings() && SimklSettingsRepository.isRewatchTrackingEnabled()) {
+                    SimklRewatchRepository.refreshAsync()
+                }
+            }
+        }
     }
 
     fun onProfileChanged() {
@@ -73,6 +80,12 @@ internal object SimklAuthRepository {
             if (resp.status !in 200..299) return null
             json.decodeFromString<SimklActivities>(resp.body)
         }.onFailure { log.w(it) { "SIMKL /sync/activities failed" } }.getOrNull()
+            ?.also { activities ->
+                val settingsStamp = activities.settings?.all
+                if (!settingsStamp.isNullOrBlank() && settingsStamp != authState.settingsActivitiesAt) {
+                    refreshUserSettings(settingsStamp)
+                }
+            }
     }
 
     /** Appends required query parameters to any SIMKL API URL. */
@@ -117,6 +130,7 @@ internal object SimklAuthRepository {
         pinPollJob = null
         authState = SimklAuthState()
         SimklAuthStorage.clearPayload()
+        SimklRewatchRepository.clearLocalState()
         publishState()
     }
 
@@ -156,10 +170,22 @@ internal object SimklAuthRepository {
             when {
                 result == null -> continue
                 result.result == "OK" && result.accessToken != null -> {
-                    val username = fetchUsername(result.accessToken)
-                    authState = SimklAuthState(accessToken = result.accessToken, username = username)
+                    val settings = fetchUserSettings(result.accessToken)
+                    authState = SimklAuthState(
+                        accessToken = result.accessToken,
+                        username = settings?.user?.name,
+                        accountType = settings?.account?.type,
+                    )
                     SimklAuthStorage.savePayload(json.encodeToString(authState))
                     publishState()
+                    if (
+                        authState.accountType.equals("pro", ignoreCase = true) ||
+                        authState.accountType.equals("vip", ignoreCase = true)
+                    ) {
+                        if (SimklSettingsRepository.isRewatchTrackingEnabled()) {
+                            SimklRewatchRepository.refreshAsync()
+                        }
+                    }
                     return
                 }
                 // A new device_code in the response means the server reissued a code (expiry) — stop.
@@ -176,20 +202,34 @@ internal object SimklAuthRepository {
         _uiState.value = SimklAuthUiState(errorMessage = "PIN expired. Please try connecting again.")
     }
 
-    private suspend fun fetchUsername(token: String): String? = runCatching {
+    suspend fun refreshUserSettings(settingsActivitiesAt: String? = authState.settingsActivitiesAt): Boolean {
+        val token = authState.accessToken?.takeIf(String::isNotBlank) ?: return false
+        val settings = fetchUserSettings(token) ?: return false
+        authState = authState.copy(
+            username = settings.user?.name ?: authState.username,
+            accountType = settings.account?.type?.lowercase() ?: authState.accountType,
+            settingsActivitiesAt = settingsActivitiesAt,
+        )
+        SimklAuthStorage.savePayload(json.encodeToString(authState))
+        publishState()
+        return true
+    }
+
+    private suspend fun fetchUserSettings(token: String): SimklUserSettingsResponse? = runCatching {
         val url = appendParams("$BASE_URL/users/settings")
         val response = httpRequestRaw(
-            method = "GET",
+            method = "POST",
             url = url,
             headers = mapOf(
                 "Authorization" to "Bearer $token",
+                "Content-Type" to "application/json",
                 "User-Agent" to "NuvioDesktop/${AppVersionPolicy.displayVersionName}",
             ),
             body = "",
         )
         if (response.status !in 200..299) return@runCatching null
-        json.decodeFromString<SimklUserSettingsResponse>(response.body).user?.name
-    }.onFailure { log.w(it) { "Failed to fetch SIMKL username" } }.getOrNull()
+        json.decodeFromString<SimklUserSettingsResponse>(response.body)
+    }.onFailure { log.w(it) { "Failed to fetch SIMKL user settings" } }.getOrNull()
 
     private fun publishState() {
         val authenticated = authState.isAuthenticated
@@ -197,6 +237,7 @@ internal object SimklAuthRepository {
         _uiState.value = SimklAuthUiState(
             mode = if (authenticated) SimklConnectionMode.CONNECTED else SimklConnectionMode.DISCONNECTED,
             username = authState.username,
+            accountType = authState.accountType,
         )
     }
 }

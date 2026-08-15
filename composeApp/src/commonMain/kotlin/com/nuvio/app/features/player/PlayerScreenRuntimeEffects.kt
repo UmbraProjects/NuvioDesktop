@@ -12,6 +12,7 @@ import androidx.compose.runtime.LaunchedEffect
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.locallibrary.FilenameParser
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.playbackEpisodeNumber
 import com.nuvio.app.features.details.playbackSeasonNumber
@@ -276,7 +277,11 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
 
     LaunchedEffect(activeSourceUrl, addonSubtitleFetchKey, playerSettingsUiState.addonSubtitleStartupMode) {
         val fetchKey = addonSubtitleFetchKey ?: return@LaunchedEffect
-        if (playerSettingsUiState.addonSubtitleStartupMode == AddonSubtitleStartupMode.FAST_STARTUP) {
+        val persistedAddonSelection = PlayerTrackPreferenceStorage.load(parentMetaId)
+            ?.subtitleType == PersistedSubtitleSelectionType.ADDON
+        if (playerSettingsUiState.addonSubtitleStartupMode == AddonSubtitleStartupMode.FAST_STARTUP &&
+            !persistedAddonSelection
+        ) {
             return@LaunchedEffect
         }
         if (autoFetchedAddonSubtitlesForKey == fetchKey) return@LaunchedEffect
@@ -297,6 +302,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         playbackSnapshot.isLoading,
         trackPreferenceRestoreApplied,
     ) {
+        restorePersistedTrackPreferenceIfNeeded()
         applyPreferredAddonSubtitleIfReady()
     }
 
@@ -404,7 +410,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
 
     DisposableEffect(Unit) {
         onDispose {
-            P2pStreamingEngine.shutdown()
+            P2pStreamingEngine.stopStream()
             PlayerStreamsRepository.clearAll()
         }
     }
@@ -487,7 +493,7 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
         errorMessage,
         isProviderDiagnosticVideoPlayback,
     ) {
-        val presenceTitle = title.trim().takeIf { it.isNotBlank() }
+        val presenceTitle = discordPresenceTitle()
         if (
             !discordSettings.showPlaybackPresence ||
             isProviderDiagnosticVideoPlayback ||
@@ -651,6 +657,44 @@ private fun PlayerScreenRuntime.BindStreamFailoverWatchdogEffect() {
             }
         }
     }
+}
+
+/**
+ * What Discord shows as the title, from the best source that actually has one.
+ *
+ * A blank title is the single condition that suppresses the presence entirely, so it must be a
+ * genuine "we know nothing about this" rather than one unlucky lookup. The launch title is empty
+ * whenever whatever started playback had no resolved metadata to name it with — the case anime
+ * hits most, because a season addressed by a per-entry id (or one whose season is not TMDB's
+ * season 1) is exactly what a meta addon fails to answer for. The loaded meta is the same answer
+ * arriving later, and the stream's own release name is the last resort the direct-play path
+ * already relies on: a parsed filename beats no presence at all.
+ */
+private fun PlayerScreenRuntime.discordPresenceTitle(): String? =
+    resolveDiscordPresenceTitle(
+        argsTitle = title,
+        metaName = metaUiState.meta?.takeIf { it.id == parentMetaId }?.name,
+        streamReleaseName = streamTitle,
+        isEpisode = activeEpisodeNumber != null,
+    )
+
+internal fun resolveDiscordPresenceTitle(
+    argsTitle: String?,
+    metaName: String?,
+    streamReleaseName: String?,
+    isEpisode: Boolean,
+): String? {
+    argsTitle?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+    metaName?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+
+    val releaseName = streamReleaseName?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    val parsed = if (isEpisode) {
+        FilenameParser.parseEpisode(releaseName).showTitle
+    } else {
+        FilenameParser.parseTitle(releaseName).title
+    }
+    return parsed?.trim()?.takeIf { it.isNotBlank() }
+        ?: FilenameParser.cleanTitle(releaseName).trim().takeIf { it.isNotBlank() }
 }
 
 private fun PlayerScreenRuntime.discordPresenceImageUrl(): String? =

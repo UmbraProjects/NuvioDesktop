@@ -806,7 +806,7 @@ private fun CommunityDetailsDialog(
     BasicAlertDialog(onDismissRequest = onDismiss) {
         NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

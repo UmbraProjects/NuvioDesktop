@@ -4,8 +4,11 @@ import com.nuvio.app.features.player.PlayerSettingsUiState
 
 object StreamAutoPlayPolicy {
     fun isEffectivelyEnabled(settings: PlayerSettingsUiState): Boolean {
+        // Reuse Last Link is described to the user as auto-playing the cached stream, so it counts
+        // as auto-play on its own. The binge-group toggles are not: they promise ordering ("try the
+        // same source profile first") and memory ("remember and reuse the last binge group"), and
+        // neither is a licence to start playback when the mode says MANUAL.
         if (settings.streamReuseLastLinkEnabled) return true
-        if (settings.streamAutoPlayReuseBingeGroup && settings.streamAutoPlayPreferBingeGroup) return true
 
         return when (settings.streamAutoPlayMode) {
             StreamAutoPlayMode.MANUAL -> false
@@ -46,8 +49,8 @@ object StreamAutoPlayPolicy {
      * profile is only consulted when nothing matches. This makes that a user choice.
      *
      * Gated on [mode] already being SCORED rather than on the profile alone, so it only fires where
-     * scoring is genuinely making the pick. MANUAL therefore never overrides: a persisted binge group
-     * is the only thing that auto-plays in that mode, and scoring has no pick to contribute.
+     * scoring is genuinely making the pick. MANUAL therefore never overrides: nothing auto-plays in
+     * that mode, so there is no pick for scoring to take away from binge affinity.
      */
     fun scoreOverridesBingeGroup(
         mode: StreamAutoPlayMode,

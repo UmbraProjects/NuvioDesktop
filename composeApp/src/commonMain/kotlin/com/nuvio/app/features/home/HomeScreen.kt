@@ -35,6 +35,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -128,6 +129,7 @@ import com.nuvio.app.features.watched.WatchedItem
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watchprogress.CachedInProgressItem
 import com.nuvio.app.features.watchprogress.CachedNextUpItem
+import com.nuvio.app.features.watchprogress.ContinueWatchingArtworkDiagnostics
 import com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
@@ -205,6 +207,8 @@ private object HomeScrollMemory {
     var hasImmersivePosition: Boolean = false
     val continueWatchingRowState = LazyListState()
     var continueWatchingStartupResetApplied: Boolean = false
+    val nextUpRowState = LazyListState()
+    var nextUpStartupResetApplied: Boolean = false
     val immersiveRowStates = mutableMapOf<String, LazyListState>()
 }
 
@@ -236,10 +240,12 @@ fun HomeScreen(
     animateCollectionGifs: Boolean = true,
     scrollToTopRequests: Flow<Unit> = emptyFlow(),
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
+    onLoadMoreCatalog: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     onLocalLibraryPosterClick: ((MetaPreview) -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
+    onContinueWatchingPlay: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
     onCastClick: ((HeroCastMember) -> Unit)? = null,
@@ -248,9 +254,9 @@ fun HomeScreen(
     onNavigateToLibrary: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
     onNavigateToHome: (() -> Unit)? = null,
+    onBack: (() -> Unit)? = null,
     resumePromptItem: ContinueWatchingItem? = null,
     resumePromptLabel: String = "",
-    resumePromptActionLabel: String = "",
     onResumePromptAction: (() -> Unit)? = null,
     onResumePromptDismiss: (() -> Unit)? = null,
     continueWatchingHeroDismissed: Boolean = false,
@@ -273,6 +279,9 @@ fun HomeScreen(
     val homeUiState by HomeRepository.uiState.collectAsStateWithLifecycle()
     val homeSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
+    // Extra Random Play candidates from the Collections catalogs (opt-in; empty otherwise).
+    val randomPlayCollectionSections by RandomPlayCollectionPool.sections.collectAsStateWithLifecycle()
+    val randomPlayPool by RandomPlayCandidatePool.state.collectAsStateWithLifecycle()
     val posterCardStyle = rememberPosterCardStyleUiState()
 
     // Search mode state — query persists while on the Search tab (rememberSaveable).
@@ -399,16 +408,24 @@ fun HomeScreen(
         displayMode, contentMode, searchQuery, discoverModeActive, discoverUiState,
         discoverAllGenresLabel, librarySectionSubtitle, randomPlayLabels,
         homeSettingsUiState.randomPlayEnabled,
+        homeSettingsUiState.randomPlayIncludeCollections,
         homeSettingsUiState.randomPlayCategories,
         homeSettingsUiState.randomPlayGenres,
         homeSettingsUiState.randomPlayMinimumImdbRating,
+        randomPlayCollectionSections,
+        randomPlayPool,
         watchedUiState.watchedKeys,
         homeUiState.sections, searchUiState.sections, libraryUiState.sections, libraryDisplaySettings.sortOption,
     ) {
         when (displayMode) {
             is HomeContentMode.Normal -> buildList {
                 buildRandomPlaySection(
-                    sourceSections = homeUiState.sections,
+                    sourceSections = randomPlaySourceSections(
+                        homeSections = homeUiState.sections,
+                        collectionSections = randomPlayCollectionSections,
+                        settings = homeSettingsUiState,
+                        pool = randomPlayPool,
+                    ),
                     settings = homeSettingsUiState,
                     labels = randomPlayLabels,
                     watchedKeys = watchedUiState.watchedKeys,
@@ -455,8 +472,7 @@ fun HomeScreen(
                 }
                 }
             }
-            // Library
-            else -> sortLibrarySections(
+            is HomeContentMode.Library -> sortLibrarySections(
                 libraryUiState.sections,
                 libraryDisplaySettings.sortOption,
                 libraryUiState.sourceMode,
@@ -490,6 +506,7 @@ fun HomeScreen(
                     paginates = false,
                 )
             }.ensureUniqueKeys()
+            is HomeContentMode.Catalogs -> displayMode.sections.ensureUniqueKeys()
         }
     }
 
@@ -582,6 +599,7 @@ fun HomeScreen(
         if (posterCardStyle.catalogLandscapeModeEnabled) pendingHeroEnrichments.keys else emptySet()
     var heroMetadataStartupGraceUsed by remember { mutableStateOf(false) }
     var continueWatchingMetadataStartupGraceUsed by remember { mutableStateOf(false) }
+    var heroBatchEnrichmentStartupGraceUsed by remember { mutableStateOf(false) }
 
     // Initialise from base items, applying any already-fetched enrichment from the map.
     // When baseHeroItems changes (new reference, same content) we preserve enrichment.
@@ -612,6 +630,22 @@ fun HomeScreen(
             baseHeroItems.any(MetaPreview::needsHeroTextEnrichment)
         if (!normalHomeMode && !searchLibraryBackdropEnrichmentEnabled && !searchLibraryNeedsMetadata) {
             return@LaunchedEffect
+        }
+        // Yield the network to the focused card's own enrichment for a moment on the first pass of
+        // a session. This batch fans out across every hero-rotation item at once (the semaphore is
+        // deliberately as wide as the list), and at launch it was finishing all of them before the
+        // focused card's single request came back — which is what left the first Continue Watching
+        // card unenriched for the whole hold window. Startup only: later passes run immediately, so
+        // scrolling is not slowed.
+        if (!heroBatchEnrichmentStartupGraceUsed) {
+            heroBatchEnrichmentStartupGraceUsed = true
+            co.touchlab.kermit.Logger.withTag("HeroLogoRace").i {
+                "t=${heroProbeMs()} BATCH grace start (${HERO_BATCH_ENRICHMENT_STARTUP_GRACE_MS}ms, ${baseHeroItems.size} items)"
+            }
+            delay(HERO_BATCH_ENRICHMENT_STARTUP_GRACE_MS)
+        }
+        co.touchlab.kermit.Logger.withTag("HeroLogoRace").i {
+            "t=${heroProbeMs()} BATCH dispatch ${baseHeroItems.size} items"
         }
         if (!heroMetadataStartupGraceUsed) {
             heroMetadataStartupGraceUsed = true
@@ -658,7 +692,7 @@ fun HomeScreen(
                 )
             }
             enriched.also {
-                heroEnrichmentMap[canonicalHeroKey(enriched.type, enriched.id)] = enriched
+                publishHeroEnrichment(heroEnrichmentMap, enriched, "baseHeroEnrich")
             }
         }
         if (effectiveHeroItems.map { canonicalHeroKey(it.type, it.id) } == newKeys &&
@@ -760,7 +794,7 @@ fun HomeScreen(
                                 now.logo ?: fetchedMeta.logo,
                         )
                     }
-                    heroEnrichmentMap[canonicalHeroKey(enriched.type, enriched.id)] = enriched
+                    publishHeroEnrichment(heroEnrichmentMap, enriched, "batchHeroEnrich")
                     idx to enriched
                 }
             }
@@ -780,11 +814,13 @@ fun HomeScreen(
     val homeListState = rememberLazyListState()
     val libraryListState = rememberLazyListState()
     val searchListState = remember(searchQuery) { LazyListState() }
+    val catalogListState = rememberLazyListState()
     
     val currentListState = when (displayMode) {
         is HomeContentMode.Normal -> homeListState
         is HomeContentMode.Library -> libraryListState
         is HomeContentMode.Search -> searchListState
+        is HomeContentMode.Catalogs -> catalogListState
     }
     // Remember the Home tab's scroll position across navigation (e.g. opening the
     // details screen and coming back) so the user returns to where they were rather
@@ -1073,12 +1109,21 @@ fun HomeScreen(
     val profileState by ProfileRepository.state.collectAsStateWithLifecycle()
     val activeProfileId = profileState.activeProfile?.profileIndex ?: 1
     val cwCacheClearVersion by ContinueWatchingEnrichmentCache.cacheCleared.collectAsStateWithLifecycle()
+    val cwArtworkRefreshVersion by ContinueWatchingEnrichmentCache.artworkRefreshRequests
+        .collectAsStateWithLifecycle()
 
     var nextUpItemsBySeries by remember(activeProfileId) { mutableStateOf<Map<String, Pair<Long, ContinueWatchingItem>>>(emptyMap()) }
     var processedNextUpContentIds by remember(activeProfileId) { mutableStateOf<Set<String>>(emptySet()) }
+    // Lets the resolution effect tell a manual-resync run apart from the many other reasons it
+    // re-runs, so only the resync pays for a meta refetch.
+    // -1 makes the first settled Home pass a real artwork refresh. The persisted CW snapshot is
+    // specifically what survives an app update/restart, so treating launch as already applied
+    // leaves placeholder episode art untouched until the user happens to finish another episode.
+    var appliedArtworkRefreshVersion by remember(activeProfileId) { mutableStateOf(-1) }
 
     LaunchedEffect(activeProfileId, cwCacheClearVersion) {
         com.nuvio.app.features.watchprogress.NextUpDiagnostics.reset()
+        ContinueWatchingArtworkDiagnostics.reset()
         if (cwCacheClearVersion == 0) return@LaunchedEffect
         nextUpItemsBySeries = emptyMap()
         processedNextUpContentIds = emptySet()
@@ -1150,6 +1195,21 @@ fun HomeScreen(
             cached.contentId to (sortTimestamp to item)
         }.toMap()
     }
+    // Deliberately built from the raw snapshot rather than from cachedNextUpItems: that map drops
+    // an entry the moment its seed moves on, which is exactly when a re-resolve happens and
+    // exactly when the show's poster and backdrop are still needed as a floor.
+    val cachedNextUpArtwork = remember(cachedSnapshots.first) {
+        cachedSnapshots.first.associate { cached ->
+            cached.contentId to CachedNextUpArtwork(
+                poster = cached.poster,
+                background = cached.backdrop,
+                logo = cached.logo,
+                seasonNumber = cached.season,
+                episodeNumber = cached.episode,
+                episodeThumbnail = cached.episodeThumbnail,
+            )
+        }
+    }
     val cachedInProgressItems = remember(cachedSnapshots.second, isTraktProgressActive) {
         cachedSnapshots.second.mapNotNull { cached ->
             if (isTraktProgressActive && WatchProgressRepository.isDroppedShow(cached.contentId)) {
@@ -1205,6 +1265,15 @@ fun HomeScreen(
             sortMode = continueWatchingPreferences.sortMode,
             todayIsoDate = CurrentDateProvider.todayIsoDate(),
             cloudLibraryUiState = cloudLibraryUiState,
+        )
+    }
+    val (continueWatchingRowItems, nextUpRowItems) = remember(
+        continueWatchingItems,
+        continueWatchingPreferences.separateNextUpRow,
+    ) {
+        splitContinueWatchingRows(
+            items = continueWatchingItems,
+            separateNextUpRow = continueWatchingPreferences.separateNextUpRow,
         )
     }
 
@@ -1279,6 +1348,50 @@ fun HomeScreen(
         HomeCatalogSettingsRepository.syncCollections(collections)
     }
 
+    // Collection catalogs are otherwise only fetched when a folder is opened, so keep a page of
+    // each one warm while Random Play is set to include them.
+    LaunchedEffect(
+        collections,
+        enabledAddons,
+        homeSettingsUiState.randomPlayEnabled,
+        homeSettingsUiState.randomPlayIncludeCollections,
+    ) {
+        if (homeSettingsUiState.randomPlayEnabled && homeSettingsUiState.randomPlayIncludeCollections) {
+            RandomPlayCollectionPool.ensureLoaded()
+        }
+    }
+
+    // Tops the candidate pool up to RANDOM_PLAY_TARGET_CANDIDATES per card: resolves the genres and
+    // release info catalog rows leave out, then pages the rows that can give more. A no-op once
+    // every enabled card has enough, so this rides Home's own state changes.
+    //
+    // Deliberately waits for Home to finish loading. Rows are published in batches as they arrive,
+    // so a pool started early would measure its shortfall against a fraction of the catalogs, spend
+    // its request budget paging for titles the next batch was about to deliver, and throw the work
+    // away when the row set changed under it.
+    LaunchedEffect(
+        homeUiState.isLoading,
+        homeUiState.sections,
+        randomPlayCollectionSections,
+        homeSettingsUiState.randomPlayEnabled,
+        homeSettingsUiState.randomPlayIncludeCollections,
+        homeSettingsUiState.randomPlayCategories,
+        homeSettingsUiState.randomPlayGenres,
+        homeSettingsUiState.randomPlayMinimumImdbRating,
+        watchedUiState.watchedKeys,
+    ) {
+        if (homeUiState.isLoading) return@LaunchedEffect
+        RandomPlayCandidatePool.ensureFilled(
+            sourceSections = randomPlaySourceSections(
+                homeSections = homeUiState.sections,
+                collectionSections = randomPlayCollectionSections,
+                settings = homeSettingsUiState,
+            ),
+            settings = homeSettingsUiState,
+            watchedKeys = watchedUiState.watchedKeys,
+        )
+    }
+
     LaunchedEffect(
         completedSeriesCandidates,
         metaProviderKey,
@@ -1288,6 +1401,7 @@ fun HomeScreen(
         watchProgressSeedKey,
         watchedUiState.items,
         watchedUiState.isLoaded,
+        cwArtworkRefreshVersion,
     ) {
         if (completedSeriesCandidates.isEmpty()) {
             nextUpItemsBySeries = emptyMap()
@@ -1304,31 +1418,42 @@ fun HomeScreen(
         }
 
         withContext(Dispatchers.Default) {
-            val cachedResolvedNextUpItems = completedSeriesCandidates.mapNotNull { candidate ->
-                val cached = cachedNextUpItems[candidate.content.id] ?: return@mapNotNull null
-                val item = cached.second
-                if (
-                    item.nextUpSeedSeasonNumber != candidate.seasonNumber ||
-                    item.nextUpSeedEpisodeNumber != candidate.episodeNumber
-                ) {
-                    return@mapNotNull null
-                }
-                candidate.content.id to cached
-            }.toMap()
-            val candidatesToResolve = completedSeriesCandidates.filter { candidate ->
-                candidate.content.id !in cachedResolvedNextUpItems
-            }
+            val plan = planNextUpResolution(
+                completedSeriesCandidates = completedSeriesCandidates,
+                cachedNextUpItems = cachedNextUpItems,
+            )
+            val cachedMatchingSeed = plan.cachedBySeries
+            val cachedStaleArtworkItems = plan.staleArtworkContentIds
+            val candidatesToResolve = plan.candidatesToResolve
             val resolutionCandidates = candidatesToResolve.take(HomeNextUpInitialResolutionLimit)
+            // Only a resync or a just-completed episode bypasses the meta LRU. Every other
+            // re-resolve rides the cache, so the retries cost nothing beyond the first fetch of
+            // each app run.
+            //
+            // The version is consumed at the end of the pass, not here: the events that request a
+            // refresh also churn watch progress, so this effect is often cancelled and re-keyed
+            // moments later. Marking it applied up front would burn the request on a pass that
+            // never got to fetch anything.
+            val forceArtworkMetaRefresh = shouldForceNextUpArtworkMetaRefresh(
+                requestVersion = cwArtworkRefreshVersion,
+                appliedVersion = appliedArtworkRefreshVersion,
+            )
+            com.nuvio.app.features.watchprogress.NextUpDiagnostics.logArtworkRetry(
+                contentIds = cachedStaleArtworkItems,
+                forcedMetaRefresh = forceArtworkMetaRefresh,
+                withinBudget = resolutionCandidates.count { it.content.id in cachedStaleArtworkItems },
+            )
             val seedLastWatchedMap = completedSeriesCandidates.associate { it.content.id to it.markedAtEpochMs }
             if (candidatesToResolve.isEmpty()) {
+                appliedArtworkRefreshVersion = cwArtworkRefreshVersion
                 withContext(Dispatchers.Main) {
-                    nextUpItemsBySeries = cachedResolvedNextUpItems
+                    nextUpItemsBySeries = cachedMatchingSeed
                     processedNextUpContentIds = completedSeriesCandidates.mapTo(mutableSetOf()) { candidate ->
                         candidate.content.id
                     }
                 }
                 saveContinueWatchingSnapshots(
-                    nextUpItemsBySeries = cachedResolvedNextUpItems,
+                    nextUpItemsBySeries = cachedMatchingSeed,
                     visibleContinueWatchingEntries = visibleContinueWatchingEntries,
                     todayIsoDate = CurrentDateProvider.todayIsoDate(),
                     seedLastWatchedMap = seedLastWatchedMap,
@@ -1359,6 +1484,8 @@ fun HomeScreen(
                                 showUnairedNextUp = continueWatchingPreferences.showUnairedNextUp,
                                 dismissedNextUpKeys = continueWatchingPreferences.dismissedNextUpKeys,
                                 isTraktProgressActive = isTraktProgressActive,
+                                forceMetaRefresh = forceArtworkMetaRefresh &&
+                                    completedEntry.content.id in cachedStaleArtworkItems,
                             )
                         }
                     }
@@ -1371,26 +1498,37 @@ fun HomeScreen(
                 }
                 val batchResolvedCount = freshResults.size - resolvedBeforeBatch
                 if (batchResolvedCount > 0) {
-                    val progressiveResults = cachedResolvedNextUpItems + freshResults
+                    val progressiveResults = cachedMatchingSeed + mergeNextUpResultsWithCachedArtwork(
+                        results = freshResults,
+                        cachedArtwork = cachedNextUpArtwork,
+                        reason = "progressive-resolve",
+                    )
                     withContext(Dispatchers.Main) {
                         nextUpItemsBySeries = progressiveResults
                         processedNextUpContentIds = (
-                            cachedResolvedNextUpItems.keys +
+                            cachedMatchingSeed.keys +
                                 processedFreshContentIds
                             ).toSet()
                     }
                 }
 
-                if (cachedResolvedNextUpItems.size + freshResults.size >= HomeContinueWatchingMaxRecentProgressItems) {
+                if (cachedMatchingSeed.size + freshResults.size >= HomeContinueWatchingMaxRecentProgressItems) {
                     break
                 }
             }
 
-            val results = cachedResolvedNextUpItems + freshResults
+            appliedArtworkRefreshVersion = cwArtworkRefreshVersion
+            // The merged map is what gets saved below. A fresh result that came back without
+            // artwork must not be allowed to overwrite the snapshot that still has it.
+            val results = cachedMatchingSeed + mergeNextUpResultsWithCachedArtwork(
+                results = freshResults,
+                cachedArtwork = cachedNextUpArtwork,
+                reason = if (forceArtworkMetaRefresh) "forced-artwork-refresh" else "resolve",
+            )
             withContext(Dispatchers.Main) {
                 nextUpItemsBySeries = results
                 processedNextUpContentIds = (
-                    cachedResolvedNextUpItems.keys +
+                    cachedMatchingSeed.keys +
                         processedFreshContentIds
                     ).toSet()
             }
@@ -1450,14 +1588,25 @@ fun HomeScreen(
     // Library doesn't pull the user to the home page.
     val isShowingHomeContent = displayMode is HomeContentMode.Normal
     val continueWatchingRowState = remember { HomeScrollMemory.continueWatchingRowState }
-    LaunchedEffect(isShowingHomeContent, continueWatchingItems.isNotEmpty()) {
+    val nextUpRowState = remember { HomeScrollMemory.nextUpRowState }
+    LaunchedEffect(isShowingHomeContent, continueWatchingRowItems.isNotEmpty()) {
         if (
             isShowingHomeContent &&
-            continueWatchingItems.isNotEmpty() &&
+            continueWatchingRowItems.isNotEmpty() &&
             !HomeScrollMemory.continueWatchingStartupResetApplied
         ) {
             continueWatchingRowState.scrollToItem(0, scrollOffset = 0)
             HomeScrollMemory.continueWatchingStartupResetApplied = true
+        }
+    }
+    LaunchedEffect(isShowingHomeContent, nextUpRowItems.isNotEmpty()) {
+        if (
+            isShowingHomeContent &&
+            nextUpRowItems.isNotEmpty() &&
+            !HomeScrollMemory.nextUpStartupResetApplied
+        ) {
+            nextUpRowState.scrollToItem(0, scrollOffset = 0)
+            HomeScrollMemory.nextUpStartupResetApplied = true
         }
     }
     // Applies to every catalog-row surface, not just home: Search and Library rows honour it too
@@ -1540,10 +1689,13 @@ fun HomeScreen(
             }
         }
     }
+    val catalogModeKey = (displayMode as? HomeContentMode.Catalogs)?.key
+    val catalogTvFocus = remember(heroFocusable, catalogModeKey) { HomeTvFocusState() }
     val tvFocus = when (displayMode) {
         is HomeContentMode.Normal -> homeTvFocus
         is HomeContentMode.Library -> libraryTvFocus
         is HomeContentMode.Search -> searchTvFocus
+        is HomeContentMode.Catalogs -> catalogTvFocus
     }
 
     // --- Continue-watching hero preview ---
@@ -1551,8 +1703,19 @@ fun HomeScreen(
     // Giving it hero previews lets the Adaptive / Ambient / TV hero retarget to the focused CW card
     // while TV mode additionally offers a Resume action. Basic mode never follows focus (see
     // heroFollowsFocusedItem), so it is unaffected.
-    val continueWatchingHeroPreviews = remember(continueWatchingItems) {
-        continueWatchingItems.map { it.toHomeHeroPreview() }
+    val continueWatchingHeroPreviews = remember(continueWatchingRowItems) {
+        continueWatchingRowItems.map { it.toHomeHeroPreview() }
+    }
+    val nextUpHeroPreviews = remember(nextUpRowItems) {
+        nextUpRowItems.map { it.toHomeHeroPreview() }
+    }
+    val nextUpRowTitle = stringResource(Res.string.continue_watching_up_next)
+    val nextUpImmersiveSettingsItem = remember(nextUpRowTitle) {
+        HomeCatalogSettingsItem(
+            key = HOME_NEXT_UP_SECTION_KEY,
+            defaultTitle = nextUpRowTitle,
+            addonName = "",
+        )
     }
     // TV Mode auto-focuses the CW row on entry, so it gets a dismiss control to fall back to the
     // two-catalog hero. The dismissal is session-scoped state owned by the app root (so it survives
@@ -1568,12 +1731,18 @@ fun HomeScreen(
         HomeHeroTrailerGate.notifyFocusChanged()
     }
     val tvFocusRequester = remember { FocusRequester() }
+    var homeRootHasFocus by remember { mutableStateOf(false) }
     var lastStateDrivenSearchQuery by remember { mutableStateOf<String?>(null) }
     // Move content-area focus when the user presses Down from the search bar.
     LaunchedEffect(navigateToContentCount) {
         if (navigateToContentCount > 0) {
-            delay(50)
-            try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+            // A returning route can still own focus for part of its exit animation. Retry for a
+            // short bounded window instead of relying on a request that may land too early.
+            repeat(12) { attempt ->
+                delay(if (attempt == 0) 50 else 48)
+                runCatching { tvFocusRequester.requestFocus() }
+                if (homeRootHasFocus) return@LaunchedEffect
+            }
         }
     }
 
@@ -1629,11 +1798,13 @@ fun HomeScreen(
         SearchScrollMemory.resetIfQueryChanged(searchQuery)
         mutableStateOf(SearchScrollMemory.immersiveRowIndex)
     }
+    var catalogImmersiveRowIndex by remember(catalogModeKey) { mutableStateOf(0) }
     val getImmersiveRowIndex = {
         when (displayMode) {
             is HomeContentMode.Normal -> homeImmersiveRowIndex
             is HomeContentMode.Library -> libraryImmersiveRowIndex
             is HomeContentMode.Search -> searchImmersiveRowIndex
+            is HomeContentMode.Catalogs -> catalogImmersiveRowIndex
         }
     }
     val setImmersiveRowIndex = { value: Int ->
@@ -1641,6 +1812,7 @@ fun HomeScreen(
             is HomeContentMode.Normal -> homeImmersiveRowIndex = value
             is HomeContentMode.Library -> libraryImmersiveRowIndex = value
             is HomeContentMode.Search -> searchImmersiveRowIndex = value
+            is HomeContentMode.Catalogs -> catalogImmersiveRowIndex = value
         }
     }
     // Persist the immersive home row + the focused position within it so both survive leaving and
@@ -1678,8 +1850,10 @@ fun HomeScreen(
     val tvRows = remember(
         contentMode,
         continueWatchingPreferences.isVisible,
-        continueWatchingItems,
+        continueWatchingRowItems,
+        nextUpRowItems,
         continueWatchingHeroPreviews,
+        nextUpHeroPreviews,
         continueWatchingHeroFollowActive,
         enabledHomeItems,
         collectionsMap,
@@ -1691,15 +1865,26 @@ fun HomeScreen(
         posterClickHandler,
     ) {
         buildList {
-            if (isShowingHomeContent && continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
+            if (isShowingHomeContent && continueWatchingPreferences.isVisible && continueWatchingRowItems.isNotEmpty()) {
                 add(
                     HomeTvRow(
-                        itemCount = continueWatchingItems.size,
+                        itemCount = continueWatchingRowItems.size,
                         // Hero previews let the adaptive/TV hero follow the focused CW card. Nulled
                         // out while the TV dismiss is active so the hero reverts to the catalog rows.
                         metaItems = if (continueWatchingHeroFollowActive) continueWatchingHeroPreviews else null,
                         onEnter = { index ->
-                            continueWatchingItems.getOrNull(index)?.let { onContinueWatchingClick?.invoke(it) }
+                            continueWatchingRowItems.getOrNull(index)?.let { onContinueWatchingClick?.invoke(it) }
+                        },
+                    ),
+                )
+            }
+            if (isShowingHomeContent && continueWatchingPreferences.isVisible && nextUpRowItems.isNotEmpty()) {
+                add(
+                    HomeTvRow(
+                        itemCount = nextUpRowItems.size,
+                        metaItems = if (continueWatchingHeroFollowActive) nextUpHeroPreviews else null,
+                        onEnter = { index ->
+                            nextUpRowItems.getOrNull(index)?.let { onContinueWatchingClick?.invoke(it) }
                         },
                     ),
                 )
@@ -1777,9 +1962,13 @@ fun HomeScreen(
 
             // Search / Library mode: add effective sections as TV rows for keyboard navigation.
             if (displayMode !is HomeContentMode.Normal) {
-                val resultRows = effectiveSections.filter { it.items.isNotEmpty() }
-                    .map { it.resultRowEntries(catalogSeeMoreEnabled) }
-                resultRows.forEach { entries ->
+                effectiveSections.filter { it.items.isNotEmpty() }.forEach { section ->
+                    val usesInfiniteScroll = section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
+                    val entries = if (usesInfiniteScroll) {
+                        section.items
+                    } else {
+                        section.resultRowEntries(catalogSeeMoreEnabled)
+                    }
                     add(
                         HomeTvRow(
                             itemCount = entries.size,
@@ -1787,7 +1976,18 @@ fun HomeScreen(
                             onEnter = { index ->
                                 entries.getOrNull(index)?.let { posterClickHandler?.invoke(it) }
                             },
-                            onRightAtEnd = null,
+                            onLoadMore = if (usesInfiniteScroll && section.hasMore) {
+                                onLoadMoreCatalog?.let { callback -> { callback(section) } }
+                            } else {
+                                null
+                            },
+                            onRightAtEnd = if (
+                                !usesInfiniteScroll && section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)
+                            ) {
+                                onCatalogClick?.let { callback -> { callback(section) } }
+                            } else {
+                                null
+                            },
                         ),
                     )
                 }
@@ -2040,6 +2240,9 @@ fun HomeScreen(
             } else if (contentMode is HomeContentMode.Search) {
                 onNavigateToHome?.invoke()
                 true
+            } else if (contentMode is HomeContentMode.Catalogs && onBack != null) {
+                onBack()
+                true
             } else false
         }
         HomeTvKey.Search -> {
@@ -2078,7 +2281,9 @@ fun HomeScreen(
     val immersiveRows = remember(
         contentMode,
         continueWatchingPreferences.isVisible,
-        continueWatchingItems,
+        continueWatchingRowItems,
+        nextUpRowItems,
+        nextUpImmersiveSettingsItem,
         enabledHomeItems,
         collectionsMap,
         sectionsMap,
@@ -2086,8 +2291,11 @@ fun HomeScreen(
     ) {
         buildList<HomeCatalogSettingsItem?> {
             if (isShowingHomeContent) {
-                if (continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
+                if (continueWatchingPreferences.isVisible && continueWatchingRowItems.isNotEmpty()) {
                     add(null)
+                }
+                if (continueWatchingPreferences.isVisible && nextUpRowItems.isNotEmpty()) {
+                    add(nextUpImmersiveSettingsItem)
                 }
                 enabledHomeItems.forEach { settingsItem ->
                     val isRenderable = if (settingsItem.isCollection) {
@@ -2212,16 +2420,37 @@ fun HomeScreen(
                 snapshotFlow { heroEnrichmentMap[key] }
                     .filterNotNull()
                     .first()
-            } ?: return
+            }
+            if (enriched == null) {
+                // The window expired, so release the held slot and let the title text render as
+                // the current answer. Do NOT stop listening: this is an upgrade, not a hold, and
+                // nothing is blocked by waiting longer. The card focused at launch routinely loses
+                // this race because the batch pass publishes every other hero key first, and
+                // giving up here left it unenriched until it was re-focused, which re-ran this
+                // effect and read the by-then-populated map.
+                logHeroPick("upgradeTimedOut", raw)
+                if (raw.heroMetadataPending) {
+                    displayedFocusedItem = raw.copy(heroMetadataPending = false)
+                }
+                val late = snapshotFlow { heroEnrichmentMap[key] }
+                    .filterNotNull()
+                    .first()
+                logHeroPick("upgradeArrivedLate", late)
+                displayedFocusedItem = late
+                return
+            }
+            logHeroPick("upgradeWhenTextArrives", enriched)
             displayedFocusedItem = enriched
         }
         if (!isEnrichedMode) {
+            logHeroPick("notEnrichedMode", tvFocusedHeroItemRaw)
             displayedFocusedItem = tvFocusedHeroItemRaw
             tvFocusedHeroItemRaw?.let { upgradeWhenTextArrives(it) }
             return@LaunchedEffect
         }
         val raw = tvFocusedHeroItemRaw
         if (raw == null) {
+            logHeroPick("rawNull", null)
             displayedFocusedItem = null
             return@LaunchedEffect
         }
@@ -2229,13 +2458,20 @@ fun HomeScreen(
         // would only reproduce it. Deliberately not a poster check: a poster is not a backdrop, and
         // treating one as "already resolved" is what put a stretched poster behind the hero.
         if (raw.banner.isMetadataProviderArtUrl()) {
-            displayedFocusedItem = raw
-            upgradeWhenTextArrives(raw)
+            // The backdrop is already provider-quality so this copy shows at once, but a row with
+            // no logo of its own is about to receive one from the enrichment below. Mark the logo
+            // unresolved so the slot stays empty rather than painting the title text and replacing
+            // it a moment later; upgradeWhenTextArrives clears the marker either way.
+            val pending = raw.withPendingLogoSlot()
+            logHeroPick("providerArtRaw", pending)
+            displayedFocusedItem = pending
+            upgradeWhenTextArrives(pending)
             return@LaunchedEffect
         }
         val key = canonicalHeroKey(raw.type, raw.id)
         if (normalHomeFocusedFallback) {
             heroEnrichmentMap[key]?.let { enriched ->
+                logHeroPick("normalFallbackCached", enriched)
                 displayedFocusedItem = enriched
                 return@LaunchedEffect
             }
@@ -2247,6 +2483,7 @@ fun HomeScreen(
                 .filterNotNull()
                 .first()
         }
+        logHeroPick(if (enriched != null) "boundedHoldEnriched" else "boundedHoldTimedOut", enriched ?: raw)
         displayedFocusedItem = enriched ?: raw
     }
     // displayedFocusedItem is only ever written from the effect above, which runs after the
@@ -2261,7 +2498,11 @@ fun HomeScreen(
         displayedFocusedItem?.takeIf { held ->
             val raw = tvFocusedHeroItemRaw
             raw != null && canonicalHeroKey(held.type, held.id) == canonicalHeroKey(raw.type, raw.id)
-        } ?: tvFocusedHeroItemRaw
+        }
+        // The same pending-logo marker the effect applies. This branch renders a frame or more
+        // before the effect catches up, so without it the slot would paint the title text here and
+        // then blank it once the effect's marked copy lands - turning one swap into two.
+            ?: tvFocusedHeroItemRaw?.withPendingLogoSlot()
     } else {
         displayedFocusedItem
     }
@@ -2277,16 +2518,22 @@ fun HomeScreen(
     // priority and replaces the whole hero. A focused Continue Watching card gets the Resume action
     // only in TV mode; Adaptive and Adaptive Ambient keep the preview but use the normal hero click
     // to open details, avoiding a clipped action in their shorter hero.
+    val continueWatchingDisplayRows = remember(continueWatchingRowItems, nextUpRowItems) {
+        buildList {
+            if (continueWatchingRowItems.isNotEmpty()) add(continueWatchingRowItems)
+            if (nextUpRowItems.isNotEmpty()) add(nextUpRowItems)
+        }
+    }
     val continueWatchingRowPresent = isShowingHomeContent &&
-        continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()
+        continueWatchingPreferences.isVisible && continueWatchingDisplayRows.isNotEmpty()
     val focusedContinueWatchingItem: ContinueWatchingItem? = if (
         resumeHeroPreview == null &&
         heroFollowsFocusedItem &&
         continueWatchingHeroFollowActive &&
         continueWatchingRowPresent &&
-        tvFocusedRowIndex == 0
+        tvFocusedRowIndex in continueWatchingDisplayRows.indices
     ) {
-        continueWatchingItems.getOrNull(tvFocus.itemIndex)
+        continueWatchingDisplayRows[tvFocusedRowIndex].getOrNull(tvFocus.itemIndex)
     } else {
         null
     }
@@ -2302,7 +2549,9 @@ fun HomeScreen(
         focusedContinueWatchingItem != null && tvModeEnabled -> {
             effectiveResumeItemKey =
                 "${focusedContinueWatchingItem.parentMetaType}:${focusedContinueWatchingItem.parentMetaId}"
-            effectiveOnResumeAction = { onContinueWatchingClick?.invoke(focusedContinueWatchingItem) }
+            effectiveOnResumeAction = {
+                (onContinueWatchingPlay ?: onContinueWatchingClick)?.invoke(focusedContinueWatchingItem)
+            }
             effectiveOnResumeDismiss = onContinueWatchingHeroDismiss
         }
         else -> {
@@ -2319,9 +2568,26 @@ fun HomeScreen(
     // Prefetch for Search and Library: warm only the first few metadata targets per row.
     // next section in full. Search/library sets are small (20–50 items) so this is cheap.
     // Home is excluded — the addon handles it in real-time.
+    // Identity of the row this effect actually enriches. Keying the effect on the focus coordinates
+    // alone is not enough: the Continue Watching row finishes loading and reorders *after* the first
+    // composition, so the item at focus (0,0) changes from one title to another while the
+    // coordinates stay put. The effect therefore never re-ran, and the item that ended up displayed
+    // never had an enrichment dispatched for it at all — it sat blank until the hold expired and
+    // then kept its bare title for the rest of the session. Moving the mouse changed itemIndex,
+    // which is why it only ever populated after focusing something else and coming back.
+    //
+    // The canonical key, not the item: the enriched copy is fed back into this composable, so
+    // keying on the object itself would restart the effect on its own result.
+    val focusedHeroEnrichmentKey = tvFocusedHeroItemRaw?.let { canonicalHeroKey(it.type, it.id) }
     LaunchedEffect(
         tvFocus.sectionIndex,
         tvFocus.itemIndex,
+        focusedHeroEnrichmentKey,
+        // Re-run once the addon list settles. Now that the focused enrichment fires as soon as the
+        // hero has an item, it can land before the addons are loaded — the lookup then has no meta
+        // provider to ask, comes back with nothing but a Metahub logo, and (being cached) never
+        // tries again. Mirrors the retry WatchProgressRepository already does for the same reason.
+        enabledAddonCount,
         displayMode,
         searchLibraryBackdropEnrichmentEnabled,
     ) {
@@ -2371,14 +2637,14 @@ fun HomeScreen(
                     ageRating = raw.ageRating ?: meta?.ageRating,
                     runtime = raw.runtime ?: meta?.runtime,
                 ).withFetchedHeroText(meta)
-                heroEnrichmentMap[canonicalHeroKey(enriched.type, enriched.id)] = enriched
+                publishHeroEnrichment(heroEnrichmentMap, enriched, "normalHomeEnrich")
                 return
             }
             // Publish the row as-is when no provider could add anything, so whoever is waiting on
             // this key (the hero hold, a suppressed landscape card) stops waiting immediately
             // instead of sitting on the timeout.
             val fetchedMeta = meta ?: run {
-                heroEnrichmentMap[canonicalHeroKey(raw.type, raw.id)] = raw
+                publishHeroEnrichment(heroEnrichmentMap, raw, "noProviderData")
                 return
             }
             val tvdb = isTvForTvdb && (raw.type.equals("series", ignoreCase = true) ||
@@ -2400,17 +2666,30 @@ fun HomeScreen(
                     else -> raw.logo ?: fetchedMeta.logo
                 },
             )
-            heroEnrichmentMap[canonicalHeroKey(enriched.type, enriched.id)] = enriched
+            publishHeroEnrichment(heroEnrichmentMap, enriched, "searchLibraryEnrich")
         }
 
         fun enrich(raw: MetaPreview) = launch {
             val mapKey = canonicalHeroKey(raw.type, raw.id)
-            if (heroEnrichmentMap.containsKey(mapKey)) return@launch
+            // A cached result only counts as final if it actually resolved the text. The pass
+            // publishes whatever it got even when a provider added nothing, so that anyone waiting
+            // on this key stops waiting — but treating that as done cached the failure for the rest
+            // of the session, and the row kept a bare title no matter how often it was focused.
+            // Retrying costs one lookup per focus for a title that genuinely has no metadata, which
+            // is the cheaper side of the trade.
+            val cached = heroEnrichmentMap[mapKey]
+            if (cached != null && !cached.needsHeroTextEnrichment()) return@launch
             pendingHeroEnrichments[mapKey] = Unit
+            co.touchlab.kermit.Logger.withTag("HeroLogoRace").i {
+                "t=${heroProbeMs()} FOCUSED enrich start key=$mapKey"
+            }
             try {
                 fetchEnrichment(raw)
             } finally {
                 pendingHeroEnrichments.remove(mapKey)
+                co.touchlab.kermit.Logger.withTag("HeroLogoRace").i {
+                    "t=${heroProbeMs()} FOCUSED enrich done key=$mapKey"
+                }
             }
         }
 
@@ -2458,6 +2737,7 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .focusRequester(tvFocusRequester)
+            .onFocusChanged { homeRootHasFocus = it.hasFocus }
             .focusable()
             .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
                 try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
@@ -2729,7 +3009,6 @@ fun HomeScreen(
                     immersiveContentBottomPadding = immersiveShelfHeight - 20.dp,
                     resumePromptItemKey = effectiveResumeItemKey,
                     resumePromptLabel = resumePromptLabel,
-                    resumePromptActionLabel = resumePromptActionLabel,
                     onResumePromptAction = effectiveOnResumeAction,
                     onResumePromptDismiss = effectiveOnResumeDismiss,
                     onActiveItemChanged = { item ->
@@ -2780,10 +3059,10 @@ fun HomeScreen(
 
             when {
                 !hasActiveAddons && !hasRenderableCollectionRows -> {
-                    if (isShowingHomeContent && continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
-                        item {
+                    if (isShowingHomeContent && continueWatchingPreferences.isVisible && continueWatchingRowItems.isNotEmpty()) {
+                        item(key = HOME_CONTINUE_WATCHING_SECTION_KEY) {
                             HomeContinueWatchingSection(
-                                items = continueWatchingItems,
+                                items = continueWatchingRowItems,
                                 style = continueWatchingPreferences.style,
                                 useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
                                 blurNextUp = continueWatchingPreferences.blurNextUp,
@@ -2791,6 +3070,23 @@ fun HomeScreen(
                                 sectionPadding = homeSectionPadding,
                                 layout = continueWatchingLayout,
                                 rowState = continueWatchingRowState,
+                                onItemClick = onContinueWatchingClick,
+                                onItemLongPress = onContinueWatchingLongPress,
+                            )
+                        }
+                    }
+                    if (isShowingHomeContent && continueWatchingPreferences.isVisible && nextUpRowItems.isNotEmpty()) {
+                        item(key = HOME_NEXT_UP_SECTION_KEY) {
+                            HomeContinueWatchingSection(
+                                items = nextUpRowItems,
+                                title = nextUpRowTitle,
+                                style = continueWatchingPreferences.style,
+                                useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
+                                blurNextUp = continueWatchingPreferences.blurNextUp,
+                                modifier = Modifier.padding(bottom = 12.dp),
+                                sectionPadding = homeSectionPadding,
+                                layout = continueWatchingLayout,
+                                rowState = nextUpRowState,
                                 onItemClick = onContinueWatchingClick,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
@@ -2806,10 +3102,10 @@ fun HomeScreen(
                 }
 
                 homeUiState.isLoading && effectiveSections.isEmpty() && !hasRenderableCollectionRows -> {
-                    if (isShowingHomeContent && continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
-                        item {
+                    if (isShowingHomeContent && continueWatchingPreferences.isVisible && continueWatchingRowItems.isNotEmpty()) {
+                        item(key = HOME_CONTINUE_WATCHING_SECTION_KEY) {
                             HomeContinueWatchingSection(
-                                items = continueWatchingItems,
+                                items = continueWatchingRowItems,
                                 style = continueWatchingPreferences.style,
                                 useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
                                 blurNextUp = continueWatchingPreferences.blurNextUp,
@@ -2817,6 +3113,23 @@ fun HomeScreen(
                                 sectionPadding = homeSectionPadding,
                                 layout = continueWatchingLayout,
                                 rowState = continueWatchingRowState,
+                                onItemClick = onContinueWatchingClick,
+                                onItemLongPress = onContinueWatchingLongPress,
+                            )
+                        }
+                    }
+                    if (isShowingHomeContent && continueWatchingPreferences.isVisible && nextUpRowItems.isNotEmpty()) {
+                        item(key = HOME_NEXT_UP_SECTION_KEY) {
+                            HomeContinueWatchingSection(
+                                items = nextUpRowItems,
+                                title = nextUpRowTitle,
+                                style = continueWatchingPreferences.style,
+                                useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
+                                blurNextUp = continueWatchingPreferences.blurNextUp,
+                                modifier = Modifier.padding(bottom = 12.dp),
+                                sectionPadding = homeSectionPadding,
+                                layout = continueWatchingLayout,
+                                rowState = nextUpRowState,
                                 onItemClick = onContinueWatchingClick,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
@@ -2901,12 +3214,12 @@ fun HomeScreen(
                     var tvRowCursor = 0
 
                     if (isShowingHomeContent &&
-                        continueWatchingPreferences.isVisible && continueWatchingItems.isNotEmpty()) {
+                        continueWatchingPreferences.isVisible && continueWatchingRowItems.isNotEmpty()) {
                         val rowIndex = tvRowCursor++
                         val sectionIndex = if (heroFocusable) rowIndex + 1 else rowIndex
-                        item {
+                        item(key = HOME_CONTINUE_WATCHING_SECTION_KEY) {
                             HomeContinueWatchingSection(
-                                items = continueWatchingItems,
+                                items = continueWatchingRowItems,
                                 style = continueWatchingPreferences.style,
                                 useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
                                 blurNextUp = continueWatchingPreferences.blurNextUp,
@@ -2914,6 +3227,38 @@ fun HomeScreen(
                                 sectionPadding = homeSectionPadding,
                                 layout = continueWatchingLayout,
                                 rowState = continueWatchingRowState,
+                                focusedItemIndex = if (tvFocusedRowIndex == rowIndex) tvFocus.itemIndex else null,
+                                isKeyboardNavigation = !mouseActivity.isMouseActive,
+                                onHoverItem = if (isDesktop) {
+                                    { itemIndex ->
+                                        if (mouseActivity.isMouseActive) {
+                                            tvFocus.sectionIndex = sectionIndex
+                                            tvFocus.itemIndex = itemIndex
+                                        }
+                                    }
+                                } else {
+                                    null
+                                },
+                                onItemClick = onContinueWatchingClick,
+                                onItemLongPress = onContinueWatchingLongPress,
+                            )
+                        }
+                    }
+                    if (isShowingHomeContent &&
+                        continueWatchingPreferences.isVisible && nextUpRowItems.isNotEmpty()) {
+                        val rowIndex = tvRowCursor++
+                        val sectionIndex = if (heroFocusable) rowIndex + 1 else rowIndex
+                        item(key = HOME_NEXT_UP_SECTION_KEY) {
+                            HomeContinueWatchingSection(
+                                items = nextUpRowItems,
+                                title = nextUpRowTitle,
+                                style = continueWatchingPreferences.style,
+                                useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
+                                blurNextUp = continueWatchingPreferences.blurNextUp,
+                                modifier = Modifier.padding(bottom = 12.dp),
+                                sectionPadding = homeSectionPadding,
+                                layout = continueWatchingLayout,
+                                rowState = nextUpRowState,
                                 focusedItemIndex = if (tvFocusedRowIndex == rowIndex) tvFocus.itemIndex else null,
                                 isKeyboardNavigation = !mouseActivity.isMouseActive,
                                 onHoverItem = if (isDesktop) {
@@ -3010,7 +3355,7 @@ fun HomeScreen(
                                         } else {
                                             null
                                         },
-                                        onLoadMore = if (usesInfiniteScroll) {
+                                        onLoadMore = if (usesInfiniteScroll && section.hasMore) {
                                             { HomeRepository.loadMoreCatalogRow(section.key) }
                                         } else {
                                             null
@@ -3029,16 +3374,21 @@ fun HomeScreen(
                     // Search / Library mode: render result sections directly.
                     if (!isShowingHomeContent) {
                         rowSections.forEach { section ->
+                            val usesInfiniteScroll = section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
                             val rowIndex = tvRowCursor++
                             val sectionIndex = if (heroFocusable) rowIndex + 1 else rowIndex
                             item(key = section.key) {
                                 HomeCatalogRowSection(
                                     section = section,
-                                    entries = section.resultRowEntries(
-                                        catalogSeeMoreEnabled = catalogSeeMoreEnabled,
-                                        cardEnrichments = heroEnrichmentMap,
-                                        pendingEnrichmentKeys = landscapePendingEnrichmentKeys,
-                                    ),
+                                    entries = if (usesInfiniteScroll) {
+                                        section.items
+                                    } else {
+                                        section.resultRowEntries(
+                                            catalogSeeMoreEnabled = catalogSeeMoreEnabled,
+                                            cardEnrichments = heroEnrichmentMap,
+                                            pendingEnrichmentKeys = landscapePendingEnrichmentKeys,
+                                        )
+                                    },
                                     modifier = Modifier.padding(bottom = 12.dp),
                                     sectionPadding = homeSectionPadding,
                                     focusedItemIndex = if (tvFocusedRowIndex == rowIndex) tvFocus.itemIndex else null,
@@ -3061,8 +3411,12 @@ fun HomeScreen(
                                     } else {
                                         null
                                     },
-                                    onLoadMore = null,
-                                    isLoadingMore = false,
+                                    onLoadMore = if (usesInfiniteScroll && section.hasMore) {
+                                        onLoadMoreCatalog?.let { callback -> { callback(section) } }
+                                    } else {
+                                        null
+                                    },
+                                    isLoadingMore = section.isLoadingMore,
                                     watchedKeys = watchedUiState.watchedKeys,
                                     onPosterClick = posterClickHandler,
                                     onPosterLongClick = onPosterLongClick,
@@ -3105,7 +3459,7 @@ fun HomeScreen(
                 ) {
                     when {
                         activeSettingsItem == null && isShowingHomeContent -> HomeContinueWatchingSection(
-                            items = continueWatchingItems,
+                            items = continueWatchingRowItems,
                             style = continueWatchingPreferences.style,
                             useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
                             blurNextUp = continueWatchingPreferences.blurNextUp,
@@ -3122,6 +3476,27 @@ fun HomeScreen(
                             onItemClick = onContinueWatchingClick,
                             onItemLongPress = onContinueWatchingLongPress,
                         )
+
+                        isShowingHomeContent && activeSettingsItem?.key == HOME_NEXT_UP_SECTION_KEY ->
+                            HomeContinueWatchingSection(
+                                items = nextUpRowItems,
+                                title = nextUpRowTitle,
+                                style = continueWatchingPreferences.style,
+                                useEpisodeThumbnails = continueWatchingPreferences.useEpisodeThumbnails,
+                                blurNextUp = continueWatchingPreferences.blurNextUp,
+                                sectionPadding = homeSectionPadding,
+                                layout = continueWatchingLayout,
+                                basePosterWidthDpOverride = immersivePosterBaseWidthDp.takeIf {
+                                    immersiveLandscapeMode
+                                },
+                                focusedItemIndex = tvFocus.itemIndex,
+                                rowState = nextUpRowState,
+                                onHoverItem = ::selectHoveredImmersiveItem,
+                                isKeyboardNavigation = !mouseActivity.isMouseActive,
+                                headerTrailingContent = tvRowDotsContent,
+                                onItemClick = onContinueWatchingClick,
+                                onItemLongPress = onContinueWatchingLongPress,
+                            )
 
                         isShowingHomeContent && activeSettingsItem?.isCollection == true -> {
                             collectionsMap[activeSettingsItem?.key ?: ""]?.let { collection ->
@@ -3151,8 +3526,7 @@ fun HomeScreen(
                             }
                             immSection?.let { section ->
                                 val usesInfiniteScroll =
-                                    isShowingHomeContent &&
-                                        section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
+                                    section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
                                 androidx.compose.runtime.key(section.key) {
                                     HomeCatalogRowSection(
                                         section = section,
@@ -3175,7 +3549,11 @@ fun HomeScreen(
                                         isKeyboardNavigation = !mouseActivity.isMouseActive,
                                         onHoverItem = ::selectHoveredImmersiveItem,
                                         onLoadMore = if (usesInfiniteScroll) {
-                                            { HomeRepository.loadMoreCatalogRow(section.key) }
+                                            if (isShowingHomeContent) {
+                                                { HomeRepository.loadMoreCatalogRow(section.key) }
+                                            } else {
+                                                onLoadMoreCatalog?.let { callback -> { callback(section) } }
+                                            }
                                         } else {
                                             null
                                         },
@@ -3267,6 +3645,8 @@ fun HomeScreen(
 }
 
 private const val HOME_CATALOG_PREVIEW_LIMIT = 18
+private const val HOME_CONTINUE_WATCHING_SECTION_KEY = "home:continue-watching"
+private const val HOME_NEXT_UP_SECTION_KEY = "home:next-up"
 
 /**
  * Entries a Search or Library row renders. Unlike home catalogs these sections never paginate —
@@ -3281,7 +3661,11 @@ private fun HomeCatalogSection.resultRowEntries(
     // was never scheduled for it, or that has already come back empty.
     pendingEnrichmentKeys: Set<String> = emptySet(),
 ): List<MetaPreview> {
-    val entries = if (catalogSeeMoreEnabled) items.take(HOME_CATALOG_PREVIEW_LIMIT) else items
+    val entries = if (catalogSeeMoreEnabled && target != null && !inlineOnly) {
+        items.take(HOME_CATALOG_PREVIEW_LIMIT)
+    } else {
+        items
+    }
     if (cardEnrichments.isEmpty() && pendingEnrichmentKeys.isEmpty()) return entries
     return entries.map { raw ->
         val key = canonicalHeroKey(raw.type, raw.id)
@@ -3345,6 +3729,10 @@ private const val SEARCH_LIBRARY_LANDSCAPE_METADATA_PREFETCH_LIMIT = 8
 // small on purpose: search results fan out across catalogs and users care about the start of each.
 private const val SEARCH_HERO_METADATA_PREFETCH_PER_CATALOG = 2
 private const val HOME_STARTUP_METADATA_GRACE_MS = 900L
+// Long enough for the focused card's own enrichment to get its request away before the hero-
+// rotation batch saturates the connection, short enough that the rotation is still warm before the
+// hero advances. Startup only.
+private const val HERO_BATCH_ENRICHMENT_STARTUP_GRACE_MS = 350L
 // COLLECTION_HERO_TYPE now lives in HomeModels.kt, shared with HomeRepository's own
 // collection-backdrop hero items.
 private const val IMMERSIVE_SHELF_TOP_PADDING_DP = 68f
@@ -3559,12 +3947,16 @@ private suspend fun resolveHomeNextUpCandidate(
     showUnairedNextUp: Boolean,
     dismissedNextUpKeys: Set<String>,
     isTraktProgressActive: Boolean,
+    forceMetaRefresh: Boolean = false,
 ): Pair<String, Pair<Long, ContinueWatchingItem>>? {
     val contentId = completedEntry.content.id
     val meta = try {
         MetaDetailsRepository.fetch(
             type = completedEntry.content.type,
             id = contentId,
+            // Set only for a manual resync retrying a card whose episode still had no thumbnail;
+            // the LRU would otherwise hand back the same artwork-less video list all session.
+            forceRefresh = forceMetaRefresh,
         )
     } catch (error: Throwable) {
         if (error is CancellationException) throw error
@@ -3713,6 +4105,15 @@ private fun heroMobileBelowSectionHeightHint(
     return sectionHeight + bottomNavigationOverlayHeight
 }
 
+internal fun splitContinueWatchingRows(
+    items: List<ContinueWatchingItem>,
+    separateNextUpRow: Boolean,
+): Pair<List<ContinueWatchingItem>, List<ContinueWatchingItem>> {
+    if (!separateNextUpRow) return items to emptyList()
+    return items.filterNot(ContinueWatchingItem::isNextUp) to
+        items.filter(ContinueWatchingItem::isNextUp)
+}
+
 internal fun buildHomeContinueWatchingItems(
     visibleEntries: List<WatchProgressEntry>,
     cachedInProgressByVideoId: Map<String, ContinueWatchingItem> = emptyMap(),
@@ -3818,6 +4219,222 @@ internal data class CompletedSeriesCandidate(
     val episodeNumber: Int,
     val markedAtEpochMs: Long,
 )
+
+/**
+ * What the Up Next pass has to do this run, decided purely from the candidates and the persisted
+ * cache.
+ *
+ * @param cachedBySeries every cached card whose seed still matches, including the stale-artwork
+ *   ones. This is the base the results merge onto, so a retry that fails — or that succeeds and
+ *   still finds no still — leaves the card on screen rather than deleting it.
+ * @param staleArtworkContentIds cached cards that are missing their episode thumbnail. Only these
+ *   may bypass the meta LRU, and only on a manual resync.
+ */
+internal data class NextUpResolutionPlan(
+    val cachedBySeries: Map<String, Pair<Long, ContinueWatchingItem>>,
+    val staleArtworkContentIds: Set<String>,
+    val candidatesToResolve: List<CompletedSeriesCandidate>,
+)
+
+/** Launch/profile load starts at -1, so request version 0 still receives one real metadata read. */
+internal fun shouldForceNextUpArtworkMetaRefresh(
+    requestVersion: Int,
+    appliedVersion: Int,
+): Boolean = requestVersion > appliedVersion
+
+/**
+ * A non-empty thumbnail is not necessarily an episode still. Some metadata providers fill an
+ * unavailable episode thumbnail with the show's backdrop (occasionally at a different TMDB image
+ * size). Persisting that value made the old planner declare the card complete forever.
+ */
+internal fun ContinueWatchingItem.needsEpisodeThumbnailRefresh(): Boolean {
+    val thumbnail = episodeThumbnail?.trim()?.takeIf(String::isNotBlank) ?: return true
+    val thumbnailIdentity = thumbnail.artworkResourceIdentity() ?: return true
+    val copiesSeriesArtwork = sequenceOf(background, poster)
+        .mapNotNull { seriesArtwork -> seriesArtwork.artworkResourceIdentity() }
+        .any { seriesArtworkIdentity -> seriesArtworkIdentity == thumbnailIdentity }
+    if (copiesSeriesArtwork) return true
+
+    val genericArtworkRule = seriesLevelArtworkRule(thumbnail) ?: return false
+    ContinueWatchingArtworkDiagnostics.logGenericArtworkDetected(
+        contentId = parentMetaId,
+        episodeThumbnail = thumbnail,
+        matchedRule = genericArtworkRule,
+    )
+    return true
+}
+
+/**
+ * Comparing the thumbnail against the card's own poster and backdrop only catches a provider that
+ * copies *Nuvio's* series artwork into the still field. AIOMetadata does something the comparison
+ * cannot see: it serves a TVDB series background as `episodeThumbnail` while Nuvio's backdrop came
+ * from TMDB. The two URLs are unrelated, so the card was declared complete and never retried, and
+ * the show backdrop stuck for the life of the seed.
+ *
+ * These providers name the artwork *kind* in the path, so the URL itself says it is show-level.
+ * Only show- and season-level directories are listed — TVDB episode stills live under `/episodes/`
+ * and `/episode/`, which deliberately do not match, and TMDB paths (`/t/p/<size>/`) carry no kind
+ * at all and so never match either.
+ */
+private fun seriesLevelArtworkRule(url: String): String? = SeriesLevelArtworkRules
+    .firstOrNull { (_, pattern) -> pattern.containsMatchIn(url) }
+    ?.first
+
+private val SeriesLevelArtworkRules: List<Pair<String, Regex>> = listOf(
+    "thetvdb series artwork" to Regex(
+        "/series/[^/]+/(?:backgrounds|posters|banners|icons|clearlogo|clearart|fanart)/",
+        RegexOption.IGNORE_CASE,
+    ),
+    "fanart.tv show artwork" to Regex(
+        "/(?:showbackground|tvposter|tvbanner|tvthumb|hdtvlogo|clearlogo|clearart|hdclearart" +
+            "|characterart|seasonposter|seasonthumb)/",
+        RegexOption.IGNORE_CASE,
+    ),
+)
+
+private fun String?.artworkResourceIdentity(): String? = this
+    ?.trim()
+    ?.takeIf(String::isNotBlank)
+    ?.substringBefore('#')
+    ?.substringBefore('?')
+    // TMDB serves the same file below size-specific paths such as /w500/ and /original/.
+    ?.replace(Regex("/t/p/(?:original|w\\d+)/", RegexOption.IGNORE_CASE), "/t/p/")
+    ?.lowercase()
+
+/**
+ * A seed match alone does not mean a cached card is finished: an episode that had no still when it
+ * first resolved can gain one days later, and the card would otherwise stay blank for the whole
+ * life of the seed. Cards missing a thumbnail are therefore queued for re-resolution — but behind
+ * the never-resolved ones, which have nothing on screen at all and so get first claim on the
+ * capped resolution budget.
+ */
+internal fun planNextUpResolution(
+    completedSeriesCandidates: List<CompletedSeriesCandidate>,
+    cachedNextUpItems: Map<String, Pair<Long, ContinueWatchingItem>>,
+): NextUpResolutionPlan {
+    val cachedBySeries = completedSeriesCandidates.mapNotNull { candidate ->
+        val cached = cachedNextUpItems[candidate.content.id] ?: return@mapNotNull null
+        val item = cached.second
+        if (
+            item.nextUpSeedSeasonNumber != candidate.seasonNumber ||
+            item.nextUpSeedEpisodeNumber != candidate.episodeNumber
+        ) {
+            return@mapNotNull null
+        }
+        candidate.content.id to cached
+    }.toMap()
+    val staleArtworkContentIds = cachedBySeries
+        .filterValues { (_, item) -> item.needsEpisodeThumbnailRefresh() }
+        .keys
+    val candidatesToResolve = completedSeriesCandidates.filter { candidate ->
+        candidate.content.id !in cachedBySeries
+    } + completedSeriesCandidates.filter { candidate ->
+        candidate.content.id in staleArtworkContentIds
+    }
+    return NextUpResolutionPlan(
+        cachedBySeries = cachedBySeries,
+        staleArtworkContentIds = staleArtworkContentIds,
+        candidatesToResolve = candidatesToResolve,
+    )
+}
+
+/**
+ * Artwork a previous pass already proved good for a series, kept out of the seed-matching cache so
+ * it survives the user finishing an episode.
+ *
+ * Split deliberately by scope. Poster, backdrop and logo belong to the *show* and stay correct no
+ * matter which episode is up next. The still belongs to one episode, so it may only be reused when
+ * the card resolved to that same episode — carrying it across would put the previous episode's
+ * still on the new card, which is worse than a backdrop.
+ */
+internal data class CachedNextUpArtwork(
+    val poster: String?,
+    val background: String?,
+    val logo: String?,
+    val seasonNumber: Int?,
+    val episodeNumber: Int?,
+    val episodeThumbnail: String?,
+)
+
+/**
+ * Fills in whatever the fresh metadata read did not return.
+ *
+ * A metadata fetch is not all-or-nothing: it can succeed and still come back without a poster, a
+ * backdrop or an episode still, either because the provider is degraded or because a fallback
+ * provider answered. The resulting card has every artwork field null and renders as an empty tile.
+ * Merging the previous pass's artwork underneath means a partial read can only ever add artwork,
+ * never take it away.
+ */
+internal fun ContinueWatchingItem.withCachedArtworkFallback(
+    cached: CachedNextUpArtwork?,
+    reason: String,
+): ContinueWatchingItem {
+    if (cached == null) return this
+    val isSameEpisode = seasonNumber == cached.seasonNumber && episodeNumber == cached.episodeNumber
+    val mergedPoster = poster.orIfBlank(cached.poster)
+    val mergedBackground = background.orIfBlank(cached.background)
+    val mergedLogo = logo.orIfBlank(cached.logo)
+    val mergedEpisodeThumbnail = if (isSameEpisode) {
+        episodeThumbnail.orIfBlank(cached.episodeThumbnail)
+    } else {
+        episodeThumbnail
+    }
+
+    ContinueWatchingArtworkDiagnostics.logArtworkRefresh(
+        contentId = parentMetaId,
+        title = title,
+        reason = reason,
+        cachedEpisodeThumbnail = cached.episodeThumbnail.takeIf { isSameEpisode },
+        freshEpisodeThumbnail = episodeThumbnail,
+        mergedEpisodeThumbnail = mergedEpisodeThumbnail,
+        mergedPoster = mergedPoster,
+        mergedBackground = mergedBackground,
+    )
+
+    if (
+        mergedPoster == poster &&
+        mergedBackground == background &&
+        mergedLogo == logo &&
+        mergedEpisodeThumbnail == episodeThumbnail &&
+        !imageUrl.isNullOrBlank()
+    ) {
+        return this
+    }
+
+    return copy(
+        poster = mergedPoster,
+        background = mergedBackground,
+        logo = mergedLogo,
+        episodeThumbnail = mergedEpisodeThumbnail,
+        // Recomputed rather than merged: imageUrl is a derived "best available" field, and leaving
+        // the fresh read's null here would keep the card blank despite the artwork just restored.
+        imageUrl = imageUrl.orIfBlank(mergedEpisodeThumbnail)
+            .orIfBlank(mergedBackground)
+            .orIfBlank(mergedPoster),
+    )
+}
+
+/**
+ * The map that gets both published to the UI and persisted.
+ *
+ * The persisted snapshot is what paints on the next launch, so it — not just the rendered item —
+ * has to be the merged one. Merging only on the way to the screen let a degraded refresh quietly
+ * overwrite a good snapshot: the card looked right until Home was recreated, then came back blank
+ * with no way to tell what had happened to it.
+ */
+internal fun mergeNextUpResultsWithCachedArtwork(
+    results: Map<String, Pair<Long, ContinueWatchingItem>>,
+    cachedArtwork: Map<String, CachedNextUpArtwork>,
+    reason: String,
+): Map<String, Pair<Long, ContinueWatchingItem>> = results.mapValues { (contentId, pair) ->
+    pair.first to pair.second.withCachedArtworkFallback(
+        cached = cachedArtwork[contentId],
+        reason = reason,
+    )
+}
+
+private fun String?.orIfBlank(fallback: String?): String? =
+    this?.trim()?.takeIf(String::isNotBlank) ?: fallback?.trim()?.takeIf(String::isNotBlank)
 
 private data class HomeContinueWatchingCandidate(
     val lastUpdatedEpochMs: Long,
@@ -4157,6 +4774,69 @@ private fun MetaPreview.needsHeroTextEnrichment(): Boolean =
     type != COLLECTION_HERO_TYPE &&
         randomPlayCategoryOrNull() == null &&
         (genres.isEmpty() || description.isNullOrBlank())
+
+/**
+ * Marks a hero copy whose logo slot must stay empty because a logo is expected imminently.
+ *
+ * A row carrying no logo of its own, that still needs text enrichment, always has an enrichment in
+ * flight - and that enrichment is where the logo comes from. Rendering the title text meanwhile
+ * only to replace it with a logo is the Continue Watching flash; see
+ * [MetaPreview.heroMetadataPending]. A row that already has a logo, or needs nothing, is returned
+ * untouched and renders immediately as before.
+ */
+private fun MetaPreview.withPendingLogoSlot(): MetaPreview =
+    if (logo.isNullOrBlank() && needsHeroTextEnrichment()) {
+        copy(heroMetadataPending = true)
+    } else {
+        this
+    }
+
+/**
+ * Anything published to the hero enrichment map is a resolved answer by definition, so it must
+ * never carry the pending marker - a copy that did would hold the slot empty forever.
+ */
+private fun MetaPreview.asResolvedHeroEnrichment(): MetaPreview =
+    if (heroMetadataPending) copy(heroMetadataPending = false) else this
+
+// TEMPORARY (hero race diagnosis) - elapsed milliseconds since the first probe call. The log shows
+// ordering but carries no timestamps of its own, so without this the one thing that actually
+// matters here - how long the hero sits blank, and where that time goes - is unmeasurable.
+private val heroProbeClock = kotlin.time.TimeSource.Monotonic.markNow()
+
+internal fun heroProbeMs(): Long = heroProbeClock.elapsedNow().inWholeMilliseconds
+
+// TEMPORARY (hero race diagnosis) - remove with the other probes. Records every write to
+// displayedFocusedItem so a repro log shows which writer set the hero item and how complete it was.
+internal fun logHeroPick(site: String, item: MetaPreview?) {
+    co.touchlab.kermit.Logger.withTag("HeroLogoRace").i {
+        if (item == null) {
+            "t=${heroProbeMs()} site=$site item=null"
+        } else {
+            "t=${heroProbeMs()} site=$site key=${canonicalHeroKey(item.type, item.id)} " +
+                "logo=${item.logo?.takeLast(26) ?: "NONE"} pending=${item.heroMetadataPending} " +
+                "genres=${item.genres.size} hasDescr=${!item.description.isNullOrBlank()} " +
+                "needsText=${item.needsHeroTextEnrichment()}"
+        }
+    }
+}
+
+// TEMPORARY (hero race diagnosis) - records every publish into the hero enrichment map with its
+// completeness, so a partial entry landing first and a fuller one landing after it shows up as two
+// PUBLISH lines for one key.
+internal fun publishHeroEnrichment(
+    map: MutableMap<String, MetaPreview>,
+    item: MetaPreview,
+    site: String,
+) {
+    val key = canonicalHeroKey(item.type, item.id)
+    val previous = map[key]
+    co.touchlab.kermit.Logger.withTag("HeroLogoRace").i {
+        "t=${heroProbeMs()} PUBLISH site=$site key=$key logo=${item.logo?.takeLast(24) ?: "NONE"} " +
+            "genres=${item.genres.size} hasDescr=${!item.description.isNullOrBlank()} " +
+            "replaces=${previous?.let { "genres=" + it.genres.size + ",logo=" + (it.logo != null) } ?: "nothing"}"
+    }
+    map[key] = item.asResolvedHeroEnrichment()
+}
 
 /**
  * Strips the addon catalog's art and metadata from a Search/Library hero item so the hero shows

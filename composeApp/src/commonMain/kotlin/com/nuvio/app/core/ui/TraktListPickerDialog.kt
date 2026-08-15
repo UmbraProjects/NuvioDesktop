@@ -55,7 +55,7 @@ fun TraktListPickerDialog(
     ) {
         NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier.padding(tokens.spacing.cardPadding),
+                modifier = Modifier.padding(start = tokens.spacing.cardPadding, end = tokens.spacing.cardPadding, top = tokens.spacing.cardPadding, bottom = NuvioTokens.Space.s8),
                 verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
             ) {
                 Text(

@@ -447,8 +447,8 @@
     <string name="settings_licenses_attributions_exoplayer_title">AndroidX Media3 ExoPlayer 1.8.0</string>
     <string name="settings_licenses_attributions_exoplayer_body">Utilisé pour la lecture sur les builds Android.</string>
     <string name="settings_licenses_attributions_exoplayer_license">Distribué sous la licence Apache, version 2.0.</string>
-    <string name="compose_trakt_list_picker_loading">Chargement de tes listes Trakt…</string>
-    <string name="compose_trakt_list_picker_subtitle">Choisis où enregistrer ce titre dans Trakt</string>
+    <string name="compose_trakt_list_picker_loading">Chargement de tes listes…</string>
+    <string name="compose_trakt_list_picker_subtitle">Choisis les listes où enregistrer ce titre</string>
     <string name="action_donate">Faire un don</string>
     <string name="cw_action_go_to_details">Voir les détails</string>
     <string name="cw_action_remove">Supprimer</string>
@@ -1197,8 +1197,8 @@
     <string name="external_player_unavailable">Aucun lecteur externe disponible</string>
     <string name="trailer_close">Fermer la bande-annonce</string>
     <string name="trailer_unable_to_play">Impossible de lire la bande-annonce</string>
-    <string name="trakt_lists_load_failed">Impossible de charger les listes Trakt</string>
-    <string name="trakt_lists_update_failed">Impossible de mettre à jour les listes Trakt</string>
+    <string name="trakt_lists_load_failed">Impossible de charger les listes</string>
+    <string name="trakt_lists_update_failed">Impossible de mettre à jour les listes</string>
     <string name="updates_asset_line">%1$s • %2$s</string>
     <string name="updates_check_failed">Échec de la vérification des mises à jour</string>
     <string name="updates_download_failed">Échec du téléchargement</string>

@@ -31,6 +31,26 @@ class AnimeWatchedKeyAliasesTest {
     }
 
     @Test
+    fun `an entry-local mark is lifted onto the franchise season`() {
+        // A mark made on a Kitsu addon's own page: that page presents the entry as season 1, so
+        // copying the coordinates onto a franchise id would badge the franchise's first season.
+        // SAO II is franchise season 2, so its entry-local episode 5 is franchise S2E5.
+        val keys = animeAlternateWatchedKeys(listOf(episode("kitsu:8174", season = 1, number = 5)))
+
+        assertContains(keys, watchedItemKey("series", "tt2250192", 2, 5))
+        assertFalse(keys.contains(watchedItemKey("series", "tt2250192", 1, 5)))
+    }
+
+    @Test
+    fun `an entry mapping to season one is left alone`() {
+        // The two spaces coincide there apart from a cour offset, and nothing records which space
+        // the stored coordinates used — shifting on a guess would move an episode never offset.
+        val keys = animeAlternateWatchedKeys(listOf(episode("kitsu:6589", season = 1, number = 5)))
+
+        assertContains(keys, watchedItemKey("series", "tt2250192", 1, 5))
+    }
+
+    @Test
     fun `coordinates are copied, never re-derived`() {
         // SAO II is franchise season 2 and the stored coordinates are already franchise-numbered
         // (SimklWatchedRepository canonicalises before storing). Applying the season/offset maths

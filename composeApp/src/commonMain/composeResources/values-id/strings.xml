@@ -449,8 +449,8 @@
     <string name="settings_licenses_attributions_exoplayer_title">AndroidX Media3 ExoPlayer 1.8.0</string>
     <string name="settings_licenses_attributions_exoplayer_body">Digunakan untuk pemutaran pada build Android.</string>
     <string name="settings_licenses_attributions_exoplayer_license">Dilisensikan di bawah Apache License, Versi 2.0.</string>
-    <string name="compose_trakt_list_picker_loading">Memuat daftar Trakt Anda…</string>
-    <string name="compose_trakt_list_picker_subtitle">Pilih tempat menyimpan judul ini di Trakt</string>
+    <string name="compose_trakt_list_picker_loading">Memuat daftar Anda…</string>
+    <string name="compose_trakt_list_picker_subtitle">Pilih daftar tempat menyimpan judul ini</string>
     <string name="action_donate">Donasi</string>
     <string name="cw_action_go_to_details">Lihat detail</string>
     <string name="cw_action_remove">Hapus</string>
@@ -1218,8 +1218,8 @@
     <string name="external_player_unavailable">Tidak ada player eksternal yang tersedia</string>
     <string name="trailer_close">Tutup trailer</string>
     <string name="trailer_unable_to_play">Tidak dapat memutar trailer</string>
-    <string name="trakt_lists_load_failed">Gagal memuat daftar Trakt</string>
-    <string name="trakt_lists_update_failed">Gagal memperbarui daftar Trakt</string>
+    <string name="trakt_lists_load_failed">Gagal memuat daftar</string>
+    <string name="trakt_lists_update_failed">Gagal memperbarui daftar</string>
     <string name="updates_asset_line">%1$s • %2$s</string>
     <string name="updates_check_failed">Pemeriksaan pembaruan gagal</string>
     <string name="updates_download_failed">Unduhan gagal</string>

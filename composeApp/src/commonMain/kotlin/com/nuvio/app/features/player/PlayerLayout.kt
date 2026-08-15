@@ -14,7 +14,9 @@ import nuvio.composeapp.generated.resources.compose_player_resize_fill
 import nuvio.composeapp.generated.resources.compose_player_resize_fit
 import nuvio.composeapp.generated.resources.compose_player_resize_zoom
 import org.jetbrains.compose.resources.StringResource
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 internal data class PlayerLayoutMetrics(
     val horizontalPadding: Dp,
@@ -151,4 +153,42 @@ internal fun formatPlaybackTime(positionMs: Long): String {
 internal fun formatPlaybackSpeedLabel(speed: Float): String {
     val normalized = speed.toString().trimEnd('0').trimEnd('.')
     return "${normalized}x"
+}
+
+/**
+ * Snaps a user-chosen speed onto the 0.05 grid mpv and the HUD label both render cleanly, within
+ * the range the speed controls already allow. Kept at 0.05 rather than 0.1 so the preset 1.25 and
+ * 1.75 stages stay expressible.
+ */
+internal fun Float.coercePlaybackSpeed(): Float =
+    ((this * 20f).roundToInt().coerceIn(10, 80)) / 20f
+
+/**
+ * The speed the toggle shortcut moves to. At or above the high speed it drops back to the low one,
+ * so a speed reached by stepping past the pair resets rather than climbing; below it, it goes up.
+ * Mirrored by `togglePlaybackSpeed` in `player-ui/controls.js` for the in-page key path.
+ */
+internal fun nextToggledPlaybackSpeed(current: Float, low: Float, high: Float): Float =
+    if (current >= high - 0.01f) low else high
+
+/** Smallest gap the two toggle speeds may sit at, in the 0.05 units [coercePlaybackSpeed] snaps to. */
+private const val PlaybackSpeedToggleMinGapSteps = 1
+
+/**
+ * Orders and separates the speed-toggle pair. Collapsing both ends onto the same speed would leave
+ * the shortcut a no-op, so the high end is pushed up (or the low end down, at the ceiling) to keep
+ * at least one step between them.
+ */
+internal fun normalizePlaybackSpeedToggleRange(low: Float, high: Float): Pair<Float, Float> {
+    val lowSteps = (low.coercePlaybackSpeed() * 20f).roundToInt()
+    val highSteps = (high.coercePlaybackSpeed() * 20f).roundToInt()
+    val orderedLow = minOf(lowSteps, highSteps)
+    val orderedHigh = maxOf(lowSteps, highSteps)
+    return if (orderedHigh - orderedLow >= PlaybackSpeedToggleMinGapSteps) {
+        orderedLow / 20f to orderedHigh / 20f
+    } else if (orderedHigh + PlaybackSpeedToggleMinGapSteps <= 80) {
+        orderedLow / 20f to (orderedLow + PlaybackSpeedToggleMinGapSteps) / 20f
+    } else {
+        (orderedHigh - PlaybackSpeedToggleMinGapSteps) / 20f to orderedHigh / 20f
+    }
 }

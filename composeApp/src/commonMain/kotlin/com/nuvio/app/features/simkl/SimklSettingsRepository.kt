@@ -34,6 +34,7 @@ data class SimklSettingsUiState(
     val simklAsCalendarSource: Boolean = false,
     val simklContinueWatchingDaysCap: Int = SIMKL_DEFAULT_CW_DAYS_CAP,
     val simklOpenDailyOnStartup: Boolean = false,
+    val simklTrackRewatches: Boolean = false,
 )
 
 @Serializable
@@ -44,6 +45,7 @@ private data class SimklSettingsState(
     val asCalendarSource: Boolean = false,
     val continueWatchingDaysCap: Int = SIMKL_DEFAULT_CW_DAYS_CAP,
     val openDailyOnStartup: Boolean = false,
+    val trackRewatches: Boolean = false,
     // UTC day (see SimklDailyVisit) the site was last opened by the startup reminder.
     val lastDailyVisitEpochDay: Long? = null,
     // Last known /sync/activities timestamps, used to skip full re-fetches when nothing changed.
@@ -69,6 +71,12 @@ internal object SimklSettingsRepository {
         publish()
     }
 
+    fun onProfileChanged() {
+        loaded = false
+        state = SimklSettingsState()
+        ensureLoaded()
+    }
+
     fun snapshot(): SimklSettingsUiState = _uiState.value
 
     fun clientId(): String = state.clientId.orEmpty().trim()
@@ -82,6 +90,9 @@ internal object SimklSettingsRepository {
     fun simklContinueWatchingDaysCap(): Int = state.continueWatchingDaysCap
 
     fun isOpenDailyOnStartup(): Boolean = state.openDailyOnStartup
+
+    fun isRewatchTrackingEnabled(): Boolean = state.trackRewatches
+
 
     /** True when the reminder is enabled and simkl.com has not been opened yet this UTC day. */
     fun isDailyVisitDue(nowMillis: Long): Boolean =
@@ -152,6 +163,12 @@ internal object SimklSettingsRepository {
         persist(); publish()
     }
 
+    fun setTrackRewatches(enabled: Boolean) {
+        state = state.copy(trackRewatches = enabled)
+        persist(); publish()
+        if (enabled) SimklRewatchRepository.refreshAsync()
+    }
+
     fun setSimklContinueWatchingDaysCap(days: Int) {
         state = state.copy(continueWatchingDaysCap = days.coerceAtLeast(SIMKL_CW_DAYS_CAP_ALL))
         persist(); publish()
@@ -165,6 +182,7 @@ internal object SimklSettingsRepository {
             simklAsCalendarSource = state.asCalendarSource,
             simklContinueWatchingDaysCap = state.continueWatchingDaysCap,
             simklOpenDailyOnStartup = state.openDailyOnStartup,
+            simklTrackRewatches = state.trackRewatches,
         )
     }
 

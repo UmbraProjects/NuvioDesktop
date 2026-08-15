@@ -343,6 +343,10 @@ object WatchProgressRepository {
      */
     suspend fun forceContinueWatchingSync(profileId: Int) {
         ensureLoaded()
+        // A manual resync is the user asking for everything to be re-read, artwork included, so
+        // Up Next cards that are still missing an episode thumbnail get re-resolved past the meta
+        // LRU rather than repainting from the cached blank.
+        ContinueWatchingEnrichmentCache.requestArtworkRefresh()
         when {
             shouldUseMdbListProgress() -> {
                 log.d { "Force refreshing MDBList Continue Watching for profile $profileId" }
@@ -790,7 +794,15 @@ object WatchProgressRepository {
 
     private fun resolveRemoteMetadata(useStartupGrace: Boolean = false) {
         val localMissing = entriesByVideoId.values
-            .filter { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }
+            .filter {
+                it.poster.isNullOrBlank() ||
+                    it.background.isNullOrBlank() ||
+                    // Matches the MDBList/SIMKL filters below: an episode still often lands well
+                    // after the episode airs, and without this the card keeps its launch-time blank
+                    // until the entry is replaced. Costs nothing when the still never arrives —
+                    // the apply below is a no-op and skips the publish.
+                    (it.contentType == "series" && it.episodeThumbnail.isNullOrBlank())
+            }
         val mdbListMissing = if (shouldUseMdbListProgress()) {
             MdbListProgressRepository.uiState.value.entries
                 .filter {
@@ -886,17 +898,30 @@ object WatchProgressRepository {
                     }
 
                     val current = entriesByVideoId[entry.videoId] ?: continue
-                    entriesByVideoId[current.videoId] = current.copy(
-                        title = meta.name,
-                        poster = meta.poster,
-                        background = meta.background,
-                        logo = meta.logo,
+                    val updated = current.copy(
+                        // Never downgrade to a nameless meta. A lightweight fetch that found only
+                        // artwork carries an empty name (MetaDetailsRepository builds its art-only
+                        // results that way), and overwriting a good title with it leaves a card with
+                        // no title and a player launch with no title — which silently suppresses
+                        // Discord presence, whose one hard requirement is a non-blank title.
+                        title = meta.name.takeIf { it.isNotBlank() } ?: current.title,
+                        // Same rule as the title above, and as the MDBList/SIMKL stores. This pass
+                        // also runs for an entry that has good artwork but no episode still, so an
+                        // unconditional assignment would blank a valid poster whenever the refetch
+                        // came back with only the still.
+                        poster = meta.poster?.takeIf { it.isNotBlank() } ?: current.poster,
+                        background = meta.background?.takeIf { it.isNotBlank() } ?: current.background,
+                        logo = meta.logo?.takeIf { it.isNotBlank() } ?: current.logo,
                         episodeTitle = episodeVideo?.title ?: current.episodeTitle,
                         episodeThumbnail = episodeVideo?.thumbnail ?: current.episodeThumbnail,
                         pauseDescription = episodeVideo?.overview
                             ?: meta.description
                             ?: current.pauseDescription,
                     )
+                    // Entries are now re-resolved for artwork that may never arrive, so a pass that
+                    // changes nothing must not trigger a publish + disk write.
+                    if (updated == current) continue
+                    entriesByVideoId[current.videoId] = updated
                     appliedEntries += 1
                 }
                 if (appliedEntries == 0) {
@@ -1279,6 +1304,7 @@ object WatchProgressRepository {
             ContinueWatchingPreferencesRepository.removeDismissedNextUpKeysForContent(entry.parentMetaId)
         }
 
+        val previousEntry = entriesByVideoId[session.videoId]
         entriesByVideoId[session.videoId] = entry
         when {
             useMdbListProgress -> MdbListProgressRepository.applyOptimisticProgress(entry)
@@ -1287,8 +1313,28 @@ object WatchProgressRepository {
         }
         publish()
         if (persist) persist()
-        if (entry.poster.isNullOrBlank() || entry.background.isNullOrBlank()) {
+
+        // upsert() runs on every progress tick and resolveRemoteMetadata() cancels whatever pass is
+        // already in flight, so the artwork work below has to fire on an edge rather than a state:
+        // the first tick of an episode, or the tick that completes it. Anything else would keep
+        // restarting the resolution job for the whole playback and never finish one.
+        val isFirstEntryForVideo = previousEntry == null
+        val completedNow = entry.isCompleted && previousEntry?.isCompleted != true
+        // Mirrors the series clause in resolveRemoteMetadata()'s own filter; keep the two in step.
+        val missingEpisodeStill = entry.contentType == "series" && entry.episodeThumbnail.isNullOrBlank()
+        if (
+            entry.poster.isNullOrBlank() ||
+            entry.background.isNullOrBlank() ||
+            (missingEpisodeStill && (isFirstEntryForVideo || completedNow))
+        ) {
             resolveRemoteMetadata()
+        }
+        if (completedNow && entry.parentMetaType.isSeriesTypeForContinueWatching()) {
+            // Finishing an episode is when Home builds the Up Next card for the next one, and the
+            // still for that episode may have been published after this run's meta fetch. Every
+            // other re-resolve rides the meta LRU, which has no TTL, so without this the only ways
+            // to pick up a late still are an app restart or a manual resync.
+            ContinueWatchingEnrichmentCache.requestArtworkRefresh()
         }
         if (syncRemote) {
             pushScrobbleToServer(entry)

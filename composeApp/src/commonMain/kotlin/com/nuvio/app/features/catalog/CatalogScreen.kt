@@ -65,6 +65,7 @@ import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.core.ui.NuvioPosterWatchedOverlay
 import com.nuvio.app.core.ui.PosterLabelWidthFraction
+import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.NuvioShelfItemSlot
 import com.nuvio.app.core.ui.rememberMouseActivityState
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
@@ -508,7 +509,9 @@ private fun PosterShape.catalogAspectRatio(): Float =
     when (this) {
         PosterShape.Poster -> 0.68f
         PosterShape.Square -> 1f
-        PosterShape.Landscape -> 1.2f
+        // The same 16:9 the home shelves use — a narrower ratio here would crop away a third of the
+        // width of art the addon cut for this shape, and disagree with the row the grid opened from.
+        PosterShape.Landscape -> PosterLandscapeAspectRatio
     }
 
 private fun catalogGridColumnsForWidth(screenWidth: Dp): Int =

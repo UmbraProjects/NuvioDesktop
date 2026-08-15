@@ -3,6 +3,7 @@ package com.nuvio.app.features.librarypvr
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.downloads.DownloadStatus
 import com.nuvio.app.features.downloads.DownloadsRepository
+import com.nuvio.app.features.metadata.migrateLegacyAnimeContentId
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.trakt.TraktPlatformClock
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,17 +64,39 @@ object LibraryPvrRepository {
             ?.let { runCatching { json.decodeFromString<LibraryPvrSettings>(it) }.getOrNull() }
             ?: LibraryPvrSettings()
         DownloadsRepository.updateAutomaticBandwidthLimit(settings.bandwidthLimitMbps)
-        monitoredById = LibraryPvrStorage.loadMonitored(profileId)
+        val storedMonitored = LibraryPvrStorage.loadMonitored(profileId)
             ?.let { runCatching { json.decodeFromString<MonitoredPayload>(it).items }.getOrNull() }
             .orEmpty()
-            .associateBy { it.id }
+        val migratedMonitored = storedMonitored.map { it.withMigratedContentId() }
+        monitoredById = migratedMonitored.associateBy { it.id }
         grabsById = LibraryPvrStorage.loadGrabs(profileId)
             ?.let { runCatching { json.decodeFromString<GrabsPayload>(it).grabs }.getOrNull() }
             .orEmpty()
             .associateBy { it.id }
 
+        if (migratedMonitored != storedMonitored) {
+            log.i { "Migrated ${migratedMonitored.count { it !in storedMonitored }} monitored item(s) to franchise content ids" }
+            persistMonitored()
+        }
+
         publish()
     }
+
+    /**
+     * Rewrites a content id written under the old kitsu-first anime policy.
+     *
+     * The scheduler matches this against ids the app computes now — `LocalMediaItem.contentId` for
+     * the destination folder, `DownloadItem.parentMetaId` for finished grabs — and drives the
+     * episode list off `MetaDetailsRepository.fetch(contentType, contentId)`. A stale `kitsu:` id
+     * matches neither and resolves to no metadata on an addon set that does not advertise a kitsu
+     * prefix, so the monitor silently downloads nothing. Left alone when the anime-list has no
+     * franchise id for the entry, which is when the native id is still the right address.
+     */
+    private fun MonitoredItem.withMigratedContentId(): MonitoredItem =
+        migrateLegacyAnimeContentId(contentId, contentType)
+            ?.takeIf { it != contentId }
+            ?.let { copy(contentId = it) }
+            ?: this
 
     // --- Settings ---
 

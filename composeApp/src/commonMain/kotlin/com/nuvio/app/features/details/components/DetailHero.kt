@@ -120,6 +120,7 @@ fun DetailHero(
     showDetails: Boolean = false,
     showManualPlayOption: Boolean = false,
     focusedActionIndex: Int? = null,
+    episodeSearch: DetailEpisodeSearchState? = null,
     onPrimaryPlayClick: () -> Unit = {},
     onPrimaryPlayLongClick: (() -> Unit)? = null,
     onRandomEpisodeClick: (() -> Unit)? = null,
@@ -156,6 +157,15 @@ fun DetailHero(
             mutableStateOf(false)
         }
         val logoUrl = meta.logo?.takeIf { it.isNotBlank() }
+        // The hero silently paints the title whenever no logo survives, which reads identically
+        // whether none was ever resolved or one was resolved and failed to load. Only a log tells
+        // those apart in a user's report — the home hero has had one for the same reason.
+        LaunchedEffect(meta.id, logoUrl) {
+            co.touchlab.kermit.Logger.withTag("DetailHeroLogo").i {
+                val state = logoUrl?.let { "logo:" + it.safeImageUrlForLog() } ?: "TITLE-TEXT (no logo url)"
+                "${meta.id} -> $state"
+            }
+        }
         val boundedHeroTrailer = desktopOverlay &&
             heroTrailerPlaybackMode == MetaHeroTrailerPlaybackMode.Hero
         val fullHeroTrailer = heroTrailerSourceUrl != null && !boundedHeroTrailer
@@ -338,6 +348,7 @@ fun DetailHero(
                         showDetails = showDetails,
                         showManualPlayOption = showManualPlayOption,
                         focusedActionIndex = focusedActionIndex,
+                        episodeSearch = episodeSearch,
                         onPrimaryPlayClick = onPrimaryPlayClick,
                         onPrimaryPlayLongClick = onPrimaryPlayLongClick,
                         onRandomEpisodeClick = onRandomEpisodeClick,
@@ -453,6 +464,7 @@ private fun DetailDesktopHeroOverlay(
     showDetails: Boolean,
     showManualPlayOption: Boolean,
     focusedActionIndex: Int?,
+    episodeSearch: DetailEpisodeSearchState?,
     onPrimaryPlayClick: () -> Unit,
     onPrimaryPlayLongClick: (() -> Unit)?,
     onRandomEpisodeClick: (() -> Unit)?,
@@ -628,6 +640,7 @@ private fun DetailDesktopHeroOverlay(
                     focusedActionIndex = focusedActionIndex,
                     onPlayClick = onPrimaryPlayClick,
                     onPlayLongClick = if (showManualPlayOption) onPrimaryPlayLongClick else null,
+                    episodeSearch = episodeSearch,
                 )
             }
 
@@ -867,6 +880,8 @@ private val detailHeroCrewRoleMarkers = listOf(
     "producer",
 )
 
+private fun String.safeImageUrlForLog(): String = substringBefore('?').take(500)
+
 @Composable
 private fun DetailHeroLogoOrTitle(
     meta: MetaDetails,
@@ -885,7 +900,12 @@ private fun DetailHeroLogoOrTitle(
             modifier = modifier,
             alignment = logoAlignment,
             contentScale = ContentScale.Fit,
-            onError = { onLogoLoadError() },
+            onError = {
+                co.touchlab.kermit.Logger.withTag("DetailHeroLogo").w {
+                    "Detail logo failed; showing title: ${logoUrl.safeImageUrlForLog()}"
+                }
+                onLogoLoadError()
+            },
         )
     } else {
         Text(

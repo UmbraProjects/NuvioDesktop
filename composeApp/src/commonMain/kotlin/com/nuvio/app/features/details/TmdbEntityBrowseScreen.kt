@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
+import com.nuvio.app.core.ui.NuvioBackButton
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import com.nuvio.app.core.ui.landscapePosterHeightForWidth
@@ -51,12 +53,17 @@ import com.nuvio.app.core.ui.landscapePosterWidth
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.details.components.DetailPosterRailSection
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.HomeCatalogSection
+import com.nuvio.app.features.home.HomeContentMode
+import com.nuvio.app.features.home.HomeScreen
+import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.tmdb.TmdbEntityBrowseData
 import com.nuvio.app.features.tmdb.TmdbEntityKind
 import com.nuvio.app.features.tmdb.TmdbEntityMediaType
 import com.nuvio.app.features.tmdb.TmdbEntityRailType
 import com.nuvio.app.features.tmdb.TmdbMetadataService
 import com.nuvio.app.features.watched.WatchedRepository
+import kotlinx.coroutines.launch
 
 private sealed interface EntityBrowseUiState {
     data object Loading : EntityBrowseUiState
@@ -82,8 +89,13 @@ fun TmdbEntityBrowseScreen(
         WatchedRepository.uiState
     }.collectAsStateWithLifecycle()
     val loadFailedMessage = stringResource(Res.string.details_browse_load_failed, entityName)
+    val coroutineScope = rememberCoroutineScope()
+    // Retry has no other key to change: the entity is the same one that just failed, so without a
+    // generation counter the effect below never re-runs and the button only ever redraws the
+    // skeleton. Reset with the entity so a fresh screen starts from zero.
+    var loadGeneration by remember(entityKind, entityId) { mutableStateOf(0) }
 
-    LaunchedEffect(entityKind, entityId) {
+    LaunchedEffect(entityKind, entityId, loadGeneration) {
         uiState = EntityBrowseUiState.Loading
         val data = TmdbMetadataService.fetchEntityBrowse(
             entityKind = entityKind,
@@ -107,32 +119,122 @@ fun TmdbEntityBrowseScreen(
                 is EntityBrowseUiState.Loading -> EntityBrowseSkeleton()
                 is EntityBrowseUiState.Error -> EntityBrowseError(
                     message = state.message,
-                    onRetry = { uiState = EntityBrowseUiState.Loading },
+                    onRetry = { loadGeneration += 1 },
                 )
-                is EntityBrowseUiState.Success -> EntityBrowseContent(
-                    data = state.data,
-                    sourceType = sourceType,
-                    watchedKeys = watchedUiState.watchedKeys,
-                    onOpenMeta = onOpenMeta,
-                )
+                is EntityBrowseUiState.Success -> {
+                    val labels = EntityCatalogLabels(
+                        movies = stringResource(Res.string.media_movies),
+                        series = stringResource(Res.string.media_series),
+                        popular = stringResource(Res.string.details_browse_rail_popular),
+                        topRated = stringResource(Res.string.details_browse_rail_top_rated),
+                        recent = stringResource(Res.string.details_browse_rail_recent),
+                    )
+                    val sections = remember(state.data, labels) {
+                        buildEntityCatalogSections(state.data, labels)
+                    }
+                    HomeScreen(
+                        contentMode = HomeContentMode.Catalogs(
+                            key = "${entityKind.routeValue}:$entityId",
+                            sections = sections,
+                        ),
+                        topChromePadding = 72.dp,
+                        onBack = onBack,
+                        onLoadMoreCatalog = { section ->
+                            val current = (uiState as? EntityBrowseUiState.Success)?.data
+                                ?: return@HomeScreen
+                            val railIndex = current.rails.indexOfFirst { entityRailKey(it) == section.key }
+                            val rail = current.rails.getOrNull(railIndex)
+                                ?: return@HomeScreen
+                            if (rail.isLoading || !rail.hasMore) return@HomeScreen
+
+                            uiState = EntityBrowseUiState.Success(
+                                current.copy(
+                                    rails = current.rails.toMutableList().also { rails ->
+                                        rails[railIndex] = rail.copy(isLoading = true)
+                                    },
+                                ),
+                            )
+                            coroutineScope.launch {
+                                val page = TmdbMetadataService.fetchNextEntityRailPage(
+                                    entityKind = entityKind,
+                                    entityId = entityId,
+                                    rail = rail,
+                                )
+                                val latest = (uiState as? EntityBrowseUiState.Success)?.data
+                                    ?: return@launch
+                                val latestIndex = latest.rails.indexOfFirst { entityRailKey(it) == section.key }
+                                val latestRail = latest.rails.getOrNull(latestIndex) ?: return@launch
+                                val mergedItems = (latestRail.items + page.items)
+                                    .distinctBy(MetaPreview::stableKey)
+                                uiState = EntityBrowseUiState.Success(
+                                    latest.copy(
+                                        rails = latest.rails.toMutableList().also { rails ->
+                                            rails[latestIndex] = latestRail.copy(
+                                                items = mergedItems,
+                                                currentPage = rail.currentPage + 1,
+                                                hasMore = page.hasMore,
+                                                isLoading = false,
+                                            )
+                                        },
+                                    ),
+                                )
+                            }
+                        },
+                        onPosterClick = onOpenMeta,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
 
-        IconButton(
+        NuvioBackButton(
             onClick = onBack,
             modifier = Modifier
                 .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(start = 4.dp, top = 4.dp)
+                .padding(horizontal = 8.dp, vertical = 4.dp)
                 .align(Alignment.TopStart),
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = stringResource(Res.string.action_back),
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+        )
     }
 }
+
+internal data class EntityCatalogLabels(
+    val movies: String,
+    val series: String,
+    val popular: String,
+    val topRated: String,
+    val recent: String,
+)
+
+internal fun buildEntityCatalogSections(
+    data: TmdbEntityBrowseData,
+    labels: EntityCatalogLabels,
+): List<HomeCatalogSection> = data.rails.map { rail ->
+    val mediaLabel = when (rail.mediaType) {
+        TmdbEntityMediaType.MOVIE -> labels.movies
+        TmdbEntityMediaType.TV -> labels.series
+    }
+    val railLabel = when (rail.railType) {
+        TmdbEntityRailType.POPULAR -> labels.popular
+        TmdbEntityRailType.TOP_RATED -> labels.topRated
+        TmdbEntityRailType.RECENT -> labels.recent
+    }
+    HomeCatalogSection(
+        key = entityRailKey(rail),
+        title = "$mediaLabel • $railLabel • ${data.header.name}",
+        subtitle = "",
+        addonName = data.header.name,
+        items = rail.items,
+        availableItemCount = rail.items.size + if (rail.hasMore) 1 else 0,
+        hasMore = rail.hasMore,
+        paginates = true,
+        nextSkip = (rail.currentPage + 1).takeIf { rail.hasMore },
+        isLoadingMore = rail.isLoading,
+        inlineOnly = true,
+    )
+}
+
+private fun entityRailKey(rail: com.nuvio.app.features.tmdb.TmdbEntityRail): String =
+    "tmdb-entity:${rail.mediaType.value}:${rail.railType.value}"
 
 @Composable
 private fun EntityBrowseContent(

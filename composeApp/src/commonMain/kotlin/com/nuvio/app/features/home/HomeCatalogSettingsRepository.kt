@@ -122,6 +122,7 @@ data class HomeCatalogSettingsUiState(
     val tvRowDotsEnabled: Boolean = false,
     val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
     val randomPlayEnabled: Boolean = false,
+    val randomPlayIncludeCollections: Boolean = false,
     val randomPlayCategories: Set<RandomPlayCategory> = RandomPlayCategory.entries.toSet(),
     val randomPlayGenres: Set<String> = RandomPlayGenres.toSet(),
     val randomPlayMinimumImdbRating: Float = 0f,
@@ -168,6 +169,8 @@ data class HomeCatalogSettingsUiState(
             append('|')
             append(randomPlayEnabled)
             append('|')
+            append(randomPlayIncludeCollections)
+            append('|')
             append(randomPlayCategories.joinToString())
             append('|')
             append(randomPlayGenres.joinToString())
@@ -206,6 +209,7 @@ internal data class HomeCatalogSettingsSnapshot(
     val heroAmbientBackgroundEnabled: Boolean,
     val tvModeEnabled: Boolean,
     val randomPlayEnabled: Boolean,
+    val randomPlayIncludeCollections: Boolean,
     val randomPlayCategories: Set<RandomPlayCategory>,
     val randomPlayGenres: Set<String>,
     val randomPlayMinimumImdbRating: Float,
@@ -271,8 +275,12 @@ private data class StoredHomeCatalogSettingsPayload(
     val tvRowDotsEnabled: Boolean = false,
     val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
     val randomPlayEnabled: Boolean = false,
+    val randomPlayIncludeCollections: Boolean = false,
     val randomPlayCategories: Set<RandomPlayCategory> = RandomPlayCategory.entries.toSet(),
     val randomPlayGenres: Set<String> = RandomPlayGenres.toSet(),
+    // False in every payload written before the anime genres joined the allow-list; see
+    // [expandLegacyRandomPlayGenres].
+    val randomPlayAnimeGenresMigrated: Boolean = false,
     val randomPlayMinimumImdbRating: Float = 0f,
     val randomPlayAction: RandomPlayAction = RandomPlayAction.Details,
     val items: List<StoredHomeCatalogPreference> = emptyList(),
@@ -313,6 +321,7 @@ object HomeCatalogSettingsRepository {
     private var tvRowDotsEnabled = false
     private var tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
     private var randomPlayEnabled = false
+    private var randomPlayIncludeCollections = false
     private var randomPlayCategories = RandomPlayCategory.entries.toSet()
     private var randomPlayGenres = RandomPlayGenres.toSet()
     private var randomPlayMinimumImdbRating = 0f
@@ -432,6 +441,7 @@ object HomeCatalogSettingsRepository {
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
             randomPlayEnabled = randomPlayEnabled,
+            randomPlayIncludeCollections = randomPlayIncludeCollections,
             randomPlayCategories = randomPlayCategories,
             randomPlayGenres = randomPlayGenres,
             randomPlayMinimumImdbRating = randomPlayMinimumImdbRating,
@@ -643,6 +653,21 @@ object HomeCatalogSettingsRepository {
         if (randomPlayEnabled == enabled) return
         randomPlayEnabled = enabled
         publishAndPersistRandomPlay()
+        if (enabled && randomPlayIncludeCollections) RandomPlayCollectionPool.ensureLoaded()
+        if (!enabled) RandomPlayCandidatePool.clear()
+    }
+
+    /**
+     * Widens the Random Play pool from the loaded Home rows to every catalog configured in
+     * Collections. Collection catalogs are only fetched when a folder is opened, so this also
+     * arms [RandomPlayCollectionPool] to keep a first page of each collection source warm.
+     */
+    fun setRandomPlayIncludeCollections(enabled: Boolean) {
+        ensureLoaded()
+        if (randomPlayIncludeCollections == enabled) return
+        randomPlayIncludeCollections = enabled
+        publishAndPersistRandomPlay()
+        if (enabled) RandomPlayCollectionPool.ensureLoaded() else RandomPlayCollectionPool.clear()
     }
 
     fun setRandomPlayCategoryEnabled(category: RandomPlayCategory, enabled: Boolean) {
@@ -800,11 +825,18 @@ object HomeCatalogSettingsRepository {
             tvRowDotsEnabled = parsedPayload.tvRowDotsEnabled
             tvRowDotsAnchor = parsedPayload.tvRowDotsAnchor
             randomPlayEnabled = parsedPayload.randomPlayEnabled
+            randomPlayIncludeCollections = parsedPayload.randomPlayIncludeCollections
             randomPlayCategories = parsedPayload.randomPlayCategories
-            randomPlayGenres = parsedPayload.randomPlayGenres
+            val storedGenres = parsedPayload.randomPlayGenres
                 .mapNotNullTo(linkedSetOf()) { stored ->
                     RandomPlayGenres.firstOrNull { it.equals(stored, ignoreCase = true) }
                 }
+            randomPlayGenres = if (parsedPayload.randomPlayAnimeGenresMigrated) {
+                storedGenres
+            } else {
+                expandLegacyRandomPlayGenres(storedGenres)
+            }
+            val migratedAnimeGenres = !parsedPayload.randomPlayAnimeGenresMigrated
             randomPlayMinimumImdbRating = parsedPayload.randomPlayMinimumImdbRating.coerceIn(0f, 10f)
             randomPlayAction = parsedPayload.randomPlayAction
             heroInfoPrioritySlotMigrations = parsedPayload.heroInfoPrioritySlotMigrations
@@ -812,7 +844,7 @@ object HomeCatalogSettingsRepository {
             normalizeHeroModes()
             preferences = parsedPayload.items.associateBy { it.key }.toMutableMap()
             publish()
-            if (migratedPriority) persist()
+            if (migratedPriority || migratedAnimeGenres) persist()
             return
         }
 
@@ -949,6 +981,7 @@ object HomeCatalogSettingsRepository {
             tvRowDotsEnabled = tvRowDotsEnabled,
             tvRowDotsAnchor = tvRowDotsAnchor,
             randomPlayEnabled = randomPlayEnabled,
+            randomPlayIncludeCollections = randomPlayIncludeCollections,
             randomPlayCategories = randomPlayCategories,
             randomPlayGenres = randomPlayGenres,
             randomPlayMinimumImdbRating = randomPlayMinimumImdbRating,
@@ -1029,8 +1062,12 @@ object HomeCatalogSettingsRepository {
                     tvRowDotsEnabled = tvRowDotsEnabled,
                     tvRowDotsAnchor = tvRowDotsAnchor,
                     randomPlayEnabled = randomPlayEnabled,
+                    randomPlayIncludeCollections = randomPlayIncludeCollections,
                     randomPlayCategories = randomPlayCategories,
                     randomPlayGenres = randomPlayGenres,
+                    // Always true once written: the in-memory set has been through
+                    // [expandLegacyRandomPlayGenres] and must not be expanded a second time.
+                    randomPlayAnimeGenresMigrated = true,
                     randomPlayMinimumImdbRating = randomPlayMinimumImdbRating,
                     randomPlayAction = randomPlayAction,
                     items = preferences.values.sortedBy { it.order },
@@ -1059,6 +1096,7 @@ object HomeCatalogSettingsRepository {
 
     private fun resetRandomPlaySettings() {
         randomPlayEnabled = false
+        randomPlayIncludeCollections = false
         randomPlayCategories = RandomPlayCategory.entries.toSet()
         randomPlayGenres = RandomPlayGenres.toSet()
         randomPlayMinimumImdbRating = 0f

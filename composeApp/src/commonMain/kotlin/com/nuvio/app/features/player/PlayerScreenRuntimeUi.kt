@@ -337,6 +337,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         subtitleStyleTabLabel = stringResource(Res.string.compose_player_style),
         noneLabel = stringResource(Res.string.compose_player_none),
         fetchSubtitlesLabel = stringResource(Res.string.compose_player_fetch_subtitles),
+        downloadSubtitleLabel = stringResource(Res.string.compose_player_download_subtitle),
         subtitleDelayLabel = stringResource(Res.string.compose_player_subtitle_delay),
         resetLabel = stringResource(Res.string.compose_player_reset),
         autoSyncLabel = stringResource(Res.string.compose_player_auto_sync),
@@ -384,6 +385,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         legacyHudEnabled = playerSettingsUiState.desktopLegacyHudEnabled,
         alwaysShowClock = playerSettingsUiState.desktopAlwaysShowClockEnabled,
         playbackSpeedFineIncrementsEnabled = playerSettingsUiState.desktopPlaybackSpeedFineIncrementsEnabled,
+        playbackSpeedToggleLow = playerSettingsUiState.playbackSpeedToggleLow,
+        playbackSpeedToggleHigh = playerSettingsUiState.playbackSpeedToggleHigh,
         uiScalePercent = playerSettingsUiState.desktopUiScalePercent,
         sourceNotchPosition = playerSettingsUiState.desktopSourceNotchPosition.name.lowercase(),
         parentalWarnings = parentalWarnings,
@@ -440,6 +443,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         closeModalsToken = playerControlsCloseModalsToken,
         showOpeningOverlay = openingOverlayWanted,
         openingArtwork = background ?: poster,
+        // Poster first here, unlike openingArtwork: the flyout thumbnail is a small near-square
+        // tile, which a portrait poster survives better than a cropped 16:9 backdrop.
+        mediaSessionArtwork = poster ?: background ?: "",
         openingLogo = logo,
         openingTitle = title,
         openingMessage = p2pInitialLoadingMessage,
@@ -1082,6 +1088,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             selectedSubtitleIndex = index
             selectedAddonSubtitleId = null
             useCustomSubtitles = false
+            markSubtitleChosenByViewer()
             persistInternalSubtitlePreference(subtitleTracks.firstOrNull { it.index == index })
             if (wasCustom) {
                 playerController?.clearExternalSubtitleAndSelect(index)
@@ -1101,13 +1108,18 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         "fetchAddonSubtitles" -> fetchAddonSubtitlesForActiveItem()
         "selectAddonSubtitle" -> {
             val addon = visibleAddonSubtitles.getOrNull(value.toInt()) ?: return true
-            selectedAddonSubtitleId = addon.id
+            selectedAddonSubtitleId = addon.id.ifBlank { addon.url }
             selectedSubtitleIndex = -1
             useCustomSubtitles = true
+            markSubtitleChosenByViewer()
             persistAddonSubtitlePreference(addon)
             playerController?.setSubtitleUri(addon.url)
             secondarySubtitleSelectionApplied = false
             applySecondarySubtitleSelectionIfNeeded()
+        }
+        "downloadAddonSubtitle" -> {
+            val addon = visibleAddonSubtitles.getOrNull(value.toInt()) ?: return true
+            downloadAddonSubtitle(addon)
         }
         "subtitleDelayDelta" -> setSubtitleDelay((subtitleDelayMs + value.toInt()).coerceIn(SUBTITLE_DELAY_MIN_MS, SUBTITLE_DELAY_MAX_MS))
         "subtitleDelayReset" -> setSubtitleDelay(0)
@@ -1211,6 +1223,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         "volumeDelta" -> adjustVolume(value.toFloat())
         "volumeSet" -> playerController?.setVolume((value.toFloat() / 100f).coerceIn(0f, playerController?.maxVolumeFraction ?: 1f))
         "keyboardSpeedStep" -> adjustPlaybackSpeedStep(if (value < 0.0) -1 else 1, showFeedback = false)
+        "keyboardSpeedToggle" -> togglePlaybackSpeed(showFeedback = false)
         "keyboardNextSubtitle" -> cycleSubtitleTrackFromKeyboard()
         "keyboardNextAudio" -> cycleAudioTrackFromKeyboard()
         "selectResizeMode" -> setPlayerResizeMode(
@@ -1658,6 +1671,8 @@ private fun PlayerScreenRuntime.buildPlayerControlBuiltInSubtitleItems(): List<P
         PlayerControlBuiltInSubtitleItem(
             index = track.index,
             label = localizedTrackDisplayName(track.label, track.language, track.index),
+            id = track.id,
+            languageLabel = track.language?.let { languageLabelForCode(it) }.orEmpty(),
             isSelected = !useCustomSubtitles && track.index == selectedSubtitleIndex,
         )
     }
@@ -1682,6 +1697,7 @@ private fun PlayerScreenRuntime.buildPlayerControlAddonSubtitleItems(): List<Pla
             languageLabel = languageLabelForCode(subtitle.language),
             addonName = subtitle.addonName.orEmpty(),
             isSelected = subtitle.id == selectedAddonSubtitleId || subtitle.url == selectedAddonSubtitleId,
+            isDownloading = subtitle.id.ifBlank { subtitle.url } == downloadingAddonSubtitleId,
         )
     }
 
@@ -1893,6 +1909,9 @@ private fun BoxScope.RenderPlaybackOverlays(
 
 @Composable
 private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
+    val downloadSubtitleLabel = stringResource(Res.string.compose_player_download_subtitle)
+    subtitleSavedLabel = stringResource(Res.string.compose_player_subtitle_saved)
+    subtitleSaveFailedLabel = stringResource(Res.string.compose_player_subtitle_save_failed)
     LaunchedEffect(showSubtitleModal, playerController) {
         if (!showSubtitleModal || playerController == null) return@LaunchedEffect
         while (true) {
@@ -1945,6 +1964,7 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
             selectedSubtitleIndex = index
             selectedAddonSubtitleId = null
             useCustomSubtitles = false
+            markSubtitleChosenByViewer()
             persistInternalSubtitlePreference(subtitleTracks.firstOrNull { it.index == index })
             if (wasCustom) {
                 playerController?.clearExternalSubtitleAndSelect(index)
@@ -1955,14 +1975,18 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
             applySecondarySubtitleSelectionIfNeeded()
         },
         onAddonSubtitleSelected = { addon ->
-            selectedAddonSubtitleId = addon.id
+            selectedAddonSubtitleId = addon.id.ifBlank { addon.url }
             selectedSubtitleIndex = -1
             useCustomSubtitles = true
+            markSubtitleChosenByViewer()
             persistAddonSubtitlePreference(addon)
             playerController?.setSubtitleUri(addon.url)
             secondarySubtitleSelectionApplied = false
             applySecondarySubtitleSelectionIfNeeded()
         },
+        onAddonSubtitleDownload = ::downloadAddonSubtitle,
+        downloadingAddonSubtitleId = downloadingAddonSubtitleId,
+        downloadSubtitleLabel = downloadSubtitleLabel,
         onFetchAddonSubtitles = { fetchAddonSubtitlesForActiveItem() },
         onSubtitleStyleChanged = PlayerSettingsRepository::setSubtitleStyle,
         onSubtitleDelayChanged = { delayMs -> setSubtitleDelay(delayMs) },
@@ -2075,4 +2099,49 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
             showSubmitIntroModal = false
         },
     )
+}
+
+/** Shared by the Compose player modal and the desktop native-controls Addons list. */
+private fun PlayerScreenRuntime.downloadAddonSubtitle(addon: AddonSubtitle) {
+    val downloadKey = addon.id.ifBlank { addon.url }
+    if (downloadingAddonSubtitleId != null) return
+    downloadingAddonSubtitleId = downloadKey
+    scope.launch {
+        val suggestedBaseName = buildString {
+            append(title)
+            if (activeSeasonNumber != null && activeEpisodeNumber != null) {
+                append(" S")
+                append(activeSeasonNumber.toString().padStart(2, '0'))
+                append('E')
+                append(activeEpisodeNumber.toString().padStart(2, '0'))
+            }
+        }
+        val result = runCatching {
+            AddonSubtitleDownloadProvider.download(
+                AddonSubtitleDownloadRequest(
+                    subtitleUrl = addon.url,
+                    subtitleLabel = addon.display,
+                    language = addon.language,
+                    activeMediaSource = activeSourceUrl,
+                    suggestedBaseName = suggestedBaseName,
+                ),
+            )
+        }.getOrElse { error ->
+            AddonSubtitleDownloadResult.Failed(error.message ?: subtitleSaveFailedLabel)
+        }
+        if (downloadingAddonSubtitleId == downloadKey) downloadingAddonSubtitleId = null
+        when (result) {
+            is AddonSubtitleDownloadResult.Saved -> NuvioToastController.show(
+                message = result.path,
+                title = subtitleSavedLabel,
+                durationMillis = 4_000L,
+            )
+            is AddonSubtitleDownloadResult.Failed -> NuvioToastController.show(
+                message = result.reason,
+                title = subtitleSaveFailedLabel,
+                durationMillis = 4_000L,
+            )
+            AddonSubtitleDownloadResult.Cancelled -> Unit
+        }
+    }
 }

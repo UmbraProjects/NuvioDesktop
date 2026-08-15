@@ -4,7 +4,19 @@
 #include <windows.h>
 #include <dwmapi.h>
 #include <dxgi1_6.h>
+#include <commctrl.h>
+#include <propkey.h>
+#include <propvarutil.h>
+#include <roapi.h>
+#include <shlobj.h>
+#include <winstring.h>
+#include <windows.foundation.h>
+#include <windows.storage.streams.h>
 #include <wrl.h>
+#include <wrl/event.h>
+#include <wrl/wrappers/corewrappers.h>
+#include <windows.media.h>
+#include <systemmediatransportcontrolsinterop.h>
 #include <WebView2.h>
 #include <jni.h>
 
@@ -21,7 +33,9 @@
 #include <deque>
 #include <functional>
 #include <fstream>
+#include <iomanip>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -34,6 +48,42 @@
 
 using Microsoft::WRL::Callback;
 using Microsoft::WRL::ComPtr;
+using Microsoft::WRL::Wrappers::HStringReference;
+
+namespace WMedia = ABI::Windows::Media;
+
+// The System Media Transport Controls session. This is what makes the keyboard's
+// play/pause/next/prev keys reach Nuvio while the app is in the BACKGROUND: Windows owns the
+// keys and routes them to whichever process is the active media session, so unlike an AWT
+// KeyEventDispatcher (focus-only) or RegisterHotKey (an exclusive grab that would steal the
+// keys from Spotify et al.) this cooperates with the rest of the system. It also puts Nuvio in
+// the volume-flyout media widget.
+typedef ABI::Windows::Foundation::ITypedEventHandler<
+    WMedia::SystemMediaTransportControls *,
+    WMedia::SystemMediaTransportControlsButtonPressedEventArgs *>
+    SystemMediaButtonPressedHandler;
+
+// SMTC only ever routes the keys to ONE session process-wide, and Windows picks it — a
+// foreground browser with a paused YouTube tab will win it off a paused Nuvio, after which
+// Nuvio can never be resumed by media key (it can't become "current" without playing, and it
+// can't play without the key). So the session is backed by a WM_APPCOMMAND subclass on the
+// top-level window: whenever Nuvio has focus the keys are handled here unconditionally, and
+// consuming the message stops it reaching the shell, so SMTC can't also fire for the same press.
+constexpr UINT_PTR kMediaKeySubclassId = 1;
+
+// ISystemMediaTransportControlsInterop::GetForWindow returns a per-window SINGLETON, and the
+// WM_APPCOMMAND subclass is likewise keyed by (window, id). Source failover and binge autoplay
+// tear down and recreate players every few seconds against the same top-level window, so a
+// departing player's cleanup would otherwise disable the session — and unhook the subclass —
+// that its replacement had already installed. Only the current owner may tear either down.
+std::mutex gSystemMediaOwnerMutex;
+const void *gSystemMediaOwner = nullptr;
+
+// Windows resolves the name and icon shown in the media flyout ("Unknown app" otherwise) from
+// the process AppUserModelID, which it looks up against Start Menu shortcuts carrying a matching
+// System.AppUserModel.ID. A plain shortcut is NOT enough — verified on a machine where a
+// shortcut pointing at the running exe already existed and the flyout still said "Unknown app".
+const wchar_t *const kNuvioAppUserModelId = L"Nuvio.Desktop";
 
 extern "C" {
 typedef struct mpv_handle mpv_handle;
@@ -510,7 +560,12 @@ void setBorderlessFullscreen(HWND hwnd, bool enable) {
             return;
         }
 
-        LONG_PTR newStyle = g_borderlessFullscreenSaved.style & ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+        // WS_MAXIMIZE goes too, not just the frame bits: Windows keeps re-constraining a window
+        // that still carries the maximized state to the monitor's work area, so entering
+        // fullscreen from a maximized window would leave the taskbar strip uncovered along one
+        // edge no matter what rect is passed below. The saved style is restored on exit, which
+        // puts the maximized state back.
+        LONG_PTR newStyle = g_borderlessFullscreenSaved.style & ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_MAXIMIZE);
         SetWindowLongPtrW(hwnd, GWL_STYLE, newStyle);
 
         const RECT &monitorRect = monitorInfo.rcMonitor;
@@ -918,6 +973,185 @@ MpvApi &mpvApi() {
 class WindowsMpvWebPlayer;
 LRESULT CALLBACK messageWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 LRESULT CALLBACK containerWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK mediaKeyRootSubclassProc(
+    HWND hwnd,
+    UINT message,
+    WPARAM wParam,
+    LPARAM lParam,
+    UINT_PTR idSubclass,
+    DWORD_PTR refData
+);
+
+std::wstring currentExecutablePath() {
+    wchar_t buffer[32768] = {};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer, ARRAYSIZE(buffer));
+    if (length == 0 || length >= ARRAYSIZE(buffer)) return {};
+    return std::wstring(buffer, length);
+}
+
+std::wstring startMenuShortcutPath() {
+    PWSTR programs = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_Programs, 0, nullptr, &programs)) || !programs) {
+        return {};
+    }
+    std::wstring path(programs);
+    CoTaskMemFree(programs);
+    return path + L"\\Nuvio.lnk";
+}
+
+bool setShortcutAumid(IShellLinkW *link) {
+    ComPtr<IPropertyStore> store;
+    if (FAILED(link->QueryInterface(IID_PPV_ARGS(&store)))) return false;
+    PROPVARIANT value;
+    if (FAILED(InitPropVariantFromString(kNuvioAppUserModelId, &value))) return false;
+    const bool ok = SUCCEEDED(store->SetValue(PKEY_AppUserModel_ID, value)) &&
+                    SUCCEEDED(store->Commit());
+    PropVariantClear(&value);
+    return ok;
+}
+
+// Reports whether the shortcut points at this exe, and whether it already carries our AUMID, so
+// a normal launch rewrites nothing. Rewriting matters: touching the Start Menu entry re-flags
+// Nuvio as "recently added", and touching a taskbar pin risks disturbing the pin itself.
+bool inspectShortcut(
+    const std::wstring &linkPath,
+    const std::wstring &exePath,
+    bool *targetsUs,
+    bool *hasOurAumid
+) {
+    *targetsUs = false;
+    *hasOurAumid = false;
+
+    ComPtr<IShellLinkW> link;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link)))) {
+        return false;
+    }
+    ComPtr<IPersistFile> file;
+    if (FAILED(link.As(&file)) || FAILED(file->Load(linkPath.c_str(), STGM_READ))) return false;
+
+    wchar_t target[MAX_PATH] = {};
+    if (FAILED(link->GetPath(target, ARRAYSIZE(target), nullptr, 0))) return false;
+    *targetsUs = _wcsicmp(target, exePath.c_str()) == 0;
+
+    ComPtr<IPropertyStore> store;
+    if (SUCCEEDED(link.As(&store))) {
+        PROPVARIANT value;
+        PropVariantInit(&value);
+        if (SUCCEEDED(store->GetValue(PKEY_AppUserModel_ID, &value)) && value.vt == VT_LPWSTR) {
+            *hasOurAumid = value.pwszVal && wcscmp(value.pwszVal, kNuvioAppUserModelId) == 0;
+        }
+        PropVariantClear(&value);
+    }
+    return true;
+}
+
+// Stamps our AUMID onto an EXISTING shortcut that already launches this exe, leaving everything
+// else about it untouched. Required because once the process declares an explicit AUMID, Windows
+// only associates a launcher with the running window when the shortcut declares the same one —
+// otherwise a pinned taskbar icon spawns a second, separate taskbar entry.
+bool stampExistingShortcut(const std::wstring &linkPath, const std::wstring &exePath) {
+    bool targetsUs = false;
+    bool hasOurAumid = false;
+    if (!inspectShortcut(linkPath, exePath, &targetsUs, &hasOurAumid)) return false;
+    if (!targetsUs || hasOurAumid) return false;
+
+    ComPtr<IShellLinkW> link;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link)))) {
+        return false;
+    }
+    ComPtr<IPersistFile> file;
+    if (FAILED(link.As(&file)) || FAILED(file->Load(linkPath.c_str(), STGM_READWRITE))) return false;
+    if (!setShortcutAumid(link.Get())) return false;
+    return SUCCEEDED(file->Save(linkPath.c_str(), TRUE));
+}
+
+// Never creates shortcuts here — only repairs ones the user already made. Nuvio has no business
+// adding itself to a taskbar or desktop the user didn't ask it to.
+int stampShortcutsInDirectory(const std::wstring &directory, const std::wstring &exePath) {
+    if (directory.empty()) return 0;
+    WIN32_FIND_DATAW found = {};
+    HANDLE search = FindFirstFileW((directory + L"\\*.lnk").c_str(), &found);
+    if (search == INVALID_HANDLE_VALUE) return 0;
+    int stamped = 0;
+    do {
+        if (found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        if (stampExistingShortcut(directory + L"\\" + found.cFileName, exePath)) stamped++;
+    } while (FindNextFileW(search, &found));
+    FindClose(search);
+    return stamped;
+}
+
+std::wstring knownFolder(REFKNOWNFOLDERID id) {
+    PWSTR path = nullptr;
+    if (FAILED(SHGetKnownFolderPath(id, 0, nullptr, &path)) || !path) return {};
+    std::wstring result(path);
+    CoTaskMemFree(path);
+    return result;
+}
+
+// The taskbar pin store has no KNOWNFOLDERID of its own.
+std::wstring taskbarPinnedDirectory() {
+    const std::wstring appData = knownFolder(FOLDERID_RoamingAppData);
+    if (appData.empty()) return {};
+    return appData + L"\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar";
+}
+
+// Rewritten (not just created) whenever the target drifts, so moving a portable copy self-heals
+// on next launch instead of leaving a shortcut aimed at a path that no longer exists.
+bool ensureStartMenuShortcut(const std::wstring &exePath) {
+    const std::wstring linkPath = startMenuShortcutPath();
+    if (linkPath.empty()) return false;
+
+    bool targetsUs = false;
+    bool hasOurAumid = false;
+    if (inspectShortcut(linkPath, exePath, &targetsUs, &hasOurAumid) && targetsUs && hasOurAumid) {
+        return true;
+    }
+
+    ComPtr<IShellLinkW> link;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link)))) {
+        return false;
+    }
+    link->SetPath(exePath.c_str());
+    link->SetIconLocation(exePath.c_str(), 0);
+    link->SetDescription(L"Nuvio");
+    const size_t slash = exePath.find_last_of(L"\\/");
+    if (slash != std::wstring::npos) {
+        link->SetWorkingDirectory(exePath.substr(0, slash).c_str());
+    }
+    setShortcutAumid(link.Get());
+
+    ComPtr<IPersistFile> file;
+    if (FAILED(link.As(&file))) return false;
+    return SUCCEEDED(file->Save(linkPath.c_str(), TRUE));
+}
+
+void initializeAppIdentity() {
+    SetCurrentProcessExplicitAppUserModelID(kNuvioAppUserModelId);
+
+    const std::wstring exePath = currentExecutablePath();
+    if (exePath.empty()) return;
+
+    // The JVM thread that calls this may or may not already have COM up; only balance the
+    // initialisation we actually performed.
+    const HRESULT comResult = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const bool shouldUninitialize = SUCCEEDED(comResult);
+
+    const bool wrote = ensureStartMenuShortcut(exePath);
+    // Repair launchers the user already created. Without our AUMID on these, launching from a
+    // taskbar pin opens a SECOND taskbar entry instead of lighting up the pinned one.
+    const int stampedTaskbar = stampShortcutsInDirectory(taskbarPinnedDirectory(), exePath);
+    const int stampedDesktop = stampShortcutsInDirectory(knownFolder(FOLDERID_Desktop), exePath);
+
+    if (shouldUninitialize) CoUninitialize();
+
+    nuvioBridgeLog(
+        std::string("app identity ") + (wrote ? "shortcut ok" : "shortcut unavailable") +
+        ", aumid " + toUtf8(kNuvioAppUserModelId) +
+        ", stamped taskbar=" + std::to_string(stampedTaskbar) +
+        " desktop=" + std::to_string(stampedDesktop)
+    );
+}
 
 void registerWindowClasses() {
     static std::once_flag once;
@@ -1227,6 +1461,43 @@ public:
     static constexpr double providerWaitVideoDurationToleranceSeconds = 1.5;
     static constexpr auto svpVideoParameterWaitTimeout = std::chrono::seconds(12);
     static constexpr auto initialResumeParameterWaitTimeout = std::chrono::seconds(5);
+
+    // d3d11vpp truncates the scaled output dimensions (then rounds an odd result up to even),
+    // but rounds the inherited crop rectangle to the nearest integer. For some scales those two
+    // rules disagree by one pixel: 720 * 3.970588... becomes a 2858px output while the full-frame
+    // crop edge becomes 2859. gpu-next rejects that crop on every frame and mpv floods the log.
+    // Step just below every such half-pixel boundary so a full-frame crop always fits the output.
+    static float cropSafeD3d11vppScale(long long width, long long height, double desiredScale) {
+        float scale = static_cast<float>(std::max(1.0, std::min(4.0, desiredScale)));
+        const long long dimensions[] = {width, height};
+        for (int pass = 0; pass < 16; ++pass) {
+            bool adjusted = false;
+            for (long long dimension : dimensions) {
+                if (dimension <= 0) continue;
+                const float scaled = scale * static_cast<float>(dimension);
+                int outputExtent = static_cast<int>(scaled);
+                if ((outputExtent & 1) != 0) ++outputExtent;
+                if (std::lrintf(scaled) <= outputExtent) continue;
+
+                const float boundary =
+                    (static_cast<float>(static_cast<int>(scaled)) + 0.5f) /
+                    static_cast<float>(dimension);
+                scale = std::nextafter(boundary, 0.0f);
+                adjusted = true;
+                break;
+            }
+            if (!adjusted) return std::max(1.0f, scale);
+        }
+        // The loop normally converges in one pass. If pathological dimensions alternate across
+        // several boundaries, disabling the upscale is safer than reviving the per-frame loop.
+        return 1.0f;
+    }
+
+    static std::string roundTripFloatText(float value) {
+        std::ostringstream text;
+        text << std::setprecision(std::numeric_limits<float>::max_digits10) << value;
+        return text.str();
+    }
 
     // Must not be called while holding mpvMutex: the property helpers take it themselves.
     bool videoParametersLookResolved() {
@@ -1951,6 +2222,29 @@ public:
         }
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
+        // The runtime video profile (applyDesktopVideoProfile / applyDesktopAnimeProfile) owns these
+        // keys and re-asserts them on every file load and settings change, which would put the
+        // source-sized allocations back a frame after startMpv stripped them out. Pin them instead
+        // of letting the write through: this is the one place every profile rebuild passes through.
+        if (lowVramRenderingActive) {
+            const bool isScalerKey = key == "scale" || key == "dscale" || key == "cscale";
+            const bool isPipelineKey = key == "deband" || key == "dither" ||
+                key == "temporal-dither" || key == "sigmoid-upscaling" ||
+                key == "correct-downscaling" || key == "hdr-compute-peak";
+            if (isScalerKey || isPipelineKey) {
+                const std::string pinned = isScalerKey ? "bilinear" : "no";
+                if (value != pinned) {
+                    // Once per key: a profile rebuild writes the whole set every time, and this
+                    // would otherwise be several lines per file load for the life of the session.
+                    if (lowVramClampLogged.insert(key).second) {
+                        nuvioMpvLogAppend("[nuvio] low-VRAM pipeline pinned " + key + "=" + value +
+                            " -> " + pinned + "\n");
+                    }
+                    mpvApi().setPropertyString(mpv, key.c_str(), pinned.c_str());
+                    return;
+                }
+            }
+        }
         // A decoder switch reconfigures the whole video chain, which is just as fatal to a
         // half-built VapourSynth graph as a vf write. Hold it on the same latch.
         if (key == "hwdec" && svpGraphInitInFlight) {
@@ -2194,6 +2488,11 @@ private:
     HWND messageHwnd = nullptr;
     DWORD uiThreadId = 0;
     bool didOleInitialize = false;
+    ComPtr<WMedia::ISystemMediaTransportControls> systemMediaControls;
+    EventRegistrationToken systemMediaButtonToken = {};
+    int lastSystemMediaStatus = -1;
+    HWND mediaSessionWindow = nullptr;
+    bool mediaKeySubclassInstalled = false;
     bool cursorHidden = false;
     // A passive surface is a hero-trailer preview (controlsUrl carries "heroTrailer=1"). It must
     // never take OS keyboard focus: the Compose UI stays the sole keyboard owner and only
@@ -2301,6 +2600,11 @@ private:
     std::atomic_bool svpStartupProfileApplied{false};
     std::chrono::steady_clock::time_point svpProfileSettleDeadline{};
     std::chrono::steady_clock::time_point svpPrerollDeadline{};
+    // Resolved once in startMpv from the "@nuvio-low-vram" marker (see lowVramProfileActive). While
+    // set, the gpu-next quality knobs are pinned to their cheap values: the runtime profile rebuilds
+    // in PlayerEngine would otherwise put spline36/ewa_lanczos back on the next file load.
+    bool lowVramRenderingActive = false;
+    std::unordered_set<std::string> lowVramClampLogged;
     bool initialRtxSuperResolutionEnabled = false;
     bool initialRtxHdrEnabled = false;
     bool initialAnimeContent = false;
@@ -2361,6 +2665,14 @@ private:
 
     friend LRESULT CALLBACK messageWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
     friend LRESULT CALLBACK containerWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+    friend LRESULT CALLBACK mediaKeyRootSubclassProc(
+        HWND hwnd,
+        UINT message,
+        WPARAM wParam,
+        LPARAM lParam,
+        UINT_PTR idSubclass,
+        DWORD_PTR refData
+    );
 
     void runNativeUiThread(
         std::string sourceUrl,
@@ -2483,10 +2795,16 @@ private:
             throw std::runtime_error("Unable to start native player timer.");
         }
         nuvioBridgeLog("init timer started");
+        // Non-fatal by design: if the media session can't be claimed the player still works,
+        // it just doesn't answer media keys.
+        nuvioBridgeLog("init smtc");
+        initializeSystemMediaControls(playWhenReady);
     }
 
     void cleanupUiResources() {
         nuvioBridgeLog("cleanup begin");
+        // Before OleUninitialize, and before the window this session is bound to goes away.
+        teardownSystemMediaControls();
         if (cursorHidden) {
             nuvioBridgeLog("cleanup show cursor");
             cursorHidden = false;
@@ -2780,11 +3098,41 @@ private:
 
             nuvioBridgeLog("mpv set options");
             std::string configMode = "off";
+            std::string lowVramMode = "auto";
             for (const std::string &option : extraMpvOptions) {
                 const std::string prefix = "@nuvio-config-mode=";
                 if (option.rfind(prefix, 0) == 0) configMode = option.substr(prefix.size());
+                const std::string lowVramPrefix = "@nuvio-low-vram=";
+                if (option.rfind(lowVramPrefix, 0) == 0) lowVramMode = option.substr(lowVramPrefix.size());
             }
             const bool fullUserConfig = configMode == "full";
+
+            // Low-VRAM pipeline (DesktopLowVramMode). libplacebo sizes its intermediate render
+            // targets from the *source* resolution — one RGBA16F surface for a 4K frame is ~63 MB,
+            // and deband + linear light + the separable scalers + peak detection each want one at
+            // the same time. When the driver refuses an allocation libplacebo disables FBOs
+            // mid-frame, skips the main scaler, and then aborts the process on an internal size
+            // assertion (renderer.c, inter_pass.img.w == out_w) — there is no point after that
+            // where this can be caught, so the memory must never be asked for in the first place.
+            // Reported on an Intel UHD 630 with a 2 GB shared pool playing 4K.
+            //
+            // 2 GiB of *dedicated* memory is the cut. Integrated graphics report a token pool far
+            // below it; a card that reports more has room for the full pipeline. When DXGI cannot
+            // answer, the full pipeline stays: one machine crashing is a smaller failure than every
+            // machine silently losing scaler quality to a broken probe.
+            uint64_t adapterVideoMemory = 0;
+            std::string adapterName;
+            const bool adapterQueried = lowVramMode == "auto" &&
+                queryLargestAdapterVideoMemory(&adapterVideoMemory, &adapterName);
+            constexpr uint64_t lowVramThresholdBytes = 2ull * 1024 * 1024 * 1024;
+            lowVramRenderingActive = lowVramMode == "on" ||
+                (lowVramMode == "auto" && adapterQueried && adapterVideoMemory < lowVramThresholdBytes);
+            nuvioMpvLogAppend("[nuvio] low-VRAM pipeline " +
+                std::string(lowVramRenderingActive ? "active" : "inactive") + " mode=" + lowVramMode +
+                " adapter=" + (adapterQueried ? adapterName : std::string("(not queried)")) +
+                " dedicatedVideoMemory=" +
+                (adapterQueried ? std::to_string(adapterVideoMemory / (1024 * 1024)) + "MiB"
+                                : std::string("unknown")) + "\n");
             nuvioConfiguredOptions.clear();
             recordNuvioConfiguredOptions = true;
 
@@ -2960,6 +3308,7 @@ private:
             // a malformed line (no '=') is skipped rather than aborting playback.
             for (const std::string &option : extraMpvOptions) {
                 if (option.rfind("@nuvio-config-mode=", 0) == 0) continue;
+                if (option.rfind("@nuvio-low-vram=", 0) == 0) continue;
                 const bool userOption = option.rfind("@nuvio-user:", 0) == 0;
                 const std::string optionText = userOption ? option.substr(12) : option;
                 std::string::size_type equals = optionText.find('=');
@@ -2986,6 +3335,31 @@ private:
                 }
             }
             recordNuvioConfiguredOptions = false;
+
+            // Low VRAM: strip the pipeline back to what a small pool can allocate. Bilinear needs no
+            // intermediate FBO at all (libplacebo samples it directly); deband, sigmoid/linear light
+            // and peak detection are the other source-sized allocations.
+            //
+            // Applied after everything else, including the user's own options and whatever config
+            // mode they are in, because this is a crash guard rather than a quality preference: an
+            // "Upscaling" choice from the Advanced (mpv) menu that reintroduced spline36 here would
+            // abort the process on the first frame, before any of the runtime pinning below could
+            // see it. Users who would rather have the quality set Low VRAM Mode to Off, which is
+            // what that option is for.
+            //
+            // Anime4K and custom GLSL chains are deliberately untouched: they are an explicit,
+            // visible choice, and dropping them silently would be the bigger surprise.
+            if (lowVramRenderingActive) {
+                setMpvOptionStringLocked("scale", "bilinear");
+                setMpvOptionStringLocked("dscale", "bilinear");
+                setMpvOptionStringLocked("cscale", "bilinear");
+                setMpvOptionStringLocked("sigmoid-upscaling", "no");
+                setMpvOptionStringLocked("correct-downscaling", "no");
+                setMpvOptionStringLocked("deband", "no");
+                setMpvOptionStringLocked("dither", "no");
+                setMpvOptionStringLocked("temporal-dither", "no");
+                setMpvOptionStringLocked("hdr-compute-peak", "no");
+            }
 
             nuvioBridgeLog("mpv initialize");
             int initResult = api.initialize(mpv);
@@ -3096,6 +3470,9 @@ private:
         double buffered = (double)bufferedPositionMs() / 1000.0;
         bool paused = isPaused();
         bool loading = isLoading();
+        // Keep the media session's status honest — Windows picks the app it routes media keys
+        // to by playback status, so a stale value costs us the keys.
+        updateSystemMediaPlaybackStatus(paused);
         // Track metadata (titles, languages, codecs) is immutable per track; the lists only
         // change when tracks appear/disappear or the selection moves, so key the cache on
         // count + selected audio/subtitle ids instead of re-reading every track each tick.
@@ -3315,6 +3692,50 @@ private:
         // The window's monitor was never enumerated (no window yet, or a hybrid-GPU quirk); the
         // desktop-wide answer is the best remaining evidence.
         return anyOutputIsHdr;
+    }
+
+    /**
+     * Writes the largest dedicated video-memory pool reported by any hardware DXGI adapter, plus
+     * that adapter's name. Returns false when DXGI cannot be asked or enumerated nothing usable.
+     *
+     * Integrated graphics report a token dedicated pool (typically 128 MB) and take everything else
+     * from system RAM, so this doubles as an "is there a real GPU in this machine" probe. The maximum
+     * across adapters is deliberate: on a hybrid laptop the presence of a discrete card means the
+     * machine is not the one the low-VRAM pipeline exists for, whichever adapter D3D11 ends up on.
+     *
+     * dxgi.dll is resolved on demand, matching isDisplayHdrEnabled, so the bridge gains no import.
+     */
+    static bool queryLargestAdapterVideoMemory(uint64_t *bytes, std::string *adapterName) {
+        using CreateDXGIFactory1Fn = HRESULT(WINAPI *)(REFIID, void **);
+        static CreateDXGIFactory1Fn createFactory = [] () -> CreateDXGIFactory1Fn {
+            HMODULE dxgi = LoadLibraryW(L"dxgi.dll");
+            if (!dxgi) return nullptr;
+            return reinterpret_cast<CreateDXGIFactory1Fn>(GetProcAddress(dxgi, "CreateDXGIFactory1"));
+        }();
+        if (!createFactory) return false;
+
+        ComPtr<IDXGIFactory1> factory;
+        if (FAILED(createFactory(IID_PPV_ARGS(&factory)))) return false;
+
+        bool found = false;
+        for (UINT adapterIndex = 0;; ++adapterIndex) {
+            ComPtr<IDXGIAdapter1> adapter;
+            if (FAILED(factory->EnumAdapters1(adapterIndex, &adapter))) break;
+            DXGI_ADAPTER_DESC1 desc{};
+            if (FAILED(adapter->GetDesc1(&desc))) continue;
+            // WARP / the Basic Render Driver rasterise on the CPU; they have no video memory to
+            // report and are exactly the case the low-VRAM pipeline should cover, not exclude.
+            // Counted rather than skipped: skipping made a software-only machine report *no*
+            // adapter, which the caller reads as "probe failed" and answers with the full pipeline
+            // — the opposite of the intent stated here. A 0-byte pool cannot displace a real card's
+            // maximum, so this is free on every machine that has one.
+            const uint64_t dedicated = static_cast<uint64_t>(desc.DedicatedVideoMemory);
+            if (found && dedicated < *bytes) continue;
+            found = true;
+            *bytes = dedicated;
+            if (adapterName) *adapterName = toUtf8(std::wstring(desc.Description));
+        }
+        return found;
     }
 
     // Repeated-message suppressor for the mpv log. Some streams emit the same ffmpeg warning
@@ -3634,10 +4055,17 @@ private:
                     double surfaceHeight = (double)(surfaceBounds.bottom - surfaceBounds.top);
                     double widthScale = surfaceWidth / (double)videoWidth;
                     double heightScale = surfaceHeight / (double)videoHeight;
-                    vsrScale = std::max(1.0, std::min(4.0, std::min(widthScale, heightScale)));
+                    const double requestedVsrScale =
+                        std::max(1.0, std::min(4.0, std::min(widthScale, heightScale)));
+                    vsrScale = cropSafeD3d11vppScale(
+                        videoWidth,
+                        videoHeight,
+                        requestedVsrScale
+                    );
                     sendPlayerEvent("videoVsrScale", vsrScale);
                     if (vsrLogActive) {
                         nuvioMpvLogAppend("[nuvio] dynamic VSR scale=" + std::to_string(vsrScale) +
+                            " requested=" + std::to_string(requestedVsrScale) +
                             " source=" + std::to_string(videoWidth) + "x" + std::to_string(videoHeight) +
                             " surface=" + std::to_string((long long)surfaceWidth) + "x" +
                             std::to_string((long long)surfaceHeight) + "\n");
@@ -3658,9 +4086,7 @@ private:
                     if (vsrActive || trueHdrActive) {
                         initialRtxFilters = "d3d11vpp=";
                         if (vsrActive) {
-                            std::string scaleText = std::to_string(vsrScale);
-                            while (scaleText.size() > 2 && scaleText.back() == '0') scaleText.pop_back();
-                            if (!scaleText.empty() && scaleText.back() == '.') scaleText.push_back('0');
+                            std::string scaleText = roundTripFloatText(static_cast<float>(vsrScale));
                             initialRtxFilters += "scale=" + scaleText + ":scaling-mode=nvidia";
                             if (trueHdrActive) initialRtxFilters += ":";
                         }
@@ -3767,6 +4193,256 @@ private:
         if (didAttach) {
             javaVm->DetachCurrentThread();
         }
+    }
+
+    // --- System Media Transport Controls -------------------------------------------------
+    // All of these run on the native UI thread (the STA that called OleInitialize and owns the
+    // message loop), except the ButtonPressed callback, which Windows raises on a thread-pool
+    // thread and which only touches sendPlayerEvent (JNI-attach safe).
+
+    void initializeSystemMediaControls(bool playWhenReady) {
+        // Hero-trailer surfaces are muted background previews. They must never claim the
+        // media session or the volume flyout would show a trailer instead of the real playback.
+        if (passiveSurface) return;
+
+        HWND sessionWindow = GetAncestor(hostHwnd, GA_ROOT);
+        if (!sessionWindow) sessionWindow = hostHwnd;
+        if (!sessionWindow) return;
+        mediaSessionWindow = sessionWindow;
+
+        {
+            std::lock_guard<std::mutex> lock(gSystemMediaOwnerMutex);
+            gSystemMediaOwner = this;
+        }
+
+        // Focus-path handler. Installed even if the SMTC session below fails, since this alone
+        // is enough to make the keys work whenever Nuvio is the foreground window.
+        if (SetWindowSubclass(
+                sessionWindow,
+                mediaKeyRootSubclassProc,
+                kMediaKeySubclassId,
+                reinterpret_cast<DWORD_PTR>(this)
+            )) {
+            mediaKeySubclassInstalled = true;
+        } else {
+            nuvioBridgeLog("smtc WM_APPCOMMAND subclass failed");
+        }
+
+        ComPtr<ISystemMediaTransportControlsInterop> interop;
+        HRESULT hr = RoGetActivationFactory(
+            HStringReference(RuntimeClass_Windows_Media_SystemMediaTransportControls).Get(),
+            IID_PPV_ARGS(&interop)
+        );
+        if (FAILED(hr)) {
+            nuvioBridgeLog("smtc activation factory unavailable, media keys disabled");
+            return;
+        }
+
+        hr = interop->GetForWindow(sessionWindow, IID_PPV_ARGS(&systemMediaControls));
+        if (FAILED(hr) || !systemMediaControls) {
+            nuvioBridgeLog("smtc GetForWindow failed, media keys disabled");
+            systemMediaControls.Reset();
+            return;
+        }
+
+        systemMediaControls->put_IsPlayEnabled(TRUE);
+        systemMediaControls->put_IsPauseEnabled(TRUE);
+        systemMediaControls->put_IsStopEnabled(TRUE);
+        systemMediaControls->put_IsNextEnabled(TRUE);
+        systemMediaControls->put_IsPreviousEnabled(TRUE);
+
+        std::weak_ptr<WindowsMpvWebPlayer> weakSelf = weak_from_this();
+        hr = systemMediaControls->add_ButtonPressed(
+            Callback<SystemMediaButtonPressedHandler>(
+                [weakSelf](
+                    WMedia::ISystemMediaTransportControls *,
+                    WMedia::ISystemMediaTransportControlsButtonPressedEventArgs *args
+                ) -> HRESULT {
+                    auto self = weakSelf.lock();
+                    if (!self || !args) return S_OK;
+                    WMedia::SystemMediaTransportControlsButton button;
+                    if (FAILED(args->get_Button(&button))) return S_OK;
+                    switch (button) {
+                        case WMedia::SystemMediaTransportControlsButton_Play:
+                            self->sendPlayerEvent("mediaPlay", 0.0);
+                            break;
+                        case WMedia::SystemMediaTransportControlsButton_Pause:
+                            self->sendPlayerEvent("mediaPause", 0.0);
+                            break;
+                        case WMedia::SystemMediaTransportControlsButton_Stop:
+                            self->sendPlayerEvent("mediaStop", 0.0);
+                            break;
+                        case WMedia::SystemMediaTransportControlsButton_Next:
+                            self->sendPlayerEvent("mediaNext", 0.0);
+                            break;
+                        case WMedia::SystemMediaTransportControlsButton_Previous:
+                            self->sendPlayerEvent("mediaPrevious", 0.0);
+                            break;
+                        default:
+                            break;
+                    }
+                    return S_OK;
+                }
+            ).Get(),
+            &systemMediaButtonToken
+        );
+        if (FAILED(hr)) {
+            nuvioBridgeLog("smtc add_ButtonPressed failed, media keys disabled");
+            systemMediaButtonToken.value = 0;
+            systemMediaControls.Reset();
+            return;
+        }
+
+        // Windows only routes media keys to a session that is enabled AND reports a live
+        // playback status. Both are required; an enabled session still reporting Closed is
+        // skipped in favour of whatever else is playing.
+        systemMediaControls->put_IsEnabled(TRUE);
+        // Deliberately NOT MediaPlaybackStatus_Changing. Windows treats Changing as "this
+        // session isn't ready" and will hand the current-session slot to another app; during a
+        // failover walk the player re-initialises every few seconds, so a Changing window on
+        // each one is a repeated opportunity to lose the keys. Publish the intended status
+        // straight away and let the 500ms timer correct it.
+        lastSystemMediaStatus = -1;
+        updateSystemMediaPlaybackStatus(!playWhenReady);
+        nuvioBridgeLog("smtc session registered");
+    }
+
+    // `loading` deliberately does not map to Changing — see initializeSystemMediaControls.
+    void updateSystemMediaPlaybackStatus(bool paused) {
+        if (!systemMediaControls) return;
+        const WMedia::MediaPlaybackStatus status =
+            paused ? WMedia::MediaPlaybackStatus_Paused : WMedia::MediaPlaybackStatus_Playing;
+        if ((int)status == lastSystemMediaStatus) return;
+        lastSystemMediaStatus = (int)status;
+        systemMediaControls->put_PlaybackStatus(status);
+    }
+
+    // WM_APPCOMMAND arrives on the thread owning the top-level window (not the native UI
+    // thread). It only reads mpv state and posts a JNI event, both of which are safe there.
+    bool handleMediaAppCommand(int command) {
+        switch (command) {
+            case APPCOMMAND_MEDIA_PLAY_PAUSE:
+                // No SMTC status to consult on this path, so resolve the toggle ourselves.
+                sendPlayerEvent(isPaused() ? "mediaPlay" : "mediaPause", 0.0);
+                return true;
+            case APPCOMMAND_MEDIA_PLAY:
+                sendPlayerEvent("mediaPlay", 0.0);
+                return true;
+            case APPCOMMAND_MEDIA_PAUSE:
+                sendPlayerEvent("mediaPause", 0.0);
+                return true;
+            case APPCOMMAND_MEDIA_STOP:
+                sendPlayerEvent("mediaStop", 0.0);
+                return true;
+            case APPCOMMAND_MEDIA_NEXTTRACK:
+                sendPlayerEvent("mediaNext", 0.0);
+                return true;
+            case APPCOMMAND_MEDIA_PREVIOUSTRACK:
+                sendPlayerEvent("mediaPrevious", 0.0);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+public:
+    // Called from the JVM thread; hops to the UI thread because the session was created there.
+    void setSystemMediaMetadata(
+        const std::string &title,
+        const std::string &subtitle,
+        const std::string &artworkUrl
+    ) {
+        auto self = shared_from_this();
+        postUiTask([self, title, subtitle, artworkUrl]() {
+            if (!self->systemMediaControls) return;
+            ComPtr<WMedia::ISystemMediaTransportControlsDisplayUpdater> updater;
+            if (FAILED(self->systemMediaControls->get_DisplayUpdater(&updater)) || !updater) return;
+            updater->put_Type(WMedia::MediaPlaybackType_Video);
+            ComPtr<WMedia::IVideoDisplayProperties> video;
+            if (FAILED(updater->get_VideoProperties(&video)) || !video) return;
+            const std::wstring wideTitle = toWide(title);
+            const std::wstring wideSubtitle = toWide(subtitle);
+            video->put_Title(HStringReference(wideTitle.c_str()).Get());
+            video->put_Subtitle(HStringReference(wideSubtitle.c_str()).Get());
+            self->applySystemMediaThumbnail(updater.Get(), artworkUrl);
+            updater->Update();
+        });
+    }
+
+private:
+    // Handed to Windows as a URI reference rather than downloaded here: the flyout fetches and
+    // caches it itself, so a poster that never loads costs nothing on the playback path.
+    void applySystemMediaThumbnail(
+        WMedia::ISystemMediaTransportControlsDisplayUpdater *updater,
+        const std::string &artworkUrl
+    ) {
+        if (!updater) return;
+        if (artworkUrl.empty()) {
+            updater->put_Thumbnail(nullptr);
+            return;
+        }
+
+        ComPtr<ABI::Windows::Foundation::IUriRuntimeClassFactory> uriFactory;
+        if (FAILED(RoGetActivationFactory(
+                HStringReference(RuntimeClass_Windows_Foundation_Uri).Get(),
+                IID_PPV_ARGS(&uriFactory)
+            ))) {
+            return;
+        }
+        const std::wstring wideUrl = toWide(artworkUrl);
+        ComPtr<ABI::Windows::Foundation::IUriRuntimeClass> uri;
+        if (FAILED(uriFactory->CreateUri(HStringReference(wideUrl.c_str()).Get(), &uri)) || !uri) {
+            return;
+        }
+
+        ComPtr<ABI::Windows::Storage::Streams::IRandomAccessStreamReferenceStatics> streamStatics;
+        if (FAILED(RoGetActivationFactory(
+                HStringReference(RuntimeClass_Windows_Storage_Streams_RandomAccessStreamReference).Get(),
+                IID_PPV_ARGS(&streamStatics)
+            ))) {
+            return;
+        }
+        ComPtr<ABI::Windows::Storage::Streams::IRandomAccessStreamReference> streamRef;
+        if (FAILED(streamStatics->CreateFromUri(uri.Get(), &streamRef)) || !streamRef) return;
+        updater->put_Thumbnail(streamRef.Get());
+    }
+
+public:
+
+private:
+    void teardownSystemMediaControls() {
+        // A player that has already been superseded must not disable the session or unhook the
+        // subclass its replacement installed on the same window.
+        bool stillOwner = false;
+        {
+            std::lock_guard<std::mutex> lock(gSystemMediaOwnerMutex);
+            stillOwner = gSystemMediaOwner == this;
+            if (stillOwner) gSystemMediaOwner = nullptr;
+        }
+        if (!stillOwner) {
+            nuvioBridgeLog("cleanup smtc skipped, session reclaimed by a newer player");
+            systemMediaControls.Reset();
+            mediaKeySubclassInstalled = false;
+            lastSystemMediaStatus = -1;
+            return;
+        }
+
+        if (mediaKeySubclassInstalled && mediaSessionWindow) {
+            RemoveWindowSubclass(mediaSessionWindow, mediaKeyRootSubclassProc, kMediaKeySubclassId);
+        }
+        mediaKeySubclassInstalled = false;
+        mediaSessionWindow = nullptr;
+
+        if (!systemMediaControls) return;
+        nuvioBridgeLog("cleanup smtc session");
+        if (systemMediaButtonToken.value != 0) {
+            systemMediaControls->remove_ButtonPressed(systemMediaButtonToken);
+            systemMediaButtonToken.value = 0;
+        }
+        systemMediaControls->put_PlaybackStatus(WMedia::MediaPlaybackStatus_Closed);
+        systemMediaControls->put_IsEnabled(FALSE);
+        systemMediaControls.Reset();
+        lastSystemMediaStatus = -1;
     }
 
     bool setMpvOptionStringLocked(const char *name, const char *value) {
@@ -3946,10 +4622,17 @@ private:
             long long channelCount = int64Property((prefix + "/demux-channel-count").c_str(), 0);
             // mpv marks both sid and secondary-sid tracks as selected. The app's existing
             // selected flag represents the primary/bottom track, so compare against sid
-            // directly once dual subtitles are active.
+            // directly once dual subtitles are active. Falling back to mpv's own flag when the
+            // primary id is unknown is safe (nothing else can be selected then), but ORing the two
+            // is not: with dual subtitles on it hands the app the secondary track as its selection.
             const bool trackSelected = flagProperty((prefix + "/selected").c_str(), false);
+            // main-selection is 0 for the primary track and 1 for the secondary one; defaulting to
+            // 0 keeps the old behaviour if the property is ever unavailable.
+            const long long mainSelection = int64Property((prefix + "/main-selection").c_str(), 0);
             bool selected = wantedType == "sub"
-                ? trackSelected || (primarySubtitleId >= 0 && trackId == primarySubtitleId)
+                ? (primarySubtitleId >= 0
+                       ? trackId == primarySubtitleId
+                       : (trackSelected && mainSelection == 0))
                 : trackSelected;
             bool forced = flagProperty((prefix + "/forced").c_str(), false);
             std::string label = formatTrackTitle(type, logicalIndex, title, language, codec, decoderDescription, channels, (int)channelCount);
@@ -4113,6 +4796,33 @@ LRESULT CALLBACK messageWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARA
         default:
             return DefWindowProcW(hwnd, message, wParam, lParam);
     }
+}
+
+LRESULT CALLBACK mediaKeyRootSubclassProc(
+    HWND hwnd,
+    UINT message,
+    WPARAM wParam,
+    LPARAM lParam,
+    UINT_PTR idSubclass,
+    DWORD_PTR refData
+) {
+    if (message == WM_APPCOMMAND) {
+        // refData is only dereferenced while this player still owns the subclass; teardown
+        // removes the hook, and a superseded player leaves the newer owner's hook in place.
+        std::lock_guard<std::mutex> lock(gSystemMediaOwnerMutex);
+        auto *player = reinterpret_cast<WindowsMpvWebPlayer *>(refData);
+        if (player && gSystemMediaOwner == player) {
+            if (player->handleMediaAppCommand(GET_APPCOMMAND_LPARAM(lParam))) {
+                // Consume it. Not forwarding to DefSubclassProc keeps the shell from turning the
+                // same press into an SMTC ButtonPressed, which would double-toggle playback.
+                return TRUE;
+            }
+        }
+    }
+    if (message == WM_NCDESTROY) {
+        RemoveWindowSubclass(hwnd, mediaKeyRootSubclassProc, idSubclass);
+    }
+    return DefSubclassProc(hwnd, message, wParam, lParam);
 }
 
 LRESULT CALLBACK containerWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -4292,8 +5002,10 @@ void setBorderlessFullscreenSuspended(HWND hwnd, bool suspended) {
     MONITORINFO monitorInfo{};
     monitorInfo.cbSize = sizeof(monitorInfo);
     if (!GetMonitorInfoW(monitor, &monitorInfo)) return;
+    // Same style mask as setBorderlessFullscreen — including WS_MAXIMIZE, or resuming from PiP
+    // into a session that was maximized before fullscreen lands on the work area, not the monitor.
     LONG_PTR style = g_borderlessFullscreenSaved.style &
-        ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+        ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_MAXIMIZE);
     SetWindowLongPtrW(hwnd, GWL_STYLE, style);
     const RECT &monitorRect = monitorInfo.rcMonitor;
     SetWindowPos(
@@ -4319,6 +5031,29 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setCursorHidden(JNIEnv *, jobject, jlong handle, jboolean hidden) {
     auto player = playerFromHandle(handle);
     if (player) player->setCursorHidden(hidden == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setMediaSessionMetadata(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring title,
+    jstring subtitle,
+    jstring artworkUrl
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->setSystemMediaMetadata(
+        title ? jstringToUtf8(env, title) : std::string(),
+        subtitle ? jstringToUtf8(env, subtitle) : std::string(),
+        artworkUrl ? jstringToUtf8(env, artworkUrl) : std::string()
+    );
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_initializeAppIdentity(JNIEnv *, jobject) {
+    initializeAppIdentity();
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -79,4 +79,18 @@ class HomeHeroSectionTest {
         assertFalse("Executive Producer, Michael Scott".isHeroCrewRole())
         assertFalse("Creator / David Brent".isHeroCrewRole())
     }
+
+    @Test
+    fun `synopsis scroll takes twice as long for twice the overflow`() {
+        val oneLine = heroSynopsisScrollDurationMs(24f)
+        val twoLines = heroSynopsisScrollDurationMs(48f)
+
+        assertEquals(2000, oneLine)
+        assertEquals(oneLine * 2, twoLines)
+    }
+
+    @Test
+    fun `a sliver of overflow still animates instead of jumping`() {
+        assertTrue(heroSynopsisScrollDurationMs(0.001f) >= 1)
+    }
 }

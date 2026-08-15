@@ -495,7 +495,7 @@ object LibraryPvrScheduler {
         )
         if (!result.isSuccess) return null
         return DownloadsRepository.uiState.value.items.firstOrNull {
-            it.parentMetaId == item.contentId &&
+            item.matchesContentId(it.parentMetaId) &&
                 it.seasonNumber == season &&
                 it.episodeNumber == episode
         }?.id
@@ -612,7 +612,7 @@ object LibraryPvrScheduler {
                 )
                 if (result.isSuccess) {
                     DownloadsRepository.uiState.value.items.firstOrNull {
-                        it.parentMetaId == item.contentId &&
+                        item.matchesContentId(it.parentMetaId) &&
                             it.seasonNumber == season &&
                             it.episodeNumber == episode
                     }?.id
@@ -686,7 +686,7 @@ object LibraryPvrScheduler {
                 )
                 if (result.isSuccess) {
                     DownloadsRepository.uiState.value.items.firstOrNull {
-                        it.parentMetaId == item.contentId &&
+                        item.matchesContentId(it.parentMetaId) &&
                             it.seasonNumber == null &&
                             it.episodeNumber == null
                     }?.id
@@ -857,15 +857,23 @@ object LibraryPvrScheduler {
         var freedDownloadSlot = false
         var libraryRescanRequired = false
         downloads.forEach { download ->
-            val mon = monitored.firstOrNull { it.contentId == download.parentMetaId } ?: return@forEach
-            val matchingGrabs = grabs.filter {
-                it.monitoredItemId == mon.id &&
-                    it.season == download.seasonNumber &&
-                    it.episode == download.episodeNumber &&
-                    it.status == GrabStatus.DOWNLOADING &&
-                    (it.downloadId == null || it.downloadId == download.id)
-            }
-            if (matchingGrabs.isEmpty()) return@forEach
+            // Sibling anime seasons share one franchise id, so the id alone can name several
+            // monitors. The in-flight grab is the explicit link between this download and the
+            // monitor that started it — take the strongest id match that actually owns one, rather
+            // than the first id match, whose grabs may be empty purely because it is the wrong
+            // sibling (which used to drop the completion silently).
+            val resolved = monitored.rankedForContentId(download.parentMetaId)
+                .firstNotNullOfOrNull { candidate ->
+                    grabs.filter {
+                        it.monitoredItemId == candidate.id &&
+                            it.season == download.seasonNumber &&
+                            it.episode == download.episodeNumber &&
+                            it.status == GrabStatus.DOWNLOADING &&
+                            (it.downloadId == null || it.downloadId == download.id)
+                    }.takeIf(List<GrabRecord>::isNotEmpty)?.let { candidate to it }
+                } ?: return@forEach
+            val mon = resolved.first
+            val matchingGrabs = resolved.second
 
             when (download.status) {
                 DownloadStatus.Completed -> {
@@ -930,11 +938,20 @@ object LibraryPvrScheduler {
         return true
     }
 
+    /**
+     * Removes the files this download replaces.
+     *
+     * Resolved exclusively rather than with `firstOrNull`: an anime franchise id covers every
+     * season's entry, so a loose match can name a sibling whose S/E numbering overlaps and delete a
+     * file the user still has. An ambiguous answer deletes nothing — the new file lands alongside
+     * the old one, which the user can resolve, unlike a deletion.
+     */
     private fun deleteSupersededLocalFiles(item: MonitoredItem, download: DownloadItem) {
         val protectedSuffix = download.fileName.replace('\\', '/').lowercase()
-        val localItem = LocalLibraryRepository.uiState.value.items.firstOrNull {
-            it.folderId == item.targetFolderId && it.contentId == item.contentId
-        } ?: return
+        val localItem = LocalLibraryRepository.uiState.value.items
+            .filter { it.folderId == item.targetFolderId }
+            .resolveMonitoredExclusively(item)
+            ?: return
         localItem.files
             .filter { file ->
                 if (item.isMovie) {
@@ -980,12 +997,13 @@ object LibraryPvrScheduler {
 
     private fun haveEpisodes(item: MonitoredItem, folder: LocalFolder): Set<Pair<Int, Int>> {
         val fromLocal = LocalLibraryRepository.uiState.value.items
-            .filter { it.folderId == folder.id && it.contentId == item.contentId }
+            .filter { it.folderId == folder.id }
+            .matchingMonitored(item)
             .flatMap { it.files }
             .mapNotNull { file -> file.season?.let { s -> file.episode?.let { e -> s to e } } }
         val fromDownloads = DownloadsRepository.uiState.value.items
             .filter {
-                it.parentMetaId == item.contentId &&
+                item.matchesContentId(it.parentMetaId) &&
                     it.status == DownloadStatus.Completed &&
                     it.seasonNumber != null && it.episodeNumber != null
             }
@@ -994,11 +1012,12 @@ object LibraryPvrScheduler {
     }
 
     private fun hasMovieLocally(item: MonitoredItem, folder: LocalFolder): Boolean {
-        val local = LocalLibraryRepository.uiState.value.items.any {
-            it.folderId == folder.id && it.contentId == item.contentId && it.files.isNotEmpty()
-        }
+        val local = LocalLibraryRepository.uiState.value.items
+            .filter { it.folderId == folder.id }
+            .matchingMonitored(item)
+            .any { it.files.isNotEmpty() }
         val downloaded = DownloadsRepository.uiState.value.items.any {
-            it.parentMetaId == item.contentId && it.status == DownloadStatus.Completed
+            item.matchesContentId(it.parentMetaId) && it.status == DownloadStatus.Completed
         }
         return local || downloaded
     }

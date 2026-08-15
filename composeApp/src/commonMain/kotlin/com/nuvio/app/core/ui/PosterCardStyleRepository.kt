@@ -24,13 +24,32 @@ internal const val DefaultPosterCardCornerRadiusDp = 12
 /** The desktop fork's largest poster preset. */
 const val ExtraLargePosterCardWidthDp = 210
 
+/**
+ * How a landscape card renders the rating its catalog supplied. [OutOfHundred] shows the same
+ * number on a 0-100 scale — 8.5 reads as 85, and a perfect score as 100 — which is why the badge
+ * reserves room for three digits at every size rather than sizing itself to the current value.
+ */
+enum class PosterRatingBadgeScale {
+    Off,
+    OutOfTen,
+    OutOfHundred,
+    ;
+
+    companion object {
+        fun fromStoredName(name: String?): PosterRatingBadgeScale =
+            entries.firstOrNull { it.name == name } ?: OutOfTen
+    }
+}
+
 @Serializable
 private data class StoredPosterCardStylePreferences(
     val widthDp: Int = DefaultPosterCardWidthDp,
     val heightDp: Int = DefaultPosterCardHeightDp,
     val cornerRadiusDp: Int = DefaultPosterCardCornerRadiusDp,
     val catalogLandscapeModeEnabled: Boolean = false,
+    val collectionsPortraitPostersEnabled: Boolean = false,
     val landscapeTextTitlesEnabled: Boolean = false,
+    val landscapeRatingBadgeScale: String = "OutOfTen",
     val hideLabelsEnabled: Boolean = false,
     val depthEnabled: Boolean = false,
     val depthEdgeStrength: Int = 42,
@@ -49,7 +68,11 @@ data class PosterCardStyleUiState(
     val heightDp: Int = DefaultPosterCardHeightDp,
     val cornerRadiusDp: Int = DefaultPosterCardCornerRadiusDp,
     val catalogLandscapeModeEnabled: Boolean = false,
+    /** Landscape posters everywhere except the Collections screens, which stay portrait. */
+    val collectionsPortraitPostersEnabled: Boolean = false,
     val landscapeTextTitlesEnabled: Boolean = false,
+    /** Corner rating badge on landscape cards, using whatever score the row's catalog supplied. */
+    val landscapeRatingBadgeScale: PosterRatingBadgeScale = PosterRatingBadgeScale.OutOfTen,
     val hideLabelsEnabled: Boolean = false,
     val depthEnabled: Boolean = false,
     val depthEdgeStrength: Int = 42,
@@ -114,6 +137,13 @@ object PosterCardStyleRepository {
         persist()
     }
 
+    fun setCollectionsPortraitPostersEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (_uiState.value.collectionsPortraitPostersEnabled == enabled) return
+        _uiState.value = _uiState.value.copy(collectionsPortraitPostersEnabled = enabled)
+        persist()
+    }
+
     fun setHideLabelsEnabled(enabled: Boolean) {
         ensureLoaded()
         if (_uiState.value.hideLabelsEnabled == enabled) return
@@ -125,6 +155,13 @@ object PosterCardStyleRepository {
         ensureLoaded()
         if (_uiState.value.landscapeTextTitlesEnabled == enabled) return
         _uiState.value = _uiState.value.copy(landscapeTextTitlesEnabled = enabled)
+        persist()
+    }
+
+    fun setLandscapeRatingBadgeScale(scale: PosterRatingBadgeScale) {
+        ensureLoaded()
+        if (_uiState.value.landscapeRatingBadgeScale == scale) return
+        _uiState.value = _uiState.value.copy(landscapeRatingBadgeScale = scale)
         persist()
     }
 
@@ -208,7 +245,11 @@ object PosterCardStyleRepository {
                 heightDp = heightDp,
                 cornerRadiusDp = cornerRadiusDp,
                 catalogLandscapeModeEnabled = stored.catalogLandscapeModeEnabled,
+                collectionsPortraitPostersEnabled = stored.collectionsPortraitPostersEnabled,
                 landscapeTextTitlesEnabled = stored.landscapeTextTitlesEnabled,
+                landscapeRatingBadgeScale = PosterRatingBadgeScale.fromStoredName(
+                    stored.landscapeRatingBadgeScale,
+                ),
                 hideLabelsEnabled = stored.hideLabelsEnabled,
                 depthEnabled = stored.depthEnabled,
                 depthEdgeStrength = stored.depthEdgeStrength.coerceIn(0, 100),
@@ -234,7 +275,9 @@ object PosterCardStyleRepository {
                     heightDp = _uiState.value.heightDp,
                     cornerRadiusDp = _uiState.value.cornerRadiusDp,
                     catalogLandscapeModeEnabled = _uiState.value.catalogLandscapeModeEnabled,
+                    collectionsPortraitPostersEnabled = _uiState.value.collectionsPortraitPostersEnabled,
                     landscapeTextTitlesEnabled = _uiState.value.landscapeTextTitlesEnabled,
+                    landscapeRatingBadgeScale = _uiState.value.landscapeRatingBadgeScale.name,
                     hideLabelsEnabled = _uiState.value.hideLabelsEnabled,
                     depthEnabled = _uiState.value.depthEnabled,
                     depthEdgeStrength = _uiState.value.depthEdgeStrength,

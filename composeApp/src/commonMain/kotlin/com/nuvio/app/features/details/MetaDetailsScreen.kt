@@ -108,6 +108,7 @@ import com.nuvio.app.features.details.components.DetailAdditionalInfoSection
 import com.nuvio.app.features.details.components.DetailCastSection
 import com.nuvio.app.features.details.components.DetailCommentsSection
 import com.nuvio.app.features.details.components.DetailCompactMediaSelector
+import com.nuvio.app.features.details.components.DetailEpisodeSearchState
 import com.nuvio.app.features.details.components.DetailFloatingHeader
 import com.nuvio.app.features.details.components.DetailHero
 import com.nuvio.app.features.details.components.DetailHeroPeoplePanelToggleTrigger
@@ -144,7 +145,7 @@ import com.nuvio.app.features.player.appShortcutMatches
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.tmdb.TmdbService
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktCommentReview
 import com.nuvio.app.features.trakt.TraktCommentsRepository
@@ -288,6 +289,10 @@ fun MetaDetailsScreen(
     var episodeSearchQuery by remember(type, id) { mutableStateOf("") }
     var episodeSearchInputReady by remember(type, id) { mutableStateOf(false) }
     val episodeSearchFocusRequester = remember(type, id) { FocusRequester() }
+    // Mirrors whether the action row is on screen to host the field inline (see
+    // [DetailEpisodeSearchState]); the layout that decides this is measured further down, but the
+    // scroll behaviour above it has to know.
+    var episodeSearchInlineHosted by remember(type, id) { mutableStateOf(false) }
 
     LaunchedEffect(episodeSearchVisible) {
         episodeSearchInputReady = false
@@ -1227,6 +1232,14 @@ fun MetaDetailsScreen(
                 val detailsKeyboardNavigationEnabled = isDesktop && !metaScreenSettingsUiState.tabLayout
                 val tvFocus = rememberMetaDetailsTvFocusState()
                 val tvFocusRequester = remember { FocusRequester() }
+                val closeEpisodeSearch: () -> Unit = {
+                    episodeSearchVisible = false
+                    episodeSearchQuery = ""
+                    episodeSearchInputReady = false
+                    if (detailsKeyboardNavigationEnabled) {
+                        try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                    }
+                }
                 val tvCoroutineScope = rememberCoroutineScope()
                 val mouseActivity = rememberMouseActivityState()
 
@@ -1561,8 +1574,11 @@ fun MetaDetailsScreen(
                         .toPx()
                 }
                 var heroHeightPx by remember(meta.id) { mutableIntStateOf(0) }
-                LaunchedEffect(episodeSearchVisible, heroHeightPx) {
+                LaunchedEffect(episodeSearchVisible, heroHeightPx, episodeSearchInlineHosted) {
                     if (!episodeSearchVisible) return@LaunchedEffect
+                    // The inline field lives in the hero's action row, with the episode list already
+                    // beside it — scrolling would carry the field the user is typing into off screen.
+                    if (episodeSearchInlineHosted) return@LaunchedEffect
                     val episodesSection = tvSections.firstOrNull { it.kind == MetaTvSectionKind.EPISODES }
                         ?: return@LaunchedEffect
                     if (mergedDetailKeyboardNavigation) {
@@ -1627,10 +1643,28 @@ fun MetaDetailsScreen(
                         heroTrailerAutoplayReady = true
                     }
                 }
+                // Every modal on this screen is drawn by Compose, but the trailer plays on a
+                // native child window (SwingPanel -> mpv/WebView2). Its z-order belongs to the OS,
+                // not to Compose, so it always composites over the dialog no matter where the
+                // dialog sits in the composition. Nothing Compose-side can draw above it, so the
+                // trailer has to get out of the way instead: parking it pauses playback and shrinks
+                // the native child to 1px (see HeroTrailerPlayerSurface.desktop.kt), and closing the
+                // modal resumes in place — the same park/resume the scroll gate below already uses,
+                // so the surface is never torn down and never comes back on a black frame.
+                val heroTrailerModalVisible = showLibraryListPicker ||
+                    showRatingDialog ||
+                    showMonitorDialog ||
+                    selectedEpisodeForActions != null ||
+                    selectedSeasonForActions != null ||
+                    selectedComment != null ||
+                    // Only non-null while another trailer is being resolved/played elsewhere (the
+                    // play-in-hero path clears it), so this never fights hero playback itself.
+                    selectedTrailer != null
                 val heroTrailerPlayWhenReady = heroTrailerSourceUrl != null &&
                     heroTrailerAutoplayReady &&
                     !isLeavingDetails &&
                     !heroTrailerDismissed &&
+                    !heroTrailerModalVisible &&
                     // The bounded trailer occupies the same right-hand space as the selector
                     // once the scaled hero scrolls. Park it and reveal the backdrop until the
                     // viewport returns to the top.
@@ -1819,12 +1853,7 @@ fun MetaDetailsScreen(
                             if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                             if (episodeSearchVisible) {
                                 if (event.navigationKey() == Key.Escape) {
-                                    episodeSearchVisible = false
-                                    episodeSearchQuery = ""
-                                    episodeSearchInputReady = false
-                                    if (detailsKeyboardNavigationEnabled) {
-                                        try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
-                                    }
+                                    closeEpisodeSearch()
                                     return@onPreviewKeyEvent true
                                 }
                                 // While the editor owns focus, ordinary letters (including other
@@ -1880,6 +1909,16 @@ fun MetaDetailsScreen(
                             isTablet &&
                             maxWidth >= 1120.dp &&
                             !metaScreenSettingsUiState.tabLayout
+                    // Only the desktop hero draws the action row itself, with the episode list
+                    // already on screen beside it. That row is also the one strip a bounded hero
+                    // trailer never covers, so the search field folds into Play there instead of
+                    // floating over the hero, where the trailer's native surface paints over
+                    // every Compose layer regardless of z-order.
+                    val inlineEpisodeSearchHosted = useDesktopDetailLayout &&
+                        MetaScreenSectionKey.ACTIONS in visibleSectionKeys
+                    LaunchedEffect(inlineEpisodeSearchHosted) {
+                        episodeSearchInlineHosted = inlineEpisodeSearchHosted
+                    }
                     val contentHorizontalPadding = if (useDesktopDetailLayout) {
                         64.dp
                     } else if (isTablet) {
@@ -1964,6 +2003,19 @@ fun MetaDetailsScreen(
                                     .filter { it.enabled }
                                     .map { it.key }
                                     .toSet()
+                                val heroEpisodeSearch = if (inlineEpisodeSearchHosted) {
+                                    DetailEpisodeSearchState(
+                                        active = episodeSearchVisible,
+                                        query = episodeSearchQuery,
+                                        resultCount = episodeSearchResults.size,
+                                        inputReady = episodeSearchInputReady,
+                                        focusRequester = episodeSearchFocusRequester,
+                                        onQueryChange = { episodeSearchQuery = it },
+                                        onClose = closeEpisodeSearch,
+                                    )
+                                } else {
+                                    null
+                                }
                                 Box(modifier = Modifier.fillMaxWidth()) {
                                     DetailHero(
                                         meta = meta,
@@ -2014,6 +2066,7 @@ fun MetaDetailsScreen(
                                             hasAdditionalInfoSection,
                                         showManualPlayOption = showManualPlayOption,
                                         focusedActionIndex = tvFocusInfo.focusedActionIndex,
+                                        episodeSearch = heroEpisodeSearch,
                                         onPrimaryPlayClick = onPrimaryPlayClick,
                                         onPrimaryPlayLongClick = onPrimaryPlayLongClick,
                                         onRandomEpisodeClick = onRandomEpisodeClick,
@@ -2287,7 +2340,10 @@ fun MetaDetailsScreen(
                             modifier = Modifier.zIndex(2f),
                         )
 
-                        if (episodeSearchVisible) {
+                        // Layouts without a hosted action row (tab layout, narrow windows) keep the
+                        // floating panel; there the content has scrolled the hero — and its trailer
+                        // — out of the way by the time it appears.
+                        if (episodeSearchVisible && !inlineEpisodeSearchHosted) {
                             EpisodeSearchOverlay(
                                 query = episodeSearchQuery,
                                 onQueryChange = { episodeSearchQuery = it },
@@ -2295,14 +2351,7 @@ fun MetaDetailsScreen(
                                 inputReady = episodeSearchInputReady,
                                 focusRequester = episodeSearchFocusRequester,
                                 onClear = { episodeSearchQuery = "" },
-                                onClose = {
-                                    episodeSearchVisible = false
-                                    episodeSearchQuery = ""
-                                    episodeSearchInputReady = false
-                                    if (detailsKeyboardNavigationEnabled) {
-                                        try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
-                                    }
-                                },
+                                onClose = closeEpisodeSearch,
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
                                     .zIndex(4f),
@@ -3029,7 +3078,7 @@ private fun EpisodeSearchOverlay(
             readOnly = !inputReady,
             modifier = Modifier
                 .focusRequester(focusRequester)
-                .trackSettingsTextFocus(),
+                .trackTextInputFocus(),
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (query.isNotEmpty()) {

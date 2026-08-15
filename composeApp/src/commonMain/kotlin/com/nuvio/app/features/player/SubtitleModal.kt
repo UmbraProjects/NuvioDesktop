@@ -28,10 +28,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +41,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,6 +73,9 @@ fun SubtitleModal(
     onTabSelected: (SubtitleTab) -> Unit,
     onBuiltInTrackSelected: (Int) -> Unit,
     onAddonSubtitleSelected: (AddonSubtitle) -> Unit,
+    onAddonSubtitleDownload: (AddonSubtitle) -> Unit,
+    downloadingAddonSubtitleId: String?,
+    downloadSubtitleLabel: String,
     onFetchAddonSubtitles: () -> Unit,
     onStyleChanged: (SubtitleStyleState) -> Unit,
     onSubtitleDelayChanged: (Int) -> Unit,
@@ -157,6 +164,9 @@ fun SubtitleModal(
                                     selectedId = selectedAddonSubtitleId,
                                     isLoading = isLoadingAddonSubtitles,
                                     onSubtitleSelected = onAddonSubtitleSelected,
+                                    onSubtitleDownload = onAddonSubtitleDownload,
+                                    downloadingSubtitleId = downloadingAddonSubtitleId,
+                                    downloadSubtitleLabel = downloadSubtitleLabel,
                                     onFetch = onFetchAddonSubtitles,
                                 )
                                 SubtitleTab.Style -> SubtitleStylePanel(
@@ -252,6 +262,11 @@ private fun BuiltInSubtitleList(
                     if (isNoneSelected) colorScheme.primaryContainer
                     else colorScheme.surfaceVariant.copy(alpha = 0.6f)
                 )
+                .border(
+                    width = if (isNoneSelected) 2.dp else 0.dp,
+                    color = if (isNoneSelected) colorScheme.primary else Color.Transparent,
+                    shape = RoundedCornerShape(12.dp),
+                )
                 .clickable { onTrackSelected(-1) }
                 .padding(vertical = 10.dp, horizontal = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -263,14 +278,6 @@ private fun BuiltInSubtitleList(
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
             )
-            if (isNoneSelected) {
-                Icon(
-                    imageVector = Icons.Rounded.Check,
-                    contentDescription = null,
-                    tint = colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
         }
 
         tracks.forEach { track ->
@@ -280,23 +287,31 @@ private fun BuiltInSubtitleList(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (isSelected) colorScheme.primaryContainer else colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                    .border(
+                        width = if (isSelected) 2.dp else 0.dp,
+                        color = if (isSelected) colorScheme.primary else Color.Transparent,
+                        shape = RoundedCornerShape(12.dp),
+                    )
                     .clickable { onTrackSelected(track.index) }
                     .padding(vertical = 10.dp, horizontal = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = localizedTrackDisplayName(track.label, track.language, track.index),
-                    color = if (isSelected) colorScheme.onPrimaryContainer else colorScheme.onSurface,
-                    fontSize = 15.sp,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                )
-                if (isSelected) {
-                    Icon(
-                        imageVector = Icons.Rounded.Check,
-                        contentDescription = null,
-                        tint = colorScheme.primary,
-                        modifier = Modifier.size(18.dp),
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = localizedTrackDisplayName(track.label, track.language, track.index),
+                        color = if (isSelected) colorScheme.onPrimaryContainer else colorScheme.onSurface,
+                        fontSize = 15.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    )
+                    Text(
+                        text = listOfNotNull(
+                            track.language?.let { languageLabelForCode(it) },
+                            track.id.takeIf(String::isNotBlank)?.let { "ID: $it" },
+                        ).joinToString(" • "),
+                        color = if (isSelected) colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
+                        else colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
                     )
                 }
             }
@@ -304,12 +319,16 @@ private fun BuiltInSubtitleList(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun AddonSubtitleList(
     addons: List<AddonSubtitle>,
     selectedId: String?,
     isLoading: Boolean,
     onSubtitleSelected: (AddonSubtitle) -> Unit,
+    onSubtitleDownload: (AddonSubtitle) -> Unit,
+    downloadingSubtitleId: String?,
+    downloadSubtitleLabel: String,
     onFetch: () -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -366,11 +385,33 @@ private fun AddonSubtitleList(
     ) {
         addons.forEach { sub ->
             val isSelected = sub.id == selectedId
+            val downloadKey = sub.id.ifBlank { sub.url }
+            val isDownloading = downloadKey == downloadingSubtitleId
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (isSelected) colorScheme.primaryContainer else colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                    .border(
+                        width = if (isSelected) 2.dp else 0.dp,
+                        color = if (isSelected) colorScheme.primary else Color.Transparent,
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                    .pointerInput(downloadKey, isDownloading) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (
+                                    !isDownloading &&
+                                    event.type == PointerEventType.Press &&
+                                    event.button == PointerButton.Secondary
+                                ) {
+                                    event.changes.forEach { it.consume() }
+                                    onSubtitleDownload(sub)
+                                }
+                            }
+                        }
+                    }
                     .clickable { onSubtitleSelected(sub) }
                     .padding(vertical = 5.dp, horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -388,21 +429,34 @@ private fun AddonSubtitleList(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        text = languageLabelForCode(sub.language),
+                        text = listOfNotNull(
+                            languageLabelForCode(sub.language),
+                            sub.addonName?.takeIf(String::isNotBlank),
+                            sub.id.takeIf(String::isNotBlank)?.let { "ID: $it" },
+                        ).joinToString(" • "),
                         color = if (isSelected) colorScheme.onPrimaryContainer.copy(alpha = 0.72f) else colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         modifier = Modifier.padding(bottom = 3.dp),
                     )
                 }
-                if (isSelected) {
-                    Icon(
-                        imageVector = Icons.Rounded.Check,
-                        contentDescription = null,
-                        tint = colorScheme.primary,
-                        modifier = Modifier
-                            .size(18.dp)
-                            .padding(end = 2.dp),
-                    )
+                IconButton(
+                    onClick = { onSubtitleDownload(sub) },
+                    enabled = !isDownloading,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    if (isDownloading) {
+                        CircularProgressIndicator(
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.CloudDownload,
+                            contentDescription = downloadSubtitleLabel,
+                            tint = if (isSelected) colorScheme.onPrimaryContainer else colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
         }

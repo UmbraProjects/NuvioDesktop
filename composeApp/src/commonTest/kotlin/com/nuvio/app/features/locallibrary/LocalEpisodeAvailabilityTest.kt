@@ -1,5 +1,6 @@
 package com.nuvio.app.features.locallibrary
 
+import com.nuvio.app.features.metadata.AnimeIdPreference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -36,8 +37,16 @@ class LocalEpisodeAvailabilityTest {
 
     @Test
     fun `franchise ids win the content id, native ids remain the fallback`() {
-        assertEquals("tt0168366", xyz.contentId)
-        assertEquals("kitsu:11367", xyzNativeOnly.contentId)
+        // Stated explicitly: the live preference is per-profile user state, and a test that reads
+        // it passes or fails depending on whose machine it runs on.
+        assertEquals("tt0168366", xyz.contentIdFor(AnimeIdPreference.IMDB))
+        assertEquals("kitsu:11367", xyzNativeOnly.contentIdFor(AnimeIdPreference.IMDB))
+    }
+
+    @Test
+    fun `a native preference addresses the item by its own entry`() {
+        assertEquals("kitsu:11367", xyz.contentIdFor(AnimeIdPreference.KITSU))
+        assertEquals("mal:31592", xyz.contentIdFor(AnimeIdPreference.MAL))
     }
 
     @Test

@@ -2,10 +2,15 @@ package com.nuvio.app.features.simkl
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpRequestRaw
+import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.metadata.MediaIdResolver
+import com.nuvio.app.features.metadata.isAnimeNativeId
 import com.nuvio.app.features.metadata.toSimklIds
+import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import com.nuvio.app.features.tmdb.customPosterTemplateUsesNativeAnimeId
+import com.nuvio.app.features.tmdb.resolveCustomPosterIds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -14,7 +19,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.Serializable
@@ -235,7 +242,13 @@ internal object SimklLibraryRepository {
     private suspend fun fetchType(type: String): List<LibraryItem> {
         val headers = SimklAuthRepository.authorizedHeaders() ?: return emptyList()
         // Filter to plantowatch only — the user's "want to watch" list, not their full history.
-        val url = SimklAuthRepository.appendParams("$BASE_URL/sync/all-items/$type/plantowatch")
+        // `extended=full` for the ids: the default response states the one id SIMKL indexes the
+        // entry by, and a row that knows only its IMDb id cannot fill a poster template that also
+        // names the TMDB one. Matches SimklWatchedRepository, and the parser ignores the extra
+        // fields it brings along.
+        val url = SimklAuthRepository.appendParams(
+            "$BASE_URL/sync/all-items/$type/plantowatch?extended=full",
+        )
         val response = httpRequestRaw(method = "GET", url = url, headers = headers, body = "")
         if (response.status !in 200..299) {
             error("SIMKL /sync/all-items/$type returned ${response.status}")
@@ -251,7 +264,17 @@ internal object SimklLibraryRepository {
 
     private fun SimklAllItemsEntry.toLibraryItem(type: String): LibraryItem? {
         val ids = show?.ids ?: movie?.ids ?: anime?.ids ?: return null
-        val contentId = ids.toBestContentId() ?: return null
+        // Anime takes the anime-aware chain, or the library is the one SIMKL surface where the
+        // AnimeIdPreference does nothing: every row here would be addressed by a franchise id (or
+        // by an unresolvable `simkl:` one) while Continue Watching, watched state and the calendar
+        // use the id the user asked for, and nothing matches across them. The node is not proof on
+        // its own — SIMKL delivers anime movies under the plain `movie` node too (isKnownAnime).
+        val isAnime = anime != null || ids.isKnownAnime()
+        val contentId = when {
+            !isAnime -> ids.toBestContentId()
+            type.equals("movie", ignoreCase = true) -> ids.toBestAnimeMovieContentId()
+            else -> ids.toBestAnimeContentId()
+        } ?: return null
         val title = show?.title ?: movie?.title ?: anime?.title ?: return null
         val poster = (show?.poster ?: movie?.poster ?: anime?.poster)
             ?.takeIf { it.isNotBlank() }?.simklPosterUrl()
@@ -259,7 +282,10 @@ internal object SimklLibraryRepository {
             ?.let { parseSimklTimestamp(it) }
             ?: System.currentTimeMillis()
 
-        val imdbId = ids.imdb?.takeIf { it.isNotBlank() }
+        // Not the placeholder: SIMKL hands tt2250192 back for anime it has no real imdb id for, and
+        // this id addresses the backdrop and the poster-service URL below — an unrelated title's
+        // artwork on every anime that carries it.
+        val imdbId = ids.imdb?.takeIf { it.isNotBlank() && it != PLACEHOLDER_IMDB_ID }
         val year = show?.year ?: movie?.year ?: anime?.year
         // Baseline backdrop so there is always something to show before enrichment runs.
         // enrichItems() calls fetchLightweightMeta which upgrades this to a TMDB-quality
@@ -275,6 +301,9 @@ internal object SimklLibraryRepository {
             releaseInfo = year?.toString(),
             imdbId = imdbId,
             tmdbId = ids.tmdb?.toIntOrNull(),
+            anilistId = ids.anilist?.toIntOrNull(),
+            kitsuId = ids.kitsu?.toIntOrNull(),
+            malId = ids.mal?.toIntOrNull(),
             savedAtEpochMs = savedAt,
         )
     }
@@ -300,6 +329,9 @@ internal object SimklLibraryRepository {
         val all = shows + movies + anime
         val sem = Semaphore(3)
         val enriched = mutableMapOf<String, LibraryItem>()
+        // Three permits means three concurrent writers; a plain map is not safe to publish from.
+        val enrichedMutex = Mutex()
+        suspend fun record(item: LibraryItem) = enrichedMutex.withLock { enriched[item.id] = item }
 
         all.map { item ->
             scope.launch {
@@ -310,9 +342,17 @@ internal object SimklLibraryRepository {
                         MetaDetailsRepository.fetchLightweightMeta(
                             item.type, item.id, preferTmdbImages = true,
                         )
-                    }.getOrNull() ?: return@withPermit
-                    if (meta.genres.isEmpty() && meta.description == null && meta.runtime == null) return@withPermit
-                    enriched[item.id] = item.copy(
+                    }.getOrNull()
+                    // SIMKL states one id per entry, so the poster service's other placeholder is
+                    // unfillable until someone asks TMDB for it. Done here rather than at render
+                    // time because it is a network call, and before the text check below because an
+                    // entry with no addon metadata still deserves its poster.
+                    val withIds = item.withPosterServiceIds(meta)
+                    if (meta == null || (meta.genres.isEmpty() && meta.description == null && meta.runtime == null)) {
+                        if (withIds != item) record(withIds)
+                        return@withPermit
+                    }
+                    record(withIds.copy(
                         genres = meta.genres.ifEmpty { item.genres },
                         description = meta.description ?: item.description,
                         releaseInfo = item.releaseInfo ?: meta.releaseInfo,
@@ -330,7 +370,7 @@ internal object SimklLibraryRepository {
                         },
                         // Prefer fetched logo (TMDB clearlogo) over existing (metahub/Fanart.tv).
                         logo = meta.logo ?: item.logo,
-                    )
+                    ))
                 }
             }
         }.forEach { it.join() }
@@ -344,5 +384,26 @@ internal object SimklLibraryRepository {
             anime = anime.applyEnrichment(),
         )
         log.d { "SIMKL library: enriched ${enriched.size} / ${all.size} items with addon metadata" }
+    }
+
+    /**
+     * Fills in the id the user's poster template names but this entry does not carry.
+     *
+     * The lightweight meta is consulted first because it costs nothing — it has already been
+     * fetched — and only what it cannot answer becomes a TMDB lookup. Anime addressed by a
+     * per-entry id is left alone: its ids belong to the franchise, so a poster service would
+     * return season 1's art for every season.
+     */
+    private suspend fun LibraryItem.withPosterServiceIds(meta: MetaDetails?): LibraryItem {
+        val settings = TmdbSettingsRepository.snapshot()
+        if (id.isAnimeNativeId() && !settings.customPosterTemplateUsesNativeAnimeId()) return this
+        val resolved = resolveCustomPosterIds(
+            settings = settings,
+            imdbId = imdbId ?: meta?.imdbId ?: id.takeIf { it.startsWith("tt") },
+            tmdbId = tmdbId ?: meta?.tmdbId,
+            type = type,
+        )
+        if (resolved.imdbId == imdbId && resolved.tmdbId == tmdbId) return this
+        return copy(imdbId = resolved.imdbId ?: imdbId, tmdbId = resolved.tmdbId ?: tmdbId)
     }
 }

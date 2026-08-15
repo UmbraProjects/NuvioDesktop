@@ -46,6 +46,11 @@ internal object ImdbGraphQlApi {
                     headers = mapOf(
                         "Accept" to "application/json",
                         "Content-Type" to "application/json",
+                        // IMDb started 403ing anonymous callers: a request carrying only Accept and
+                        // Content-Type is rejected at the edge before it reaches GraphQL. Any
+                        // non-blank client name is enough to be let through; the value is not
+                        // validated against a registry.
+                        "x-imdb-client-name" to IMDB_GRAPHQL_CLIENT_NAME,
                     ),
                     body = "{\"query\":${seriesGraphJson.encodeToString(episodeRatingsQuery(imdbId, cursor))}}",
                 )
@@ -218,6 +223,9 @@ private suspend fun requestSeasonRatings(
 }
 
 private const val IMDB_GRAPHQL_URL = "https://api.graphql.imdb.com/"
+
+/** Identifies us to IMDb's edge; without it every request comes back 403 rather than 200. */
+private const val IMDB_GRAPHQL_CLIENT_NAME = "nuvio-desktop"
 
 /** IMDb's hard server-side cap for the episode connection; asking for more is silently clamped. */
 private const val IMDB_GRAPHQL_PAGE_SIZE = 250

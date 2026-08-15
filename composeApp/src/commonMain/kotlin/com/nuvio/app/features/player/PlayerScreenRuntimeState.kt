@@ -85,6 +85,7 @@ internal class PlayerScreenRuntime(
     var addonsUiState: AddonsUiState = AddonsUiState()
     var addonSubtitles: List<AddonSubtitle> = emptyList()
     var isLoadingAddonSubtitles: Boolean = false
+    var downloadingAddonSubtitleId by mutableStateOf<String?>(null)
 
     var horizontalSafePadding: Dp = 0.dp
     var metrics: PlayerLayoutMetrics = PlayerLayoutMetrics.fromWidth(0.dp)
@@ -94,6 +95,8 @@ internal class PlayerScreenRuntime(
     var resizeModeFillLabel: String = ""
     var resizeModeZoomLabel: String = ""
     var downloadedLabel: String = ""
+    var subtitleSavedLabel: String = "Subtitle saved"
+    var subtitleSaveFailedLabel: String = "Could not save subtitle"
     var airsPrefix: String = ""
     var tbaLabel: String = ""
     var genericUnknownLabel: String = ""

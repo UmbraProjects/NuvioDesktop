@@ -1,5 +1,7 @@
 package com.nuvio.app.features.librarypvr
 
+import com.nuvio.app.features.locallibrary.LocalMediaItem
+import com.nuvio.app.features.locallibrary.isLocalLibraryId
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -204,9 +206,144 @@ data class LibraryPvrUiState(
 ) {
     fun monitoredItem(id: String): MonitoredItem? = monitoredItems.firstOrNull { it.id == id }
 
-    fun isMonitored(contentId: String): Boolean =
-        monitoredItems.any { it.contentId == contentId }
+    fun isMonitored(contentId: String): Boolean = monitoredFor(contentId) != null
 
     fun monitoredFor(contentId: String): MonitoredItem? =
-        monitoredItems.firstOrNull { it.contentId == contentId }
+        monitoredItems.firstOrNull { it.matchesContentId(contentId) }
+}
+
+/**
+ * Every content id this title is known by, not just the one it was stored under.
+ *
+ * The id a title is addressed by is a *choice* — [com.nuvio.app.features.metadata.AnimeIdPreference]
+ * decides whether anime uses its franchise id or its own entry's — and that choice can change after
+ * this item was written. Comparing stored ids by equality made a monitor stop recognising its own
+ * local files and its own finished downloads the moment it did, which no migration can fully repair:
+ * franchise → native is ambiguous, since one IMDb id covers every season's entry. Matching on any
+ * shared id sidesteps the question entirely and needs no migration in either direction.
+ */
+internal fun MonitoredItem.knownContentIds(): Set<String> = buildSet {
+    add(contentId)
+    addAll(nativeContentIds())
+    addAll(franchiseContentIds())
+}
+
+/**
+ * The ids that address this exact entry and nothing else.
+ *
+ * A Kitsu/MAL entry is one season of one show, so a shared native id is proof of identity in a way
+ * a shared franchise id is not.
+ */
+internal fun MonitoredItem.nativeContentIds(): Set<String> = buildSet {
+    kitsuId?.let { add("kitsu:$it") }
+    malId?.let { add("mal:$it") }
+}
+
+/**
+ * The ids that address the whole franchise, which several entries can legitimately share.
+ *
+ * Every season of an anime maps onto one IMDb/TMDB record, so these identify a title only when no
+ * stronger id agrees and exactly one candidate carries them. See [MonitorIdMatch].
+ */
+internal fun MonitoredItem.franchiseContentIds(): Set<String> = buildSet {
+    imdbId?.takeIf { it.isNotBlank() }?.let(::add)
+    tmdbId?.let { add("tmdb:$it") }
+}
+
+/**
+ * How strongly some candidate identifies a monitored title, strongest first.
+ *
+ * Declaration order is the ranking — [resolveMonitoredExclusively] compares by it.
+ */
+internal enum class MonitorIdMatch { EXACT, NATIVE, FRANCHISE }
+
+/** True when [candidate] is any of the ids this title is known by. See [knownContentIds]. */
+internal fun MonitoredItem.matchesContentId(candidate: String): Boolean =
+    matchStrengthForContentId(candidate) != null
+
+/** [matchesContentId] with the strength of the match, or null when nothing matched. */
+internal fun MonitoredItem.matchStrengthForContentId(candidate: String): MonitorIdMatch? {
+    val wanted = candidate.trim().takeIf { it.isNotBlank() } ?: return null
+    fun Set<String>.holds(): Boolean = any { it.equals(wanted, ignoreCase = true) }
+    return when {
+        contentId.equals(wanted, ignoreCase = true) -> MonitorIdMatch.EXACT
+        nativeContentIds().holds() -> MonitorIdMatch.NATIVE
+        franchiseContentIds().holds() -> MonitorIdMatch.FRANCHISE
+        else -> null
+    }
+}
+
+/**
+ * The monitored titles [candidate] could address, strongest match first.
+ *
+ * Several monitors can share one franchise id, so a caller that needs exactly one must disambiguate
+ * with something outside the id — the grab record's `monitoredItemId`, which is the explicit link.
+ */
+internal fun List<MonitoredItem>.rankedForContentId(candidate: String): List<MonitoredItem> =
+    mapNotNull { item -> item.matchStrengthForContentId(candidate)?.let { it to item } }
+        .sortedBy { (strength, _) -> strength }
+        .map { (_, item) -> item }
+
+/**
+ * Whether this local title is the one [monitored] is monitoring.
+ *
+ * Matched on any shared id rather than on the two `contentId` values agreeing: which id each side
+ * derives depends on the anime identity preference, and the monitor's was fixed when it was created.
+ *
+ * Answers "could be" — several sibling seasons share one franchise id and all match. Anything that
+ * must act on a single title, and everything destructive, needs [resolveMonitoredExclusively].
+ */
+internal fun LocalMediaItem.matchesMonitored(monitored: MonitoredItem): Boolean =
+    matchStrengthFor(monitored) != null
+
+/**
+ * [matchesMonitored] with the strength of the match, or null when nothing matched.
+ *
+ * Compares stored ids only. `LocalMediaItem.contentId` is derived from the live identity preference,
+ * and matching must not change meaning because a setting did — that is the bug the whole known-ids
+ * scheme exists to avoid.
+ */
+internal fun LocalMediaItem.matchStrengthFor(monitored: MonitoredItem): MonitorIdMatch? {
+    val mine = knownContentIds
+    fun Set<String>.sharedWithMine(): Boolean =
+        any { theirs -> mine.any { it.equals(theirs, ignoreCase = true) } }
+    return when {
+        // The scanner's own key names one scanned item and nothing else.
+        monitored.contentId.isLocalLibraryId() &&
+            mine.any { it.equals(monitored.contentId, ignoreCase = true) } -> MonitorIdMatch.EXACT
+        monitored.nativeContentIds().sharedWithMine() -> MonitorIdMatch.NATIVE
+        monitored.franchiseContentIds().sharedWithMine() -> MonitorIdMatch.FRANCHISE
+        else -> null
+    }
+}
+
+/**
+ * The one local title [monitored] is monitoring, or null when that cannot be decided.
+ *
+ * Callers that delete files must use this rather than `firstOrNull { matchesMonitored(it) }`: two
+ * seasons of an anime share one IMDb/TMDB id, so the loose match returns both and `firstOrNull`
+ * picks by list order. Selecting the wrong sibling there deletes a file the user still has.
+ *
+ * Only the strongest tier present is considered, so an exact id beats a franchise id rather than
+ * competing with it; a tie inside that tier is genuinely ambiguous and resolves to null.
+ */
+internal fun List<LocalMediaItem>.resolveMonitoredExclusively(monitored: MonitoredItem): LocalMediaItem? {
+    val ranked = mapNotNull { item -> item.matchStrengthFor(monitored)?.let { it to item } }
+    val best = ranked.minOfOrNull { (strength, _) -> strength } ?: return null
+    return ranked.filter { (strength, _) -> strength == best }
+        .singleOrNull()
+        ?.second
+}
+
+/**
+ * The local titles whose files count as [monitored]'s, strongest tier only.
+ *
+ * Non-destructive counterpart to [resolveMonitoredExclusively]: an ambiguous franchise tier is kept
+ * (missing-episode maths would rather over-count than re-download something already on disk), but a
+ * sibling never contributes once an exact or native match exists.
+ */
+internal fun List<LocalMediaItem>.matchingMonitored(monitored: MonitoredItem): List<LocalMediaItem> {
+    val ranked = mapNotNull { item -> item.matchStrengthFor(monitored)?.let { it to item } }
+    val best = ranked.minOfOrNull { (strength, _) -> strength } ?: return emptyList()
+    return ranked.filter { (strength, _) -> strength == best }.map { (_, item) -> item }
 }

@@ -84,9 +84,14 @@ internal fun Set<SubtitleRejectKeyword>.rejectsSubtitleTrack(track: SubtitleTrac
     return matchesAny(normalizeTrackText(track.label, track.language, track.id))
 }
 
+/**
+ * The addon's own name is deliberately not part of the matched text: it describes the source, not
+ * the track, and an addon that happens to be called "Signs" would otherwise have every one of its
+ * subtitles rejected. Its display name already carries the track's description.
+ */
 internal fun Set<SubtitleRejectKeyword>.rejectsAddonSubtitle(subtitle: AddonSubtitle): Boolean {
     if (isEmpty()) return false
-    return matchesAny(normalizeTrackText(subtitle.display, subtitle.language, subtitle.addonName))
+    return matchesAny(normalizeTrackText(subtitle.display, subtitle.language))
 }
 
 internal fun Set<AudioRejectKeyword>.rejectsAudioTrack(track: AudioTrack): Boolean {

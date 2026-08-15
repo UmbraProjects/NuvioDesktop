@@ -433,8 +433,8 @@
     <string name="settings_licenses_attributions_exoplayer_title">AndroidX Media3 ExoPlayer 1.8.0</string>
     <string name="settings_licenses_attributions_exoplayer_body">Brukes for avspilling på Android.</string>
     <string name="settings_licenses_attributions_exoplayer_license">Lisensiert under Apache License, Version 2.0.</string>
-    <string name="compose_trakt_list_picker_loading">Laster Trakt-listene dine…</string>
-    <string name="compose_trakt_list_picker_subtitle">Velg hvor du vil lagre denne tittelen på Trakt</string>
+    <string name="compose_trakt_list_picker_loading">Laster listene dine…</string>
+    <string name="compose_trakt_list_picker_subtitle">Velg hvilke lister denne tittelen skal lagres i</string>
     <string name="action_donate">Doner</string>
     <string name="cw_action_go_to_details">Gå til detaljer</string>
     <string name="cw_action_remove">Fjern</string>
@@ -1173,8 +1173,8 @@
     <string name="external_player_unavailable">Ingen ekstern avspiller er tilgjengelig</string>
     <string name="trailer_close">Lukk trailer</string>
     <string name="trailer_unable_to_play">Kan ikke spille trailer</string>
-    <string name="trakt_lists_load_failed">Kunne ikke laste Trakt-lister</string>
-    <string name="trakt_lists_update_failed">Kunne ikke oppdatere Trakt-lister</string>
+    <string name="trakt_lists_load_failed">Kunne ikke laste lister</string>
+    <string name="trakt_lists_update_failed">Kunne ikke oppdatere lister</string>
     <string name="updates_asset_line">%1$s • %2$s</string>
     <string name="updates_check_failed">Oppdateringssjekk mislyktes</string>
     <string name="updates_download_failed">Nedlasting mislyktes</string>

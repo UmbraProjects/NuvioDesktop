@@ -48,7 +48,7 @@ import com.nuvio.app.core.i18n.localizedByteUnit
 import com.nuvio.app.core.ui.NuvioAlertDialog
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioToastController
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.library_add_dialog_cancel
@@ -123,7 +123,7 @@ internal fun ManualLinkDialog(item: MonitoredItem, onDismiss: () -> Unit) {
                             link = it
                             error = null
                         },
-                        modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
+                        modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
                         placeholder = { Text(stringResource(Res.string.library_manual_hint)) },
                     )
                 } else {
@@ -419,7 +419,7 @@ internal fun NumberField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester)
-                    .trackSettingsTextFocus()
+                    .trackTextInputFocus()
                     .onFocusChanged { state ->
                         if (state.isFocused) hasFocused = true
                         else if (hasFocused && editing) commit()

@@ -52,6 +52,7 @@ import com.nuvio.app.core.ui.ThemeColorPalette
 import com.nuvio.app.core.ui.dismissNuvioBottomSheet
 import com.nuvio.app.core.ui.labelRes
 import com.nuvio.app.core.ui.ThemeColors
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.isDesktop
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
@@ -77,6 +78,8 @@ import nuvio.composeapp.generated.resources.settings_appearance_desktop_navigati
 import nuvio.composeapp.generated.resources.settings_appearance_section_display
 import nuvio.composeapp.generated.resources.settings_appearance_start_windowed
 import nuvio.composeapp.generated.resources.settings_appearance_start_windowed_description
+import nuvio.composeapp.generated.resources.settings_appearance_close_to_tray
+import nuvio.composeapp.generated.resources.settings_appearance_close_to_tray_description
 import nuvio.composeapp.generated.resources.settings_appearance_section_theme
 import nuvio.composeapp.generated.resources.settings_poster_card_style
 import org.jetbrains.compose.resources.StringResource
@@ -174,6 +177,10 @@ internal fun LazyListScope.appearanceSettingsContent(
             DesktopWindowStartupPreference.ensureLoaded()
             DesktopWindowStartupPreference.startWindowed
         }.collectAsState()
+        val closeToTray by remember {
+            DesktopWindowStartupPreference.ensureLoaded()
+            DesktopWindowStartupPreference.closeToTray
+        }.collectAsState()
         SettingsSection(
             title = stringResource(Res.string.settings_appearance_section_display),
             isTablet = isTablet,
@@ -209,6 +216,15 @@ internal fun LazyListScope.appearanceSettingsContent(
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("start-windowed")),
                         onCheckedChange = DesktopWindowStartupPreference::setStartWindowed,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_appearance_close_to_tray),
+                        description = stringResource(Res.string.settings_appearance_close_to_tray_description),
+                        checked = closeToTray,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("close-to-tray")),
+                        onCheckedChange = DesktopWindowStartupPreference::setCloseToTray,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                 }
@@ -290,13 +306,17 @@ internal fun LazyListScope.appearanceSettingsContent(
                     widthDp = posterCardStyleUiState.widthDp,
                     cornerRadiusDp = posterCardStyleUiState.cornerRadiusDp,
                     catalogLandscapeModeEnabled = posterCardStyleUiState.catalogLandscapeModeEnabled,
+                    collectionsPortraitPostersEnabled = posterCardStyleUiState.collectionsPortraitPostersEnabled,
                     landscapeTextTitlesEnabled = posterCardStyleUiState.landscapeTextTitlesEnabled,
+                    landscapeRatingBadgeScale = posterCardStyleUiState.landscapeRatingBadgeScale,
                     hideLabelsEnabled = posterCardStyleUiState.hideLabelsEnabled,
                     zoomActionPreviewEnabled = posterCardStyleUiState.zoomActionPreviewEnabled,
                     onWidthSelected = PosterCardStyleRepository::setWidthDp,
                     onCornerRadiusSelected = PosterCardStyleRepository::setCornerRadiusDp,
                     onCatalogLandscapeModeChange = PosterCardStyleRepository::setCatalogLandscapeModeEnabled,
+                    onCollectionsPortraitPostersChange = PosterCardStyleRepository::setCollectionsPortraitPostersEnabled,
                     onLandscapeTextTitlesChange = PosterCardStyleRepository::setLandscapeTextTitlesEnabled,
+                    onLandscapeRatingBadgeScaleChange = PosterCardStyleRepository::setLandscapeRatingBadgeScale,
                     onHideLabelsChange = PosterCardStyleRepository::setHideLabelsEnabled,
                 )
             }
@@ -489,7 +509,7 @@ private fun CustomThemeColorField(
                     onValidHex(next)
                 }
             },
-            modifier = Modifier.weight(1f).trackSettingsTextFocus(),
+            modifier = Modifier.weight(1f).trackTextInputFocus(),
             singleLine = true,
             label = { Text(label) },
             supportingText = if (parsedColor == null) {

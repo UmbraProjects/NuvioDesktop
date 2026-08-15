@@ -5,6 +5,16 @@ import java.awt.Window
 private const val NuvioWindowBackgroundRgb = 0x0D0D0D
 private const val NuvioWindowTextRgb = 0xF5F7F8
 
+/**
+ * Publishes the process AppUserModelID and a Start Menu shortcut carrying it, so the Windows
+ * media flyout shows "Nuvio" and the app icon instead of "Unknown app". The shortcut is rewritten
+ * only when its target drifts, which lets a moved portable copy heal itself on the next launch.
+ */
+internal fun registerDesktopAppIdentity() {
+    if (DesktopHostOs.current != DesktopHostOs.WINDOWS) return
+    runCatching { NativePlayerBridge.initializeAppIdentity() }
+}
+
 internal fun applyNativeDesktopWindowChrome(window: Window) {
     if (DesktopHostOs.current != DesktopHostOs.WINDOWS || !window.isDisplayable) return
 
@@ -29,6 +39,9 @@ internal fun applyNativeBorderlessFullscreen(window: Window, enabled: Boolean) {
         val hwnd = AwtNativeViewResolver.resolveNativeViewPointer(window)
         NativePlayerBridge.setBorderlessFullscreen(hwnd, enabled)
     }
+    // The style change above is invisible to AWT, which keeps laying the content out inside the
+    // decorated window's frame insets until something corrects it.
+    DesktopBorderlessRootPaneFix.setActive(window, enabled)
 }
 
 internal fun applyNativeCompactPlayerWindow(window: Window, enabled: Boolean) {
@@ -47,6 +60,7 @@ internal fun suspendNativeBorderlessFullscreen(window: Window, suspended: Boolea
         val hwnd = AwtNativeViewResolver.resolveNativeViewPointer(window)
         NativePlayerBridge.setBorderlessFullscreenSuspended(hwnd, suspended)
     }
+    DesktopBorderlessRootPaneFix.setActive(window, !suspended)
 }
 
 internal fun beginNativeCompactPlayerWindowMove(window: Window?) {

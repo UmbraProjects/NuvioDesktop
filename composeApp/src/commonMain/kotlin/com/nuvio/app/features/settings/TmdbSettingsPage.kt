@@ -14,14 +14,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.trackTextInputFocus
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.features.tmdb.CustomPosterTemplateProbe
 import com.nuvio.app.features.tmdb.HeroImageSource
 import com.nuvio.app.features.tmdb.TmdbSettings
+import com.nuvio.app.features.tmdb.probeCustomPosterTemplate
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.tvdb.TvdbSettingsRepository
 import com.nuvio.app.features.tmdb.normalizeLanguage
@@ -79,6 +85,10 @@ import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_title
 import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_description
 import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_missing_template
 import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_section
+import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_test_description
+import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_test_ok
+import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_test_running
+import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_test_title
 import nuvio.composeapp.generated.resources.settings_tmdb_library_posters_title
 import nuvio.composeapp.generated.resources.settings_tmdb_poster_template
 import nuvio.composeapp.generated.resources.settings_tmdb_poster_template_description
@@ -392,6 +402,10 @@ internal fun LazyListScope.tmdbSettingsContent(
                     value = settings.libraryPosterUrlTemplate,
                     onTemplateCommitted = TmdbSettingsRepository::setLibraryPosterUrlTemplate,
                 )
+                if (settings.libraryPosterUrlTemplate.isNotBlank()) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    TmdbLibraryPosterTestRow(isTablet = isTablet, settings = settings)
+                }
             }
         }
     }
@@ -543,7 +557,7 @@ private fun TmdbLibraryPosterRow(
         OutlinedTextField(
             value = draft,
             onValueChange = { draft = it },
-            modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
+            modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
             minLines = 2,
             maxLines = 6,
             label = { Text(stringResource(Res.string.settings_tmdb_poster_template_label)) },
@@ -609,7 +623,7 @@ private fun TmdbLanguageRow(
                 draft = it
             },
             enabled = enabled,
-            modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
+            modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
             singleLine = true,
             label = { Text(stringResource(Res.string.settings_tmdb_language_code_label)) },
             colors = OutlinedTextFieldDefaults.colors(
@@ -632,6 +646,49 @@ private fun TmdbLanguageRow(
                 Text(stringResource(Res.string.action_save))
             }
         }
+    }
+}
+
+/**
+ * One-shot check of the poster template against the service, with its answer shown verbatim.
+ *
+ * A poster service that rejects the request is invisible from the library: the card quietly falls
+ * back to the plain poster, so a broken template and a service with no art for a title look exactly
+ * the same. The service's own error text names the problem (a missing `tmdb_key=` on a self-hosted
+ * instance, a bad host, an expired key) far faster than reading the library ever could.
+ */
+@Composable
+private fun TmdbLibraryPosterTestRow(
+    isTablet: Boolean,
+    settings: TmdbSettings,
+) {
+    val scope = rememberCoroutineScope()
+    val runningText = stringResource(Res.string.settings_tmdb_library_posters_test_running)
+    val okText = stringResource(Res.string.settings_tmdb_library_posters_test_ok)
+    var isRunning by remember { mutableStateOf(false) }
+    var result by remember(settings.libraryPosterUrlTemplate) { mutableStateOf<String?>(null) }
+
+    SettingsNavigationRow(
+        title = stringResource(Res.string.settings_tmdb_library_posters_test_title),
+        description = stringResource(Res.string.settings_tmdb_library_posters_test_description),
+        enabled = !isRunning,
+        isTablet = isTablet,
+        onClick = {
+            if (isRunning) return@SettingsNavigationRow
+            isRunning = true
+            result = null
+            scope.launch {
+                result = when (val probe = probeCustomPosterTemplate(settings)) {
+                    is CustomPosterTemplateProbe.Ok -> okText
+                    is CustomPosterTemplateProbe.Failed -> probe.detail
+                }
+                isRunning = false
+            }
+        },
+    )
+    val message = if (isRunning) runningText else result
+    if (message != null) {
+        TmdbInfoRow(isTablet = isTablet, text = message)
     }
 }
 

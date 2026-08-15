@@ -4,10 +4,14 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.kitsu.KitsuService
+import com.nuvio.app.features.metadata.AnimeIdPreference
+import com.nuvio.app.features.metadata.AnimeIdPreferenceRepository
 import com.nuvio.app.features.metadata.hasAnimeNamespacePrefix
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.tmdb.TmdbService
+import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import com.nuvio.app.features.tmdb.resolveCustomPosterIds
 import com.nuvio.app.features.trakt.TraktPlatformClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -159,6 +163,12 @@ object LocalLibraryRepository {
         publish(isScanning = _uiState.value.isScanning)
     }
 
+    /** Read at click time so retained navigation callbacks cannot use an older Compose snapshot. */
+    fun currentPlaybackPreference(): LocalLibraryPlaybackPreference {
+        ensureLoaded()
+        return playbackPreference
+    }
+
     fun rescan() {
         ensureLoaded()
         if (folders.isEmpty()) {
@@ -220,6 +230,7 @@ object LocalLibraryRepository {
             persistCache()
             publish(isScanning = false, errorMessage = firstError)
             backfillBackdrops()
+            backfillPosterServiceIds()
         }
     }
 
@@ -243,6 +254,55 @@ object LocalLibraryRepository {
                             )
                         }.getOrNull()?.backdrop ?: return@withPermit
                         updateItem((itemsByKey[item.key] ?: item).copy(background = backdrop))
+                    }
+                }
+            }.forEach { it.join() }
+        }
+        persistCache()
+        publish(isScanning = false)
+    }
+
+    /**
+     * Fills in the counterpart id for items the user's poster-service template cannot address.
+     *
+     * A match only ever establishes the id it was made with: matching by TMDB search back-fills the
+     * IMDb id, but a title fixed by hand with an IMDb id (and anything matched before that back-fill
+     * existed) has no TMDB id at all. A template naming both then skips those rows, which is a
+     * library of mixed styled and unstyled posters.
+     *
+     * Same shape as [backfillBackdrops]: runs after the scan has published, upgrades what is already
+     * on screen, and persists — so a library whose ids are complete costs nothing on later scans.
+     */
+    private suspend fun backfillPosterServiceIds() {
+        val settings = TmdbSettingsRepository.snapshot()
+        if (!settings.libraryPosterEnabled) return
+        val incomplete = itemsByKey.values.filter { item ->
+            // One id present and the other missing: nothing to derive from otherwise, and a
+            // native-anime identity deliberately keeps its own per-season art.
+            item.kitsuId == null && item.malId == null &&
+                (item.imdbId.isNullOrBlank() != (item.tmdbId == null))
+        }
+        if (incomplete.isEmpty()) return
+
+        val sem = Semaphore(4)
+        coroutineScope {
+            incomplete.map { item ->
+                launch {
+                    sem.withPermit {
+                        val resolved = resolveCustomPosterIds(
+                            settings = settings,
+                            imdbId = item.imdbId,
+                            tmdbId = item.tmdbId,
+                            type = item.contentType,
+                        )
+                        if (resolved.imdbId == item.imdbId && resolved.tmdbId == item.tmdbId) return@withPermit
+                        val current = itemsByKey[item.key] ?: item
+                        updateItem(
+                            current.copy(
+                                imdbId = resolved.imdbId ?: current.imdbId,
+                                tmdbId = resolved.tmdbId ?: current.tmdbId,
+                            ),
+                        )
                     }
                 }
             }.forEach { it.join() }
@@ -361,9 +421,22 @@ object LocalLibraryRepository {
             // actually forces a fresh request in the Library — it's appended as a URL fragment to
             // whichever URL the Library displays (the poster-service/PostersPlus URL when one is
             // configured, otherwise this fallback), so a stale cached poster is discarded.
-            val fresh = item.tmdbId
+            suspend fun tmdbPoster(): String? = item.tmdbId
                 ?.let { id -> runCatching { TmdbService.fetchPosterUrl(id, item.contentType) }.getOrNull() }
-                ?: item.kitsuId?.let { id -> runCatching { KitsuService.fetchPosterUrl(id) }.getOrNull() }
+            suspend fun kitsuPoster(): String? = item.kitsuId
+                ?.let { id -> runCatching { KitsuService.fetchPosterUrl(id) }.getOrNull() }
+            // Which source leads follows the identity preference. A Kitsu match back-fills a TMDB
+            // id, so TMDB-first meant refresh always replaced the entry's own art with the
+            // franchise's — undoing the very thing a user who picked Kitsu or MAL asked for.
+            // Either way the other source is still the fallback, so a title one cannot serve keeps
+            // getting a poster.
+            val preferNativeArt = item.isAnime &&
+                AnimeIdPreferenceRepository.current() != AnimeIdPreference.IMDB
+            val fresh = if (preferNativeArt) {
+                kitsuPoster() ?: tmdbPoster()
+            } else {
+                tmdbPoster() ?: kitsuPoster()
+            }
             val token = TraktPlatformClock.nowEpochMs()
             overridesByKey[item.key]?.let { existing ->
                 overridesByKey = overridesByKey + (item.key to existing.copy(poster = fresh, posterRefreshToken = token))

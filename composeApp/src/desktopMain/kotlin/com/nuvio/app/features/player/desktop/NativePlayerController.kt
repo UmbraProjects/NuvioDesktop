@@ -47,7 +47,8 @@ import com.nuvio.app.features.player.inferForcedSubtitleTrack
 import com.nuvio.app.features.player.isExplicitProviderDiagnosticVideoUrl
 import com.nuvio.app.features.player.isProviderPlaybackEndpoint
 import com.nuvio.app.features.player.OriginalLanguageCache
-import com.nuvio.app.features.player.preferredSubtitleTargetsForSettings
+import com.nuvio.app.features.player.primarySubtitleTargetsForSettings
+import com.nuvio.app.features.player.preferredMpvMediaTitle
 import com.nuvio.app.features.player.resolvePreferredAudioLanguageTargets
 import com.nuvio.app.features.player.toStorageHexString
 import kotlinx.serialization.Serializable
@@ -133,6 +134,8 @@ internal class NativePlayerController(
     var isAnimeContentDetected = false
     private var controlsState = PlayerControlsState()
     private var lastSentControlsStructureKey: PlayerControlsState? = null
+    private var lastSentMediaSessionKey: String? = null
+    private var lastSentMpvMediaTitle: String? = null
     private var onAction: (PlayerControlsAction) -> Boolean = { false }
     private var onEvent: (String, Double) -> Boolean = { _, _ -> false }
     private var onScrubChange: (Long) -> Boolean = { false }
@@ -141,6 +144,7 @@ internal class NativePlayerController(
         sourceUrl: String,
         sourceAudioUrl: String?,
         sourceHeaders: Map<String, String>,
+        mediaTitle: String = "",
         playWhenReady: Boolean,
         initialPositionMs: Long,
         initialProgressFraction: Float = 0f,
@@ -206,6 +210,11 @@ internal class NativePlayerController(
                     add("ytdl=no")
                 }
                 if (enableUserMpvOptions) addAll(buildDesktopUserMpvOptions(initialPlaybackSpeed))
+                mediaTitle.takeIf(String::isNotBlank)?.let { title ->
+                    // Unlike mpv's inferred media-title this never exposes the resolved URL. Keep
+                    // it after custom options so the app's presentation/security boundary wins.
+                    add("force-media-title=$title")
+                }
                 // mpv applies these before mpv_initialize/loadfile. This must follow custom
                 // options so the app's explicit Default Playback Speed remains authoritative and
                 // speed-sensitive filters can see the final value during their first setup.
@@ -243,6 +252,8 @@ internal class NativePlayerController(
             val previousHandle = takePlayerHandle()
             keyboardPanelOpen = false
             lastSentControlsStructureKey = null
+            lastSentMediaSessionKey = null
+            lastSentMpvMediaTitle = null
             thread(isDaemon = true, name = "Nuvio-Player-Attach") {
                 synchronized(nativeProcessLifecycleLock) {
                     // Replacement is intentionally sequential. Both operations remain on this
@@ -358,6 +369,30 @@ internal class NativePlayerController(
         val currentHandle = handle
         val structureKey = state.nativeControlsStructureKey()
         val current = currentHandle.takeIf { it != 0L } ?: return
+        val mpvMediaTitle = preferredMpvMediaTitle(
+            streamTitle = state.streamTitle,
+            title = state.title,
+            episodeText = state.episodeText,
+        )
+        if (mpvMediaTitle.isNotBlank() && mpvMediaTitle != lastSentMpvMediaTitle) {
+            lastSentMpvMediaTitle = mpvMediaTitle
+            // Also update the live property: metadata can resolve after loadfile, and source
+            // credential refreshes can replace a URL without rebuilding the visible controls.
+            NativePlayerBridge.setMpvProperty(current, "force-media-title", mpvMediaTitle)
+        }
+        // Tracked separately from the controls structure key: the media-session widget only
+        // cares about the title/artwork fields, and it must still update on an episode change that
+        // leaves the HUD's button structure identical.
+        val mediaSessionKey = "${state.title} ${state.episodeText} ${state.mediaSessionArtwork}"
+        if (mediaSessionKey != lastSentMediaSessionKey) {
+            lastSentMediaSessionKey = mediaSessionKey
+            NativePlayerBridge.setMediaSessionMetadata(
+                current,
+                state.title,
+                state.episodeText,
+                state.mediaSessionArtwork,
+            )
+        }
         if (structureKey == lastSentControlsStructureKey) return
         lastSentControlsStructureKey = structureKey
         AppShortcutsRepository.ensureLoaded()
@@ -465,9 +500,8 @@ internal class NativePlayerController(
         handlePlayerEvent(type, value)
         if (type == "volumeUp" || type == "volumeDown") {
             showVolumePillFromNative()
-        } else if (type == "keyboardSpeedStep") {
-            showPlaybackSpeedPillFromNative()
         }
+        // Speed events pill themselves inside handlePlayerEvent, since the HUD sends them too.
     }
 
     private fun showPlaybackSpeedPillFromNative() {
@@ -827,6 +861,14 @@ internal class NativePlayerController(
             cycleDesktopAnimeSvpMode()
             return
         }
+        // Both the AWT key dispatcher and the HUD (its speed button and the step/toggle keys, which
+        // this page owns whenever the WebView holds focus) route relative speed changes here, so the
+        // Kotlin rules run against mpv's live speed either way and the pill is raised in one place.
+        if (type == "keyboardSpeedStep" || type == "keyboardSpeedToggle") {
+            onEvent(type, value)
+            showPlaybackSpeedPillFromNative()
+            return
+        }
         if (type == "keyboardPanelOpened") {
             keyboardPanelOpen = true
             return
@@ -1060,6 +1102,8 @@ internal class NativePlayerController(
         }
         keyboardPanelOpen = false
         lastSentControlsStructureKey = null
+        lastSentMediaSessionKey = null
+        lastSentMpvMediaTitle = null
         // The clamp lived on the handle being torn down; the next handle starts from its pre-init
         // preset options, so only the flag needs clearing.
         meteredPrefetchFrozen = false
@@ -1526,6 +1570,12 @@ private fun buildDesktopUserMpvOptions(initialPlaybackSpeed: Float): List<String
     val settings = PlayerSettingsRepository.uiState.value
     return buildList {
         add("@nuvio-config-mode=${settings.desktopMpvConfigMode.name.lowercase()}")
+        // Resolved natively: only the bridge can ask DXGI what the adapter actually has, and the
+        // trimmed pipeline has to be in place before mpv_initialize (the first frame is the one that
+        // would abort). Windows-only marker — the macOS bridge forwards unknown entries to mpv.
+        if (DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+            add("@nuvio-low-vram=${settings.desktopLowVramMode.name.lowercase()}")
+        }
         val useNuvioOptions = settings.desktopMpvConfigMode != DesktopMpvConfigMode.Full
         if (useNuvioOptions) {
             // These must be options, not post-create properties. Native creation does not return
@@ -1543,7 +1593,7 @@ private fun buildDesktopUserMpvOptions(initialPlaybackSpeed: Float): List<String
         // for the Compose-side track poll is unnecessarily fragile for tracks already present in
         // the container, and can leave `sid=no` active if startup takes longer than that poll.
         // Per-title persisted selection still runs afterward and can override this default.
-        val preferredSubtitleLanguages = preferredSubtitleTargetsForSettings(settings)
+        val preferredSubtitleLanguages = primarySubtitleTargetsForSettings(settings)
             .filterNot { it.equals("forced", ignoreCase = true) || it.equals("none", ignoreCase = true) }
             .distinct()
         if (useNuvioOptions && preferredSubtitleLanguages.isNotEmpty()) {
@@ -1800,6 +1850,8 @@ private fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("fetchSubtitlesLabel", fetchSubtitlesLabel)
         append(',')
+        appendJsonField("downloadSubtitleLabel", downloadSubtitleLabel)
+        append(',')
         appendJsonField("subtitleDelayLabel", subtitleDelayLabel)
         append(',')
         appendJsonField("resetLabel", resetLabel)
@@ -1891,6 +1943,10 @@ private fun PlayerControlsState.toControlsJson(
         appendJsonField("alwaysShowClock", alwaysShowClock)
         append(',')
         appendJsonField("playbackSpeedFineIncrementsEnabled", playbackSpeedFineIncrementsEnabled)
+        append(',')
+        appendJsonField("playbackSpeedToggleLow", playbackSpeedToggleLow)
+        append(',')
+        appendJsonField("playbackSpeedToggleHigh", playbackSpeedToggleHigh)
         append(',')
         appendJsonField("appFullscreenKeyCode", appFullscreenKeyCode)
         append(',')
@@ -2231,6 +2287,8 @@ private fun StringBuilder.appendAddonSubtitleItemJson(item: PlayerControlAddonSu
     appendJsonField("addonName", item.addonName)
     append(',')
     appendJsonField("isSelected", item.isSelected)
+    append(',')
+    appendJsonField("isDownloading", item.isDownloading)
     append('}')
 }
 

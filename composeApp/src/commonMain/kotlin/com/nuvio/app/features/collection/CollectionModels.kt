@@ -169,6 +169,50 @@ data class TmdbCollectionFilters(
     val withWatchProviders: String? = null,
 )
 
+internal const val TMDB_ANIMATION_GENRE_ID = 16
+
+/**
+ * Returns the anime-catalogue form only when the source or item carries anime-specific evidence.
+ * Animation by itself is intentionally insufficient because TMDB and Trakt use it for western
+ * cartoons too.
+ */
+internal fun collectionAnimeType(
+    mediaType: TmdbCollectionMediaType,
+    genres: List<String> = emptyList(),
+    isAnimation: Boolean = genres.any { it.equals("animation", ignoreCase = true) },
+    originalLanguage: String? = null,
+    originCountries: Iterable<String> = emptyList(),
+    sourceDeclaresAnime: Boolean = false,
+): String? {
+    val hasExplicitAnimeGenre = genres.any { it.equals("anime", ignoreCase = true) }
+    val hasJapaneseProvenance = originalLanguage.isJapaneseLanguageCode() ||
+        originCountries.any { it.isJapanCountryCode() }
+    if (!sourceDeclaresAnime && !hasExplicitAnimeGenre && !(isAnimation && hasJapaneseProvenance)) {
+        return null
+    }
+    return when (mediaType) {
+        TmdbCollectionMediaType.MOVIE -> "movie"
+        TmdbCollectionMediaType.TV -> "TV"
+    }
+}
+
+/** True only when every result from this Discover filter is constrained to Japanese animation. */
+internal fun TmdbCollectionFilters.declaresAnime(): Boolean {
+    val requiresAnimation = withGenres
+        ?.split(',')
+        ?.any { requiredGenre -> requiredGenre.trim() == TMDB_ANIMATION_GENRE_ID.toString() }
+        ?: false
+    val requiresJapaneseOrigin = withOriginalLanguage.isJapaneseLanguageCode() ||
+        withOriginCountry.isJapanCountryCode()
+    return requiresAnimation && requiresJapaneseOrigin
+}
+
+private fun String?.isJapaneseLanguageCode(): Boolean =
+    this?.trim()?.lowercase() in setOf("ja", "jpn")
+
+private fun String?.isJapanCountryCode(): Boolean =
+    this?.trim()?.lowercase() in setOf("jp", "jpn")
+
 data class TmdbSourceImportMetadata(
     val title: String? = null,
     val coverImageUrl: String? = null,

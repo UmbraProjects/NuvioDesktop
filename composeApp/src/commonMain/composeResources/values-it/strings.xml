@@ -240,8 +240,8 @@
   <string name="compose_settings_root_switch_profile_description">Passa a un profilo diverso.</string>
   <string name="compose_settings_root_switch_profile_title">Cambia profilo</string>
   <string name="compose_settings_root_trakt_description">Collega Trakt, sincronizza la lista dei desideri e salva i titoli direttamente su Trakt.</string>
-  <string name="compose_trakt_list_picker_loading">Caricamento liste Trakt…</string>
-  <string name="compose_trakt_list_picker_subtitle">Scegli dove salvare questo titolo su Trakt</string>
+  <string name="compose_trakt_list_picker_loading">Caricamento liste…</string>
+  <string name="compose_trakt_list_picker_subtitle">Scegli in quali liste salvare questo titolo</string>
   <string name="action_donate">Dona</string>
   <string name="cw_action_go_to_details">Vai ai dettagli</string>
   <string name="cw_action_remove">Rimuovi</string>
@@ -871,8 +871,8 @@
   <string name="streams_size">DIMENSIONE %1$s</string>
   <string name="trailer_close">Chiudi trailer</string>
   <string name="trailer_unable_to_play">Impossibile riprodurre il trailer</string>
-  <string name="trakt_lists_load_failed">Impossibile caricare le liste Trakt</string>
-  <string name="trakt_lists_update_failed">Impossibile aggiornare le liste Trakt</string>
+  <string name="trakt_lists_load_failed">Impossibile caricare le liste</string>
+  <string name="trakt_lists_update_failed">Impossibile aggiornare le liste</string>
   <string name="updates_asset_line">%1$s • %2$s</string>
   <string name="updates_check_failed">Controllo aggiornamenti fallito</string>
   <string name="updates_download_failed">Download fallito</string>

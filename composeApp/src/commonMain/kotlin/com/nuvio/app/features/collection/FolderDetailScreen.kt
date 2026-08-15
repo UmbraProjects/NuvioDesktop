@@ -79,6 +79,7 @@ import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioPosterCard
 import com.nuvio.app.core.ui.HeroAmbientBackdrop
+import com.nuvio.app.core.ui.LocalCollectionsPosterSurface
 import com.nuvio.app.core.ui.NuvioPosterShape
 import com.nuvio.app.core.ui.rememberHomePosterCardStyleUiState
 import com.nuvio.app.core.ui.NuvioScreenHeader
@@ -209,7 +210,6 @@ private fun rememberFolderPageScrollKeys(
         }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun FolderDetailScreen(
     entryKey: String,
@@ -218,6 +218,30 @@ fun FolderDetailScreen(
     onCastClick: (HeroCastMember) -> Unit,
     onPosterClick: (MetaPreview) -> Unit,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
+) {
+    // Everything below styles its posters through rememberHomePosterCardStyleUiState, so marking
+    // the surface once here is what lets "Keep portrait posters in Collections" take effect.
+    CompositionLocalProvider(LocalCollectionsPosterSurface provides true) {
+        FolderDetailScreenContent(
+            entryKey = entryKey,
+            onBack = onBack,
+            onCatalogClick = onCatalogClick,
+            onCastClick = onCastClick,
+            onPosterClick = onPosterClick,
+            onPosterLongClick = onPosterLongClick,
+        )
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun FolderDetailScreenContent(
+    entryKey: String,
+    onBack: () -> Unit,
+    onCatalogClick: (HomeCatalogSection) -> Unit,
+    onCastClick: (HeroCastMember) -> Unit,
+    onPosterClick: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)?,
 ) {
     val uiState by FolderDetailRepository.uiState.collectAsState()
     val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()

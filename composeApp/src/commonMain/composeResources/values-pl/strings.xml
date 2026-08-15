@@ -449,8 +449,8 @@
     <string name="settings_licenses_attributions_exoplayer_title">AndroidX Media3 ExoPlayer 1.8.0</string>
     <string name="settings_licenses_attributions_exoplayer_body">Używany do odtwarzania w wersjach na Androida.</string>
     <string name="settings_licenses_attributions_exoplayer_license">Licencjonowany na podstawie Apache License, wersja 2.0.</string>
-    <string name="compose_trakt_list_picker_loading">Ładowanie list Trakt…</string>
-    <string name="compose_trakt_list_picker_subtitle">Wybierz, gdzie zapisać ten tytuł w Trakt</string>
+    <string name="compose_trakt_list_picker_loading">Ładowanie list…</string>
+    <string name="compose_trakt_list_picker_subtitle">Wybierz, na których listach zapisać ten tytuł</string>
     <string name="action_donate">Wesprzyj</string>
     <string name="cw_action_go_to_details">Przejdź do szczegółów</string>
     <string name="cw_action_remove">Usuń</string>
@@ -1226,8 +1226,8 @@
     <string name="external_player_unavailable">Brak dostępnego zewnętrznego odtwarzacza</string>
     <string name="trailer_close">Zamknij zwiastun</string>
     <string name="trailer_unable_to_play">Nie można odtworzyć zwiastuna</string>
-    <string name="trakt_lists_load_failed">Nie udało się załadować list Trakt</string>
-    <string name="trakt_lists_update_failed">Nie udało się zaktualizować list Trakt</string>
+    <string name="trakt_lists_load_failed">Nie udało się załadować list</string>
+    <string name="trakt_lists_update_failed">Nie udało się zaktualizować list</string>
     <string name="updates_asset_line">%1$s • %2$s</string>
     <string name="updates_check_failed">Sprawdzanie aktualizacji nie powiodło się</string>
     <string name="updates_download_failed">Pobieranie nie powiodło się</string>

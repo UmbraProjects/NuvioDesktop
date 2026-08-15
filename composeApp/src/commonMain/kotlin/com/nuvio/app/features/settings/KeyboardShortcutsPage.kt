@@ -109,6 +109,7 @@ private val playerRowSections: List<Pair<String, List<PlayerRowSpec>>> = listOf(
         PlayerRowSpec(PlayerShortcutAction.SeekForward.displayName, PlayerShortcutAction.SeekForward, extraKeys = listOf("→")),
         PlayerRowSpec(PlayerShortcutAction.SpeedUp.displayName, PlayerShortcutAction.SpeedUp),
         PlayerRowSpec(PlayerShortcutAction.SpeedDown.displayName, PlayerShortcutAction.SpeedDown),
+        PlayerRowSpec(PlayerShortcutAction.ToggleSpeed.displayName, PlayerShortcutAction.ToggleSpeed),
         PlayerRowSpec("Volume up", null, fixedKeys = listOf("↑")),
         PlayerRowSpec("Volume down", null, fixedKeys = listOf("↓")),
     ),

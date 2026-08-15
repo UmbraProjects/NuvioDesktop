@@ -49,7 +49,7 @@ import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.ui.NuvioInputField
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioScreenHeader
@@ -157,7 +157,7 @@ fun ProfileEditScreen(
                             }
                         },
                         placeholder = stringResource(Res.string.profile_custom_avatar_url_placeholder),
-                        modifier = Modifier.trackSettingsTextFocus(),
+                        modifier = Modifier.trackTextInputFocus(),
                     )
                     if (avatarUrlIsInvalid) {
                         Text(
@@ -490,7 +490,7 @@ private fun ProfileIdentityCard(
                 value = name,
                 onValueChange = onNameChange,
                 placeholder = stringResource(Res.string.profile_name_placeholder),
-                modifier = Modifier.trackSettingsTextFocus(),
+                modifier = Modifier.trackTextInputFocus(),
             )
 
             ProfileOptionRow(

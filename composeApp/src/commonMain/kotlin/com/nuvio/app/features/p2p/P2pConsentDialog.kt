@@ -40,7 +40,7 @@ fun P2pConsentDialog(
     BasicAlertDialog(onDismissRequest = onDismiss) {
         NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp),
             ) {
                 Text(
                     text = stringResource(Res.string.p2p_consent_title),

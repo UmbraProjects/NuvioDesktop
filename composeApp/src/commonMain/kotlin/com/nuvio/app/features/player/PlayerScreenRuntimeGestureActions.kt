@@ -241,6 +241,19 @@ internal fun PlayerScreenRuntime.cyclePlaybackSpeed() {
     controlsVisible = true
 }
 
+/** Flips between the two speeds of the Playback settings range. */
+internal fun PlayerScreenRuntime.togglePlaybackSpeed(showFeedback: Boolean = true) {
+    val next = nextToggledPlaybackSpeed(
+        current = playbackSnapshot.playbackSpeed,
+        low = playerSettingsUiState.playbackSpeedToggleLow,
+        high = playerSettingsUiState.playbackSpeedToggleHigh,
+    )
+    playerController?.setPlaybackSpeed(next)
+    sessionPlaybackSpeed = next
+    playbackSnapshot = playbackSnapshot.copy(playbackSpeed = next)
+    if (showFeedback) showGestureMessage(formatPlaybackSpeedLabel(next))
+}
+
 internal fun PlayerScreenRuntime.adjustPlaybackSpeedStep(direction: Int, showFeedback: Boolean = true) {
     val current = playbackSnapshot.playbackSpeed
     val step = direction.coerceIn(-1, 1)

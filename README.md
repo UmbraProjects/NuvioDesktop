@@ -20,70 +20,66 @@
 
 This fork is unaffiliated with the Nuvio team. It is intended to be a fork focused solely on the best possible experience for Windows. Don't worry about the commit disparity, Nuvio's team makes many small commits while I bundle everything into a single release commit. Their method is more professional for open source projects but I'm going for simplicity and not working on this with anyone else. 
 
-Here is a non exhaustive feature list:
+Here is a non-exhaustive feature list:
 
-**Home & Browsing**
+**Home, Browsing & Discovery**
 
-1. Adaptive Hero, with an option to tint the background based on the backdrop, plus a manual vertical position slider so you can tune framing to whatever looks best for your library.
-2. Full TV Mode UI for full screen mode.
-3. Hero info badges for awards, festivals, critic signals, release status, language, trending/cult/true-story metadata, notable studios/directors, short films, mini series, binge-ready shows, and new releases - fully customizable (placement, size, priority order) and extendable with your own badges/config, see below.
-4. Trailers on the home screen in either the hero or full screen, with a configurable auto-play delay; they also play in MPV if opened in the media info screen.
-5. Search and Library are now full home-mode screens (same TV Mode / Adaptive Hero layout as Home) instead of flat lists.
-6. Infinite scrolling on home catalog rows and inside collections instead of stopping at a small "View All" preview.
-7. A Trakt Calendar (press `C`) showing your upcoming and recent airings/releases in a month-view poster grid.
-8. Hero image source setting to pull backdrops/logos straight from TMDB, or TMDB for movies + TheTVDB for TV/anime, applies only to search and library.
-9. A one-time popup on first launch if you haven't set a TMDB or Mdblist API key, explaining what you're missing (lower quality backdrops/logos, fewer badges) with fields to add them right there.
-10. Larger posters option.
+- Adaptive Hero with backdrop tinting and manual vertical positioning, plus a full TV Mode UI for full-screen browsing.
+- Customizable hero badges for awards, festivals, critic signals, release status, language, trending/cult/true-story metadata, notable studios/directors, short films, mini series, binge-ready shows, new releases, post-credits scenes, and QualiCache release quality.
+- Custom hero discovery configuration and badge images, so studios, directors, labels, placement, size, priority, and artwork can be extended without changing the code.
+- Trailers in the Home hero, Search, Library, Collections, or full screen, with configurable autoplay delay, mute, and volume controls.
+- Search and Library as full home-mode screens with Adaptive Hero and TV Mode layouts, infinite scrolling, image prewarming, persistent search and collection positions, and page/edge keyboard jumps.
+- Landscape or portrait poster cards with optional titles and catalog rating badges; Collections can keep their own portrait-card preference.
+- A provider-backed Calendar (press `C`) with upcoming and recent airings/releases in a month-view poster grid.
+- Discovery directly inside Search through the compass or `Tab`, plus Random Play for movies, series, anime movies, and anime series with genre, rating, Collections, details, and immediate-play filters.
+- Episode search across series and anime details by title, description, or season/episode number.
+- TV Mode row-jump dots, optional row numbers, per-catalog marker colours, row-name labels, and tooltips for navigating long Home and Collection screens.
+- Selectable detail-page backgrounds (Normal, Cinematic, and Dominant Colour), optional IMDb episode ratings, long-synopsis teleprompter scrolling, and detail-page trailer previews.
+- TMDB/TheTVDB hero-art source controls, a first-launch API-key helper, and larger poster options.
 
-**Tracking & Scrobbling**
+**Tracking, Metadata & Integrations**
 
-11. SIMKL integration alongside Trakt - dual scrobbling, and the option to drive Library/Continue Watching/Calendar from SIMKL instead. A bundled Fribb anime ID mapping database translates between AniDB, AniList, Kitsu, MyAnimeList, SIMKL, IMDb, TMDB, and TVDB so anime numbering lines up properly across services.
+- Trakt and SIMKL alongside MDBList and self-hosted Floppy (Yamtrack fork), with dual scrobbling, watched history, ratings, Calendar, Continue Watching, and provider fallbacks.
+- Unified provider selectors for Library, Calendar, and Continue Watching, including watched-history import without a Nuvio account, manual watched-state syncing, and optional SIMKL daily-visit automation.
+- Anime metadata identity selection using IMDb, MyAnimeList, or Kitsu IDs, shared by catalogs, Continue Watching, Local Library, watch progress, episode matching, and enrichment. A bundled Fribb mapping database keeps AniDB, AniList, Kitsu, MyAnimeList, SIMKL, IMDb, TMDB, and TVDB numbering aligned.
+- Local anime classification with dedicated Anime Movies and Anime Series shelves, Kitsu matching, manual overrides, sibling-season mapping, and a Kitsu-assisted local episode-repair tool.
+- Filename-only catalog and cloud-library resolution through TMDB, turning raw TorBox, Premiumize, and library addons into real titles and artwork. Custom poster-service URLs can use media IDs and TMDB/MDBList API-key placeholders, and can be tested from Settings.
+- Portable account-sync controls for choosing which categories sync to a profile; fork-specific desktop settings remain local. Optional P2P support is bundled for compatible sources.
 
-**Input & Controls**
+**Library, Downloads & Sources**
 
-12. Keyboard controls for most of the application.
-13. Improved mouse support, hold your mouse at the edge of a catalog to auto scroll, hold and drag to scroll fast, hold shift and use the mouse wheel.
-14. Hotkeys for search and library.
+- Local Library support for scanning and playing movies and TV shows from PC folders, with automatic TMDB matching, manual fix-matching, anime support, custom catalogs, search/filtering, persistent filters, and local-versus-online playback preference.
+- Library sorting by default order, recently added, or title, with controls in the search bar and Library navigation. Series details also offer random-episode and mark-watched/unwatched actions.
+- Library Auto-Downloads for monitored movies and series, with configurable release delays, check intervals, startup checks, episode-selection modes, concurrency, bandwidth, size limits, pause-while-playing, and a full activity/history page.
+- Manual Debrid Library Grabs from magnets, infohashes, or supported links, including cached-source inspection, file-to-movie/episode mapping, and downloads into a Local Library folder.
+- Season-pack inspection and episode selection for TorBox and Premiumize, with editable episode numbers, Select all/none, one-season actions, season-pack indicators, torrent/file-content lookup, and automatic expansion of monitored episodes from a downloaded pack.
+- Opt-in Stream Scoring that ranks or rejects sources using quality, resolution, HDR, audio, codec, release metadata, language, debrid cache status, and file size. Scores can control source ordering, merged views, first-play selection, failover, next-episode autoplay, and auto-downloads, with score breakdowns and rejection reasons in the UI.
+- Resumable downloads with speed/ETA, disk-space checks, throttling, multiple connections where supported, safer validation, grouped movie/show views, bulk deletion, and Local Library access to the download panel.
 
-**Playback**
+**Desktop Player & Playback**
 
-15. Tuned MPV config with three color profiles, thanks to Allecsc the developer of [Stremio Kai](https://github.com/allecsc/Stremio-Kai) who gave permission for them to be used here.
-16. Anime enhancements ported from Stremio Kai: Anime4K shaders ([bloc97/Anime4K](https://github.com/bloc97/Anime4K), MIT) plus anime-tuned scaling/deband, auto-applied for anime titles and toggleable with F10 (Auto/Off/Optimized/Fast/HQ), plus SVP frame interpolation support when SVP is running.
-17. Binge mode to automatically trigger the next episode ASAP without manual input.
-18. Volume boost up to 200% for quiet content (Up/Down past 100%).
-19. Buffer presets (Low Data / Balanced / Resilient) to tune playback caching for your connection, with a seek-bar indicator showing how far ahead is cached.
-20. NVIDIA RTX Video True HDR support on RTX GPUs.
-21. Local file drag-and-drop - drop a video file from Explorer straight onto the window to play it immediately.
-22. Playback speed defaults.
-23. Probably other stuff I've forgotten about, generally just a huge list of improvements to PC.
+- A purpose-built desktop player UI with responsive controls, clock and end-time display, episode and source browsers, subtitle and audio panels, contextual settings, preset feedback, and mouse/keyboard interaction.
+- Desktop Picture-in-Picture mode with inline pause/seek controls, draggable and resizable floating windows, and remembered size and position.
+- A nested right-click player menu for playback, subtitles, audio, video, window controls, curated advanced MPV options, stream failover, diagnostics, and copying stream links.
+- Optional automatic stream failover that retries untried sources after errors, startup timeouts, diagnostic videos, or provider-specific rate limits.
+- Tuned MPV configuration with three color profiles, Anime4K shaders and anime-tuned scaling/deband from [Stremio Kai](https://github.com/allecsc/Stremio-Kai), SVP frame interpolation, NVIDIA RTX Video True HDR, and optional external shader libraries.
+- Binge mode, source affinity, reliable next-episode autoplay, Previous Episode navigation, playback speed defaults with optional 0.1x increments, volume boost up to 200%, and Low Data/Balanced/Resilient buffer presets.
+- Seek-bar thumbnail previews with chapter names, interactive chapter markers, SkipDB segment support, and chapter-based intro/outro/preview skip prompts when community timestamps are unavailable.
+- Advanced MPV configuration modes (Off, Add, Replace, and Full), verbose MPV logging, persistent redacted player logs, and a live diagnostics overlay.
+- Independent desktop-app and player-HUD scaling controls, an always-visible playback clock, built-in subtitle-language filtering, subtitle drop-shadow styling, dual subtitles, original-language preference, and name-based subtitle/audio rejection filters.
+- Desktop playback panels for aspect ratio, audio, subtitles, sources, episodes, subtitle styling, and technical diagnostics.
+- Paste a direct HTTP(S) video link with `Ctrl+V` or drop a local video file from Explorer to play it immediately. Direct links and local files derive cleaner title, year, season, episode, and episode-title metadata from filenames.
+- Portable installations can stage and install verified updates automatically when the app exits, with a manual fallback for development or unwritable installs.
+
+**Input, Profiles & Desktop Experience**
+
+- Keyboard controls throughout the application, rebindable player shortcuts, global Home/Search/Library/Calendar/Fullscreen/Back shortcuts, and enhanced mouse scrolling and drag behavior.
+- Hotkeys are listed and rebindable within the application.
+- Custom desktop resume dialogs, richer Discord Rich Presence modes and artwork, and desktop-native stream context menus for copying, downloading through the browser, and launching external players.
+- Remembered windowed size, position, and maximized state, configurable desktop and player UI scale, and a Windows-friendly native player runtime.
+- Native Windows crash reports and minidumps, bounded JVM freeze diagnostics, and the latest five redacted MPV sessions collected under `%LOCALAPPDATA%\NuvioHTPC\logs`.
 
 The design is partly inspired by Nuvio TV and Stremio Kai. 
-
-## Fork Hotkeys
-
-Assume arrow keys for navigation, enter to confirm, backspace/escape to go backwards (escape is an official hotkey.)
-
-Homepage:
-
-- S to open the search panel (back to home if already in search)
-- L to open the library panel (back to home if already in library)
-- T to play the trailer (adaptive hero/TV mode only)
-- C to open your Trakt or SIMKL calendar
-
-Player:
-
-- F7 toggles SVP
-- F8 toggles HDR mode
-- F9 toggles color profile
-- F10 cycles anime shaders
-- Tab to skip the intro/outro (only while the skip prompt is showing)
-- A to toggle audio track
-- S to toggle subtitles
-- O for sources
-- E for episodes
-- Up/down to change volume (boosts up to 200% for quiet content)
-- [] to change playback speed
-- C to cycle aspect ratio
 
 ## Custom Hero Discovery Config & Badges
 
@@ -184,95 +180,115 @@ The custom image wins over the bundled default whenever its filename matches the
 
 This concludes the forks readme, anything beyond this point is from the official upstream Nuvio Desktop.
 
-## About
+## Upstream - About
 
-Nuvio Desktop brings the Nuvio media experience to desktop. It keeps the playback-focused browsing, collection, watch progress, downloads, and Stremio addon ecosystem integration from Nuvio while adapting the app for desktop input, desktop storage, and native desktop playback.
+Nuvio Desktop is a media client for browsing metadata, managing collections and watch progress, downloading media, and playing streams from user-installed extensions or user-provided sources.
 
-The desktop app is built from the shared Kotlin Multiplatform codebase in [composeApp](./composeApp), with desktop-specific code in [composeApp/src/desktopMain](./composeApp/src/desktopMain). Desktop packaging is configured through Gradle, with development builds active for desktop hosts and broader platform coverage continuing over time.
+## Upstream - Installation
 
-## Platform Status
+Download the latest desktop build from [GitHub Releases](https://github.com/NuvioMedia/NuvioDesktop/releases/latest).
 
-Current desktop builds are actively being developed. Linux support is planned for a later phase, and public release targets are not finalized yet.
+Release packages are provided for supported desktop platforms:
 
-## Installation
+- Windows: MSI installer
+- macOS: DMG installer
+- Linux: DEB package, when available
 
-Public desktop releases are not available yet. Current builds are development builds.
-
-When releases are ready, desktop builds will be published from the Nuvio Desktop repository.
-
-## Development
-
-Desktop development checkout:
+## Upstream - Development
 
 ```bash
-git clone --branch Dev --recurse-submodules https://github.com/NuvioMedia/NuvioDesktop.git
+git clone https://github.com/NuvioMedia/NuvioDesktop.git
 cd NuvioDesktop
-git submodule update --init --recursive MPVKit
-git -C MPVKit fetch origin Nuvio
-git -C MPVKit switch Nuvio
-git -C MPVKit pull --ff-only
+```
+
+Run from source:
+
+```bash
 ./gradlew :composeApp:run
 ```
 
-Useful commands:
+On Windows PowerShell:
 
-```bash
-./gradlew :composeApp:compileKotlinDesktop
-./gradlew :composeApp:packageDistributionForCurrentOS
+```powershell
+.\gradlew.bat :composeApp:run
 ```
 
-On macOS, the native player bridge uses MPVKit libmpv artifacts from the `MPVKit` submodule. For development, the submodule is configured to use [NuvioMedia/MPVKit](https://github.com/NuvioMedia/MPVKit) on the `Nuvio` branch. If you already have a checkout, sync and update it with:
+Build a release package for the current host:
 
 ```bash
-git submodule sync MPVKit
-git submodule update --init --recursive MPVKit
-git -C MPVKit remote set-url origin https://github.com/NuvioMedia/MPVKit.git
-git -C MPVKit fetch origin Nuvio
-git -C MPVKit switch Nuvio
-git -C MPVKit pull --ff-only
+./gradlew :composeApp:packageReleaseDistributionForCurrentOS
 ```
 
-If Gradle reports missing MPVKit artifacts, build the macOS runtime before running the app:
+Platform-specific packaging:
 
 ```bash
-cd MPVKit
-make build platform=macos
+# Windows
+./gradlew :composeApp:packageReleaseMsi --rerun-tasks
+
+# macOS
+./scripts/build-macos-release-dmgs.sh --package-only
+
+# Linux
+./gradlew :composeApp:packageReleaseDeb
 ```
 
-You can also point Gradle at a separate MPVKit checkout:
+## Upstream - Project Structure
 
-```bash
-./gradlew :composeApp:run -Pnuvio.mpvkit.dir=/absolute/path/to/MPVKit
-```
-
-## Project Structure
-
-- `composeApp/` contains the Kotlin Multiplatform and Compose Multiplatform app code.
+- `composeApp/` contains the app code.
 - `composeApp/src/commonMain/` contains shared UI, features, repositories, and platform-agnostic logic.
-- `composeApp/src/desktopMain/` contains desktop-specific app code, storage, settings, player integration, and desktop resources.
-- `composeApp/src/desktopMain/native/macos/` and `composeApp/src/desktopMain/native/windows/` contain the native player bridges.
-- `composeApp/src/desktopMain/resources/player-ui/` contains the desktop native player control UI.
-- `composeApp/src/desktopMain/resources/icons/` contains desktop app icons for macOS, Windows, and Linux packaging.
+- `composeApp/src/desktopMain/` contains desktop-specific integrations.
+- `composeApp/Configuration/DesktopVersion.properties` contains the desktop release version and build code.
 
-## Desktop Player
+## Upstream - Versioning
 
-Nuvio Desktop uses a native desktop player path with MPVKit/libmpv integration and desktop-owned controls. The desktop player is separate from the mobile Compose player surface so desktop behavior can match desktop input, keyboard, windowing, and playback expectations.
+Desktop versions are set in `composeApp/Configuration/DesktopVersion.properties`.
 
-## Legal & DMCA
+```properties
+VERSION_NAME=0.1.1-alpha
+VERSION_CODE=1
+```
+
+Use the version helper when changing desktop release versions:
+
+```bash
+./scripts/set-version.sh --desktop 0.1.2-alpha --desktop-code 2
+./scripts/set-version.sh --show
+```
+
+## Upstream - Legal & DMCA
 
 Nuvio functions solely as a client-side interface for browsing metadata and playing media provided by user-installed extensions and/or user-provided sources. It is intended for content the user owns or is otherwise authorized to access.
 
 Nuvio is not affiliated with any third-party extensions, catalogs, sources, or content providers. It does not host, store, or distribute any media content.
 
-For comprehensive legal information, including the full disclaimer, third-party extension policy, and DMCA/Copyright information, please visit the [Legal & Disclaimer Page](https://nuvioapp.space/legal).
+For comprehensive legal information, including our full disclaimer, third-party extension policy, and DMCA/Copyright information, please visit our [Legal & Disclaimer Page](https://nuvioapp.space/legal).
 
-## Built With
+## Upstream - Built With
 
 - Kotlin Multiplatform
-- Compose Multiplatform for Desktop
+- Compose Multiplatform
 - Kotlin
-- MPVKit and libmpv
+- Compose Desktop packaging
+- Native desktop player integrations
+
+## Upstream - Star History
+
+<a href="https://www.star-history.com/#NuvioMedia/NuvioDesktop&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=NuvioMedia/NuvioDesktop&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=NuvioMedia/NuvioDesktop&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=NuvioMedia/NuvioDesktop&type=date&legend=top-left" />
+ </picture>
+</a>
 
 <!-- MARKDOWN LINKS & IMAGES -->
+[contributors-shield]: https://img.shields.io/github/contributors/NuvioMedia/NuvioDesktop.svg?style=for-the-badge
+[contributors-url]: https://github.com/NuvioMedia/NuvioDesktop/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/NuvioMedia/NuvioDesktop.svg?style=for-the-badge
+[forks-url]: https://github.com/NuvioMedia/NuvioDesktop/network/members
+[stars-shield]: https://img.shields.io/github/stars/NuvioMedia/NuvioDesktop.svg?style=for-the-badge
+[stars-url]: https://github.com/NuvioMedia/NuvioDesktop/stargazers
+[issues-shield]: https://img.shields.io/github/issues/NuvioMedia/NuvioDesktop.svg?style=for-the-badge
+[issues-url]: https://github.com/NuvioMedia/NuvioDesktop/issues
 [license-shield]: https://img.shields.io/github/license/NuvioMedia/NuvioDesktop.svg?style=for-the-badge
-[license-url]: https://github.com/NuvioMedia/NuvioDesktop/blob/Dev/LICENSE
+[license-url]: https://github.com/NuvioMedia/NuvioDesktop/blob/main/LICENSE

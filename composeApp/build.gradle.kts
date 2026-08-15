@@ -525,6 +525,15 @@ val windowsPlayerBridgeCommand = if (missingWindowsPlayerBridgeInputs.isNotEmpty
         "User32.lib",
         "Gdi32.lib",
         "Dwmapi.lib",
+        // RoGetActivationFactory / WindowsCreateStringReference, for the System Media
+        // Transport Controls session that gives the player global media-key handling.
+        "RuntimeObject.lib",
+        // SetWindowSubclass, for the WM_APPCOMMAND media-key fallback on the top-level window.
+        "Comctl32.lib",
+        // IShellLink / SHGetKnownFolderPath and InitPropVariantFromString, for the Start Menu
+        // shortcut that carries the AppUserModelID Windows needs to name the media session.
+        "Shell32.lib",
+        "Propsys.lib",
     ).joinToString(" ")
     val powershellCompileCommand = compileCommand.replace("\"", "__DQ__")
     val powershellCommand = """

@@ -16,6 +16,7 @@ import com.nuvio.app.core.ui.NuvioActionLabel
 import com.nuvio.app.core.ui.NuvioCardDepthSurface
 import com.nuvio.app.core.ui.PosterCardStyleRepository
 import com.nuvio.app.core.ui.PosterCardStyleUiState
+import com.nuvio.app.core.ui.PosterRatingBadgeScale
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_reset
 import nuvio.composeapp.generated.resources.settings_poster_card_radius
@@ -23,7 +24,14 @@ import nuvio.composeapp.generated.resources.settings_poster_card_style
 import nuvio.composeapp.generated.resources.settings_poster_card_width
 import nuvio.composeapp.generated.resources.settings_poster_description
 import nuvio.composeapp.generated.resources.settings_poster_hide_labels
+import nuvio.composeapp.generated.resources.settings_poster_collections_portrait
+import nuvio.composeapp.generated.resources.settings_poster_collections_portrait_description
 import nuvio.composeapp.generated.resources.settings_poster_landscape_mode
+import nuvio.composeapp.generated.resources.settings_poster_landscape_rating_badge
+import nuvio.composeapp.generated.resources.settings_poster_landscape_rating_badge_description
+import nuvio.composeapp.generated.resources.settings_poster_landscape_rating_badge_off
+import nuvio.composeapp.generated.resources.settings_poster_landscape_rating_badge_out_of_hundred
+import nuvio.composeapp.generated.resources.settings_poster_landscape_rating_badge_out_of_ten
 import nuvio.composeapp.generated.resources.settings_poster_landscape_text_titles
 import nuvio.composeapp.generated.resources.settings_poster_landscape_text_titles_description
 import nuvio.composeapp.generated.resources.settings_poster_radius_classic
@@ -74,13 +82,17 @@ internal fun LazyListScope.posterCustomizationSettingsContent(
                     widthDp = uiState.widthDp,
                     cornerRadiusDp = uiState.cornerRadiusDp,
                     catalogLandscapeModeEnabled = uiState.catalogLandscapeModeEnabled,
+                    collectionsPortraitPostersEnabled = uiState.collectionsPortraitPostersEnabled,
                     landscapeTextTitlesEnabled = uiState.landscapeTextTitlesEnabled,
+                    landscapeRatingBadgeScale = uiState.landscapeRatingBadgeScale,
                     hideLabelsEnabled = uiState.hideLabelsEnabled,
                     zoomActionPreviewEnabled = uiState.zoomActionPreviewEnabled,
                     onWidthSelected = PosterCardStyleRepository::setWidthDp,
                     onCornerRadiusSelected = PosterCardStyleRepository::setCornerRadiusDp,
                     onCatalogLandscapeModeChange = PosterCardStyleRepository::setCatalogLandscapeModeEnabled,
+                    onCollectionsPortraitPostersChange = PosterCardStyleRepository::setCollectionsPortraitPostersEnabled,
                     onLandscapeTextTitlesChange = PosterCardStyleRepository::setLandscapeTextTitlesEnabled,
+                    onLandscapeRatingBadgeScaleChange = PosterCardStyleRepository::setLandscapeRatingBadgeScale,
                     onHideLabelsChange = PosterCardStyleRepository::setHideLabelsEnabled,
                 )
             }
@@ -107,13 +119,17 @@ internal fun PosterCardStyleControls(
     widthDp: Int,
     cornerRadiusDp: Int,
     catalogLandscapeModeEnabled: Boolean,
+    collectionsPortraitPostersEnabled: Boolean,
     landscapeTextTitlesEnabled: Boolean,
+    landscapeRatingBadgeScale: PosterRatingBadgeScale,
     hideLabelsEnabled: Boolean,
     zoomActionPreviewEnabled: Boolean,
     onWidthSelected: (Int) -> Unit,
     onCornerRadiusSelected: (Int) -> Unit,
     onCatalogLandscapeModeChange: (Boolean) -> Unit,
+    onCollectionsPortraitPostersChange: (Boolean) -> Unit,
     onLandscapeTextTitlesChange: (Boolean) -> Unit,
+    onLandscapeRatingBadgeScaleChange: (PosterRatingBadgeScale) -> Unit,
     onHideLabelsChange: (Boolean) -> Unit,
 ) {
     val widthOptions = listOf(
@@ -174,6 +190,18 @@ internal fun PosterCardStyleControls(
         )
         SettingsGroupDivider(isTablet = isTablet)
         SettingsSwitchRow(
+            title = stringResource(Res.string.settings_poster_collections_portrait),
+            description = stringResource(Res.string.settings_poster_collections_portrait_description),
+            checked = collectionsPortraitPostersEnabled,
+            enabled = catalogLandscapeModeEnabled,
+            isTablet = isTablet,
+            modifier = Modifier.settingsScrollAnchor(
+                SettingsScrollAnchor.searchKey("poster-collections-portrait"),
+            ),
+            onCheckedChange = onCollectionsPortraitPostersChange,
+        )
+        SettingsGroupDivider(isTablet = isTablet)
+        SettingsSwitchRow(
             title = stringResource(Res.string.settings_poster_landscape_text_titles),
             description = stringResource(Res.string.settings_poster_landscape_text_titles_description),
             checked = landscapeTextTitlesEnabled,
@@ -183,6 +211,19 @@ internal fun PosterCardStyleControls(
                 SettingsScrollAnchor.searchKey("poster-landscape-text-titles"),
             ),
             onCheckedChange = onLandscapeTextTitlesChange,
+        )
+        SettingsGroupDivider(isTablet = isTablet)
+        SettingsChoiceRow(
+            title = stringResource(Res.string.settings_poster_landscape_rating_badge),
+            description = stringResource(Res.string.settings_poster_landscape_rating_badge_description),
+            options = ratingBadgeScaleOptions(),
+            selectedValue = landscapeRatingBadgeScale,
+            enabled = catalogLandscapeModeEnabled,
+            isTablet = isTablet,
+            modifier = Modifier.settingsScrollAnchor(
+                SettingsScrollAnchor.searchKey("poster-landscape-rating-badge"),
+            ),
+            onSelected = onLandscapeRatingBadgeScaleChange,
         )
         SettingsGroupDivider(isTablet = isTablet)
         SettingsSwitchRow(
@@ -203,6 +244,22 @@ internal fun PosterCardStyleControls(
         )
     }
 }
+
+@Composable
+private fun ratingBadgeScaleOptions(): List<SettingsChoiceOption<PosterRatingBadgeScale>> = listOf(
+    SettingsChoiceOption(
+        PosterRatingBadgeScale.Off,
+        stringResource(Res.string.settings_poster_landscape_rating_badge_off),
+    ),
+    SettingsChoiceOption(
+        PosterRatingBadgeScale.OutOfTen,
+        stringResource(Res.string.settings_poster_landscape_rating_badge_out_of_ten),
+    ),
+    SettingsChoiceOption(
+        PosterRatingBadgeScale.OutOfHundred,
+        stringResource(Res.string.settings_poster_landscape_rating_badge_out_of_hundred),
+    ),
+)
 
 @Composable
 internal fun CardDepthControls(

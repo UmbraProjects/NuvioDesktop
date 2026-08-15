@@ -272,13 +272,15 @@ internal object SimklProgressRepository {
         val (rawSeason, rawEpisode) = parseSimklEpisodeMarker(marker) ?: return null
         val isAnime = anime != null
         val s = show ?: anime ?: return null
-        val (season, episode) = if (isAnime) {
-            s.ids.toCanonicalAnimeEpisode(rawSeason, rawEpisode)
-        } else {
-            rawSeason to rawEpisode
-        }
-        if (season == 0) return null // specials
         val showId = (if (isAnime) s.ids.toBestAnimeContentId() else s.ids.toBestContentId()) ?: return null
+        // The id decides the coordinate space, so it is resolved first — see episodeCoordinatesFor.
+        val (season, episode) = s.ids.episodeCoordinatesFor(
+            contentId = showId,
+            isAnime = isAnime,
+            entrySeason = rawSeason,
+            entryEpisode = rawEpisode,
+        )
+        if (season == 0) return null // specials
         val videoId = "$showId:$season:$episode"
         // Skip if this exact episode is already an active playback session — the in-progress
         // card is more useful, and it already serves as an implicit up-next seed.
@@ -356,14 +358,22 @@ internal object SimklProgressRepository {
                 val isAnime = anime != null
                 val s = show ?: anime ?: return null
                 val ep = episode ?: return null
-                val rawSeason = ep.season ?: return null
-                val rawNumber = ep.number ?: return null
-                val (season, number) = if (isAnime) {
-                    s.ids.toCanonicalAnimeEpisode(rawSeason, rawNumber)
-                } else {
-                    rawSeason to rawNumber
-                }
                 val showId = (if (isAnime) s.ids.toBestAnimeContentId() else s.ids.toBestContentId()) ?: return null
+                // SIMKL states the franchise (TVDB) coordinates itself; they need no anime-list
+                // entry and are correct even where the mapping is thin, so they win outright for a
+                // franchise id. A per-entry id keeps SIMKL's own numbering — see
+                // episodeCoordinatesFor. A payload that states only the franchise pair leaves
+                // nothing else to fall back to, so it stands in for both.
+                val entrySeason = ep.season ?: ep.tvdbSeason ?: return null
+                val entryNumber = ep.number ?: ep.tvdbNumber ?: return null
+                val (season, number) = s.ids.episodeCoordinatesFor(
+                    contentId = showId,
+                    isAnime = isAnime,
+                    entrySeason = entrySeason,
+                    entryEpisode = entryNumber,
+                    franchiseSeason = ep.tvdbSeason,
+                    franchiseEpisode = ep.tvdbNumber,
+                )
                 val videoId = "$showId:$season:$number"
                 val cachedMeta = MetaDetailsRepository.peek("series", showId)
                 val posterUrl = cachedMeta?.poster

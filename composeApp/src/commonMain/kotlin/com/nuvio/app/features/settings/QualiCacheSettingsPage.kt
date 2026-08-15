@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.qualicache.QualiCacheSettings
 import com.nuvio.app.features.qualicache.QualiCacheSettingsRepository
 import com.nuvio.app.features.qualicache.QualityBadgeCategory
@@ -208,7 +209,7 @@ private fun QualiCacheBaseUrlRow(
             // trigger the Home hotkey mid-typing.
             modifier = Modifier
                 .fillMaxWidth()
-                .trackSettingsTextFocus(),
+                .trackTextInputFocus(),
             singleLine = true,
             label = { Text(stringResource(Res.string.settings_qualicache_server_url)) },
         )

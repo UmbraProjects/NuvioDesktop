@@ -12,11 +12,14 @@ import com.nuvio.app.features.details.MoreLikeThisSource
 import com.nuvio.app.features.details.PersonDetail
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
+import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -37,7 +40,8 @@ object TmdbMetadataService {
     private val personCache = mutableMapOf<String, PersonDetail>()
     private val entityBrowseCache = mutableMapOf<String, TmdbEntityBrowseData>()
     private val entityHeaderCache = mutableMapOf<String, TmdbEntityHeader>()
-    private val entityRailCache = mutableMapOf<String, List<MetaPreview>>()
+    private val entityRailCache = mutableMapOf<String, TmdbEntityRailPageResult>()
+    private val entityPosterIdSemaphore = Semaphore(4)
 
     suspend fun fetchPersonDetail(
         personId: Int,
@@ -266,7 +270,7 @@ object TmdbMetadataService {
         if (!settings.enabled || !settings.hasApiKey) return@withContext null
         val language = normalizeTmdbLanguage(settings.language)
         val normalizedSourceType = normalizeEntitySourceType(sourceType)
-        val cacheKey = "${entityKind.routeValue}:$entityId:$normalizedSourceType:$language"
+        val cacheKey = "${entityKind.routeValue}:$entityId:$normalizedSourceType:$language:${entityPosterCacheKey(settings)}"
         entityBrowseCache[cacheKey]?.let { return@withContext it }
 
         val (header, rails) = coroutineScope {
@@ -337,10 +341,10 @@ object TmdbMetadataService {
             return TmdbEntityRailPageResult(items = emptyList(), hasMore = false)
         }
 
-        val cacheKey = "${entityKind.routeValue}:$entityId:${mediaType.value}:${railType.value}:$language:page:$page"
-        entityRailCache[cacheKey]?.let { cached ->
-            return TmdbEntityRailPageResult(items = cached, hasMore = cached.isNotEmpty())
-        }
+        val posterSettings = TmdbSettingsRepository.snapshot()
+        val cacheKey = "${entityKind.routeValue}:$entityId:${mediaType.value}:${railType.value}:$language:" +
+            "${entityPosterCacheKey(posterSettings)}:page:$page"
+        entityRailCache[cacheKey]?.let { return it }
 
         val voteCountFloor = if (railType == TmdbEntityRailType.TOP_RATED) ENTITY_TOP_RATED_VOTE_FLOOR else null
 
@@ -383,10 +387,22 @@ object TmdbMetadataService {
             val results = response?.results.orEmpty()
             val totalPages = response?.totalPages ?: page
 
-            val mappedItems = results
-                .filter { it.id > 0 }
-                .mapNotNull { item -> mapEntityDiscoverResult(item, mediaType) }
-                .take(ENTITY_RAIL_MAX_ITEMS)
+            val mappedItems = coroutineScope {
+                results
+                    .asSequence()
+                    .filter { it.id > 0 }
+                    .take(ENTITY_RAIL_MAX_ITEMS)
+                    .map { item ->
+                        async {
+                            entityPosterIdSemaphore.withPermit {
+                                mapEntityDiscoverResult(item, mediaType, posterSettings)
+                            }
+                        }
+                    }
+                    .toList()
+                    .awaitAll()
+                    .filterNotNull()
+            }
 
             TmdbEntityRailPageResult(
                 items = mappedItems,
@@ -398,9 +414,28 @@ object TmdbMetadataService {
         }
 
         if (result.items.isNotEmpty()) {
-            entityRailCache[cacheKey] = result.items
+            entityRailCache[cacheKey] = result
         }
         return result
+    }
+
+    suspend fun fetchNextEntityRailPage(
+        entityKind: TmdbEntityKind,
+        entityId: Int,
+        rail: TmdbEntityRail,
+    ): TmdbEntityRailPageResult {
+        val settings = TmdbSettingsRepository.snapshot()
+        if (!settings.enabled || !settings.hasApiKey || !rail.hasMore) {
+            return TmdbEntityRailPageResult(items = emptyList(), hasMore = false)
+        }
+        return fetchEntityRailPage(
+            entityKind = entityKind,
+            entityId = entityId,
+            mediaType = rail.mediaType,
+            railType = rail.railType,
+            language = normalizeTmdbLanguage(settings.language),
+            page = rail.currentPage + 1,
+        )
     }
 
     private suspend fun fetchEntityHeader(
@@ -468,9 +503,10 @@ object TmdbMetadataService {
         return header
     }
 
-    private fun mapEntityDiscoverResult(
+    private suspend fun mapEntityDiscoverResult(
         result: TmdbDiscoverResult,
         mediaType: TmdbEntityMediaType,
+        posterSettings: TmdbSettings,
     ): MetaPreview? {
         val title = result.title?.takeIf { it.isNotBlank() }
             ?: result.name?.takeIf { it.isNotBlank() }
@@ -485,9 +521,10 @@ object TmdbMetadataService {
             TmdbEntityMediaType.MOVIE -> result.releaseDate?.take(4)
             TmdbEntityMediaType.TV -> result.firstAirDate?.take(4)
         }
-        return MetaPreview(
+        val type = if (mediaType == TmdbEntityMediaType.TV) "series" else "movie"
+        val base = MetaPreview(
             id = "tmdb:${result.id}",
-            type = if (mediaType == TmdbEntityMediaType.TV) "series" else "movie",
+            type = type,
             name = title,
             poster = poster,
             banner = buildImageUrl(result.backdropPath, "w780"),
@@ -495,7 +532,36 @@ object TmdbMetadataService {
             description = result.overview?.takeIf { it.isNotBlank() },
             releaseInfo = releaseInfo,
         )
+        val mdbListApiKey = MdbListSettingsRepository.snapshot().apiKey
+        var styled = base.withCustomLibraryPoster(
+            settings = posterSettings,
+            imdbId = null,
+            tmdbId = result.id,
+            mdbListApiKey = mdbListApiKey,
+        )
+        if (styled === base && posterSettings.customPosterTemplateNeedsImdbId()) {
+            val posterIds = resolveCustomPosterIds(
+                settings = posterSettings,
+                imdbId = null,
+                tmdbId = result.id,
+                type = type,
+            )
+            styled = base.withCustomLibraryPoster(
+                settings = posterSettings,
+                imdbId = posterIds.imdbId,
+                tmdbId = posterIds.tmdbId ?: result.id,
+                mdbListApiKey = mdbListApiKey,
+            )
+        }
+        return styled
     }
+
+    private fun entityPosterCacheKey(settings: TmdbSettings): String =
+        if (settings.libraryPosterEnabled && settings.libraryPosterUrlTemplate.isNotBlank()) {
+            "poster:${settings.libraryPosterUrlTemplate.hashCode()}"
+        } else {
+            "poster:off"
+        }
 
     private fun buildEntityMediaOrder(
         entityKind: TmdbEntityKind,

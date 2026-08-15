@@ -34,9 +34,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -240,6 +238,8 @@ fun StreamsScreen(
     val providerListState = rememberLazyListState()
     val streamListState = rememberLazyListState()
     var focusedStreamIndex by remember(videoId) { mutableIntStateOf(0) }
+    // Bumped by every navigation key press, and by nothing else. See the scroll-to-focus effect.
+    var keyboardNavTick by remember(videoId) { mutableIntStateOf(0) }
     val autoPlayOverlayLogoUrl = logo?.takeIf { it.isNotBlank() }
     val storedProgress = if (startFromBeginning) {
         null
@@ -352,14 +352,39 @@ fun StreamsScreen(
         )
     }
 
-    LaunchedEffect(uiState.selectedFilter, providerIds) {
-        val filterIndex = providerIds.indexOf(uiState.selectedFilter).coerceAtLeast(0)
-        if (filterIndex < providerIds.size) {
+    // Keyed on the selected chip, plus whether that chip exists yet — not on providerIds itself,
+    // which changes every time an addon starts or finishes loading and dragged the chip row back
+    // under the user mid-scroll for as long as sources kept arriving.
+    val selectedFilterIndex = providerIds.indexOf(uiState.selectedFilter)
+    LaunchedEffect(uiState.selectedFilter, selectedFilterIndex >= 0) {
+        val filterIndex = selectedFilterIndex
+        if (filterIndex < 0) return@LaunchedEffect
+        val layoutInfo = providerListState.layoutInfo
+        val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
+            item.index == filterIndex &&
+                item.offset >= layoutInfo.viewportStartOffset &&
+                item.offset + item.size <= layoutInfo.viewportEndOffset
+        }
+        if (!isFullyVisible) {
             providerListState.animateScrollToItem(filterIndex)
         }
     }
 
-    LaunchedEffect(focusedStream, displayGroups) {
+    // Switching chips replaces the whole list, so the old offset means nothing against the new one.
+    LaunchedEffect(uiState.selectedFilter) {
+        streamListState.scrollToItem(0)
+    }
+
+    // Follow the keyboard cursor, and *only* the keyboard cursor.
+    //
+    // This used to key on the focused stream itself, which made every late-arriving source scroll
+    // the list: a new group re-sorts the list, a different stream lands at focusedStreamIndex, and
+    // the effect read that as the user having moved. Nothing but a nav key bumps this counter, so a
+    // mouse user's scroll position is now left alone for the whole scrape. focusedStream and
+    // displayGroups are read inside the effect on purpose — the key press writes both the index and
+    // the counter in one pass, so the restarted effect already sees the new focus.
+    LaunchedEffect(keyboardNavTick) {
+        if (keyboardNavTick == 0) return@LaunchedEffect
         val target = focusedStream ?: return@LaunchedEffect
         val lazyIndex = streamLazyListIndex(
             groups = displayGroups,
@@ -641,11 +666,13 @@ fun StreamsScreen(
                                 }
                                 Key.DirectionUp -> {
                                     focusedStreamIndex = (focusedStreamIndex - 1).coerceAtLeast(0)
+                                    keyboardNavTick++
                                     true
                                 }
                                 Key.DirectionDown -> {
                                     focusedStreamIndex = (focusedStreamIndex + 1)
                                         .coerceAtMost((selectableStreams.size - 1).coerceAtLeast(0))
+                                    keyboardNavTick++
                                     true
                                 }
                                 Key.DirectionLeft, Key.DirectionRight -> {
@@ -1546,6 +1573,20 @@ internal fun StreamList(
         StreamBadgeSettingsRepository.ensureLoaded()
         StreamBadgeSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
+    val showGroupHeaders = uiState.selectedFilter == null
+    val entries = remember(filteredGroups, showGroupHeaders) {
+        buildStreamListEntries(groups = filteredGroups, showGroupHeaders = showGroupHeaders)
+    }
+    // One context for every card's badge and right-click breakdown, so the number on a row and the
+    // explanation behind it can never be computed differently — and so a list of two hundred rows
+    // builds it once instead of once per row.
+    val rowScoreContext = remember(isEpisode, contentId, contentType) {
+        StreamScoreContexts.forPlayback(
+            isEpisode = isEpisode,
+            contentId = contentId,
+            contentType = contentType,
+        )
+    }
 
     LazyColumn(
         state = listState,
@@ -1558,45 +1599,75 @@ internal fun StreamList(
     ) {
         when {
             hasGroups && anyLoading && !hasAnyStreams -> {
-                item {
+                item(key = "state_loading") {
                     LoadingStateBlock()
                 }
             }
 
             !hasAnyStreams && !uiState.isAnyLoading -> {
-                item {
+                item(key = "state_empty") {
                     EmptyStateBlock(reason = uiState.emptyStateReason)
                 }
             }
 
             else -> {
-                filteredGroups.forEachIndexed { groupIndex, group ->
-                    streamSection(
-                        sectionKey = streamSectionRenderKey(groupIndex = groupIndex, group = group),
-                        group = group,
-                        showHeader = uiState.selectedFilter == null &&
-                            !StreamSourceMerge.isFlatSection(group.addonId),
-                        debridEnabled = debridEnabled,
-                        appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
-                        showFileSizeBadges = streamBadgeSettings.showFileSizeBadges,
-                        showAddonLogo = streamBadgeSettings.showAddonLogo,
-                        badgePlacement = streamBadgeSettings.badgePlacement,
-                        onStreamSelected = onStreamSelected,
-                        onStreamLongPress = onStreamLongPress,
-                        resumePositionMs = resumePositionMs,
-                        resumeProgressFraction = resumeProgressFraction,
-                        focusedStream = focusedStream,
-                        isEpisode = isEpisode,
-                        contentId = contentId,
-                        contentType = contentType,
-                    )
+                items(
+                    items = entries,
+                    key = { it.key },
+                    contentType = { entry ->
+                        when (entry) {
+                            is StreamListEntry.SectionHeader -> "sectionHeader"
+                            is StreamListEntry.SourceHeader -> "sourceHeader"
+                            is StreamListEntry.Stream -> "stream"
+                        }
+                    },
+                ) { entry ->
+                    when (entry) {
+                        is StreamListEntry.SectionHeader -> StreamSectionHeader(
+                            addonName = entry.addonName,
+                            isLoading = entry.isLoading,
+                        )
+
+                        is StreamListEntry.SourceHeader -> StreamSourceHeader(sourceName = entry.sourceName)
+
+                        is StreamListEntry.Stream -> {
+                            val stream = entry.stream
+                            StreamRowContextMenu(
+                                stream = stream,
+                                enabled = stream.playableDirectUrl != null || stream.isAddonDebridCandidate,
+                                scoreContext = rowScoreContext,
+                            ) {
+                                StreamCard(
+                                    stream = stream,
+                                    enabled = stream.isSelectableForPlayback(debridEnabled),
+                                    appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
+                                    showFileSizeBadges = streamBadgeSettings.showFileSizeBadges,
+                                    showAddonLogo = streamBadgeSettings.showAddonLogo,
+                                    badgePlacement = streamBadgeSettings.badgePlacement,
+                                    focused = stream === focusedStream,
+                                    scoreContext = rowScoreContext,
+                                    onClick = {
+                                        if (stream.isSelectableForPlayback(debridEnabled)) {
+                                            onStreamSelected(stream, resumePositionMs, resumeProgressFraction)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (stream.playableDirectUrl != null || stream.isAddonDebridCandidate) {
+                                            onStreamLongPress(stream)
+                                        }
+                                    },
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+                    }
                 }
                 if (anyLoading) {
-                    item {
+                    item(key = "footer_loading") {
                         FooterLoadingBlock()
                     }
                 }
-                item {
+                item(key = "footer_spacer") {
                     Spacer(modifier = Modifier.height(nuvioSafeBottomPadding(80.dp)))
                 }
             }
@@ -1686,111 +1757,106 @@ internal fun rememberHtpcSourceGroup(
 }
 
 
-private fun LazyListScope.streamSection(
-    sectionKey: String,
-    group: AddonStreamGroup,
-    showHeader: Boolean,
-    debridEnabled: Boolean,
-    appendInstantServiceToDefaultName: Boolean,
-    showFileSizeBadges: Boolean,
-    showAddonLogo: Boolean,
-    badgePlacement: StreamBadgePlacement,
-    onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
-    onStreamLongPress: (StreamItem) -> Unit,
-    resumePositionMs: Long?,
-    resumeProgressFraction: Float?,
-    focusedStream: StreamItem?,
-    isEpisode: Boolean,
-    contentId: String?,
-    contentType: String?,
-) {
-    if (group.streams.isEmpty() && !group.isLoading) return
+/**
+ * One drawable row of the source list: a section header, a source header, or a stream.
+ *
+ * Flattening the whole list up front is what makes the scroll position stable. The list is rebuilt
+ * every time an addon answers, and score sorting can move any row anywhere in it, so [key] has to
+ * describe what a row *is* rather than where it currently sits: LazyColumn keeps the viewport in
+ * place across a data change by looking the first visible key up in the new list, and a key built
+ * from an index never matches once a late source has been slotted in above it.
+ */
+internal sealed interface StreamListEntry {
+    val key: String
 
-    if (showHeader) {
-        item(key = "header_$sectionKey") {
-            StreamSectionHeader(
+    data class SectionHeader(
+        override val key: String,
+        val addonName: String,
+        val isLoading: Boolean,
+    ) : StreamListEntry
+
+    data class SourceHeader(
+        override val key: String,
+        val sourceName: String,
+    ) : StreamListEntry
+
+    data class Stream(
+        override val key: String,
+        val stream: StreamItem,
+    ) : StreamListEntry
+}
+
+/**
+ * Expands [groups] into the exact row sequence [StreamList] draws.
+ *
+ * Single source of truth for the list's shape: rendering, lazy keys and [streamLazyListIndex] all
+ * read it, so keyboard navigation can no longer target a different row than the one on screen.
+ */
+internal fun buildStreamListEntries(
+    groups: List<AddonStreamGroup>,
+    showGroupHeaders: Boolean,
+): List<StreamListEntry> {
+    val entries = mutableListOf<StreamListEntry>()
+    val keyOccurrences = mutableMapOf<String, Int>()
+    // Identity keys can legitimately repeat — the same release listed twice, rows carrying neither a
+    // url nor a hash — and a duplicate key crashes the app on Desktop, so collisions get an
+    // occurrence suffix. The first occurrence keeps the bare key, which keeps it stable.
+    fun uniqueKey(base: String): String {
+        val seen = keyOccurrences.getOrElse(base) { 0 }
+        keyOccurrences[base] = seen + 1
+        return if (seen == 0) base else "$base#$seen"
+    }
+
+    groups.forEach { group ->
+        if (group.streams.isEmpty() && !group.isLoading) return@forEach
+
+        // The merged list is a single score-ordered run: sub-grouping it by source and sorting those
+        // groups alphabetically (what a normal section does) would throw the score order away, which
+        // is the entire point of merging.
+        val isMergedSection = StreamSourceMerge.isFlatSection(group.addonId)
+        if (showGroupHeaders && !isMergedSection) {
+            entries += StreamListEntry.SectionHeader(
+                key = uniqueKey("header:${group.addonId}"),
                 addonName = group.addonName,
                 isLoading = group.isLoading,
             )
         }
-    }
 
-    // The merged list is a single score-ordered run: sub-grouping it by source and sorting those
-    // groups alphabetically (what a normal section does) would throw the score order away, which is
-    // the entire point of merging.
-    val isMergedSection = StreamSourceMerge.isFlatSection(group.addonId)
-    val streamsBySource = if (isMergedSection) {
-        mapOf(group.addonName to group.streams)
-    } else {
-        group.streams.groupBy { stream ->
-            stream.sourceName?.takeIf { it.isNotBlank() } ?: stream.addonName
-        }
-    }
-    val sortedSources = if (isMergedSection) {
-        streamsBySource.keys.toList()
-    } else {
-        streamsBySource.keys.sortedBy { it.lowercase() }
-    }
-    val showSourceHeaders = !isMergedSection && sortedSources.size > 1
-
-    sortedSources.forEachIndexed { sourceIndex, sourceName ->
-        val sourceStreams = streamsBySource[sourceName].orEmpty()
-        if (showSourceHeaders) {
-            item(key = "source_${sectionKey}_$sourceIndex") {
-                StreamSourceHeader(sourceName = sourceName)
+        val streamsBySource = if (isMergedSection) {
+            mapOf(group.addonName to group.streams)
+        } else {
+            group.streams.groupBy { stream ->
+                stream.sourceName?.takeIf { it.isNotBlank() } ?: stream.addonName
             }
         }
+        val sortedSources = if (isMergedSection) {
+            streamsBySource.keys.toList()
+        } else {
+            streamsBySource.keys.sortedBy { it.lowercase() }
+        }
+        val showSourceHeaders = !isMergedSection && sortedSources.size > 1
 
-        itemsIndexed(
-            items = sourceStreams,
-            key = { index, stream ->
-                streamCardRenderKey(
-                    sectionKey = sectionKey,
-                    sourceIndex = sourceIndex,
-                    itemIndex = index,
+        sortedSources.forEach { sourceName ->
+            if (showSourceHeaders) {
+                entries += StreamListEntry.SourceHeader(
+                    key = uniqueKey("source:${group.addonId}:$sourceName"),
+                    sourceName = sourceName,
+                )
+            }
+            streamsBySource[sourceName].orEmpty().forEach { stream ->
+                entries += StreamListEntry.Stream(
+                    key = uniqueKey("stream:${group.addonId}:${stream.lazyRowIdentity()}"),
                     stream = stream,
                 )
-            },
-        ) { _, stream ->
-            // One context for both the card's badge and the right-click breakdown, so the number on
-            // the row and the explanation behind it can never be computed differently.
-            val rowScoreContext = remember(isEpisode, contentId, contentType) {
-                StreamScoreContexts.forPlayback(
-                    isEpisode = isEpisode,
-                    contentId = contentId,
-                    contentType = contentType,
-                )
             }
-            StreamRowContextMenu(
-                stream = stream,
-                enabled = stream.playableDirectUrl != null || stream.isAddonDebridCandidate,
-                scoreContext = rowScoreContext,
-            ) {
-                StreamCard(
-                    stream = stream,
-                    enabled = stream.isSelectableForPlayback(debridEnabled),
-                    appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
-                    showFileSizeBadges = showFileSizeBadges,
-                    showAddonLogo = showAddonLogo,
-                    badgePlacement = badgePlacement,
-                    focused = stream === focusedStream,
-                    scoreContext = rowScoreContext,
-                    onClick = {
-                        if (stream.isSelectableForPlayback(debridEnabled)) {
-                            onStreamSelected(stream, resumePositionMs, resumeProgressFraction)
-                        }
-                    },
-                    onLongClick = {
-                        if (stream.playableDirectUrl != null || stream.isAddonDebridCandidate) {
-                            onStreamLongPress(stream)
-                        }
-                    },
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
         }
     }
+    return entries
 }
+
+/** The most stable thing a row can be recognised by across a re-sorted, re-fetched list. */
+private fun StreamItem.lazyRowIdentity(): String =
+    url ?: infoHash ?: clientResolve?.infoHash ?: streamLabel
 
 private fun orderedStreams(groups: List<AddonStreamGroup>): List<StreamItem> =
     groups.flatMap { group ->
@@ -1811,56 +1877,8 @@ private fun streamLazyListIndex(
     groups: List<AddonStreamGroup>,
     showGroupHeaders: Boolean,
     target: StreamItem,
-): Int {
-    var lazyIndex = 0
-    groups.forEach { group ->
-        if (group.streams.isEmpty() && !group.isLoading) return@forEach
-        if (showGroupHeaders && !StreamSourceMerge.isFlatSection(group.addonId)) lazyIndex++
-
-        val isMergedSection = StreamSourceMerge.isFlatSection(group.addonId)
-        val streamsBySource = if (isMergedSection) {
-            mapOf(group.addonName to group.streams)
-        } else {
-            group.streams.groupBy { stream ->
-                stream.sourceName?.takeIf { it.isNotBlank() } ?: stream.addonName
-            }
-        }
-        val sortedSources = if (isMergedSection) {
-            streamsBySource.keys.toList()
-        } else {
-            streamsBySource.keys.sortedBy { it.lowercase() }
-        }
-        val showSourceHeaders = !isMergedSection && sortedSources.size > 1
-        sortedSources.forEach { sourceName ->
-            if (showSourceHeaders) lazyIndex++
-            streamsBySource[sourceName].orEmpty().forEach { stream ->
-                if (stream === target) return lazyIndex
-                lazyIndex++
-            }
-        }
-    }
-    return -1
-}
-
-internal fun streamSectionRenderKey(
-    groupIndex: Int,
-    group: AddonStreamGroup,
-): String = "$groupIndex:${group.addonId}"
-
-internal fun streamCardRenderKey(
-    sectionKey: String,
-    sourceIndex: Int,
-    itemIndex: Int,
-    stream: StreamItem,
-): String = buildString {
-    append(sectionKey)
-    append(':')
-    append(sourceIndex)
-    append(':')
-    append(itemIndex)
-    append(':')
-    append(stream.url ?: stream.infoHash ?: stream.clientResolve?.infoHash ?: stream.streamLabel)
-}
+): Int = buildStreamListEntries(groups = groups, showGroupHeaders = showGroupHeaders)
+    .indexOfFirst { it is StreamListEntry.Stream && it.stream === target }
 
 // ---------------------------------------------------------------------------
 // Stream Section Header

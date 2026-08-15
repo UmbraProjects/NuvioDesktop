@@ -68,13 +68,35 @@ internal fun ResolvedMediaIds.projectScrobbleCoordinates(
         retainsNativeAnimeIds = true,
     )
 
-    TrackingCoordinateFamily.ENTRY_LOCAL -> TrackingScrobbleCoordinates(
-        season = sourceSeason?.let { entryLocalSeasonNumber(it, isAnime) },
-        episode = sourceEpisode?.let { entryLocalEpisodeNumber(sourceSeason, it, isAnime) },
-        isAnime = isAnime,
-        retainsNativeAnimeIds = retainsEntryLocalNativeIds(isAnime),
-    )
+    TrackingCoordinateFamily.ENTRY_LOCAL -> {
+        val season = sourceSeason?.let { entryLocalSeasonNumber(it, isAnime) }
+        TrackingScrobbleCoordinates(
+            season = season,
+            episode = sourceEpisode?.let { entryLocalEpisodeNumber(sourceSeason, it, isAnime) },
+            isAnime = isAnime,
+            retainsNativeAnimeIds = retainsEntryLocalNativeIds(isAnime) &&
+                isEntryLocalSeason(season, isAnime),
+        )
+    }
 }
+
+/**
+ * Whether the projected season actually ended up entry-local.
+ *
+ * An entry's own season is 1 by definition, so any other number means [entryLocalSeasonNumber]
+ * found nothing to convert with — no resolved SIMKL entry, or no mapped season — and passed the
+ * franchise coordinates straight through. Pairing a per-entry id with a franchise season describes
+ * an episode that cannot exist: `kitsu:49002` has one season, so "season 3, episode 1" of it is
+ * meaningless, and the provider is free to accept it and record something wrong.
+ *
+ * Dropping the native ids leaves the franchise ids, which is a request the provider can map itself.
+ * Upstream reaches the same conclusion from the other end (`stripAnimeIdsIfSeasoned`): its
+ * entry-local form carries no season at all, so *any* season present means franchise numbering and
+ * the native ids go. This fork's entry-local form uses season 1, so the equivalent test is
+ * "season is not 1" rather than "season is present".
+ */
+private fun isEntryLocalSeason(season: Int?, isAnime: Boolean): Boolean =
+    !isAnime || season == null || season == 1
 
 /**
  * True when at least one franchise-level id is present.

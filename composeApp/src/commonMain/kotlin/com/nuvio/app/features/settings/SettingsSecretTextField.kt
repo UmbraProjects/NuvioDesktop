@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import com.nuvio.app.core.ui.trackTextInputFocus
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_hide_secret
 import nuvio.composeapp.generated.resources.settings_show_secret
@@ -39,7 +40,7 @@ internal fun SettingsSecretTextField(
         onValueChange = onValueChange,
         // Tracked here rather than at each call site: an API key containing "h" would otherwise
         // navigate to Home mid-typing. Every secret field gets the suppression for free.
-        modifier = modifier.trackSettingsTextFocus(),
+        modifier = modifier.trackTextInputFocus(),
         isError = isError,
         singleLine = true,
         label = { Text(label) },

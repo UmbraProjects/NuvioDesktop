@@ -105,4 +105,30 @@ class LocalLibraryPlaybackPreferenceTest {
             ),
         )
     }
+
+    @Test
+    fun `source picker can never enter the completed download shortcut`() {
+        val decision = LocalLibraryPlaybackPreference.SOURCE_PICKER.resolvePlaybackRouting(
+            useAlternate = false,
+            hasDownloadedFile = true,
+            hasLocalLibraryStream = true,
+        )
+
+        assertTrue(decision.manualSelection)
+        assertFalse(decision.preferLocalStreams)
+        assertFalse(decision.playDownloadedFileDirectly)
+    }
+
+    @Test
+    fun `explicit local alternate may enter the completed download shortcut`() {
+        val decision = LocalLibraryPlaybackPreference.SOURCE_PICKER.resolvePlaybackRouting(
+            useAlternate = true,
+            hasDownloadedFile = true,
+            hasLocalLibraryStream = true,
+        )
+
+        assertFalse(decision.manualSelection)
+        assertTrue(decision.preferLocalStreams)
+        assertTrue(decision.playDownloadedFileDirectly)
+    }
 }

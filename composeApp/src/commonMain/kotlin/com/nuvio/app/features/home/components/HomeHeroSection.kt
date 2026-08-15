@@ -1,9 +1,12 @@
 package com.nuvio.app.features.home.components
 
 import co.touchlab.kermit.Logger
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -24,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -66,13 +70,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -89,12 +94,14 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.NuvioDesktopImageScaling
+import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.features.details.HeroTrailerAudioState
@@ -249,7 +256,6 @@ fun HomeHeroSection(
     immersiveContentBottomPadding: Dp = IMMERSIVE_HERO_CONTENT_BOTTOM_PADDING,
     resumePromptItemKey: String? = null,
     resumePromptLabel: String = "",
-    resumePromptActionLabel: String = "",
     onResumePromptAction: (() -> Unit)? = null,
     onResumePromptDismiss: (() -> Unit)? = null,
     onActiveItemChanged: ((MetaPreview) -> Unit)? = null,
@@ -496,7 +502,6 @@ fun HomeHeroSection(
                     immersiveContentBottomPadding = immersiveContentBottomPadding,
                     resumePromptItemKey = resumePromptItemKey,
                     resumePromptLabel = resumePromptLabel,
-                    resumePromptActionLabel = resumePromptActionLabel,
                     onResumePromptAction = onResumePromptAction,
                     onResumePromptDismiss = onResumePromptDismiss,
                     ratingsCache = ratingsCache,
@@ -719,7 +724,6 @@ private fun DesktopHomeHeroFrame(
     immersiveContentBottomPadding: Dp,
     resumePromptItemKey: String?,
     resumePromptLabel: String,
-    resumePromptActionLabel: String,
     onResumePromptAction: (() -> Unit)?,
     onResumePromptDismiss: (() -> Unit)?,
     ratingsCache: Map<String, List<MetaExternalRating>>,
@@ -1163,9 +1167,12 @@ private fun DesktopHomeHeroFrame(
                             } else {
                                 null
                             },
-                            resumePromptActionLabel = resumePromptActionLabel,
                             onResumePromptAction = onResumePromptAction,
                             onResumePromptDismiss = onResumePromptDismiss,
+                            synopsisAutoScroll = layer.visibility >= HeroSettledVisibility &&
+                                items[layer.page].let {
+                                    it.id == currentItem.id && it.type == currentItem.type
+                                },
                             onItemClick = onItemClick?.let { handler ->
                                 { _ -> handler(currentItem) }
                             },
@@ -1471,27 +1478,71 @@ private fun DesktopHeroContentBlock(
     peoplePanelTab: HeroPeoplePanelTab = HeroPeoplePanelTab.Starring,
     allowProductionHotkeySwap: Boolean = false,
     resumePromptLabel: String? = null,
-    resumePromptActionLabel: String = "",
     onResumePromptAction: (() -> Unit)? = null,
     onResumePromptDismiss: (() -> Unit)? = null,
+    /**
+     * True only for the settled, front-most hero item. Layers behind a page transition render the
+     * same block, and letting those run the timer would leave a half-scrolled synopsis waiting on
+     * the page the reader is heading back to.
+     */
+    synopsisAutoScroll: Boolean = false,
     onItemClick: ((MetaPreview) -> Unit)?,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     var logoLoadError by remember(item.type, item.id, item.logo) { mutableStateOf(false) }
     val logoUrl = item.logo?.takeIf { it.isNotBlank() && !logoLoadError }
+    // TEMPORARY (hero race diagnosis) — remove with logHeroPick. Reports what the slot actually
+    // paints, not merely the logo value: the first version of this probe printed TITLE-TEXT
+    // whenever logo was null, which is also true while the slot is deliberately held blank, so it
+    // could not see whether the hold was working. Text completeness rides along so a
+    // partially-enriched frame (ratings present, genres/synopsis missing) is visible too.
+    LaunchedEffect(
+        item.type,
+        item.id,
+        item.logo,
+        item.heroMetadataPending,
+        item.genres.size,
+        item.description,
+    ) {
+        co.touchlab.kermit.Logger.withTag("HeroLogoRace").i {
+            val slot = when {
+                !item.logo.isNullOrBlank() -> "logo:" + item.logo!!.takeLast(26)
+                item.heroMetadataPending -> "BLANK-HELD"
+                else -> "TITLE-TEXT"
+            }
+            "t=${com.nuvio.app.features.home.heroProbeMs()} RENDER ${item.type}:${item.id} slot=$slot " +
+                "genres=${item.genres.size} hasDescr=${!item.description.isNullOrBlank()} " +
+                "year=${item.releaseInfo ?: "-"} runtime=${item.runtime ?: "-"}"
+        }
+    }
+    // A resume prompt puts its two actions on the hero itself rather than on buttons: left click
+    // resumes, right click dismisses. The buttons they replace sat at the bottom of the metadata
+    // column, so they inherited its layout — they appeared before the metadata they were positioned
+    // against and were liable to being clipped by a short hero. Nothing about the prompt needs its
+    // own hit target, and this way the actions are available from the first frame regardless of
+    // what the column is doing. Keyboard already had the same pair (Select resumes, Back dismisses).
+    val resumePromptActive = !resumePromptLabel.isNullOrBlank() && onResumePromptAction != null
+    val primaryClick: (() -> Unit)? = when {
+        resumePromptActive -> onResumePromptAction
+        interactive && onItemClick != null -> ({ onItemClick(item) })
+        else -> null
+    }
+    val secondaryClickAction: (() -> Unit)? = onResumePromptDismiss.takeIf { resumePromptActive }
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .then(
-                if (interactive && onItemClick != null) {
+                if (primaryClick != null) {
                     Modifier.clickable(
                         interactionSource = interactionSource,
                         indication = null,
-                    ) { onItemClick(item) }
+                        onClick = primaryClick,
+                    )
                 } else {
                     Modifier
                 },
-            ),
+            )
+            .secondaryClick(secondaryClickAction),
         horizontalAlignment = Alignment.Start,
     ) {
         val cast = heroDisplayCast(
@@ -1534,20 +1585,35 @@ private fun DesktopHeroContentBlock(
                     .height(desktopHeroLogoSlotHeight(layout)),
                 contentAlignment = if (showExtendedMetadata) Alignment.BottomStart else Alignment.CenterStart,
             ) {
-                Text(
-                    text = item.name,
-                    modifier = Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.displayMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.Start,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // Third state: the item is a pre-enrichment copy whose logo has not been decided
+                // yet, so the title would only be painted for the moment it takes the logo to
+                // arrive and then replaced. Hold the slot empty instead. The slot keeps its height
+                // either way, so resolving into a logo or into the title causes no layout shift.
+                if (!item.heroMetadataPending) {
+                    Text(
+                        text = item.name,
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.displayMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.Black,
+                        textAlign = TextAlign.Start,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
 
-        if (!showExtendedMetadata && (cast.isNotEmpty() || production.isNotEmpty())) {
+        // The metadata column below is withheld in one piece while the item is a pre-enrichment
+        // placeholder — see [MetaPreview.heroMetadataPending]. Revealing these rows as each field
+        // arrives is what read as a flash: the row would paint with a bare episode label and no
+        // genres, ratings or synopsis, then repaint complete a few frames later. The backdrop, the
+        // fixed-height logo slot and the action buttons are outside the gate and always render, so
+        // the hero is never empty and never changes height.
+        if (!item.heroMetadataPending &&
+            !showExtendedMetadata &&
+            (cast.isNotEmpty() || production.isNotEmpty())
+        ) {
             Spacer(modifier = Modifier.height(14.dp))
             if (
                 allowProductionHotkeySwap &&
@@ -1582,7 +1648,7 @@ private fun DesktopHeroContentBlock(
             showReleaseMetadata = showReleaseMetadata && !qualityBadgesEnabled,
             includeAgeRating = false,
         )
-        if (genreText.isNotBlank() || ageRating != null) {
+        if (!item.heroMetadataPending && (genreText.isNotBlank() || ageRating != null)) {
             Spacer(modifier = Modifier.height(14.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1603,52 +1669,186 @@ private fun DesktopHeroContentBlock(
             }
         }
 
-        HomeHeroRatingsRow(item = item, ratingsCache = ratingsCache)
+        if (!item.heroMetadataPending) {
+            HomeHeroRatingsRow(item = item, ratingsCache = ratingsCache)
 
-        item.description
-            ?.replace(Regex("\\s+"), " ")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?.let { description ->
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.82f),
-                maxLines = 5,
-                overflow = TextOverflow.Ellipsis,
+            item.description
+                ?.replace(Regex("\\s+"), " ")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { description ->
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HeroSynopsis(
+                        text = description,
+                        resetKey = "${item.type}:${item.id}",
+                        autoScroll = synopsisAutoScroll,
+                    )
+                }
+
+            HeroReleaseFooter(
+                item = item,
+                highlights = qualityHighlights,
+                // Nothing to put down here when the badges are off: the year and runtime went back
+                // onto the genre line above.
+                showReleaseMetadata = showReleaseMetadata && qualityBadgesEnabled,
             )
         }
 
-        HeroReleaseFooter(
-            item = item,
-            highlights = qualityHighlights,
-            // Nothing to put down here when the badges are off: the year and runtime went back onto
-            // the genre line above.
-            showReleaseMetadata = showReleaseMetadata && qualityBadgesEnabled,
-        )
-
-        if (!resumePromptLabel.isNullOrBlank() && onResumePromptAction != null) {
-            Spacer(modifier = Modifier.height(18.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = onResumePromptAction) {
-                    Icon(
-                        imageVector = Icons.Rounded.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(resumePromptActionLabel)
-                }
-                if (onResumePromptDismiss != null) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = onResumePromptDismiss) {
-                        Text(stringResource(Res.string.action_close))
-                    }
-                }
-            }
-        }
     }
+}
+
+/** Lines of synopsis the hero shows before the rest has to be scrolled into view. */
+private const val HeroSynopsisMaxLines = 5
+
+/** Layer visibility above which a hero page counts as settled rather than mid-transition. */
+private const val HeroSettledVisibility = 0.99f
+
+/**
+ * How long an item has to hold the hero before its synopsis starts scrolling. Long enough that
+ * flicking through the carousel never sets anything in motion, and that the reader gets the visible
+ * lines on their own terms first.
+ */
+private const val HeroSynopsisScrollDelayMs = 4_000L
+
+/**
+ * Teleprompter speed. Deliberately expressed as a rate rather than a fixed duration so a
+ * twelve-line synopsis scrolls at the same readable pace as a six-line one — a fixed duration would
+ * make the long ones fly. At the hero's ~24dp line height this is roughly two seconds per line.
+ */
+internal const val HeroSynopsisScrollDpPerSecond = 12f
+
+/**
+ * Travel time for [overflowDp] of synopsis at the teleprompter's constant speed. Never zero: a
+ * synopsis that overflows by a single pixel still animates rather than jumping.
+ */
+internal fun heroSynopsisScrollDurationMs(overflowDp: Float): Int =
+    ((overflowDp / HeroSynopsisScrollDpPerSecond) * 1000f).roundToInt().coerceAtLeast(1)
+
+/** Depth of the soft edge that replaces a hard cut where the text enters and leaves the window. */
+private val HeroSynopsisFadeHeight = 16.dp
+
+/**
+ * The hero synopsis. When the text overflows [maxLines] and the item holds the hero for
+ * [HeroSynopsisScrollDelayMs], it scrolls up through a [maxLines]-tall window at a constant speed
+ * and stops the moment its last line is in view, the way a teleprompter would.
+ *
+ * The distance comes from the scroll state of the text that is actually on screen, never from a
+ * separate pre-measure. A pre-measured copy can disagree with the rendered one about where the
+ * lines break, and when it does the scroll runs past the end of the synopsis and parks the reader
+ * in front of blank space. Letting the layout system own both the window and the travel makes that
+ * disagreement impossible: [ScrollState.maxValue] is by definition "content minus window".
+ *
+ * The window is a cap, not a fixed height — a synopsis shorter than [maxLines] keeps its own
+ * height, scrolls nowhere, and pays for no offscreen layer.
+ */
+@Composable
+private fun HeroSynopsis(
+    text: String,
+    resetKey: String,
+    autoScroll: Boolean,
+    modifier: Modifier = Modifier,
+    maxLines: Int = HeroSynopsisMaxLines,
+) {
+    val style = MaterialTheme.typography.bodyLarge
+    val color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.82f)
+    val density = LocalDensity.current
+    val scrollState = remember(resetKey) { ScrollState(0) }
+
+    // The window opens at maxLines of the style's nominal line height — close enough that the first
+    // frame is never wrong by more than a pixel or two — and the first layout replaces it with
+    // either the real line boundary or no cap at all. Keeping the estimate as a standing fallback
+    // was worse than useless: where a font's real line box runs slightly taller than its nominal
+    // line height, an exactly-maxLines synopsis would report a few pixels of overflow and creep.
+    val estimatedWindowHeight = with(density) {
+        val lineHeight = if (style.lineHeight.isSpecified) {
+            style.lineHeight.toDp()
+        } else {
+            style.fontSize.toDp() * 1.5f
+        }
+        lineHeight * maxLines
+    }
+    var windowHeight by remember(resetKey) { mutableStateOf(estimatedWindowHeight) }
+
+    val overflowPx = scrollState.maxValue.takeIf { it != Int.MAX_VALUE } ?: 0
+    val hasOverflow = overflowPx > 0
+
+    LaunchedEffect(resetKey, autoScroll, overflowPx) {
+        scrollState.scrollTo(0)
+        if (!autoScroll || !hasOverflow) return@LaunchedEffect
+        delay(HeroSynopsisScrollDelayMs)
+        scrollState.animateScrollTo(
+            value = overflowPx,
+            animationSpec = tween(
+                durationMillis = heroSynopsisScrollDurationMs(
+                    overflowDp = with(density) { overflowPx.toDp().value },
+                ),
+                easing = LinearEasing,
+            ),
+        )
+    }
+
+    val fadeHeightPx = with(density) { HeroSynopsisFadeHeight.toPx() }
+    Text(
+        text = text,
+        style = style,
+        color = color,
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(max = windowHeight)
+            .then(
+                if (hasOverflow) {
+                    // The soft edges are punched out of the text with DstIn, which needs its own
+                    // layer — without one the blend would erase the backdrop behind the synopsis
+                    // instead of the synopsis itself.
+                    Modifier
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            val fade = fadeHeightPx.coerceAtMost(size.height / 3f)
+                            val scrolled = scrollState.value.toFloat()
+                            val enteringFromTop = (scrolled / fade).coerceIn(0f, 1f)
+                            val remainingBelow = ((overflowPx - scrolled) / fade).coerceIn(0f, 1f)
+                            if (enteringFromTop > 0f) {
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colorStops = arrayOf(
+                                            0f to Color.Black.copy(alpha = 1f - enteringFromTop),
+                                            fade / size.height to Color.Black,
+                                        ),
+                                    ),
+                                    blendMode = BlendMode.DstIn,
+                                )
+                            }
+                            if (remainingBelow > 0f) {
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colorStops = arrayOf(
+                                            1f - fade / size.height to Color.Black,
+                                            1f to Color.Black.copy(alpha = 1f - remainingBelow),
+                                        ),
+                                    ),
+                                    blendMode = BlendMode.DstIn,
+                                )
+                            }
+                        }
+                } else {
+                    Modifier
+                },
+            )
+            .verticalScroll(scrollState, enabled = false),
+        // The text is measured unbounded inside the scroll, so this always sees the whole synopsis
+        // rather than the capped view of it. Writing back an unchanged value is inert, so this
+        // settles on the first layout instead of looping.
+        onTextLayout = { layout ->
+            windowHeight = if (layout.lineCount > maxLines) {
+                with(density) { layout.getLineBottom(maxLines - 1).toDp() }
+            } else {
+                // Nothing to cap. A shorter synopsis keeps its own height rather than reserving
+                // five lines of empty space above the release footer.
+                Dp.Unspecified
+            }
+        },
+    )
 }
 
 private fun String.safeImageUrlForLog(): String = substringBefore('?').take(500)
@@ -2718,90 +2918,6 @@ private fun HeroDiscoveryAwardIcon(
         }
     }
 }
-
-@Composable
-private fun HeroDiscoveryFlagIcon(
-    languageCode: String,
-    modifier: Modifier = Modifier,
-) {
-    val palette = languageCode.heroDiscoveryFlagPalette()
-    if (palette == null) {
-        Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Text(
-                text = "\uD83C\uDF10",
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 20.sp, lineHeight = 20.sp),
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-            )
-        }
-        return
-    }
-
-    Canvas(modifier = modifier.fillMaxSize()) {
-        val flagWidth = size.width * 0.78f
-        val flagHeight = size.height * 0.56f
-        val left = (size.width - flagWidth) / 2f
-        val top = (size.height - flagHeight) / 2f
-        if (palette.vertical) {
-            val stripeWidth = flagWidth / palette.colors.size
-            palette.colors.forEachIndexed { index, color ->
-                drawRect(
-                    color = color,
-                    topLeft = Offset(left + stripeWidth * index, top),
-                    size = Size(stripeWidth + 0.5f, flagHeight),
-                )
-            }
-        } else {
-            val stripeHeight = flagHeight / palette.colors.size
-            palette.colors.forEachIndexed { index, color ->
-                drawRect(
-                    color = color,
-                    topLeft = Offset(left, top + stripeHeight * index),
-                    size = Size(flagWidth, stripeHeight + 0.5f),
-                )
-            }
-        }
-        drawRect(
-            color = Color.White.copy(alpha = 0.28f),
-            topLeft = Offset(left, top),
-            size = Size(flagWidth, 1.2f),
-        )
-    }
-}
-
-private data class HeroDiscoveryFlagPalette(
-    val colors: List<Color>,
-    val vertical: Boolean = false,
-)
-
-private fun String.heroDiscoveryFlagPalette(): HeroDiscoveryFlagPalette? =
-    when (trim().lowercase()) {
-        "es", "spa" -> HeroDiscoveryFlagPalette(listOf(Color(0xFFC60B1E), Color(0xFFFFC400), Color(0xFFC60B1E)))
-        "fr", "fre", "fra" -> HeroDiscoveryFlagPalette(listOf(Color(0xFF0055A4), Color.White, Color(0xFFEF4135)), vertical = true)
-        "de", "ger", "deu" -> HeroDiscoveryFlagPalette(listOf(Color.Black, Color(0xFFDD0000), Color(0xFFFFCE00)))
-        "it", "ita" -> HeroDiscoveryFlagPalette(listOf(Color(0xFF009246), Color.White, Color(0xFFCE2B37)), vertical = true)
-        "pt", "por" -> HeroDiscoveryFlagPalette(listOf(Color(0xFF006600), Color(0xFFFF0000)), vertical = true)
-        "ja", "jpn" -> HeroDiscoveryFlagPalette(listOf(Color.White, Color(0xFFBC002D), Color.White), vertical = true)
-        "ko", "kor" -> HeroDiscoveryFlagPalette(listOf(Color.White, Color(0xFFC60C30), Color(0xFF003478)), vertical = true)
-        "zh", "zho", "chi" -> HeroDiscoveryFlagPalette(listOf(Color(0xFFDE2910), Color(0xFFFFDE00), Color(0xFFDE2910)), vertical = true)
-        "da", "dan" -> HeroDiscoveryFlagPalette(listOf(Color(0xFFC60C30), Color.White, Color(0xFFC60C30)), vertical = true)
-        "sv", "swe" -> HeroDiscoveryFlagPalette(listOf(Color(0xFF006AA7), Color(0xFFFECC00), Color(0xFF006AA7)), vertical = true)
-        "no", "nor" -> HeroDiscoveryFlagPalette(listOf(Color(0xFFBA0C2F), Color.White, Color(0xFF00205B), Color.White, Color(0xFFBA0C2F)), vertical = true)
-        "fi", "fin" -> HeroDiscoveryFlagPalette(listOf(Color.White, Color(0xFF002F6C), Color.White), vertical = true)
-        "nl", "dut", "nld" -> HeroDiscoveryFlagPalette(listOf(Color(0xFFAE1C28), Color.White, Color(0xFF21468B)))
-        "pl", "pol" -> HeroDiscoveryFlagPalette(listOf(Color.White, Color(0xFFDC143C)))
-        "ru", "rus" -> HeroDiscoveryFlagPalette(listOf(Color.White, Color(0xFF0039A6), Color(0xFFD52B1E)))
-        "tr", "tur" -> HeroDiscoveryFlagPalette(listOf(Color(0xFFE30A17), Color.White, Color(0xFFE30A17)), vertical = true)
-        "ar", "ara" -> HeroDiscoveryFlagPalette(listOf(Color(0xFF006C35), Color.White, Color(0xFF006C35)), vertical = true)
-        "hi", "hin" -> HeroDiscoveryFlagPalette(listOf(Color(0xFFFF9933), Color.White, Color(0xFF138808)))
-        "fa", "per", "fas" -> HeroDiscoveryFlagPalette(listOf(Color(0xFF239F40), Color.White, Color(0xFFDA0000)))
-        "ro", "rum", "ron" -> HeroDiscoveryFlagPalette(listOf(Color(0xFF002B7F), Color(0xFFFCD116), Color(0xFFCE1126)), vertical = true)
-        "hu", "hun" -> HeroDiscoveryFlagPalette(listOf(Color(0xFFCE2939), Color.White, Color(0xFF477050)))
-        "cs", "cze", "ces" -> HeroDiscoveryFlagPalette(listOf(Color.White, Color(0xFFD7141A), Color(0xFF11457E)), vertical = true)
-        "he", "heb" -> HeroDiscoveryFlagPalette(listOf(Color.White, Color(0xFF0038B8), Color.White))
-        "el", "gre", "ell" -> HeroDiscoveryFlagPalette(listOf(Color(0xFF0D5EAF), Color.White, Color(0xFF0D5EAF)))
-        else -> null
-    }
 
 private fun List<HeroDiscoveryFact>.heroVisibleAwardFacts(): List<HeroDiscoveryFact> =
     heroVisibleAwardFacts(HERO_DISCOVERY_MAX_VISIBLE_BADGES)

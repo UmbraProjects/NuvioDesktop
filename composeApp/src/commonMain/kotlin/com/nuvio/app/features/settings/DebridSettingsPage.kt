@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioDialogSurface
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.debrid.DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT
 import com.nuvio.app.features.debrid.DebridCredentialValidator
 import com.nuvio.app.features.debrid.DebridDeviceAuthorization
@@ -714,7 +715,7 @@ private fun DebridTemplateDialog(
                 onValueChange = { draft = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .trackSettingsTextFocus()
+                    .trackTextInputFocus()
                     .heightIn(min = 140.dp, max = 280.dp),
                 minLines = 5,
                 colors = OutlinedTextFieldDefaults.colors(
@@ -1174,7 +1175,7 @@ private fun DebridTextListDialog(
                 onValueChange = { value = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .trackSettingsTextFocus()
+                    .trackTextInputFocus()
                     .heightIn(min = 120.dp),
                 minLines = 4,
                 colors = OutlinedTextFieldDefaults.colors(
@@ -1212,7 +1213,7 @@ private fun DebridDialogSurface(
 ) {
     NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
@@ -1779,7 +1780,7 @@ private fun DebridApiKeyDialog(
                     draft = it
                     validationMessage = null
                 },
-                modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
+                modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
                 singleLine = true,
                 placeholder = { Text(placeholder) },
                 colors = OutlinedTextFieldDefaults.colors(

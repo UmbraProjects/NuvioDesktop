@@ -39,6 +39,7 @@ internal object SimklWatchedRepository {
 
 internal fun SimklAllItemsResponse.toWatchedItems(): List<WatchedItem> = buildList {
     movies.forEach { entry ->
+        if (entry.isRewatch) return@forEach
         val movie = entry.movie ?: return@forEach
         val watchedAt = entry.lastWatchedAt ?: return@forEach
         val id = if (movie.ids.isKnownAnime()) {
@@ -59,6 +60,7 @@ internal fun SimklAllItemsResponse.toWatchedItems(): List<WatchedItem> = buildLi
     }
 
     fun addEpisodes(entry: SimklAllItemsEntry, anime: Boolean) {
+        if (entry.isRewatch) return
         val show = (if (anime) entry.anime else entry.show) ?: return
         val id = (if (anime) show.ids.toBestAnimeContentId() else show.ids.toBestContentId())
             ?: return
@@ -67,11 +69,15 @@ internal fun SimklAllItemsResponse.toWatchedItems(): List<WatchedItem> = buildLi
             season.episodes.forEach { episode ->
                 val watchedAt = episode.watchedAt ?: return@forEach
                 val rawEpisode = episode.number ?: return@forEach
-                val (seasonNumber, episodeNumber) = if (anime) {
-                    show.ids.toCanonicalAnimeEpisode(rawSeason, rawEpisode)
-                } else {
-                    rawSeason to rawEpisode
-                }
+                val (seasonNumber, episodeNumber) = show.ids.episodeCoordinatesFor(
+                    contentId = id,
+                    isAnime = anime,
+                    entrySeason = rawSeason,
+                    entryEpisode = rawEpisode,
+                    // SIMKL's own franchise (TVDB) coordinates — see SimklEpisodeTvdbMapping.
+                    franchiseSeason = episode.tvdb?.season,
+                    franchiseEpisode = episode.tvdb?.episode,
+                )
                 add(
                     WatchedItem(
                         id = id,

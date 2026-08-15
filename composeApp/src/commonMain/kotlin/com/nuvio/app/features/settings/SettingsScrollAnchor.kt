@@ -47,6 +47,7 @@ internal object SettingsScrollAnchor {
     const val MouseMove = "mouse_move"
     const val SourceNotch = "source_notch"
     const val DefaultSpeed = "default_speed"
+    const val SpeedToggle = "speed_toggle"
     const val BingeMode = "binge_mode"
     const val ExtraLargePosters = "extra_large_posters"
     const val BufferPreset = "buffer_preset"

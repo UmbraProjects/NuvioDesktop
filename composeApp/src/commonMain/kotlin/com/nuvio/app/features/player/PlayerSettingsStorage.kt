@@ -19,6 +19,10 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopPauseOverlaySourceEnabled(enabled: Boolean)
     fun loadDesktopPlaybackSpeedFineIncrementsEnabled(): Boolean?
     fun saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean)
+    fun loadPlaybackSpeedToggleLow(): Float?
+    fun savePlaybackSpeedToggleLow(speed: Float)
+    fun loadPlaybackSpeedToggleHigh(): Float?
+    fun savePlaybackSpeedToggleHigh(speed: Float)
     fun loadDesktopVerboseMpvLoggingEnabled(): Boolean?
     fun saveDesktopVerboseMpvLoggingEnabled(enabled: Boolean)
     fun loadDesktopUiScalePercent(): Int?
@@ -41,6 +45,8 @@ internal expect object PlayerSettingsStorage {
     fun saveSecondaryPreferredSubtitleLanguage(language: String?)
     fun loadDualSubtitlesEnabled(): Boolean?
     fun saveDualSubtitlesEnabled(enabled: Boolean)
+    fun loadPreferHearingImpairedSubtitles(): Boolean?
+    fun savePreferHearingImpairedSubtitles(enabled: Boolean)
     fun loadSubtitleTextColor(): String?
     fun saveSubtitleTextColor(colorHex: String)
     fun loadSubtitleBackgroundColor(): String?
@@ -198,6 +204,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopBufferPreset(preset: String)
     fun loadDesktopRendererApi(): String?
     fun saveDesktopRendererApi(api: String)
+    fun loadDesktopLowVramMode(): String?
+    fun saveDesktopLowVramMode(mode: String)
     fun loadDesktopAnimeMode(): String?
     fun saveDesktopAnimeMode(mode: String)
     fun loadHeroTvTrailerEnabled(): Boolean?

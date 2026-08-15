@@ -117,6 +117,37 @@ class HomeScreenTest {
     }
 
     @Test
+    fun `continue watching rows remain combined when separation is disabled`() {
+        val resume = continueWatchingItem("show:1:4", "S1E4").copy(isNextUp = false)
+        val next = continueWatchingItem("show:1:5", "Up Next - S1E5")
+        val items = listOf(next, resume)
+
+        val (continueWatching, nextUp) = splitContinueWatchingRows(
+            items = items,
+            separateNextUpRow = false,
+        )
+
+        assertEquals(items, continueWatching)
+        assertTrue(nextUp.isEmpty())
+    }
+
+    @Test
+    fun `continue watching rows split next up items while preserving row order`() {
+        val resumeOne = continueWatchingItem("first:1:4", "S1E4").copy(isNextUp = false)
+        val nextOne = continueWatchingItem("second:1:5", "Up Next - S1E5")
+        val resumeTwo = continueWatchingItem("third:1:2", "S1E2").copy(isNextUp = false)
+        val nextTwo = continueWatchingItem("fourth:2:1", "Up Next - S2E1")
+
+        val (continueWatching, nextUp) = splitContinueWatchingRows(
+            items = listOf(resumeOne, nextOne, resumeTwo, nextTwo),
+            separateNextUpRow = true,
+        )
+
+        assertEquals(listOf(resumeOne, resumeTwo), continueWatching)
+        assertEquals(listOf(nextOne, nextTwo), nextUp)
+    }
+
+    @Test
     fun `build home continue watching items removes duplicate video ids`() {
         val inProgress = progressEntry(
             videoId = "tt0944947:1:4",

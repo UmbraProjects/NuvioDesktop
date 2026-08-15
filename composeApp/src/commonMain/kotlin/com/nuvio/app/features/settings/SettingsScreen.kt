@@ -95,6 +95,7 @@ import androidx.compose.ui.unit.max
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.build.AppVersionConfig
 import com.nuvio.app.core.ui.AppTheme
+import com.nuvio.app.core.ui.TextInputFocusTracker
 import com.nuvio.app.core.ui.labelRes
 import com.nuvio.app.core.ui.LocalNuvioBottomNavigationOverlayPadding
 import com.nuvio.app.core.ui.NuvioScreen
@@ -235,7 +236,7 @@ fun SettingsScreen(
     var settingsSearchHasFocus by remember { mutableStateOf(false) }
     // Any editable field on the page (e.g. a Local Library catalog name) suppresses the shortcut so
     // typing "H" doesn't jump to Home. The search bar keeps its own flag for the same reason.
-    val textInputActive by SettingsTextInputTracker.active.collectAsStateWithLifecycle()
+    val textInputActive by TextInputFocusTracker.active.collectAsStateWithLifecycle()
     // H returns to the home tab. onKeyEvent (bubble phase) so settings text fields,
     // which consume their own keystrokes, are never disrupted.
     val homeKeyModifier = if (isDesktop && onNavigateToHome != null) {
@@ -414,7 +415,7 @@ fun SettingsScreen(
         LaunchedEffect(page) {
             // Leaving a page drops any text-input shortcut lock, so a field left focused (e.g. a
             // catalog name box) can't keep navigation shortcuts suppressed on the next page.
-            SettingsTextInputTracker.reset()
+            TextInputFocusTracker.reset()
             if (!page.isEnabledByFeaturePolicy()) {
                 currentPage = SettingsPage.Addons.name
             }
@@ -925,9 +926,11 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                     isVisible = continueWatchingPreferencesUiState.isVisible,
                     style = continueWatchingPreferencesUiState.style,
+                    clickAction = continueWatchingPreferencesUiState.clickAction,
                     upNextFromFurthestEpisode = continueWatchingPreferencesUiState.upNextFromFurthestEpisode,
                     useEpisodeThumbnails = continueWatchingPreferencesUiState.useEpisodeThumbnails,
                     showUnairedNextUp = continueWatchingPreferencesUiState.showUnairedNextUp,
+                    separateNextUpRow = continueWatchingPreferencesUiState.separateNextUpRow,
                     blurNextUp = continueWatchingPreferencesUiState.blurNextUp,
                     showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
                     sortMode = continueWatchingPreferencesUiState.sortMode,
@@ -1503,9 +1506,11 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         isVisible = continueWatchingPreferencesUiState.isVisible,
                         style = continueWatchingPreferencesUiState.style,
+                        clickAction = continueWatchingPreferencesUiState.clickAction,
                         upNextFromFurthestEpisode = continueWatchingPreferencesUiState.upNextFromFurthestEpisode,
                         useEpisodeThumbnails = continueWatchingPreferencesUiState.useEpisodeThumbnails,
                         showUnairedNextUp = continueWatchingPreferencesUiState.showUnairedNextUp,
+                        separateNextUpRow = continueWatchingPreferencesUiState.separateNextUpRow,
                         blurNextUp = continueWatchingPreferencesUiState.blurNextUp,
                         showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
                         sortMode = continueWatchingPreferencesUiState.sortMode,

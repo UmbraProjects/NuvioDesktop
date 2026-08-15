@@ -540,7 +540,12 @@ private fun String.episodeSuffix(): Pair<Int?, Int?>? {
     return suffixSeason to suffixEpisode
 }
 
-private fun String.hasNativeAnimePrefix(): Boolean =
+/**
+ * Id namespaces that address **one anime-list entry** rather than a franchise, and therefore carry
+ * entry-local episode coordinates. `simkl:` joins the anime namespaces here because a SIMKL anime
+ * entry is per-season too — its season is 1 whatever season of the franchise it really is.
+ */
+internal fun String.hasNativeAnimePrefix(): Boolean =
     hasAnimeNamespacePrefix() || startsWith("simkl:", ignoreCase = true)
 
 /** Anime-only id namespaces (unlike simkl:, these prefixes imply anime content). */

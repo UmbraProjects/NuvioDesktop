@@ -3108,12 +3108,22 @@ svg {
 }
 #episodesModal .track-header-row { padding: 12px 22px 8px; }
 #episodesModal .track-title { font-size: 15px; }
+/* Long-running shows (Survivor: 40+ seasons) overflow the strip, so it scrolls horizontally like
+   the episode rail below it. position:relative makes chip.offsetLeft row-relative for the
+   scroll-into-view math in controls.js; the bar itself stays hidden since wheel/drag drive it. */
 #episodesModal .filter-row {
+  position: relative;
   min-height: 34px;
   padding: 0 22px 8px;
-  overflow: hidden;
+  overflow: auto hidden;
+  scrollbar-width: none;
+  scroll-behavior: auto;
+  cursor: grab;
 }
+#episodesModal .filter-row::-webkit-scrollbar { display: none; }
+#episodesModal .filter-row.is-dragging { cursor: grabbing; }
 #episodesModal .filter-chip {
+  flex: 0 0 auto;
   min-height: 30px;
   padding: 5px 2px;
   border: 0;
@@ -3521,6 +3531,45 @@ svg {
 #sourceModal .track-row.selected {
   background: var(--theme-selected-surface);
   border-color: var(--theme-selected-ring);
+}
+#subtitleModal .track-row.selected {
+  box-shadow: inset 0 0 0 1px var(--theme-focus), 0 0 0 1px rgba(158, 202, 255, .2);
+}
+#subtitleModal .subtitle-track-row {
+  min-height: 58px;
+}
+#subtitleModal .subtitle-track-detail {
+  font-style: normal;
+}
+#subtitleModal .addon-subtitle-row {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+#subtitleModal .subtitle-download-button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  flex: 0 0 38px;
+  place-items: center;
+  align-self: center;
+  border-radius: 4px;
+  color: rgba(255,255,255,.78);
+}
+#subtitleModal .subtitle-download-button:hover:not(:disabled),
+#subtitleModal .subtitle-download-button:focus-visible {
+  background: rgba(255,255,255,.12);
+  color: #fff;
+  outline: 1px solid var(--theme-focus);
+}
+#subtitleModal .subtitle-download-button:disabled { opacity: .62; }
+#subtitleModal .subtitle-download-button svg { width: 21px; height: 21px; fill: currentColor; }
+#subtitleModal .subtitle-download-spinner {
+  width: 17px;
+  height: 17px;
+  border: 2px solid rgba(255,255,255,.28);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: center-spin 760ms linear infinite;
 }
 #subtitleModal .subtitle-tabs,
 #sourceModal .filter-row {

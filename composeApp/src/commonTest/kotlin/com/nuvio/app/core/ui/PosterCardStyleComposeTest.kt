@@ -24,4 +24,46 @@ class PosterCardStyleComposeTest {
             ).hideLabelsEnabled,
         )
     }
+
+    @Test
+    fun `collections keep portrait posters when the opt-out is on`() {
+        assertFalse(
+            effectiveHomePosterCardStyle(
+                base = PosterCardStyleUiState(
+                    catalogLandscapeModeEnabled = true,
+                    collectionsPortraitPostersEnabled = true,
+                ),
+                tvModeEnabled = false,
+                isCollectionsSurface = true,
+            ).catalogLandscapeModeEnabled,
+        )
+    }
+
+    @Test
+    fun `collections follow landscape mode when the opt-out is off`() {
+        assertTrue(
+            effectiveHomePosterCardStyle(
+                base = PosterCardStyleUiState(
+                    catalogLandscapeModeEnabled = true,
+                    collectionsPortraitPostersEnabled = false,
+                ),
+                tvModeEnabled = false,
+                isCollectionsSurface = true,
+            ).catalogLandscapeModeEnabled,
+        )
+    }
+
+    @Test
+    fun `non collection surfaces ignore the collections portrait opt-out`() {
+        assertTrue(
+            effectiveHomePosterCardStyle(
+                base = PosterCardStyleUiState(
+                    catalogLandscapeModeEnabled = true,
+                    collectionsPortraitPostersEnabled = true,
+                ),
+                tvModeEnabled = false,
+                isCollectionsSurface = false,
+            ).catalogLandscapeModeEnabled,
+        )
+    }
 }

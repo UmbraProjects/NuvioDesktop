@@ -69,6 +69,20 @@ internal object ContinueWatchingEnrichmentCache {
     private val _cacheCleared = MutableStateFlow(0)
     val cacheCleared: StateFlow<Int> = _cacheCleared.asStateFlow()
 
+    private val _artworkRefreshRequests = MutableStateFlow(0)
+
+    /**
+     * Bumped by the manual Continue Watching resync. Home watches it to re-resolve Up Next cards
+     * whose artwork is still incomplete, bypassing the meta LRU — an episode still can gain a
+     * thumbnail hours after it airs, and the cached card would otherwise keep the blank one until
+     * the seed changes.
+     */
+    val artworkRefreshRequests: StateFlow<Int> = _artworkRefreshRequests.asStateFlow()
+
+    fun requestArtworkRefresh() {
+        _artworkRefreshRequests.value += 1
+    }
+
     fun getNextUpSnapshot(): List<CachedNextUpItem> =
         loadPayload()?.nextUp ?: emptyList()
 

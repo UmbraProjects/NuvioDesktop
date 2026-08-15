@@ -28,9 +28,11 @@ import com.nuvio.app.core.sync.SynchronizationPreferencesRepository
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.NuvioSurfaceCard
+import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsSyncService
 import com.nuvio.app.features.updater.AppUpdaterPlatform
+import com.nuvio.app.isDesktop
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
@@ -47,6 +49,12 @@ import nuvio.composeapp.generated.resources.settings_account_sign_out_confirm_ti
 import nuvio.composeapp.generated.resources.settings_account_status
 import nuvio.composeapp.generated.resources.settings_account_status_anonymous
 import nuvio.composeapp.generated.resources.settings_account_status_signed_in
+import nuvio.composeapp.generated.resources.settings_backup_saved
+import nuvio.composeapp.generated.resources.settings_backup_section
+import nuvio.composeapp.generated.resources.settings_backup_with_credentials
+import nuvio.composeapp.generated.resources.settings_backup_with_credentials_description
+import nuvio.composeapp.generated.resources.settings_backup_without_credentials
+import nuvio.composeapp.generated.resources.settings_backup_without_credentials_description
 import nuvio.composeapp.generated.resources.settings_sync_appearance
 import nuvio.composeapp.generated.resources.settings_sync_appearance_description
 import nuvio.composeapp.generated.resources.settings_sync_content_preferences
@@ -295,6 +303,50 @@ private fun AccountSettingsBody(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        if (isDesktop) {
+            SettingsSection(
+                title = stringResource(Res.string.settings_backup_section),
+                isTablet = isTablet,
+            ) {
+                val savedMessage = stringResource(Res.string.settings_backup_saved)
+                SettingsGroup(isTablet = isTablet) {
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_backup_without_credentials),
+                        description = stringResource(Res.string.settings_backup_without_credentials_description),
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("backup-settings")),
+                        onClick = {
+                            when (val result = DesktopSettingsBackup.create(includeCredentials = false)) {
+                                is DesktopSettingsBackupResult.Saved ->
+                                    NuvioToastController.show("$savedMessage ${result.path}")
+                                is DesktopSettingsBackupResult.Failed ->
+                                    NuvioToastController.show(result.message)
+                                DesktopSettingsBackupResult.Cancelled -> Unit
+                            }
+                        },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_backup_with_credentials),
+                        description = stringResource(Res.string.settings_backup_with_credentials_description),
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("backup-settings-credentials"),
+                        ),
+                        onClick = {
+                            when (val result = DesktopSettingsBackup.create(includeCredentials = true)) {
+                                is DesktopSettingsBackupResult.Saved ->
+                                    NuvioToastController.show("$savedMessage ${result.path}")
+                                is DesktopSettingsBackupResult.Failed ->
+                                    NuvioToastController.show(result.message)
+                                DesktopSettingsBackupResult.Cancelled -> Unit
+                            }
+                        },
+                    )
+                }
+            }
         }
 
         SettingsSection(

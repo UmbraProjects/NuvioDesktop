@@ -58,6 +58,10 @@ data class PlayerSettingsUiState(
     // When true, the desktop speed button / speed keyboard shortcuts step by 0.1 instead of
     // jumping between the coarse preset stages (1, 1.25, 1.5, 2, 3, 4).
     val desktopPlaybackSpeedFineIncrementsEnabled: Boolean = false,
+    // The two speeds the "Toggle playback speed" shortcut flips between. Both are user-set, so the
+    // pair can be 1.2 / 1.6 just as well as the 1x / 2x default.
+    val playbackSpeedToggleLow: Float = 1f,
+    val playbackSpeedToggleHigh: Float = 2f,
     // When true, mpv writes its full verbose log to logs/mpv-verbose.log (via the mpv --log-file
     // option) for troubleshooting, instead of the bridge's normal warnings-only capture.
     val desktopVerboseMpvLoggingEnabled: Boolean = false,
@@ -72,6 +76,7 @@ data class PlayerSettingsUiState(
     val preferredSubtitleLanguage: String = SubtitleLanguageOption.NONE,
     val secondaryPreferredSubtitleLanguage: String? = null,
     val dualSubtitlesEnabled: Boolean = false,
+    val preferHearingImpairedSubtitles: Boolean = false,
     val subtitleStyle: SubtitleStyleState = SubtitleStyleState.DEFAULT,
     val addonSubtitleStartupMode: AddonSubtitleStartupMode = AddonSubtitleStartupMode.ALL_SUBTITLES,
     // Track kinds ruled out by name — signs/songs/karaoke/forced subtitles, commentary and
@@ -129,6 +134,7 @@ data class PlayerSettingsUiState(
     val desktopColorProfile: DesktopColorProfile = DesktopColorProfile.Neutral,
     val desktopBufferPreset: DesktopBufferPreset = DesktopBufferPreset.Balanced,
     val desktopRendererApi: DesktopRendererApi = DesktopRendererApi.OpenGL,
+    val desktopLowVramMode: DesktopLowVramMode = DesktopLowVramMode.Auto,
     val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Off,
     val desktopAnimeModeAutoEnabled: Boolean = false,
     val desktopAnimeSvpEnabled: Boolean = false,
@@ -172,6 +178,8 @@ object PlayerSettingsRepository {
     private var desktopAlwaysShowClockEnabled = false
     private var desktopPauseOverlaySourceEnabled = false
     private var desktopPlaybackSpeedFineIncrementsEnabled = false
+    private var playbackSpeedToggleLow = 1f
+    private var playbackSpeedToggleHigh = 2f
     private var desktopVerboseMpvLoggingEnabled = false
     private var desktopUiScalePercent = 0
     private var desktopSourceNotchPosition = DesktopSourceNotchPosition.Right
@@ -183,6 +191,7 @@ object PlayerSettingsRepository {
     private var preferredSubtitleLanguage = SubtitleLanguageOption.NONE
     private var secondaryPreferredSubtitleLanguage: String? = null
     private var dualSubtitlesEnabled = false
+    private var preferHearingImpairedSubtitles = false
     private var subtitleStyle = SubtitleStyleState.DEFAULT
     private var addonSubtitleStartupMode = AddonSubtitleStartupMode.ALL_SUBTITLES
     private var rejectedSubtitleKeywords: Set<SubtitleRejectKeyword> = emptySet()
@@ -235,6 +244,7 @@ object PlayerSettingsRepository {
     private var desktopColorProfile = DesktopColorProfile.Neutral
     private var desktopBufferPreset = DesktopBufferPreset.Balanced
     private var desktopRendererApi = DesktopRendererApi.OpenGL
+    private var desktopLowVramMode = DesktopLowVramMode.Auto
     private var desktopAnimeMode = DesktopAnimeMode.Off
     private var desktopAnimeModeAutoEnabled = false
     private var desktopAnimeSvpEnabled = false
@@ -274,6 +284,8 @@ object PlayerSettingsRepository {
         desktopAlwaysShowClockEnabled = false
         desktopPauseOverlaySourceEnabled = false
         desktopPlaybackSpeedFineIncrementsEnabled = false
+        playbackSpeedToggleLow = 1f
+        playbackSpeedToggleHigh = 2f
         desktopVerboseMpvLoggingEnabled = false
         desktopUiScalePercent = 0
         desktopSourceNotchPosition = DesktopSourceNotchPosition.Right
@@ -285,6 +297,7 @@ object PlayerSettingsRepository {
         preferredSubtitleLanguage = SubtitleLanguageOption.NONE
         secondaryPreferredSubtitleLanguage = null
         dualSubtitlesEnabled = false
+        preferHearingImpairedSubtitles = false
         subtitleStyle = SubtitleStyleState.DEFAULT
         addonSubtitleStartupMode = AddonSubtitleStartupMode.ALL_SUBTITLES
         rejectedSubtitleKeywords = emptySet()
@@ -337,6 +350,7 @@ object PlayerSettingsRepository {
         desktopColorProfile = DesktopColorProfile.Neutral
         desktopBufferPreset = DesktopBufferPreset.Balanced
         desktopRendererApi = DesktopRendererApi.OpenGL
+        desktopLowVramMode = DesktopLowVramMode.Auto
         desktopAnimeMode = DesktopAnimeMode.Off
         desktopAnimeModeAutoEnabled = false
         desktopAnimeSvpEnabled = false
@@ -371,6 +385,12 @@ object PlayerSettingsRepository {
         desktopPauseOverlaySourceEnabled = PlayerSettingsStorage.loadDesktopPauseOverlaySourceEnabled() ?: false
         desktopPlaybackSpeedFineIncrementsEnabled =
             PlayerSettingsStorage.loadDesktopPlaybackSpeedFineIncrementsEnabled() ?: false
+        val toggleRange = normalizePlaybackSpeedToggleRange(
+            low = PlayerSettingsStorage.loadPlaybackSpeedToggleLow() ?: 1f,
+            high = PlayerSettingsStorage.loadPlaybackSpeedToggleHigh() ?: 2f,
+        )
+        playbackSpeedToggleLow = toggleRange.first
+        playbackSpeedToggleHigh = toggleRange.second
         desktopVerboseMpvLoggingEnabled = PlayerSettingsStorage.loadDesktopVerboseMpvLoggingEnabled() ?: false
         desktopUiScalePercent = (PlayerSettingsStorage.loadDesktopUiScalePercent() ?: 0).coerceIn(-50, 50)
         desktopSourceNotchPosition = DesktopSourceNotchPosition.fromStorage(
@@ -391,6 +411,8 @@ object PlayerSettingsRepository {
         secondaryPreferredSubtitleLanguage =
             normalizeLanguageCode(PlayerSettingsStorage.loadSecondaryPreferredSubtitleLanguage())
         dualSubtitlesEnabled = PlayerSettingsStorage.loadDualSubtitlesEnabled() ?: false
+        preferHearingImpairedSubtitles =
+            PlayerSettingsStorage.loadPreferHearingImpairedSubtitles() ?: false
         subtitleStyle = SubtitleStyleState(
             textColor = subtitleColorFromStorage(PlayerSettingsStorage.loadSubtitleTextColor())
                 ?: SubtitleStyleState.DEFAULT.textColor,
@@ -529,6 +551,9 @@ object PlayerSettingsRepository {
         desktopRendererApi = PlayerSettingsStorage.loadDesktopRendererApi()
             ?.let { runCatching { DesktopRendererApi.valueOf(it) }.getOrNull() }
             ?: DesktopRendererApi.OpenGL
+        desktopLowVramMode = PlayerSettingsStorage.loadDesktopLowVramMode()
+            ?.let { runCatching { DesktopLowVramMode.valueOf(it) }.getOrNull() }
+            ?: DesktopLowVramMode.Auto
         val storedAnimeMode = PlayerSettingsStorage.loadDesktopAnimeMode()
         if (storedAnimeMode == "Auto") {
             // Migrate: old "Auto" = Optimized preset + auto-detect on.
@@ -638,6 +663,22 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled)
     }
 
+    /**
+     * The two ends of the speed-toggle range. Written together because they are one control: the
+     * shortcut needs low < high to have anything to flip between, so the pair is normalised here
+     * rather than trusting either caller or a hand-edited prefs file.
+     */
+    fun setPlaybackSpeedToggleRange(low: Float, high: Float) {
+        ensureLoaded()
+        val (nextLow, nextHigh) = normalizePlaybackSpeedToggleRange(low, high)
+        if (playbackSpeedToggleLow == nextLow && playbackSpeedToggleHigh == nextHigh) return
+        playbackSpeedToggleLow = nextLow
+        playbackSpeedToggleHigh = nextHigh
+        publish()
+        PlayerSettingsStorage.savePlaybackSpeedToggleLow(nextLow)
+        PlayerSettingsStorage.savePlaybackSpeedToggleHigh(nextHigh)
+    }
+
     fun setDesktopVerboseMpvLoggingEnabled(enabled: Boolean) {
         ensureLoaded()
         if (desktopVerboseMpvLoggingEnabled == enabled) return
@@ -738,6 +779,14 @@ object PlayerSettingsRepository {
         dualSubtitlesEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDualSubtitlesEnabled(enabled)
+    }
+
+    fun setPreferHearingImpairedSubtitles(enabled: Boolean) {
+        ensureLoaded()
+        if (preferHearingImpairedSubtitles == enabled) return
+        preferHearingImpairedSubtitles = enabled
+        publish()
+        PlayerSettingsStorage.savePreferHearingImpairedSubtitles(enabled)
     }
 
     fun setSubtitleStyle(style: SubtitleStyleState) {
@@ -1197,6 +1246,8 @@ object PlayerSettingsRepository {
             desktopAlwaysShowClockEnabled = desktopAlwaysShowClockEnabled,
             desktopPauseOverlaySourceEnabled = desktopPauseOverlaySourceEnabled,
             desktopPlaybackSpeedFineIncrementsEnabled = desktopPlaybackSpeedFineIncrementsEnabled,
+            playbackSpeedToggleLow = playbackSpeedToggleLow,
+            playbackSpeedToggleHigh = playbackSpeedToggleHigh,
             desktopVerboseMpvLoggingEnabled = desktopVerboseMpvLoggingEnabled,
             desktopUiScalePercent = desktopUiScalePercent,
             desktopSourceNotchPosition = desktopSourceNotchPosition,
@@ -1208,6 +1259,7 @@ object PlayerSettingsRepository {
             preferredSubtitleLanguage = preferredSubtitleLanguage,
             secondaryPreferredSubtitleLanguage = secondaryPreferredSubtitleLanguage,
             dualSubtitlesEnabled = dualSubtitlesEnabled,
+            preferHearingImpairedSubtitles = preferHearingImpairedSubtitles,
             subtitleStyle = subtitleStyle,
             addonSubtitleStartupMode = addonSubtitleStartupMode,
             rejectedSubtitleKeywords = rejectedSubtitleKeywords,
@@ -1260,6 +1312,7 @@ object PlayerSettingsRepository {
             desktopColorProfile = desktopColorProfile,
             desktopBufferPreset = desktopBufferPreset,
             desktopRendererApi = desktopRendererApi,
+            desktopLowVramMode = desktopLowVramMode,
             desktopAnimeMode = desktopAnimeMode,
             desktopAnimeModeAutoEnabled = desktopAnimeModeAutoEnabled,
             desktopAnimeSvpEnabled = desktopAnimeSvpEnabled,
@@ -1311,6 +1364,15 @@ object PlayerSettingsRepository {
         desktopRendererApi = api
         publish()
         PlayerSettingsStorage.saveDesktopRendererApi(api.name)
+    }
+
+    /** Takes effect on the next playback: the pipeline it trims is set up before mpv initialises. */
+    fun setDesktopLowVramMode(mode: DesktopLowVramMode) {
+        ensureLoaded()
+        if (desktopLowVramMode == mode) return
+        desktopLowVramMode = mode
+        publish()
+        PlayerSettingsStorage.saveDesktopLowVramMode(mode.name)
     }
 
     fun setDesktopAnimeMode(mode: DesktopAnimeMode) {

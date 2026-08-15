@@ -38,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +68,7 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
@@ -381,6 +383,12 @@ fun NuvioPosterCard(
     showTitleBelow: Boolean = true,
     bottomLeftLogoUrl: String? = null,
     bottomLeftText: String? = null,
+    /**
+     * Pre-formatted rating shown in the artwork's bottom-right corner, or null for no badge.
+     * Callers own both the formatting and the "is this row's rating worth showing" decision —
+     * see [com.nuvio.app.features.home.components.posterRatingBadgeText].
+     */
+    ratingBadgeText: String? = null,
     artworkContent: (@Composable BoxScope.() -> Unit)? = null,
     isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
@@ -398,7 +406,10 @@ fun NuvioPosterCard(
         basePosterWidthDp = basePosterWidthDp,
         shape = shape,
     )
+    val ratingBadgeMetrics = posterRatingBadgeMetrics(basePosterWidthDp = basePosterWidthDp)
     val hasArtwork = imageUrl != null || artworkContent != null
+    // Hoisted above the card Box so the long-press anchor can read it — see posterCardClickable.
+    var currentUrl by remember(imageUrl, fallbackImageUrl) { mutableStateOf(imageUrl) }
     val shouldShowTitleBelow = showTitleBelow && !posterCardStyle.hideLabelsEnabled
     // Upstream's 14sp label is balanced around its 126dp poster. This fork supports much larger
     // posters, so scale gently by the square root of the size ratio. The tight clamp preserves
@@ -443,15 +454,19 @@ fun NuvioPosterCard(
                 .posterCardClickable(
                     onClick = onClick,
                     onLongClick = onLongClick,
-                    zoomImageUrl = imageUrl,
+                    // The URL actually on screen, not the one first asked for: a custom poster
+                    // service (PostersPlus/RPDB) has no art for every title, and the long-press
+                    // preview must lift the poster the user is looking at rather than re-request
+                    // the 404 this card already fell back from.
+                    zoomImageUrl = currentUrl,
+                    zoomFallbackImageUrl = fallbackImageUrl,
                     zoomCornerRadius = posterCardStyle.cornerRadiusDp.dp,
                 ),
             contentAlignment = Alignment.Center,
         ) {
             if (artworkContent != null) {
                 artworkContent()
-            } else if (imageUrl != null) {
-                var currentUrl by remember(imageUrl, fallbackImageUrl) { mutableStateOf(imageUrl) }
+            } else if (currentUrl != null) {
                 NuvioAsyncImage(
                     model = currentUrl,
                     contentDescription = title,
@@ -517,10 +532,33 @@ fun NuvioPosterCard(
                             color = tokens.colors.textPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.widthIn(max = catalogLogoOverlaySize.textMaxWidth),
+                            // A text title is the only bottom-left overlay wide enough to reach the
+                            // badge on a narrow landscape card, so it yields the badge's width and
+                            // ellipsizes rather than running underneath it. Logos are already
+                            // narrow enough to clear it at every preset.
+                            modifier = Modifier.widthIn(
+                                max = catalogLogoOverlaySize.textMaxWidth - if (ratingBadgeText.isNullOrBlank()) {
+                                    NuvioTokens.Space.none
+                                } else {
+                                    ratingBadgeMetrics.reservedWidth
+                                },
+                            ),
                         )
                     }
                 }
+            }
+
+            // Carries its own scrim rather than relying on the bottom gradient above: that gradient
+            // is only drawn when the card has a title overlay, and the badge must stay readable on
+            // cards whose labels are hidden (TV Mode) or whose row supplied no logo.
+            if (hasArtwork && !ratingBadgeText.isNullOrBlank()) {
+                NuvioPosterRatingBadge(
+                    text = ratingBadgeText,
+                    metrics = ratingBadgeMetrics,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(NuvioTokens.Space.s8),
+                )
             }
 
             NuvioPosterWatchedOverlay(isWatched = isWatched)
@@ -683,6 +721,106 @@ private val NuvioPosterShape.aspectRatio: Float
         NuvioPosterShape.Landscape -> PosterLandscapeAspectRatio
     }
 
+/**
+ * Source-neutral on purpose. Catalog rows carry whatever score their provider shipped — IMDb from
+ * Cinemeta and the synced library, TMDB's vote average from the TMDB-backed rows — so the badge
+ * shows a star and a number rather than claiming a specific provider's branding.
+ */
+private val PosterRatingBadgeStarColor = Color(0xFFF5C518)
+
+@Composable
+private fun NuvioPosterRatingBadge(
+    text: String,
+    metrics: PosterRatingBadgeMetrics,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(NuvioTokens.Radius.sm))
+            .background(Color.Black.copy(alpha = 0.62f))
+            .padding(
+                horizontal = metrics.horizontalPadding,
+                vertical = metrics.verticalPadding,
+            ),
+        horizontalArrangement = Arrangement.spacedBy(metrics.iconGap),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Star,
+            contentDescription = null,
+            tint = PosterRatingBadgeStarColor,
+            modifier = Modifier.size(metrics.iconSize),
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontSize = metrics.textSize,
+                lineHeight = metrics.textSize,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.sp,
+            ),
+            color = Color.White,
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+            // Held to the widest result ("100", "8.3") so neighbouring cards in a row show
+            // identically sized pills instead of one shrinking around a two-digit "83".
+            modifier = Modifier.widthIn(min = metrics.valueMinWidth),
+        )
+    }
+}
+
+private data class PosterRatingBadgeMetrics(
+    val textSize: TextUnit,
+    val iconSize: Dp,
+    val iconGap: Dp,
+    val horizontalPadding: Dp,
+    val verticalPadding: Dp,
+    /** Width the value is held to, sized for three digits so the pill never resizes per card. */
+    val valueMinWidth: Dp,
+    /** Room a neighbouring bottom-left overlay must leave clear: badge width plus its inset. */
+    val reservedWidth: Dp,
+)
+
+private fun posterRatingBadgeMetrics(basePosterWidthDp: Int): PosterRatingBadgeMetrics =
+    when {
+        basePosterWidthDp <= 108 -> PosterRatingBadgeMetrics(
+            textSize = 9.sp,
+            iconSize = 9.dp,
+            iconGap = 2.dp,
+            horizontalPadding = 4.dp,
+            verticalPadding = 2.dp,
+            valueMinWidth = 17.dp,
+            reservedWidth = 48.dp,
+        )
+        basePosterWidthDp <= 132 -> PosterRatingBadgeMetrics(
+            textSize = 10.sp,
+            iconSize = 10.dp,
+            iconGap = 3.dp,
+            horizontalPadding = 5.dp,
+            verticalPadding = 2.dp,
+            valueMinWidth = 19.dp,
+            reservedWidth = 54.dp,
+        )
+        basePosterWidthDp <= 175 -> PosterRatingBadgeMetrics(
+            textSize = 11.sp,
+            iconSize = 11.dp,
+            iconGap = 3.dp,
+            horizontalPadding = 6.dp,
+            verticalPadding = 3.dp,
+            valueMinWidth = 21.dp,
+            reservedWidth = 60.dp,
+        )
+        else -> PosterRatingBadgeMetrics(
+            textSize = 12.sp,
+            iconSize = 12.dp,
+            iconGap = 4.dp,
+            horizontalPadding = 7.dp,
+            verticalPadding = 3.dp,
+            valueMinWidth = 23.dp,
+            reservedWidth = 66.dp,
+        )
+    }
+
 private data class CatalogLogoOverlaySize(
     val width: Dp,
     val height: Dp,
@@ -722,6 +860,7 @@ internal fun Modifier.posterCardClickable(
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
     zoomImageUrl: String? = null,
+    zoomFallbackImageUrl: String? = null,
     zoomCornerRadius: Dp = NuvioTokens.Radius.poster,
 ): Modifier {
     if (onClick == null && onLongClick == null) return this
@@ -730,7 +869,12 @@ internal fun Modifier.posterCardClickable(
         {
             bounds.value?.takeIf { zoomImageUrl != null }?.let { cardBounds ->
                 PosterZoomAnchorHolder.stash(
-                    PosterZoomAnchor(cardBounds, zoomImageUrl, zoomCornerRadius),
+                    PosterZoomAnchor(
+                        boundsInRoot = cardBounds,
+                        imageUrl = zoomImageUrl,
+                        fallbackImageUrl = zoomFallbackImageUrl,
+                        cornerRadius = zoomCornerRadius,
+                    ),
                 )
             }
             longClick()

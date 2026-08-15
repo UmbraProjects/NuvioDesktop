@@ -54,7 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -621,7 +621,7 @@ private fun DesktopAddonSearchField(
                     .weight(1f)
                     .focusRequester(focusRequester)
                     .onFocusChanged { focused = it.isFocused }
-                    .trackSettingsTextFocus(),
+                    .trackTextInputFocus(),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.colors.textPrimary),
                 cursorBrush = SolidColor(tokens.colors.accent),

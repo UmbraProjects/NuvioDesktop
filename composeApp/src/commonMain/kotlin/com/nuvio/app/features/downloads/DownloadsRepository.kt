@@ -2,6 +2,8 @@ package com.nuvio.app.features.downloads
 
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.locallibrary.LocalLibraryRepository
+import com.nuvio.app.features.metadata.migrateLegacyAnimeContentId
+import com.nuvio.app.features.metadata.migrateLegacyAnimeVideoId
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -422,10 +424,11 @@ object DownloadsRepository {
                 }
 
                 val localUriNormalized = normalizeCompletedLocalFileUri(statusNormalized)
-                if (localUriNormalized != item) {
+                val idNormalized = localUriNormalized.withMigratedAnimeIds()
+                if (idNormalized != item) {
                     shouldPersistNormalized = true
                 }
-                localUriNormalized
+                idNormalized
             }
 
         _uiState.value = DownloadsUiState(normalized)
@@ -433,6 +436,27 @@ object DownloadsRepository {
         if (shouldPersistNormalized) {
             persist()
         }
+    }
+
+    /**
+     * Rewrites ids written under the old kitsu-first anime policy.
+     *
+     * `parentMetaId` is matched by equality against `MonitoredItem.contentId`, which migrates on its
+     * own load — leaving these behind would break the link between a monitor and the downloads it
+     * already produced. `videoId` additionally carries entry-local episode coordinates, so the
+     * migration converts those rather than only swapping the base: a franchise id paired with an
+     * unconverted `:1:1` means the first season's first episode, not this entry's.
+     */
+    private fun DownloadItem.withMigratedAnimeIds(): DownloadItem {
+        val migratedParent = migrateLegacyAnimeContentId(parentMetaId, parentMetaType)
+            ?.takeIf { it != parentMetaId }
+        val migratedVideo = migrateLegacyAnimeVideoId(videoId, parentMetaType)
+            ?.takeIf { it != videoId }
+        if (migratedParent == null && migratedVideo == null) return this
+        return copy(
+            parentMetaId = migratedParent ?: parentMetaId,
+            videoId = migratedVideo ?: videoId,
+        )
     }
 
     private fun startDownload(item: DownloadItem) {

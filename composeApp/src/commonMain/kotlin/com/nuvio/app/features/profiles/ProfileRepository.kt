@@ -12,10 +12,12 @@ import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.HomeRepository
+import com.nuvio.app.features.home.RandomPlayCollectionPool
 import com.nuvio.app.core.ui.PosterCardStyleRepository
 import com.nuvio.app.features.library.LibraryDisplaySettingsRepository
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
+import com.nuvio.app.features.metadata.AnimeIdPreferenceRepository
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -33,6 +35,9 @@ import com.nuvio.app.features.tracking.LibrarySourceRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import com.nuvio.app.features.simkl.SimklSettingsRepository
+import com.nuvio.app.features.simkl.SimklRewatchRepository
+import com.nuvio.app.features.simkl.SimklAuthRepository
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
@@ -79,10 +84,28 @@ object ProfileRepository {
     private val _state = MutableStateFlow(ProfileState())
     val state: StateFlow<ProfileState> = _state.asStateFlow()
 
-    private var activeProfileIndex: Int = 1
+    private var activeProfileIndexBacking: Int = 1
+
+    /**
+     * The active profile, with the process-wide caches that are keyed on it invalidated on change.
+     *
+     * A choke point rather than a call at each switch site: the index moves in six places (a
+     * deliberate switch, a stored payload being applied, a sign-out reset, a profile deletion), and
+     * every one of them is followed by stores reloading against it. Anime identity in particular is
+     * read during those reloads to decide whether to rewrite persisted ids, so a cache that is
+     * merely *usually* refreshed corrupts the profile the one time it is not.
+     */
+    private var activeProfileIndex: Int
+        get() = activeProfileIndexBacking
+        set(value) {
+            if (activeProfileIndexBacking == value) return
+            activeProfileIndexBacking = value
+            AnimeIdPreferenceRepository.onProfileChanged()
+        }
+
     private var loadedCacheForUserId: String? = null
 
-    val activeProfileId: Int get() = activeProfileIndex
+    val activeProfileId: Int get() = activeProfileIndexBacking
 
     fun setRememberLastProfileEnabled(enabled: Boolean) {
         if (_state.value.rememberLastProfileEnabled == enabled) return
@@ -173,9 +196,15 @@ object ProfileRepository {
             hasEverSelectedProfile = selectedProfile != null || _state.value.hasEverSelectedProfile,
         )
         persist()
+        // Anime identity was already invalidated by the activeProfileIndex assignment above, which
+        // has to happen before these reloads: they run legacy anime-id migrations against it, and a
+        // stale value rewrites the incoming profile's native ids to franchise ids and persists them.
         WatchedRepository.onProfileChanged(profileIndex)
         TraktSettingsRepository.onProfileChanged()
         TraktAuthRepository.onProfileChanged(profileIndex)
+        SimklSettingsRepository.onProfileChanged()
+        SimklAuthRepository.onProfileChanged()
+        SimklRewatchRepository.onProfileChanged()
         LibraryRepository.onProfileChanged(profileIndex)
         WatchProgressRepository.onProfileChanged(profileIndex)
         AddonRepository.onProfileChanged(profileIndex)
@@ -194,6 +223,8 @@ object ProfileRepository {
         P2pSettingsRepository.onProfileChanged()
         HomeCatalogSettingsRepository.onProfileChanged()
         HomeRepository.clear()
+        RandomPlayCollectionPool.onProfileChanged()
+        com.nuvio.app.features.home.RandomPlayCandidatePool.onProfileChanged()
         MetaScreenSettingsRepository.onProfileChanged()
         ContinueWatchingPreferencesRepository.onProfileChanged()
         EpisodeReleaseNotificationsRepository.onProfileChanged()

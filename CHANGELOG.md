@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.13.0 - 2026-08-15
+
+### Added
+
+- **Windows Media Controls** - Windows playback now registers a system media session with title and artwork, so hardware media keys and Windows controls can play, pause, stop, or move between episodes even when Nuvio is not focused. Nuvio can consequently appear alongside browser media sessions in Windows audio controls; an existing taskbar pin may need to be recreated once if Windows retains the old app identity.
+- **Close to Notification Area** - a new Appearance option makes the window's close button hide Nuvio in the system tray, whose menu can reopen or fully exit the app. The power-off action in Settings still exits normally.
+- **Desktop Settings Backups** - Account settings can save all desktop preference files as a ZIP, either with credentials included or with passwords, tokens, API keys, sign-in sessions, and configured addon URLs removed for safer sharing and storage.
+- **Configurable Playback Speed Toggle** - the `R` shortcut now flips between two user-defined speeds from 0.5x to 4x. It also stays in sync after playback speed is changed through the player UI.
+- **SDH Subtitle Preference** - an optional playback preference prioritizes subtitles identified as SDH, closed captions, hearing impaired, or hard of hearing when several tracks match the preferred language.
+- **Metadata Rework Following Upstream** - metadata handling now follows upstream's implementation across normal catalogs, Continue Watching, Local Library, and related playback flows. This is a broad change: anime can use IMDb, MyAnimeList, or Kitsu identity, with the choice shared by Local Library and Continue Watching; metadata-derived IDs, anime mapping, watched/progress matching, episode handling, and downstream enrichment all use the selected model. IMDb remains the most addon-compatible choice, while MAL and Kitsu require metadata addons that support those IDs.
+- **Random Play** - an optional Home catalog can pick a random movie, series, anime movie, or anime series from loaded catalogs. It supports standard and anime-specific genre filters, a minimum IMDb rating, optional Collections catalogs, and opening details or starting playback immediately. Anime detection now also uses catalog types and native anime IDs, improving results from addons whose items are otherwise labelled as ordinary movies or series.
+- **Episode Search** - series and anime details can search episodes by title, description, or season/episode number using the search hotkey. On desktop, the search field is built into Play so it remains usable while a trailer is playing.
+- **Landscape Poster Cards** - Home, Search, Library, and TV mode can use landscape posters while Collections keep portrait posters if desired. Landscape cards can optionally show text titles and a catalog rating badge, disabled or formatted out of 10 or out of 100.
+- **Post-Credits Discovery Badge** - movie discovery metadata can show a badge for mid-credits, post-credits, or both types of stinger scenes when MDBList keywords identify them.
+- **Portable Settings Sync Controls** - Account settings can now opt individual categories into profile synchronization, including appearance, Home catalogs, stream display, debrid, metadata, content preferences, Trakt, and notifications. Fork-specific desktop settings remain local to the device.
+- **Remembered Windowed Desktop Layout** - desktop builds can start windowed and remember the last valid window size, position, and maximized state.
+- **Low VRAM Mode** - a new playback setting (Off / Auto / On, default Auto) trims the video rendering pipeline to bilinear scaling with no debanding, dithering, or HDR peak detection. Auto turns it on for integrated graphics and GPUs reporting under 2 GB of video memory, where the full pipeline could exhaust video memory on 4K files and crash the player. Anime4K and custom shader chains are left untouched.
+
+### Improved
+
+- **Addon-Supplied Landscape Posters** - landscape cards now use purpose-built 16:9 art when a metadata addon provides it, such as AIOMetadata's Landscape URL Pattern, instead of cropping a backdrop. Because that art already has the title composited into it, Nuvio no longer draws its own logo or text title over the card. Titles the addon has no landscape art for still fall back to the previous backdrop-and-logo card.
+- **Subtitle Selection and Persistence** - manually selected built-in and addon subtitles are remembered across episodes, including season-pack playback, and delayed addon results no longer overwrite a viewer's choice. The subtitle menu now shows language, addon, and track IDs, marks the active choice with a focus border instead of a tick, and reveals truncated track information on hover.
+- **Subtitle Matching and Automation** - automatic selection now handles exact regional language matches, SDH preference, `tv`/`series` addon compatibility, dual-subtitle Original and Device languages, forced-subtitle behavior, and external-player forwarding more reliably. Subtitle filters also avoid hiding every track when no concrete preferred language can be resolved.
+- **Episode and Season Navigation** - the in-player season selector accepts mouse-wheel scrolling and keeps the selected season in view, making shows with many seasons easier to browse.
+- **Provider Watched Feedback** - when the selected tracking provider confirms that a single episode was marked watched, Nuvio now shows a success message naming that provider.
+- **Network and Studio Browsing** - clicking a network or studio logo on Details now opens its titles through the shared Home catalog renderer, so TV Mode, Adaptive Hero, loading, and pagination behavior apply consistently.
+- **Continue Watching Episode Artwork** - missing episode thumbnails are rechecked on app startup, a forced Continue Watching resync, the first progress update, and episode completion, allowing newly published stills to replace blank artwork.
+- **Home Hero Information** - truncated plot synopses now start a teleprompter-style scroll after the focused item has remained selected for four seconds.
+- **Home, Search, and Addon Loading** - Home hotkeys behave correctly after returning from Calendar, search exposes more applicable content, and catalog rows can be scrolled while plugins/addons are still loading without the list jumping around.
+- **Continue Watching** - items can open Details instead of immediately playing, and Continue Watching no longer gets stuck during search. The row also avoids starting playback unless the relevant autoplay setting is enabled.
+- **Local Library and Resolved Catalog Metadata** - local files and filename-resolved entries now populate the same useful metadata as regular catalog items, including artwork and episode information. Local Library also respects the TMDB enrichment setting for proper backdrops.
+- **Custom Poster Services** - local-library poster templates can use raw Stremio IDs plus TMDB and MDBList API-key placeholders alongside the available media IDs, and the settings page can test a configured template against a known title.
+- **Details Dialogs and Trailers** - opening a Details dialog now pauses and minimizes the trailer so the dialog remains visible. Right-click Add to Library is provider-agnostic instead of being hard-coded to Trakt.
+- **Poster Service Compatibility** - Posters+ receives raw Stremio IDs through `{id}`, allowing its rewritten anime handling to work for Kitsu-backed catalogs without the `{kitsu_id?}` workaround.
+
+### Fixed
+
+- **Landscape Tiles in Catalog Grids** - opening a landscape catalog with See All no longer squashes its tiles to a narrower shape than the Home rows use, so grid and shelf now crop the same 16:9 image identically.
+- **Discovery Language Flags** - language discovery badges now use recognizable flag geometry instead of simplified colour bands that rendered several countries incorrectly, while unknown languages retain a globe fallback.
+- **Details Page Logos** - Details now falls back to the lightweight metadata path when normal enrichment returns no logo, avoiding title-text fallbacks for items whose logo is available elsewhere in Nuvio.
+- **Windows Borderless Fullscreen Insets** - corrected stale AWT frame insets that could offset and clip the Compose UI or native video surface after entering borderless fullscreen.
+- **Autoplay and Local Files** - downloaded local-library files no longer bypass the configured autoplay behavior, and Continue Watching avoids instant playback unless explicitly enabled.
+- **Episode Ratings** - IMDb episode ratings work again.
+- **Audio Track Selection** - selecting an audio track now reaches the native player reliably and keeps the selected track in sync.
+- **Player Focus and Auto-Hide** - the Skip Intro button no longer steals focus or prevents the player UI from hiding.
+- **Home and Calendar Hotkeys** - keyboard actions no longer get into a bad state after navigating through Home and returning from Calendar.
+
 ## 1.12.0 - 2026-08-01
 
 ### Added

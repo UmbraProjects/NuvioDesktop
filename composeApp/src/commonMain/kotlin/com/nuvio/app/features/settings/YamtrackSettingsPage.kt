@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.yamtrack.YamtrackConnectionState
 import com.nuvio.app.features.yamtrack.YamtrackSettings
 import com.nuvio.app.features.yamtrack.YamtrackSettingsRepository
@@ -130,7 +131,7 @@ private fun YamtrackConnectionRows(
             label = { Text(stringResource(Res.string.settings_yamtrack_url_label)) },
             // Without this a URL containing "h" would fire the Home shortcut mid-typing, the same
             // reason SettingsSecretTextField applies it internally.
-            modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
+            modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
         )
 
         SettingsFieldLabel(

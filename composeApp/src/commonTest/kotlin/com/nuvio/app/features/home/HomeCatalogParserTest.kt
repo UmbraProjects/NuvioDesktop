@@ -28,6 +28,69 @@ class HomeCatalogParserTest {
     }
 
     @Test
+    fun `parse catalog response reads an addon-supplied landscape poster beside the backdrop`() {
+        // AIOMetadata's Landscape URL Pattern writes `landscapePoster` and leaves `poster` and
+        // `background` alone, so all three have to survive the same meta independently.
+        val result = HomeCatalogParser.parseCatalogResponse(
+            """
+            {
+              "metas": [
+                {
+                  "id": "tt0903747", "type": "series", "name": "Has landscape art",
+                  "poster": "https://example.com/poster.jpg",
+                  "background": "https://example.com/backdrop.jpg",
+                  "landscapePoster": "https://example.com/landscape.jpg"
+                },
+                {
+                  "id": "tt2250192", "type": "series", "name": "No landscape art",
+                  "poster": "https://example.com/poster2.jpg",
+                  "background": "https://example.com/backdrop2.jpg"
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val (withArt, withoutArt) = result.items
+        assertEquals("https://example.com/landscape.jpg", withArt.landscapePoster)
+        assertEquals("https://example.com/backdrop.jpg", withArt.banner)
+        assertEquals("https://example.com/poster.jpg", withArt.poster)
+        assertEquals(null, withoutArt.landscapePoster)
+    }
+
+    @Test
+    fun `parse catalog response reads anime form and side-channel anime ids`() {
+        // Shaped after a real anime-kitsu meta: the anime catalogue's own id sits beside an imdb
+        // one, and animeType names the form the `type` field is too coarse to give.
+        val result = HomeCatalogParser.parseCatalogResponse(
+            """
+            {
+              "metas": [
+                {
+                  "id": "kitsu:11614", "type": "movie", "name": "A film",
+                  "animeType": "movie", "kitsu_id": 11614, "imdb_id": "tt5311514"
+                },
+                {
+                  "id": "tt2250192", "type": "series", "name": "Franchise-addressed",
+                  "mal_id": "20021"
+                },
+                { "id": "tt0903747", "type": "series", "name": "Not anime" }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val (film, franchise, plain) = result.items
+        assertEquals("movie", film.animeType)
+        assertEquals(true, film.carriesAnimeCatalogueId)
+        // A numeric id field reads the same as a string one, and survives the primary id being
+        // translated into a franchise namespace.
+        assertEquals(true, franchise.carriesAnimeCatalogueId)
+        assertEquals(null, franchise.animeType)
+        assertEquals(false, plain.carriesAnimeCatalogueId)
+    }
+
+    @Test
     fun `parse catalog response respects max item cap without losing raw count`() {
         val result = HomeCatalogParser.parseCatalogResponse(
             payload = """
@@ -70,5 +133,35 @@ class HomeCatalogParserTest {
 
         assertEquals("2027", result.items.single().releaseInfo)
         assertEquals("2027-05-12T00:00:00.000Z", result.items.single().rawReleaseDate)
+    }
+
+    @Test
+    fun `parse catalog response keeps the default video id that marks a single-video meta`() {
+        val result = HomeCatalogParser.parseCatalogResponse(
+            payload = """
+                {
+                  "metas": [
+                    {
+                      "id": "kitsu:11614",
+                      "type": "anime",
+                      "name": "A Silent Voice",
+                      "behaviorHints": { "defaultVideoId": "kitsu:11614" }
+                    },
+                    { "id": "kitsu:7442", "type": "anime", "name": "Attack on Titan" },
+                    {
+                      "id": "kitsu:1",
+                      "type": "anime",
+                      "name": "Blank hint",
+                      "behaviorHints": { "defaultVideoId": "" }
+                    }
+                  ]
+                }
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            listOf("kitsu:11614", null, null),
+            result.items.map { it.defaultVideoId },
+        )
     }
 }

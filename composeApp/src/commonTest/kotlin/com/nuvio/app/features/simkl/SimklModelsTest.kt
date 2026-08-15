@@ -1,5 +1,6 @@
 package com.nuvio.app.features.simkl
 
+import com.nuvio.app.features.metadata.AnimeIdPreference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -23,7 +24,7 @@ class SimklModelsTest {
             kitsu = "1011",
         )
 
-        assertEquals("tt0443717", ids.toBestAnimeContentId())
+        assertEquals("tt0443717", ids.toBestAnimeContentId(AnimeIdPreference.IMDB))
     }
 
     @Test
@@ -36,7 +37,7 @@ class SimklModelsTest {
             kitsu = UNMAPPED_KITSU_ID,
         )
 
-        assertEquals("tmdb:456", ids.toBestAnimeContentId())
+        assertEquals("tmdb:456", ids.toBestAnimeContentId(AnimeIdPreference.IMDB))
     }
 
     @Test
@@ -47,7 +48,7 @@ class SimklModelsTest {
             kitsu = UNMAPPED_KITSU_ID,
         )
 
-        assertEquals("tmdb:456", ids.toBestAnimeMovieContentId())
+        assertEquals("tmdb:456", ids.toBestAnimeMovieContentId(AnimeIdPreference.IMDB))
     }
 
     @Test
@@ -55,7 +56,7 @@ class SimklModelsTest {
         // A TVDB record for an anime film is season 0 of its parent series, not the film.
         val ids = SimklMediaIds(tvdb = 789, kitsu = UNMAPPED_KITSU_ID)
 
-        assertEquals("kitsu:$UNMAPPED_KITSU_ID", ids.toBestAnimeMovieContentId())
+        assertEquals("kitsu:$UNMAPPED_KITSU_ID", ids.toBestAnimeMovieContentId(AnimeIdPreference.IMDB))
     }
 
     @Test
@@ -65,7 +66,7 @@ class SimklModelsTest {
         // Real data: SAO the Movie: Ordinal Scale, simkl 527702 -> imdb tt5544384.
         val ids = SimklMediaIds(simkl = 527702)
 
-        assertEquals("tt5544384", ids.toBestAnimeMovieContentId())
+        assertEquals("tt5544384", ids.toBestAnimeMovieContentId(AnimeIdPreference.IMDB))
     }
 
     @Test
@@ -75,14 +76,14 @@ class SimklModelsTest {
         // completely different record, so the native id is the correct answer here.
         val ids = SimklMediaIds(simkl = 527700)
 
-        assertEquals("tt5923132", ids.toBestAnimeMovieContentId())
+        assertEquals("tt5923132", ids.toBestAnimeMovieContentId(AnimeIdPreference.IMDB))
     }
 
     @Test
     fun `unknown simkl id keeps the simkl fallback`() {
         val ids = SimklMediaIds(simkl = 999999999)
 
-        assertEquals("simkl:999999999", ids.toBestAnimeMovieContentId())
+        assertEquals("simkl:999999999", ids.toBestAnimeMovieContentId(AnimeIdPreference.IMDB))
     }
 
     @Test
@@ -94,7 +95,7 @@ class SimklModelsTest {
             tvdb = 789,
         )
 
-        assertEquals("tmdb:456", ids.toBestAnimeMovieContentId())
+        assertEquals("tmdb:456", ids.toBestAnimeMovieContentId(AnimeIdPreference.IMDB))
     }
 
     @Test
@@ -102,7 +103,44 @@ class SimklModelsTest {
         // No franchise id anywhere — neither on the payload nor in the mapping.
         val ids = SimklMediaIds(kitsu = UNMAPPED_KITSU_ID, mal = UNMAPPED_MAL_ID)
 
-        assertEquals("kitsu:$UNMAPPED_KITSU_ID", ids.toBestAnimeMovieContentId())
+        assertEquals("kitsu:$UNMAPPED_KITSU_ID", ids.toBestAnimeMovieContentId(AnimeIdPreference.IMDB))
+    }
+
+    @Test
+    fun `the KITSU preference addresses anime by its own entry`() {
+        // Mushoku Tensei 3rd season carries a franchise imdb, which the default preference would
+        // pick. KITSU asks for the per-entry identity instead.
+        val ids = SimklMediaIds(simkl = 2832226, kitsu = "49002", imdb = "tt13293588")
+
+        assertEquals("kitsu:49002", ids.toBestAnimeContentId(AnimeIdPreference.KITSU))
+    }
+
+    @Test
+    fun `the MAL preference prefers mal and falls back to kitsu`() {
+        val ids = SimklMediaIds(simkl = 2832226, kitsu = "49002", imdb = "tt13293588")
+
+        // mal is absent from the payload but the anime-list entry carries it (mal 59193).
+        assertEquals("mal:59193", ids.toBestAnimeContentId(AnimeIdPreference.MAL))
+    }
+
+    @Test
+    fun `a sparse simkl-only payload still honours the preference`() {
+        // The Continue Watching case: playback sessions often carry nothing but a simkl id, so the
+        // preference would be silently ignored without the anime-list lookup behind it.
+        val ids = SimklMediaIds(simkl = 46206)
+
+        assertEquals("kitsu:8174", ids.toBestAnimeContentId(AnimeIdPreference.KITSU))
+    }
+
+    @Test
+    fun `a simkl-only stub entry does not shadow the entry that has the season`() {
+        // Mushoku Tensei 3rd season: the anime-list holds a stub row carrying simkl 2832226 and
+        // nothing else, while the real entry (kitsu 49002) records tvdb season 3. Preferring the
+        // stub left the episode at S1E1, which against a franchise id is the first season's
+        // opener rather than this season's.
+        val ids = SimklMediaIds(simkl = 2832226, kitsu = "49002")
+
+        assertEquals(3 to 1, ids.toCanonicalAnimeEpisode(season = 1, episode = 1))
     }
 
     @Test
@@ -117,5 +155,86 @@ class SimklModelsTest {
         val ids = SimklMediaIds(simkl = 1186817, kitsu = "42927")
 
         assertEquals(4 to 15, ids.toCanonicalAnimeEpisode(season = 1, episode = 3))
+    }
+
+    @Test
+    fun `a per-entry id keeps SIMKL's own episode coordinates`() {
+        // Mushoku Tensei 3rd season under the KITSU preference. kitsu:49002 has one season, so the
+        // franchise pair SIMKL states for the same episode (S3E1) would address nothing.
+        val ids = SimklMediaIds(simkl = 2832226, kitsu = "49002", imdb = "tt13293588")
+
+        val coordinates = ids.episodeCoordinatesFor(
+            contentId = "kitsu:49002",
+            isAnime = true,
+            entrySeason = 1,
+            entryEpisode = 1,
+            franchiseSeason = 3,
+            franchiseEpisode = 1,
+        )
+
+        assertEquals(1 to 1, coordinates)
+    }
+
+    @Test
+    fun `a simkl id is per-entry too`() {
+        // The last-resort id for an entry with no franchise id at all. It is still one SIMKL entry,
+        // so it is numbered like one.
+        val ids = SimklMediaIds(simkl = 2832226)
+
+        val coordinates = ids.episodeCoordinatesFor(
+            contentId = "simkl:2832226",
+            isAnime = true,
+            entrySeason = 1,
+            entryEpisode = 1,
+            franchiseSeason = 3,
+            franchiseEpisode = 1,
+        )
+
+        assertEquals(1 to 1, coordinates)
+    }
+
+    @Test
+    fun `a franchise id takes the franchise coordinates SIMKL states`() {
+        val ids = SimklMediaIds(simkl = 2832226, kitsu = "49002", imdb = "tt13293588")
+
+        val coordinates = ids.episodeCoordinatesFor(
+            contentId = "tt13293588",
+            isAnime = true,
+            entrySeason = 1,
+            entryEpisode = 1,
+            franchiseSeason = 3,
+            franchiseEpisode = 1,
+        )
+
+        assertEquals(3 to 1, coordinates)
+    }
+
+    @Test
+    fun `a franchise id falls back to the anime list when SIMKL states no coordinates`() {
+        // The watchlist marker and calendar paths, which carry entry-local numbers only.
+        val ids = SimklMediaIds(simkl = 2832226, kitsu = "49002", imdb = "tt13293588")
+
+        val coordinates = ids.episodeCoordinatesFor(
+            contentId = "tt13293588",
+            isAnime = true,
+            entrySeason = 1,
+            entryEpisode = 1,
+        )
+
+        assertEquals(3 to 1, coordinates)
+    }
+
+    @Test
+    fun `non-anime coordinates are never reinterpreted`() {
+        val ids = SimklMediaIds(simkl = 2832226, imdb = "tt13293588")
+
+        val coordinates = ids.episodeCoordinatesFor(
+            contentId = "tt13293588",
+            isAnime = false,
+            entrySeason = 2,
+            entryEpisode = 7,
+        )
+
+        assertEquals(2 to 7, coordinates)
     }
 }

@@ -438,7 +438,7 @@ fun NuvioStatusModal(
     ) {
         NuvioDialogSurface(modifier = modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier.padding(tokens.spacing.dialogPadding),
+                modifier = Modifier.padding(start = tokens.spacing.dialogPadding, end = tokens.spacing.dialogPadding, top = tokens.spacing.dialogPadding, bottom = 8.dp),
             ) {
                 if (isBusy) {
                     CircularProgressIndicator(

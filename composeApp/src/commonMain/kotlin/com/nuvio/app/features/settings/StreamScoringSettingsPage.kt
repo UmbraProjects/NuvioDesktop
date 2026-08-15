@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.streams.AudioDeviceSupport
 import com.nuvio.app.features.streams.DebridCachedBoost
 import com.nuvio.app.features.streams.HdrPreference
@@ -642,7 +643,7 @@ private fun NumberStepper(
                             }
                         }
                         // Keeps app-wide keyboard shortcuts from firing on the digits being typed.
-                        .trackSettingsTextFocus(),
+                        .trackTextInputFocus(),
                 )
             } else {
                 Text(
@@ -839,7 +840,7 @@ private fun ScoreTestBench(
             singleLine = true,
             label = { Text(stringResource(Res.string.settings_stream_scoring_test_label)) },
             placeholder = { Text(stringResource(Res.string.settings_stream_scoring_test_hint)) },
-            modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
+            modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
         )
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),

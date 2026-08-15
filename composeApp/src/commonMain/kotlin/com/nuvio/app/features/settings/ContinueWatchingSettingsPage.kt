@@ -73,6 +73,7 @@ import com.nuvio.app.features.home.components.ContinueWatchingStylePreview
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
+import com.nuvio.app.features.watchprogress.ContinueWatchingClickAction
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import com.nuvio.app.features.watchprogress.ContinueWatchingSortMode
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
@@ -84,10 +85,17 @@ import nuvio.composeapp.generated.resources.settings_advanced_clear_cw_cache_sub
 import nuvio.composeapp.generated.resources.settings_advanced_section_cache
 import nuvio.composeapp.generated.resources.settings_continue_watching_resume_prompt_description
 import nuvio.composeapp.generated.resources.settings_continue_watching_resume_prompt_title
+import nuvio.composeapp.generated.resources.settings_continue_watching_click_action_details
+import nuvio.composeapp.generated.resources.settings_continue_watching_click_action_description
+import nuvio.composeapp.generated.resources.settings_continue_watching_click_action_play
+import nuvio.composeapp.generated.resources.settings_continue_watching_click_action_title
+import nuvio.composeapp.generated.resources.settings_continue_watching_section_default_action
 import nuvio.composeapp.generated.resources.settings_continue_watching_blur_next_up_description
 import nuvio.composeapp.generated.resources.settings_continue_watching_blur_next_up_title
 import nuvio.composeapp.generated.resources.settings_continue_watching_show_unaired_next_up_description
 import nuvio.composeapp.generated.resources.settings_continue_watching_show_unaired_next_up_title
+import nuvio.composeapp.generated.resources.settings_continue_watching_separate_next_up_description
+import nuvio.composeapp.generated.resources.settings_continue_watching_separate_next_up_title
 import nuvio.composeapp.generated.resources.settings_continue_watching_section_card_style
 import nuvio.composeapp.generated.resources.settings_continue_watching_section_on_launch
 import nuvio.composeapp.generated.resources.settings_continue_watching_section_sort_order
@@ -116,9 +124,11 @@ internal fun LazyListScope.continueWatchingSettingsContent(
     isTablet: Boolean,
     isVisible: Boolean,
     style: ContinueWatchingSectionStyle,
+    clickAction: ContinueWatchingClickAction,
     upNextFromFurthestEpisode: Boolean,
     useEpisodeThumbnails: Boolean,
     showUnairedNextUp: Boolean,
+    separateNextUpRow: Boolean,
     blurNextUp: Boolean,
     showResumePromptOnLaunch: Boolean,
     sortMode: ContinueWatchingSortMode,
@@ -137,6 +147,35 @@ internal fun LazyListScope.continueWatchingSettingsContent(
     }
     item {
         SettingsSection(
+            title = stringResource(Res.string.settings_continue_watching_section_default_action),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsChoiceRow(
+                    title = stringResource(Res.string.settings_continue_watching_click_action_title),
+                    description = stringResource(Res.string.settings_continue_watching_click_action_description),
+                    options = listOf(
+                        SettingsChoiceOption(
+                            ContinueWatchingClickAction.PLAY,
+                            stringResource(Res.string.settings_continue_watching_click_action_play),
+                        ),
+                        SettingsChoiceOption(
+                            ContinueWatchingClickAction.DETAILS,
+                            stringResource(Res.string.settings_continue_watching_click_action_details),
+                        ),
+                    ),
+                    selectedValue = clickAction,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(
+                        SettingsScrollAnchor.searchKey("continue-watching-click-action"),
+                    ),
+                    onSelected = ContinueWatchingPreferencesRepository::setClickAction,
+                )
+            }
+        }
+    }
+    item {
+        SettingsSection(
             title = stringResource(Res.string.settings_cw_source_section),
             isTablet = isTablet,
         ) {
@@ -146,6 +185,19 @@ internal fun LazyListScope.continueWatchingSettingsContent(
             ) {
                 ContinueWatchingSourceRow(isTablet = isTablet)
                 ContinueWatchingWindowRow(isTablet = isTablet)
+                // Only SIMKL reports anime as per-entry seasons, so the identity choice only
+                // changes what this row produces when SIMKL is the source. The same setting is
+                // also reachable from Local Library, which it governs regardless of this source.
+                val continueWatchingSource by ContinueWatchingSourceRepository.uiState
+                    .collectAsStateWithLifecycle()
+                if (continueWatchingSource == ContinueWatchingSource.SIMKL) {
+                    AnimeIdPreferenceRow(
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("anime-id-preference"),
+                        ),
+                    )
+                }
                 SettingsGroupDivider(isTablet = isTablet)
                 SeedFromNuvioSyncRow(isTablet = isTablet)
             }
@@ -182,6 +234,15 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                     isTablet = isTablet,
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-up-next")),
                     onCheckedChange = ContinueWatchingPreferencesRepository::setUpNextFromFurthestEpisode,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_continue_watching_separate_next_up_title),
+                    description = stringResource(Res.string.settings_continue_watching_separate_next_up_description),
+                    checked = separateNextUpRow,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-separate-next-up")),
+                    onCheckedChange = ContinueWatchingPreferencesRepository::setSeparateNextUpRow,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(

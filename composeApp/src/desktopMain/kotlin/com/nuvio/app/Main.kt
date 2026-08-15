@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +30,7 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import java.awt.datatransfer.DataFlavor
 import java.awt.dnd.DnDConstants
@@ -42,6 +44,9 @@ import com.nuvio.app.features.player.PlatformPlayerSurface
 import com.nuvio.app.features.player.PlayerSettingsStorage
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.DesktopWindowGeometry
+import com.nuvio.app.features.player.desktop.DesktopWindowMinHeight
+import com.nuvio.app.features.player.desktop.DesktopWindowMinWidth
+import com.nuvio.app.features.player.desktop.DesktopWindowGeometryDiagnostics
 import com.nuvio.app.features.player.desktop.DesktopWindowModeStorage
 import com.nuvio.app.features.player.desktop.applyNativeBorderlessFullscreen
 import com.nuvio.app.features.player.desktop.applyNativeDesktopWindowChrome
@@ -57,6 +62,8 @@ import com.nuvio.app.features.player.desktop.suspendNativeBorderlessFullscreen
 import com.nuvio.app.features.player.desktop.toggleDesktopAppFullscreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 import java.awt.AWTEvent
 import java.awt.Color as AwtColor
@@ -67,11 +74,15 @@ import com.nuvio.app.features.player.LocalFileDrop
 import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.AppShortcutBridge
 import com.nuvio.app.features.player.AppShortcutsRepository
-import com.nuvio.app.features.settings.SettingsTextInputTracker
+import com.nuvio.app.core.ui.TextInputFocusTracker
 import com.nuvio.app.features.settings.DesktopWindowStartupPreference
 import java.awt.Toolkit
 import java.awt.Frame
+import java.awt.MenuItem
+import java.awt.PopupMenu
 import java.awt.Rectangle
+import java.awt.SystemTray
+import java.awt.TrayIcon
 import java.awt.event.InputEvent
 import java.awt.event.AWTEventListener
 import java.awt.event.KeyEvent
@@ -186,6 +197,75 @@ private val NuvioDesktopNativeBackground = AwtColor(0x0D, 0x0D, 0x0D)
 private const val NuvioDesktopIconPath = "icons/nuvio-app-icon.png"
 private const val MacosDarkAquaAppearance = "NSAppearanceNameDarkAqua"
 
+private fun installDesktopTray(
+    window: java.awt.Window,
+    onExit: () -> Unit,
+): (() -> Unit)? {
+    if (!SystemTray.isSupported()) return null
+    val iconUrl = Thread.currentThread().contextClassLoader.getResource(NuvioDesktopIconPath)
+        ?: return null
+    val tray = SystemTray.getSystemTray()
+    val popup = PopupMenu()
+    val openItem = MenuItem("Open Nuvio")
+    val exitItem = MenuItem("Exit")
+    popup.add(openItem)
+    popup.addSeparator()
+    popup.add(exitItem)
+    val trayIcon = TrayIcon(Toolkit.getDefaultToolkit().getImage(iconUrl), "Nuvio", popup).apply {
+        isImageAutoSize = true
+    }
+    val restoreWindow = {
+        EventQueue.invokeLater {
+            window.isVisible = true
+            if (window is Frame && window.extendedState and Frame.ICONIFIED != 0) {
+                window.extendedState = Frame.NORMAL
+            }
+            window.toFront()
+            window.requestFocus()
+        }
+    }
+    openItem.addActionListener { restoreWindow() }
+    trayIcon.addActionListener { restoreWindow() }
+    exitItem.addActionListener { EventQueue.invokeLater(onExit) }
+    return runCatching {
+        tray.add(trayIcon)
+        val uninstall: () -> Unit = { tray.remove(trayIcon) }
+        uninstall
+    }.getOrNull()
+}
+
+// How long a window rect must hold still before it is written to disk. Long enough that a
+// fullscreen/PiP transition, or a drag across the desktop, settles into a single write.
+private const val WindowGeometrySettleDelayMs = 400L
+
+private data class DesktopWindowGeometrySample(
+    val placement: WindowPlacement,
+    val isMinimized: Boolean,
+    val position: WindowPosition,
+    val size: DpSize,
+    val borderlessFullscreen: Boolean,
+    val pictureInPicture: Boolean,
+) {
+    /** Null while the window is in a state whose bounds are not worth remembering. */
+    fun toWindowedGeometry(): DesktopWindowGeometry? {
+        if (isMinimized || borderlessFullscreen || pictureInPicture) return null
+        if (placement == WindowPlacement.Fullscreen) return null
+        if (!position.isSpecified) return null
+        // While maximized, Compose stops syncing position/size from AWT, so these still hold the
+        // floating rect to un-maximize back to.
+        if (size.width.value < DesktopWindowMinWidth || size.height.value < DesktopWindowMinHeight) {
+            return null
+        }
+        return DesktopWindowGeometry(
+            x = position.x.value,
+            y = position.y.value,
+            width = size.width.value,
+            height = size.height.value,
+            maximized = placement == WindowPlacement.Maximized,
+        )
+    }
+}
+
 private data class DesktopPictureInPictureRestore(
     val bounds: Rectangle,
     val placement: WindowPlacement,
@@ -272,6 +352,11 @@ fun main() {
     )
     val desktopStartupStartedAt = System.currentTimeMillis()
     System.out.println("Info: (DesktopStartup) main entered")
+    // Before any window exists: Windows caches the process AppUserModelID early, and the media
+    // session created later is labelled "Unknown app" without it.
+    desktopStartupStep("app identity") {
+        runCatching { com.nuvio.app.features.player.desktop.registerDesktopAppIdentity() }
+    }
     desktopStartupStep("configure renderer") { configureDesktopRenderer() }
     desktopStartupStep("configure chrome") { configureDesktopChrome() }
     desktopStartupStep("subtitle font warm request") { com.nuvio.app.features.player.warmSubtitleFontCache() }
@@ -296,8 +381,20 @@ fun main() {
         }
         // Explicit centered position (instead of the platform default) so the restore rect the
         // native borderless-fullscreen code captures from the still-hidden window is sane.
-        val savedWindowGeometry = remember { DesktopWindowModeStorage.loadWindowedGeometry() }
+        //
+        // The remembered rect is reconciled with the currently connected displays first, so a
+        // monitor that has been unplugged or moved in the desktop layout since the last run can
+        // never reopen Nuvio somewhere off-screen; it falls back to the centered default instead.
+        val savedWindowGeometry = remember { DesktopWindowModeStorage.restoredWindowedGeometry() }
         val windowState = rememberWindowState(
+            // Restoring maximized only applies when starting windowed: the borderless-fullscreen
+            // startup path expects a plain floating window underneath it, and its exit rect is
+            // taken from these bounds.
+            placement = if (startWindowed && savedWindowGeometry?.maximized == true) {
+                WindowPlacement.Maximized
+            } else {
+                WindowPlacement.Floating
+            },
             width = savedWindowGeometry?.width?.dp ?: 1280.dp,
             height = savedWindowGeometry?.height?.dp ?: 820.dp,
             position = savedWindowGeometry?.let { WindowPosition.Absolute(it.x.dp, it.y.dp) }
@@ -306,11 +403,40 @@ fun main() {
         val restoreWindowPlacement = remember { mutableStateOf(WindowPlacement.Floating) }
         val isBorderlessFullscreen = remember { mutableStateOf(false) }
         val isWindowsHost = remember { DesktopHostOs.current == DesktopHostOs.WINDOWS }
+        val closeToTray by remember {
+            DesktopWindowStartupPreference.ensureLoaded()
+            DesktopWindowStartupPreference.closeToTray
+        }.collectAsState()
+        val desktopWindow = remember { mutableStateOf<java.awt.Window?>(null) }
+        val trayInstalled = remember { mutableStateOf(false) }
+
+        val flushWindowGeometry = {
+            DesktopWindowGeometrySample(
+                placement = windowState.placement,
+                isMinimized = windowState.isMinimized,
+                position = windowState.position,
+                size = windowState.size,
+                borderlessFullscreen = isBorderlessFullscreen.value,
+                pictureInPicture = desktopPictureInPictureState.value,
+            ).toWindowedGeometry()?.let(DesktopWindowModeStorage::saveWindowedGeometry)
+        }
+        val exitDesktopApplication = {
+            flushWindowGeometry()
+            P2pStreamingEngine.shutdown()
+            exitApplication()
+        }
 
         Window(
             onCloseRequest = {
-                P2pStreamingEngine.shutdown()
-                exitApplication()
+                // Close-to-tray only handles a deliberate window-close request. Keeping it here,
+                // rather than treating ordinary iconification as a close, avoids false hides when
+                // Windows minimizes the app during display/fullscreen transitions.
+                if (closeToTray && trayInstalled.value) {
+                    flushWindowGeometry()
+                    desktopWindow.value?.isVisible = false
+                } else {
+                    exitDesktopApplication()
+                }
             },
             title = if (smokePlayerUrl == null) "Nuvio" else "Nuvio Player Smoke",
             state = windowState,
@@ -325,6 +451,7 @@ fun main() {
             }
             val windowSideEffectLogged = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
             SideEffect {
+                desktopWindow.value = window
                 if (windowSideEffectLogged.compareAndSet(false, true)) {
                     System.out.println(
                         "Info: (DesktopStartup) Window side effect after " +
@@ -336,16 +463,40 @@ fun main() {
                 window.contentPane.background = NuvioDesktopNativeBackground
                 (window.contentPane as? JComponent)?.isOpaque = true
             }
-            LaunchedEffect(windowState, isBorderlessFullscreen.value, desktopPictureInPictureState.value) {
-                snapshotFlow { Triple(windowState.placement, windowState.position, windowState.size) }
-                    .collect { (placement, position, size) ->
-                        val isWindowed = placement == WindowPlacement.Floating &&
-                            !isBorderlessFullscreen.value && !desktopPictureInPictureState.value
-                        if (isWindowed && position.isSpecified && size.width.value >= 640f && size.height.value >= 420f) {
-                            DesktopWindowModeStorage.saveWindowedGeometry(
-                                DesktopWindowGeometry(position.x.value, position.y.value, size.width.value, size.height.value),
-                            )
-                        }
+            DisposableEffect(window, closeToTray) {
+                val uninstallTray = if (closeToTray) {
+                    installDesktopTray(window, exitDesktopApplication)
+                } else {
+                    null
+                }
+                trayInstalled.value = uninstallTray != null
+                onDispose {
+                    trayInstalled.value = false
+                    uninstallTray?.invoke()
+                }
+            }
+            // Remembering where the user left the window means only persisting rects that are
+            // genuinely the windowed placement. Compose keeps syncing state.position/size from AWT
+            // while borderless fullscreen or PiP is driving the bounds natively, and an iconified
+            // window reports an off-screen origin on Windows, so those states are excluded outright.
+            // collectLatest then swallows the intermediate rects reported while a transition is
+            // still settling — only the rect that survives the delay reaches storage.
+            LaunchedEffect(window, windowState) {
+                snapshotFlow {
+                    DesktopWindowGeometrySample(
+                        placement = windowState.placement,
+                        isMinimized = windowState.isMinimized,
+                        position = windowState.position,
+                        size = windowState.size,
+                        borderlessFullscreen = isBorderlessFullscreen.value,
+                        pictureInPicture = desktopPictureInPictureState.value,
+                    )
+                }
+                    .distinctUntilChanged()
+                    .collectLatest { sample ->
+                        val geometry = sample.toWindowedGeometry() ?: return@collectLatest
+                        delay(WindowGeometrySettleDelayMs)
+                        DesktopWindowModeStorage.saveWindowedGeometry(geometry)
                     }
             }
             DisposableEffect(window, windowState) {
@@ -489,6 +640,24 @@ fun main() {
                 }
             }
 
+            // Diagnostics for the "white lines / black bars along the fullscreen edges" report.
+            // Borderless fullscreen resizes and restyles the HWND natively, so every AWT-side
+            // consumer of the window's geometry (frame insets, content pane, Skia layer, and the
+            // SwingPanel-positioned mpv surface) has to re-derive itself afterwards. Sampling the
+            // whole chain right after the transition and again once it has settled shows which
+            // layer, if any, kept the pre-transition numbers.
+            LaunchedEffect(window) {
+                snapshotFlow { desktopAppFullscreenState.value }
+                    .collectLatest { fullscreen ->
+                        val label = if (fullscreen) "fullscreen" else "windowed"
+                        DesktopWindowGeometryDiagnostics.log(window, "$label +0ms")
+                        delay(500)
+                        DesktopWindowGeometryDiagnostics.log(window, "$label +500ms")
+                        delay(2_500)
+                        DesktopWindowGeometryDiagnostics.log(window, "$label +3000ms")
+                    }
+            }
+
             LaunchedEffect(window) {
                 if (startWindowed) {
                     if (isWindowsHost) {
@@ -553,7 +722,7 @@ fun main() {
                             if (event.isCtrlPressed) return@onKeyEvent false
                             // Compose text fields may leave ordinary key-down events unconsumed.
                             // Do not turn content searches or Settings edits into global navigation.
-                            if (SettingsTextInputTracker.active.value) return@onKeyEvent false
+                            if (TextInputFocusTracker.active.value) return@onKeyEvent false
                             AppShortcutsRepository.ensureLoaded()
                             when (val action = AppShortcutsRepository.actionForKeyCode(event.key.nativeKeyCode)) {
                                 AppShortcutAction.GoHome,

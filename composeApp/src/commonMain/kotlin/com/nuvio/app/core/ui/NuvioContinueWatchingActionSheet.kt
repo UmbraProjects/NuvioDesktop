@@ -43,10 +43,12 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun NuvioContinueWatchingActionSheet(
     item: ContinueWatchingItem?,
+    primaryPlayLabel: String? = null,
     alternatePlayLabel: String? = null,
     showDetailsOption: Boolean = true,
     onDismiss: () -> Unit,
     onOpenDetails: () -> Unit,
+    onPrimaryPlay: (() -> Unit)? = null,
     onStartFromBeginning: (() -> Unit)? = null,
     onAlternatePlay: (() -> Unit)? = null,
     onResync: () -> Unit,
@@ -59,12 +61,14 @@ fun NuvioContinueWatchingActionSheet(
     if (posterCardStyle.zoomActionPreviewEnabled && zoomHazeState != null) {
         NuvioContinueWatchingZoomActionSheet(
             item = item,
+            primaryPlayLabel = primaryPlayLabel,
             alternatePlayLabel = alternatePlayLabel,
             showDetailsOption = showDetailsOption,
             anchor = zoomAnchor,
             hazeState = zoomHazeState,
             onDismiss = onDismiss,
             onOpenDetails = onOpenDetails,
+            onPrimaryPlay = onPrimaryPlay,
             onStartFromBeginning = onStartFromBeginning,
             onAlternatePlay = onAlternatePlay,
             onResync = onResync,
@@ -103,6 +107,14 @@ fun NuvioContinueWatchingActionSheet(
                     icon = Icons.Default.Info,
                     title = stringResource(Res.string.cw_action_go_to_details),
                     onClick = { dismissAfter(onOpenDetails) },
+                )
+            }
+            if (primaryPlayLabel != null && onPrimaryPlay != null) {
+                NuvioBottomSheetDivider()
+                NuvioBottomSheetActionRow(
+                    icon = Icons.Default.PlayArrow,
+                    title = primaryPlayLabel,
+                    onClick = { dismissAfter(onPrimaryPlay) },
                 )
             }
             if (alternatePlayLabel != null && onAlternatePlay != null) {
@@ -144,12 +156,14 @@ fun NuvioContinueWatchingActionSheet(
 @Composable
 private fun NuvioContinueWatchingZoomActionSheet(
     item: ContinueWatchingItem,
+    primaryPlayLabel: String?,
     alternatePlayLabel: String?,
     showDetailsOption: Boolean,
     anchor: PosterZoomAnchor?,
     hazeState: HazeState,
     onDismiss: () -> Unit,
     onOpenDetails: () -> Unit,
+    onPrimaryPlay: (() -> Unit)?,
     onStartFromBeginning: (() -> Unit)?,
     onAlternatePlay: (() -> Unit)?,
     onResync: () -> Unit,
@@ -168,6 +182,15 @@ private fun NuvioContinueWatchingZoomActionSheet(
                         icon = Icons.Default.Info,
                         label = stringResource(Res.string.cw_action_go_to_details),
                         onSelected = onOpenDetails,
+                    ),
+                )
+            }
+            if (primaryPlayLabel != null && onPrimaryPlay != null) {
+                add(
+                    PosterZoomOverlayAction(
+                        icon = Icons.Default.PlayArrow,
+                        label = primaryPlayLabel,
+                        onSelected = onPrimaryPlay,
                     ),
                 )
             }

@@ -10,7 +10,7 @@ import java.awt.Window
 import java.awt.event.KeyEvent
 import javax.swing.SwingUtilities
 import javax.swing.text.JTextComponent
-import com.nuvio.app.features.settings.SettingsTextInputTracker
+import com.nuvio.app.core.ui.TextInputFocusTracker
 
 private object DesktopAppFullscreen {
     private var toggleHandler: ((Window?) -> Unit)? = null
@@ -45,7 +45,7 @@ internal fun installDesktopAppFullscreenShortcuts(window: Window): () -> Unit {
     val dispatcher = KeyEventDispatcher { event ->
         if (!event.isDesktopAppFullscreenShortcut()) return@KeyEventDispatcher false
         val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
-        if (focusOwner is JTextComponent || SettingsTextInputTracker.active.value) {
+        if (focusOwner is JTextComponent || TextInputFocusTracker.active.value) {
             return@KeyEventDispatcher false
         }
         toggleDesktopAppFullscreen(window)

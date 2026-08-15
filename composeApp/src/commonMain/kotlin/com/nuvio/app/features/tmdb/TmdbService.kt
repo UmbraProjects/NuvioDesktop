@@ -17,6 +17,15 @@ object TmdbService {
     private val json = Json { ignoreUnknownKeys = true }
     private val imdbToTmdbCache = linkedMapOf<String, String>()
     private val tmdbToImdbCache = linkedMapOf<String, String>()
+
+    /**
+     * External-id lookups that came back with nothing, keyed as their positive cache would be.
+     *
+     * A miss is as worth remembering as a hit: plenty of TMDB records genuinely carry no IMDb id,
+     * and without this every one of them is re-requested on each cold pass. The custom-poster path
+     * makes that visible — a rail of 20 unmatched titles is 20 requests, repeated per entity load.
+     */
+    private val unresolvedExternalIds = mutableSetOf<String>()
     private val cacheMutex = Mutex()
 
     // One lock per external id being resolved. The cache alone doesn't help a fan-out, because it
@@ -91,22 +100,39 @@ object TmdbService {
         val apiKey = currentApiKey() ?: return null
 
         val cacheKey = "$tmdbId:${normalizeMediaType(mediaType)}"
+        val negativeKey = "tmdbToImdb:$cacheKey"
         cacheMutex.withLock {
             tmdbToImdbCache[cacheKey]?.let { return it }
+            if (negativeKey in unresolvedExternalIds) return null
         }
 
-        val endpoint = when (normalizeMediaType(mediaType)) {
-            "tv" -> "tv/$tmdbId/external_ids"
-            else -> "movie/$tmdbId/external_ids"
-        }
-        val body = fetch<TmdbExternalIdsResponse>(endpoint = endpoint, apiKey = apiKey) ?: return null
-        val imdbId = body.imdbId?.trim()?.takeIf(String::isNotBlank) ?: return null
+        // Single-flighted like the imdb→tmdb direction. Custom posters fan out across a whole rail
+        // at once, so without this the same id is requested once per concurrent card.
+        return withExternalIdLookupLock(negativeKey) {
+            cacheMutex.withLock {
+                tmdbToImdbCache[cacheKey]?.let { return@withExternalIdLookupLock it }
+                if (negativeKey in unresolvedExternalIds) return@withExternalIdLookupLock null
+            }
 
-        cacheMutex.withLock {
-            tmdbToImdbCache[cacheKey] = imdbId
-            imdbToTmdbCache["$imdbId:${normalizeMediaType(mediaType)}"] = tmdbId.toString()
+            val endpoint = when (normalizeMediaType(mediaType)) {
+                "tv" -> "tv/$tmdbId/external_ids"
+                else -> "movie/$tmdbId/external_ids"
+            }
+            val body = fetch<TmdbExternalIdsResponse>(endpoint = endpoint, apiKey = apiKey)
+            val imdbId = body?.imdbId?.trim()?.takeIf(String::isNotBlank)
+            if (imdbId == null) {
+                // Only a parsed response proves the record has no IMDb id. A null body is a
+                // transport failure or a rate limit, which must stay retryable.
+                if (body != null) cacheMutex.withLock { unresolvedExternalIds += negativeKey }
+                return@withExternalIdLookupLock null
+            }
+
+            cacheMutex.withLock {
+                tmdbToImdbCache[cacheKey] = imdbId
+                imdbToTmdbCache["$imdbId:${normalizeMediaType(mediaType)}"] = tmdbId.toString()
+            }
+            imdbId
         }
-        return imdbId
     }
 
     suspend fun fetchMovieReleaseStatus(

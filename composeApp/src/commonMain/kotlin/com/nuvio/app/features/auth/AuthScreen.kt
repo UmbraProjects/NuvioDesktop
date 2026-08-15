@@ -48,7 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -197,7 +197,7 @@ fun AuthScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .trackSettingsTextFocus()
+                        .trackTextInputFocus()
                         .onGloballyPositioned { coordinates ->
                             emailFieldBounds = coordinates.boundsInRoot()
                         },
@@ -235,7 +235,7 @@ fun AuthScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .trackSettingsTextFocus()
+                        .trackTextInputFocus()
                         .onGloballyPositioned { coordinates ->
                             passwordFieldBounds = coordinates.boundsInRoot()
                         },

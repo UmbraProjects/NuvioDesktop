@@ -30,6 +30,11 @@ private val subtitleHttpClient: HttpClient = HttpClient.newBuilder()
     .followRedirects(HttpClient.Redirect.NORMAL)
     .build()
 
+internal data class DownloadedSubtitleFile(
+    val bytes: ByteArray,
+    val extension: String,
+)
+
 /**
  * Desktop implementation: downloads each addon subtitle to a local file and returns plain absolute
  * paths.
@@ -69,32 +74,7 @@ actual object SubtitleCacheProvider {
 
     private fun download(directory: File, index: Int, subtitle: SubtitleInput): SubtitleInput? =
         runCatching {
-            if (subtitle.url.hasExecutableDownloadExtension()) return null
-            val response = subtitleHttpClient.send(
-                HttpRequest.newBuilder()
-                    .uri(URI(subtitle.url.trim()))
-                    .timeout(Duration.ofSeconds(20))
-                    .header("Accept", "text/*,application/x-subrip;q=0.9,*/*;q=0.5")
-                    .GET()
-                    .build(),
-                HttpResponse.BodyHandlers.ofByteArray(),
-            )
-            if (response.statusCode() !in 200..299) return null
-            if (
-                response.headers().firstValue("Content-Type").orElse(null)
-                    .isExecutableDownloadContentType()
-            ) {
-                return null
-            }
-
-            val body = response.body().decompressIfGzipped()
-            if (
-                body.isEmpty() ||
-                body.size > MAX_SUBTITLE_BYTES ||
-                body.hasExecutableFileSignature()
-            ) {
-                return null
-            }
+            val downloaded = downloadSubtitleFile(subtitle.url) ?: return null
 
             // The file name is what every player shows in its track menu, so it carries the
             // language and addon label rather than an opaque id.
@@ -104,15 +84,46 @@ actual object SubtitleCacheProvider {
                 .distinct()
                 .joinToString(" - ")
                 .ifBlank { "Subtitle" }
-            val name = "${(index + 1).toString().padStart(2, '0')} $label.${body.subtitleExtension(subtitle.url)}"
+            val name = "${(index + 1).toString().padStart(2, '0')} $label.${downloaded.extension}"
             val target = File(directory, name.take(120))
-            target.writeBytes(body)
+            target.writeBytes(downloaded.bytes)
             // Desktop players take plain absolute paths; a file: URI is not understood here.
             subtitle.copy(url = target.absolutePath)
         }.getOrNull()
 }
 
-private fun String.isRemoteHttpUrl(): Boolean =
+/** Shared secure fetch used by both the disposable external-player cache and user downloads. */
+internal fun downloadSubtitleFile(sourceUrl: String): DownloadedSubtitleFile? {
+    if (!sourceUrl.isRemoteHttpUrl() || sourceUrl.hasExecutableDownloadExtension()) return null
+    val response = runCatching {
+        subtitleHttpClient.send(
+            HttpRequest.newBuilder()
+                .uri(URI(sourceUrl.trim()))
+                .timeout(Duration.ofSeconds(20))
+                .header("Accept", "text/*,application/x-subrip;q=0.9,*/*;q=0.5")
+                .GET()
+                .build(),
+            HttpResponse.BodyHandlers.ofByteArray(),
+        )
+    }.getOrNull() ?: return null
+    if (response.statusCode() !in 200..299) return null
+    if (
+        response.headers().firstValue("Content-Type").orElse(null)
+            .isExecutableDownloadContentType()
+    ) {
+        return null
+    }
+    val body = response.body().decompressIfGzipped()
+    if (body.isEmpty() || body.size > MAX_SUBTITLE_BYTES || body.hasExecutableFileSignature()) {
+        return null
+    }
+    return DownloadedSubtitleFile(
+        bytes = body,
+        extension = body.subtitleExtension(sourceUrl),
+    )
+}
+
+internal fun String.isRemoteHttpUrl(): Boolean =
     startsWith("http://", ignoreCase = true) || startsWith("https://", ignoreCase = true)
 
 /**

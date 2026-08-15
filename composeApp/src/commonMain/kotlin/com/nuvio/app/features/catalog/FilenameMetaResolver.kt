@@ -3,6 +3,7 @@ package com.nuvio.app.features.catalog
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.locallibrary.FilenameParser
+import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.metadata.pickBestTmdbMatch
 import com.nuvio.app.features.tmdb.TmdbSearchResult
 import com.nuvio.app.features.tmdb.TmdbService
@@ -194,6 +195,8 @@ internal object FilenameMetaResolver {
             imdbId = imdbId.takeIf { settings.customPosterTemplateNeedsImdbId() },
             tmdbId = id.toString(),
             type = posterType(),
+            stremioId = "tmdb:$id",
+            mdbListApiKey = MdbListSettingsRepository.snapshot().apiKey,
         )
         return ResolvedTitle(
             title = displayTitle,

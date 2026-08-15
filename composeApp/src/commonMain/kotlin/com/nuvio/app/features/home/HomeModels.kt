@@ -10,6 +10,16 @@ data class MetaPreview(
     val poster: String? = null,
     val posterFallback: String? = null,
     val banner: String? = null,
+    /**
+     * A purpose-built 16:9 poster the addon supplied for landscape cards — non-standard Stremio,
+     * written by AIOMetadata's **Landscape URL Pattern** and nothing else.
+     *
+     * Distinct from [banner] because it is not a backdrop: the art already has the title composited
+     * into it, so a card showing it must not draw its own logo or title on top. Absent for every
+     * title the pattern has no art for, which is why the landscape card still falls back to
+     * [banner] rather than treating this as the only source.
+     */
+    val landscapePoster: String? = null,
     val logo: String? = null,
     val posterShape: PosterShape = PosterShape.Poster,
     val description: String? = null,
@@ -22,6 +32,44 @@ data class MetaPreview(
     val runtime: String? = null,
     val genres: List<String> = emptyList(),
     val cast: List<HeroCastMember> = emptyList(),
+    /**
+     * `behaviorHints.defaultVideoId` from the catalog response: set when the meta is one playable
+     * video rather than a collection of episodes. It is the only per-item signal that separates a
+     * film from a show inside a catalog whose type says neither — an `anime` catalog carrying both.
+     */
+    val defaultVideoId: String? = null,
+    /**
+     * The anime-catalogue form — `TV`, `movie`, `OVA`, `ONA`, `special`, `music` — as emitted by
+     * Kitsu/MAL/AniList-backed addons. Two things at once, and the only place either is stated:
+     * that this is anime at all, and whether it is a film, for the addons that type every meta
+     * `anime` and leave the form to be guessed.
+     */
+    val animeType: String? = null,
+    /**
+     * Whether the meta carried a `kitsu_id` / `mal_id` / `anilist_id` / `anidb_id` **beside** its
+     * own id. Anime metadata reaches the app under whichever namespace the user's addons prefer —
+     * imdb, tmdb, tvdb, simkl — and the primary id then says nothing about the content being
+     * anime, while these side fields survive the translation.
+     *
+     * Classification evidence only. Never an identity: the id chain is [metadataId]'s business,
+     * and picking a namespace here would undo [AnimeIdPreference].
+     */
+    val carriesAnimeCatalogueId: Boolean = false,
+    /**
+     * The content type returned by the metadata lookup Random Play used to verify this row.
+     * Unlike the catalog's [type], this can correct an addon row that called a series `movie`, or
+     * identify a zero-video anime film whose catalog type only said `anime`.
+     */
+    val resolvedMetadataType: String? = null,
+    /**
+     * Episodes in the meta this title resolved to — **not** catalog data; a catalog response has no
+     * video list, so this is 0 until [RandomPlayCandidatePool] has looked the title up.
+     *
+     * The last word on whether something is a show, and the only one that survives an addon typing
+     * a series `movie`: SIMKL-backed anime rows do exactly that, and no field in their catalog
+     * payload contradicts it — not the type, not `animeType`, not a bare release year.
+     */
+    val resolvedEpisodeCount: Int = 0,
     // Used by virtual catalog cards that compose several loaded posters into one piece of art.
     val posterCollage: List<String> = emptyList(),
     // Navigation provenance, not content metadata. A title can appear in both a local-library
@@ -38,6 +86,20 @@ data class MetaPreview(
     // provider's own row, which is the whole point of a cloud-library catalog.
     val metaLookupId: String? = null,
     val metaLookupType: String? = null,
+    /**
+     * True while this copy is a pre-enrichment placeholder: its logo, genres, synopsis, ratings
+     * and runtime are all still unknown and an enrichment for it is in flight.
+     *
+     * A raw Continue Watching row carries a backdrop, a title and an episode label and nothing
+     * else, so the hero used to paint that much, then repaint a moment later with the logo and the
+     * full metadata once enrichment landed. Both halves of that were visible as a flash.
+     *
+     * While this is set the hero renders its backdrop, its (fixed-height, empty) logo slot and its
+     * action buttons only — the whole metadata column is withheld and revealed in one go. Whoever
+     * sets it MUST clear it once the outcome is known: enrichment landed, or the bounded hold
+     * expired and what the row already had is the final answer.
+     */
+    val heroMetadataPending: Boolean = false,
 ) {
     /** The id metadata lookups should use — the resolved title's, when the row's own id is a file. */
     val metadataId: String
@@ -72,7 +134,9 @@ data class HomeCatalogSection(
     val title: String,
     val subtitle: String,
     val addonName: String,
-    val target: CatalogTarget,
+    // Null for inline-only catalogs supplied by a standalone Home destination. Those rows
+    // paginate in place and never open the legacy CatalogScreen.
+    val target: CatalogTarget? = null,
     val items: List<MetaPreview>,
     val availableItemCount: Int = items.size,
     val hasMore: Boolean = false,
@@ -84,13 +148,14 @@ data class HomeCatalogSection(
     val nextSkip: Int? = null,
     // True while the next page is being fetched (drives the trailing spinner).
     val isLoadingMore: Boolean = false,
+    val inlineOnly: Boolean = false,
 )
 
 fun HomeCatalogSection.canOpenCatalog(previewLimit: Int): Boolean =
     availableItemCount > previewLimit || hasMore
 
 fun HomeCatalogSection.usesInfiniteHomeRow(catalogSeeMoreEnabled: Boolean): Boolean =
-    paginates && !catalogSeeMoreEnabled
+    inlineOnly || (paginates && !catalogSeeMoreEnabled)
 
 /**
  * Guarantees every [HomeCatalogSection.key] in the list is unique by suffixing collisions

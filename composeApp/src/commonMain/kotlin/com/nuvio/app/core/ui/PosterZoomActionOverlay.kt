@@ -53,7 +53,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.min
-import coil3.compose.AsyncImage
 import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
@@ -70,6 +69,12 @@ data class PosterZoomAnchor(
     val boundsInRoot: Rect,
     val imageUrl: String?,
     val cornerRadius: Dp,
+    /**
+     * The card's own second choice, carried so the preview degrades exactly as the card does.
+     * A poster-service URL (PostersPlus/RPDB) 404s for any title the service has no art for, and
+     * without this the preview showed an empty card for a poster that is visibly on screen.
+     */
+    val fallbackImageUrl: String? = null,
 )
 
 /**
@@ -128,6 +133,7 @@ fun NuvioPosterZoomActionOverlay(
     imageUrl: String?,
     title: String,
     subtitle: String?,
+    fallbackImageUrl: String? = null,
     isWatched: Boolean = false,
     depthSurface: NuvioCardDepthSurface = NuvioCardDepthSurface.Posters,
     anchor: PosterZoomAnchor?,
@@ -144,6 +150,8 @@ fun NuvioPosterZoomActionOverlay(
     // A context menu shows a snapshot of the moment it was invoked; don't let
     // repository updates mid-animation relabel or reorder the rows.
     val frozenActions = remember { actions }
+
+    var currentImageUrl by remember(imageUrl, fallbackImageUrl) { mutableStateOf(imageUrl) }
 
     val zoom = remember { Animatable(0f) }
     val scrim = remember { Animatable(0f) }
@@ -394,12 +402,19 @@ fun NuvioPosterZoomActionOverlay(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (imageUrl != null) {
-                        AsyncImage(
-                            model = imageUrl,
+                    if (currentImageUrl != null) {
+                        NuvioAsyncImage(
+                            model = currentImageUrl,
                             contentDescription = title,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
+                            // Same swap the shelf card makes, so a poster the card recovered by
+                            // falling back is not an empty rectangle once it is centred.
+                            onError = {
+                                if (fallbackImageUrl != null && currentImageUrl != fallbackImageUrl) {
+                                    currentImageUrl = fallbackImageUrl
+                                }
+                            },
                         )
                     } else {
                         Text(

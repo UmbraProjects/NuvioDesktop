@@ -43,7 +43,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -95,7 +95,7 @@ fun SubmitIntroDialog(
         NuvioDialogSurface(modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp)) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
+                    .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp)
                     .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
@@ -342,7 +342,7 @@ private fun TimeInputRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 14.dp, vertical = 12.dp)
-                        .trackSettingsTextFocus(),
+                        .trackTextInputFocus(),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onSurface,
                     ),

@@ -41,7 +41,7 @@ import com.nuvio.app.features.locallibrary.LocalMatchState
 import com.nuvio.app.features.locallibrary.LocalMatcher
 import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.locallibrary.LocalMediaItem
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
@@ -223,7 +223,7 @@ fun SearchAddToLibraryDialog(
                         value = query,
                         onValueChange = { query = it },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
+                        modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
                         placeholder = { Text(stringResource(Res.string.library_add_search_hint)) },
                     )
                     when {

@@ -358,8 +358,8 @@
     <string name="compose_settings_root_switch_profile_description">Cambiar a un perfil diferente.</string>
     <string name="compose_settings_root_switch_profile_title">Cambiar perfil</string>
     <string name="compose_settings_root_trakt_description">Conecta Trakt, sincroniza listas y guarda títulos directamente en Trakt.</string>
-    <string name="compose_trakt_list_picker_loading">Cargando tus listas de Trakt…</string>
-    <string name="compose_trakt_list_picker_subtitle">Elige dónde guardar este título en Trakt</string>
+    <string name="compose_trakt_list_picker_loading">Cargando tus listas…</string>
+    <string name="compose_trakt_list_picker_subtitle">Elige en qué listas guardar este título</string>
     <string name="action_donate">Donar</string>
     <string name="cw_action_go_to_details">Ir a detalles</string>
     <string name="cw_action_remove">Eliminar</string>
@@ -989,8 +989,8 @@
     <string name="streams_size">TAMAÑO %1$s</string>
     <string name="trailer_close">Cerrar tráiler</string>
     <string name="trailer_unable_to_play">No se puede reproducir el tráiler</string>
-    <string name="trakt_lists_load_failed">No se pudieron cargar las listas de Trakt</string>
-    <string name="trakt_lists_update_failed">No se pudieron actualizar las listas de Trakt</string>
+    <string name="trakt_lists_load_failed">No se pudieron cargar las listas</string>
+    <string name="trakt_lists_update_failed">No se pudieron actualizar las listas</string>
     <string name="updates_asset_line">%1$s • %2$s</string>
     <string name="updates_check_failed">Falló la comprobación de actualizaciones</string>
     <string name="updates_download_failed">La descarga falló</string>

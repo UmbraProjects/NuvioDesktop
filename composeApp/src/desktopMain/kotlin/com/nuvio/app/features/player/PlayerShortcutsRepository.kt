@@ -28,6 +28,7 @@ object PlayerShortcutsRepository {
         PlayerShortcutAction.SeekForward to KeyEvent.VK_L,
         PlayerShortcutAction.SpeedUp to KeyEvent.VK_CLOSE_BRACKET,
         PlayerShortcutAction.SpeedDown to KeyEvent.VK_OPEN_BRACKET,
+        PlayerShortcutAction.ToggleSpeed to KeyEvent.VK_R,
         PlayerShortcutAction.NextSubtitle to KeyEvent.VK_S,
         PlayerShortcutAction.NextAudio to KeyEvent.VK_A,
         PlayerShortcutAction.OpenSources to KeyEvent.VK_O,

@@ -391,8 +391,8 @@
     <string name="compose_settings_root_switch_profile_description">Zu einem anderen Profil wechseln.</string>
     <string name="compose_settings_root_switch_profile_title">Profil wechseln</string>
     <string name="compose_settings_root_trakt_description">Trakt verbinden, Watchlist-Listen synchronisieren und Titel direkt in Trakt speichern.</string>
-    <string name="compose_trakt_list_picker_loading">Deine Trakt-Listen werden geladen…</string>
-    <string name="compose_trakt_list_picker_subtitle">Wähle, wo dieser Titel auf Trakt gespeichert werden soll</string>
+    <string name="compose_trakt_list_picker_loading">Deine Listen werden geladen…</string>
+    <string name="compose_trakt_list_picker_subtitle">Wähle, in welchen Listen dieser Titel gespeichert werden soll</string>
     <string name="action_donate">Spenden</string>
     <string name="cw_action_go_to_details">Zu Details</string>
     <string name="cw_action_remove">Entfernen</string>
@@ -1026,8 +1026,8 @@
     <string name="streams_size">GRÖSSE %1$s</string>
     <string name="trailer_close">Trailer schließen</string>
     <string name="trailer_unable_to_play">Trailer kann nicht abgespielt werden</string>
-    <string name="trakt_lists_load_failed">Trakt-Listen konnten nicht geladen werden</string>
-    <string name="trakt_lists_update_failed">Trakt-Listen konnten nicht aktualisiert werden</string>
+    <string name="trakt_lists_load_failed">Listen konnten nicht geladen werden</string>
+    <string name="trakt_lists_update_failed">Listen konnten nicht aktualisiert werden</string>
     <string name="updates_asset_line">%1$s • %2$s</string>
     <string name="updates_check_failed">Update-Prüfung fehlgeschlagen</string>
     <string name="updates_download_failed">Download fehlgeschlagen</string>

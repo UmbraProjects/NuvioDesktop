@@ -1,6 +1,7 @@
 package com.nuvio.app.features.watched
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.effectiveEpisodeNumber
 import com.nuvio.app.features.details.effectiveSeasonNumber
@@ -39,6 +40,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.watched_episode_provider_success
+import org.jetbrains.compose.resources.getString
 
 @Serializable
 private data class StoredWatchedPayload(
@@ -716,6 +720,16 @@ object WatchedRepository {
             },
         )
         result.warnIfIncomplete(writer.providerId, "mark watched")
+        if (result.isComplete && items.size == 1 && items.first().episode != null) {
+            val providerName = TrackingProviderRegistry.authProvider(writer.providerId)
+                ?.descriptor
+                ?.displayName
+                ?.takeIf(String::isNotBlank)
+                ?: writer.providerId.storageId
+            NuvioToastController.show(
+                getString(Res.string.watched_episode_provider_success, providerName),
+            )
+        }
         return true
     }
 

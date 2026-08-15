@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -33,7 +34,10 @@ import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 import java.time.Duration
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -67,11 +71,21 @@ actual object P2pStreamingEngine {
     actual suspend fun startStream(request: P2pStreamRequest): String = withContext(Dispatchers.IO) {
         stopStreamNow(stopBinary = false)
         val generation = nextStreamGeneration()
+        val startupStartedAt = System.nanoTime()
         _state.value = P2pStreamingState.Connecting
+        log.i {
+            "P2P startup begin: hash=${request.infoHash.take(12)} " +
+                "requestedFile=${request.fileIdx ?: "auto"}"
+        }
 
         try {
             binary.start()
             ensureCurrentGeneration(generation)
+            val serverReadyMs = elapsedMillis(startupStartedAt)
+
+            api.ensurePerformanceDefaults()
+            ensureCurrentGeneration(generation)
+            val settingsReadyMs = elapsedMillis(startupStartedAt)
 
             val magnetLink = buildMagnetUri(request.infoHash, request.trackers)
             log.d { "Starting stream: $magnetLink" }
@@ -82,6 +96,7 @@ actual object P2pStreamingEngine {
                 api.dropTorrent(hash)
                 throw CancellationException("P2P stream start was cancelled")
             }
+            val torrentAddedMs = elapsedMillis(startupStartedAt)
 
             val resolvedIdx = resolveFileIndex(
                 hash = hash,
@@ -92,8 +107,14 @@ actual object P2pStreamingEngine {
 
             val streamUrl = api.getStreamUrl(magnetLink, resolvedIdx)
             log.d { "Stream URL: $streamUrl" }
+            val readyMs = elapsedMillis(startupStartedAt)
+            log.i {
+                "P2P startup ready: hash=${hash.take(12)} file=$resolvedIdx total=${readyMs}ms " +
+                    "server=${serverReadyMs}ms settings=${settingsReadyMs - serverReadyMs}ms " +
+                    "add=${torrentAddedMs - settingsReadyMs}ms metadata=${readyMs - torrentAddedMs}ms"
+            }
 
-            startStatsPolling(hash, generation)
+            startStatsPolling(hash, generation, startupStartedAt)
 
             ensureCurrentGeneration(generation)
             _state.value = P2pStreamingState.Streaming(
@@ -155,11 +176,18 @@ actual object P2pStreamingEngine {
     }
 
     private suspend fun cleanupDetachedStream(hash: String?, stopBinary: Boolean) {
-        hash?.let {
-            try {
-                api.dropTorrent(it)
-            } catch (e: Exception) {
-                log.w(e) { "Error dropping torrent" }
+        if (stopBinary) {
+            hash?.let {
+                try {
+                    api.dropTorrent(it)
+                } catch (e: Exception) {
+                    log.w(e) { "Error dropping torrent" }
+                }
+            }
+        } else if (hash != null) {
+            log.d {
+                "Released active stream ${hash.take(12)}; TorrServer will retain it for " +
+                    "$NUVIO_TORRENT_RETENTION_SECONDS seconds"
             }
         }
 
@@ -264,9 +292,11 @@ actual object P2pStreamingEngine {
         return result
     }
 
-    private fun startStatsPolling(hash: String, generation: Long) {
+    private fun startStatsPolling(hash: String, generation: Long, startupStartedAt: Long) {
         statsJob?.cancel()
         statsJob = scope.launch {
+            var loggedFirstStats = false
+            var loggedFirstTransfer = false
             while (isActive) {
                 if (!isCurrentGeneration(generation)) return@launch
                 try {
@@ -277,6 +307,20 @@ actual object P2pStreamingEngine {
                         currentState is P2pStreamingState.Streaming &&
                         isCurrentGeneration(generation)
                     ) {
+                        if (!loggedFirstStats) {
+                            loggedFirstStats = true
+                            log.i {
+                                "P2P first stats: hash=${hash.take(12)} after=${elapsedMillis(startupStartedAt)}ms " +
+                                    "peers=${stats.peers} seeds=${stats.seeds} speed=${stats.downloadSpeed}B/s"
+                            }
+                        }
+                        if (!loggedFirstTransfer && (stats.downloadSpeed > 0L || stats.loadedSize > 0L)) {
+                            loggedFirstTransfer = true
+                            log.i {
+                                "P2P first transfer: hash=${hash.take(12)} after=${elapsedMillis(startupStartedAt)}ms " +
+                                    "peers=${stats.peers} speed=${stats.downloadSpeed}B/s loaded=${stats.loadedSize}"
+                            }
+                        }
                         _state.value = currentState.copy(
                             downloadSpeed = stats.downloadSpeed,
                             uploadSpeed = stats.uploadSpeed,
@@ -309,6 +353,7 @@ actual object P2pStreamingEngine {
             .connectTimeout(Duration.ofSeconds(2))
             .build()
         private var process: Process? = null
+        private var resolvedBinaryFile: File? = null
 
         val baseUrl: String get() = "http://127.0.0.1:$PORT"
 
@@ -425,18 +470,22 @@ actual object P2pStreamingEngine {
             proc?.isAlive == true
 
         private fun resolveBinaryFile(): File {
+            resolvedBinaryFile
+                ?.takeIf(File::exists)
+                ?.let { return it }
+
             configuredBinaryPath()?.let { configured ->
                 val file = File(configured)
-                if (file.exists()) return file
+                if (file.exists()) return file.also { resolvedBinaryFile = it }
                 throw P2pStreamingException("Configured TorrServer binary was not found at ${file.absolutePath}")
             }
 
             val platform = DesktopTorrServerPlatform.current()
             localBinaryCandidates(platform)
                 .firstOrNull(File::exists)
-                ?.let { return it }
+                ?.let { return it.also { resolved -> resolvedBinaryFile = resolved } }
 
-            extractBundledBinary(platform)?.let { return it }
+            extractBundledBinary(platform)?.let { return it.also { resolved -> resolvedBinaryFile = resolved } }
 
             throw P2pStreamingException(
                 "TorrServer desktop binary not found for ${platform.resourceDir}. " +
@@ -462,18 +511,82 @@ actual object P2pStreamingEngine {
 
         private fun extractBundledBinary(platform: DesktopTorrServerPlatform): File? {
             val resource = "/torrserver/${platform.resourceDir}/${platform.binaryName}"
-            val input = P2pStreamingEngine::class.java.getResourceAsStream(resource) ?: return null
-            val dir = File(System.getProperty("java.io.tmpdir"), "nuvio-torrserver/${platform.resourceDir}").apply {
-                mkdirs()
+            val digest = P2pStreamingEngine::class.java.getResourceAsStream(resource)?.use(::sha256) ?: return null
+            cleanupLegacyTempBinaries(platform)
+
+            val dir = DesktopStorage.rootDir.resolve("torrserver/bin/${platform.resourceDir}").toFile().apply {
+                check(mkdirs() || isDirectory) { "Could not create TorrServer binary directory: $absolutePath" }
             }
-            val suffix = if (platform.binaryName.endsWith(".exe", ignoreCase = true)) ".exe" else null
-            val file = Files.createTempFile(dir.toPath(), "TorrServer-", suffix).toFile()
-            file.deleteOnExit()
-            input.use { source ->
-                file.outputStream().use { target -> source.copyTo(target) }
+            val file = File(dir, contentAddressedBinaryName(platform.binaryName, digest))
+            if (!file.isFile) {
+                installBundledBinary(resource, file)
             }
             file.setExecutable(true)
+            cleanupOutdatedBundledBinaries(dir, file)
             return file
+        }
+
+        private fun installBundledBinary(resource: String, destination: File) {
+            val source = P2pStreamingEngine::class.java.getResourceAsStream(resource)
+                ?: throw P2pStreamingException("Bundled TorrServer resource disappeared: $resource")
+            val temporary = Files.createTempFile(destination.parentFile.toPath(), ".TorrServer-", ".tmp")
+            try {
+                source.use { input ->
+                    Files.newOutputStream(temporary).use { output -> input.copyTo(output) }
+                }
+                try {
+                    Files.move(
+                        temporary,
+                        destination.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE,
+                    )
+                } catch (_: AtomicMoveNotSupportedException) {
+                    Files.move(temporary, destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                } catch (error: Exception) {
+                    // Another Nuvio instance may have installed the same content-addressed file first.
+                    if (!destination.isFile) throw error
+                }
+            } finally {
+                runCatching { Files.deleteIfExists(temporary) }
+            }
+        }
+
+        private fun cleanupLegacyTempBinaries(platform: DesktopTorrServerPlatform) {
+            val legacyDir = File(System.getProperty("java.io.tmpdir"), "nuvio-torrserver/${platform.resourceDir}")
+            legacyDir.listFiles()
+                ?.asSequence()
+                ?.filter { it.isFile && it.name.startsWith("TorrServer-") }
+                ?.forEach { stale ->
+                    runCatching { Files.deleteIfExists(stale.toPath()) }
+                        .onFailure { error -> log.d(error) { "Could not remove legacy TorrServer binary ${stale.absolutePath}" } }
+                }
+        }
+
+        private fun cleanupOutdatedBundledBinaries(directory: File, current: File) {
+            directory.listFiles()
+                ?.asSequence()
+                ?.filter { it.isFile && it != current && it.name.startsWith("TorrServer-") }
+                ?.forEach { stale ->
+                    runCatching { Files.deleteIfExists(stale.toPath()) }
+                        .onFailure { error -> log.d(error) { "Could not remove outdated TorrServer binary ${stale.absolutePath}" } }
+                }
+        }
+
+        private fun contentAddressedBinaryName(binaryName: String, digest: String): String {
+            val extensionIndex = binaryName.lastIndexOf('.').takeIf { it > 0 } ?: binaryName.length
+            return "${binaryName.substring(0, extensionIndex)}-$digest${binaryName.substring(extensionIndex)}"
+        }
+
+        private fun sha256(input: java.io.InputStream): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+            return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
         }
 
         companion object {
@@ -546,6 +659,38 @@ actual object P2pStreamingEngine {
             .build()
 
         private val baseUrl: String get() = binary.baseUrl
+
+        private var performanceDefaultsApplied = false
+
+        suspend fun ensurePerformanceDefaults() = withContext(Dispatchers.IO) {
+            if (performanceDefaultsApplied) return@withContext
+
+            try {
+                val request = buildJsonObject { put("action", "get") }
+                val current = postJson("/settings", request)
+                    ?: throw P2pStreamingException("TorrServer settings were unavailable")
+                val configured = current.withNuvioP2pPerformanceDefaults()
+
+                if (configured != current) {
+                    val update = buildJsonObject {
+                        put("action", "set")
+                        put("sets", configured)
+                    }
+                    postJson("/settings", update)
+                        ?: throw P2pStreamingException("TorrServer rejected Nuvio performance defaults")
+                    log.i {
+                        "Applied TorrServer defaults: connections=$NUVIO_TORRENT_CONNECTION_LIMIT " +
+                            "retention=${NUVIO_TORRENT_RETENTION_SECONDS}s"
+                    }
+                } else {
+                    log.d { "TorrServer performance defaults already applied" }
+                }
+                performanceDefaultsApplied = true
+            } catch (e: Exception) {
+                // Performance tuning must not turn a playable torrent into a startup failure.
+                log.w(e) { "Could not apply TorrServer performance defaults" }
+            }
+        }
 
         suspend fun addTorrent(magnetLink: String, title: String? = null): String? = withContext(Dispatchers.IO) {
             val body = buildJsonObject {
@@ -630,10 +775,29 @@ actual object P2pStreamingEngine {
                 .build()
             val response = client.send(request, HttpResponse.BodyHandlers.ofString())
             if (response.statusCode() !in 200..299) return null
-            return json.parseToJsonElement(response.body().orEmpty()).jsonObject
+            val responseBody = response.body().orEmpty()
+            return if (responseBody.isBlank()) {
+                JsonObject(emptyMap())
+            } else {
+                json.parseToJsonElement(responseBody).jsonObject
+            }
         }
     }
 }
+
+internal const val NUVIO_TORRENT_CONNECTION_LIMIT = 55
+internal const val NUVIO_TORRENT_RETENTION_SECONDS = 10 * 60
+
+internal fun JsonObject.withNuvioP2pPerformanceDefaults(): JsonObject =
+    JsonObject(
+        toMutableMap().apply {
+            this["ConnectionsLimit"] = JsonPrimitive(NUVIO_TORRENT_CONNECTION_LIMIT)
+            this["TorrentDisconnectTimeout"] = JsonPrimitive(NUVIO_TORRENT_RETENTION_SECONDS)
+        },
+    )
+
+private fun elapsedMillis(startedAtNanos: Long): Long =
+    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos)
 
 private fun JsonObject.stringOrNull(key: String): String? =
     this[key]?.jsonPrimitive?.contentOrNull

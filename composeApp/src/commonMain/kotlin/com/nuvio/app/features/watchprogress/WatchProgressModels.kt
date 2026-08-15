@@ -27,6 +27,15 @@ enum class ContinueWatchingSortMode {
     STREAMING_STYLE,
 }
 
+@Serializable
+enum class ContinueWatchingClickAction {
+    PLAY,
+    DETAILS,
+}
+
+internal fun ContinueWatchingClickAction.opensDetails(canOpenDetails: Boolean): Boolean =
+    this == ContinueWatchingClickAction.DETAILS && canOpenDetails
+
 /** Whether a playback source URL is a local file (local-library / download) rather than a remote stream. */
 fun isLocalFileSourceUrl(url: String?): Boolean =
     !url.isNullOrBlank() && !url.startsWith("http", ignoreCase = true)
@@ -192,9 +201,11 @@ data class ContinueWatchingItem(
 data class ContinueWatchingPreferencesUiState(
     val isVisible: Boolean = true,
     val style: ContinueWatchingSectionStyle = ContinueWatchingSectionStyle.Card,
+    val clickAction: ContinueWatchingClickAction = ContinueWatchingClickAction.PLAY,
     val upNextFromFurthestEpisode: Boolean = true,
     val useEpisodeThumbnails: Boolean = true,
     val showUnairedNextUp: Boolean = true,
+    val separateNextUpRow: Boolean = false,
     /**
      * Whether Up Next may also be seeded from the Nuvio Sync watched history when a *remote*
      * Continue Watching source is selected.

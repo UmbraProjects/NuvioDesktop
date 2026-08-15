@@ -240,8 +240,8 @@
     <string name="compose_settings_root_switch_profile_description">Μετάβαση σε διαφορετικό προφίλ.</string>
     <string name="compose_settings_root_switch_profile_title">Εναλλαγή προφίλ</string>
     <string name="compose_settings_root_trakt_description">Συνδέστε το Trakt, συγχρονίστε λίστες παρακολούθησης και αποθηκεύστε τίτλους απευθείας στο Trakt.</string>
-    <string name="compose_trakt_list_picker_loading">Φόρτωση λιστών Trakt…</string>
-    <string name="compose_trakt_list_picker_subtitle">Επιλέξτε πού θα αποθηκευτεί αυτός ο τίτλος στο Trakt</string>
+    <string name="compose_trakt_list_picker_loading">Φόρτωση λιστών…</string>
+    <string name="compose_trakt_list_picker_subtitle">Επιλέξτε σε ποιες λίστες θα αποθηκευτεί αυτός ο τίτλος</string>
     <string name="action_donate">Δωρεά</string>
     <string name="cw_action_go_to_details">Μετάβαση στις λεπτομέρειες</string>
     <string name="cw_action_remove">Αφαίρεση</string>
@@ -871,8 +871,8 @@
     <string name="streams_size">ΜΕΓΕΘΟΣ %1$s</string>
     <string name="trailer_close">Κλείσιμο τρέιλερ</string>
     <string name="trailer_unable_to_play">Αδυναμία αναπαραγωγής τρέιλερ</string>
-    <string name="trakt_lists_load_failed">Αποτυχία φόρτωσης λιστών Trakt</string>
-    <string name="trakt_lists_update_failed">Αποτυχία ενημέρωσης λιστών Trakt</string>
+    <string name="trakt_lists_load_failed">Αποτυχία φόρτωσης λιστών</string>
+    <string name="trakt_lists_update_failed">Αποτυχία ενημέρωσης λιστών</string>
     <string name="updates_asset_line">%1$s • %2$s</string>
     <string name="updates_check_failed">Ο έλεγχος ενημερώσεων απέτυχε</string>
     <string name="updates_download_failed">Η λήψη απέτυχε</string>

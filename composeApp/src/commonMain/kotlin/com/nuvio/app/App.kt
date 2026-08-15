@@ -205,8 +205,13 @@ import com.nuvio.app.features.home.components.HomeHeroTrailerGate
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.HomeRepository
 import com.nuvio.app.features.home.RandomPlayAction
+import com.nuvio.app.features.home.RandomPlayCandidatePool
+import com.nuvio.app.features.home.RandomPlayCollectionPool
 import com.nuvio.app.features.home.pickRandomPlayItem
+import com.nuvio.app.features.home.randomPlaySourceSections
+import com.nuvio.app.features.home.withRandomPlayPool
 import com.nuvio.app.features.home.randomPlayCategoryOrNull
+import com.nuvio.app.features.home.randomPlayPickTrace
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryNavigationContextMenu
 import com.nuvio.app.features.library.LibraryNavMenuWidth
@@ -241,7 +246,8 @@ import com.nuvio.app.features.player.ExternalPlayerPlaybackRequest
 import com.nuvio.app.features.player.rememberExternalPlayerLauncher
 import com.nuvio.app.features.player.prepareExternalPlayerLaunch
 import com.nuvio.app.features.player.playerSourceIdentityKey
-import com.nuvio.app.features.player.SubtitleLanguageOption
+import com.nuvio.app.features.player.externalPlayerSubtitleTargets
+import com.nuvio.app.features.player.OriginalLanguageCache
 import com.nuvio.app.features.player.sanitizePlaybackHeaders
 import com.nuvio.app.features.player.sanitizePlaybackResponseHeaders
 import com.nuvio.app.features.player.skip.SkipDbDumpRepository
@@ -265,7 +271,7 @@ import com.nuvio.app.features.settings.MetaScreenSettingsScreen
 import com.nuvio.app.features.settings.ContinueWatchingSettingsScreen
 import com.nuvio.app.features.settings.AddonsSettingsScreen
 import com.nuvio.app.features.settings.PluginsSettingsScreen
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.settings.AccountSettingsScreen
 import com.nuvio.app.features.settings.SupportersContributorsSettingsScreen
 import com.nuvio.app.features.settings.LicensesAttributionsSettingsScreen
@@ -295,6 +301,9 @@ import com.nuvio.app.features.simkl.SimklConnectionMode
 import com.nuvio.app.features.simkl.SimklDailyVisit
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.simkl.SimklSettingsRepository
+import com.nuvio.app.features.simkl.SimklRewatchRepository
+import com.nuvio.app.features.simkl.SimklRewatchStartResult
+import com.nuvio.app.features.simkl.canUseRewatches
 import com.nuvio.app.features.mdblist.MdbListScrobbleAdapter
 import com.nuvio.app.features.mdblist.MdbListLibraryAdapter
 import com.nuvio.app.features.mdblist.MdbListTrackingAuthProvider
@@ -345,6 +354,7 @@ import com.nuvio.app.features.watchprogress.ResumePromptRepository
 import com.nuvio.app.features.watchprogress.WatchProgressPlaybackSession
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.nextUpDismissKey
+import com.nuvio.app.features.watchprogress.opensDetails
 import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import com.nuvio.app.features.watching.application.WatchingActions
 import com.nuvio.app.features.watching.application.WatchingState
@@ -609,6 +619,9 @@ private data class PendingProfileSwitch(
 
 private val appStartupLog = Logger.withTag("AppStartup")
 
+/** Why a Random Play click landed on the title it did; see [randomPlayPickTrace]. */
+private val randomPlayLog = Logger.withTag("RandomPlay")
+
 private inline fun startupWarmStep(
     name: String,
     rethrow: Boolean = true,
@@ -720,6 +733,15 @@ private suspend fun warmProfileDeferredRepositories() {
         startupWarmStep("discord presence settings load", rethrow = false) { DiscordPresenceSettingsRepository.ensureLoaded() }
         startupWarmStep("simkl settings load", rethrow = false) { SimklSettingsRepository.ensureLoaded() }
         startupWarmStep("simkl auth load", rethrow = false) { SimklAuthRepository.ensureLoaded() }
+        startupWarmStep("simkl rewatches load", rethrow = false) {
+            SimklRewatchRepository.ensureLoaded()
+            if (
+                SimklSettingsRepository.isRewatchTrackingEnabled() &&
+                SimklAuthRepository.uiState.value.canUseRewatches
+            ) {
+                SimklRewatchRepository.refreshNow()
+            }
+        }
         startupWarmStep("tvdb settings load", rethrow = false) { com.nuvio.app.features.tvdb.TvdbSettingsRepository.ensureLoaded() }
         startupWarmStep("collection sync observer start", rethrow = false) { CollectionSyncService.startObserving() }
         if (AppFeaturePolicy.downloadsEnabled) {
@@ -1157,6 +1179,20 @@ private fun MainAppContent(
             openSimklDailyVisitIfDue(uriHandler::openUri)
         }
         val currentBackStackEntry by navController.currentBackStackEntryAsState()
+        var previousDestinationWasTabs by remember { mutableStateOf<Boolean?>(null) }
+        LaunchedEffect(currentBackStackEntry) {
+            val destinationIsTabs = currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true
+            if (
+                destinationIsTabs &&
+                previousDestinationWasTabs == false &&
+                (selectedTab == AppScreenTab.Home || selectedTab == AppScreenTab.Library)
+            ) {
+                // Pushed routes (notably Calendar) can retain focus during their exit transition.
+                // Tell the tab content to reclaim it once the Tabs destination becomes active.
+                navigateToContentCount++
+            }
+            previousDestinationWasTabs = destinationIsTabs
+        }
         var lastPlayerExitBackMark by remember { mutableStateOf<TimeMark?>(null) }
         BindDiscordBrowsingPresence(
             currentBackStackEntry = currentBackStackEntry,
@@ -1249,7 +1285,12 @@ private fun MainAppContent(
     val playerSettingsUiState by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
     val homeCatalogSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     val p2pSettingsUiState by P2pSettingsRepository.uiState.collectAsStateWithLifecycle()
-    val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
+        val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
+        val simklAuthUiState by SimklAuthRepository.uiState.collectAsStateWithLifecycle()
+        val simklSettingsUiState by SimklSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val simklRewatchActionLabel = stringResource(Res.string.simkl_start_rewatch)
+        val simklRewatchStartedLabel = stringResource(Res.string.simkl_rewatch_started)
+        val simklRewatchFailedLabel = stringResource(Res.string.simkl_rewatch_failed)
     val networkStatusUiState by remember {
         NetworkStatusRepository.uiState
     }.collectAsStateWithLifecycle()
@@ -1643,8 +1684,15 @@ private fun MainAppContent(
             }
 
             val baseRequest = launch.toExternalPlayerPlaybackRequest()
+            // The same question the launch itself asks, so the overlay is shown exactly when there
+            // is a fetch to wait for — a secondary language alone is reason enough, and neither
+            // "Device language" nor "Original" is a language until it has been resolved.
+            val externalSubtitleLanguages = externalPlayerSubtitleTargets(
+                settings = playerSettingsUiState,
+                originalLanguage = OriginalLanguageCache.languageFor(launch.parentMetaId),
+            )
             val shouldForwardSubtitles = playerSettingsUiState.externalPlayerForwardSubtitles &&
-                !playerSettingsUiState.preferredSubtitleLanguage.equals(SubtitleLanguageOption.NONE, ignoreCase = true)
+                externalSubtitleLanguages.isNotEmpty()
             if (shouldForwardSubtitles) {
                 StreamsRepository.setOverlayVisible(true, getString(Res.string.streams_loading_subtitles))
             }
@@ -1653,8 +1701,8 @@ private fun MainAppContent(
                 type = launch.contentType ?: launch.parentMetaType,
                 videoId = launch.videoId ?: launch.parentMetaId,
                 forwardSubtitles = playerSettingsUiState.externalPlayerForwardSubtitles,
-                preferredLanguage = playerSettingsUiState.preferredSubtitleLanguage,
-                secondaryLanguage = playerSettingsUiState.secondaryPreferredSubtitleLanguage,
+                settings = playerSettingsUiState,
+                originalLanguage = OriginalLanguageCache.languageFor(launch.parentMetaId),
                 onOverlayMessage = { _ -> },
             )
             StreamsRepository.setOverlayVisible(false)
@@ -1762,11 +1810,10 @@ private fun MainAppContent(
 
             PlaybackStartTrace.beginPending("playClicked type=$type id=$videoId")
 
-            val configuredBehavior = localLibraryUiState.playbackPreference
-            val requestedBehavior = configuredBehavior.behaviorFor(useAlternateBehavior)
-            val requestedLocalPlayback =
-                requestedBehavior == LocalLibraryPlaybackPreference.LOCAL_LIBRARY &&
-                    AppFeaturePolicy.downloadsEnabled
+            // Read the repository at the moment of the click. A details destination can outlive the
+            // composition that created its callbacks; using its captured UI snapshot meant changing
+            // this setting to Source picker could still leave that destination opening local files.
+            val configuredBehavior = LocalLibraryRepository.currentPlaybackPreference()
             val downloadedItem = if (AppFeaturePolicy.downloadsEnabled) {
                 DownloadsRepository.findPlayableDownload(
                     parentMetaId = parentMetaId,
@@ -1780,19 +1827,20 @@ private fun MainAppContent(
             val localSourceUrl = downloadedItem?.let(DownloadsRepository::playableLocalFileUri)
             val hasLocalLibraryStream = AppFeaturePolicy.downloadsEnabled &&
                 LocalLibraryRepository.localStreamsFor(parentMetaId, videoId).isNotEmpty()
-            val hasLocalPlayback = !localSourceUrl.isNullOrBlank() || hasLocalLibraryStream
-            val prefersLocalStreams =
-                requestedLocalPlayback && hasLocalPlayback
-            // "Source picker" is deliberately manual even when stream auto-play is configured.
-            // Without a local source this preference is irrelevant and normal online auto-play
-            // remains active. An alternate local action whose file disappeared still falls back
-            // to the picker instead of silently auto-playing an unrelated external source.
-            val manualSelection = configuredBehavior.shouldUseManualStreamSelection(
+            val localRouting = configuredBehavior.resolvePlaybackRouting(
                 useAlternate = useAlternateBehavior,
-                hasLocalFile = hasLocalPlayback,
+                hasDownloadedFile = !localSourceUrl.isNullOrBlank(),
+                hasLocalLibraryStream = hasLocalLibraryStream,
+            )
+            val prefersLocalStreams = localRouting.preferLocalStreams
+            val manualSelection = localRouting.manualSelection
+            PlaybackStartTrace.markPending(
+                "localRoute configured=$configuredBehavior requested=${localRouting.requestedBehavior} " +
+                    "downloaded=${!localSourceUrl.isNullOrBlank()} scanned=$hasLocalLibraryStream " +
+                    "manual=$manualSelection",
             )
 
-            if (prefersLocalStreams && downloadedItem != null) {
+            if (localRouting.playDownloadedFileDirectly && downloadedItem != null) {
                 if (!localSourceUrl.isNullOrBlank()) {
                     val playerLaunch = PlayerLaunch(
                             title = title,
@@ -1941,12 +1989,13 @@ private fun MainAppContent(
                 )
             }
 
-        val onCatalogClick: (HomeCatalogSection) -> Unit = { section ->
+        val onCatalogClick: (HomeCatalogSection) -> Unit = onCatalogClick@ { section ->
+            val target = section.target ?: return@onCatalogClick
             navController.navigate(
                 CatalogRoute(
                     title = section.title,
                     subtitle = section.subtitle,
-                    target = section.target,
+                    target = target,
                 ),
             )
         }
@@ -2049,6 +2098,23 @@ private fun MainAppContent(
         }
 
         val onContinueWatchingClick: (ContinueWatchingItem) -> Unit = { item ->
+            if (
+                continueWatchingPreferencesUiState.clickAction.opensDetails(
+                    canOpenDetails = !item.isCloudLibraryContinueWatchingItem(),
+                )
+            ) {
+                resumePromptItem = null
+                navController.navigateIfResumed(
+                    DetailRoute(type = item.parentMetaType, id = item.parentMetaId),
+                )
+            } else {
+                openContinueWatching(item, false, false)
+            }
+        }
+
+        // Explicit Resume/Play affordances never inherit the card's default click action. They
+        // continue into the existing local-file/source-picker/autoplay decision tree.
+        val onContinueWatchingPlay: (ContinueWatchingItem) -> Unit = { item ->
             openContinueWatching(item, false, false)
         }
 
@@ -2253,7 +2319,6 @@ private fun MainAppContent(
                                         animateHomeCollectionGifs = tabsRouteActive,
                                         resumePromptItem = resumePromptItem.takeIf { resumePromptUsesHero },
                                         resumePromptLabel = stringResource(Res.string.resume_prompt_question),
-                                        resumePromptActionLabel = stringResource(Res.string.resume_prompt_action),
                                         onResumePromptAction = {
                                             val item = resumePromptItem
                                             if (item != null) {
@@ -2270,12 +2335,38 @@ private fun MainAppContent(
                                             val randomCategory = meta.randomPlayCategoryOrNull()
                                             if (randomCategory != null) {
                                                 val randomSettings = HomeCatalogSettingsRepository.uiState.value
+                                                val randomSourceSections = randomPlaySourceSections(
+                                                    homeSections = HomeRepository.uiState.value.sections,
+                                                    collectionSections = RandomPlayCollectionPool.sections.value,
+                                                    settings = randomSettings,
+                                                )
                                                 val selected = pickRandomPlayItem(
                                                     category = randomCategory,
-                                                    sourceSections = HomeRepository.uiState.value.sections,
+                                                    sourceSections = randomSourceSections
+                                                        .withRandomPlayPool(RandomPlayCandidatePool.state.value),
                                                     settings = randomSettings,
                                                     watchedKeys = WatchedRepository.uiState.value.watchedKeys,
                                                 )
+                                                // Warm the next window of collection sources for
+                                                // the pick after this one. No-op once every source
+                                                // is covered, or when collections are not included.
+                                                RandomPlayCollectionPool.ensureLoaded()
+                                                // Likewise top the candidate pool back up: this
+                                                // pick may have been the one that took a card
+                                                // under its target.
+                                                RandomPlayCandidatePool.ensureFilled(
+                                                    sourceSections = randomSourceSections,
+                                                    settings = randomSettings,
+                                                    watchedKeys = WatchedRepository.uiState.value.watchedKeys,
+                                                )
+                                                randomPlayLog.i {
+                                                    val pooled = randomSourceSections
+                                                        .withRandomPlayPool(RandomPlayCandidatePool.state.value)
+                                                    "Pick for $randomCategory: " + (
+                                                        selected?.let { randomPlayPickTrace(pooled, it) }
+                                                            ?: "no candidates"
+                                                        )
+                                                }
                                                 if (selected == null) {
                                                     coroutineScope.launch {
                                                         NuvioToastController.show(
@@ -2344,6 +2435,7 @@ private fun MainAppContent(
                                             selectedTab = AppScreenTab.Settings
                                         },
                                         onContinueWatchingClick = onContinueWatchingClick,
+                                        onContinueWatchingPlay = onContinueWatchingPlay,
                                         onContinueWatchingLongPress = onContinueWatchingLongPress,
                                         onSwitchProfile = onSwitchProfile,
                                         onHomescreenSettingsClick = { navController.navigate(HomescreenSettingsRoute) },
@@ -3763,6 +3855,30 @@ private fun MainAppContent(
                         }
                     }
                 },
+                onStartRewatch = selectedPosterActionTarget?.preview
+                    ?.takeIf {
+                        simklAuthUiState.canUseRewatches &&
+                            simklSettingsUiState.simklTrackRewatches &&
+                            WatchingState.isPosterWatched(watchedUiState.watchedKeys, it)
+                    }
+                    ?.let { preview ->
+                        {
+                            coroutineScope.launch {
+                                when (val result = SimklRewatchRepository.startRewatch(preview)) {
+                                    is SimklRewatchStartResult.Started -> NuvioToastController.show(
+                                        message = result.session.title,
+                                        title = simklRewatchStartedLabel,
+                                    )
+                                    is SimklRewatchStartResult.Failed -> NuvioToastController.show(
+                                        message = result.reason,
+                                        title = simklRewatchFailedLabel,
+                                        durationMillis = 4_000L,
+                                    )
+                                }
+                            }
+                        }
+                    },
+                rewatchLabel = simklRewatchActionLabel,
                 onToggleWatched = {
                     selectedPosterActionTarget?.preview?.let { preview ->
                         coroutineScope.launch {
@@ -3817,8 +3933,16 @@ private fun MainAppContent(
                     )
                 }
 
+            val continueWatchingUsesDetailsByDefault = selectedContinueWatching?.let { item ->
+                continueWatchingPreferencesUiState.clickAction.opensDetails(
+                    canOpenDetails = !item.isCloudLibraryContinueWatchingItem(),
+                )
+            } == true
+
             NuvioContinueWatchingActionSheet(
                 item = selectedContinueWatchingForActions,
+                primaryPlayLabel = stringResource(Res.string.cw_action_play)
+                    .takeIf { continueWatchingUsesDetailsByDefault },
                 alternatePlayLabel = continueWatchingAlternatePlayLabel,
                 showDetailsOption = selectedContinueWatchingForActions?.isCloudLibraryContinueWatchingItem() != true,
                 onDismiss = {
@@ -3835,6 +3959,9 @@ private fun MainAppContent(
                         )
                     }
                 },
+                onPrimaryPlay = selectedContinueWatchingForActions
+                    ?.takeIf { continueWatchingUsesDetailsByDefault }
+                    ?.let { item -> { onContinueWatchingPlay(item) } },
                 onStartFromBeginning = selectedContinueWatchingForActions
                     ?.takeIf { !it.isNextUp }
                     ?.let { item -> { onContinueWatchingStartFromBeginning(item) } },
@@ -4205,7 +4332,6 @@ private fun AppTabHost(
     animateHomeCollectionGifs: Boolean = true,
     resumePromptItem: ContinueWatchingItem? = null,
     resumePromptLabel: String = "",
-    resumePromptActionLabel: String = "",
     onResumePromptAction: (() -> Unit)? = null,
     onResumePromptDismiss: (() -> Unit)? = null,
     continueWatchingHeroDismissed: Boolean = false,
@@ -4221,6 +4347,7 @@ private fun AppTabHost(
     onCloudFilePlay: ((CloudLibraryItem, CloudLibraryFile) -> Unit)? = null,
     onConnectCloudClick: (() -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
+    onContinueWatchingPlay: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
     onSwitchProfile: (() -> Unit)? = null,
     onHomescreenSettingsClick: () -> Unit = {},
@@ -4260,13 +4387,13 @@ private fun AppTabHost(
                 // until results arrive, and switching from Library to Search stays
                 // on the library view until the user types.
                 AppScreenTab.Home, AppScreenTab.Search, AppScreenTab.Library -> {
-                    AnimatedContent(
-                        targetState = selectedTab,
-                        transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(160)) },
-                        label = "home_library_tab_crossfade",
-                    ) { activeTab ->
-                    val isSearch = activeTab == AppScreenTab.Search
-                    val isLib = activeTab == AppScreenTab.Library
+                    // Keep one HomeScreen in the composition while its mode changes. AnimatedContent
+                    // retained the outgoing screen for the fade, leaving two focusable HomeScreens
+                    // and two HomeTvKeyboardBridge collectors alive at once. On Search -> Home the
+                    // outgoing Search screen could reclaim/clear focus as it was disposed, freezing
+                    // the Continue Watching shelf until another navigation resynchronised it.
+                    val isSearch = selectedTab == AppScreenTab.Search
+                    val isLib = selectedTab == AppScreenTab.Library
                     HomeScreen(
                         modifier = Modifier.fillMaxSize(),
                         topChromePadding = topChromePadding,
@@ -4302,6 +4429,7 @@ private fun AppTabHost(
                         onPosterLongClick = onPosterLongClick,
                         onLocalLibraryPosterClick = onLocalLibraryPosterClick,
                         onContinueWatchingClick = if (!isSearch && !isLib) onContinueWatchingClick else null,
+                        onContinueWatchingPlay = if (!isSearch && !isLib) onContinueWatchingPlay else null,
                         onContinueWatchingLongPress = if (!isSearch && !isLib) onContinueWatchingLongPress else null,
                         onFolderClick = if (!isSearch && !isLib) onFolderClick else null,
                         onFirstCatalogRendered = if (!isSearch && !isLib) onInitialHomeContentRendered else null,
@@ -4312,13 +4440,11 @@ private fun AppTabHost(
                         navigateToContentCount = navigateToContentCount,
                         resumePromptItem = if (!isSearch && !isLib) resumePromptItem else null,
                         resumePromptLabel = resumePromptLabel,
-                        resumePromptActionLabel = resumePromptActionLabel,
                         onResumePromptAction = onResumePromptAction,
                         onResumePromptDismiss = onResumePromptDismiss,
                         continueWatchingHeroDismissed = if (!isSearch && !isLib) continueWatchingHeroDismissed else false,
                         onContinueWatchingHeroDismiss = onContinueWatchingHeroDismiss,
                     )
-                    }
                 }
 
                 AppScreenTab.Settings -> {
@@ -5038,7 +5164,7 @@ private fun TabletFloatingTopBar(
                                 // This floating search field lives above the active content screen,
                                 // but desktop app shortcuts are handled at the window root. Mark it
                                 // as an active text editor so typed shortcut letters are not routed.
-                                .trackSettingsTextFocus()
+                                .trackTextInputFocus()
                                 .onFocusChanged { state ->
                                     searchBarHasFocus = state.isFocused
                                     if (state.isFocused) {

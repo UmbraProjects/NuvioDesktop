@@ -88,6 +88,9 @@ enum class PlayerControlsAction {
 data class PlayerControlsState(
     val title: String = "",
     val episodeText: String = "",
+    // Poster/backdrop URL for the Windows media-session thumbnail. Desktop-only; other platforms
+    // and the hero-trailer surfaces leave it blank, which clears the thumbnail.
+    val mediaSessionArtwork: String = "",
     val streamTitle: String = "",
     val providerName: String = "",
     val pauseOverlayWatchingLabel: String = "You're watching",
@@ -162,6 +165,7 @@ data class PlayerControlsState(
     val subtitleStyleTabLabel: String = "Style",
     val noneLabel: String = "None",
     val fetchSubtitlesLabel: String = "Tap to fetch subtitles",
+    val downloadSubtitleLabel: String = "Download subtitle",
     val subtitleDelayLabel: String = "Subtitle Delay",
     val resetLabel: String = "Reset",
     val autoSyncLabel: String = "Auto Sync",
@@ -208,6 +212,8 @@ data class PlayerControlsState(
     val legacyHudEnabled: Boolean = false,
     val alwaysShowClock: Boolean = false,
     val playbackSpeedFineIncrementsEnabled: Boolean = false,
+    val playbackSpeedToggleLow: Float = 1f,
+    val playbackSpeedToggleHigh: Float = 2f,
     val uiScalePercent: Int = 0,
     val sourceNotchPosition: String = "right",
     val parentalWarnings: List<ParentalWarning> = emptyList(),
@@ -316,6 +322,31 @@ data class PlayerControlsState(
     val streamFailoverEnabled: Boolean = false,
 )
 
+/**
+ * The title mpv exposes through `media-title` and its diagnostics overlay.
+ *
+ * A resolved debrid URL is an implementation detail and can contain both opaque hashes and access
+ * tokens. The source-list label is already the user-facing description of that URL, so it wins;
+ * title/episode metadata is only a fallback for direct and local playback.
+ */
+internal fun preferredMpvMediaTitle(
+    streamTitle: String?,
+    title: String?,
+    episodeText: String?,
+): String = streamTitle.cleanMpvMediaTitlePart()
+    ?: listOfNotNull(
+        title.cleanMpvMediaTitlePart(),
+        episodeText.cleanMpvMediaTitlePart(),
+    ).distinct().joinToString(" ")
+
+private fun String?.cleanMpvMediaTitlePart(): String? =
+    this
+        ?.replace('\n', ' ')
+        ?.replace('\r', ' ')
+        ?.replace(Regex("\\s+"), " ")
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+
 data class PlayerControlFilterItem(
     val id: String = "",
     val label: String = "",
@@ -376,6 +407,7 @@ data class PlayerControlAddonSubtitleItem(
     val languageLabel: String = "",
     val addonName: String = "",
     val isSelected: Boolean = false,
+    val isDownloading: Boolean = false,
 )
 
 /**
@@ -387,6 +419,8 @@ data class PlayerControlAddonSubtitleItem(
 data class PlayerControlBuiltInSubtitleItem(
     val index: Int = 0,
     val label: String = "",
+    val id: String = "",
+    val languageLabel: String = "",
     val isSelected: Boolean = false,
 )
 

@@ -456,6 +456,21 @@ fun languageMatchesPreference(trackLanguage: String?, targetLanguage: String): B
     return trackPrimary == targetPrimary
 }
 
+/**
+ * The same comparison without the primary-subtag fallback, so `pt-BR` does not answer to European
+ * Portuguese and `zh-CN` does not answer to Traditional Chinese.
+ *
+ * Automatic selection runs this pass first and only then [languageMatchesPreference]: the loose
+ * match is what makes a plain `pt` release usable for someone who asked for Brazilian Portuguese,
+ * but when both variants are present the one that was actually asked for has to win — and which of
+ * the two comes first in the container is arbitrary.
+ */
+fun languageMatchesPreferenceExactly(trackLanguage: String?, targetLanguage: String): Boolean {
+    val normalizedTrack = normalizeLanguageCode(trackLanguage) ?: return false
+    val normalizedTarget = normalizeLanguageCode(targetLanguage) ?: return false
+    return normalizedTrack == normalizedTarget
+}
+
 private fun languageLabelResForCode(code: String?): StringResource? {
     val normalized = normalizeLanguageCode(code) ?: return null
     return AvailableLanguageOptions.firstOrNull {

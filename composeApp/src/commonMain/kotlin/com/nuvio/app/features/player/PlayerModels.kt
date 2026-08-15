@@ -190,6 +190,31 @@ enum class DesktopColorProfile(val label: String, val description: String) {
     Vivid("Vivid", "Boosted contrast and saturation for a punchier image."),
 }
 
+/**
+ * Trims the gpu-next rendering pipeline down to what a small video-memory budget can actually
+ * allocate.
+ *
+ * libplacebo sizes its intermediate render targets from the *source* resolution, not the window: one
+ * RGBA16F surface for a 4K frame is ~63 MB, and the baseline pipeline (deband, linear/sigmoid light,
+ * the separable scalers, HDR peak detection) wants several of them at once. When the driver refuses
+ * one of those allocations libplacebo disables FBOs mid-frame, skips the main scaler, and then trips
+ * an internal size assertion that aborts the process — the crash cannot be caught or recovered from
+ * after the fact, so the only fix is to never ask for the memory. Reported on an Intel UHD 630 with a
+ * 2 GB shared pool playing 4K ("Failed creating FBO texture! Disabling advanced rendering..").
+ *
+ * [Auto] resolves natively (see the Windows player bridge) against the adapter's dedicated video
+ * memory. It deliberately does not look at the source resolution: mpv's options have to be set before
+ * the file is loaded, and the first rendered frame is already the one that crashes.
+ *
+ * Anime4K and custom GLSL chains are left alone in every mode — they are an explicit, visible user
+ * choice, and silently dropping them would be a worse surprise than the quality loss here.
+ */
+enum class DesktopLowVramMode(val label: String, val description: String) {
+    Off("Off", "Always use the full rendering pipeline, whatever the GPU reports."),
+    Auto("Auto", "Trim the pipeline on integrated graphics and GPUs with under 2 GB of video memory."),
+    On("On", "Always trim: bilinear scaling, no debanding, dithering or HDR peak detection."),
+}
+
 enum class DesktopSourceNotchPosition {
     Right,
     Left,

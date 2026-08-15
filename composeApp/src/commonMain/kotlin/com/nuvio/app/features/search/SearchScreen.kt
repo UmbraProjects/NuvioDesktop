@@ -75,7 +75,7 @@ import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
 import com.nuvio.app.features.home.components.HomeSkeletonRow
-import com.nuvio.app.features.settings.trackSettingsTextFocus
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.watched.WatchedRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -423,7 +423,7 @@ fun SearchScreen(
                                 // Compose text fields can leave ordinary desktop key-down events
                                 // unconsumed after editing. Register focus with the app shortcut
                                 // guard so shortcut letters remain search text.
-                                .trackSettingsTextFocus()
+                                .trackTextInputFocus()
                                 .onPreviewKeyEvent { event ->
                                     if (suppressSearchActivationKey && event.key == Key.S) {
                                         if (event.type == KeyEventType.KeyUp) {

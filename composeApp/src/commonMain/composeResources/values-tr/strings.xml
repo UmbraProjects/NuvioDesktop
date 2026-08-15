@@ -439,8 +439,8 @@
     <string name="settings_licenses_attributions_exoplayer_title">AndroidX Media3 ExoPlayer 1.8.0</string>
     <string name="settings_licenses_attributions_exoplayer_body">Android sürümlerinde oynatma için kullanılır.</string>
     <string name="settings_licenses_attributions_exoplayer_license">Apache Lisansı, Sürüm 2.0 kapsamında lisanslanmıştır.</string>
-    <string name="compose_trakt_list_picker_loading">Trakt listelerin yükleniyor…</string>
-    <string name="compose_trakt_list_picker_subtitle">Bu içeriğin Trakt'ta nereye kaydedileceğini seç</string>
+    <string name="compose_trakt_list_picker_loading">Listelerin yükleniyor…</string>
+    <string name="compose_trakt_list_picker_subtitle">Bu içeriğin hangi listelere kaydedileceğini seç</string>
     <string name="action_donate">Bağış yap</string>
     <string name="cw_action_go_to_details">Detaylara git</string>
     <string name="cw_action_remove">Kaldır</string>
@@ -1187,8 +1187,8 @@
     <string name="external_player_unavailable">Kullanılabilir harici oynatıcı yok</string>
     <string name="trailer_close">Fragmanı kapat</string>
     <string name="trailer_unable_to_play">Fragman oynatılamıyor</string>
-    <string name="trakt_lists_load_failed">Trakt listeleri yüklenemedi</string>
-    <string name="trakt_lists_update_failed">Trakt listeleri güncellenemedi</string>
+    <string name="trakt_lists_load_failed">Listeler yüklenemedi</string>
+    <string name="trakt_lists_update_failed">Listeler güncellenemedi</string>
     <string name="updates_asset_line">%1$s • %2$s</string>
     <string name="updates_check_failed">Güncelleme kontrolü olmadı</string>
     <string name="updates_download_failed">İndirme olmadı</string>

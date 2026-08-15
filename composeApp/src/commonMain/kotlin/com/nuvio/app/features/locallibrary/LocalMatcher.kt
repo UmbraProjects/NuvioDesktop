@@ -3,6 +3,8 @@ package com.nuvio.app.features.locallibrary
 import com.nuvio.app.features.kitsu.KitsuSearchResult
 import com.nuvio.app.features.kitsu.KitsuService
 import com.nuvio.app.features.metadata.AnimeIdMappingRepository
+import com.nuvio.app.features.metadata.AnimeIdPreference
+import com.nuvio.app.features.metadata.AnimeIdPreferenceRepository
 import com.nuvio.app.features.metadata.pickBestTmdbMatch
 import com.nuvio.app.features.metadata.titleSimilarity
 import com.nuvio.app.features.metadata.yearMismatchPenalty
@@ -165,10 +167,18 @@ internal object LocalMatcher {
         val mediaType = tmdbMediaType()
         val tmdb = if (type == LocalFolderType.SERIES) mapping?.tmdbTvId else mapping?.tmdbMovieIds?.firstOrNull()
         val imdb = mapping?.imdbIds?.firstOrNull()
+        // A search hit supplies Kitsu's own poster; an id typed into the Fix-match dialog supplies
+        // none, and would otherwise fall through to the franchise's TMDB art — the same surprise as
+        // refreshing a poster used to give. Fetch the entry's own art when it is what the identity
+        // preference asked for.
+        val nativePoster = poster
+            ?: kitsuId
+                .takeIf { AnimeIdPreferenceRepository.current() != AnimeIdPreference.IMDB }
+                ?.let { id -> runCatching { KitsuService.fetchPosterUrl(id) }.getOrNull() }
         // Kitsu gives a poster but no backdrop; the mapped TMDB id supplies the landscape art.
-        val tmdbArtwork = tmdb?.takeIf { poster == null || background == null }
+        val tmdbArtwork = tmdb?.takeIf { nativePoster == null || background == null }
             ?.let { artworkFromTmdb(it, mediaType) }
-        val resolvedPoster = poster ?: tmdbArtwork?.poster ?: this.poster
+        val resolvedPoster = nativePoster ?: tmdbArtwork?.poster ?: this.poster
         return copy(
             kitsuId = kitsuId,
             malId = mapping?.malId ?: malId,

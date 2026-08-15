@@ -44,6 +44,8 @@ private data class ShowCalendarInfo(
     val title: String,
     val posterUrl: String?,
     val isAnime: Boolean,
+    /** Kept so episode coordinates can be projected into [contentId]'s space. */
+    val ids: SimklMediaIds,
 )
 
 internal object SimklCalendarRepository {
@@ -196,7 +198,12 @@ internal object SimklCalendarRepository {
                 val movie = entry.movie ?: return@forEach
                 val simklId = movie.ids.simkl ?: return@forEach
                 movieWatchlistIds.add(simklId)
-                movie.ids.toBestContentId()?.let { movieWatchlistContentIds[simklId] = it }
+                val movieContentId = if (movie.ids.isKnownAnime()) {
+                    movie.ids.toBestAnimeMovieContentId()
+                } else {
+                    movie.ids.toBestContentId()
+                }
+                movieContentId?.let { movieWatchlistContentIds[simklId] = it }
                 movie.poster?.takeIf { it.isNotBlank() }
                     ?.let { movieWatchlistPosters[simklId] = it.simklPosterUrl() }
             }
@@ -215,6 +222,7 @@ internal object SimklCalendarRepository {
                         title = show.title.orEmpty(),
                         posterUrl = show.poster?.takeIf { it.isNotBlank() }?.simklPosterUrl(),
                         isAnime = false,
+                        ids = show.ids,
                     ))
                 }
                 (parsed.anime).forEach { entry ->
@@ -222,13 +230,17 @@ internal object SimklCalendarRepository {
                     if (status == "completed" || status == "dropped") return@forEach
                     val anime = entry.anime ?: return@forEach
                     val simklId = anime.ids.simkl ?: return@forEach
-                    val contentId = anime.ids.toBestContentId() ?: return@forEach
+                    // Anime-aware, like every other SIMKL surface: a calendar row keyed by a
+                    // franchise id cannot be matched against a library or Continue Watching row
+                    // keyed by a kitsu/mal one, which is what silently drops the release badges.
+                    val contentId = anime.ids.toBestAnimeContentId() ?: return@forEach
                     add(ShowCalendarInfo(
                         simklId = simklId,
                         contentId = contentId,
                         title = anime.title.orEmpty(),
                         posterUrl = anime.poster?.takeIf { it.isNotBlank() }?.simklPosterUrl(),
                         isAnime = true,
+                        ids = anime.ids,
                     ))
                 }
             }
@@ -250,14 +262,27 @@ internal object SimklCalendarRepository {
             json.decodeFromString<List<SimklEpisodeDto>>(resp.body)
                 .mapNotNull { ep ->
                     val dateKey = ep.date?.take(10)?.takeIf { it.length == 10 } ?: return@mapNotNull null
+                    // /anime/episodes numbers episodes within the entry, so a franchise content id
+                    // needs them lifted onto the franchise season the entry maps to; a per-entry id
+                    // takes them as they are. Only a complete pair can be projected.
+                    val coordinates = if (ep.season != null && ep.episode != null) {
+                        show.ids.episodeCoordinatesFor(
+                            contentId = show.contentId,
+                            isAnime = show.isAnime,
+                            entrySeason = ep.season,
+                            entryEpisode = ep.episode,
+                        )
+                    } else {
+                        ep.season to ep.episode
+                    }
                     TraktCalendarEntry(
                         dateKey = dateKey,
                         type = "series",
                         contentId = show.contentId,
                         title = show.title,
                         posterUrl = show.posterUrl,
-                        seasonNumber = ep.season,
-                        episodeNumber = ep.episode,
+                        seasonNumber = coordinates.first,
+                        episodeNumber = coordinates.second,
                         episodeTitle = ep.title?.takeIf { it.isNotBlank() },
                     )
                 }

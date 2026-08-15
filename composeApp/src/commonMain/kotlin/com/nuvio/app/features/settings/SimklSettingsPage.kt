@@ -31,11 +31,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioDialogSurface
+import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.simkl.SimklAuthRepository
 import com.nuvio.app.features.simkl.SimklAuthUiState
 import com.nuvio.app.features.simkl.SimklConnectionMode
 import com.nuvio.app.features.simkl.SimklSettingsRepository
 import com.nuvio.app.features.simkl.SimklSettingsUiState
+import com.nuvio.app.features.simkl.canUseRewatches
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.settings_simkl_connect
@@ -94,6 +96,29 @@ internal fun LazyListScope.simklSettingsContent(
     if (uiState.mode == SimklConnectionMode.CONNECTED) {
         item {
             SettingsSection(
+                title = stringResource(Res.string.settings_simkl_section_rewatches),
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_simkl_track_rewatches),
+                        description = if (uiState.canUseRewatches) {
+                            stringResource(Res.string.settings_simkl_track_rewatches_desc)
+                        } else {
+                            stringResource(Res.string.settings_simkl_track_rewatches_requires_pro)
+                        },
+                        checked = settingsUiState.simklTrackRewatches && uiState.canUseRewatches,
+                        enabled = uiState.canUseRewatches,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("simkl-rewatches")),
+                        onCheckedChange = SimklSettingsRepository::setTrackRewatches,
+                    )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(
                 title = stringResource(Res.string.settings_simkl_section_daily_visit),
                 isTablet = isTablet,
             ) {
@@ -110,6 +135,7 @@ internal fun LazyListScope.simklSettingsContent(
             }
         }
     }
+
 }
 
 @Composable
@@ -147,7 +173,7 @@ private fun SimklCredentialsCard(
         OutlinedTextField(
             value = clientId,
             onValueChange = { clientId = it },
-            modifier = Modifier.fillMaxWidth().trackSettingsTextFocus(),
+            modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
             singleLine = true,
             label = { Text(stringResource(Res.string.settings_simkl_client_id)) },
             colors = OutlinedTextFieldDefaults.colors(

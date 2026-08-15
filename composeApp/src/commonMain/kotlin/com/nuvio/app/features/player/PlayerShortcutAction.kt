@@ -22,6 +22,7 @@ enum class PlayerShortcutAction(
     SeekForward("seek_forward", "Seek forward", PlayerShortcutSection.Playback),
     SpeedUp("speed_up", "Increase playback speed", PlayerShortcutSection.Playback),
     SpeedDown("speed_down", "Decrease playback speed", PlayerShortcutSection.Playback),
+    ToggleSpeed("toggle_speed", "Toggle playback speed", PlayerShortcutSection.Playback),
     NextSubtitle("next_subtitle", "Cycle subtitle track", PlayerShortcutSection.TracksAndPanels),
     NextAudio("next_audio", "Cycle audio track", PlayerShortcutSection.TracksAndPanels),
     OpenSources("open_sources", "Open sources panel", PlayerShortcutSection.TracksAndPanels),
