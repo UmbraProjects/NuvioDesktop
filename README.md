@@ -16,7 +16,7 @@
 
 ## HTPC Fork Changes
 
-[![Nuvio TV Mode Demo](https://img.youtube.com/vi/aindWO1cJJU/maxresdefault.jpg)](https://youtu.be/aindWO1cJJU)
+[![Nuvio TV Mode Demo](https://img.youtube.com/vi/txiM8_y2aD8/maxresdefault.jpg)](https://youtu.be/txiM8_y2aD8)
 
 This fork is unaffiliated with the Nuvio team. It is intended to be a fork focused solely on the best possible experience for Windows. Don't worry about the commit disparity, Nuvio's team makes many small commits while I bundle everything into a single release commit. Their method is more professional for open source projects but I'm going for simplicity and not working on this with anyone else. 
 
