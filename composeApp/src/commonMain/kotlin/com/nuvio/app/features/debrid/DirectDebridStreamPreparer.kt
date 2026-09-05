@@ -15,11 +15,32 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/**
+ * Which allowance a preparation run spends.
+ *
+ * Speculative work gets its own so it can never consume the allowance a play the user actually
+ * asked for is about to need — the whole point of preparing links ahead is defeated if the guess
+ * exhausts the budget before the real request arrives.
+ */
+enum class DebridPrepareBudget {
+    /** A load the user triggered. */
+    Interactive,
+
+    /** A background stream prefetch. */
+    Speculative,
+}
+
 object DirectDebridStreamPreparer {
     private val log = Logger.withTag("DirectDebridPreparer")
     private val budgetMutex = Mutex()
-    private val minuteStarts = ArrayDeque<Long>()
-    private val hourStarts = ArrayDeque<Long>()
+    private val budgetWindows = DebridPrepareBudget.entries.associateWith {
+        BudgetWindows(minuteStarts = ArrayDeque(), hourStarts = ArrayDeque())
+    }
+
+    private class BudgetWindows(
+        val minuteStarts: ArrayDeque<Long>,
+        val hourStarts: ArrayDeque<Long>,
+    )
 
     suspend fun prepare(
         streams: List<StreamItem>,
@@ -29,10 +50,18 @@ object DirectDebridStreamPreparer {
         installedAddonNames: Set<String>,
         contentId: String? = null,
         contentType: String? = null,
+        /**
+         * Caps how many candidates are resolved, below the user's configured
+         * [DebridSettings.instantPlaybackPreparationLimit]. A speculative run prepares only the one
+         * link it believes will be played; resolving a whole shortlist on a guess is not worth it.
+         */
+        limitOverride: Int? = null,
+        budget: DebridPrepareBudget = DebridPrepareBudget.Interactive,
         onPrepared: (original: StreamItem, prepared: StreamItem) -> Unit,
     ) {
         val settings = DebridSettingsRepository.snapshot()
-        val limit = settings.instantPlaybackPreparationLimit
+        val limit = limitOverride?.coerceAtMost(settings.instantPlaybackPreparationLimit)
+            ?: settings.instantPlaybackPreparationLimit
         if (!settings.canResolvePlayableLinks || limit <= 0) return
 
         val candidates = prioritizeCandidates(
@@ -53,7 +82,7 @@ object DirectDebridStreamPreparer {
                 continue
             }
 
-            if (!consumeBackgroundBudget()) {
+            if (!consumeBackgroundBudget(budget)) {
                 log.d { "Skipping instant playback preparation; local debrid budget reached" }
                 return
             }
@@ -157,20 +186,36 @@ object DirectDebridStreamPreparer {
         }
     }
 
-    private suspend fun consumeBackgroundBudget(): Boolean {
+    internal suspend fun consumeBackgroundBudget(budget: DebridPrepareBudget): Boolean {
         val now = epochMs()
+        val windows = budgetWindows.getValue(budget)
+        val perMinute = when (budget) {
+            DebridPrepareBudget.Interactive -> MAX_BACKGROUND_PREPARES_PER_MINUTE
+            DebridPrepareBudget.Speculative -> MAX_SPECULATIVE_PREPARES_PER_MINUTE
+        }
+        val perHour = when (budget) {
+            DebridPrepareBudget.Interactive -> MAX_BACKGROUND_PREPARES_PER_HOUR
+            DebridPrepareBudget.Speculative -> MAX_SPECULATIVE_PREPARES_PER_HOUR
+        }
         return budgetMutex.withLock {
-            minuteStarts.removeOlderThan(now - BACKGROUND_PREPARES_PER_MINUTE_WINDOW_MS)
-            hourStarts.removeOlderThan(now - BACKGROUND_PREPARES_PER_HOUR_WINDOW_MS)
-            if (
-                minuteStarts.size >= MAX_BACKGROUND_PREPARES_PER_MINUTE ||
-                hourStarts.size >= MAX_BACKGROUND_PREPARES_PER_HOUR
-            ) {
+            windows.minuteStarts.removeOlderThan(now - BACKGROUND_PREPARES_PER_MINUTE_WINDOW_MS)
+            windows.hourStarts.removeOlderThan(now - BACKGROUND_PREPARES_PER_HOUR_WINDOW_MS)
+            if (windows.minuteStarts.size >= perMinute || windows.hourStarts.size >= perHour) {
                 false
             } else {
-                minuteStarts.addLast(now)
-                hourStarts.addLast(now)
+                windows.minuteStarts.addLast(now)
+                windows.hourStarts.addLast(now)
                 true
+            }
+        }
+    }
+
+    /** Forgets both allowances. For profile switches and account wipes. */
+    suspend fun resetBudgets() {
+        budgetMutex.withLock {
+            budgetWindows.values.forEach {
+                it.minuteStarts.clear()
+                it.hourStarts.clear()
             }
         }
     }
@@ -178,6 +223,12 @@ object DirectDebridStreamPreparer {
 
 private const val MAX_BACKGROUND_PREPARES_PER_MINUTE = 6
 private const val MAX_BACKGROUND_PREPARES_PER_HOUR = 30
+
+// Smaller, and separate. A prefetch sweep resolves at most one link, and sweeps are already capped
+// at four per ten minutes — but sharing the interactive allowance would still let a browsing session
+// spend most of the hourly budget on guesses before a real play ever asked for it.
+private const val MAX_SPECULATIVE_PREPARES_PER_MINUTE = 2
+private const val MAX_SPECULATIVE_PREPARES_PER_HOUR = 12
 private const val BACKGROUND_PREPARES_PER_MINUTE_WINDOW_MS = 60L * 1000L
 private const val BACKGROUND_PREPARES_PER_HOUR_WINDOW_MS = 60L * 60L * 1000L
 

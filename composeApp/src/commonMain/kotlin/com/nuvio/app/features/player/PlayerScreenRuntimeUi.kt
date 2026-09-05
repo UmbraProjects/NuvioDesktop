@@ -21,9 +21,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
+import com.nuvio.app.core.ui.accentGradientStops
 import com.nuvio.app.core.ui.copyPlainTextToClipboard
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.NuvioToastPlacement
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
+import com.nuvio.app.core.ui.appFontFamilyName
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -70,6 +73,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         StreamBadgeSettingsRepository.ensureLoaded()
         StreamBadgeSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
+    val posterCardStyle = rememberPosterCardStyleUiState()
     val displayedPositionMs = scrubbingPositionMs ?: playbackSnapshot.positionMs
     val seasonNumber = activeSeasonNumber
     val episodeNumber = activeEpisodeNumber
@@ -156,6 +160,14 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     )
     val sourceItems = buildPlayerControlSourceItems()
     val episodeItems = buildPlayerControlEpisodeItems()
+    // Same fallback chain the details screen's episode cards use, so an episode whose still is
+    // missing or unreachable shows the show's artwork instead of an empty card.
+    val episodeFallbackThumbnail = (
+        metaUiState.meta?.background
+            ?: metaUiState.meta?.poster
+            ?: args.background
+            ?: args.poster
+        ).orEmpty()
     val episodeSeasons = buildPlayerControlSeasonItems(episodeItems)
     val episodeStreamFilters = buildPlayerControlEpisodeStreamFilters(
         allLabel = allFilterLabel,
@@ -173,11 +185,11 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         emptyList()
     }
     val audioTrackFilterActive = playerSettingsUiState.rejectedAudioKeywords.isNotEmpty()
-    val playerControlAudioTracks = if (audioTrackFilterActive) {
-        buildPlayerControlAudioTrackItems()
-    } else {
-        emptyList()
-    }
+    // Unlike the subtitle list above, this one is always pushed: the overlay renders the native
+    // track list whenever the filter is off, and only these items carry the spelled-out language
+    // ("Tamil") each audio row shows as its subtext. audioTrackFilterActive still decides which of
+    // the two lists the overlay renders.
+    val playerControlAudioTracks = buildPlayerControlAudioTrackItems()
     val playerControlAutoSyncCues = buildPlayerControlSubtitleCueItems()
     val themeColors = MaterialTheme.nuvio.colors
     val selectedEpisodeLabel = episodeStreamsPanelState.selectedEpisode?.let { selected ->
@@ -242,7 +254,12 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             if (meta != null) {
                 OriginalLanguageCache.record(args.parentMetaId, meta.language)
                 if (!meta.genres.isNullOrEmpty()) {
-                    AnimeContentCache.record(args.parentMetaId, meta.genres)
+                    AnimeContentCache.record(
+                        metaId = args.parentMetaId,
+                        genres = meta.genres,
+                        originalLanguage = meta.language,
+                        originCountries = listOfNotNull(meta.country),
+                    )
                     if (AnimeContentCache.isAnime(args.parentMetaId)) {
                         isAnimeContent = true
                     }
@@ -302,6 +319,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         playbackInfoPanelEnabled = playerSettingsUiState.desktopPlaybackInfoPanelEnabled,
         activeSubtitleLabel = activePlaybackSubtitleLabel(),
         seekThumbnailsEnabled = playerSettingsUiState.desktopBufferPreset != DesktopBufferPreset.Metered,
+        seekStepSeconds = playerSettingsUiState.seekStepSeconds,
         tapToUnlockLabel = stringResource(Res.string.compose_player_tap_to_unlock),
         playbackErrorTitle = stringResource(Res.string.compose_player_playback_error),
         playbackErrorMessage = errorMessage.orEmpty(),
@@ -356,6 +374,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         boldLabel = stringResource(Res.string.compose_player_bold),
         italicLabel = stringResource(Res.string.compose_player_italic),
         bottomOffsetLabel = stringResource(Res.string.compose_player_bottom_offset),
+        assStyleModeLabel = stringResource(Res.string.player_subtitle_ass_mode),
+        assScaleLabel = stringResource(Res.string.player_subtitle_ass_scale),
+        assStyleModeValueLabel = subtitleStyle.assStyleMode.label,
         colorLabel = stringResource(Res.string.compose_player_color),
         textOpacityLabel = stringResource(Res.string.compose_player_text_opacity),
         outlineColorLabel = stringResource(Res.string.compose_player_outline_color),
@@ -364,7 +385,21 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         onLabel = stringResource(Res.string.compose_action_on),
         offLabel = stringResource(Res.string.compose_action_off),
         themeAccentColor = themeColors.accent.toCssColorString(),
+        posterHighlightMode = posterCardStyle.posterHighlightMode.name,
         themeAccentStrongColor = themeColors.accentStrong.toCssColorString(),
+        // Angle and stops both come from the same place the Compose brush gets them, so the HUD
+        // turns with the rest of the app and shares its perceptual spacing rather than falling back
+        // to the browser's own two-stop sRGB ramp.
+        themeAccentFill = themeColors.accentGradientEnd
+            ?.let { end ->
+                val stops = accentGradientStops(themeColors.accent, end)
+                val css = stops.mapIndexed { index, color ->
+                    val percent = index * 100 / (stops.size - 1)
+                    "${color.toCssColorString()} $percent%"
+                }.joinToString()
+                "linear-gradient(${themeColors.accentGradientDirection.cssAngle}deg, $css)"
+            }
+            ?: themeColors.accent.toCssColorString(),
         themeOnAccentColor = themeColors.onAccent.toCssColorString(),
         themeFocusColor = themeColors.focusRing.toCssColorString(),
         themeSelectedSurfaceColor = themeColors.accent.copy(alpha = 0.24f).toCssColorString(),
@@ -388,7 +423,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         playbackSpeedToggleLow = playerSettingsUiState.playbackSpeedToggleLow,
         playbackSpeedToggleHigh = playerSettingsUiState.playbackSpeedToggleHigh,
         uiScalePercent = playerSettingsUiState.desktopUiScalePercent,
+        uiFontFamily = MaterialTheme.appFontFamilyName,
         sourceNotchPosition = playerSettingsUiState.desktopSourceNotchPosition.name.lowercase(),
+        notificationPosition = playerSettingsUiState.desktopPlayerNotificationPosition.webValue,
         parentalWarnings = parentalWarnings,
         showParentalGuide = showParentalGuide,
         // Films are submittable too: SkipDB takes them with no season or episode, and holds opening
@@ -411,6 +448,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         sourceFilters = sourceFilters,
         sourceItems = sourceItems,
         episodeItems = episodeItems,
+        episodeFallbackThumbnail = episodeFallbackThumbnail,
         episodeSeasons = episodeSeasons,
         episodeStreamsVisible = episodeStreamsPanelState.showStreams,
         episodeStreamsIsLoading = episodeStreamsRepoState.isAnyLoading,
@@ -793,8 +831,9 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
                 args.onBack()
             },
             onTogglePlayback = { togglePlayback() },
-            onSeekBack = { seekBy(-10_000L) },
-            onSeekForward = { seekBy(10_000L) },
+            onSeekBack = { seekBy(-seekStepMs) },
+            onSeekForward = { seekBy(seekStepMs) },
+            seekStepSeconds = playerSettingsUiState.seekStepSeconds,
             onResizeModeClick = { cycleResizeMode() },
             onSpeedClick = { cyclePlaybackSpeed() },
             onSubtitleClick = {
@@ -895,19 +934,19 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
             return false
         }
         PlayerControlsAction.SeekBack -> {
-            prepareSeekByForNativeFallback(-10_000L)
+            prepareSeekByForNativeFallback(-seekStepMs)
             return false
         }
         PlayerControlsAction.KeyboardSeekBack -> {
-            prepareSeekByForNativeFallback(-10_000L, revealControls = false)
+            prepareSeekByForNativeFallback(-seekStepMs, revealControls = false)
             return false
         }
         PlayerControlsAction.SeekForward -> {
-            prepareSeekByForNativeFallback(10_000L)
+            prepareSeekByForNativeFallback(seekStepMs)
             return false
         }
         PlayerControlsAction.KeyboardSeekForward -> {
-            prepareSeekByForNativeFallback(10_000L, revealControls = false)
+            prepareSeekByForNativeFallback(seekStepMs, revealControls = false)
             return false
         }
         PlayerControlsAction.ResizeMode -> cycleResizeMode()
@@ -1042,9 +1081,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         "submitIntroCommit" -> submitIntroFromPlayerControls()
         "skipInterval" -> {
             val interval = activeSkipInterval ?: return true
-            playerController?.seekTo((interval.endTime * 1000).toLong())
-            scheduleProgressSyncAfterSeek()
-            skipIntervalDismissed = true
+            acceptSkipInterval(interval)
         }
         "playNextEpisode" -> {
             if (nextEpisodeInfo?.hasAired == true) {
@@ -1183,6 +1220,25 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         "subtitleItalicToggle" -> {
             PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(italic = !subtitleStyle.italic))
         }
+        // ASS/SSA tracks: how much of the styling above reaches them, and their own size factor.
+        //
+        // The mode is addressed by index rather than by a step, so both the HUD menu and the style
+        // panel's dropdown name the level they are selecting. It started out as a
+        // next/previous-level pair, which meant neither surface could say what the levels *were* —
+        // the user had to cycle blind and read the result somewhere else.
+        "subtitleAssStyleMode" -> {
+            SubtitleAssStyleMode.entries.getOrNull(value.toInt())?.let { mode ->
+                PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(assStyleMode = mode))
+            }
+        }
+        "subtitleAssScaleDelta" -> {
+            PlayerSettingsRepository.setSubtitleStyle(
+                subtitleStyle.copy(
+                    assScalePercent = (subtitleStyle.assScalePercent + value.toInt())
+                        .coerceIn(SUBTITLE_ASS_SCALE_MIN, SUBTITLE_ASS_SCALE_MAX),
+                ),
+            )
+        }
         "subtitleBottomOffsetDelta" -> {
             PlayerSettingsRepository.setSubtitleStyle(
                 subtitleStyle.copy(bottomOffset = (subtitleStyle.bottomOffset + value.toInt()).coerceIn(0, 200)),
@@ -1209,6 +1265,28 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
                     subtitleStyle.copy(shadowColor = color.copy(alpha = subtitleStyle.shadowColor.alpha)),
                 )
             }
+        }
+        // Custom colours from the HUD's hex prompt. It resolves alpha before sending (it knows the
+        // current style and the opacity steppers), so these apply the packed value as it arrives.
+        "subtitleTextColorArgb" -> {
+            PlayerSettingsRepository.setSubtitleStyle(
+                subtitleStyle.copy(textColor = subtitleColorFromArgb(value)),
+            )
+        }
+        "subtitleOutlineColorArgb" -> {
+            PlayerSettingsRepository.setSubtitleStyle(
+                subtitleStyle.copy(outlineColor = subtitleColorFromArgb(value)),
+            )
+        }
+        "subtitleBackgroundColorArgb" -> {
+            PlayerSettingsRepository.setSubtitleStyle(
+                subtitleStyle.copy(backgroundColor = subtitleColorFromArgb(value)),
+            )
+        }
+        "subtitleShadowColorArgb" -> {
+            PlayerSettingsRepository.setSubtitleStyle(
+                subtitleStyle.copy(shadowColor = subtitleColorFromArgb(value)),
+            )
         }
         "subtitleTextOpacity" -> {
             val alpha = (value.toFloat() / 100f).coerceIn(0f, 1f)
@@ -1683,6 +1761,7 @@ private fun PlayerScreenRuntime.buildPlayerControlAudioTrackItems(): List<Player
         PlayerControlAudioTrackItem(
             index = track.index,
             label = localizedTrackDisplayName(track.label, track.language, track.index),
+            languageLabel = trackLanguageDisplayLabel(track.language),
             isSelected = track.index == selectedAudioIndex,
         )
     }
@@ -1870,11 +1949,7 @@ private fun BoxScope.RenderPlaybackOverlays(
             },
             skipIntervalDismissed = skipIntervalDismissed,
             controlsVisible = controlsVisible,
-            onSkipInterval = { interval ->
-                playerController?.seekTo((interval.endTime * 1000).toLong())
-                scheduleProgressSyncAfterSeek()
-                skipIntervalDismissed = true
-            },
+            onSkipInterval = { interval -> acceptSkipInterval(interval) },
             onDismissSkipInterval = { skipIntervalDismissed = true },
             sliderEdgePadding = sliderEdgePadding,
             overlayBottomPadding = overlayBottomPadding,

@@ -118,6 +118,7 @@ import nuvio.composeapp.generated.resources.library_downloads_section_settings
 import nuvio.composeapp.generated.resources.compose_settings_root_downloads_description
 import nuvio.composeapp.generated.resources.compose_settings_root_downloads_title
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.accentBrush
 
 private val INTERVAL_OPTION_HOURS = listOf(3, 6, 12, 24)
 private val CONCURRENCY_OPTIONS = listOf(1, 2, 3, 4)
@@ -688,7 +689,7 @@ private fun GrabRow(
             download?.takeIf { it.status == DownloadStatus.Downloading }?.let {
                 Text(
                     text = downloadProgressLine(it),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.accentBrush(),
                     color = MaterialTheme.colorScheme.primary,
                 )
             }

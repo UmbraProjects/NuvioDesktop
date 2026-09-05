@@ -104,8 +104,10 @@ internal fun PlayerScreenRuntime.adjustVolume(deltaFraction: Float) {
     val current = controller.getVolume() ?: PlayerAudioLevel(fraction = 1f, isMuted = false)
     val next = (current.fraction + deltaFraction).coerceIn(0f, controller.maxVolumeFraction)
     val level = controller.setVolume(next) ?: PlayerAudioLevel(fraction = next, isMuted = next <= 0f)
+    // Deliberately does NOT reveal the chrome. The volume pill is its own feedback and reads fine
+    // over bare video; raising the whole control bar for a wheel notch or an arrow key buried the
+    // picture behind gradients and a seek bar for the next few seconds.
     showVolumeFeedback(level)
-    controlsVisible = true
 }
 
 internal fun PlayerScreenRuntime.togglePlayback() {
@@ -177,13 +179,14 @@ private fun PlayerScreenRuntime.handleDoubleTapSeek(
 ) {
     val currentPositionMs = playbackSnapshot.positionMs.coerceAtLeast(0L)
     val currentSeekState = accumulatedSeekState
+    val stepMs = seekStepMs
     val nextState = if (currentSeekState?.direction == direction) {
-        currentSeekState.copy(amountMs = currentSeekState.amountMs + PlayerDoubleTapSeekStepMs)
+        currentSeekState.copy(amountMs = currentSeekState.amountMs + stepMs)
     } else {
         PlayerAccumulatedSeekState(
             direction = direction,
             baselinePositionMs = currentPositionMs,
-            amountMs = PlayerDoubleTapSeekStepMs,
+            amountMs = stepMs,
         )
     }
     accumulatedSeekState = nextState

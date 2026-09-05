@@ -7,6 +7,11 @@ data class ThemeColorPalette(
     val secondary: Color,
     val secondaryVariant: Color,
     val nativeAccentHex: String,
+    /**
+     * Second stop of the accent gradient. Null means the theme paints accent surfaces flat, which
+     * is what every built-in palette does; only the custom theme opts in to a gradient.
+     */
+    val accentGradientEnd: Color? = null,
     val onSecondary: Color = Color.White,
     val onSecondaryVariant: Color = Color.White,
     val focusRing: Color,
@@ -16,8 +21,35 @@ data class ThemeColorPalette(
     val backgroundCard: Color = Color(0xFF242424),
 )
 
+/**
+ * Which way the accent gradient runs across a surface it fills.
+ *
+ * Only meaningful when the theme actually has a second accent stop — every built-in palette paints
+ * accents flat, so this is a custom-theme control. It is a display preference rather than palette
+ * data, so it rides alongside amoled through [NuvioTheme] instead of living in [ThemeColorPalette].
+ *
+ * [cssAngle] keeps the player HUD's `linear-gradient(…)` string in step with the Compose brush from
+ * one definition; CSS angles are measured clockwise from "to top", so 90deg is left-to-right.
+ */
+enum class AccentGradientDirection(val cssAngle: Int) {
+    Horizontal(90),
+    Vertical(180),
+    Diagonal(135),
+    DiagonalReverse(45),
+    ;
+
+    companion object {
+        val Default = Horizontal
+
+        fun fromStorageOrDefault(value: String?): AccentGradientDirection =
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: Default
+    }
+}
+
 object ThemeColors {
     const val DefaultCustomAccentHex = "#FFD700"
+    // Defaults to the accent itself so an upgrade keeps the flat accent the user already had.
+    const val DefaultCustomAccentEndHex = DefaultCustomAccentHex
     const val DefaultCustomBackgroundHex = "#0B0F10"
     const val DefaultCustomElevatedHex = "#151D1F"
     const val DefaultCustomCardHex = "#182427"
@@ -103,6 +135,7 @@ object ThemeColors {
 
     val Custom = customPalette(
         accentHex = DefaultCustomAccentHex,
+        accentEndHex = DefaultCustomAccentEndHex,
         backgroundHex = DefaultCustomBackgroundHex,
         elevatedHex = DefaultCustomElevatedHex,
         cardHex = DefaultCustomCardHex,
@@ -110,18 +143,21 @@ object ThemeColors {
 
     fun customPalette(
         accentHex: String,
+        accentEndHex: String = accentHex,
         backgroundHex: String,
         elevatedHex: String,
         cardHex: String,
     ): ThemeColorPalette {
         val accent = accentHex.toThemeColor(Color(0xFFFFD700))
+        val accentEnd = accentEndHex.toThemeColor(accent)
         val background = backgroundHex.toThemeColor(Color(0xFF0B0F10))
         val elevated = elevatedHex.toThemeColor(Color(0xFF151D1F))
         val card = cardHex.toThemeColor(Color(0xFF182427))
         return ThemeColorPalette(
             secondary = accent,
-            secondaryVariant = accent,
+            secondaryVariant = accentEnd,
             nativeAccentHex = accentHex.normalizedThemeHex(DefaultCustomAccentHex),
+            accentGradientEnd = accentEnd.takeIf { it != accent },
             onSecondary = contentColorFor(accent),
             onSecondaryVariant = Color.White,
             focusRing = accent,

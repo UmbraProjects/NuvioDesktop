@@ -15,7 +15,13 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.jvm.tasks.Jar
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Properties
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 abstract class GenerateRuntimeConfigsTask : DefaultTask() {
     @get:OutputDirectory
@@ -247,6 +253,22 @@ val desktopReleaseVersionCode = (
     ?.takeIf { it.isNotBlank() }
     ?.toIntOrNull()
     ?: 1
+// An explicit override for a one-off build; when absent the channel is taken from the app's own
+// Update Channel setting at packaging time (see resolveDesktopChannel). Stable releases are a
+// couple a month and nightlies are everything else, so the setting this machine already carries is
+// a better default than anything a build file could guess.
+//   ./gradlew :composeApp:createReleaseDistributable -Pnuvio.desktop.channel=stable
+val desktopChannelOverride = (
+    providers.gradleProperty("nuvio.desktop.channel").orNull
+        ?: System.getenv("NUVIO_DESKTOP_CHANNEL")
+        ?: supabaseProps.getProperty("NUVIO_DESKTOP_CHANNEL")
+    )
+    ?.trim()
+    ?.lowercase()
+    ?.takeIf { it.isNotBlank() }
+require(desktopChannelOverride == null || desktopChannelOverride == "stable" || desktopChannelOverride == "nightly") {
+    "Desktop release channel must be either stable or nightly: $desktopChannelOverride"
+}
 val releaseAppVersionName = desktopReleaseVersionName
 val releaseAppVersionCode = desktopReleaseVersionCode
 val desktopReleasePackageVersion = jpackageCompatibleVersion(desktopReleaseVersionName)
@@ -591,6 +613,28 @@ val buildWindowsPlayerBridge = tasks.register<Exec>("buildWindowsPlayerBridge") 
     commandLine(windowsPlayerBridgeCommand)
 }
 
+val windowsPlaybackStartupTestSource = layout.projectDirectory.file("src/desktopTest/native/windows/playback_startup_test.cpp")
+val windowsPlaybackStartupTestOutput = layout.buildDirectory.file("native/windows/player_startup_test.exe")
+val buildWindowsPlaybackStartupTests = tasks.register<Exec>("buildWindowsPlaybackStartupTests") {
+    notCompatibleWithConfigurationCache("Builds native playback transition tests with the Windows bridge toolchain.")
+    enabled = isWindowsHost
+    inputs.files(windowsPlayerBridgeSource, windowsPlaybackStartupTestSource)
+    outputs.file(windowsPlaybackStartupTestOutput)
+    commandLine(windowsPlayerBridgeCommand.map { argument ->
+        argument.replace(windowsPlayerBridgeSource.asFile.absolutePath, windowsPlaybackStartupTestSource.asFile.absolutePath)
+            .replace("/LD ", "")
+            .replace("player_bridge.dll", "player_startup_test.exe")
+            .replace("player_bridge", "player_startup_test")
+    })
+}
+tasks.register<Exec>("nativePlaybackStartupTest") {
+    notCompatibleWithConfigurationCache("Runs the native playback tests on the Windows host.")
+    enabled = isWindowsHost
+    dependsOn(buildWindowsPlaybackStartupTests)
+    workingDir(windowsPlaybackStartupTestOutput.get().asFile.parentFile)
+    commandLine(windowsPlaybackStartupTestOutput.get().asFile.absolutePath)
+}
+
 val prepareWindowsPlayerRuntime = tasks.register<Sync>("prepareWindowsPlayerRuntime") {
     notCompatibleWithConfigurationCache("Validates and bundles host-local Windows native player runtime DLLs.")
     enabled = isWindowsHost
@@ -753,6 +797,24 @@ abstract class GenerateNativeRuntimeIndexTask : DefaultTask() {
     }
 }
 
+// The Windows player runtime was packed into every download twice: once into desktopJar for
+// NativePlayerBridge's extraction fallback, and once beside Nuvio.exe by the app-image staging
+// further down. Only the second copy is ever loaded. A packaged build resolves
+// packagedRuntimeDir() first, and the extraction fallback underneath it refuses to run at all
+// without -Dnuvio.nativeRuntimeExtractionEnabled=true; `gradlew run` loads the DLLs straight out
+// of build/native/windows via findLocalBuildLibrary(). So the jar copy is dead weight in every
+// layout this project actually builds — ~82MB of the shipped zip. runtime-files.txt has to stay
+// in the jar: packagedRuntimeDir() reads it to know which files must exist beside Nuvio.exe.
+//
+// Build with -Pnuvio.desktop.leanJar=false to restore the self-contained jar. That is what an
+// uber jar needs, and what a deliberately incomplete development layout needs before
+// -Dnuvio.nativeRuntimeExtractionEnabled=true can do anything (with a lean jar the extraction
+// path fails cleanly: copyResourceTo throws on the missing resource, loadNativeLibrary() reports
+// "Unable to prepare the bundled native player runtime").
+val leanDesktopJar = providers.gradleProperty("nuvio.desktop.leanJar")
+    .map(String::toBoolean)
+    .getOrElse(true)
+
 tasks.withType<Jar>().configureEach {
     if (isMacHost && name == "desktopJar") {
         dependsOn(buildMacosPlayerBridge)
@@ -772,6 +834,9 @@ tasks.withType<Jar>().configureEach {
             into("native/windows")
         }
         from(windowsPlayerRuntimeOutput) {
+            if (leanDesktopJar) {
+                include("runtime-files.txt")
+            }
             into("native/windows")
         }
         from(windowsPythonLibOutput) {
@@ -860,6 +925,209 @@ if (isWindowsHost) {
     }
 }
 
+// material-icons-extended ships 11,105 icons (~36MB compressed) and the app references about 75
+// of them, so it was the second-largest thing in the download after the player runtime. ProGuard
+// would remove the rest, but buildTypes.release.proguard is off because shrinking a Compose app
+// wholesale is its own project; this trims that one jar and touches nothing else.
+//
+// The set of icons to keep is read out of the bytecode already staged in the app image rather
+// than out of the sources, so it is exactly the reference closure that ships: an icon reached
+// from a library, from generated code, or from Kotlin that never spells out an import is still
+// found. It is deliberately over-inclusive — the scan matches icon class names anywhere in a
+// class file's bytes, so a false positive costs a few hundred bytes while a false negative would
+// be a NoClassDefFoundError in the packaged app.
+//
+// Not safe for a reflective Icons lookup (`Icons::class.members`, an icon-name-to-vector map
+/**
+ * The channel this image should claim, read from the app's own Update Channel setting.
+ *
+ * That setting is what this machine is already publishing for, so the build follows it instead of
+ * asking for a flag on every cut. It lives in the desktop preference store, written by the running
+ * app; when it cannot be read (another machine, a clean profile, CI) the answer is nightly, which
+ * is what all but a couple of builds a month are.
+ *
+ * Read at execution time, never at configuration time: with the configuration cache on, a value
+ * captured during configuration would be replayed from the cache and every later build would keep
+ * claiming whatever the setting said the first time.
+ */
+fun resolveDesktopChannel(override: String?, logger: org.gradle.api.logging.Logger): String {
+    if (override != null) return override
+    val appData = System.getenv("LOCALAPPDATA")
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::File)
+        ?: File(System.getProperty("user.home"), "AppData/Local")
+    val updaterPrefs = File(appData, "NuvioHTPC/nuvio_updater.properties")
+    val stored = runCatching {
+        Properties()
+            .apply { updaterPrefs.inputStream().use { load(it) } }
+            .getProperty("update_channel")
+            ?.trim()
+            ?.lowercase()
+    }.getOrNull()
+    return when (stored) {
+        "stable" -> "stable"
+        "nightly" -> "nightly"
+        else -> {
+            logger.lifecycle(
+                "No Update Channel setting found at ${updaterPrefs.absolutePath}; stamping this image as nightly.",
+            )
+            "nightly"
+        }
+    }
+}
+
+/**
+ * Stamps the packaged app image with the identity of this specific build.
+ *
+ * The version name and code only move when someone edits DesktopVersion.properties, so two
+ * distributables cut from the same version are indistinguishable in the UI — which makes a
+ * freshly installed build look like the update never landed. The build time (and commit, when
+ * the tree is a git checkout) is what actually changes every time the image is rebuilt, so it
+ * is written beside the jars and read back at runtime for the About/sidebar build line.
+ *
+ * Written from the packaging task's own execution, not from configuration: with the
+ * configuration cache on, a timestamp captured at configuration time would be replayed from the
+ * cache and every build would claim the same moment.
+ */
+fun writeAppImageBuildInfo(
+    appDir: File,
+    versionName: String,
+    versionCode: Int,
+    channelOverride: String?,
+    repoRoot: File,
+    logger: org.gradle.api.logging.Logger,
+) {
+    val channel = resolveDesktopChannel(channelOverride, logger)
+    // UTC, not local time: release notes and GitHub release timestamps are posted in UTC, and a
+    // build stamp that has to be mentally converted before it can be matched against them is a
+    // stamp nobody checks.
+    val now = ZonedDateTime.now(ZoneOffset.UTC).withNano(0)
+    val buildId = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+    val gitCommit = runCatching {
+        val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+            .directory(repoRoot)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().readText().trim()
+        if (process.waitFor() == 0) output.takeIf { it.matches(Regex("[0-9a-f]{6,40}")) } else null
+    }.getOrNull()
+
+    val buildInfo = appDir.resolve("build-info.properties")
+    buildInfo.writeText(
+        buildString {
+            appendLine("# Generated by the packaging task. Identifies this exact app image.")
+            appendLine("BUILD_ID=$buildId")
+            appendLine("BUILD_TIME=${now.format(DateTimeFormatter.ISO_INSTANT)}")
+            appendLine("VERSION_NAME=$versionName")
+            appendLine("VERSION_CODE=$versionCode")
+            appendLine("CHANNEL=$channel")
+            if (gitCommit != null) appendLine("GIT_COMMIT=$gitCommit")
+        },
+    )
+    logger.lifecycle(
+        "Stamped ${buildInfo.name}: $versionName ($versionCode) $channel build $buildId UTC" +
+            gitCommit?.let { " commit $it" }.orEmpty(),
+    )
+}
+
+// built from strings). There is none today; add one and this has to grow an allowlist.
+fun trimMaterialIconsExtendedJar(appDir: File, logger: org.gradle.api.logging.Logger) {
+    val iconsJar = appDir
+        .listFiles { file -> file.isFile && file.name.startsWith("material-icons-extended") && file.name.endsWith(".jar") }
+        ?.singleOrNull()
+        ?: return
+    val iconPackage = "androidx/compose/material/icons/"
+    val iconReference = Regex("androidx/compose/material/icons/[A-Za-z0-9_/]+Kt")
+
+    fun iconReferencesIn(zip: ZipFile, filter: (String) -> Boolean): Set<String> =
+        zip.entries().asSequence()
+            .filter { !it.isDirectory && it.name.endsWith(".class") && filter(it.name) }
+            .flatMap { entry ->
+                // ISO_8859_1 is a byte-for-byte decode, so this searches the constant pool
+                // without paying for a real class parser.
+                val text = zip.getInputStream(entry).use { it.readBytes() }.toString(Charsets.ISO_8859_1)
+                if (iconPackage in text) iconReference.findAll(text).map { it.value } else emptySequence()
+            }
+            .toSet()
+
+    val referenced = mutableSetOf<String>()
+    appDir.listFiles { file -> file.isFile && file.name.endsWith(".jar") && file != iconsJar }
+        .orEmpty()
+        .forEach { jar -> ZipFile(jar).use { referenced += iconReferencesIn(it) { true } } }
+    check(referenced.isNotEmpty()) {
+        "Refusing to trim ${iconsJar.name}: no material icon references were found anywhere in " +
+            "$appDir. That means this bytecode scan broke, not that the app stopped using icons."
+    }
+
+    // An icon class can reference another class in the icons package (they all reach IconsKt).
+    // Close over that before deciding what to drop.
+    ZipFile(iconsJar).use { zip ->
+        var frontier = referenced.toSet()
+        while (frontier.isNotEmpty()) {
+            val names = frontier.map { "$it.class" }.toSet()
+            val discovered = iconReferencesIn(zip) { it in names } - referenced
+            referenced += discovered
+            frontier = discovered
+        }
+    }
+
+    val trimmed = File(iconsJar.parentFile, "${iconsJar.name}.trimmed")
+    var kept = 0
+    var dropped = 0
+    ZipFile(iconsJar).use { zip ->
+        ZipOutputStream(trimmed.outputStream().buffered()).use { out ->
+            zip.entries().asSequence().forEach { entry ->
+                val keep = entry.isDirectory ||
+                    !entry.name.startsWith(iconPackage) ||
+                    entry.name.removeSuffix(".class").substringBefore('$') in referenced
+                if (!keep) {
+                    dropped++
+                    return@forEach
+                }
+                kept++
+                out.putNextEntry(ZipEntry(entry.name))
+                zip.getInputStream(entry).use { it.copyTo(out) }
+                out.closeEntry()
+            }
+        }
+    }
+
+    val sizeBefore = iconsJar.length()
+    check(iconsJar.delete()) { "Could not replace ${iconsJar.absolutePath} with its trimmed copy" }
+    check(trimmed.renameTo(iconsJar)) { "Could not move ${trimmed.absolutePath} into place" }
+    logger.lifecycle(
+        "Trimmed ${iconsJar.name}: kept $kept entries for ${referenced.size} referenced icon " +
+            "classes, dropped $dropped (${sizeBefore / 1024 / 1024}MB -> ${iconsJar.length() / 1024 / 1024}MB)",
+    )
+}
+
+val repoRootDir = rootProject.layout.projectDirectory.asFile
+
+mapOf(
+    "createDistributable" to "main",
+    "createReleaseDistributable" to "main-release",
+).forEach { (taskName, imageFlavor) ->
+    tasks.matching { it.name == taskName }.configureEach {
+        notCompatibleWithConfigurationCache("Rewrites the packaged material-icons-extended jar in the app image.")
+        doLast {
+            val binariesDir = layout.buildDirectory.dir("compose/binaries/$imageFlavor/app").get().asFile
+            val appDir = listOf("Nuvio/app", "Nuvio.app/Contents/app", "nuvio/lib/app")
+                .map(binariesDir::resolve)
+                .firstOrNull(File::isDirectory)
+            check(appDir != null) { "No packaged app directory found under $binariesDir" }
+            trimMaterialIconsExtendedJar(appDir, logger)
+            writeAppImageBuildInfo(
+                appDir = appDir,
+                versionName = desktopReleaseVersionName,
+                versionCode = desktopReleaseVersionCode,
+                channelOverride = desktopChannelOverride,
+                repoRoot = repoRootDir,
+                logger = logger,
+            )
+        }
+    }
+}
+
 tasks.withType<KotlinCompilationTask<*>>().configureEach {
     dependsOn(generateRuntimeConfigs)
 }
@@ -920,6 +1188,16 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
+        val desktopTest by getting {
+            dependencies {
+                // Real pointer-event dispatch for the desktop-only gestures (right-click as the
+                // secondary action). Reasoning about Compose's button filtering from the source
+                // is how this got shipped broken once already.
+                implementation(compose.desktop.currentOs)
+                @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+                implementation(compose.uiTest)
+            }
+        }
     }
 }
 
@@ -970,6 +1248,46 @@ compose.desktop {
                 "-Xlog:safepoint,gc:file=C:/Users/Public/nuvio_safepoint_pid%p.log" +
                     ":time,uptime,level,tags:filesize=2m,filecount=3"
             } else null,
+            // Return idle heap to the OS. G1 only uncommits regions at the end of a concurrent
+            // cycle, and with no flags set nothing triggers one while the app sits still — so the
+            // heap ratchets up to whatever the busiest moment needed and stays there for the rest
+            // of the session. The safepoint/gc logs above show exactly that: across seven long
+            // sessions the live set after a collection was 205-359 MB while the committed heap sat
+            // at 512 MB-1.4 GB. An HTPC spends most of its life parked on the home screen or
+            // playing, neither of which allocates much, so those are hours of holding several
+            // hundred MB of nothing.
+            //
+            // PeriodicGCInterval only fires when no GC has happened in the interval, i.e. only when
+            // the app is genuinely idle, and the load threshold of 0 disables the "skip it if the
+            // machine is busy" check (which reads system load average — unavailable on Windows,
+            // where it reads as -1 and would suppress the collection entirely).
+            //
+            // InvokesConcurrent must be off. Left at its default the periodic collection runs a
+            // concurrent cycle, which collects garbage but never uncommits: measured on a live
+            // session, a full concurrent cycle completed with the heap still at 640 MB committed
+            // against 164 MB used. Only a full collection resizes the heap. Forcing one on the same
+            // session took it to 260 MB committed and the process working set from 1429 MB to
+            // 1039 MB, in a 58 ms pause.
+            //
+            // The free ratios decide how far that shrink goes. At the default MaxHeapFreeRatio of
+            // 70 the same collection would have stopped around 540 MB; at 30 it reached 260 MB.
+            //
+            // 15 minutes, not the interval's usual single-digit minutes, because the pause is the
+            // whole cost here: the first collection after a burst reclaims, and every one after it
+            // pays 58 ms to reclaim nothing. It cannot land while the app is being used (using it
+            // allocates, which collects, which resets the timer) and it cannot touch playback (the
+            // native player owns its own window and threads, outside the JVM), so the only case it
+            // is perceptible is an animation running on an otherwise idle window. Hiding or
+            // minimising the window trims immediately instead — see DesktopIdleHeapTrim, which is
+            // where this reclaim happens for free and why the timer can afford to be this slow.
+            //
+            // All four are accepted silently under SerialGC too, which is what a machine with fewer
+            // than two cores or under ~1.8 GB of RAM would pick instead of G1.
+            "-XX:G1PeriodicGCInterval=900000",
+            "-XX:G1PeriodicGCSystemLoadThreshold=0",
+            "-XX:-G1PeriodicGCInvokesConcurrent",
+            "-XX:MinHeapFreeRatio=10",
+            "-XX:MaxHeapFreeRatio=30",
             smokePlayerUrl?.takeIf { it.isNotBlank() }?.let { "-Dnuvio.desktop.smokePlayerUrl=$it" },
         )
 
@@ -978,7 +1296,11 @@ compose.desktop {
             packageName = "Nuvio"
             packageVersion = desktopReleasePackageVersion
             vendor = "Nuvio Media"
-            modules("java.net.http", "jdk.httpserver")
+            // jdk.management is here for one call: the decoded-animation cache budget is a fraction
+            // of physical RAM (see animatedImageCacheBudgetBytes), and OperatingSystemMXBean is the
+            // only way to read that without going native. Measured cost of the module in a jlink
+            // image: 2 MB.
+            modules("java.net.http", "jdk.httpserver", "jdk.management")
             macOS {
                 bundleID = "com.nuvio.media.desktop"
                 iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon.icns"))

@@ -7,6 +7,8 @@ internal expect object DebridSettingsStorage {
     fun saveEnabled(enabled: Boolean)
     fun loadCloudLibraryEnabled(): Boolean?
     fun saveCloudLibraryEnabled(enabled: Boolean)
+    fun loadCloudLibraryWindow(): String?
+    fun saveCloudLibraryWindow(window: String)
     fun loadPreferredResolverProviderId(): String?
     fun savePreferredResolverProviderId(providerId: String)
     fun loadProviderApiKey(providerId: String): String?

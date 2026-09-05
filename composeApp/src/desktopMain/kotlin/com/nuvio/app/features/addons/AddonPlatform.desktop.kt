@@ -88,6 +88,7 @@ actual suspend fun httpRequestRaw(
     headers: Map<String, String>,
     body: String,
     followRedirects: Boolean,
+    allowLargeResponse: Boolean,
 ): RawHttpResponse = withContext(Dispatchers.IO) {
     val client = if (followRedirects) {
         desktopHttpClient
@@ -99,13 +100,20 @@ actual suspend fun httpRequestRaw(
             status = response.code,
             statusText = response.message,
             url = response.request.url.toString(),
-            body = readResponseBodyLimited(response.body),
+            body = readRawResponseBody(response.body, allowLargeResponse),
             headers = response.headers.toMultimap()
                 .mapValues { (_, values) -> values.joinToString(",") }
                 .mapKeys { (name, _) -> name.lowercase() },
         )
     }
 }
+
+internal fun readRawResponseBody(body: ResponseBody?, allowLargeResponse: Boolean): String =
+    if (allowLargeResponse) {
+        readResponseBody(body)
+    } else {
+        readResponseBodyLimited(body)
+    }
 
 actual suspend fun httpGetFileRevalidated(
     url: String,

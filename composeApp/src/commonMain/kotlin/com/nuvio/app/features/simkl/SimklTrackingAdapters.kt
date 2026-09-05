@@ -16,6 +16,7 @@ import com.nuvio.app.features.tracking.TrackingProviderId
 import com.nuvio.app.features.tracking.TrackingRefreshIntent
 import com.nuvio.app.features.tracking.TrackingScrobbleAction
 import com.nuvio.app.features.tracking.TrackingScrobbleEvent
+import com.nuvio.app.features.tracking.TrackingScrobbleResult
 import com.nuvio.app.features.tracking.TrackingScrobbler
 import com.nuvio.app.features.tracking.TrackingSeekScrobblePolicy
 import com.nuvio.app.features.tracking.TrackingWatchedProvider
@@ -97,9 +98,9 @@ internal object SimklScrobbleAdapter : TrackingScrobbler {
         profileId: Int,
         action: TrackingScrobbleAction,
         event: TrackingScrobbleEvent,
-    ): Boolean {
+    ): TrackingScrobbleResult {
         val media = event.media
-        val catalog = media.catalog ?: return false
+        val catalog = media.catalog ?: return TrackingScrobbleResult.Declined
         // Null means no SIMKL-usable id resolved. For anime this can be transient — the repository
         // enriches ids over the network and only caches successes — so declining here (rather than
         // reporting a send) is what lets a later attempt for the same item try again.
@@ -111,20 +112,16 @@ internal object SimklScrobbleAdapter : TrackingScrobbler {
             seasonNumber = media.episode?.season,
             episodeNumber = media.episode?.number,
             isAnime = media.kind == TrackingMediaKind.ANIME,
-        ) ?: return false
+        ) ?: return TrackingScrobbleResult.Declined
         val progressPercent = event.progressPercent.toFloat()
 
         return when (action) {
-            TrackingScrobbleAction.START -> {
-                SimklScrobbleRepository.scrobbleStart(item = item, progressPercent = progressPercent)
-                true
-            }
-            TrackingScrobbleAction.STOP -> {
-                SimklScrobbleRepository.scrobbleStop(item = item, progressPercent = progressPercent)
-                true
-            }
+            TrackingScrobbleAction.START ->
+                SimklScrobbleRepository.scrobbleStart(item = item, progressPercent = progressPercent).copy(handled = true)
+            TrackingScrobbleAction.STOP ->
+                SimklScrobbleRepository.scrobbleStop(item = item, progressPercent = progressPercent).copy(handled = true)
             // SIMKL's scrobble API has no pause action.
-            TrackingScrobbleAction.PAUSE -> false
+            TrackingScrobbleAction.PAUSE -> TrackingScrobbleResult.Declined
         }
     }
 }

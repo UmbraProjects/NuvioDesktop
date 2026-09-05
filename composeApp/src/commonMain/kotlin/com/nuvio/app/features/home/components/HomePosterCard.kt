@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.ui.NuvioPosterCard
+import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.core.ui.NuvioPosterShape
 import com.nuvio.app.core.ui.PosterRatingBadgeScale
 import com.nuvio.app.core.ui.rememberHomePosterCardStyleUiState
@@ -49,32 +50,49 @@ fun HomePosterCard(
         null
     }
 
-    NuvioPosterCard(
-        title = item.name,
-        imageUrl = artwork.imageUrl.takeUnless { isRandomPlayCard },
-        fallbackImageUrl = artwork.fallbackImageUrl,
-        modifier = modifier,
-        shape = if (isLandscapeMode) NuvioPosterShape.Landscape else item.posterShape.toNuvioPosterShape(),
-        basePosterWidthDpOverride = basePosterWidthDpOverride,
-        detailLine = if (isLandscapeMode || posterCardStyle.hideLabelsEnabled) null else item.releaseInfo?.let { formatReleaseDateForDisplay(it) },
-        showTitleBelow = !posterCardStyle.hideLabelsEnabled,
-        bottomLeftLogoUrl = titleOverlay.logoUrl,
-        bottomLeftText = titleOverlay.text,
-        ratingBadgeText = ratingBadgeText,
-        artworkContent = if (isRandomPlayCard) {
-            {
-                RandomPlayPosterCollage(
-                    title = item.name,
-                    posterUrls = item.posterCollage,
-                )
-            }
-        } else {
-            null
-        },
+    // Plan §5/§18: an AI row's per-item reason is the whole reason that row exists, and until now
+    // it was visible only inside the settings editor. The shelf renders a bare list of MetaPreview
+    // and has no card-level slot to print it in, so it goes on hover — where a sentence has room to
+    // be a sentence, and where it costs nothing on the rows that carry no reason at all. Wrapping
+    // the artwork rather than the label is deliberate: the label already owns the truncated-title
+    // tooltip, and a card with labels hidden would otherwise have nowhere to show this.
+    // The hover preview sits outside the tooltip so a card can carry both: the preview is the
+    // desktop affordance for the card as a whole, the tooltip is the AI row's per-item reason.
+    HomePosterHoverPreview(
+        item = item,
         isWatched = isWatched,
         onClick = onClick,
         onLongClick = onLongClick,
-    )
+    ) { hoverModifier ->
+        NuvioPosterHoverTooltip(title = item.recommendationReason.orEmpty()) {
+            NuvioPosterCard(
+                title = item.name,
+                imageUrl = artwork.imageUrl.takeUnless { isRandomPlayCard },
+                fallbackImageUrl = artwork.fallbackImageUrl,
+                modifier = modifier.then(hoverModifier),
+                shape = if (isLandscapeMode) NuvioPosterShape.Landscape else item.posterShape.toNuvioPosterShape(),
+                basePosterWidthDpOverride = basePosterWidthDpOverride,
+                detailLine = if (isLandscapeMode || posterCardStyle.hideLabelsEnabled) null else item.releaseInfo?.let { formatReleaseDateForDisplay(it) },
+                showTitleBelow = !posterCardStyle.hideLabelsEnabled,
+                bottomLeftLogoUrl = titleOverlay.logoUrl,
+                bottomLeftText = titleOverlay.text,
+                ratingBadgeText = ratingBadgeText,
+                artworkContent = if (isRandomPlayCard) {
+                    {
+                        RandomPlayPosterCollage(
+                            title = item.name,
+                            posterUrls = item.posterCollage,
+                        )
+                    }
+                } else {
+                    null
+                },
+                isWatched = isWatched,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
+        }
+    }
 }
 
 /**

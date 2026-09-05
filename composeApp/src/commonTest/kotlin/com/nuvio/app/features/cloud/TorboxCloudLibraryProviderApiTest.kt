@@ -45,6 +45,31 @@ class TorboxCloudLibraryProviderApiTest {
     }
 
     @Test
+    fun `added at falls back through created cached and updated timestamps`() {
+        fun addedAt(created: String? = null, cached: String? = null, updated: String? = null): Long? =
+            TorboxCloudItemDto(
+                id = JsonPrimitive(1),
+                name = "Item",
+                createdAt = created,
+                cachedAt = cached,
+                updatedAt = updated,
+            ).toCloudLibraryItem(
+                providerId = "torbox",
+                providerName = "TorBox",
+                type = CloudLibraryItemType.Torrent,
+            )?.addedAtEpochMs
+
+        // Torrents date themselves with created_at...
+        assertEquals(1_699_131_547_000L, addedAt(created = "2023-11-04T20:59:07.000Z"))
+        // ...usenet and web downloads use cached_at, and drop the zone while they are at it.
+        assertEquals(1_699_131_547_000L, addedAt(cached = "2023-11-04T20:59:07.000000"))
+        assertEquals(1_699_131_547_000L, addedAt(updated = "2023-11-04T20:59:07Z"))
+        // An unparseable or absent date must leave the item listed, not drop it.
+        assertNull(addedAt(created = "not a date"))
+        assertNull(addedAt())
+    }
+
+    @Test
     fun `mapping falls back to hash and file absolute path when friendly fields are missing`() {
         val item = TorboxCloudItemDto(
             hash = "abc123",

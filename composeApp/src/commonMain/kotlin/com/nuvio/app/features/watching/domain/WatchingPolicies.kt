@@ -31,9 +31,11 @@ fun isReleasedBy(
     todayIsoDate: String,
     releasedDate: String?,
 ): Boolean {
-    val isoDate = releasedDate
-        ?.substringBefore('T')
-        ?.takeIf { it.length == 10 }
+    // The local date the airing lands on, not the UTC one: a 2026-09-04T01:00:00Z drop is a
+    // Sept 3 evening broadcast in the US and a Sept 4 morning one in Europe, and taking
+    // substringBefore('T') called it Sept 4 for both. Anything that isn't a calendar date at all
+    // (a bare year, a "2026-" range) still counts as released, as it always has.
+    val isoDate = com.nuvio.app.features.watchprogress.localReleaseDateOrNull(releasedDate)
         ?: return true
     return isoDate <= todayIsoDate
 }
@@ -69,7 +71,8 @@ private fun isExplicitlyReleasedBy(
     todayIsoDate: String,
     releasedDate: String?,
 ): Boolean {
-    val isoDate = isoCalendarDateOrNull(releasedDate) ?: return false
+    val isoDate = com.nuvio.app.features.watchprogress.localReleaseDateOrNull(releasedDate)
+        ?: return false
     return isoDate <= todayIsoDate
 }
 
@@ -78,7 +81,8 @@ internal fun daysUntilExplicitRelease(
     releasedDate: String?,
 ): Int? {
     val startDate = isoCalendarDateOrNull(todayIsoDate) ?: return null
-    val targetDate = isoCalendarDateOrNull(releasedDate) ?: return null
+    val targetDate = com.nuvio.app.features.watchprogress.localReleaseDateOrNull(releasedDate)
+        ?: return null
     return (isoEpochDay(targetDate) - isoEpochDay(startDate)).toInt()
 }
 

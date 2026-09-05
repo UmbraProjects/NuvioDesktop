@@ -36,13 +36,22 @@ import java.awt.datatransfer.DataFlavor
 import java.awt.dnd.DnDConstants
 import java.awt.dnd.DropTargetDragEvent
 import java.awt.dnd.DropTargetDropEvent
+import com.nuvio.app.core.build.AppVersionPolicy
 import com.nuvio.app.core.ui.DesktopNavigationGestureBridge
 import com.nuvio.app.core.ui.DesktopBackRequestSource
+import com.nuvio.app.core.ui.DesktopTrayMenu
+import com.nuvio.app.core.ui.DesktopTrayMenuEntry
+import com.nuvio.app.core.ui.loadDesktopTrayIconImage
 import com.nuvio.app.features.p2p.P2pStreamingEngine
 import com.nuvio.app.features.player.DesktopRendererApi
 import com.nuvio.app.features.player.PlatformPlayerSurface
 import com.nuvio.app.features.player.PlayerSettingsStorage
 import com.nuvio.app.features.player.desktop.DesktopHostOs
+import com.nuvio.app.features.mdblist.HeroCastMetadataService
+import com.nuvio.app.features.mdblist.MdbListMetadataService
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import com.nuvio.app.features.player.desktop.DesktopIdleHeapTrim
 import com.nuvio.app.features.player.desktop.DesktopWindowGeometry
 import com.nuvio.app.features.player.desktop.DesktopWindowMinHeight
 import com.nuvio.app.features.player.desktop.DesktopWindowMinWidth
@@ -78,14 +87,15 @@ import com.nuvio.app.core.ui.TextInputFocusTracker
 import com.nuvio.app.features.settings.DesktopWindowStartupPreference
 import java.awt.Toolkit
 import java.awt.Frame
-import java.awt.MenuItem
-import java.awt.PopupMenu
+import java.awt.MouseInfo
+import java.awt.Point
 import java.awt.Rectangle
 import java.awt.SystemTray
 import java.awt.TrayIcon
 import java.awt.event.InputEvent
 import java.awt.event.AWTEventListener
 import java.awt.event.KeyEvent
+import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.event.MouseWheelEvent
 import java.awt.event.WindowStateListener
@@ -205,14 +215,14 @@ private fun installDesktopTray(
     val iconUrl = Thread.currentThread().contextClassLoader.getResource(NuvioDesktopIconPath)
         ?: return null
     val tray = SystemTray.getSystemTray()
-    val popup = PopupMenu()
-    val openItem = MenuItem("Open Nuvio")
-    val exitItem = MenuItem("Exit")
-    popup.add(openItem)
-    popup.addSeparator()
-    popup.add(exitItem)
-    val trayIcon = TrayIcon(Toolkit.getDefaultToolkit().getImage(iconUrl), "Nuvio", popup).apply {
-        isImageAutoSize = true
+    // Pre-rendered variants beat isImageAutoSize, which scales the 1080px master down to 16px with
+    // the toolkit's fast path and leaves the icon visibly aliased in the tray.
+    val renderedIcon = loadDesktopTrayIconImage(iconUrl, tray.trayIconSize)
+    val trayIcon = TrayIcon(
+        renderedIcon ?: Toolkit.getDefaultToolkit().getImage(iconUrl),
+        "Nuvio",
+    ).apply {
+        isImageAutoSize = renderedIcon == null
     }
     val restoreWindow = {
         EventQueue.invokeLater {
@@ -222,14 +232,33 @@ private fun installDesktopTray(
             }
             window.toFront()
             window.requestFocus()
+            DesktopIdleHeapTrim.onWindowVisibilityChanged(visible = true)
         }
     }
-    openItem.addActionListener { restoreWindow() }
+    // No PopupMenu is attached, so the right-click reaches us as a plain mouse event and the menu
+    // is ours to draw. See DesktopTrayMenu for why the native one had to go.
+    val menuEntries = listOf(
+        DesktopTrayMenuEntry.Action("Open Nuvio") { restoreWindow() },
+        DesktopTrayMenuEntry.Separator,
+        DesktopTrayMenuEntry.Info("Nuvio ${AppVersionPolicy.displayVersionName}"),
+        DesktopTrayMenuEntry.Separator,
+        DesktopTrayMenuEntry.Action("Exit", onExit),
+    )
+    trayIcon.addMouseListener(object : MouseAdapter() {
+        override fun mouseReleased(e: MouseEvent) {
+            if (!e.isPopupTrigger && e.button != MouseEvent.BUTTON3) return
+            val pointer = runCatching { MouseInfo.getPointerInfo()?.location }.getOrNull()
+                ?: Point(e.x, e.y)
+            DesktopTrayMenu.show(menuEntries, pointer.x, pointer.y)
+        }
+    })
     trayIcon.addActionListener { restoreWindow() }
-    exitItem.addActionListener { EventQueue.invokeLater(onExit) }
     return runCatching {
         tray.add(trayIcon)
-        val uninstall: () -> Unit = { tray.remove(trayIcon) }
+        val uninstall: () -> Unit = {
+            DesktopTrayMenu.dismiss()
+            tray.remove(trayIcon)
+        }
         uninstall
     }.getOrNull()
 }
@@ -360,6 +389,7 @@ fun main() {
     desktopStartupStep("configure renderer") { configureDesktopRenderer() }
     desktopStartupStep("configure chrome") { configureDesktopChrome() }
     desktopStartupStep("subtitle font warm request") { com.nuvio.app.features.player.warmSubtitleFontCache() }
+    desktopStartupStep("app font warm request") { com.nuvio.app.core.ui.warmSystemFontCache() }
     System.out.println("Info: (DesktopStartup) entering Compose application")
 
     application {
@@ -434,6 +464,7 @@ fun main() {
                 if (closeToTray && trayInstalled.value) {
                     flushWindowGeometry()
                     desktopWindow.value?.isVisible = false
+                    DesktopIdleHeapTrim.onWindowVisibilityChanged(visible = false)
                 } else {
                     exitDesktopApplication()
                 }
@@ -611,6 +642,7 @@ fun main() {
                         com.nuvio.app.features.player.BingeAdvanceLog.i {
                             if (isIconified) "window minimized" else "window restored"
                         }
+                        DesktopIdleHeapTrim.onWindowVisibilityChanged(visible = !isIconified)
                     }
                 }
                 window.addWindowStateListener(windowStateListener)
@@ -728,7 +760,11 @@ fun main() {
                                 AppShortcutAction.GoHome,
                                 AppShortcutAction.OpenSearch,
                                 AppShortcutAction.OpenLibrary,
-                                AppShortcutAction.OpenCalendar -> {
+                                AppShortcutAction.OpenDiscover,
+                                AppShortcutAction.OpenCalendar,
+                                // Routed through App so it inherits the same guard the other
+                                // navigation shortcuts get: nothing fires while the player is up.
+                                AppShortcutAction.ToggleGameMode -> {
                                     AppShortcutBridge.emit(action)
                                     true
                                 }
@@ -789,11 +825,26 @@ fun main() {
         }
     }
 
+    // The hero cast and MDBList ratings caches batch their writes rather than rewriting a 3.4 MB
+    // file per title (see CoalescingCachePersister), so anything from the last few seconds is still
+    // only in memory at this point. Both are re-fetchable, but re-fetching costs API budget, so
+    // spend a moment here rather than throw them away. Bounded, because this is the last thing
+    // between the user and the process going away.
+    runBlocking {
+        withTimeoutOrNull(CACHE_FLUSH_TIMEOUT_MS) {
+            runCatching { HeroCastMetadataService.flushPendingWrites() }
+            runCatching { MdbListMetadataService.flushPendingWrites() }
+        }
+    }
+
     // Allow a brief grace period for background coroutines (e.g., scrobble network requests
     // triggered by UI teardown) to complete before hard-terminating the JVM.
     Thread.sleep(400)
     kotlin.system.exitProcess(0)
 }
+
+/** Cap on the exit-path cache flush: a stuck disk must not stop the app from closing. */
+private const val CACHE_FLUSH_TIMEOUT_MS = 2_000L
 
 private fun configureDesktopChrome() {
     if (System.getProperty("os.name").contains("mac", ignoreCase = true)) {

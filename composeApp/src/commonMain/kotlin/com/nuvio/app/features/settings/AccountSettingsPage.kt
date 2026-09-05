@@ -26,15 +26,22 @@ import com.nuvio.app.core.auth.ReauthenticationTrigger
 import com.nuvio.app.core.sync.ProfileSettingsSync
 import com.nuvio.app.core.sync.SynchronizationPreferencesRepository
 import com.nuvio.app.core.ui.NuvioPrimaryButton
+import com.nuvio.app.features.setup.FirstRunWizardController
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsSyncService
+import com.nuvio.app.features.updater.AppUpdaterController
 import com.nuvio.app.features.updater.AppUpdaterPlatform
+import com.nuvio.app.features.updater.UpdateChannel
+import com.nuvio.app.features.updater.updateChannelLabel
 import com.nuvio.app.isDesktop
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.settings_account_run_wizard
+import nuvio.composeapp.generated.resources.settings_account_run_wizard_description
+import nuvio.composeapp.generated.resources.settings_account_setup
 import nuvio.composeapp.generated.resources.action_cancel
 import nuvio.composeapp.generated.resources.compose_auth_sign_in
 import nuvio.composeapp.generated.resources.compose_settings_page_account
@@ -76,8 +83,11 @@ import nuvio.composeapp.generated.resources.settings_sync_trakt
 import nuvio.composeapp.generated.resources.settings_sync_trakt_description
 import nuvio.composeapp.generated.resources.settings_updates_auto_install
 import nuvio.composeapp.generated.resources.settings_updates_auto_install_description
+import nuvio.composeapp.generated.resources.settings_updates_channel
+import nuvio.composeapp.generated.resources.settings_updates_channel_description
 import nuvio.composeapp.generated.resources.settings_updates_section
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.accentBrush
 
 internal fun LazyListScope.accountSettingsContent(
     isTablet: Boolean,
@@ -110,6 +120,32 @@ private fun AccountSettingsBody(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (isDesktop) {
+            NuvioSurfaceCard(
+                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("setup-wizard")),
+            ) {
+                Text(
+                    text = stringResource(Res.string.settings_account_setup),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = stringResource(Res.string.settings_account_run_wizard_description),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                NuvioPrimaryButton(
+                    text = stringResource(Res.string.settings_account_run_wizard),
+                    // The wizard is hosted globally, so it opens above Settings rather than being a
+                    // navigation destination of its own.
+                    onClick = FirstRunWizardController::openManually,
+                )
+            }
+        }
+
         NuvioSurfaceCard(
             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("account-status")),
         ) {
@@ -138,7 +174,7 @@ private fun AccountSettingsBody(
                             } else {
                                 stringResource(Res.string.settings_account_status_signed_in)
                             },
-                            style = MaterialTheme.typography.bodyLarge,
+                            style = MaterialTheme.typography.bodyLarge.accentBrush(),
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Medium,
                         )
@@ -371,6 +407,36 @@ private fun AccountSettingsBody(
                 isTablet = isTablet,
             ) {
                 SettingsGroup(isTablet = isTablet) {
+                    // Not rememberSaveable: the desktop saveable registry has no saver for enums.
+                    var channel by remember { mutableStateOf(AppUpdaterPlatform.getUpdateChannel()) }
+                    SettingsChoiceRow(
+                        title = stringResource(Res.string.settings_updates_channel),
+                        description = stringResource(Res.string.settings_updates_channel_description),
+                        options = listOf(
+                            SettingsChoiceOption(
+                                value = UpdateChannel.Stable,
+                                label = updateChannelLabel(UpdateChannel.Stable),
+                            ),
+                            SettingsChoiceOption(
+                                value = UpdateChannel.Nightly,
+                                label = updateChannelLabel(UpdateChannel.Nightly),
+                            ),
+                        ),
+                        selectedValue = channel,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("update-channel"),
+                        ),
+                        onSelected = { value ->
+                            channel = value
+                            AppUpdaterPlatform.setUpdateChannel(value)
+                            // Check straight away: the point of switching is to get the other
+                            // channel's build, and waiting for the next launch to offer it makes
+                            // the toggle look like it did nothing.
+                            AppUpdaterController.recheckActiveController()
+                        },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
                     var autoInstall by rememberSaveable {
                         mutableStateOf(AppUpdaterPlatform.isInPlaceUpdateEnabled())
                     }

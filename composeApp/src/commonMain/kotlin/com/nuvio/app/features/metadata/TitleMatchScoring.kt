@@ -28,6 +28,19 @@ internal fun yearMismatchPenalty(a: Int?, b: Int?): Double {
 }
 
 /**
+ * Ranks candidates that tie on score: an exactly matching year wins over a merely tolerated one.
+ *
+ * [yearMismatchPenalty] treats a ±1 gap as free, which is right for a single title dated
+ * differently by two sources but leaves consecutive-year entries of the *same* title tied — anime
+ * sequels routinely differ only by punctuation that normalisation erases ("Kaguya-sama: Love is War"
+ * 2019 vs "Kaguya-sama: Love is War?" 2020). Without this the winner is whichever the provider
+ * happened to list first. It is a tie-break rather than a bonus on purpose: nothing may cross the
+ * accept threshold on the strength of its year alone.
+ */
+internal fun exactYearRank(local: Int?, candidate: Int?): Int =
+    if (local != null && local == candidate) 1 else 0
+
+/**
  * Token-overlap score, with two allowances for how release names spell titles.
  *
  * [allowCharacterSimilarity] adds a character-level floor for callers that would rather show a
@@ -92,6 +105,8 @@ internal fun pickBestTmdbMatch(
         val similarity = titleSimilarity(target, candidate, allowCharacterSimilarity = fuzzy)
         result to (similarity - yearMismatchPenalty(year, result.year))
     }
-    val best = scored.maxByOrNull { it.second } ?: return null
+    val best = scored.maxWithOrNull(
+        compareBy({ it.second }, { exactYearRank(year, it.first.year) }),
+    ) ?: return null
     return best.first.takeIf { best.second >= minScore }
 }

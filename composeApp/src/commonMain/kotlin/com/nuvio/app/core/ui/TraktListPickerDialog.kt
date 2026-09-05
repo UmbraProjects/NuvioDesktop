@@ -33,6 +33,7 @@ import nuvio.composeapp.generated.resources.action_save
 import nuvio.composeapp.generated.resources.compose_trakt_list_picker_loading
 import nuvio.composeapp.generated.resources.compose_trakt_list_picker_subtitle
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.graphics.SolidColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,10 +113,10 @@ fun TraktListPickerDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(
-                                        color = if (selected) {
-                                            tokens.colors.accent.copy(alpha = tokens.opacity.selected)
+                                        brush = if (selected) {
+                                            tokens.colors.accentFill(tokens.opacity.selected)
                                         } else {
-                                            tokens.colors.surfaceCard.copy(alpha = tokens.opacity.medium)
+                                            SolidColor(tokens.colors.surfaceCard.copy(alpha = tokens.opacity.medium))
                                         },
                                         shape = tokens.shapes.compactCard,
                                     )

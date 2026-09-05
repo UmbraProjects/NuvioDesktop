@@ -483,9 +483,23 @@ object LibraryPvrScheduler {
             stream = stream,
             destinationDirOverride = folder.path,
             destinationRelativePath = if (item.isAnime) {
-                LibraryFileNaming.animeEpisodeRelativePath(item.title, item.year, episode, extension)
+                LibraryFileNaming.animeEpisodeRelativePath(
+                    item.title,
+                    item.year,
+                    episode,
+                    extension,
+                    item.existingFolderNamesIn(folder),
+                )
             } else {
-                LibraryFileNaming.episodeRelativePath(item.title, item.year, season, episode, video.title, extension)
+                LibraryFileNaming.episodeRelativePath(
+                    item.title,
+                    item.year,
+                    season,
+                    episode,
+                    video.title,
+                    extension,
+                    item.existingFolderNamesIn(folder),
+                )
             },
             bandwidthLimitMbps = settings.bandwidthLimitMbps,
             expectedSizeBytes = link.sizeBytes ?: row.sizeBytes,
@@ -600,9 +614,23 @@ object LibraryPvrScheduler {
                     stream = stream,
                     destinationDirOverride = folder.path,
                     destinationRelativePath = if (item.isAnime) {
-                        LibraryFileNaming.animeEpisodeRelativePath(item.title, item.year, episode, ext)
+                        LibraryFileNaming.animeEpisodeRelativePath(
+                            item.title,
+                            item.year,
+                            episode,
+                            ext,
+                            item.existingFolderNamesIn(folder),
+                        )
                     } else {
-                        LibraryFileNaming.episodeRelativePath(item.title, item.year, season, episode, video.title, ext)
+                        LibraryFileNaming.episodeRelativePath(
+                            item.title,
+                            item.year,
+                            season,
+                            episode,
+                            video.title,
+                            ext,
+                            item.existingFolderNamesIn(folder),
+                        )
                     },
                     bandwidthLimitMbps = bandwidthLimitMbps,
                     expectedSizeBytes = stream.knownDownloadSizeBytes(),
@@ -677,7 +705,12 @@ object LibraryPvrScheduler {
                     episodeThumbnail = null,
                     stream = stream,
                     destinationDirOverride = folder.path,
-                    destinationRelativePath = LibraryFileNaming.movieRelativePath(item.title, item.year, ext),
+                    destinationRelativePath = LibraryFileNaming.movieRelativePath(
+                        item.title,
+                        item.year,
+                        ext,
+                        item.existingFolderNamesIn(folder),
+                    ),
                     bandwidthLimitMbps = bandwidthLimitMbps,
                     expectedSizeBytes = stream.knownDownloadSizeBytes(),
                     maximumSizeBytes = maximumSizeBytes,
@@ -924,7 +957,12 @@ object LibraryPvrScheduler {
         if (folder == null) return false
         LocalLibraryRepository.preseedMatchOverride(
             LocalMatchOverride(
-                key = LibraryFileNaming.expectedItemKey(folder, item.title, item.year),
+                key = LibraryFileNaming.expectedItemKey(
+                    folder = folder,
+                    title = item.title,
+                    year = item.year,
+                    existingFolderNames = item.existingFolderNamesIn(folder),
+                ),
                 imdbId = item.imdbId,
                 tmdbId = item.tmdbId,
                 kitsuId = item.kitsuId,
@@ -1115,6 +1153,16 @@ object LibraryPvrScheduler {
             updatedAtEpochMs = now,
         )
     }
+
+    /**
+     * Top-level folder names this monitored title already occupies in [folder].
+     *
+     * A monitored item carries its own year, so the scheduler is not exposed to the cache-warmth
+     * problem the manual route has — but it still has to land in the same folder a manual grab
+     * created, which may not carry a year at all. See [LibraryDestinationFolders].
+     */
+    private fun MonitoredItem.existingFolderNamesIn(folder: LocalFolder): List<String> =
+        LibraryDestinationFolders.existingFolderNames(folder = folder, contentId = contentId)
 
     private val LibraryPvrSettings.postReleaseDelayMs: Long
         get() = postReleaseDelayHours.coerceIn(0, 168).toLong() * 60L * 60L * 1000L

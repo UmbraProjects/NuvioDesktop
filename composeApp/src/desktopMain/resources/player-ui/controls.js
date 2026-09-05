@@ -153,6 +153,13 @@ const boldToggle = document.getElementById("boldToggle");
 const italicLabel = document.getElementById("italicLabel");
 const italicToggle = document.getElementById("italicToggle");
 const bottomOffsetLabel = document.getElementById("bottomOffsetLabel");
+const assStyleModeLabel = document.getElementById("assStyleModeLabel");
+const assStyleModeSelect = document.getElementById("assStyleModeSelect");
+const assScaleRow = document.getElementById("assScaleRow");
+const assScaleLabel = document.getElementById("assScaleLabel");
+const assScaleMinus = document.getElementById("assScaleMinus");
+const assScaleValue = document.getElementById("assScaleValue");
+const assScalePlus = document.getElementById("assScalePlus");
 const bottomOffsetMinus = document.getElementById("bottomOffsetMinus");
 const bottomOffsetValue = document.getElementById("bottomOffsetValue");
 const bottomOffsetPlus = document.getElementById("bottomOffsetPlus");
@@ -209,6 +216,14 @@ const captureEndButton = document.getElementById("captureEndButton");
 const submitIntroStatus = document.getElementById("submitIntroStatus");
 const submitIntroCancelButton = document.getElementById("submitIntroCancelButton");
 const submitIntroSubmitButton = document.getElementById("submitIntroSubmitButton");
+const subtitleHexModal = document.getElementById("subtitleHexModal");
+const subtitleHexTitle = document.getElementById("subtitleHexTitle");
+const subtitleHexPreview = document.getElementById("subtitleHexPreview");
+const subtitleHexInput = document.getElementById("subtitleHexInput");
+const subtitleHexStatus = document.getElementById("subtitleHexStatus");
+const subtitleHexCloseButton = document.getElementById("subtitleHexCloseButton");
+const subtitleHexCancelButton = document.getElementById("subtitleHexCancelButton");
+const subtitleHexApplyButton = document.getElementById("subtitleHexApplyButton");
 const p2pConsentModal = document.getElementById("p2pConsentModal");
 const p2pConsentTitle = document.getElementById("p2pConsentTitle");
 const p2pConsentCloseButton = document.getElementById("p2pConsentCloseButton");
@@ -251,6 +266,7 @@ let state = {
   desktopAnimeModeLabel: "Off",
   desktopAnimeSvpEnabled: false,
   seekThumbnailsEnabled: true,
+  seekStepSeconds: 10,
   tapToUnlockLabel: "Tap to unlock",
   playbackErrorTitle: "Playback error",
   playbackErrorMessage: "",
@@ -305,8 +321,10 @@ let state = {
   resetDefaultsLabel: "Reset Defaults",
   onLabel: "On",
   offLabel: "Off",
+  posterHighlightMode: "Off",
   themeAccentColor: "#2f6fed",
   themeAccentStrongColor: "#3c7bff",
+  themeAccentFill: "#2f6fed",
   themeOnAccentColor: "#fff",
   themeFocusColor: "#9ecaff",
   themeSelectedSurfaceColor: "#26384f",
@@ -330,7 +348,9 @@ let state = {
   appFullscreenKeyCode: 122,
   playerShortcutKeyCodes: {},
   uiScalePercent: 0,
+  uiFontFamily: "",
   sourceNotchPosition: "right",
+  notificationPosition: "center",
   parentalWarnings: [],
   showParentalGuide: false,
   showOpeningOverlay: false,
@@ -366,6 +386,7 @@ let state = {
   sourceFilters: [],
   sourceItems: [],
   episodeItems: [],
+  episodeFallbackThumbnail: "",
   episodeSeasons: [],
   episodeStreamsVisible: false,
   episodeStreamsIsLoading: false,
@@ -412,7 +433,13 @@ let state = {
     fontSizeSp: 18,
     bottomOffset: 20,
     fontFamily: "",
+    assStyleMode: "Original",
+    assScalePercent: 100,
   },
+  // The three ASS/SSA levels, in enum order, as {value, label}. Sent by the player so the panel's
+  // dropdown and the context menu name the same things the settings page does.
+  subtitleAssStyleModes: [],
+  assStyleModeValueLabel: "Original",
   subtitleFontFamilies: [],
   subtitleColorSwatches: [],
   subtitleBackgroundColorSwatches: [],
@@ -444,6 +471,12 @@ let episodeListRenderKey = "";
 let seasonFilterRenderKey = "";
 let episodeFocusPositionKey = "";
 const episodeArtworkPreloads = new Map();
+// Reported failures, keyed by episode index + url, so a rebuilt list doesn't re-report artwork the
+// app has already been told about.
+const reportedEpisodeArtworkFailures = new Set();
+// Episode stills come off a public CDN while the video is saturating the same link, so a single
+// short retry loses often enough to leave cards blank for the rest of the session.
+const EpisodeArtworkRetryDelaysMs = [700, 1800, 4200];
 let submitIntroDraft = {
   segmentType: "intro",
   startTime: "00:00",
@@ -481,6 +514,24 @@ let appliedCombinedUserScale = null;
 // state push (including position ticks), so guard the setProperty writes behind a change check to
 // avoid needless style invalidation when nothing scale-related moved.
 let appliedScaleSignature = "";
+// The HUD's own font stack, and what --nuvio-ui-font falls back to when no app font is set. Kept
+// here as well as in controls.css because the canvas measurements below cannot read a CSS variable.
+const DEFAULT_UI_FONT_STACK = '"Nuvio JetBrains Sans", "JetBrains Sans", "Segoe UI", sans-serif';
+let uiFontStack = DEFAULT_UI_FONT_STACK;
+
+// A family the app resolved against the host's installed fonts, so it is quoted and used as-is;
+// the bundled stack stays appended as the fallback in case the WebView disagrees about the name.
+function applyUiFontFamily(family) {
+  const trimmed = String(family || "").trim();
+  const stack = trimmed ? `"${trimmed.replace(/"/g, '\\"')}", ${DEFAULT_UI_FONT_STACK}` : DEFAULT_UI_FONT_STACK;
+  if (stack === uiFontStack) return;
+  uiFontStack = stack;
+  document.documentElement.style.setProperty("--nuvio-ui-font", stack);
+  // Both canvases size panels from measured text, so their cached widths are stale under a new
+  // face. Re-render whichever is open rather than leaving a panel cut off or over-wide.
+  if (activeModal === "audio" || activeModal === "subtitles") renderActiveModal();
+}
+
 function applyUserUiScale(percent) {
   const nextPercent = Math.max(-50, Math.min(50, Math.round(Number(percent) || 0)));
   if (nextPercent !== appliedUiScalePercent) {
@@ -710,6 +761,13 @@ const applyTheme = () => {
   };
   setColor("--theme-accent", state.themeAccentColor, "#2f6fed");
   setColor("--theme-accent-strong", state.themeAccentStrongColor, "#3c7bff");
+  // A paint, not a colour: cssColorOrFallback would reject the gradient form.
+  style.setProperty(
+    "--theme-accent-fill",
+    typeof state.themeAccentFill === "string" && state.themeAccentFill.trim()
+      ? state.themeAccentFill.trim()
+      : "var(--theme-accent)",
+  );
   setColor("--theme-on-accent", state.themeOnAccentColor, "#fff");
   setColor("--theme-focus", state.themeFocusColor, "#9ecaff");
   setColor("--theme-selected-surface", state.themeSelectedSurfaceColor, "#26384f");
@@ -733,6 +791,53 @@ const formatTime = milliseconds => {
     : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
 
+/**
+ * Whether the right-hand timeline label shows time remaining instead of total duration.
+ *
+ * Persisted the same way the context-menu preference is: this is a HUD-local display choice with
+ * no bearing on playback, so it does not need a round trip through the Kotlin settings store, and
+ * every other player app that offers this remembers it between sessions.
+ */
+let showRemainingTime = (() => {
+  try {
+    return window.localStorage.getItem("nuvioShowRemainingTime") === "true";
+  } catch (error) {
+    return false;
+  }
+})();
+
+/**
+ * [positionMs] is passed explicitly by [setProgress] rather than read from `state`, because while
+ * the user is dragging the seek bar the label is updated from the drag position and `state` still
+ * holds where playback actually is — the countdown has to follow the thumb.
+ */
+const durationLabelText = (durationMs, positionMs) => {
+  // Nothing to count down to on a live or still-loading stream, so fall back to the total rather
+  // than showing a remaining time that is really just "-00:00".
+  if (!showRemainingTime || durationMs <= 0) return formatTime(durationMs);
+  const at = Math.max(0, Number(positionMs) || 0);
+  return `-${formatTime(Math.max(0, durationMs - at))}`;
+};
+
+const applyDurationLabel = () => {
+  const durationMs = Math.max(0, Number(state.durationMs) || 0);
+  durationLabel.textContent = durationLabelText(durationMs, Number(state.positionMs) || 0);
+  durationLabel.title = showRemainingTime ? "Click to show total duration" : "Click to show time remaining";
+};
+
+durationLabel.addEventListener("click", event => {
+  // Kept off any outer surface handler: a click on the video area is a playback toggle elsewhere in
+  // the player, and reading the clock should never be one.
+  event.stopPropagation();
+  showRemainingTime = !showRemainingTime;
+  try {
+    window.localStorage.setItem("nuvioShowRemainingTime", showRemainingTime ? "true" : "false");
+  } catch (error) {
+    // A blocked storage quota is not a reason to refuse the toggle for this session.
+  }
+  applyDurationLabel();
+});
+
 const setProgress = (positionMs, durationMs) => {
   const percent = durationMs > 0 ? Math.max(0, Math.min(100, positionMs / durationMs * 100)) : 0;
   seek.value = Math.round(percent * 10);
@@ -749,7 +854,9 @@ const setProgress = (positionMs, durationMs) => {
     pipSeek.style.setProperty("--buffered", `${bufferedPercent}%`);
   }
   positionLabel.textContent = formatTime(positionMs);
-  durationLabel.textContent = formatTime(durationMs);
+  // Read through the same helper the click handler uses, so a countdown keeps counting down as
+  // playback advances rather than freezing at whatever it read when the label was tapped.
+  durationLabel.textContent = durationLabelText(durationMs, positionMs);
 };
 
 let chapterMarkersSignature = "";
@@ -914,7 +1021,14 @@ const setImageVisualState = (element, stateName) => {
   });
 };
 
-const setImageSource = (element, source) => {
+/**
+ * `options.retryDelays` re-requests a failed load on that schedule before giving up, and
+ * `options.onExhausted` runs once every attempt has failed — that is where a caller hands the
+ * element a fallback URL or reports the failure. Without a retry schedule the load is single-shot,
+ * which is right for artwork the page can afford to lose (a logo, a seek preview) and wrong for the
+ * episode strip, where a lost request leaves a card blank until the panel is rebuilt.
+ */
+const setImageSource = (element, source, options) => {
   const url = String(source || "").trim();
   if (!url) {
     element.removeAttribute("src");
@@ -922,28 +1036,50 @@ const setImageSource = (element, source) => {
     setImageVisualState(element, "");
     return "";
   }
+  const retryDelays = (options && options.retryDelays) || [];
+  const onExhausted = (options && options.onExhausted) || null;
   const currentUrl = element.getAttribute("src") || "";
   const loadedUrl = element.getAttribute("data-loaded-src") || "";
   if (currentUrl !== url) {
     element.setAttribute("decoding", "async");
     setImageVisualState(element, "loading");
+    let retryIndex = 0;
+    let retryPending = false;
     element.onload = () => {
       if (element.getAttribute("src") !== url) return;
+      retryPending = false;
       element.setAttribute("data-loaded-src", url);
-      window.requestAnimationFrame(() => setImageVisualState(element, "loaded"));
+      // The frame callback exists so the reveal transition starts on a painted frame, but it does
+      // not run at all while the page isn't rendering — and an image that finished loading in that
+      // window would otherwise sit at opacity 0 with nothing left to trigger it. The timer is the
+      // backstop; whichever lands first wins and the other is a no-op.
+      const reveal = () => {
+        if (element.getAttribute("src") !== url) return;
+        setImageVisualState(element, "loaded");
+      };
+      window.requestAnimationFrame(reveal);
+      window.setTimeout(reveal, 400);
     };
     element.onerror = () => {
-      if (element.getAttribute("src") !== url) return;
+      // A retry clears and re-sets `src`, and the clearing can queue an error of its own; ignoring
+      // errors while a retry is in flight keeps that from eating an attempt.
+      if (element.getAttribute("src") !== url || retryPending) return;
       element.removeAttribute("data-loaded-src");
       setImageVisualState(element, "error");
-      if (element.closest(".episode-thumb") && element.getAttribute("data-retried-src") !== url) {
-        element.setAttribute("data-retried-src", url);
-        window.setTimeout(() => {
-          if (element.getAttribute("src") !== url) return;
-          element.removeAttribute("src");
-          setImageSource(element, url);
-        }, 700);
+      if (retryIndex >= retryDelays.length) {
+        if (onExhausted) onExhausted(url);
+        return;
       }
+      const delay = retryDelays[retryIndex];
+      retryIndex += 1;
+      retryPending = true;
+      window.setTimeout(() => {
+        retryPending = false;
+        if (element.getAttribute("src") !== url) return;
+        setImageVisualState(element, "loading");
+        element.removeAttribute("src");
+        element.setAttribute("src", url);
+      }, delay);
     };
     element.setAttribute("src", url);
     if (element.complete && element.naturalWidth > 0) {
@@ -1050,6 +1186,116 @@ const rangePositionMs = (input = seek) => {
   return durationMs > 0 ? Math.round(durationMs * Number(input.value) / 1000) : 0;
 };
 
+// Custom subtitle colours. The controls bridge only carries numbers, so a colour crosses as one
+// packed 0xAARRGGBB integer - exact in a Double, and no new string channel to thread through the
+// native player. Alpha is resolved here, on the side that knows the current style.
+const SUBTITLE_COLOR_FIELDS = {
+  textColor: { title: "Custom Text Color", event: "subtitleTextColorArgb" },
+  outlineColor: { title: "Custom Outline Color", event: "subtitleOutlineColorArgb" },
+  backgroundColor: { title: "Custom Background Color", event: "subtitleBackgroundColorArgb" },
+  shadowColor: { title: "Custom Shadow Color", event: "subtitleShadowColorArgb" },
+};
+
+const SUBTITLE_COLOR_EVENT_FIELDS = {
+  subtitleTextColor: "textColor",
+  subtitleOutlineColor: "outlineColor",
+  subtitleBackgroundColor: "backgroundColor",
+  subtitleShadowColor: "shadowColor",
+};
+
+const HEX_COLOR_PATTERN = /^#?(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+let subtitleHexField = "";
+
+const currentSubtitleColor = field => String((state.subtitleStyle || {})[field] || "");
+
+const formatArgbForInput = value => {
+  const parsed = parseArgb(value);
+  const hex = [parsed.alpha, parsed.red, parsed.green, parsed.blue]
+    .map(part => part.toString(16).toUpperCase().padStart(2, "0"))
+    .join("");
+  return `#${hex}`;
+};
+
+const parseHexColorInput = (input, field) => {
+  const raw = String(input || "").trim();
+  if (!HEX_COLOR_PATTERN.test(raw)) return null;
+  const clean = raw.replace("#", "").toUpperCase();
+  // Arithmetic rather than shifts: an opaque colour exceeds a signed 32-bit int, which is what
+  // JavaScript's bitwise operators would silently truncate it to.
+  if (clean.length === 8) return parseInt(clean, 16);
+  // Six digits say nothing about opacity, so the field keeps the alpha it already had - text,
+  // outline and shadow all have their own opacity steppers. A fully transparent current colour is
+  // the exception, since honouring it would apply an invisible colour.
+  const currentAlpha = parseArgb(currentSubtitleColor(field)).alpha;
+  return ((currentAlpha > 0 ? currentAlpha : 255) * 0x1000000) + parseInt(clean, 16);
+};
+
+const updateSubtitleHexPreview = () => {
+  const typed = String(subtitleHexInput.value || "").trim();
+  const argb = parseHexColorInput(typed, subtitleHexField);
+  const valid = argb !== null;
+  subtitleHexStatus.textContent = valid || !typed ? "" : "Enter a hex color like #FFD700 or #B3000000.";
+  subtitleHexApplyButton.disabled = !valid;
+  if (!valid) return;
+  const alpha = Math.floor(argb / 0x1000000);
+  const rgb = argb % 0x1000000;
+  const css = `rgba(${Math.floor(rgb / 0x10000)}, ${Math.floor(rgb / 0x100) % 0x100}, ${rgb % 0x100}, ${(alpha / 255).toFixed(3)})`;
+  subtitleHexPreview.style.setProperty("--hex-preview", css);
+};
+
+const closeSubtitleHexPrompt = () => {
+  if (!subtitleHexField) return;
+  subtitleHexField = "";
+  setModalVisibility(subtitleHexModal, false);
+  focusShortcutRoot();
+};
+
+const openSubtitleHexPrompt = field => {
+  const descriptor = SUBTITLE_COLOR_FIELDS[field];
+  if (!descriptor) return;
+  subtitleHexField = field;
+  subtitleHexTitle.textContent = descriptor.title;
+  subtitleHexInput.value = formatArgbForInput(currentSubtitleColor(field));
+  updateSubtitleHexPreview();
+  setModalVisibility(subtitleHexModal, true);
+  window.requestAnimationFrame(() => {
+    subtitleHexInput.focus();
+    subtitleHexInput.select();
+  });
+};
+
+const applySubtitleHexPrompt = () => {
+  const descriptor = SUBTITLE_COLOR_FIELDS[subtitleHexField];
+  if (!descriptor) return;
+  const argb = parseHexColorInput(subtitleHexInput.value, subtitleHexField);
+  if (argb === null) {
+    updateSubtitleHexPreview();
+    return;
+  }
+  closeSubtitleHexPrompt();
+  send(descriptor.event, argb);
+};
+
+subtitleHexInput.addEventListener("input", updateSubtitleHexPreview);
+subtitleHexInput.addEventListener("keydown", event => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    applySubtitleHexPrompt();
+  } else if (event.key === "Escape") {
+    // Stop it reaching the document handler, which would close the subtitle panel underneath.
+    event.preventDefault();
+    event.stopPropagation();
+    closeSubtitleHexPrompt();
+  }
+});
+subtitleHexApplyButton.addEventListener("click", applySubtitleHexPrompt);
+subtitleHexCancelButton.addEventListener("click", closeSubtitleHexPrompt);
+subtitleHexCloseButton.addEventListener("click", closeSubtitleHexPrompt);
+subtitleHexModal.addEventListener("click", event => {
+  if (event.target === subtitleHexModal) closeSubtitleHexPrompt();
+});
+
 const modalByName = {
   audio: audioModal,
   subtitles: subtitleModal,
@@ -1099,6 +1345,7 @@ const setModalVisibility = (modal, visible, animated = true) => {
 };
 
 const closePlayerModal = (notifyDismiss = false, animated = true) => {
+  closeSubtitleHexPrompt();
   const closingModal = activeModal;
   activeModal = "";
   modalElements.forEach(modal => {
@@ -1191,8 +1438,10 @@ const contextMenuItems = [
     label: "Playback",
     children: [
       { label: "Play / Pause", action: "send:toggle", shortcut: "K" },
-      { label: "Seek back 10 seconds", action: "send:seekBack", shortcut: "←" },
-      { label: "Seek forward 10 seconds", action: "send:seekForward", shortcut: "→" },
+      // Labels carry the configured step, so they are rewritten by refreshSeekStepLabels()
+      // whenever the setting changes rather than baked in at build time.
+      { label: "Seek back 10 seconds", labelKey: "seekBack", action: "send:seekBack", shortcut: "←" },
+      { label: "Seek forward 10 seconds", labelKey: "seekForward", action: "send:seekForward", shortcut: "→" },
       { label: "Playback speed", children: playbackSpeedMenuItems },
       { label: "Previous episode", action: "send:previousEpisode" },
       { label: "Next episode", action: "send:nextEpisode" },
@@ -1237,6 +1486,18 @@ const contextMenuItems = [
           { label: "Bottom offset", children: [
             { label: "Increase", action: "send:subtitleBottomOffsetDelta:5" },
             { label: "Decrease", action: "send:subtitleBottomOffsetDelta:-5" },
+          ] },
+          // ASS/SSA scripts ignore everything above unless the styling level says otherwise;
+          // "Override" is the only level under which Font size and Bottom offset move them.
+          // Listed by name with a tick on the active one, like the HDR and colour-profile menus.
+          { label: "ASS/SSA styling", children: [
+            { label: "Original", action: "send:subtitleAssStyleMode:0", selectedField: "assStyleModeValueLabel" },
+            { label: "Resize", action: "send:subtitleAssStyleMode:1", selectedField: "assStyleModeValueLabel" },
+            { label: "Override", action: "send:subtitleAssStyleMode:2", selectedField: "assStyleModeValueLabel" },
+          ] },
+          { label: "ASS/SSA size", children: [
+            { label: "Increase", action: "send:subtitleAssScaleDelta:5" },
+            { label: "Decrease", action: "send:subtitleAssScaleDelta:-5" },
           ] },
           { label: "Text opacity", children: [
             { label: "Increase", action: "subtitleOpacity:10" },
@@ -1382,6 +1643,32 @@ const applyOptimisticContextSelection = button => {
   }
 };
 
+const seekStepSeconds = () => {
+  const value = Math.round(Number(state.seekStepSeconds));
+  return Number.isFinite(value) && value > 0 ? value : 10;
+};
+
+// Keeps every place that names the jump distance — the context-menu rows and the two seek buttons'
+// screen-reader labels — in step with the setting. The buttons themselves draw plain chevrons, so
+// there is no number to redraw there.
+const refreshSeekStepLabels = () => {
+  const seconds = seekStepSeconds();
+  const unit = seconds === 1 ? "second" : "seconds";
+  const labels = {
+    seekBack: `Seek back ${seconds} ${unit}`,
+    seekForward: `Seek forward ${seconds} ${unit}`,
+  };
+  Object.entries(labels).forEach(([key, text]) => {
+    if (contextMenu) {
+      const row = contextMenu.querySelector(`.context-menu-item[data-label-key="${key}"] .context-menu-label`);
+      if (row) row.textContent = text;
+    }
+    document.querySelectorAll(`.seek-control[data-command="${key}"]`).forEach(button => {
+      button.setAttribute("aria-label", text);
+    });
+  });
+};
+
 const refreshContextMenuIndicators = () => {
   if (!contextMenu) return;
   contextMenu.querySelectorAll(".context-menu-item[data-toggle-key], .context-menu-item[data-selected-field]")
@@ -1477,7 +1764,7 @@ const cycleAspectFromControls = () => {
 // "close after selecting" preference is off (that preference only governs in-place tweaks).
 const contextActionOpensSurface = action => {
   const kind = String(action || "").split(":")[0];
-  if (kind === "modal" || kind === "subtitleTab") return true;
+  if (kind === "modal" || kind === "subtitleTab" || kind === "subtitleColorPrompt") return true;
   return action === "send:back" ||
     action === "send:toggleFullscreen" ||
     action === "send:pictureInPicture" ||
@@ -1567,6 +1854,10 @@ const executeContextAction = action => {
     openSubtitleContextTab(Number(parts.shift() || 0));
     return;
   }
+  if (kind === "subtitleColorPrompt") {
+    openSubtitleHexPrompt(parts.shift());
+    return;
+  }
   if (kind === "subtitleStyle") {
     // Toggle the style attribute in place — do not pop the style panel open.
     const command = parts.shift();
@@ -1645,6 +1936,7 @@ const buildContextMenu = (items, parent) => {
     button.className = "context-menu-item";
     button.setAttribute("role", "menuitem");
     if (item.toggleKey) button.dataset.toggleKey = item.toggleKey;
+    if (item.labelKey) button.dataset.labelKey = item.labelKey;
     if (item.selectedField) {
       button.dataset.selectedField = item.selectedField;
       button.dataset.selectedValue = String(item.selectedValue ?? item.label);
@@ -1716,6 +2008,7 @@ const buildContextMenu = (items, parent) => {
 if (contextMenu) {
   buildContextMenu(contextMenuItems, contextMenu);
   refreshContextMenuIndicators();
+  refreshSeekStepLabels();
   contextMenu.addEventListener("contextmenu", event => event.preventDefault());
 }
 
@@ -1723,13 +2016,58 @@ window.nuvioOpenAnimeShaderContextMenu = items => {
   setContextMenuDynamicItems("animeShaders", items);
 };
 
+// The catalog is re-pushed after every selection so the checkmark can move. This submenu is the
+// only nested dynamic one, so wiping and rebuilding it destroyed the `is-open` latch on the very
+// flyout the pointer was standing in — which is what closed "Upscaling" (and every other mpv
+// option) mid-interaction even with "Close menu after selecting" turned off. A selection-only
+// change is therefore applied to the existing rows instead of rebuilding them.
+const mpvOptionsStructureSignature = list => JSON.stringify(list.map(option => [
+  String(option.label || "Option"),
+  (Array.isArray(option.choices) ? option.choices : [])
+    .map(choice => [String(choice.label || "Option"), Number(choice.index) || 0]),
+]));
+
+let mpvOptionsMenuSignature = "";
+
+// Rows built without a checkmark have no indicator span at all (buildContextMenu only adds one for
+// the initially selected row), so the span is created on demand as the selection moves.
+const applyMpvOptionSelection = (submenu, list) => {
+  const groupsOf = parent => Array.from(parent.children)
+    .filter(node => node.classList.contains("context-menu-group"));
+  const optionGroups = groupsOf(submenu);
+  list.forEach((option, optionIndex) => {
+    const optionGroup = optionGroups[optionIndex];
+    const choiceSubmenu = optionGroup && optionGroup.querySelector(":scope > .context-menu-submenu");
+    if (!choiceSubmenu) return;
+    const choiceGroups = groupsOf(choiceSubmenu);
+    (Array.isArray(option.choices) ? option.choices : []).forEach((choice, choiceIndex) => {
+      const group = choiceGroups[choiceIndex];
+      const button = group && group.querySelector(":scope > .context-menu-item");
+      if (!button) return;
+      let indicator = button.querySelector(".context-menu-state");
+      if (!indicator) {
+        indicator = document.createElement("span");
+        indicator.className = "context-menu-state";
+        button.appendChild(indicator);
+      }
+      indicator.textContent = choice.selected ? "✓" : "";
+    });
+  });
+};
+
 // Builds the nested "Advanced (mpv)" submenu from a catalog pushed by Kotlin. Each option becomes a
 // flyout of choices; each choice carries a flat `index` the Kotlin side maps back to a property/value.
 window.nuvioSetMpvOptionsMenu = options => {
   const submenu = contextMenuDynamicSubmenus.get("mpvOptions");
   if (!submenu) return;
-  submenu.textContent = "";
   const list = Array.isArray(options) ? options : [];
+  const signature = mpvOptionsStructureSignature(list);
+  if (signature === mpvOptionsMenuSignature && submenu.querySelector(".context-menu-group")) {
+    applyMpvOptionSelection(submenu, list);
+    return;
+  }
+  mpvOptionsMenuSignature = signature;
+  submenu.textContent = "";
   if (list.length === 0) {
     const empty = document.createElement("div");
     empty.className = "context-menu-empty";
@@ -1770,14 +2108,24 @@ const describeSubtitleColor = value => {
 
 const subtitleColorContextEntries = field => {
   const style = state.subtitleStyle || {};
-  return (state.subtitleColorSwatches || []).map((value, index) => {
+  const entries = (state.subtitleColorSwatches || []).map((value, index) => {
     const info = describeSubtitleColor(value);
     return {
       label: info.name || `Color ${index + 1}`,
       swatch: info.css,
-      selected: value === style[field],
+      // Compared on RGB alone, like the swatch row: the opacity stepper moves the alpha of the
+      // same chosen colour, and that should not read as "nothing is selected".
+      selected: sameRgb(value, style[field]),
     };
   });
+  const custom = !entries.some(entry => entry.selected);
+  entries.push({
+    label: "Custom...",
+    action: `subtitleColorPrompt:${field}`,
+    swatch: custom ? describeSubtitleColor(style[field]).css : undefined,
+    selected: custom,
+  });
+  return entries;
 };
 
 const refreshSubtitleStyleContextSubmenus = () => {
@@ -1850,12 +2198,22 @@ const normalizeTracks = tracks =>
 // source for the selected flag on every playerUpdate tick — the app-pushed state can lag it.
 const visibleAudioTracks = () => {
   const nativeTracks = normalizeTracks(state.audioTracks);
-  if (!state.audioTrackFilterActive) return nativeTracks;
   const items = normalizeItems(state.audioTrackItems);
+  // The native list carries the raw language tag ("tam") and nothing that can name it; the app
+  // pushes the spelled-out language for every track, filtered list or not, so the row subtext is
+  // read from the pushed items in both paths.
+  const languageLabelByIndex = new Map(
+    items.map(item => [Number(item.index) || 0, String(item.languageLabel || "")]),
+  );
+  const withLanguageLabel = track => ({
+    ...track,
+    languageLabel: languageLabelByIndex.get(Number(track.index) || 0) || "",
+  });
+  if (!state.audioTrackFilterActive) return nativeTracks.map(withLanguageLabel);
   // The two lists arrive on separate channels. An empty filtered list against a non-empty native
   // one means the app state has not caught up yet, not that every track was rejected — Kotlin never
   // filters the list down to nothing — so show the native list rather than "no audio tracks".
-  if (items.length === 0 && nativeTracks.length > 0) return nativeTracks;
+  if (items.length === 0 && nativeTracks.length > 0) return nativeTracks.map(withLanguageLabel);
   const nativeSelectionByIndex = new Map(
     nativeTracks.map(track => [Number(track.index) || 0, Boolean(track.selected)]),
   );
@@ -1865,6 +2223,7 @@ const visibleAudioTracks = () => {
       index,
       label: item.label || "",
       language: "",
+      languageLabel: String(item.languageLabel || ""),
       selected: nativeSelectionByIndex.has(index)
         ? nativeSelectionByIndex.get(index)
         : Boolean(item.isSelected),
@@ -1924,10 +2283,12 @@ const setTrackRowTooltipText = (element, text) => {
 
 [subtitleTrackList, addonSubtitleList, audioTrackList].forEach(attachOverflowTooltips);
 
-const appendTrackRow = (container, label, selected, onSelect, closeAfterSelect = true) => {
+// `detail` is the row's subtext (the audio panel names the track's language there). Rows without
+// one keep the single-line markup they had, so nothing but the audio list changes shape.
+const appendTrackRow = (container, label, detail, selected, onSelect, closeAfterSelect = true) => {
   const row = document.createElement("button");
   row.type = "button";
-  row.className = `track-row${selected ? " selected" : ""}`;
+  row.className = `track-row${detail ? " detail-row" : ""}${selected ? " selected" : ""}`;
   row.addEventListener("click", event => {
     event.stopPropagation();
     onSelect();
@@ -1938,7 +2299,18 @@ const appendTrackRow = (container, label, selected, onSelect, closeAfterSelect =
   text.className = "track-label";
   text.textContent = label;
   setTrackRowTooltipText(text, label);
-  row.appendChild(text);
+  if (detail) {
+    const copy = document.createElement("span");
+    copy.className = "track-copy";
+    copy.appendChild(text);
+    const meta = document.createElement("span");
+    meta.className = "track-detail";
+    meta.textContent = detail;
+    copy.appendChild(meta);
+    row.appendChild(copy);
+  } else {
+    row.appendChild(text);
+  }
   row.appendChild(buildCheckIcon());
   container.appendChild(row);
 };
@@ -1983,7 +2355,7 @@ const renderAudioTrackList = () => {
     const canvas = renderAudioTrackList.canvas || (renderAudioTrackList.canvas = document.createElement("canvas"));
     const context = canvas.getContext("2d");
     if (context) {
-      context.font = '700 15px "Nuvio JetBrains Sans", "Segoe UI", sans-serif';
+      context.font = `700 15px ${uiFontStack}`;
       const widest = tracks.reduce((width, track, index) => {
         const label = track.label || track.language || `Track ${Number(track.index || index) + 1}`;
         return Math.max(width, context.measureText(String(label)).width);
@@ -1997,9 +2369,17 @@ const renderAudioTrackList = () => {
     return;
   }
   tracks.forEach(track => {
+    const label = track.label || track.language || `Track ${Number(track.index || 0) + 1}`;
+    // A track whose label is already just its language ("Tamil", from a title-less track) would
+    // otherwise repeat itself on both lines.
+    const languageLabel = String(track.languageLabel || "");
+    const detail = languageLabel && languageLabel.toLowerCase() !== label.toLowerCase()
+      ? languageLabel
+      : "";
     appendTrackRow(
       audioTrackList,
-      track.label || track.language || `Track ${Number(track.index || 0) + 1}`,
+      label,
+      detail,
       Boolean(track.selected),
       () => send("selectAudioTrack", trackIndexValue(track)),
     );
@@ -2201,6 +2581,26 @@ const renderSwatches = (container, selectedColor, eventType, availableColors = s
     });
     container.appendChild(swatch);
   });
+
+  const field = SUBTITLE_COLOR_EVENT_FIELDS[eventType];
+  if (!field) return;
+  // Trailing entry: a dashed "+" normally, and the colour itself once one is in use that no preset
+  // covers - otherwise a custom colour would leave the whole row looking unselected.
+  const isCustom = !colors.some(color => sameRgb(color, selectedColor));
+  const custom = document.createElement("button");
+  custom.type = "button";
+  custom.className = `swatch custom${isCustom ? " has-color selected" : ""}`;
+  custom.title = "Custom color";
+  if (isCustom) {
+    custom.style.setProperty("--swatch", parseArgb(selectedColor).css);
+  } else {
+    custom.textContent = "+";
+  }
+  custom.addEventListener("click", event => {
+    event.stopPropagation();
+    openSubtitleHexPrompt(field);
+  });
+  container.appendChild(custom);
 };
 
 const renderAutoSyncCues = () => {
@@ -2256,6 +2656,55 @@ const renderAutoSyncCues = () => {
   }
 };
 
+// ASS/SSA scripts carry their own styling, so the level chosen here decides how much of the panel
+// above reaches them at all — and at "Original", which is the default, none of it does. Both rows
+// name their actual values: the level was originally driven by a next/previous pair, which left
+// every surface unable to say what the levels were.
+const ASS_STYLE_MODE_FALLBACK = [
+  { value: "Original", label: "Original" },
+  { value: "Resize", label: "Resize" },
+  { value: "Override", label: "Override" },
+];
+
+const assStyleModes = () => {
+  const modes = state.subtitleAssStyleModes;
+  return Array.isArray(modes) && modes.length ? modes : ASS_STYLE_MODE_FALLBACK;
+};
+
+const renderAssStyleRows = style => {
+  if (assStyleModeLabel) assStyleModeLabel.textContent = state.assStyleModeLabel || "ASS/SSA Styling";
+  if (assScaleLabel) assScaleLabel.textContent = state.assScaleLabel || "ASS/SSA Size";
+  const modes = assStyleModes();
+  if (assStyleModeSelect) {
+    // Same guard as the font dropdown: only rebuild when the list actually changes, so an
+    // unrelated controls update cannot close the dropdown mid-interaction.
+    if (assStyleModeSelect.dataset.count !== String(modes.length)) {
+      assStyleModeSelect.innerHTML = "";
+      modes.forEach((mode, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = mode.label;
+        assStyleModeSelect.appendChild(option);
+      });
+      assStyleModeSelect.dataset.count = String(modes.length);
+    }
+    const current = String(style.assStyleMode || "Original");
+    const selectedIndex = modes.findIndex(mode => mode.value === current);
+    assStyleModeSelect.value = String(selectedIndex >= 0 ? selectedIndex : 0);
+  }
+  const scale = Number(style.assScalePercent) || 100;
+  if (assScaleValue) assScaleValue.textContent = `${scale}%`;
+  // The size factor is inert at Original — mpv applies no user options to the track there — so
+  // the row is dimmed rather than silently doing nothing.
+  if (assScaleRow) {
+    const inert = String(style.assStyleMode || "Original") === "Original";
+    assScaleRow.classList.toggle("style-row-inert", inert);
+    [assScaleMinus, assScalePlus].forEach(button => {
+      if (button) button.disabled = inert;
+    });
+  }
+};
+
 const renderSubtitleStylePanel = () => {
   const style = state.subtitleStyle || {};
   subtitleDelayLabel.textContent = state.subtitleDelayLabel || "Subtitle Delay";
@@ -2308,6 +2757,7 @@ const renderSubtitleStylePanel = () => {
   italicToggle.classList.toggle("primary", Boolean(style.italic));
   bottomOffsetLabel.textContent = state.bottomOffsetLabel || "Bottom Offset";
   bottomOffsetValue.textContent = String(Number(style.bottomOffset) || 0);
+  renderAssStyleRows(style);
   subtitleColorLabel.textContent = state.colorLabel || "Color";
   textOpacityLabel.textContent = state.textOpacityLabel || "Text Opacity";
   const textAlpha = Math.round((parseArgb(style.textColor).alpha / 255) * 100);
@@ -2606,7 +3056,7 @@ const updateSourcePanelWidth = items => {
       .split(/\r?\n/)
       .reduce((widest, line) => Math.max(widest, context.measureText(line).width), 0);
   };
-  const fontFamily = '"Nuvio JetBrains Sans", "Segoe UI", sans-serif';
+  const fontFamily = uiFontStack;
   const contentWidth = items.reduce((widest, item) => {
     const primary = Math.max(
       measureLines(item.label || "Stream", `700 14px ${fontFamily}`),
@@ -2695,13 +3145,40 @@ const appendEpisodeRow = (container, item, keyboardIndex) => {
 
   const thumb = document.createElement("span");
   thumb.className = "episode-thumb";
-  if (item.thumbnail) {
+  // An episode with no still of its own (an unaired one, usually) falls back to the show's artwork
+  // rather than rendering an empty card — the same fallback the details screen's episode cards use.
+  const fallbackArtwork = String(state.episodeFallbackThumbnail || "").trim();
+  const primaryArtwork = String(item.thumbnail || "").trim();
+  const artwork = primaryArtwork || fallbackArtwork;
+  const reportArtworkFailure = url => {
+    const key = `${item.index}|${url || ""}`;
+    if (reportedEpisodeArtworkFailures.has(key)) return;
+    reportedEpisodeArtworkFailures.add(key);
+    send("episodeArtworkFailed", Number(item.index) || 0);
+  };
+  if (artwork) {
     const image = document.createElement("img");
     image.alt = "";
     image.loading = "eager";
     image.decoding = "async";
-    setImageSource(image, item.thumbnail);
+    setImageSource(image, artwork, {
+      retryDelays: EpisodeArtworkRetryDelaysMs,
+      onExhausted: url => {
+        // The show's artwork comes from a different host than the episode still, so it is worth a
+        // try before the card is written off as blank.
+        if (!fallbackArtwork || fallbackArtwork === artwork) {
+          reportArtworkFailure(url);
+          return;
+        }
+        setImageSource(image, fallbackArtwork, {
+          retryDelays: EpisodeArtworkRetryDelaysMs,
+          onExhausted: reportArtworkFailure,
+        });
+      },
+    });
     thumb.appendChild(image);
+  } else {
+    reportArtworkFailure("");
   }
   row.appendChild(thumb);
 
@@ -2767,26 +3244,31 @@ const scrollSelectedSeasonIntoView = () => {
   }
 };
 
+// Warms the browser cache before the panel is opened, so opening it paints stills that are already
+// in hand. Repairing a card that failed is the row's own job (see appendEpisodeRow) — doing it from
+// here too would reset that element's retry chain mid-flight.
 const preloadEpisodeArtwork = items => {
-  items.forEach(item => {
-    const url = String(item && item.thumbnail || "").trim();
+  const urls = items.map(item => String(item && item.thumbnail || "").trim());
+  urls.push(String(state.episodeFallbackThumbnail || "").trim());
+  urls.forEach(url => {
     if (!url || episodeArtworkPreloads.has(url)) return;
     const preload = new Image();
     preload.decoding = "async";
     preload.loading = "eager";
     episodeArtworkPreloads.set(url, preload);
     let retried = false;
-    preload.onload = () => {
-      episodeList.querySelectorAll(".episode-thumb img").forEach(image => {
-        if (image.getAttribute("src") !== url || !image.classList.contains("image-error")) return;
-        image.removeAttribute("src");
-        setImageSource(image, url);
-      });
-    };
     preload.onerror = () => {
       if (retried) return;
       retried = true;
-      window.setTimeout(() => { preload.src = url; }, 600);
+      // A fresh element, because re-assigning the same `src` on a failed one is not guaranteed to
+      // start another request.
+      window.setTimeout(() => {
+        const retry = new Image();
+        retry.decoding = "async";
+        retry.loading = "eager";
+        episodeArtworkPreloads.set(url, retry);
+        retry.src = url;
+      }, 600);
     };
     preload.src = url;
   });
@@ -2829,6 +3311,7 @@ const renderEpisodeList = () => {
   const nextRenderKey = JSON.stringify([
     selectedSeason,
     state.noEpisodesLabel || "",
+    state.episodeFallbackThumbnail || "",
     items.map(item => [
       item.index,
       item.id,
@@ -3167,7 +3650,22 @@ const renderNativePlaybackPrompts = () => {
   skipPromptAutoHideActive = false;
 
   const showNextEpisode = Boolean(state.nextEpisodeVisible);
-  const nextThumbUrl = setImageSource(nextEpisodeThumb, state.nextEpisodeThumbnail);
+  // Same treatment as the episode strip: the next-episode card is the other place a lost still
+  // leaves a visibly empty frame, and it shares the strip's fallback artwork.
+  const nextEpisodeFallback = String(state.episodeFallbackThumbnail || "").trim();
+  const nextThumbUrl = setImageSource(
+    nextEpisodeThumb,
+    String(state.nextEpisodeThumbnail || "").trim() || nextEpisodeFallback,
+    {
+      retryDelays: EpisodeArtworkRetryDelaysMs,
+      onExhausted: url => {
+        if (!nextEpisodeFallback || nextEpisodeFallback === url) return;
+        setImageSource(nextEpisodeThumb, nextEpisodeFallback, {
+          retryDelays: EpisodeArtworkRetryDelaysMs,
+        });
+      },
+    },
+  );
   nextEpisodeHeader.textContent = state.nextEpisodeHeaderLabel || "Next episode";
   nextEpisodeTitle.textContent = state.nextEpisodeTitle || "";
   nextEpisodeStatus.textContent = state.nextEpisodeStatus || "";
@@ -3309,6 +3807,13 @@ const renderChrome = () => {
   root.classList.toggle("legacy-hud", Boolean(state.legacyHudEnabled));
   root.classList.toggle("clock-always-visible", Boolean(state.alwaysShowClock));
   root.classList.toggle("mpv-diagnostics", Boolean(mpvDiagnosticsEnabled));
+  const posterHighlightMode = ["white", "accent", "shine"].includes(
+    String(state.posterHighlightMode || "").toLowerCase(),
+  )
+    ? String(state.posterHighlightMode).toLowerCase()
+    : "off";
+  ["off", "white", "accent", "shine"].forEach(mode =>
+    root.classList.toggle(`poster-highlight-${mode}`, mode === posterHighlightMode));
   applyUserUiScale(state.uiScalePercent);
   root.classList.toggle("locked-visible", Boolean(state.isLocked && state.lockedOverlayVisible));
   // Playback failures are a compact notification now. Keep the normal chrome and cursor visible
@@ -3352,6 +3857,7 @@ const renderChrome = () => {
     ? state.sourceNotchPosition
     : "right";
   root.classList.toggle("source-notch-left", sourceNotchPosition === "left");
+  root.classList.toggle("notifications-top", state.notificationPosition === "top-center");
   setVisible(sourceNotch, Boolean(state.showSources) && sourceNotchPosition !== "hidden");
   document.querySelectorAll(".episode-skip").forEach(button => setVisible(button, Boolean(state.showEpisodes)));
 
@@ -4196,6 +4702,25 @@ italicToggle.addEventListener("click", event => {
   event.stopPropagation();
   send("subtitleItalicToggle", 0);
 });
+if (assStyleModeSelect) {
+  assStyleModeSelect.addEventListener("change", event => {
+    event.stopPropagation();
+    send("subtitleAssStyleMode", Number(assStyleModeSelect.value) || 0);
+  });
+  assStyleModeSelect.addEventListener("click", event => event.stopPropagation());
+}
+if (assScaleMinus) {
+  assScaleMinus.addEventListener("click", event => {
+    event.stopPropagation();
+    send("subtitleAssScaleDelta", -5);
+  });
+}
+if (assScalePlus) {
+  assScalePlus.addEventListener("click", event => {
+    event.stopPropagation();
+    send("subtitleAssScaleDelta", 5);
+  });
+}
 bottomOffsetMinus.addEventListener("click", event => {
   event.stopPropagation();
   send("subtitleBottomOffsetDelta", -5);
@@ -4636,12 +5161,14 @@ window.playerUpdate = update => {
 window.playerControls = nextState => {
   const previousCloseToken = Number(state.closeModalsToken) || 0;
   state = { ...state, ...nextState };
+  applyUiFontFamily(state.uiFontFamily);
   if (!state.seekThumbnailsEnabled) {
     hideSeekThumbnail();
     seekThumbnailCache.clear();
     seekThumbnailImage.removeAttribute("src");
   }
   refreshContextMenuIndicators();
+  refreshSeekStepLabels();
   if (contextMenuOpen) refreshSubtitleStyleContextSubmenus();
   setContextMenuDynamicItems("addonSubtitles", state.addonSubtitleItems);
   // The rejected-keyword audio list arrives on this channel, not with the native track push, so
@@ -4797,6 +5324,15 @@ document.addEventListener("keydown", event => {
   // parallel path fought Compose's own handling and caused stuck-key bugs) and don't run any of
   // the full-screen player key logic below for this surface.
   if (isHeroTrailerSurface || state.heroTrailerMode) {
+    return;
+  }
+  // The hex prompt is its own layer rather than an activeModal, so the modal branches below would
+  // otherwise close the panel underneath it and leave the prompt stranded.
+  if (subtitleHexField) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSubtitleHexPrompt();
+    }
     return;
   }
   if (event.key === "Escape" && contextMenuOpen) {

@@ -2,6 +2,7 @@ package com.nuvio.app.features.cloud
 
 import com.nuvio.app.features.catalog.FilenameMetaResolver
 import com.nuvio.app.features.catalog.ResolvedName
+import com.nuvio.app.features.debrid.DebridCloudLibraryWindow
 import com.nuvio.app.features.debrid.DebridProviderCapability
 import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.debrid.DebridServiceCredential
@@ -23,10 +24,15 @@ import org.jetbrains.compose.resources.getString
 internal class CloudLibraryStore(
     private val credentialsProvider: suspend () -> List<DebridServiceCredential>,
     private val providerApis: List<CloudLibraryProviderApi>,
+    private val windowProvider: () -> DebridCloudLibraryWindow = { DebridCloudLibraryWindow.ALL },
+    private val nowEpochMs: () -> Long = CloudLibraryClock::nowEpochMs,
 ) {
-    suspend fun refresh(): CloudLibraryUiState {
+    fun window(): DebridCloudLibraryWindow = windowProvider()
+
+    suspend fun refresh(window: DebridCloudLibraryWindow = windowProvider()): CloudLibraryUiState {
         val credentials = credentialsProvider()
             .filter { credential -> credential.provider.supports(DebridProviderCapability.CloudLibrary) }
+        val now = nowEpochMs()
 
         val providerStates = credentials.map { credential ->
             val api = providerApis.firstOrNull { it.provider.id == credential.provider.id }
@@ -45,7 +51,7 @@ internal class CloudLibraryStore(
                     onSuccess = { items ->
                         CloudLibraryProviderState(
                             provider = credential.provider,
-                            items = items,
+                            items = items.withinWindow(window = window, nowEpochMs = now),
                         )
                     },
                     onFailure = { error ->
@@ -89,6 +95,20 @@ internal class CloudLibraryStore(
     }
 }
 
+/**
+ * Newest first, then trimmed to the user's window.
+ *
+ * Ordering is unconditional — a provider hands its account back in whatever order it pleases (TorBox
+ * oldest-first), which puts the download the user just added at the bottom of a very long list.
+ */
+internal fun List<CloudLibraryItem>.withinWindow(
+    window: DebridCloudLibraryWindow,
+    nowEpochMs: Long,
+): List<CloudLibraryItem> =
+    // Undated items sort last but are never filtered out; see DebridCloudLibraryWindow.includes.
+    sortedByDescending { item -> item.addedAtEpochMs ?: Long.MIN_VALUE }
+        .filter { item -> window.includes(addedAtEpochMs = item.addedAtEpochMs, nowEpochMs = nowEpochMs) }
+
 object CloudLibraryRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val store = CloudLibraryStore(
@@ -97,9 +117,13 @@ object CloudLibraryRepository {
             DebridProviders.configuredServices(DebridSettingsRepository.snapshot())
         },
         providerApis = CloudLibraryProviderApis.all(),
+        windowProvider = { DebridSettingsRepository.snapshot().cloudLibraryWindow },
     )
     private val _uiState = MutableStateFlow(CloudLibraryUiState())
     private var loadedConnectionKeys: List<CloudConnectionKey> = emptyList()
+    // The window is applied while listing, so changing it has to re-list rather than re-filter what
+    // is already in hand — widening it needs rows the last refresh never kept.
+    private var loadedWindow: DebridCloudLibraryWindow? = null
     private var resolveNamesJob: Job? = null
     val uiState = _uiState.asStateFlow()
 
@@ -107,13 +131,15 @@ object CloudLibraryRepository {
         DebridSettingsRepository.ensureLoaded()
         if (!DebridSettingsRepository.snapshot().cloudLibraryEnabled) {
             loadedConnectionKeys = emptyList()
+            loadedWindow = null
             _uiState.value = CloudLibraryUiState(isLoaded = true, isEnabled = false)
             return
         }
         val current = _uiState.value
         if (current.isRefreshing) return
         val connectedKeys = connectedCloudConnectionKeys()
-        if (!current.isLoaded || connectedKeys != loadedConnectionKeys) {
+        val window = DebridSettingsRepository.snapshot().cloudLibraryWindow
+        if (!current.isLoaded || connectedKeys != loadedConnectionKeys || window != loadedWindow) {
             refresh()
         }
     }
@@ -122,6 +148,7 @@ object CloudLibraryRepository {
         DebridSettingsRepository.ensureLoaded()
         if (!DebridSettingsRepository.snapshot().cloudLibraryEnabled) {
             loadedConnectionKeys = emptyList()
+            loadedWindow = null
             _uiState.value = CloudLibraryUiState(isLoaded = true, isEnabled = false)
             return
         }
@@ -133,8 +160,9 @@ object CloudLibraryRepository {
             )
         }
         scope.launch {
-            val refreshed = store.refresh()
+            val refreshed = store.refresh().carryResolvedNamesFrom(_uiState.value)
             loadedConnectionKeys = connectedCloudConnectionKeys()
+            loadedWindow = DebridSettingsRepository.snapshot().cloudLibraryWindow
             _uiState.value = refreshed
             resolveDisplayNames(refreshed)
         }
@@ -185,6 +213,7 @@ object CloudLibraryRepository {
         DebridSettingsRepository.ensureLoaded()
         if (!DebridSettingsRepository.snapshot().cloudLibraryEnabled) {
             loadedConnectionKeys = emptyList()
+            loadedWindow = null
             _uiState.value = CloudLibraryUiState(isLoaded = true, isEnabled = false)
             return CloudLibraryPlaybackTargetLookupResult.Disabled
         }
@@ -212,12 +241,19 @@ object CloudLibraryRepository {
         )?.let { target -> return CloudLibraryPlaybackTargetLookupResult.Found(target) }
 
         val refreshed = refreshNow()
-        val refreshedTarget = refreshed.findPlaybackTargetForProgress(
+        refreshed.findPlaybackTargetForProgress(
             contentId = contentId,
             videoId = videoId,
-        )
-        return if (refreshedTarget != null) {
-            CloudLibraryPlaybackTargetLookupResult.Found(refreshedTarget)
+        )?.let { target -> return CloudLibraryPlaybackTargetLookupResult.Found(target) }
+
+        // A file older than the user's "added within" window is still theirs to resume — Continue
+        // Watching does not expire when the listing does. Search the whole account once on a miss,
+        // without publishing it: the library keeps showing the window the user asked for.
+        if (store.window().isUnbounded) return CloudLibraryPlaybackTargetLookupResult.NotFound
+        val unboundedTarget = store.refresh(window = DebridCloudLibraryWindow.ALL)
+            .findPlaybackTargetForProgress(contentId = contentId, videoId = videoId)
+        return if (unboundedTarget != null) {
+            CloudLibraryPlaybackTargetLookupResult.Found(unboundedTarget)
         } else {
             CloudLibraryPlaybackTargetLookupResult.NotFound
         }
@@ -276,8 +312,9 @@ object CloudLibraryRepository {
                 providers = current.providers.map { it.copy(isLoading = true, errorMessage = null) },
             )
         }
-        val refreshed = store.refresh()
+        val refreshed = store.refresh().carryResolvedNamesFrom(_uiState.value)
         loadedConnectionKeys = connectedCloudConnectionKeys()
+        loadedWindow = DebridSettingsRepository.snapshot().cloudLibraryWindow
         _uiState.value = refreshed
         resolveDisplayNames(refreshed)
         return refreshed
@@ -317,6 +354,51 @@ internal fun CloudLibraryUiState.findPlaybackTargetForProgress(
 }
 
 /** Attaches titles/artwork recovered from torrent names, keyed by the raw name that was resolved. */
+/**
+ * Carries resolved display metadata from [previous] onto a freshly fetched state.
+ *
+ * A refresh replaces the provider lists wholesale with what the debrid API just returned, and the
+ * API knows nothing about titles — so without this, **every resolved poster and title is discarded
+ * on every refresh** and the rows go back to raw release names until TMDB resolution finishes
+ * again. On screen that reads as posters unloading and reloading, which is exactly what a user sees
+ * when a refresh happens while they are scrolling.
+ *
+ * Matched on [CloudLibraryItem.stableKey]. The resolution is derived from the torrent name, which
+ * does not change between refreshes, so carrying it forward cannot go stale in a way re-resolution
+ * would fix — and an item whose name *did* change gets a new resolution from the pass that follows.
+ */
+internal fun CloudLibraryUiState.carryResolvedNamesFrom(
+    previous: CloudLibraryUiState,
+): CloudLibraryUiState {
+    val resolvedByKey = previous.providers
+        .asSequence()
+        .flatMap { it.items.asSequence() }
+        .filter { it.resolvedName != null || it.resolvedPoster != null }
+        .associateBy { it.stableKey }
+    if (resolvedByKey.isEmpty()) return this
+
+    return copy(
+        providers = providers.map { providerState ->
+            providerState.copy(
+                items = providerState.items.map { item ->
+                    // Only fills gaps: anything the refresh itself resolved wins, so this can never
+                    // hold back newer information.
+                    val prior = resolvedByKey[item.stableKey] ?: return@map item
+                    item.copy(
+                        resolvedName = item.resolvedName ?: prior.resolvedName,
+                        resolvedPoster = item.resolvedPoster ?: prior.resolvedPoster,
+                        resolvedBackdrop = item.resolvedBackdrop ?: prior.resolvedBackdrop,
+                        resolvedDescription = item.resolvedDescription ?: prior.resolvedDescription,
+                        resolvedLookupId = item.resolvedLookupId ?: prior.resolvedLookupId,
+                        resolvedLookupType = item.resolvedLookupType ?: prior.resolvedLookupType,
+                        resolvedImdbId = item.resolvedImdbId ?: prior.resolvedImdbId,
+                    )
+                },
+            )
+        },
+    )
+}
+
 internal fun CloudLibraryUiState.withResolvedNames(
     resolved: Map<String, ResolvedName>,
 ): CloudLibraryUiState {

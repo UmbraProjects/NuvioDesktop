@@ -167,6 +167,21 @@ data class TmdbCollectionFilters(
     val year: Int? = null,
     val watchRegion: String? = null,
     val withWatchProviders: String? = null,
+    /**
+     * `with_runtime.gte` / `with_runtime.lte`, in minutes. TMDB accepts both on the film and the
+     * television endpoint.
+     */
+    val withRuntimeGte: Int? = null,
+    val withRuntimeLte: Int? = null,
+    /**
+     * `with_people`. **Films only** — TMDB's television discover endpoint has no people filter, so
+     * the resolver drops it for TV rather than sending a parameter that is silently ignored.
+     *
+     * One field, not the `with_cast` / `with_crew` pair TMDB also offers for films: this exists so a
+     * Discover custom row can be exported to a catalog service, and AIOMetadata's importer reads
+     * `with_people` only. Splitting it here would create a distinction nothing downstream can carry.
+     */
+    val withPeople: String? = null,
 )
 
 internal const val TMDB_ANIMATION_GENRE_ID = 16

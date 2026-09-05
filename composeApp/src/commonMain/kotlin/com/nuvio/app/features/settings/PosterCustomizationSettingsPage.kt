@@ -16,6 +16,7 @@ import com.nuvio.app.core.ui.NuvioActionLabel
 import com.nuvio.app.core.ui.NuvioCardDepthSurface
 import com.nuvio.app.core.ui.PosterCardStyleRepository
 import com.nuvio.app.core.ui.PosterCardStyleUiState
+import com.nuvio.app.core.ui.PosterHighlightMode
 import com.nuvio.app.core.ui.PosterRatingBadgeScale
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_reset
@@ -24,6 +25,13 @@ import nuvio.composeapp.generated.resources.settings_poster_card_style
 import nuvio.composeapp.generated.resources.settings_poster_card_width
 import nuvio.composeapp.generated.resources.settings_poster_description
 import nuvio.composeapp.generated.resources.settings_poster_hide_labels
+import nuvio.composeapp.generated.resources.settings_poster_highlight
+import nuvio.composeapp.generated.resources.settings_poster_highlight_accent
+import nuvio.composeapp.generated.resources.settings_poster_highlight_description
+import nuvio.composeapp.generated.resources.settings_poster_highlight_off
+import nuvio.composeapp.generated.resources.settings_poster_highlight_shine
+import nuvio.composeapp.generated.resources.settings_poster_highlight_sweep
+import nuvio.composeapp.generated.resources.settings_poster_highlight_white
 import nuvio.composeapp.generated.resources.settings_poster_collections_portrait
 import nuvio.composeapp.generated.resources.settings_poster_collections_portrait_description
 import nuvio.composeapp.generated.resources.settings_poster_landscape_mode
@@ -85,6 +93,7 @@ internal fun LazyListScope.posterCustomizationSettingsContent(
                     collectionsPortraitPostersEnabled = uiState.collectionsPortraitPostersEnabled,
                     landscapeTextTitlesEnabled = uiState.landscapeTextTitlesEnabled,
                     landscapeRatingBadgeScale = uiState.landscapeRatingBadgeScale,
+                    posterHighlightMode = uiState.posterHighlightMode,
                     hideLabelsEnabled = uiState.hideLabelsEnabled,
                     zoomActionPreviewEnabled = uiState.zoomActionPreviewEnabled,
                     onWidthSelected = PosterCardStyleRepository::setWidthDp,
@@ -122,6 +131,7 @@ internal fun PosterCardStyleControls(
     collectionsPortraitPostersEnabled: Boolean,
     landscapeTextTitlesEnabled: Boolean,
     landscapeRatingBadgeScale: PosterRatingBadgeScale,
+    posterHighlightMode: PosterHighlightMode,
     hideLabelsEnabled: Boolean,
     zoomActionPreviewEnabled: Boolean,
     onWidthSelected: (Int) -> Unit,
@@ -178,6 +188,16 @@ internal fun PosterCardStyleControls(
             isTablet = isTablet,
             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-radius")),
             onSelected = onCornerRadiusSelected,
+        )
+        SettingsGroupDivider(isTablet = isTablet)
+        SettingsChoiceRow(
+            title = stringResource(Res.string.settings_poster_highlight),
+            description = stringResource(Res.string.settings_poster_highlight_description),
+            options = posterHighlightModeOptions(),
+            selectedValue = posterHighlightMode,
+            isTablet = isTablet,
+            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("poster-poster-highlight")),
+            onSelected = PosterCardStyleRepository::setPosterHighlightMode,
         )
         SettingsGroupDivider(isTablet = isTablet)
         SettingsSwitchRow(
@@ -258,6 +278,30 @@ private fun ratingBadgeScaleOptions(): List<SettingsChoiceOption<PosterRatingBad
     SettingsChoiceOption(
         PosterRatingBadgeScale.OutOfHundred,
         stringResource(Res.string.settings_poster_landscape_rating_badge_out_of_hundred),
+    ),
+)
+
+@Composable
+private fun posterHighlightModeOptions(): List<SettingsChoiceOption<PosterHighlightMode>> = listOf(
+    SettingsChoiceOption(
+        PosterHighlightMode.Off,
+        stringResource(Res.string.settings_poster_highlight_off),
+    ),
+    SettingsChoiceOption(
+        PosterHighlightMode.White,
+        stringResource(Res.string.settings_poster_highlight_white),
+    ),
+    SettingsChoiceOption(
+        PosterHighlightMode.Accent,
+        stringResource(Res.string.settings_poster_highlight_accent),
+    ),
+    SettingsChoiceOption(
+        PosterHighlightMode.Shine,
+        stringResource(Res.string.settings_poster_highlight_shine),
+    ),
+    SettingsChoiceOption(
+        PosterHighlightMode.Sweep,
+        stringResource(Res.string.settings_poster_highlight_sweep),
     ),
 )
 

@@ -23,6 +23,8 @@ internal object SkipIntroApi {
     // out-of-range answers are dropped instead.
     private const val SKIPDB_ADJUST = "conservative"
 
+    private val ANISKIP_TYPES = listOf("op", "ed", "recap", "mixed-op", "mixed-ed")
+
     // --- SkipDB ---
 
     /**
@@ -184,12 +186,23 @@ internal object SkipIntroApi {
 
     // --- AniSkip ---
 
+    /**
+     * AniSkip takes its `types` as a **repeated** query parameter. A single comma-joined value is
+     * rejected with HTTP 400, which the catch below turns into a silent "nothing here" — so the
+     * comma form does not degrade the answer, it removes AniSkip from every lookup entirely.
+     *
+     * `episodeLength=0` is AniSkip's wildcard, and it is deliberate. The parameter is matched, not
+     * approximated: a runtime a few seconds off a cut AniSkip knows returns no results at all
+     * (Monster ep1 answers for 1453s and 1420s, and returns nothing for 1438s). Since our duration
+     * comes from whatever release is being played it would miss far more often than it would
+     * sharpen, so we take the most-voted timings and let SkipDB be the duration-aware source.
+     */
     suspend fun getAniSkipTimes(
         malId: String,
         episode: Int,
     ): AniSkipResponse? {
-        val types = "op,ed,recap,mixed-op,mixed-ed"
-        val url = "${ANISKIP_BASE}skip-times/$malId/$episode?types=$types&episodeLength=0"
+        val types = ANISKIP_TYPES.joinToString("&") { "types=$it" }
+        val url = "${ANISKIP_BASE}skip-times/$malId/$episode?$types&episodeLength=0"
         return try {
             val text = httpGetText(url)
             json.decodeFromString<AniSkipResponse>(text)
@@ -210,48 +223,17 @@ internal object SkipIntroApi {
         }
     }
 
-    suspend fun resolveMalToImdb(malId: String): ArmEntry? {
-        val url = "${ARM_BASE}ids?source=myanimelist&id=$malId&include=imdb"
-        return try {
-            val text = httpGetText(url)
-            json.decodeFromString<ArmEntry>(text)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    suspend fun resolveMalToAnilist(malId: String): ArmEntry? {
-        val url = "${ARM_BASE}ids?source=myanimelist&id=$malId&include=anilist"
-        return try {
-            val text = httpGetText(url)
-            json.decodeFromString<ArmEntry>(text)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    suspend fun resolveKitsuToMal(kitsuId: String): ArmEntry? {
-        val url = "${ARM_BASE}ids?source=kitsu&id=$kitsuId&include=myanimelist"
-        return try {
-            val text = httpGetText(url)
-            json.decodeFromString<ArmEntry>(text)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    suspend fun resolveKitsuToAnilist(kitsuId: String): ArmEntry? {
-        val url = "${ARM_BASE}ids?source=kitsu&id=$kitsuId&include=anilist"
-        return try {
-            val text = httpGetText(url)
-            json.decodeFromString<ArmEntry>(text)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    suspend fun resolveKitsuToImdb(kitsuId: String): ArmEntry? {
-        val url = "${ARM_BASE}ids?source=kitsu&id=$kitsuId&include=imdb"
+    /**
+     * Every id ARM holds for one anime-list entry, in a single request.
+     *
+     * [source] is an [AnimeIdNamespace.armSource]. Asking for the whole set at once matters: the
+     * chain needs the MAL id for AniSkip, the AniList id for Anime-Skip and the IMDb id for
+     * SkipDB/IntroDB, and fetching them separately cost three round trips per lookup to answer
+     * the same question.
+     */
+    suspend fun resolveAnimeEntry(source: String, id: String): ArmEntry? {
+        if (source.isBlank() || id.isBlank()) return null
+        val url = "${ARM_BASE}ids?source=$source&id=$id&include=myanimelist,anilist,kitsu,imdb"
         return try {
             val text = httpGetText(url)
             json.decodeFromString<ArmEntry>(text)

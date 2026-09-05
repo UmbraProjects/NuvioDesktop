@@ -30,6 +30,7 @@ import nuvio.composeapp.generated.resources.settings_notifications_test_for_titl
 import nuvio.composeapp.generated.resources.settings_notifications_test_requires_saved_show
 import nuvio.composeapp.generated.resources.settings_notifications_test_title
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.accentBrush
 
 internal fun LazyListScope.notificationsSettingsContent(
     isTablet: Boolean,
@@ -137,7 +138,7 @@ private fun NotificationTestCard(
             uiState.statusMessage?.let { message ->
                 Text(
                     text = message,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.accentBrush(),
                     color = MaterialTheme.colorScheme.primary,
                 )
             }

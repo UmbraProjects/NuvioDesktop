@@ -1,6 +1,8 @@
 package com.nuvio.app.features.player
 
 import co.touchlab.kermit.Logger
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.updateAndGet
 import kotlin.concurrent.Volatile
 import kotlin.time.TimeSource
 
@@ -20,6 +22,10 @@ import kotlin.time.TimeSource
 object PlaybackStartTrace {
     private val log = Logger.withTag("PlaybackStartTrace")
     private val timeSource = TimeSource.Monotonic
+    private val traceSequence = MutableStateFlow(0L)
+    @Volatile private var pendingTraceId = 0L
+    @Volatile private var activeTraceId = 0L
+    val currentId: Long get() = if (pendingOrigin != null) pendingTraceId else activeTraceId
 
     /** How long a [beginPending] anchor stays adoptable by the [begin] that follows it. */
     private const val PendingWindowMillis = 30_000L
@@ -51,9 +57,10 @@ object PlaybackStartTrace {
      * (navigation cancelled, cached link reused) simply expires.
      */
     fun beginPending(reason: String) {
+        pendingTraceId = traceSequence.updateAndGet { it + 1 }
         pendingOrigin = timeSource.markNow()
         pendingEntries = listOf("$reason +0ms")
-        log.i { "beginPending: $reason" }
+        log.i { "id=$pendingTraceId beginPending: $reason" }
     }
 
     /**
@@ -64,7 +71,7 @@ object PlaybackStartTrace {
         val start = pendingOrigin ?: return
         val line = "$label +${start.elapsedNow().inWholeMilliseconds}ms"
         pendingEntries = pendingEntries + line
-        log.i { line }
+        log.i { "id=$pendingTraceId $line" }
     }
 
     /**
@@ -86,6 +93,7 @@ object PlaybackStartTrace {
         val pending = pendingOrigin
         val adoptPending = pending != null &&
             pending.elapsedNow().inWholeMilliseconds <= PendingWindowMillis
+        activeTraceId = if (adoptPending) pendingTraceId else traceSequence.updateAndGet { it + 1 }
         origin = if (adoptPending) pending else timeSource.markNow()
         entries = if (adoptPending) {
             pendingEntries + "$reason +${pending!!.elapsedNow().inWholeMilliseconds}ms"
@@ -95,7 +103,7 @@ object PlaybackStartTrace {
         pendingOrigin = null
         pendingEntries = emptyList()
         completed = false
-        log.i { "begin: $reason" }
+        log.i { "id=$activeTraceId begin: $reason" }
     }
 
     /**
@@ -111,16 +119,22 @@ object PlaybackStartTrace {
         }
         val line = "$label +${start.elapsedNow().inWholeMilliseconds}ms"
         entries = entries + line
-        log.i { line }
+        log.i { "id=$activeTraceId $line" }
     }
 
-    /** Records the final mark (first rendered frame) and logs the whole timeline as one line. */
+    fun markStartupDetail(label: String) {
+        val start = origin ?: return
+        if (start.elapsedNow().inWholeMilliseconds > 30_000L) return
+        log.i { "id=$activeTraceId $label +${start.elapsedNow().inWholeMilliseconds}ms" }
+    }
+
+    /** Records the playback hand-off and logs the timeline; rendering details may follow. */
     fun complete(label: String) {
         val start = origin
         if (completed || start == null) return
         val line = "$label +${start.elapsedNow().inWholeMilliseconds}ms"
         entries = entries + line
         completed = true
-        log.i { "summary: ${entries.joinToString(" | ")}" }
+        log.i { "id=$activeTraceId summary: ${entries.joinToString(" | ")}" }
     }
 }

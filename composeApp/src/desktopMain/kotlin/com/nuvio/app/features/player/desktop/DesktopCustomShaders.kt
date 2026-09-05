@@ -21,7 +21,22 @@ internal object DesktopCustomShaders {
             ?: ""
     }
 
+    private var cachedPaths: String? = null
+    private var cachedAtNanos = 0L
+    private var cachedShaders: List<CustomShaderFile> = emptyList()
+
+    @Synchronized
     fun availableShaders(pathsText: String): List<CustomShaderFile> {
+        val now = System.nanoTime()
+        if (cachedPaths == pathsText && now - cachedAtNanos < 1_000_000_000L) return cachedShaders
+        return discoverShaders(pathsText).also {
+            cachedPaths = pathsText
+            cachedAtNanos = now
+            cachedShaders = it
+        }
+    }
+
+    private fun discoverShaders(pathsText: String): List<CustomShaderFile> {
         val seen = linkedSetOf<String>()
         return pathsText
             .lineSequence()

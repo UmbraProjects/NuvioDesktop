@@ -22,8 +22,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,7 +39,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioDialogSurface
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktBrandAsset
 import com.nuvio.app.features.trakt.TraktAuthUiState
@@ -96,6 +93,8 @@ import nuvio.composeapp.generated.resources.trakt_watch_progress_subtitle
 import nuvio.composeapp.generated.resources.trakt_watch_progress_title
 import nuvio.composeapp.generated.resources.trakt_watch_progress_trakt_selected
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.accentBrush
 
 internal fun LazyListScope.traktSettingsContent(
     isTablet: Boolean,
@@ -242,7 +241,7 @@ private fun TraktSettingsActionRow(
         }
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.accentBrush(),
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Medium,
             maxLines = 2,
@@ -468,83 +467,60 @@ private fun TraktCredentialsCard(
     settingsUiState: TraktSettingsUiState,
 ) {
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
-    val verticalPadding = if (isTablet) 18.dp else 16.dp
-    var clientId by rememberSaveable { mutableStateOf(settingsUiState.traktClientId) }
-    var clientSecret by rememberSaveable { mutableStateOf(settingsUiState.traktClientSecret) }
-    var redirectUri by rememberSaveable { mutableStateOf(settingsUiState.traktRedirectUri.ifBlank { TRAKT_DEFAULT_REDIRECT_URI }) }
-    var statusMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    val savedMessage = stringResource(Res.string.settings_trakt_credentials_saved)
-    val clearedMessage = stringResource(Res.string.settings_trakt_credentials_cleared)
+    val savedRedirectUri = settingsUiState.traktRedirectUri.ifBlank { TRAKT_DEFAULT_REDIRECT_URI }
 
-    LaunchedEffect(
-        settingsUiState.traktClientId,
-        settingsUiState.traktClientSecret,
-        settingsUiState.traktRedirectUri,
-    ) {
-        clientId = settingsUiState.traktClientId
-        clientSecret = settingsUiState.traktClientSecret
-        redirectUri = settingsUiState.traktRedirectUri.ifBlank { TRAKT_DEFAULT_REDIRECT_URI }
+    fun saveCredentials(clientId: String, clientSecret: String, redirectUri: String) {
+        TraktSettingsRepository.setCredentials(
+            clientId = clientId,
+            clientSecret = clientSecret,
+            redirectUri = redirectUri,
+        )
+        TraktAuthRepository.onCredentialsChanged()
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(
-            text = stringResource(Res.string.settings_trakt_credentials_title),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
+        SettingsTextInputRow(
+            title = stringResource(Res.string.settings_trakt_client_id),
+            description = stringResource(Res.string.settings_trakt_credentials_description),
+            value = settingsUiState.traktClientId,
+            placeholder = stringResource(Res.string.settings_trakt_client_id),
+            summarizeAsConfigured = true,
+            isTablet = isTablet,
+            onSave = { value ->
+                saveCredentials(value, settingsUiState.traktClientSecret, savedRedirectUri)
+            },
         )
-        Text(
-            text = stringResource(Res.string.settings_trakt_credentials_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        SettingsGroupDivider(isTablet = isTablet)
+        SettingsTextInputRow(
+            title = stringResource(Res.string.settings_trakt_client_secret),
+            description = stringResource(Res.string.settings_trakt_credentials_description),
+            value = settingsUiState.traktClientSecret,
+            placeholder = stringResource(Res.string.settings_trakt_client_secret),
+            secret = true,
+            isTablet = isTablet,
+            onSave = { value ->
+                saveCredentials(settingsUiState.traktClientId, value, savedRedirectUri)
+            },
         )
-        TraktCredentialTextField(
-            value = clientId,
-            onValueChange = { clientId = it },
-            label = stringResource(Res.string.settings_trakt_client_id),
+        SettingsGroupDivider(isTablet = isTablet)
+        SettingsTextInputRow(
+            title = stringResource(Res.string.settings_trakt_redirect_uri),
+            description = stringResource(Res.string.settings_trakt_credentials_description),
+            value = savedRedirectUri,
+            placeholder = stringResource(Res.string.settings_trakt_redirect_uri),
+            isTablet = isTablet,
+            onSave = { value ->
+                saveCredentials(settingsUiState.traktClientId, settingsUiState.traktClientSecret, value)
+            },
         )
-        SettingsSecretTextField(
-            value = clientSecret,
-            onValueChange = { clientSecret = it },
-            label = stringResource(Res.string.settings_trakt_client_secret),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        TraktCredentialTextField(
-            value = redirectUri,
-            onValueChange = { redirectUri = it },
-            label = stringResource(Res.string.settings_trakt_redirect_uri),
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        if (settingsUiState.traktClientId.isNotBlank() || settingsUiState.traktClientSecret.isNotBlank()) {
             Button(
+                modifier = Modifier.padding(horizontal = horizontalPadding, vertical = 8.dp),
                 onClick = {
-                    TraktSettingsRepository.setCredentials(
-                        clientId = clientId,
-                        clientSecret = clientSecret,
-                        redirectUri = redirectUri,
-                    )
-                    TraktAuthRepository.onCredentialsChanged()
-                    statusMessage = savedMessage
-                },
-            ) {
-                Text(stringResource(Res.string.settings_trakt_credentials_save))
-            }
-            Button(
-                onClick = {
-                    clientId = ""
-                    clientSecret = ""
-                    redirectUri = TRAKT_DEFAULT_REDIRECT_URI
                     TraktSettingsRepository.clearCredentials()
                     TraktAuthRepository.onCredentialsChanged()
-                    statusMessage = clearedMessage
                 },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -554,36 +530,7 @@ private fun TraktCredentialsCard(
                 Text(stringResource(Res.string.settings_trakt_credentials_clear))
             }
         }
-        statusMessage?.takeIf { it.isNotBlank() }?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
-}
-
-@Composable
-private fun TraktCredentialTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
-        singleLine = true,
-        label = { Text(label) },
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-            focusedContainerColor = MaterialTheme.colorScheme.surface,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-            disabledContainerColor = MaterialTheme.colorScheme.surface,
-        ),
-    )
 }
 
 @Composable

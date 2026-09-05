@@ -8,18 +8,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.nuvio.app.core.ui.trackTextInputFocus
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -32,7 +28,6 @@ import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.tvdb.TvdbSettingsRepository
 import com.nuvio.app.features.tmdb.normalizeLanguage
 import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.action_save
 import nuvio.composeapp.generated.resources.settings_tmdb_add_api_key_first
 import nuvio.composeapp.generated.resources.settings_tmdb_api_key_label
 import nuvio.composeapp.generated.resources.settings_tmdb_enable_enrichment
@@ -74,7 +69,6 @@ import nuvio.composeapp.generated.resources.settings_tmdb_filename_catalogs_miss
 import nuvio.composeapp.generated.resources.settings_tmdb_filename_catalogs_section
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_addon
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_addon_description
-import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_description
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_missing_key
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_movies_tvdb_shows
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_movies_tvdb_shows_description
@@ -98,6 +92,7 @@ import nuvio.composeapp.generated.resources.settings_tvdb_api_key_description
 import nuvio.composeapp.generated.resources.settings_tvdb_api_key_label
 import nuvio.composeapp.generated.resources.settings_tvdb_api_key_section
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 
 internal fun LazyListScope.tmdbSettingsContent(
     isTablet: Boolean,
@@ -294,11 +289,6 @@ internal fun LazyListScope.tmdbSettingsContent(
                 isTablet = isTablet,
                 modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TmdbHeroImages),
             ) {
-                TmdbInfoRow(
-                    isTablet = isTablet,
-                    text = stringResource(Res.string.settings_tmdb_hero_artwork_description),
-                )
-                SettingsGroupDivider(isTablet = isTablet)
                 val heroImageOptions = buildList {
                     add(SettingsChoiceOption(HeroImageSource.Addon, stringResource(Res.string.settings_tmdb_hero_artwork_addon)))
                     if (settings.hasApiKey) {
@@ -426,53 +416,16 @@ private fun TmdbApiKeyRow(
     modifier: Modifier = Modifier,
     onApiKeyCommitted: (String) -> Unit,
 ) {
-    val horizontalPadding = if (isTablet) 20.dp else 16.dp
-    val verticalPadding = if (isTablet) 16.dp else 14.dp
-    var draft by rememberSaveable(value) { mutableStateOf(value) }
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = stringResource(Res.string.settings_tmdb_personal_api_key),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = stringResource(Res.string.settings_tmdb_enter_api_key),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        val normalizedDraft = draft.trim()
-
-        SettingsSecretTextField(
-            value = draft,
-            onValueChange = {
-                draft = it
-            },
-            modifier = Modifier.fillMaxWidth(),
-            label = stringResource(Res.string.settings_tmdb_api_key_label),
-        )
-
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = {
-                    draft = normalizedDraft
-                    onApiKeyCommitted(normalizedDraft)
-                },
-                enabled = normalizedDraft != value,
-            ) {
-                Text(stringResource(Res.string.action_save))
-            }
-        }
-    }
+    SettingsTextInputRow(
+        title = stringResource(Res.string.settings_tmdb_personal_api_key),
+        description = stringResource(Res.string.settings_tmdb_enter_api_key),
+        value = value,
+        placeholder = stringResource(Res.string.settings_tmdb_api_key_label),
+        secret = true,
+        isTablet = isTablet,
+        modifier = modifier,
+        onSave = onApiKeyCommitted,
+    )
 }
 
 @Composable
@@ -482,45 +435,16 @@ private fun TvdbApiKeyRow(
     modifier: Modifier = Modifier,
     onKeyCommitted: (String) -> Unit,
 ) {
-    val horizontalPadding = if (isTablet) 20.dp else 16.dp
-    val verticalPadding = if (isTablet) 16.dp else 14.dp
-    var draft by rememberSaveable(value) { mutableStateOf(value) }
-    val normalizedDraft = draft.trim()
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = stringResource(Res.string.settings_tvdb_api_key),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = stringResource(Res.string.settings_tvdb_api_key_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        SettingsSecretTextField(
-            value = draft,
-            onValueChange = { draft = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = stringResource(Res.string.settings_tvdb_api_key_label),
-        )
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = { onKeyCommitted(normalizedDraft) },
-                enabled = normalizedDraft != value.trim(),
-            ) {
-                Text(stringResource(Res.string.action_save))
-            }
-        }
-    }
+    SettingsTextInputRow(
+        title = stringResource(Res.string.settings_tvdb_api_key),
+        description = stringResource(Res.string.settings_tvdb_api_key_description),
+        value = value,
+        placeholder = stringResource(Res.string.settings_tvdb_api_key_label),
+        secret = true,
+        isTablet = isTablet,
+        modifier = modifier,
+        onSave = onKeyCommitted,
+    )
 }
 
 @Composable
@@ -529,59 +453,19 @@ private fun TmdbLibraryPosterRow(
     value: String,
     onTemplateCommitted: (String) -> Unit,
 ) {
-    val horizontalPadding = if (isTablet) 20.dp else 16.dp
-    val verticalPadding = if (isTablet) 16.dp else 14.dp
-    var draft by rememberSaveable(value) { mutableStateOf(value) }
-    val normalizedDraft = draft.trim()
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = stringResource(Res.string.settings_tmdb_poster_template),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = stringResource(Res.string.settings_tmdb_poster_template_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        OutlinedTextField(
-            value = draft,
-            onValueChange = { draft = it },
-            modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
-            minLines = 2,
-            maxLines = 6,
-            label = { Text(stringResource(Res.string.settings_tmdb_poster_template_label)) },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                disabledContainerColor = MaterialTheme.colorScheme.surface,
-            ),
-        )
-
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = {
-                    draft = normalizedDraft
-                    onTemplateCommitted(normalizedDraft)
-                },
-                enabled = normalizedDraft != value,
-            ) {
-                Text(stringResource(Res.string.action_save))
-            }
-        }
-    }
+    SettingsTextInputRow(
+        title = stringResource(Res.string.settings_tmdb_poster_template),
+        description = stringResource(Res.string.settings_tmdb_poster_template_description),
+        value = value,
+        placeholder = stringResource(Res.string.settings_tmdb_poster_template_label),
+        singleLine = false,
+        minLines = 2,
+        maxLines = 6,
+        keyboardType = KeyboardType.Uri,
+        summarizeAsConfigured = true,
+        isTablet = isTablet,
+        onSave = onTemplateCommitted,
+    )
 }
 
 @Composable
@@ -592,61 +476,17 @@ private fun TmdbLanguageRow(
     modifier: Modifier = Modifier,
     onLanguageCommitted: (String) -> Unit,
 ) {
-    val horizontalPadding = if (isTablet) 20.dp else 16.dp
-    val verticalPadding = if (isTablet) 16.dp else 14.dp
-    var draft by rememberSaveable(value) { mutableStateOf(value) }
-    val normalizedDraft = normalizeLanguage(draft)
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = stringResource(Res.string.settings_tmdb_preferred_language),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = stringResource(Res.string.settings_tmdb_preferred_language_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        OutlinedTextField(
-            value = draft,
-            onValueChange = {
-                draft = it
-            },
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
-            singleLine = true,
-            label = { Text(stringResource(Res.string.settings_tmdb_language_code_label)) },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                disabledContainerColor = MaterialTheme.colorScheme.surface,
-            ),
-        )
-
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = {
-                    draft = normalizedDraft
-                    onLanguageCommitted(normalizedDraft)
-                },
-                enabled = enabled && normalizedDraft != value,
-            ) {
-                Text(stringResource(Res.string.action_save))
-            }
-        }
-    }
+    SettingsTextInputRow(
+        title = stringResource(Res.string.settings_tmdb_preferred_language),
+        description = stringResource(Res.string.settings_tmdb_preferred_language_description),
+        value = value,
+        placeholder = stringResource(Res.string.settings_tmdb_language_code_label),
+        enabled = enabled,
+        isTablet = isTablet,
+        modifier = modifier,
+        normalize = ::normalizeLanguage,
+        onSave = onLanguageCommitted,
+    )
 }
 
 /**

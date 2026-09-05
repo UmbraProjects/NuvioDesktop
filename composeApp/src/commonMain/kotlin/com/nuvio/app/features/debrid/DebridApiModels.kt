@@ -57,6 +57,11 @@ internal data class TorboxCloudItemDto(
     @SerialName("download_progress") val downloadProgress: Double? = null,
     val size: Long? = null,
     @SerialName("total_size") val totalSize: Long? = null,
+    // When the download landed in the account. Drives "newest first" ordering and the
+    // "added within" window; `cached_at` is the usenet/webdl spelling of the same idea.
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("cached_at") val cachedAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
     val files: List<TorboxCloudFileDto>? = null,
 )
 

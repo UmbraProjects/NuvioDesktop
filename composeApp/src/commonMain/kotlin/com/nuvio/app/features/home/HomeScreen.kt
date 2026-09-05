@@ -3,9 +3,11 @@ package com.nuvio.app.features.home
 import coil3.compose.LocalPlatformContext
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
+import com.nuvio.app.core.ui.nuvioArtworkRequestSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +24,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -84,6 +87,13 @@ import com.nuvio.app.features.library.LibrarySourceMode
 import com.nuvio.app.features.library.toMetaPreview
 import com.nuvio.app.features.search.SearchRepository
 import com.nuvio.app.features.search.DiscoverEmptyStateReason
+import com.nuvio.app.features.discover.DiscoverPickerSegment
+import com.nuvio.app.features.discover.DISCOVER_PLACEHOLDER_KEY_PREFIX
+import com.nuvio.app.features.discover.DiscoverRecommendationsRepository
+import com.nuvio.app.features.discover.DiscoverRowBody
+import com.nuvio.app.features.discover.DiscoverRowHeader
+import com.nuvio.app.features.discover.discoverRowProvenance
+import com.nuvio.app.features.discover.rememberDiscoverPostersAlpha
 import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.cloud.CloudLibraryRepository
 import com.nuvio.app.features.cloud.CloudLibraryUiState
@@ -96,13 +106,17 @@ import com.nuvio.app.features.details.HeroTrailerAudioState
 import com.nuvio.app.features.metadata.isAnimeSeasonArtUrl
 import com.nuvio.app.features.details.SeriesPrimaryAction
 import com.nuvio.app.features.details.seriesPrimaryAction
+import com.nuvio.app.features.streams.StreamPrefetchService
+import com.nuvio.app.features.home.components.immersiveShelfScrimStops
 import com.nuvio.app.features.home.components.PAGE_ITEM_STEP
 import com.nuvio.app.features.home.components.PAGE_SECTION_STEP
+import com.nuvio.app.features.home.components.DiscoverRowTitleWithProvenance
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroReservedSpace
 import com.nuvio.app.features.home.components.HomeHeroSection
+import com.nuvio.app.features.home.components.HomeBasicTrailerOverlay
 import com.nuvio.app.features.home.components.HomeHeroTrailerGate
 import com.nuvio.app.features.home.components.HomeHeroPeoplePanelToggleTrigger
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -226,6 +240,21 @@ private object LibraryScrollMemory {
     var hasImmersivePosition: Boolean = false
 }
 
+/**
+ * Scroll memory for the Discover tab, mirroring [LibraryScrollMemory].
+ *
+ * Every mode that shares HomeScreen needs its own holder — the position is per tab, not per
+ * composable — so adding a mode without adding one of these silently gives that tab no position
+ * memory at all, which is how Discover shipped.
+ */
+private object DiscoverScrollMemory {
+    var firstVisibleItemIndex: Int = 0
+    var firstVisibleItemScrollOffset: Int = 0
+    var immersiveRowIndex: Int = 0
+    var immersiveItemIndex: Int = 0
+    var hasImmersivePosition: Boolean = false
+}
+
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -234,7 +263,6 @@ fun HomeScreen(
     topChromePadding: Dp? = null,
     contentMode: HomeContentMode = HomeContentMode.Normal,
     searchQuery: String = "",
-    discoverModeActive: Boolean = false,
     searchSubmitRequests: Flow<String> = emptyFlow(),
     navigateToContentCount: Int = 0,
     animateCollectionGifs: Boolean = true,
@@ -252,6 +280,7 @@ fun HomeScreen(
     onFirstCatalogRendered: (() -> Unit)? = null,
     onNavigateToSearch: (() -> Unit)? = null,
     onNavigateToLibrary: (() -> Unit)? = null,
+    onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
     onNavigateToHome: (() -> Unit)? = null,
     onBack: (() -> Unit)? = null,
@@ -278,6 +307,8 @@ fun HomeScreen(
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val homeUiState by HomeRepository.uiState.collectAsStateWithLifecycle()
     val homeSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val rowShuffleOrders by HomeRowShuffleState.orders.collectAsStateWithLifecycle()
+    val rowShufflingKeys by HomeRowShuffleState.shuffling.collectAsStateWithLifecycle()
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
     // Extra Random Play candidates from the Collections catalogs (opt-in; empty otherwise).
     val randomPlayCollectionSections by RandomPlayCollectionPool.sections.collectAsStateWithLifecycle()
@@ -293,6 +324,50 @@ fun HomeScreen(
     val discoverUiState by remember {
         SearchRepository.discoverUiState
     }.collectAsStateWithLifecycle()
+
+    // Which header segment (if any) currently owns the row body. Reset when leaving the tab so the
+    // picker is never left hanging open behind another mode.
+    var discoverPickerSegment by remember(contentMode is HomeContentMode.Discover) {
+        mutableStateOf<DiscoverPickerSegment?>(null)
+    }
+    // Left edge of each header segment within the header row, reported by layout. The picker panel
+    // hangs off the segment that opened it rather than off the row edge.
+    var discoverSegmentOffsets by remember { mutableStateOf(emptyMap<DiscoverPickerSegment, Float>()) }
+    // Discover catalogs are derived from the installed addons, so this is lazy — nothing here runs
+    // until the user actually opens the tab.
+    LaunchedEffect(contentMode, addonsUiState.addons) {
+        if (contentMode is HomeContentMode.Discover) {
+            SearchRepository.refreshDiscover(addonsUiState.addons)
+        }
+    }
+    val discoverRecommendations by DiscoverRecommendationsRepository.uiState.collectAsStateWithLifecycle()
+    // Seeds come from watch history and cost a TMDB request each, so this is lazy too and cached
+    // for an hour by the repository. Keyed on the Discover settings as well as the mode: the
+    // repository drops its cache when they change, and without the key nothing would ask it to,
+    // because HomeScreen stays composed the whole time the user is in Settings.
+    val discoverRowSettingsKey = remember(homeSettingsUiState) {
+        listOf(
+            homeSettingsUiState.discoverBecauseYouWatchedRows,
+            homeSettingsUiState.discoverHideWatched,
+            homeSettingsUiState.discoverFinishWhatYouStartedEnabled,
+            homeSettingsUiState.discoverFinishIdleDays,
+            homeSettingsUiState.discoverMoreLikeFavouritesEnabled,
+            homeSettingsUiState.discoverHiddenGemsEnabled,
+            homeSettingsUiState.discoverTrendingGenreRows,
+            homeSettingsUiState.discoverExcludedGenres.sorted().joinToString(","),
+            homeSettingsUiState.hideUnreleasedContent,
+            // Both halves of row management: the definitions decide what gets built, the order
+            // decides what it looks like. The repository treats them differently — a reorder
+            // re-sorts what it already has — but either one has to bring us back here first.
+            homeSettingsUiState.discoverCustomRows.joinToString(";"),
+            homeSettingsUiState.discoverRowOrder.joinToString(","),
+        ).joinToString("|")
+    }
+    LaunchedEffect(contentMode, discoverRowSettingsKey) {
+        if (contentMode is HomeContentMode.Discover) {
+            DiscoverRecommendationsRepository.refresh()
+        }
+    }
 
     // Library mode state. Load it off the composition path so Home startup doesn't pay
     // for library/provider cache work before the user opens Library.
@@ -330,6 +405,10 @@ fun HomeScreen(
             item.poster?.takeIf { it.isNotBlank() }?.let { url ->
                 val request = ImageRequest.Builder(platformContext)
                     .data(url)
+                    // Without this the prefetch decoded at full source resolution and parked that
+                    // in the memory cache, which the card then reused — see
+                    // [nuvioArtworkRequestSize].
+                    .nuvioArtworkRequestSize()
                     .build()
                 imageLoader.enqueue(request)
             }
@@ -371,7 +450,7 @@ fun HomeScreen(
         if (contentMode !is HomeContentMode.Search) previousNonSearchMode = contentMode
     }
     // What to actually display: when search is blank, fall back to the previous mode.
-    val isSearchPristine = !discoverModeActive && searchUiState.sections.isEmpty() &&
+    val isSearchPristine = searchUiState.sections.isEmpty() &&
         !searchUiState.isLoading &&
         searchUiState.emptyStateReason == null &&
         searchUiState.errorMessage == null
@@ -387,7 +466,7 @@ fun HomeScreen(
     val searchLibraryBackdropEnrichmentEnabled =
         tmdbImageModeOn || posterCardStyle.catalogLandscapeModeEnabled
 
-    val discoverAllGenresLabel = stringResource(Res.string.discover_all_genres)
+    val discoverAllFiltersLabel = stringResource(Res.string.discover_all_filters)
     val randomPlayLabels = RandomPlayLabels(
         sectionTitle = stringResource(Res.string.random_play_title),
         sectionSubtitle = stringResource(Res.string.random_play_catalog_subtitle),
@@ -405,8 +484,8 @@ fun HomeScreen(
 
     // Compute effective sections and hero items based on content mode.
     val effectiveSections: List<HomeCatalogSection> = remember(
-        displayMode, contentMode, searchQuery, discoverModeActive, discoverUiState,
-        discoverAllGenresLabel, librarySectionSubtitle, randomPlayLabels,
+        displayMode, contentMode, searchQuery, discoverUiState, discoverRecommendations,
+        discoverAllFiltersLabel, librarySectionSubtitle, randomPlayLabels,
         homeSettingsUiState.randomPlayEnabled,
         homeSettingsUiState.randomPlayIncludeCollections,
         homeSettingsUiState.randomPlayCategories,
@@ -433,29 +512,6 @@ fun HomeScreen(
                 addAll(homeUiState.sections)
             }
             is HomeContentMode.Search -> {
-                if (discoverModeActive) {
-                    val catalog = discoverUiState.selectedCatalog
-                    if (catalog == null || discoverUiState.items.isEmpty()) {
-                        emptyList()
-                    } else {
-                        listOf(
-                            HomeCatalogSection(
-                                key = "discover:${catalog.key}:${discoverUiState.selectedGenre.orEmpty()}",
-                                title = "${catalog.catalogName} • ${discoverUiState.selectedGenre ?: discoverAllGenresLabel}",
-                                subtitle = catalog.addonName,
-                                addonName = catalog.addonName,
-                                target = com.nuvio.app.features.catalog.CatalogTarget.Addon(
-                                    manifestUrl = catalog.manifestUrl,
-                                    contentType = catalog.type,
-                                    catalogId = catalog.catalogId,
-                                    genre = discoverUiState.selectedGenre,
-                                    supportsPagination = false,
-                                ),
-                                items = discoverUiState.items,
-                            ),
-                        )
-                    }
-                } else {
                 // Normalize genres for all search result items at the section level so
                 // every item — whether it needs further enrichment or not — gets capitalised
                 // genres. (Addon catalog responses return lowercase genre strings.)
@@ -469,7 +525,6 @@ fun HomeScreen(
                             current
                         }
                     })
-                }
                 }
             }
             is HomeContentMode.Library -> sortLibrarySections(
@@ -507,6 +562,53 @@ fun HomeScreen(
                 )
             }.ensureUniqueKeys()
             is HomeContentMode.Catalogs -> displayMode.sections.ensureUniqueKeys()
+            // Row 1 is the addon catalog browser lifted out of Search; the generated
+            // "Because you watched …" rows follow it.
+            is HomeContentMode.Discover -> buildList {
+                val catalog = discoverUiState.selectedCatalog
+                if (catalog != null) {
+                    add(
+                        HomeCatalogSection(
+                            key = DISCOVER_BROWSER_ROW_KEY,
+                            title = "${catalog.catalogName} • ${discoverUiState.selectedGenre ?: discoverAllFiltersLabel}",
+                            subtitle = catalog.addonName,
+                            addonName = catalog.addonName,
+                            target = com.nuvio.app.features.catalog.CatalogTarget.Addon(
+                                manifestUrl = catalog.manifestUrl,
+                                contentType = catalog.type,
+                                catalogId = catalog.catalogId,
+                                genre = discoverUiState.selectedGenre,
+                                supportsPagination = catalog.supportsPagination,
+                            ),
+                            items = discoverUiState.items,
+                            // Unlike the old Search-hosted row, this one paginates in place: it is
+                            // the tab's primary browsing surface, not a preview of one.
+                            paginates = catalog.supportsPagination,
+                            hasMore = discoverUiState.canLoadMore,
+                            nextSkip = discoverUiState.nextSkip,
+                            isLoadingMore = discoverUiState.isLoading && discoverUiState.items.isNotEmpty(),
+                            inlineOnly = true,
+                        ),
+                    )
+                }
+                discoverRecommendations.rows.forEach { row ->
+                    add(
+                        HomeCatalogSection(
+                            // A placeholder keeps its DISCOVER_PLACEHOLDER_KEY_PREFIX key, which is
+                            // how the row renderer knows to draw a skeleton instead of a shelf.
+                            key = row.key,
+                            title = row.title,
+                            subtitle = "",
+                            addonName = "",
+                            // No CatalogTarget: these rows are generated, not addon-backed, so
+                            // there is no catalog for "see all" to open.
+                            target = null,
+                            items = row.items,
+                            inlineOnly = true,
+                        ),
+                    )
+                }
+            }.ensureUniqueKeys()
         }
     }
 
@@ -815,12 +917,14 @@ fun HomeScreen(
     val libraryListState = rememberLazyListState()
     val searchListState = remember(searchQuery) { LazyListState() }
     val catalogListState = rememberLazyListState()
-    
+    val discoverListState = rememberLazyListState()
+
     val currentListState = when (displayMode) {
         is HomeContentMode.Normal -> homeListState
         is HomeContentMode.Library -> libraryListState
         is HomeContentMode.Search -> searchListState
         is HomeContentMode.Catalogs -> catalogListState
+        is HomeContentMode.Discover -> discoverListState
     }
     // Remember the Home tab's scroll position across navigation (e.g. opening the
     // details screen and coming back) so the user returns to where they were rather
@@ -867,6 +971,28 @@ fun HomeScreen(
             }.collect { (index, offset) ->
                 LibraryScrollMemory.firstVisibleItemIndex = index
                 LibraryScrollMemory.firstVisibleItemScrollOffset = offset
+            }
+        }
+    }
+    // And the same again for Discover. Its row 1 is the catalog browser, whose contents change as
+    // the user picks catalogs, but the *row* count is stable — so the wait-for-content guard below
+    // behaves exactly as it does for Home.
+    if (displayMode is HomeContentMode.Discover) {
+        LaunchedEffect(Unit) {
+            val savedIndex = DiscoverScrollMemory.firstVisibleItemIndex
+            val savedOffset = DiscoverScrollMemory.firstVisibleItemScrollOffset
+            if (savedIndex > 0 || savedOffset > 0) {
+                withTimeoutOrNull(4000) {
+                    snapshotFlow { discoverListState.layoutInfo.totalItemsCount }
+                        .first { it > savedIndex }
+                }
+                discoverListState.scrollToItem(savedIndex, savedOffset)
+            }
+            snapshotFlow {
+                discoverListState.firstVisibleItemIndex to discoverListState.firstVisibleItemScrollOffset
+            }.collect { (index, offset) ->
+                DiscoverScrollMemory.firstVisibleItemIndex = index
+                DiscoverScrollMemory.firstVisibleItemScrollOffset = offset
             }
         }
     }
@@ -1297,7 +1423,12 @@ fun HomeScreen(
                                 preferTmdbImages = tmdbImageModeOn
                             )
                             if (meta != null && !meta.genres.isNullOrEmpty()) {
-                                com.nuvio.app.features.player.AnimeContentCache.record(item.parentMetaId, meta.genres)
+                                com.nuvio.app.features.player.AnimeContentCache.record(
+                                    metaId = item.parentMetaId,
+                                    genres = meta.genres,
+                                    originalLanguage = meta.language,
+                                    originCountries = listOfNotNull(meta.country),
+                                )
                             }
                         }
                     }
@@ -1438,6 +1569,9 @@ fun HomeScreen(
                 requestVersion = cwArtworkRefreshVersion,
                 appliedVersion = appliedArtworkRefreshVersion,
             )
+            com.nuvio.app.features.watchprogress.NextUpDiagnostics.logReleasePrecisionRetry(
+                contentIds = plan.staleReleasePrecisionContentIds,
+            )
             com.nuvio.app.features.watchprogress.NextUpDiagnostics.logArtworkRetry(
                 contentIds = cachedStaleArtworkItems,
                 forcedMetaRefresh = forceArtworkMetaRefresh,
@@ -1553,6 +1687,9 @@ fun HomeScreen(
         isResolvingHeroSources
     var firstCatalogReported by remember { mutableStateOf(false) }
     var activeHeroBackdrop by remember { mutableStateOf<String?>(null) }
+    // What Basic's hero is currently paging on, for a trailer request that names nothing and for
+    // auto-play. Only meaningful in Basic; the other modes' heroes host their own trailers.
+    var basicHeroActiveItem by remember { mutableStateOf<MetaPreview?>(null) }
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
 
     LaunchedEffect(effectiveSections.firstOrNull()?.key, onFirstCatalogRendered) {
@@ -1587,6 +1724,28 @@ fun HomeScreen(
     // (blank query = empty hero + rows, not home content) so switching to Search from
     // Library doesn't pull the user to the home page.
     val isShowingHomeContent = displayMode is HomeContentMode.Normal
+
+    // Row shuffle. The order is session state (HomeRowShuffleState), never the saved catalog order,
+    // so it is applied per render rather than folded into the section itself — and the whole
+    // feature collapses to null when the setting is off, leaving the header untouched.
+    //
+    // Home content rows only. Search, Library and Discover rows are published by their own
+    // repositories, so HomeRepository cannot find them to deepen the pool — shuffling would deal
+    // from a single page and, on Search, would be reordering relevance-ranked results anyway.
+    //
+    // Declared here rather than beside the row rendering because tvRows needs it too: that list is
+    // what the immersive hero and the keyboard Enter handler index into, and it has to agree with
+    // what the row actually draws.
+    val rowShuffleEnabled = homeSettingsUiState.catalogRowShuffleEnabled && isShowingHomeContent
+    fun shuffleOrderFor(section: HomeCatalogSection): HomeRowShuffleOrder? =
+        if (rowShuffleEnabled) rowShuffleOrders[section.key] else null
+
+    fun shuffleClickFor(section: HomeCatalogSection): (() -> Unit)? =
+        if (rowShuffleEnabled && section.canShuffleRow()) {
+            { HomeRowShuffleState.shuffle(section.key) }
+        } else {
+            null
+        }
     val continueWatchingRowState = remember { HomeScrollMemory.continueWatchingRowState }
     val nextUpRowState = remember { HomeScrollMemory.nextUpRowState }
     LaunchedEffect(isShowingHomeContent, continueWatchingRowItems.isNotEmpty()) {
@@ -1625,10 +1784,21 @@ fun HomeScreen(
     val playerTrailerSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
     val trailersEnabledForCurrentMode =
         displayMode !is HomeContentMode.Search || playerTrailerSettings.heroTvTrailerSearchEnabled
+    // Basic's hero is a static rotation the user pages themselves, so it can host a trailer
+    // too. Full screen only: it lives inside the rows list, and a viewport-tall list item is
+    // as close to a full-screen surface as it gets without reparenting the hero mid-playback
+    // — which would dispose the native video surface and stop the trailer dead.
+    val basicHomeHeroTrailersEnabled = basicHeroTrailersAllowed(
+        mode = homeDisplayModeOf(homeSettingsUiState),
+        isDesktop = isDesktop,
+        heroVisible = showHeroSlot,
+        isNormalHomeMode = displayMode is HomeContentMode.Normal,
+    )
     // In Adaptive Hero mode the hero is only a strip, so a full-screen trailer needs its
     // container expanded to the whole screen (TV Mode's hero already fills the viewport).
     val heroTrailerFullscreenActive =
-        heroTrailerShowing && trailersEnabledForCurrentMode && playerTrailerSettings.heroTvTrailerFullscreen
+        heroTrailerShowing && trailersEnabledForCurrentMode &&
+            playerTrailerSettings.heroTvTrailerFullscreen && !basicHomeHeroTrailersEnabled
     val heroAmbientBackgroundEnabled =
         homeSettingsUiState.heroAmbientBackgroundEnabled && isDesktop && showHeroSlot
     val tvModeEnabled =
@@ -1691,11 +1861,28 @@ fun HomeScreen(
     }
     val catalogModeKey = (displayMode as? HomeContentMode.Catalogs)?.key
     val catalogTvFocus = remember(heroFocusable, catalogModeKey) { HomeTvFocusState() }
+    val discoverTvFocus = remember(heroFocusable) {
+        HomeTvFocusState { sectionIndex, itemIndex ->
+            val rowIndex = sectionIndex - if (heroFocusable) 1 else 0
+            if (rowIndex >= 0) {
+                DiscoverScrollMemory.hasImmersivePosition = true
+                DiscoverScrollMemory.immersiveRowIndex = rowIndex
+                DiscoverScrollMemory.immersiveItemIndex = itemIndex
+            }
+        }.apply {
+            val restoredSection = DiscoverScrollMemory.immersiveRowIndex + if (heroFocusable) 1 else 0
+            restoreItemIndex(restoredSection, DiscoverScrollMemory.immersiveItemIndex)
+            if (DiscoverScrollMemory.hasImmersivePosition) {
+                sectionIndex = restoredSection
+            }
+        }
+    }
     val tvFocus = when (displayMode) {
         is HomeContentMode.Normal -> homeTvFocus
         is HomeContentMode.Library -> libraryTvFocus
         is HomeContentMode.Search -> searchTvFocus
         is HomeContentMode.Catalogs -> catalogTvFocus
+        is HomeContentMode.Discover -> discoverTvFocus
     }
 
     // --- Continue-watching hero preview ---
@@ -1726,6 +1913,10 @@ fun HomeScreen(
     // is declared before the focus is resolved. Written from a SideEffect so it always reflects the
     // latest composition without triggering one.
     val continueWatchingHeroFocused = remember { mutableStateOf(false) }
+    // The poster the pointer (or TV focus) is on, for the same reason and by the same trick: the
+    // T handler is declared above where the focused item is resolved. Only Basic reads it — the
+    // other modes' heroes already show the focused item, so their trailer needs no target.
+    val focusedTrailerTarget = remember { mutableStateOf<MetaPreview?>(null) }
     // Restart the hero-trailer dwell timer whenever TV focus moves (any input method).
     LaunchedEffect(tvFocus.sectionIndex, tvFocus.itemIndex) {
         HomeHeroTrailerGate.notifyFocusChanged()
@@ -1799,12 +1990,14 @@ fun HomeScreen(
         mutableStateOf(SearchScrollMemory.immersiveRowIndex)
     }
     var catalogImmersiveRowIndex by remember(catalogModeKey) { mutableStateOf(0) }
+    var discoverImmersiveRowIndex by remember { mutableStateOf(DiscoverScrollMemory.immersiveRowIndex) }
     val getImmersiveRowIndex = {
         when (displayMode) {
             is HomeContentMode.Normal -> homeImmersiveRowIndex
             is HomeContentMode.Library -> libraryImmersiveRowIndex
             is HomeContentMode.Search -> searchImmersiveRowIndex
             is HomeContentMode.Catalogs -> catalogImmersiveRowIndex
+            is HomeContentMode.Discover -> discoverImmersiveRowIndex
         }
     }
     val setImmersiveRowIndex = { value: Int ->
@@ -1813,6 +2006,7 @@ fun HomeScreen(
             is HomeContentMode.Library -> libraryImmersiveRowIndex = value
             is HomeContentMode.Search -> searchImmersiveRowIndex = value
             is HomeContentMode.Catalogs -> catalogImmersiveRowIndex = value
+            is HomeContentMode.Discover -> discoverImmersiveRowIndex = value
         }
     }
     // Persist the immersive home row + the focused position within it so both survive leaving and
@@ -1844,6 +2038,15 @@ fun HomeScreen(
                 searchTvFocus.itemIndexForSection(searchImmersiveRowIndex + if (heroFocusable) 1 else 0)
         }
     }
+    if (displayMode is HomeContentMode.Discover) {
+        LaunchedEffect(discoverImmersiveRowIndex) {
+            DiscoverScrollMemory.immersiveRowIndex = discoverImmersiveRowIndex
+        }
+        LaunchedEffect(discoverTvFocus.itemIndexForSection(discoverImmersiveRowIndex + if (heroFocusable) 1 else 0)) {
+            DiscoverScrollMemory.immersiveItemIndex =
+                discoverTvFocus.itemIndexForSection(discoverImmersiveRowIndex + if (heroFocusable) 1 else 0)
+        }
+    }
 
     var immersiveWheelLocked by remember { mutableStateOf(false) }
 
@@ -1863,6 +2066,9 @@ fun HomeScreen(
         onContinueWatchingClick,
         onFolderClick,
         posterClickHandler,
+        // A re-deal changes what sits at each index, and tvRows is indexed by the focused column.
+        rowShuffleOrders,
+        rowShuffleEnabled,
     ) {
         buildList {
             if (isShowingHomeContent && continueWatchingPreferences.isVisible && continueWatchingRowItems.isNotEmpty()) {
@@ -1929,10 +2135,15 @@ fun HomeScreen(
                     val section = sectionsMap[settingsItem.key]
                     if (section != null && section.items.isNotEmpty()) {
                         val usesInfiniteScroll = section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
+                        // Must match the row's rendered entries exactly. tvFocus.itemIndex is a
+                        // position in the drawn row, and metaItems[index] is what the immersive
+                        // hero shows for it — build this from section.items and a shuffled row
+                        // renders one title while the hero describes a different one.
+                        val shuffledItems = section.shuffled(shuffleOrderFor(section))
                         val entries = if (usesInfiniteScroll) {
-                            section.items
+                            shuffledItems
                         } else {
-                            section.items.take(HOME_CATALOG_PREVIEW_LIMIT)
+                            shuffledItems.take(HOME_CATALOG_PREVIEW_LIMIT)
                         }
                         add(
                             HomeTvRow(
@@ -1960,9 +2171,15 @@ fun HomeScreen(
                 }
             }
 
-            // Search / Library mode: add effective sections as TV rows for keyboard navigation.
+            // Search / Library / Discover mode: add effective sections as TV rows for keyboard
+            // navigation. The Discover browser row is kept even when empty — see the note on
+            // rowSections; if it drops out here, tvRows goes empty and TV mode falls back to the
+            // plain list, which is how switching to TV mode on an empty catalog blanked the tab.
             if (displayMode !is HomeContentMode.Normal) {
-                effectiveSections.filter { it.items.isNotEmpty() }.forEach { section ->
+                effectiveSections.filter {
+                    it.items.isNotEmpty() || it.key == DISCOVER_BROWSER_ROW_KEY ||
+                        it.key.startsWith(DISCOVER_PLACEHOLDER_KEY_PREFIX)
+                }.forEach { section ->
                     val usesInfiniteScroll = section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
                     val entries = if (usesInfiniteScroll) {
                         section.items
@@ -2194,8 +2411,23 @@ fun HomeScreen(
             true
         }
         HomeTvKey.ToggleTrailer -> {
-            if (trailersEnabledForCurrentMode && (adaptiveHeroEnabled || tvModeEnabled)) {
-                HomeHeroTrailerManualTrigger.trigger()
+            // Logged before the gate: the absence of this line means the key never reached
+            // the handler at all (the home root did not hold Compose focus), which is a
+            // different fault from the gate refusing it.
+            co.touchlab.kermit.Logger.withTag("HomeHeroTrailer").i {
+                "ToggleTrailer key: modeOk=$trailersEnabledForCurrentMode " +
+                    "adaptive=$adaptiveHeroEnabled tv=$tvModeEnabled " +
+                    "basic=$basicHomeHeroTrailersEnabled"
+            }
+            if (trailersEnabledForCurrentMode &&
+                (adaptiveHeroEnabled || tvModeEnabled || basicHomeHeroTrailersEnabled)
+            ) {
+                // Basic's hero shows trending titles the user did not choose, so T there means
+                // "play the trailer for what I am pointing at", falling back to the hero when the
+                // pointer is not on a poster. Adaptive/TV pass nothing: their hero is already it.
+                HomeHeroTrailerManualTrigger.trigger(
+                    if (basicHomeHeroTrailersEnabled) focusedTrailerTarget.value else null,
+                )
                 true
             } else false
         }
@@ -2306,8 +2538,13 @@ fun HomeScreen(
                     if (isRenderable) add(settingsItem)
                 }
             } else {
-                // Search / Library: one immersive row per effective section
-                effectiveSections.filter { it.items.isNotEmpty() }.forEach { section ->
+                // Search / Library / Discover: one immersive row per effective section. Same
+                // empty-row exemption as tvRows — these two lists are index-aligned, so a section
+                // present in one and absent from the other desynchronises the row-jump dots.
+                effectiveSections.filter {
+                    it.items.isNotEmpty() || it.key == DISCOVER_BROWSER_ROW_KEY ||
+                        it.key.startsWith(DISCOVER_PLACEHOLDER_KEY_PREFIX)
+                }.forEach { section ->
                     add(HomeCatalogSettingsItem(
                         key = section.key,
                         defaultTitle = section.title,
@@ -2393,6 +2630,9 @@ fun HomeScreen(
         tvRows.getOrNull(tvFocusedRowIndex)?.metaItems?.getOrNull(tvFocus.itemIndex)
     } else {
         null
+    }
+    SideEffect {
+        focusedTrailerTarget.value = tvFocusedHeroItemRaw
     }
     // For Search/Library: hold hero on the previous item while the new one enriches.
     // For Normal (home): pass through directly — addon already provides good images.
@@ -2565,6 +2805,51 @@ fun HomeScreen(
     SideEffect {
         continueWatchingHeroFocused.value = focusedContinueWatchingItem != null
     }
+
+    // Search ahead for the focused Continue Watching / Up Next card, so pressing play on it skips
+    // the scrape. Deliberately *not* `focusedContinueWatchingItem`: that one is gated on the hero
+    // following focus and so is null in Basic hero mode, while the row is worth preparing whichever
+    // hero the user runs.
+    val prefetchContinueWatchingItem: ContinueWatchingItem? = if (
+        continueWatchingRowPresent &&
+        tvFocusedRowIndex in continueWatchingDisplayRows.indices
+    ) {
+        continueWatchingDisplayRows[tvFocusedRowIndex].getOrNull(tvFocus.itemIndex)
+    } else {
+        null
+    }
+    // Focus starts on the first card of the row, so the first item this sees is the app opening
+    // rather than the user choosing — and that entry is deliberately prepared too. "Open the app and
+    // press play" is the path that otherwise always pays full scrape latency, and the top of
+    // Continue Watching is the single best guess anyone can make about what is about to be played.
+    LaunchedEffect(
+        prefetchContinueWatchingItem?.parentMetaType,
+        prefetchContinueWatchingItem?.parentMetaId,
+        prefetchContinueWatchingItem?.videoId,
+        prefetchContinueWatchingItem?.seasonNumber,
+        prefetchContinueWatchingItem?.episodeNumber,
+    ) {
+        val item = prefetchContinueWatchingItem
+        if (item == null) {
+            // Focus moved off the row entirely; whatever was pending is for a card the user left.
+            StreamPrefetchService.cancel()
+            return@LaunchedEffect
+        }
+        // Cloud-library entries play through the provider's own file listing, never the addon
+        // stream pipeline, so there is nothing here for a stream search to prepare.
+        if (item.isCloudLibraryContinueWatchingItem()) return@LaunchedEffect
+        StreamPrefetchService.request(
+            StreamPrefetchService.Target(
+                trigger = StreamPrefetchService.Trigger.ContinueWatching,
+                type = item.parentMetaType,
+                parentMetaId = item.parentMetaId,
+                videoId = item.videoId,
+                title = item.title,
+                season = item.seasonNumber,
+                episode = item.episodeNumber,
+            ),
+        )
+    }
     // Prefetch for Search and Library: warm only the first few metadata targets per row.
     // next section in full. Search/library sets are small (20–50 items) so this is cheap.
     // Home is excluded — the addon handles it in real-time.
@@ -2719,12 +3004,19 @@ fun HomeScreen(
             ?.forEach { enrich(it) }
     }
     val immersiveMetadataPrefetchItems = if (tvModeEnabled) {
-        // Home and Library warm the whole focused row: both are stable, user-owned catalogs whose
-        // metadata is worth caching, so the one-time cost is fine. Search is different every time and
-        // most results are noise (ranked, so what matters is the top of each catalog), so there we cap
-        // the hero's eager (rate-limited MDBList) enrichment to the first couple per catalog; deeper
-        // results still enrich on demand once focused.
-        val perRowLimit = if (displayMode is HomeContentMode.Search) SEARCH_HERO_METADATA_PREFETCH_PER_CATALOG else Int.MAX_VALUE
+        // Home and Library warm ahead of the focused row: both are stable, user-owned catalogs whose
+        // metadata is worth caching. Bounded rather than unlimited, though - this used to pass
+        // Int.MAX_VALUE, handing two entire rows to a consumer that caps concurrency but not the
+        // number of targets, so a large library queued thousands of speculative enrichments for a
+        // hero that shows one title at a time. Search is different every time and most results are
+        // noise (ranked, so what matters is the top of each catalog), so there we cap the hero's
+        // eager (rate-limited MDBList) enrichment to the first couple per catalog; deeper results
+        // still enrich on demand once focused.
+        val perRowLimit = if (displayMode is HomeContentMode.Search) {
+            SEARCH_HERO_METADATA_PREFETCH_PER_CATALOG
+        } else {
+            IMMERSIVE_HERO_METADATA_PREFETCH_PER_ROW
+        }
         buildList {
             tvRows.getOrNull(getImmersiveRowIndex())?.metaItems?.take(perRowLimit)?.let(::addAll)
             tvRows.getOrNull(getImmersiveRowIndex() + 1)?.metaItems?.take(perRowLimit)?.let(::addAll)
@@ -2744,6 +3036,12 @@ fun HomeScreen(
             }
             .onPreviewKeyEvent { event ->
                 when {
+                    // Escape closes an open Discover picker before anything else can act on it,
+                    // so it never falls through to dismissing the whole screen.
+                    discoverPickerSegment != null && event.key == Key.Escape -> {
+                        if (event.type == KeyEventType.KeyUp) discoverPickerSegment = null
+                        true
+                    }
                     appShortcutMatches(AppShortcutAction.OpenSearch, event) -> {
                         if (event.type == KeyEventType.KeyUp) {
                             onNavigateToSearch?.invoke()
@@ -2763,6 +3061,17 @@ fun HomeScreen(
                                 onNavigateToHome?.invoke()
                             } else {
                                 onNavigateToLibrary?.invoke()
+                            }
+                        }
+                        true
+                    }
+                    appShortcutMatches(AppShortcutAction.OpenDiscover, event) -> {
+                        if (event.type == KeyEventType.KeyUp) {
+                            // Same toggle shape as Library: from Discover it returns Home.
+                            if (contentMode is HomeContentMode.Discover) {
+                                onNavigateToHome?.invoke()
+                            } else {
+                                onNavigateToDiscover?.invoke()
                             }
                         }
                         true
@@ -2790,6 +3099,10 @@ fun HomeScreen(
                         .then(
                             if (tvModeEnabled) {
                                 Modifier.onPointerEvent(PointerEventType.Scroll) { event ->
+                                    // An open Discover picker owns the wheel: without this the shelf
+                                    // jumps to another row under the panel, and the panel's own list
+                                    // never scrolls.
+                                    if (discoverPickerSegment != null) return@onPointerEvent
                                     val change = event.changes.firstOrNull() ?: return@onPointerEvent
                                     val direction = change.scrollDelta.y.compareTo(0f)
                                     if (direction != 0) {
@@ -2901,6 +3214,69 @@ fun HomeScreen(
         }
 
         val homeSectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value)
+        // Sized off the viewport, not a fixed dp: the Discover row's position on screen moves with
+        // TV mode, adaptive hero, and hero height, so a constant tall enough on a large window
+        // would run off a small one.
+        val discoverPickerMaxHeight = (maxHeight * 0.45f).coerceIn(180.dp, 360.dp)
+        // Ceiling only — the panel sizes itself to its longest label and rarely reaches this.
+        val discoverPickerMaxWidth = (maxWidth - homeSectionPadding * 2).coerceAtLeast(200.dp)
+        val discoverPostersAlpha = rememberDiscoverPostersAlpha(discoverPickerSegment != null)
+        val discoverRowEmptyText = stringResource(Res.string.discover_row_empty)
+        val discoverRowLoadingText = stringResource(Res.string.discover_row_loading)
+        // Defined once and handed to both the plain list and the TV immersive shelf, which render
+        // the Discover row through separate call sites.
+        val discoverRowTitleContent: @Composable () -> Unit = {
+            DiscoverRowHeader(
+                catalogLabel = discoverUiState.selectedCatalog?.catalogName.orEmpty(),
+                filterLabel = discoverUiState.selectedCatalog?.let {
+                    discoverUiState.selectedGenre ?: discoverAllFiltersLabel
+                },
+                activeSegment = discoverPickerSegment,
+                onSegmentClick = { segment ->
+                    discoverPickerSegment = if (discoverPickerSegment == segment) null else segment
+                },
+                onSegmentPositioned = { segment, x ->
+                    if (discoverSegmentOffsets[segment] != x) {
+                        discoverSegmentOffsets = discoverSegmentOffsets + (segment to x)
+                    }
+                },
+            )
+        }
+
+        // The header a Discover row draws: the catalog/genre segments for row 1, a title-plus-badge
+        // for a row whose origin is not obvious from its name (§7 provenance badges), and null —
+        // meaning the shelf's own plain title — for the built-in generated families.
+        val discoverRowTitleContentFor: (HomeCatalogSection) -> (@Composable () -> Unit)? = { section ->
+            when {
+                displayMode !is HomeContentMode.Discover -> null
+                section.key == DISCOVER_BROWSER_ROW_KEY -> discoverRowTitleContent
+                else -> discoverRowProvenance(section.key)?.let { provenance ->
+                    {
+                        DiscoverRowTitleWithProvenance(
+                            title = section.title,
+                            provenance = provenance,
+                        )
+                    }
+                }
+            }
+        }
+
+        @Composable
+        fun BoxScope.DiscoverRowBodySlot(section: HomeCatalogSection, pickerMaxHeight: Dp) {
+            val anchorPx = discoverPickerSegment?.let { discoverSegmentOffsets[it] } ?: 0f
+            DiscoverRowBody(
+                state = discoverUiState,
+                itemsEmpty = section.items.isEmpty(),
+                segment = discoverPickerSegment,
+                pickerMaxHeight = pickerMaxHeight,
+                pickerMaxWidth = discoverPickerMaxWidth,
+                horizontalPadding = homeSectionPadding,
+                anchorX = with(LocalDensity.current) { anchorPx.toDp() },
+                onSegmentChange = { discoverPickerSegment = it },
+                emptyText = discoverRowEmptyText,
+                loadingText = discoverRowLoadingText,
+            )
+        }
         val continueWatchingLayout = rememberContinueWatchingLayout(maxWidth.value)
         val continueWatchingCardHeight = remember(posterCardStyle.widthDp) {
             continueWatchingLandscapeCardHeight(posterCardStyle.widthDp)
@@ -3000,6 +3376,7 @@ fun HomeScreen(
                     roundedBottomCorners =
                         !heroAmbientBackgroundEnabled && !tvModeEnabled,
                     immersiveMode = tvModeEnabled,
+                    immersiveFullBackdrop = homeSettingsUiState.tvFullBackdropEnabled,
                     adaptiveHeroMode = adaptiveHeroEnabled,
                     heroInfoLines = homeSettingsUiState.heroInfoLines,
                     heroInfoPriority = homeSettingsUiState.heroInfoPriority,
@@ -3013,6 +3390,7 @@ fun HomeScreen(
                     onResumePromptDismiss = effectiveOnResumeDismiss,
                     onActiveItemChanged = { item ->
                         activeHeroBackdrop = item.banner ?: item.poster
+                        basicHeroActiveItem = item
                     },
                     onCastClick = onCastClick,
                     onItemClick = { item ->
@@ -3150,7 +3528,7 @@ fun HomeScreen(
                     // no results — no query means "type to search", query means "no matches".
                     // In Library mode an empty library just shows nothing.
                     // Only Normal mode gets the home-specific empty state cards.
-                    if (discoverModeActive) {
+                    if (displayMode is HomeContentMode.Discover) {
                         if (discoverUiState.isLoading) {
                             items(3) {
                                 HomeSkeletonRow(
@@ -3286,7 +3664,13 @@ fun HomeScreen(
                             else null
                         }
                     } else {
-                        effectiveSections.filter { it.items.isNotEmpty() }
+                        // The Discover browser row survives an empty result on purpose: its header
+                        // carries the catalog/genre pickers, so dropping it would strand the user on
+                        // an empty catalog with no way to choose a different one.
+                        effectiveSections.filter {
+                            it.items.isNotEmpty() || it.key == DISCOVER_BROWSER_ROW_KEY ||
+                        it.key.startsWith(DISCOVER_PLACEHOLDER_KEY_PREFIX)
+                        }
                     }
 
                     if (isShowingHomeContent) enabledHomeItems.forEach { settingsItem ->
@@ -3325,14 +3709,23 @@ fun HomeScreen(
                                     section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
                                 val rowIndex = tvRowCursor++
                                 val sectionIndex = if (heroFocusable) rowIndex + 1 else rowIndex
+                                val shuffleOrder = shuffleOrderFor(section)
+                                // Shuffle first, slice second: on a row that shows a preview and a
+                                // View All pill, dealing the whole pool and then taking the first
+                                // 18 is what swaps in titles from pages the user has never scrolled
+                                // to. Slicing first would only ever reorder the same 18 posters.
+                                val shuffledItems = section.shuffled(shuffleOrder)
                                 item(key = settingsItem.key) {
                                     HomeCatalogRowSection(
                                         section = section,
                                         entries = if (usesInfiniteScroll) {
-                                            section.items
+                                            shuffledItems
                                         } else {
-                                            section.items.take(HOME_CATALOG_PREVIEW_LIMIT)
+                                            shuffledItems.take(HOME_CATALOG_PREVIEW_LIMIT)
                                         },
+                                        onShuffleClick = shuffleClickFor(section),
+                                        isShuffling = section.key in rowShufflingKeys,
+                                        shuffleGeneration = shuffleOrder?.generation ?: 0,
                                         modifier = Modifier.padding(bottom = 12.dp),
                                         sectionPadding = homeSectionPadding,
                                         focusedItemIndex = if (tvFocusedRowIndex == rowIndex) tvFocus.itemIndex else null,
@@ -3371,12 +3764,25 @@ fun HomeScreen(
                         }
                     }
 
-                    // Search / Library mode: render result sections directly.
+                    // Search / Library / Discover mode: render result sections directly.
                     if (!isShowingHomeContent) {
                         rowSections.forEach { section ->
+                            // A reserved slot for a Discover row still being built. Drawn as a
+                            // skeleton and, crucially, NOT given a tvRowCursor index — it cannot be
+                            // focused or clicked, and when the real row replaces it the cursor
+                            // numbering is unchanged.
+                            if (section.key.startsWith(DISCOVER_PLACEHOLDER_KEY_PREFIX)) {
+                                item(key = section.key) {
+                                    HomeSkeletonRow(
+                                        modifier = Modifier.padding(bottom = 12.dp),
+                                    )
+                                }
+                                return@forEach
+                            }
                             val usesInfiniteScroll = section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
                             val rowIndex = tvRowCursor++
                             val sectionIndex = if (heroFocusable) rowIndex + 1 else rowIndex
+                            val isDiscoverBrowserRow = section.key == DISCOVER_BROWSER_ROW_KEY
                             item(key = section.key) {
                                 HomeCatalogRowSection(
                                     section = section,
@@ -3411,15 +3817,24 @@ fun HomeScreen(
                                     } else {
                                         null
                                     },
-                                    onLoadMore = if (usesInfiniteScroll && section.hasMore) {
-                                        onLoadMoreCatalog?.let { callback -> { callback(section) } }
-                                    } else {
-                                        null
+                                    onLoadMore = when {
+                                        isDiscoverBrowserRow && section.hasMore ->
+                                            { { SearchRepository.loadMoreDiscover() } }
+                                        usesInfiniteScroll && section.hasMore ->
+                                            onLoadMoreCatalog?.let { callback -> { callback(section) } }
+                                        else -> null
                                     },
                                     isLoadingMore = section.isLoadingMore,
                                     watchedKeys = watchedUiState.watchedKeys,
                                     onPosterClick = posterClickHandler,
                                     onPosterLongClick = onPosterLongClick,
+                                    titleContent = discoverRowTitleContentFor(section),
+                                    bodyAlpha = if (isDiscoverBrowserRow) discoverPostersAlpha else 1f,
+                                    bodyOverlay = if (isDiscoverBrowserRow) {
+                                        { DiscoverRowBodySlot(section, discoverPickerMaxHeight) }
+                                    } else {
+                                        null
+                                    },
                                 )
                             }
                         }
@@ -3437,13 +3852,15 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .height(immersiveShelfHeight)
                         .align(Alignment.BottomStart)
+                        // The shelf's own scrim, and the thing that actually makes TV Mode's
+                        // bottom band black: it reaches the opaque background colour whatever the
+                        // hero behind it is doing. Under full backdrop it stops short instead, so
+                        // the artwork the hero now paints down here stays visible through it.
                         .background(
                             Brush.verticalGradient(
-                                colorStops = arrayOf(
-                                    0f to Color.Transparent,
-                                    0.30f to MaterialTheme.colorScheme.background.copy(alpha = 0.28f),
-                                    0.62f to MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
-                                    1f to MaterialTheme.colorScheme.background,
+                                colorStops = immersiveShelfScrimStops(
+                                    backgroundColor = MaterialTheme.colorScheme.background,
+                                    fullBackdrop = homeSettingsUiState.tvFullBackdropEnabled,
                                 ),
                             ),
                         )
@@ -3527,6 +3944,8 @@ fun HomeScreen(
                             immSection?.let { section ->
                                 val usesInfiniteScroll =
                                     section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
+                                val shuffleOrder = shuffleOrderFor(section)
+                                val shuffledItems = section.shuffled(shuffleOrder)
                                 androidx.compose.runtime.key(section.key) {
                                     HomeCatalogRowSection(
                                         section = section,
@@ -3537,9 +3956,12 @@ fun HomeScreen(
                                                     cardEnrichments = heroEnrichmentMap,
                                                     pendingEnrichmentKeys = landscapePendingEnrichmentKeys,
                                                 )
-                                            usesInfiniteScroll -> section.items
-                                            else -> section.items.take(HOME_CATALOG_PREVIEW_LIMIT)
+                                            usesInfiniteScroll -> shuffledItems
+                                            else -> shuffledItems.take(HOME_CATALOG_PREVIEW_LIMIT)
                                         },
+                                        onShuffleClick = shuffleClickFor(section),
+                                        isShuffling = section.key in rowShufflingKeys,
+                                        shuffleGeneration = shuffleOrder?.generation ?: 0,
                                         sectionPadding = homeSectionPadding,
                                         basePosterWidthDpOverride = immersivePosterBaseWidthDp,
                                         focusedItemIndex = tvFocus.itemIndex,
@@ -3563,6 +3985,28 @@ fun HomeScreen(
                                         onPosterLongClick = onPosterLongClick,
                                         rowNumber = catalogRowNumbers[section.key],
                                         headerTrailingContent = tvRowDotsContent,
+                                        titleContent = discoverRowTitleContentFor(section),
+                                        bodyAlpha = if (section.key == DISCOVER_BROWSER_ROW_KEY) {
+                                            discoverPostersAlpha
+                                        } else {
+                                            1f
+                                        },
+                                        bodyOverlay = if (section.key == DISCOVER_BROWSER_ROW_KEY) {
+                                            {
+                                                // The immersive shelf is a fixed-height box pinned to
+                                                // the bottom of the window, so the picker is capped to
+                                                // it rather than to the viewport.
+                                                DiscoverRowBodySlot(
+                                                    section = section,
+                                                    pickerMaxHeight = minOf(
+                                                        discoverPickerMaxHeight,
+                                                        immersiveShelfHeight,
+                                                    ),
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        },
                                         onViewAllClick = if (
                                             (isShowingHomeContent || catalogSeeMoreEnabled) &&
                                             !usesInfiniteScroll &&
@@ -3615,7 +4059,13 @@ fun HomeScreen(
                     .fillMaxSize()
                     .smoothVerticalWheelScroll(
                         state = currentListState,
-                        enabled = isDesktop && homeSettingsUiState.smoothScrollingEnabled,
+                        // This interceptor consumes every vertical wheel delta on the Initial pass,
+                        // so it starves any nested vertical scroller — the Discover picker's list
+                        // could not be scrolled at all while it was on. Stand down while a picker
+                        // owns the row body; the page should not move under an open panel anyway.
+                        enabled = isDesktop &&
+                            homeSettingsUiState.smoothScrollingEnabled &&
+                            discoverPickerSegment == null,
                     ),
                 horizontalPadding = 0.dp,
                 topPadding = when {
@@ -3641,11 +4091,34 @@ fun HomeScreen(
                 .zIndex(100f)
                 .padding(end = 3.dp),
         )
+        // Outside the rows list on purpose: Basic's hero is a recycled list item, so a trailer
+        // parented to it dies the moment the user scrolls to the rows they wanted to play from.
+        // Derived, not read straight: firstVisibleItemIndex changes every frame of a scroll, and
+        // reading it here would recompose the whole home screen along with it.
+        val basicHeroOnScreen by remember(currentListState) {
+            derivedStateOf { currentListState.firstVisibleItemIndex == 0 }
+        }
+        HomeBasicTrailerOverlay(
+            enabled = basicHomeHeroTrailersEnabled,
+            heroItem = basicHeroActiveItem,
+            heroOnScreen = basicHeroOnScreen,
+            onDismissed = {
+                try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+            },
+            modifier = Modifier.zIndex(200f),
+        )
     }
 }
 
 private const val HOME_CATALOG_PREVIEW_LIMIT = 18
 private const val HOME_CONTINUE_WATCHING_SECTION_KEY = "home:continue-watching"
+
+/**
+ * Row 1 of the Discover tab. Stable across catalog/genre changes on purpose: keying it by the
+ * selection would tear the LazyRow down on every pick, losing scroll position and re-running the
+ * poster fade from scratch.
+ */
+internal const val DISCOVER_BROWSER_ROW_KEY = "discover:browser"
 private const val HOME_NEXT_UP_SECTION_KEY = "home:next-up"
 
 /**
@@ -3728,6 +4201,10 @@ private const val SEARCH_LIBRARY_LANDSCAPE_METADATA_PREFETCH_LIMIT = 8
 // How many results per catalog the search hero eagerly enriches (incl. rate-limited MDBList). Kept
 // small on purpose: search results fan out across catalogs and users care about the start of each.
 private const val SEARCH_HERO_METADATA_PREFETCH_PER_CATALOG = 2
+// How far ahead the TV-mode hero warms metadata in Home/Library, per row. Comfortably more than a
+// shelf shows at once, so the titles the user can reach next are already warm, without queueing work
+// for a row they may never scroll to.
+private const val IMMERSIVE_HERO_METADATA_PREFETCH_PER_ROW = 12
 private const val HOME_STARTUP_METADATA_GRACE_MS = 900L
 // Long enough for the focused card's own enrichment to get its request away before the hero-
 // rotation batch saturates the connection, short enough that the rotation is still warm before the
@@ -4234,6 +4711,7 @@ internal data class NextUpResolutionPlan(
     val cachedBySeries: Map<String, Pair<Long, ContinueWatchingItem>>,
     val staleArtworkContentIds: Set<String>,
     val candidatesToResolve: List<CompletedSeriesCandidate>,
+    val staleReleasePrecisionContentIds: Set<String> = emptySet(),
 )
 
 /** Launch/profile load starts at -1, so request version 0 still receives one real metadata read. */
@@ -4308,9 +4786,32 @@ private fun String?.artworkResourceIdentity(): String? = this
  * the never-resolved ones, which have nothing on screen at all and so get first claim on the
  * capped resolution budget.
  */
+/**
+ * A cached card whose air date is close enough that a day of imprecision would show on screen, and
+ * whose stored `released` has no time of day.
+ *
+ * The date-only form comes from TMDB's `air_date`, which is the network's local date — Ted Lasso
+ * S4E5 was stored as `2026-09-01` while the addon knew it as `2026-09-02T04:00:00.000Z`, so the
+ * card claimed "New Episode" a full day before the episode existed. The snapshot is only rewritten
+ * when a card is re-resolved, and a seed match otherwise means never, so the stale value would
+ * outlive the episode. Re-resolving rides the meta LRU, so this costs one fetch per app run.
+ */
+internal fun ContinueWatchingItem.needsReleasePrecisionRefresh(todayIsoDate: String): Boolean {
+    val release = com.nuvio.app.features.watchprogress.resolveReleaseInstant(released) ?: return false
+    if (release.hasTimeOfDay) return false
+    val daysUntil = com.nuvio.app.features.watchprogress.isoDaysBetween(
+        from = todayIsoDate,
+        to = release.localIsoDate,
+    ) ?: return false
+    // From the day after the nominal date (where a premature "New Episode" is showing) out to two
+    // days before it. Outside that window nobody can tell the difference.
+    return daysUntil in -1..2
+}
+
 internal fun planNextUpResolution(
     completedSeriesCandidates: List<CompletedSeriesCandidate>,
     cachedNextUpItems: Map<String, Pair<Long, ContinueWatchingItem>>,
+    todayIsoDate: String = CurrentDateProvider.todayIsoDate(),
 ): NextUpResolutionPlan {
     val cachedBySeries = completedSeriesCandidates.mapNotNull { candidate ->
         val cached = cachedNextUpItems[candidate.content.id] ?: return@mapNotNull null
@@ -4326,15 +4827,20 @@ internal fun planNextUpResolution(
     val staleArtworkContentIds = cachedBySeries
         .filterValues { (_, item) -> item.needsEpisodeThumbnailRefresh() }
         .keys
+    val staleReleasePrecisionContentIds = cachedBySeries
+        .filterValues { (_, item) -> item.needsReleasePrecisionRefresh(todayIsoDate) }
+        .keys
+    val staleContentIds = staleArtworkContentIds + staleReleasePrecisionContentIds
     val candidatesToResolve = completedSeriesCandidates.filter { candidate ->
         candidate.content.id !in cachedBySeries
     } + completedSeriesCandidates.filter { candidate ->
-        candidate.content.id in staleArtworkContentIds
+        candidate.content.id in staleContentIds
     }
     return NextUpResolutionPlan(
         cachedBySeries = cachedBySeries,
         staleArtworkContentIds = staleArtworkContentIds,
         candidatesToResolve = candidatesToResolve,
+        staleReleasePrecisionContentIds = staleReleasePrecisionContentIds,
     )
 }
 

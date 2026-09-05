@@ -31,7 +31,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,7 +53,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioTokens
+import com.nuvio.app.core.ui.NuvioShelfItemSlot
+import com.nuvio.app.core.ui.nuvioPosterHighlight
 import com.nuvio.app.core.ui.desktopHorizontalListNavigation
+import com.nuvio.app.core.ui.accentFill
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.details.MetaVideo
@@ -74,6 +76,7 @@ import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import com.nuvio.app.features.watching.application.WatchingState
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material.icons.rounded.Refresh
 
 /**
  * Episode selection panel shown inside the player.
@@ -236,6 +239,7 @@ private fun EpisodesListSubView(
     val episodeListState = rememberLazyListState()
     var hasPositionedSeasonRow by remember(availableSeasons) { mutableStateOf(false) }
     var hasPositionedEpisodeList by remember(selectedSeason) { mutableStateOf(false) }
+    var hoveredEpisodeIndex by remember(seasonEpisodes) { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(selectedSeason, availableSeasons) {
         val selectedSeasonIndex = availableSeasons.indexOf(selectedSeason)
@@ -341,7 +345,7 @@ private fun EpisodesListSubView(
                     key = { index, episode ->
                         "${episode.playbackSeasonNumber()}:${episode.playbackEpisodeNumber()}:${episode.id}#$index"
                     },
-                ) { _, episode ->
+                ) { index, episode ->
                     val isCurrent = episode == currentPosition?.video
                     val episodeVideoId = buildPlaybackVideoId(
                         parentMetaId = parentMetaId,
@@ -357,13 +361,18 @@ private fun EpisodesListSubView(
                             metaId = parentMetaId,
                             episode = episode,
                         )
-                    EpisodeRow(
-                        episode = episode,
-                        isCurrent = isCurrent,
-                        isWatched = isWatched,
-                        blurUnwatchedEpisodes = blurUnwatchedEpisodes,
-                        onClick = { onEpisodeSelected(episode) },
-                    )
+                    NuvioShelfItemSlot(
+                        focused = index == hoveredEpisodeIndex,
+                        onHover = { hoveredEpisodeIndex = index },
+                    ) {
+                        EpisodeRow(
+                            episode = episode,
+                            isCurrent = isCurrent,
+                            isWatched = isWatched,
+                            blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+                            onClick = { onEpisodeSelected(episode) },
+                        )
+                    }
                 }
             }
         }
@@ -385,6 +394,7 @@ private fun EpisodeRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(tokens.shapes.compactCard)
+            .nuvioPosterHighlight(NuvioTokens.Radius.compactCard)
             .background(
                 if (isCurrent) tokens.colors.overlaySelected else Color.Transparent,
             )
@@ -446,7 +456,7 @@ private fun EpisodeRow(
                     Box(
                         modifier = Modifier
                             .clip(tokens.shapes.chip)
-                            .background(tokens.colors.accent)
+                            .background(tokens.colors.accentFill)
                             .padding(horizontal = NuvioTokens.Space.s6, vertical = NuvioTokens.Space.s2),
                     ) {
                         Text(

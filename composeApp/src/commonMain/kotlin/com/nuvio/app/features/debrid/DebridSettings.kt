@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 data class DebridSettings(
     val enabled: Boolean = false,
     val cloudLibraryEnabled: Boolean = true,
+    val cloudLibraryWindow: DebridCloudLibraryWindow = DebridCloudLibraryWindow.DEFAULT,
     val providerApiKeys: Map<String, String> = emptyMap(),
     val preferredResolverProviderId: String = "",
     val instantPlaybackPreparationLimit: Int = 0,
@@ -71,6 +72,37 @@ data class DebridSettings(
 
 const val DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT = 2
 const val DEBRID_PREPARE_INSTANT_PLAYBACK_MAX_LIMIT = 5
+
+/**
+ * How far back the cloud library lists, newest first.
+ *
+ * A long-lived TorBox account holds hundreds of downloads; listing all of them buries this week's
+ * additions and starves the filename resolver, which only gets a few passes to turn release names
+ * into titles and posters, so most rows end up with neither.
+ */
+enum class DebridCloudLibraryWindow(val days: Int) {
+    DAYS_7(7),
+    DAYS_14(14),
+    DAYS_30(30),
+    DAYS_90(90),
+    DAYS_180(180),
+    DAYS_365(365),
+    ALL(0);
+
+    val isUnbounded: Boolean
+        get() = days <= 0
+
+    /** Items the provider gave no timestamp for stay visible — a missing date is not an age. */
+    fun includes(addedAtEpochMs: Long?, nowEpochMs: Long): Boolean {
+        if (isUnbounded || addedAtEpochMs == null) return true
+        return addedAtEpochMs >= nowEpochMs - days * MILLIS_PER_DAY
+    }
+
+    companion object {
+        val DEFAULT = DAYS_30
+        private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L
+    }
+}
 
 enum class DebridStreamSortMode {
     DEFAULT,

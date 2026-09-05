@@ -26,7 +26,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -50,12 +49,11 @@ fun NuvioDialogSurface(
         modifier = modifier
             .shadow(elevation = 32.dp, shape = shape, clip = false)
             .clip(shape)
-            // Flat fill, deliberately. This used to be a top-down sheen, but a ~5% lighten spread
-            // over the full height of a dialog only spans a handful of 8-bit levels, so each step
-            // landed as a band tens of pixels tall — clearly visible on a dark panel. Depth comes
-            // from the shadow and hairline border instead. Don't reintroduce a gradient here
-            // without dithering it; at this contrast it will band again.
-            .background(colors.surfaceDialog)
+            // A dark top-to-bottom ramp rather than one flat fill. An earlier attempt at this was
+            // reverted for banding — a ~5% sheen crosses too few 8-bit levels to look continuous —
+            // so the ramp is both wider and dithered now. Both halves matter: read the notes on
+            // [nuvioBackdropBrush] before narrowing either.
+            .background(nuvioBackdropBrush(colors.surfaceDialog))
             .border(width = 1.dp, color = Color.White.copy(alpha = 0.08f), shape = shape),
         shape = shape,
         // The gradient above is the fill; Surface only carries shape + content colour from here.
@@ -103,16 +101,12 @@ fun NuvioModalDialog(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = colors.textPrimary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 subtitle?.takeIf { it.isNotBlank() }?.let {
                     Text(
                         text = it,
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.textMuted,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

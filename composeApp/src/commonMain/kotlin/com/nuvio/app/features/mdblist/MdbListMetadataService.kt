@@ -5,6 +5,7 @@ import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaExternalRating
 import com.nuvio.app.features.library.LibraryClock
+import com.nuvio.app.core.storage.CoalescingCachePersister
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -112,6 +113,15 @@ object MdbListMetadataService {
         return meta.copy(externalRatings = ratings, mdblistKeywords = enrichment.keywords)
     }
 
+    /**
+     * Clears immediately rather than through [persister], because a user asking for this wants it
+     * done, not scheduled.
+     *
+     * A deferred write already in flight is harmless and must stay that way: it snapshots the map at
+     * write time, and the map is empty by then, so the worst it can do is write `{}` a second time.
+     * Anything that made the persister capture its payload at [schedule][CoalescingCachePersister]
+     * time instead would turn that into a resurrection of the cleared cache.
+     */
     suspend fun clearCache() {
         cacheMutex.withLock {
             cache = mutableMapOf()
@@ -190,7 +200,7 @@ object MdbListMetadataService {
                     keywords = emptyList(),
                     expiresAtMs = LibraryClock.nowEpochMs() + ERROR_TTL_MS,
                 )
-                persistCache(loaded)
+                persister.schedule()
                 inFlightRequests.remove(cacheKey)
             }
             deferred.complete(MdbListEnrichmentData())
@@ -201,7 +211,7 @@ object MdbListMetadataService {
             val loaded = ensureCacheLoaded()
             val ttl = if (enrichment.ratings.isNotEmpty() || enrichment.keywords.isNotEmpty()) FOUND_TTL_MS else NOT_FOUND_TTL_MS
             loaded[cacheKey] = CachedRatings(ratings = enrichment.ratings, keywords = enrichment.keywords, expiresAtMs = requestedAtMs + ttl)
-            persistCache(loaded)
+            persister.schedule()
             inFlightRequests.remove(cacheKey)
         }
         deferred.complete(enrichment)
@@ -238,6 +248,20 @@ object MdbListMetadataService {
         }
         val keywords = parsed.keywords.mapNotNull { it.name }.filter { it.isNotBlank() }
         return MdbListEnrichmentData(ratings, keywords)
+    }
+
+    /**
+     * Same burst as the hero cast cache next door, into the same 3.4 MB properties file — batched
+     * for the same reason. See [CoalescingCachePersister].
+     */
+    private val persister = CoalescingCachePersister(tag = "mdbListRatings") {
+        val snapshot = cacheMutex.withLock { ensureCacheLoaded().toMap() }
+        persistCache(snapshot)
+    }
+
+    /** Writes any pending changes now. For the exit path. */
+    suspend fun flushPendingWrites() {
+        persister.flush()
     }
 
     private fun ensureCacheLoaded(): MutableMap<String, CachedRatings> {
@@ -302,8 +326,33 @@ object MdbListMetadataService {
             .firstOrNull()
             ?.let { return MdbListLookup(provider = PROVIDER_MAL, id = it) }
 
+        // TMDB last, and it is what makes the generated rows work at all. Everything the app builds
+        // itself out of TMDB — Discover's recommendation and AI rows, TMDB-backed collections, the
+        // network/studio rows — is addressed `tmdb:<id>` and carries no IMDb id, so before this the
+        // lookup returned null and those items silently had no ratings while the addon-backed rows
+        // beside them did. MDBList resolves the id on its own server, so this costs no TMDB call.
+        //
+        // Ranked below MAL deliberately: an anime record's TMDB id is the least reliable of the
+        // three, and MAL is the one that actually addresses the season being shown.
+        sequenceOf(meta.tmdbId?.toString(), extractTmdbId(meta.id), extractTmdbId(fallbackItemId))
+            .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
+            .firstOrNull()
+            ?.let { return MdbListLookup(provider = PROVIDER_TMDB, id = it) }
+
         return null
     }
+
+    /**
+     * The numeric TMDB id in a `tmdb:<id>` address, or null.
+     *
+     * Only the first segment: an episode is addressed `tmdb:<show>:<season>:<episode>`, and the
+     * ratings endpoint wants the title. Non-numeric remainders are rejected rather than passed on —
+     * a malformed id would be a request that can only 404, and a 404 is cached for a week.
+     */
+    private fun extractTmdbId(value: String?): String? =
+        extractNamespacedId(value, "tmdb")
+            ?.substringBefore(':')
+            ?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
 
     private fun extractNamespacedId(value: String?, vararg namespaces: String): String? {
         val normalized = value?.trim()?.takeIf(String::isNotBlank) ?: return null

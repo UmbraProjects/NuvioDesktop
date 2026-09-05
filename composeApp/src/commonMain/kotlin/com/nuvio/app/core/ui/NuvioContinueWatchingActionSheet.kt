@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +38,7 @@ import nuvio.composeapp.generated.resources.cw_action_go_to_details
 import nuvio.composeapp.generated.resources.cw_action_remove
 import nuvio.composeapp.generated.resources.cw_action_resync
 import nuvio.composeapp.generated.resources.cw_action_start_from_beginning
+import nuvio.composeapp.generated.resources.play_choose_source
 import org.jetbrains.compose.resources.stringResource
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,6 +53,10 @@ fun NuvioContinueWatchingActionSheet(
     onPrimaryPlay: (() -> Unit)? = null,
     onStartFromBeginning: (() -> Unit)? = null,
     onAlternatePlay: (() -> Unit)? = null,
+    // Separate from [onAlternatePlay] on purpose: the source picker is not the "other" of the two
+    // local-library routes, it is the one that overrides stream auto-play, so it is offered
+    // whether or not this item has a local file to alternate to.
+    onChooseSource: (() -> Unit)? = null,
     onResync: () -> Unit,
     onRemove: () -> Unit,
     zoomAnchor: PosterZoomAnchor? = null,
@@ -71,6 +77,7 @@ fun NuvioContinueWatchingActionSheet(
             onPrimaryPlay = onPrimaryPlay,
             onStartFromBeginning = onStartFromBeginning,
             onAlternatePlay = onAlternatePlay,
+            onChooseSource = onChooseSource,
             onResync = onResync,
             onRemove = onRemove,
         )
@@ -125,6 +132,14 @@ fun NuvioContinueWatchingActionSheet(
                     onClick = { dismissAfter(onAlternatePlay) },
                 )
             }
+            if (onChooseSource != null) {
+                NuvioBottomSheetDivider()
+                NuvioBottomSheetActionRow(
+                    icon = Icons.AutoMirrored.Filled.PlaylistPlay,
+                    title = stringResource(Res.string.play_choose_source),
+                    onClick = { dismissAfter(onChooseSource) },
+                )
+            }
             if (!item.isNextUp && onStartFromBeginning != null) {
                 NuvioBottomSheetDivider()
                 NuvioBottomSheetActionRow(
@@ -166,6 +181,7 @@ private fun NuvioContinueWatchingZoomActionSheet(
     onPrimaryPlay: (() -> Unit)?,
     onStartFromBeginning: (() -> Unit)?,
     onAlternatePlay: (() -> Unit)?,
+    onChooseSource: (() -> Unit)?,
     onResync: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -200,6 +216,15 @@ private fun NuvioContinueWatchingZoomActionSheet(
                         icon = Icons.Default.PlayArrow,
                         label = alternatePlayLabel,
                         onSelected = onAlternatePlay,
+                    ),
+                )
+            }
+            if (onChooseSource != null) {
+                add(
+                    PosterZoomOverlayAction(
+                        icon = Icons.AutoMirrored.Filled.PlaylistPlay,
+                        label = stringResource(Res.string.play_choose_source),
+                        onSelected = onChooseSource,
                     ),
                 )
             }

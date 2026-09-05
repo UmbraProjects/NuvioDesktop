@@ -66,8 +66,11 @@ object HeroTrailerMetadataService {
         if (!ownsRequest) return pending.await()
 
         val source = try {
+            // Summary rather than the details-screen record. It scopes TMDB trailers to season 1,
+            // which is exactly what the spoiler filter below keeps - the full fetch was pulling a
+            // trailer list per season so this could throw all but one of them away.
             val meta = MetaDetailsRepository.peek(type = type, id = id)
-                ?: MetaDetailsRepository.fetch(type = type, id = id)
+                ?: MetaDetailsRepository.fetchHeroSummary(type = type, id = id)
             // Only consider series-agnostic or season 1 trailers. Later-season trailers are
             // a major spoiler risk to surface unprompted on the hero.
             val spoilerSafeTrailers = meta?.trailers

@@ -28,7 +28,9 @@ import com.nuvio.app.features.streams.filterForRequestedEpisode
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamLoadCompletion
 import com.nuvio.app.features.streams.StreamParser
+import com.nuvio.app.features.streams.StreamPrefetchCache
 import com.nuvio.app.features.streams.StreamsUiState
+import com.nuvio.app.features.streams.reStampedFor
 import com.nuvio.app.features.streams.runCatchingUnlessCancelled
 import com.nuvio.app.features.streams.sortedForGroupedDisplay
 import com.nuvio.app.features.streams.streamAddonInstanceId
@@ -190,6 +192,15 @@ object PlayerStreamsRepository {
         stateFlow.value = StreamsUiState()
 
         val streamBadgeRules = StreamBadgeSettingsRepository.snapshot()
+        // Same key shape and same forced-refresh rule as StreamsRepository, so a background search
+        // serves both. forceRefresh must keep bypassing this: next-episode auto-play forces a
+        // refresh on purpose, having once stalled on a reused terminal-empty result.
+        val prefetchContentKey = StreamPrefetchCache.contentKey(
+            type = type,
+            videoId = effectiveVideoId,
+            season = effectiveSeason,
+            episode = effectiveEpisode,
+        )
 
         fun singleGroupState(group: AddonStreamGroup): StreamsUiState {
             val presentedGroup = StreamBadgePresentation.apply(
@@ -248,6 +259,11 @@ object PlayerStreamsRepository {
         val installedAddons = AddonRepository.uiState.value.addons.enabledAddons()
         PlayerSettingsRepository.ensureLoaded()
         val playerSettings = PlayerSettingsRepository.uiState.value
+        val prefetchMaxAgeMs = if (forceRefresh) {
+            0L
+        } else {
+            playerSettings.streamPrefetchCacheMinutes * 60L * 1000L
+        }
         val debridSettings = DebridSettingsRepository.snapshot()
         val pluginScrapers = if (AppFeaturePolicy.pluginsEnabled) {
             PluginRepository.getEnabledScrapersForType(type)
@@ -422,6 +438,26 @@ object PlayerStreamsRepository {
 
             streamAddons.forEach { addon ->
                 launch {
+                    val prefetched = (
+                        StreamPrefetchCache
+                            .get(prefetchContentKey, addon.addonId, prefetchMaxAgeMs)
+                            ?.streams
+                            ?: StreamPrefetchCache
+                                .awaitInFlight(prefetchContentKey, addon.addonId, prefetchMaxAgeMs)
+                        )?.reStampedFor(addon.addonName, addon.addonId)
+                    if (prefetched != null) {
+                        log.i {
+                            "Provider served from prefetch addon=${addon.addonName} " +
+                                "id=${addon.addonId} streams=${prefetched.size}"
+                        }
+                        publishCompletion(
+                            StreamLoadCompletion.Addon(
+                                AddonStreamGroup(addon.addonName, addon.addonId, prefetched, isLoading = false),
+                            ),
+                        )
+                        return@launch
+                    }
+
                     val providerStarted = TimeSource.Monotonic.markNow()
                     log.i {
                         "Provider started addon=${addon.addonName} id=${addon.addonId} " +
@@ -478,6 +514,29 @@ object PlayerStreamsRepository {
                 val includeScraperNameInSubtitle = false
                 providerGroup.scrapers.forEach { scraper ->
                     launch {
+                        val scraperProviderId = StreamPrefetchCache.scraperProviderId(scraper.id)
+                        val prefetched = (
+                            StreamPrefetchCache
+                                .get(prefetchContentKey, scraperProviderId, prefetchMaxAgeMs)
+                                ?.streams
+                                ?: StreamPrefetchCache
+                                    .awaitInFlight(prefetchContentKey, scraperProviderId, prefetchMaxAgeMs)
+                            )?.reStampedFor(providerGroup.addonName, providerGroup.addonId)
+                        if (prefetched != null) {
+                            log.i {
+                                "Plugin provider served from prefetch group=${providerGroup.addonName} " +
+                                    "scraper=${scraper.name} streams=${prefetched.size}"
+                            }
+                            publishCompletion(
+                                StreamLoadCompletion.PluginScraper(
+                                    addonId = providerGroup.addonId,
+                                    streams = prefetched,
+                                    error = null,
+                                ),
+                            )
+                            return@launch
+                        }
+
                         val providerStarted = TimeSource.Monotonic.markNow()
                         log.i {
                             "Plugin provider started group=${providerGroup.addonName} " +

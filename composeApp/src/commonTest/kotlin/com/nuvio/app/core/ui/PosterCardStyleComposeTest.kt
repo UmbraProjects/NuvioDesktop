@@ -1,10 +1,20 @@
 package com.nuvio.app.core.ui
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PosterCardStyleComposeTest {
+    @Test
+    fun `an unknown stored highlight mode falls back to off`() {
+        // Off is also the default for installs saved before the setting existed, whose payload
+        // carries no highlight field at all.
+        assertEquals(PosterHighlightMode.Off, PosterHighlightMode.fromStoredName(null))
+        assertEquals(PosterHighlightMode.Off, PosterHighlightMode.fromStoredName("Nonsense"))
+        assertEquals(PosterHighlightMode.Accent, PosterHighlightMode.fromStoredName("Accent"))
+    }
+
     @Test
     fun `tv mode hides poster labels regardless of saved preference`() {
         assertTrue(

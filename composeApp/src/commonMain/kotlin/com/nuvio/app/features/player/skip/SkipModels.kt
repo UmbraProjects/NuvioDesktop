@@ -10,6 +10,12 @@ data class SkipInterval(
     val provider: String,
 )
 
+/** [SkipInterval.provider] of an interval derived from the file's own chapter markers. */
+const val CHAPTER_SKIP_PROVIDER = "chapters"
+
+/** Identity of a segment within one loaded episode, stable across list rebuilds. */
+internal fun SkipInterval.identityKey(): String = "$type@$startTime-$endTime"
+
 /**
  * Community timings take precedence for their own kind of segment, while chapter timings fill
  * gaps (for example a community intro with a chapter-provided outro).
@@ -45,6 +51,43 @@ data class NextEpisodeInfo(
     val hasAired: Boolean,
     val unairedMessage: String?,
 )
+
+/**
+ * How the skip prompt is accepted. The prompt itself is unaffected — this only decides whether the
+ * app presses it for you, and which timing sources it trusts enough to press it for.
+ *
+ * [CHAPTERS] covers segments read from the file's own chapter markers, which are authored against
+ * the exact cut being played. [ANY_SOURCE] additionally accepts the community/API timings, which
+ * are matched by title and runtime and so vary in accuracy between sources.
+ *
+ * Outros are never auto-accepted at any level. Skipping one seeks to the end of the file, which
+ * ends the episode and rolls into the next — far too consequential to do without a press, and not
+ * what "skip the intro for me" asks for. The outro prompt stays manual.
+ */
+enum class SkipAutoAcceptMode {
+    MANUAL,
+    CHAPTERS,
+    ANY_SOURCE,
+    ;
+
+    fun accepts(interval: SkipInterval): Boolean {
+        if (!interval.isAutoAcceptable()) return false
+        return when (this) {
+            MANUAL -> false
+            CHAPTERS -> interval.provider == CHAPTER_SKIP_PROVIDER
+            ANY_SOURCE -> true
+        }
+    }
+}
+
+/**
+ * Intros and recaps only, as an allowlist rather than an "everything but outro" test: skipping
+ * either lands inside the episode, while anything unrecognised is left to a deliberate press.
+ */
+private fun SkipInterval.isAutoAcceptable(): Boolean =
+    type.skipIntervalKind() in AUTO_ACCEPTABLE_SKIP_KINDS
+
+private val AUTO_ACCEPTABLE_SKIP_KINDS = setOf("intro", "recap")
 
 enum class NextEpisodeThresholdMode {
     PERCENTAGE,

@@ -17,7 +17,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,7 +47,6 @@ import com.nuvio.app.core.i18n.localizedByteUnit
 import com.nuvio.app.core.ui.NuvioAlertDialog
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioToastController
-import com.nuvio.app.core.ui.trackTextInputFocus
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.library_add_dialog_cancel
@@ -72,6 +70,9 @@ import nuvio.composeapp.generated.resources.library_manual_selection
 import nuvio.composeapp.generated.resources.library_manual_title
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.trackTextInputFocus
+import com.nuvio.app.core.ui.accentBrush
 
 /**
  * The manual-link panel: paste a link, review exactly which file lands on which episode, confirm.
@@ -117,14 +118,14 @@ internal fun ManualLinkDialog(item: MonitoredItem, onDismiss: () -> Unit) {
                 )
                 val active = session
                 if (active == null) {
-                    OutlinedTextField(
+                    NuvioTextField(
                         value = link,
                         onValueChange = {
                             link = it
                             error = null
                         },
-                        modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
-                        placeholder = { Text(stringResource(Res.string.library_manual_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = stringResource(Res.string.library_manual_hint),
                     )
                 } else {
                     active.sourceName?.let { name ->
@@ -142,7 +143,7 @@ internal fun ManualLinkDialog(item: MonitoredItem, onDismiss: () -> Unit) {
                             included.size,
                             formatBytes(selectedBytes),
                         ),
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.labelLarge.accentBrush(),
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Column(

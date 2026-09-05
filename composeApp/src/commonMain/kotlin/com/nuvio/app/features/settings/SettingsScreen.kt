@@ -2,7 +2,6 @@ package com.nuvio.app.features.settings
 
 import com.nuvio.app.core.build.AppFeaturePolicy
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -47,7 +46,9 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.ViewColumn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,6 +61,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -94,6 +96,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.build.AppVersionConfig
+import com.nuvio.app.core.build.AppVersionPolicy
+import com.nuvio.app.core.ui.accentGradientMask
 import com.nuvio.app.core.ui.AppTheme
 import com.nuvio.app.core.ui.TextInputFocusTracker
 import com.nuvio.app.core.ui.labelRes
@@ -118,6 +122,9 @@ import com.nuvio.app.features.debrid.DebridSettings
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.discord.DiscordPresenceSettings
 import com.nuvio.app.features.discord.DiscordPresenceSettingsRepository
+import com.nuvio.app.features.downloads.DownloadItem
+import com.nuvio.app.features.downloads.DownloadsRepository
+import com.nuvio.app.features.downloads.DownloadsUiState
 import com.nuvio.app.features.home.HeroBadgePlacement
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
@@ -126,6 +133,9 @@ import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.librarypvr.libraryDownloadsSection
 import com.nuvio.app.features.mdblist.MdbListSettings
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
+import com.nuvio.app.features.games.GameLibrarySettings
+import com.nuvio.app.features.games.GameLibrarySettingsRepository
+import com.nuvio.app.features.games.GameModeController
 import com.nuvio.app.features.qualicache.QualiCacheSettings
 import com.nuvio.app.features.qualicache.QualiCacheSettingsRepository
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
@@ -151,6 +161,7 @@ import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trakt.TraktSettingsUiState
 import com.nuvio.app.features.tmdb.TmdbSettings
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import com.nuvio.app.features.updater.AppUpdaterPlatform
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesUiState
 import com.nuvio.app.isDesktop
@@ -167,6 +178,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_advanced
 import nuvio.composeapp.generated.resources.compose_settings_page_appearance
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
+import nuvio.composeapp.generated.resources.compose_settings_page_games
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
 import nuvio.composeapp.generated.resources.compose_settings_page_keyboard_shortcuts
@@ -221,7 +233,7 @@ fun SettingsScreen(
     onContinueWatchingClick: () -> Unit = {},
     onAddonsClick: () -> Unit = {},
     onPluginsClick: () -> Unit = {},
-    onDownloadsClick: () -> Unit = {},
+    onOpenDownload: (DownloadItem) -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
     onLicensesAttributionsClick: () -> Unit = {},
@@ -231,6 +243,7 @@ fun SettingsScreen(
     onNavigateToHome: (() -> Unit)? = null,
     onNavigateToSearch: (() -> Unit)? = null,
     onNavigateToLibrary: (() -> Unit)? = null,
+    onNavigateToDiscover: (() -> Unit)? = null,
 ) {
     val homeKeyFocusRequester = remember { FocusRequester() }
     var settingsSearchHasFocus by remember { mutableStateOf(false) }
@@ -253,8 +266,14 @@ fun SettingsScreen(
     } else {
         Modifier
     }
-    LaunchedEffect(Unit) {
-        if (isDesktop && onNavigateToHome != null) runCatching { homeKeyFocusRequester.requestFocus() }
+    // Re-requested when game mode closes over Settings, not just on first composition: its library
+    // holds focus while it is up, and Compose leaves nothing focused once that focusable goes —
+    // which silently kills H and every other single-key shortcut until something is clicked.
+    val gameModeActive by GameModeController.active.collectAsStateWithLifecycle()
+    LaunchedEffect(gameModeActive) {
+        if (!gameModeActive && isDesktop && onNavigateToHome != null) {
+            runCatching { homeKeyFocusRequester.requestFocus() }
+        }
     }
 
     BoxWithConstraints(
@@ -300,6 +319,10 @@ fun SettingsScreen(
             QualiCacheSettingsRepository.ensureLoaded()
             QualiCacheSettingsRepository.uiState
         }.collectAsStateWithLifecycle()
+        val gameLibrarySettings by remember {
+            GameLibrarySettingsRepository.ensureLoaded()
+            GameLibrarySettingsRepository.uiState
+        }.collectAsStateWithLifecycle()
         val debridSettings by remember {
             DebridSettingsRepository.ensureLoaded()
             DebridSettingsRepository.uiState
@@ -335,6 +358,10 @@ fun SettingsScreen(
         val addonsUiState by remember {
             AddonRepository.initialize()
             AddonRepository.uiState
+        }.collectAsStateWithLifecycle()
+        val downloadsUiState by remember {
+            DownloadsRepository.ensureLoaded()
+            DownloadsRepository.uiState
         }.collectAsStateWithLifecycle()
         val homescreenCatalogRefreshKey = remember(addonsUiState.addons) {
             val enabledAddons = addonsUiState.addons.enabledAddons()
@@ -392,6 +419,8 @@ fun SettingsScreen(
         }
 
         var currentPage by rememberSaveable { mutableStateOf(SettingsPage.Addons.name) }
+        var selectedDownloadsShowId by rememberSaveable { mutableStateOf<String?>(null) }
+        var pendingDownloadsDelete by remember { mutableStateOf<DownloadsSettingsDeleteTarget?>(null) }
         val scrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
         val page = remember(currentPage) { SettingsPage.valueOf(currentPage) }
         val previousPage = page.desktopBackPage()
@@ -494,6 +523,7 @@ fun SettingsScreen(
                 tmdbSettings = tmdbSettings,
                 mdbListSettings = mdbListSettings,
                 qualiCacheSettings = qualiCacheSettings,
+                gameLibrarySettings = gameLibrarySettings,
                 debridSettings = debridSettings,
                 discordPresenceSettings = discordPresenceSettings,
                 traktAuthUiState = traktAuthUiState,
@@ -510,6 +540,7 @@ fun SettingsScreen(
                 homescreenHeroReleaseStatusUnavailableOnly = homescreenSettingsUiState.heroReleaseStatusUnavailableOnly,
                 homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                 homescreenHideCatalogUnderline = homescreenSettingsUiState.hideCatalogUnderline,
+                homescreenCatalogRowShuffleEnabled = homescreenSettingsUiState.catalogRowShuffleEnabled,
                 homescreenAdaptiveHeroEnabled = homescreenSettingsUiState.adaptiveHeroEnabled,
                 homescreenAdaptiveHeroVerticalBias = homescreenSettingsUiState.adaptiveHeroVerticalBias,
                 homescreenHeroAmbientBackgroundEnabled = homescreenSettingsUiState.heroAmbientBackgroundEnabled,
@@ -521,7 +552,11 @@ fun SettingsScreen(
                 posterCardStyleUiState = posterCardStyleUiState,
                 profileAvatars = profileAvatars,
                 onSwitchProfile = onSwitchProfile,
-                onDownloadsClick = onDownloadsClick,
+                downloadsUiState = downloadsUiState,
+                selectedDownloadsShowId = selectedDownloadsShowId,
+                onSelectedDownloadsShowChange = { selectedDownloadsShowId = it },
+                onOpenDownload = onOpenDownload,
+                onDownloadsDeleteTarget = { pendingDownloadsDelete = it },
                 onSupportersContributorsClick = onSupportersContributorsClick,
                 onLicensesAttributionsClick = onLicensesAttributionsClick,
                 onCheckForUpdatesClick = onCheckForUpdatesClick,
@@ -530,6 +565,7 @@ fun SettingsScreen(
                 onNavigateToHome = onNavigateToHome,
                 onNavigateToSearch = onNavigateToSearch,
                 onNavigateToLibrary = onNavigateToLibrary,
+                onNavigateToDiscover = onNavigateToDiscover,
                 onSettingsSearchFocusChange = { settingsSearchHasFocus = it },
             )
         } else {
@@ -571,6 +607,7 @@ fun SettingsScreen(
                 tmdbSettings = tmdbSettings,
                 mdbListSettings = mdbListSettings,
                 qualiCacheSettings = qualiCacheSettings,
+                gameLibrarySettings = gameLibrarySettings,
                 debridSettings = debridSettings,
                 discordPresenceSettings = discordPresenceSettings,
                 traktAuthUiState = traktAuthUiState,
@@ -587,6 +624,7 @@ fun SettingsScreen(
                 homescreenHeroReleaseStatusUnavailableOnly = homescreenSettingsUiState.heroReleaseStatusUnavailableOnly,
                 homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                 homescreenHideCatalogUnderline = homescreenSettingsUiState.hideCatalogUnderline,
+                homescreenCatalogRowShuffleEnabled = homescreenSettingsUiState.catalogRowShuffleEnabled,
                 homescreenAdaptiveHeroEnabled = homescreenSettingsUiState.adaptiveHeroEnabled,
                 homescreenAdaptiveHeroVerticalBias = homescreenSettingsUiState.adaptiveHeroVerticalBias,
                 homescreenHeroAmbientBackgroundEnabled = homescreenSettingsUiState.heroAmbientBackgroundEnabled,
@@ -602,7 +640,11 @@ fun SettingsScreen(
                 onContinueWatchingClick = onContinueWatchingClick,
                 onAddonsClick = onAddonsClick,
                 onPluginsClick = onPluginsClick,
-                onDownloadsClick = onDownloadsClick,
+                downloadsUiState = downloadsUiState,
+                selectedDownloadsShowId = selectedDownloadsShowId,
+                onSelectedDownloadsShowChange = { selectedDownloadsShowId = it },
+                onOpenDownload = onOpenDownload,
+                onDownloadsDeleteTarget = { pendingDownloadsDelete = it },
                 onAccountClick = onAccountClick,
                 onSupportersContributorsClick = onSupportersContributorsClick,
                 onLicensesAttributionsClick = onLicensesAttributionsClick,
@@ -612,6 +654,10 @@ fun SettingsScreen(
                 onSettingsSearchFocusChange = { settingsSearchHasFocus = it },
             )
         }
+        DownloadsSettingsDeleteDialog(
+            target = pendingDownloadsDelete,
+            onDismiss = { pendingDownloadsDelete = null },
+        )
     }
 }
 
@@ -654,6 +700,7 @@ private fun MobileSettingsScreen(
     tmdbSettings: TmdbSettings,
     mdbListSettings: MdbListSettings,
     qualiCacheSettings: QualiCacheSettings,
+    gameLibrarySettings: GameLibrarySettings,
     debridSettings: DebridSettings,
     discordPresenceSettings: DiscordPresenceSettings,
     traktAuthUiState: TraktAuthUiState,
@@ -670,6 +717,7 @@ private fun MobileSettingsScreen(
     homescreenHeroReleaseStatusUnavailableOnly: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenHideCatalogUnderline: Boolean,
+    homescreenCatalogRowShuffleEnabled: Boolean,
     homescreenAdaptiveHeroEnabled: Boolean,
     homescreenAdaptiveHeroVerticalBias: Float,
     homescreenHeroAmbientBackgroundEnabled: Boolean,
@@ -679,13 +727,17 @@ private fun MobileSettingsScreen(
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
     posterCardStyleUiState: PosterCardStyleUiState,
+    downloadsUiState: DownloadsUiState,
+    selectedDownloadsShowId: String?,
+    onSelectedDownloadsShowChange: (String?) -> Unit,
+    onOpenDownload: (DownloadItem) -> Unit,
+    onDownloadsDeleteTarget: (DownloadsSettingsDeleteTarget) -> Unit,
     onSwitchProfile: (() -> Unit)? = null,
     onHomescreenClick: () -> Unit = {},
     onMetaScreenClick: () -> Unit = {},
     onContinueWatchingClick: () -> Unit = {},
     onAddonsClick: () -> Unit = {},
     onPluginsClick: () -> Unit = {},
-    onDownloadsClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
     onLicensesAttributionsClick: () -> Unit = {},
@@ -695,6 +747,7 @@ private fun MobileSettingsScreen(
     onNavigateToHome: (() -> Unit)? = null,
     onNavigateToSearch: (() -> Unit)? = null,
     onNavigateToLibrary: (() -> Unit)? = null,
+    onNavigateToDiscover: (() -> Unit)? = null,
     onSettingsSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     val saveableStateHolder = rememberSaveableStateHolder()
@@ -704,6 +757,20 @@ private fun MobileSettingsScreen(
     saveableStateHolder.SaveableStateProvider(page.name) {
         val localLibraryUiState by LocalLibraryRepository.uiState.collectAsStateWithLifecycle()
         val localLibraryTitlesState = rememberLocalLibraryTitlesState()
+
+        // Hosted outside the settings list: the browser is a full-screen modal over the page, not
+        // a row inside it. The open flag lives in the per-profile session store, so it has to be
+        // cleared on the way out or the browser reappears over an unrelated settings page.
+        LaunchedEffect(page) {
+            if (page != SettingsPage.LocalLibrary) localLibraryTitlesState.browserOpen = false
+        }
+        if (page == SettingsPage.LocalLibrary && localLibraryTitlesState.browserOpen) {
+            LocalLibraryBrowserDialog(
+                state = localLibraryUiState,
+                titlesState = localLibraryTitlesState,
+                onDismiss = { localLibraryTitlesState.browserOpen = false },
+            )
+        }
         var rootSearchVisible by rememberSaveable { mutableStateOf(isDesktop) }
         var rootSearchRevealAnimating by rememberSaveable { mutableStateOf(false) }
         val listState = rememberLazyListState()
@@ -722,13 +789,14 @@ private fun MobileSettingsScreen(
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             }
         }
-        val searchEntries = settingsSearchEntries(
+        val searchEntries = rememberSettingsSearchEntries(
             pluginsEnabled = AppFeaturePolicy.pluginsEnabled,
             downloadsEnabled = AppFeaturePolicy.downloadsEnabled,
             notificationsEnabled = AppFeaturePolicy.notificationsEnabled,
             liquidGlassNativeTabBarSupported = liquidGlassNativeTabBarSupported,
             switchProfileAvailable = onSwitchProfile != null,
             checkForUpdatesAvailable = onCheckForUpdatesClick != null,
+            languageCode = selectedAppLanguage.code,
         )
 
         fun openSearchTarget(target: SettingsSearchTarget) {
@@ -758,11 +826,6 @@ private fun MobileSettingsScreen(
                         SettingsPage.Homescreen -> onHomescreenClick()
                         SettingsPage.MetaScreen -> onMetaScreenClick()
                         else -> onPageChange(target.page)
-                    }
-                }
-                SettingsSearchTarget.Downloads -> {
-                    if (AppFeaturePolicy.downloadsEnabled) {
-                        onDownloadsClick()
                     }
                 }
                 SettingsSearchTarget.SwitchProfile -> onSwitchProfile?.invoke()
@@ -817,8 +880,10 @@ private fun MobileSettingsScreen(
                             isTablet = false,
                             onPlaybackClick = { onPageChange(SettingsPage.Playback) },
                             onRandomPlayClick = { onPageChange(SettingsPage.RandomPlay) },
+                            onDiscoverClick = { onPageChange(SettingsPage.Discover) },
                             onStreamsClick = { onPageChange(SettingsPage.Streams) },
                             onLocalLibraryClick = { onPageChange(SettingsPage.LocalLibrary) },
+                            onGamesClick = { onPageChange(SettingsPage.Games) },
                             onAutoDownloadsClick = { onPageChange(SettingsPage.AutoDownloads) },
                             onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                             onAdvancedClick = { onPageChange(SettingsPage.Advanced) },
@@ -836,7 +901,7 @@ private fun MobileSettingsScreen(
                             onSupportersContributorsClick = onSupportersContributorsClick,
                             onLicensesAttributionsClick = onLicensesAttributionsClick,
                             onCheckForUpdatesClick = onCheckForUpdatesClick,
-                            onDownloadsClick = onDownloadsClick,
+                            onDownloadsClick = { onPageChange(SettingsPage.Downloads) },
                             onAccountClick = onAccountClick,
                             onSwitchProfileClick = onSwitchProfile,
                             showDownloadsEntry = AppFeaturePolicy.downloadsEnabled,
@@ -871,6 +936,10 @@ private fun MobileSettingsScreen(
                     useLibass = useLibass,
                     libassRenderType = libassRenderType,
                 )
+                SettingsPage.Discover -> discoverSettingsContent(
+                    isTablet = false,
+                    settings = randomPlaySettingsUiState,
+                )
                 SettingsPage.RandomPlay -> randomPlaySettingsContent(
                     isTablet = false,
                     settings = randomPlaySettingsUiState,
@@ -886,7 +955,15 @@ private fun MobileSettingsScreen(
                 )
                 SettingsPage.AutoDownloads -> libraryDownloadsSection(
                     isTablet = false,
-                    onDownloadsClick = onDownloadsClick,
+                    onDownloadsClick = { onPageChange(SettingsPage.Downloads) },
+                )
+                SettingsPage.Downloads -> downloadsSettingsContent(
+                    isTablet = false,
+                    uiState = downloadsUiState,
+                    selectedShowId = selectedDownloadsShowId,
+                    onSelectedShowChange = onSelectedDownloadsShowChange,
+                    onOpenDownload = onOpenDownload,
+                    onDeleteTarget = onDownloadsDeleteTarget,
                 )
                 SettingsPage.StreamScoring -> streamScoringSection(isTablet = false)
                 SettingsPage.KeyboardShortcuts -> keyboardShortcutsContent(
@@ -948,7 +1025,7 @@ private fun MobileSettingsScreen(
                     onHomescreenClick = onHomescreenClick,
                     onMetaScreenClick = onMetaScreenClick,
                     onCollectionsClick = { onPageChange(SettingsPage.Collections) },
-                    onDownloadsClick = onDownloadsClick,
+                    onDownloadsClick = { onPageChange(SettingsPage.Downloads) },
                 )
                 SettingsPage.Collections -> collectionsSettingsContent(
                     isTablet = false,
@@ -966,6 +1043,7 @@ private fun MobileSettingsScreen(
                     heroReleaseStatusUnavailableOnly = homescreenHeroReleaseStatusUnavailableOnly,
                     hideUnreleasedContent = homescreenHideUnreleasedContent,
                     hideCatalogUnderline = homescreenHideCatalogUnderline,
+                    catalogRowShuffleEnabled = homescreenCatalogRowShuffleEnabled,
                     adaptiveHeroEnabled = homescreenAdaptiveHeroEnabled,
                     adaptiveHeroVerticalBias = homescreenAdaptiveHeroVerticalBias,
                     heroAmbientBackgroundEnabled = homescreenHeroAmbientBackgroundEnabled,
@@ -980,6 +1058,7 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                     discordPresenceSettings = discordPresenceSettings,
                     onDiscordPresenceModeChange = DiscordPresenceSettingsRepository::setMode,
+                    onDiscordEpisodeArtworkChange = DiscordPresenceSettingsRepository::setEpisodeArtwork,
                     onTmdbClick = { onPageChange(SettingsPage.TmdbEnrichment) },
                     onMdbListClick = { onPageChange(SettingsPage.MdbListRatings) },
                     onQualiCacheClick = { onPageChange(SettingsPage.QualiCache) },
@@ -999,6 +1078,10 @@ private fun MobileSettingsScreen(
                 SettingsPage.QualiCache -> qualiCacheSettingsContent(
                     isTablet = false,
                     settings = qualiCacheSettings,
+                )
+                SettingsPage.Games -> gamesSettingsContent(
+                    isTablet = false,
+                    settings = gameLibrarySettings,
                 )
                 SettingsPage.Debrid -> debridSettingsContent(
                     isTablet = false,
@@ -1022,7 +1105,8 @@ private fun SettingsPage.isEnabledByFeaturePolicy(): Boolean =
     when (this) {
         SettingsPage.Notifications -> AppFeaturePolicy.notificationsEnabled
         SettingsPage.Plugins -> AppFeaturePolicy.pluginsEnabled
-        SettingsPage.AutoDownloads -> AppFeaturePolicy.downloadsEnabled
+        SettingsPage.AutoDownloads,
+        SettingsPage.Downloads -> AppFeaturePolicy.downloadsEnabled
         else -> true
     }
 
@@ -1110,6 +1194,7 @@ private fun TabletSettingsScreen(
     tmdbSettings: TmdbSettings,
     mdbListSettings: MdbListSettings,
     qualiCacheSettings: QualiCacheSettings,
+    gameLibrarySettings: GameLibrarySettings,
     debridSettings: DebridSettings,
     discordPresenceSettings: DiscordPresenceSettings,
     traktAuthUiState: TraktAuthUiState,
@@ -1126,6 +1211,7 @@ private fun TabletSettingsScreen(
     homescreenHeroReleaseStatusUnavailableOnly: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenHideCatalogUnderline: Boolean,
+    homescreenCatalogRowShuffleEnabled: Boolean,
     homescreenAdaptiveHeroEnabled: Boolean,
     homescreenAdaptiveHeroVerticalBias: Float,
     homescreenHeroAmbientBackgroundEnabled: Boolean,
@@ -1135,9 +1221,13 @@ private fun TabletSettingsScreen(
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
     posterCardStyleUiState: PosterCardStyleUiState,
+    downloadsUiState: DownloadsUiState,
+    selectedDownloadsShowId: String?,
+    onSelectedDownloadsShowChange: (String?) -> Unit,
+    onOpenDownload: (DownloadItem) -> Unit,
+    onDownloadsDeleteTarget: (DownloadsSettingsDeleteTarget) -> Unit,
     profileAvatars: List<AvatarCatalogItem>,
     onSwitchProfile: (() -> Unit)? = null,
-    onDownloadsClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
     onLicensesAttributionsClick: () -> Unit = {},
     onCheckForUpdatesClick: (() -> Unit)? = null,
@@ -1146,6 +1236,7 @@ private fun TabletSettingsScreen(
     onNavigateToHome: (() -> Unit)? = null,
     onNavigateToSearch: (() -> Unit)? = null,
     onNavigateToLibrary: (() -> Unit)? = null,
+    onNavigateToDiscover: (() -> Unit)? = null,
     onSettingsSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
@@ -1177,17 +1268,32 @@ private fun TabletSettingsScreen(
         saveableStateHolder.SaveableStateProvider(page.name) {
             val localLibraryUiState by LocalLibraryRepository.uiState.collectAsStateWithLifecycle()
             val localLibraryTitlesState = rememberLocalLibraryTitlesState()
+
+            // Hosted outside the settings list: the browser is a full-screen modal over the page, not
+            // a row inside it. The open flag lives in the per-profile session store, so it has to be
+            // cleared on the way out or the browser reappears over an unrelated settings page.
+            LaunchedEffect(page) {
+                if (page != SettingsPage.LocalLibrary) localLibraryTitlesState.browserOpen = false
+            }
+            if (page == SettingsPage.LocalLibrary && localLibraryTitlesState.browserOpen) {
+                LocalLibraryBrowserDialog(
+                    state = localLibraryUiState,
+                    titlesState = localLibraryTitlesState,
+                    onDismiss = { localLibraryTitlesState.browserOpen = false },
+                )
+            }
             var rootSearchVisible by rememberSaveable { mutableStateOf(false) }
             var rootSearchRevealAnimating by rememberSaveable { mutableStateOf(false) }
             val hapticFeedback = LocalHapticFeedback.current
             val hapticScope = rememberCoroutineScope()
-            val searchEntries = settingsSearchEntries(
+            val searchEntries = rememberSettingsSearchEntries(
                 pluginsEnabled = AppFeaturePolicy.pluginsEnabled,
                 downloadsEnabled = AppFeaturePolicy.downloadsEnabled,
                 notificationsEnabled = AppFeaturePolicy.notificationsEnabled,
                 liquidGlassNativeTabBarSupported = liquidGlassNativeTabBarSupported,
                 switchProfileAvailable = onSwitchProfile != null,
                 checkForUpdatesAvailable = onCheckForUpdatesClick != null,
+                languageCode = selectedAppLanguage.code,
             )
 
             fun openSearchTarget(target: SettingsSearchTarget) {
@@ -1203,11 +1309,6 @@ private fun TabletSettingsScreen(
                                 )
                             }
                             openInlinePage(target.page)
-                        }
-                    }
-                    SettingsSearchTarget.Downloads -> {
-                        if (AppFeaturePolicy.downloadsEnabled) {
-                            onDownloadsClick()
                         }
                     }
                     SettingsSearchTarget.SwitchProfile -> onSwitchProfile?.invoke()
@@ -1283,6 +1384,7 @@ private fun TabletSettingsScreen(
                 onNavigateToHome = onNavigateToHome,
                 onNavigateToSearch = onNavigateToSearch,
                 onNavigateToLibrary = onNavigateToLibrary,
+                onNavigateToDiscover = onNavigateToDiscover,
                 contextPanelWidth = contextPanelWidth,
             )
             if (desktopColumnGuidesVisible) {
@@ -1299,20 +1401,68 @@ private fun TabletSettingsScreen(
                         .fillMaxSize()
                         .padding(horizontal = 22.dp, vertical = 24.dp),
                 ) {
-                    LaunchedEffect(Unit) { SettingsCategoryOrderRepository.ensureLoaded() }
+                    LaunchedEffect(Unit) {
+                        SettingsCategoryOrderRepository.ensureLoaded()
+                        SettingsHiddenCategoriesRepository.ensureLoaded()
+                    }
                     val categoryOrder by SettingsCategoryOrderRepository.order.collectAsStateWithLifecycle()
+                    val hiddenCategories by SettingsHiddenCategoriesRepository.hiddenPages
+                        .collectAsStateWithLifecycle()
                     val sidebarItems = desktopSettingsSidebarItems()
                     val orderedSidebarItems = remember(sidebarItems, categoryOrder) {
                         orderDesktopSettingsSidebarItems(sidebarItems, categoryOrder)
                     }
+                    // Hidden categories drop out of the list but stay in `orderedSidebarItems`, so
+                    // the visibility dialog can still offer them and a reorder can keep their slot.
+                    val visibleSidebarItems = remember(orderedSidebarItems, hiddenCategories) {
+                        orderedSidebarItems.filterNot { it.page.name in hiddenCategories }
+                    }
+                    val categoriesConfigureIconVisible by SettingsHiddenCategoriesRepository
+                        .configureIconVisible
+                        .collectAsStateWithLifecycle()
+                    var categoryVisibilityDialogVisible by remember { mutableStateOf(false) }
                     Box(modifier = Modifier.weight(1f)) {
-                        DesktopPanelSection(title = stringResource(Res.string.settings_desktop_categories)) {
-                            DesktopSettingsSidebarList(
-                                items = orderedSidebarItems,
-                                activeSidebarPage = activeSidebarPage,
-                                onPageChange = ::openInlinePage,
-                            )
+                        DesktopPanelSection(
+                            title = stringResource(Res.string.settings_desktop_categories),
+                            // Hidden on request once the user has been in the dialog; the heading
+                            // row keeps its onTitleClick either way, so the panel is still
+                            // reachable with no mark on it.
+                            titleAction = Icons.Rounded.Tune.takeIf { categoriesConfigureIconVisible },
+                            titleActionContentDescription = stringResource(
+                                Res.string.settings_desktop_categories_customize,
+                            ),
+                            onTitleClick = { categoryVisibilityDialogVisible = true },
+                        ) {
+                            if (visibleSidebarItems.isEmpty()) {
+                                Text(
+                                    text = stringResource(Res.string.settings_desktop_categories_empty),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = tokens.colors.textMuted,
+                                )
+                            } else {
+                                DesktopSettingsSidebarList(
+                                    items = visibleSidebarItems,
+                                    allItems = orderedSidebarItems,
+                                    activeSidebarPage = activeSidebarPage,
+                                    onPageChange = ::openInlinePage,
+                                )
+                            }
                         }
+                    }
+                    if (categoryVisibilityDialogVisible) {
+                        SettingsCategoryVisibilityDialog(
+                            items = orderedSidebarItems,
+                            onDismiss = {
+                                categoryVisibilityDialogVisible = false
+                                // Hiding the page that is open would strand the user on a category
+                                // with no sidebar row to click away from. Redirected on close
+                                // rather than on the toggle: changing page swaps the saveable state
+                                // key underneath this dialog, which would shut it after one switch.
+                                if (activeSidebarPage.name in hiddenCategories) {
+                                    openInlinePage(SettingsPage.Root)
+                                }
+                            },
+                        )
                     }
                     DesktopSettingsSidebarFooter()
                 }
@@ -1351,7 +1501,7 @@ private fun TabletSettingsScreen(
                                 end = 32.dp,
                                 bottom = 40.dp + bottomOverlayPadding,
                             ),
-                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(SettingsSectionGap),
                         ) {
                 val previousPage = page.desktopBackPage()
                 if (previousPage != null) {
@@ -1393,8 +1543,10 @@ private fun TabletSettingsScreen(
                                 isTablet = true,
                                 onPlaybackClick = { openInlinePage(SettingsPage.Playback) },
                                 onRandomPlayClick = { openInlinePage(SettingsPage.RandomPlay) },
+                                onDiscoverClick = { openInlinePage(SettingsPage.Discover) },
                                 onStreamsClick = { openInlinePage(SettingsPage.Streams) },
                                 onLocalLibraryClick = { openInlinePage(SettingsPage.LocalLibrary) },
+                                onGamesClick = { openInlinePage(SettingsPage.Games) },
                                 onAutoDownloadsClick = { openInlinePage(SettingsPage.AutoDownloads) },
                                 onAppearanceClick = { openInlinePage(SettingsPage.Appearance) },
                                 onAdvancedClick = { openInlinePage(SettingsPage.Advanced) },
@@ -1412,7 +1564,7 @@ private fun TabletSettingsScreen(
                                 onSupportersContributorsClick = { openInlinePage(SettingsPage.SupportersContributors) },
                                 onLicensesAttributionsClick = { openInlinePage(SettingsPage.LicensesAttributions) },
                                 onCheckForUpdatesClick = onCheckForUpdatesClick,
-                                onDownloadsClick = onDownloadsClick,
+                                onDownloadsClick = { openInlinePage(SettingsPage.Downloads) },
                                 onAccountClick = { openInlinePage(SettingsPage.Account) },
                                 onSwitchProfileClick = onSwitchProfile,
                                 showDownloadsEntry = AppFeaturePolicy.downloadsEnabled,
@@ -1451,6 +1603,10 @@ private fun TabletSettingsScreen(
                         useLibass = useLibass,
                         libassRenderType = libassRenderType,
                     )
+                    SettingsPage.Discover -> discoverSettingsContent(
+                        isTablet = true,
+                        settings = randomPlaySettingsUiState,
+                    )
                     SettingsPage.RandomPlay -> randomPlaySettingsContent(
                         isTablet = true,
                         settings = randomPlaySettingsUiState,
@@ -1466,7 +1622,15 @@ private fun TabletSettingsScreen(
                     )
                     SettingsPage.AutoDownloads -> libraryDownloadsSection(
                         isTablet = true,
-                        onDownloadsClick = onDownloadsClick,
+                        onDownloadsClick = { openInlinePage(SettingsPage.Downloads) },
+                    )
+                    SettingsPage.Downloads -> downloadsSettingsContent(
+                        isTablet = true,
+                        uiState = downloadsUiState,
+                        selectedShowId = selectedDownloadsShowId,
+                        onSelectedShowChange = onSelectedDownloadsShowChange,
+                        onOpenDownload = onOpenDownload,
+                        onDeleteTarget = onDownloadsDeleteTarget,
                     )
                 SettingsPage.StreamScoring -> streamScoringSection(isTablet = true)
                     SettingsPage.KeyboardShortcuts -> keyboardShortcutsContent(
@@ -1528,7 +1692,7 @@ private fun TabletSettingsScreen(
                         onHomescreenClick = { openInlinePage(SettingsPage.Homescreen) },
                         onMetaScreenClick = { openInlinePage(SettingsPage.MetaScreen) },
                         onCollectionsClick = { openInlinePage(SettingsPage.Collections) },
-                        onDownloadsClick = onDownloadsClick,
+                        onDownloadsClick = { openInlinePage(SettingsPage.Downloads) },
                     )
                     SettingsPage.Collections -> collectionsSettingsContent(
                         isTablet = true,
@@ -1545,7 +1709,8 @@ private fun TabletSettingsScreen(
                     heroBadgeScale = homescreenHeroBadgeScale,
                         heroReleaseStatusUnavailableOnly = homescreenHeroReleaseStatusUnavailableOnly,
                         hideUnreleasedContent = homescreenHideUnreleasedContent,
-                        hideCatalogUnderline = homescreenHideCatalogUnderline,
+                            hideCatalogUnderline = homescreenHideCatalogUnderline,
+                        catalogRowShuffleEnabled = homescreenCatalogRowShuffleEnabled,
                         adaptiveHeroEnabled = homescreenAdaptiveHeroEnabled,
                         adaptiveHeroVerticalBias = homescreenAdaptiveHeroVerticalBias,
                         heroAmbientBackgroundEnabled = homescreenHeroAmbientBackgroundEnabled,
@@ -1560,6 +1725,7 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         discordPresenceSettings = discordPresenceSettings,
                         onDiscordPresenceModeChange = DiscordPresenceSettingsRepository::setMode,
+                        onDiscordEpisodeArtworkChange = DiscordPresenceSettingsRepository::setEpisodeArtwork,
                         onTmdbClick = { onPageChange(SettingsPage.TmdbEnrichment) },
                         onMdbListClick = { onPageChange(SettingsPage.MdbListRatings) },
                     onQualiCacheClick = { onPageChange(SettingsPage.QualiCache) },
@@ -1579,6 +1745,10 @@ private fun TabletSettingsScreen(
                     SettingsPage.QualiCache -> qualiCacheSettingsContent(
                         isTablet = true,
                         settings = qualiCacheSettings,
+                    )
+                    SettingsPage.Games -> gamesSettingsContent(
+                        isTablet = true,
+                        settings = gameLibrarySettings,
                     )
                     SettingsPage.Debrid -> debridSettingsContent(
                         isTablet = true,
@@ -1624,14 +1794,32 @@ private fun TabletSettingsScreen(
 }
 }
 
-private data class DesktopSettingsSidebarItem(
+internal data class DesktopSettingsSidebarItem(
     val label: String,
     val icon: ImageVector,
     val page: SettingsPage,
+    /** The shipped label, kept so a rename can be compared against it and undone. */
+    val defaultLabel: String = label,
 )
 
+/**
+ * The sidebar list with the user's own category names applied. Every consumer goes through here,
+ * so a renamed category reads the same in the sidebar, the reorder drag and the categories dialog.
+ */
 @Composable
-private fun desktopSettingsSidebarItems(): List<DesktopSettingsSidebarItem> = listOf(
+private fun desktopSettingsSidebarItems(): List<DesktopSettingsSidebarItem> {
+    val customNames by remember {
+        SettingsCategoryNamesRepository.ensureLoaded()
+        SettingsCategoryNamesRepository.names
+    }.collectAsStateWithLifecycle()
+    return desktopSettingsSidebarDefaultItems().map { item ->
+        val custom = customNames[item.page.name]
+        if (custom.isNullOrBlank()) item else item.copy(label = custom)
+    }
+}
+
+@Composable
+private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarItem> = listOf(
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_addons),
         icon = Icons.Rounded.AutoAwesome,
@@ -1683,6 +1871,11 @@ private fun desktopSettingsSidebarItems(): List<DesktopSettingsSidebarItem> = li
         page = SettingsPage.RandomPlay,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.compose_settings_page_discover),
+        icon = Icons.Rounded.Explore,
+        page = SettingsPage.Discover,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_plugins),
         icon = Icons.Rounded.Settings,
         page = SettingsPage.Plugins,
@@ -1698,9 +1891,19 @@ private fun desktopSettingsSidebarItems(): List<DesktopSettingsSidebarItem> = li
         page = SettingsPage.LocalLibrary,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.compose_settings_page_games),
+        icon = Icons.Rounded.SportsEsports,
+        page = SettingsPage.Games,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_auto_downloads),
         icon = Icons.Rounded.CloudDownload,
         page = SettingsPage.AutoDownloads,
+    ),
+    DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.compose_settings_root_downloads_title),
+        icon = Icons.Rounded.CloudDownload,
+        page = SettingsPage.Downloads,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_keyboard_shortcuts),
@@ -1721,13 +1924,16 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.MetaScreen -> SettingsPage.MetaScreen
     SettingsPage.Playback -> SettingsPage.Playback
     SettingsPage.RandomPlay -> SettingsPage.RandomPlay
+    SettingsPage.Discover -> SettingsPage.Discover
     SettingsPage.Appearance,
     SettingsPage.PosterCustomization -> SettingsPage.Appearance
     SettingsPage.Homescreen -> SettingsPage.Homescreen
     SettingsPage.Plugins -> SettingsPage.Plugins
     SettingsPage.Streams -> SettingsPage.Streams
     SettingsPage.LocalLibrary -> SettingsPage.LocalLibrary
+    SettingsPage.Games -> SettingsPage.Games
     SettingsPage.AutoDownloads -> SettingsPage.AutoDownloads
+    SettingsPage.Downloads -> SettingsPage.Downloads
     SettingsPage.StreamScoring -> SettingsPage.Streams
     SettingsPage.KeyboardShortcuts -> SettingsPage.KeyboardShortcuts
     SettingsPage.LicensesAttributions -> SettingsPage.LicensesAttributions
@@ -1771,6 +1977,7 @@ private fun orderDesktopSettingsSidebarItems(
 @Composable
 private fun DesktopSettingsSidebarList(
     items: List<DesktopSettingsSidebarItem>,
+    allItems: List<DesktopSettingsSidebarItem>,
     activeSidebarPage: SettingsPage,
     onPageChange: (SettingsPage) -> Unit,
 ) {
@@ -1781,6 +1988,7 @@ private fun DesktopSettingsSidebarList(
             fromIndex = from.index,
             toIndex = to.index,
             visiblePages = items.map { it.page.name },
+            allPages = allItems.map { it.page.name },
         )
         hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
     }
@@ -1824,11 +2032,16 @@ private fun DesktopSettingsSidebarRow(
 ) {
     val tokens = MaterialTheme.nuvio
     val contentColor = if (selected) tokens.colors.accent else tokens.colors.textMuted
+    // Masked across the whole row rather than per element, so a selected category reads as one
+    // sweep running from its icon through its label instead of two small independent ramps. Only
+    // while selected: an unselected row is muted grey and has no accent to gradient.
+    val accentMask = if (selected) Modifier.accentGradientMask() else Modifier
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
+            .padding(vertical = 6.dp)
+            .then(accentMask),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -1905,6 +2118,7 @@ private fun DesktopSettingsTopBar(
     onNavigateToHome: (() -> Unit)?,
     onNavigateToSearch: (() -> Unit)?,
     onNavigateToLibrary: (() -> Unit)?,
+    onNavigateToDiscover: (() -> Unit)?,
     contextPanelWidth: Dp,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -1946,6 +2160,11 @@ private fun DesktopSettingsTopBar(
                     } else {
                         tokens.colors.textMuted.copy(alpha = 0.42f)
                     },
+                    modifier = if (onShowLatestChangelogClick != null) {
+                        Modifier.accentGradientMask()
+                    } else {
+                        Modifier
+                    },
                 )
             }
             IconButton(
@@ -1959,6 +2178,7 @@ private fun DesktopSettingsTopBar(
                     } else {
                         tokens.colors.textMuted
                     },
+                    modifier = if (columnGuidesVisible) Modifier.accentGradientMask() else Modifier,
                 )
             }
             IconButton(onClick = onQuitClick) {
@@ -1966,6 +2186,7 @@ private fun DesktopSettingsTopBar(
                     imageVector = Icons.Rounded.PowerSettingsNew,
                     contentDescription = null,
                     tint = tokens.colors.accent,
+                    modifier = Modifier.accentGradientMask(),
                 )
             }
             Spacer(modifier = Modifier.weight(1f))
@@ -1973,6 +2194,7 @@ private fun DesktopSettingsTopBar(
                 onNavigateToHome = onNavigateToHome,
                 onNavigateToSearch = onNavigateToSearch,
                 onNavigateToLibrary = onNavigateToLibrary,
+                onNavigateToDiscover = onNavigateToDiscover,
             )
             Spacer(modifier = Modifier.weight(1f))
             if (contextPanelWidth == 0.dp) {
@@ -2013,8 +2235,12 @@ private fun DesktopSettingsRootNavigation(
     onNavigateToHome: (() -> Unit)?,
     onNavigateToSearch: (() -> Unit)?,
     onNavigateToLibrary: (() -> Unit)?,
+    onNavigateToDiscover: (() -> Unit)?,
 ) {
     val tokens = MaterialTheme.nuvio
+    val discoverTabVisible by remember {
+        ThemeSettingsRepository.desktopDiscoverTabVisible
+    }.collectAsState()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
@@ -2026,7 +2252,9 @@ private fun DesktopSettingsRootNavigation(
             Icon(
                 imageVector = Icons.Filled.Home,
                 contentDescription = stringResource(Res.string.compose_nav_home),
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier
+                    .size(22.dp)
+                    .then(if (onNavigateToHome != null) Modifier.accentGradientMask() else Modifier),
                 tint = if (onNavigateToHome != null) {
                     tokens.colors.accent
                 } else {
@@ -2041,13 +2269,38 @@ private fun DesktopSettingsRootNavigation(
             Icon(
                 painter = painterResource(Res.drawable.sidebar_search),
                 contentDescription = stringResource(Res.string.compose_nav_search),
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier
+                    .size(22.dp)
+                    .then(if (onNavigateToSearch != null) Modifier.accentGradientMask() else Modifier),
                 tint = if (onNavigateToSearch != null) {
                     tokens.colors.accent
                 } else {
                     tokens.colors.textMuted.copy(alpha = 0.42f)
                 },
             )
+        }
+        // Discover sits between Search and Library, matching the top bar and sidebar order. Settings
+        // hides the top bar entirely, so without this row Discover is only reachable by detouring
+        // through another tab or knowing the hotkey. Hidden outright when the tab is turned off,
+        // since navigation to it is refused and the button would do nothing.
+        if (discoverTabVisible) {
+            IconButton(
+                onClick = { onNavigateToDiscover?.invoke() },
+                enabled = onNavigateToDiscover != null,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Explore,
+                    contentDescription = stringResource(Res.string.compose_nav_discover),
+                    modifier = Modifier
+                        .size(22.dp)
+                        .then(if (onNavigateToDiscover != null) Modifier.accentGradientMask() else Modifier),
+                    tint = if (onNavigateToDiscover != null) {
+                        tokens.colors.accent
+                    } else {
+                        tokens.colors.textMuted.copy(alpha = 0.42f)
+                    },
+                )
+            }
         }
         IconButton(
             onClick = { onNavigateToLibrary?.invoke() },
@@ -2056,7 +2309,9 @@ private fun DesktopSettingsRootNavigation(
             Icon(
                 painter = painterResource(Res.drawable.sidebar_library),
                 contentDescription = stringResource(Res.string.compose_nav_library),
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier
+                    .size(22.dp)
+                    .then(if (onNavigateToLibrary != null) Modifier.accentGradientMask() else Modifier),
                 tint = if (onNavigateToLibrary != null) {
                     tokens.colors.accent
                 } else {
@@ -2189,13 +2444,52 @@ private fun DesktopPanelSection(
     title: String,
     content: @Composable () -> Unit,
 ) {
+    DesktopPanelSection(
+        title = title,
+        titleAction = null,
+        titleActionContentDescription = null,
+        onTitleClick = null,
+        content = content,
+    )
+}
+
+@Composable
+private fun DesktopPanelSection(
+    title: String,
+    titleAction: ImageVector?,
+    titleActionContentDescription: String?,
+    onTitleClick: (() -> Unit)?,
+    content: @Composable () -> Unit,
+) {
+    val tokens = MaterialTheme.nuvio
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.nuvio.colors.textPrimary,
-            fontWeight = FontWeight.SemiBold,
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (onTitleClick != null) Modifier.clickable(onClick = onTitleClick) else Modifier,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = tokens.colors.textPrimary,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (titleAction != null) {
+                // The heading is the control, so it needs a mark that says so - a bare title that
+                // happens to be clickable is not discoverable. Muted rather than accent: this is an
+                // affordance on a heading, not an action the sidebar should lead with.
+                Icon(
+                    imageVector = titleAction,
+                    contentDescription = titleActionContentDescription,
+                    tint = tokens.colors.textMuted,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             content()
         }
@@ -2223,12 +2517,44 @@ private fun DesktopSettingsSidebarFooter() {
                 runCatching { uriHandler.openUri(NuvioHtpcRepoUrl) }
             },
         )
+        // Every nightly reports the version of the release it was cut from, so the version name on
+        // its own cannot tell a nightly from the stable build of the same number — which is exactly
+        // the question a bug report needs answered. Name the build when one is installed.
+        val nightlyBuild = remember { AppUpdaterPlatform.getInstalledNightlyBuild() }
+        // The version name is the same string for every build cut from it, so a freshly installed
+        // build looks identical to the one it replaced. The packaging stamp is the part that
+        // moves, and it also carries the channel the image was cut for — the marker above only
+        // knows about nightlies that arrived through the updater, not ones installed by hand.
+        val packagedBuild = remember { AppVersionPolicy.packagedBuild }
         Text(
-            text = stringResource(
-                Res.string.settings_desktop_build,
-                AppVersionConfig.DESKTOP_VERSION_NAME,
-                AppVersionConfig.DESKTOP_VERSION_CODE,
-            ),
+            text = when {
+                nightlyBuild != null -> stringResource(
+                    Res.string.settings_desktop_build_nightly,
+                    AppVersionConfig.DESKTOP_VERSION_NAME,
+                    AppVersionConfig.DESKTOP_VERSION_CODE,
+                    nightlyBuild.label,
+                )
+
+                packagedBuild?.isNightly == true -> stringResource(
+                    Res.string.settings_desktop_build_nightly_stamped,
+                    AppVersionConfig.DESKTOP_VERSION_NAME,
+                    AppVersionConfig.DESKTOP_VERSION_CODE,
+                    packagedBuild.label,
+                )
+
+                packagedBuild != null -> stringResource(
+                    Res.string.settings_desktop_build_stamped,
+                    AppVersionConfig.DESKTOP_VERSION_NAME,
+                    AppVersionConfig.DESKTOP_VERSION_CODE,
+                    packagedBuild.label,
+                )
+
+                else -> stringResource(
+                    Res.string.settings_desktop_build,
+                    AppVersionConfig.DESKTOP_VERSION_NAME,
+                    AppVersionConfig.DESKTOP_VERSION_CODE,
+                )
+            },
             style = MaterialTheme.typography.bodySmall,
             color = tokens.colors.textMuted,
         )

@@ -1,6 +1,7 @@
 package com.nuvio.app.features.cloud
 
 import com.nuvio.app.features.catalog.ResolvedName
+import com.nuvio.app.features.debrid.DebridCloudLibraryWindow
 import com.nuvio.app.features.debrid.DebridProvider
 import com.nuvio.app.features.debrid.DebridProviderCapability
 import com.nuvio.app.features.debrid.DebridServiceCredential
@@ -80,6 +81,57 @@ class CloudLibraryStoreTest {
         assertTrue(state.isLoaded)
         assertEquals(listOf("alpha", "beta"), state.providers.map { it.providerId })
         assertEquals(listOf("one", "two"), state.items.map { it.id })
+    }
+
+    @Test
+    fun `refresh lists newest first and drops items outside the window`() = runBlocking {
+        val provider = cloudProvider(id = "torbox", name = "TorBox")
+        val now = 100L * MILLIS_PER_DAY
+        val store = CloudLibraryStore(
+            credentialsProvider = { listOf(DebridServiceCredential(provider, "token")) },
+            providerApis = listOf(
+                FakeCloudProviderApi(
+                    provider = provider,
+                    // Oldest-first, the order TorBox hands an account back in.
+                    items = listOf(
+                        cloudItem(provider, "ancient", addedAtEpochMs = now - 200L * MILLIS_PER_DAY),
+                        cloudItem(provider, "undated", addedAtEpochMs = null),
+                        cloudItem(provider, "last-month", addedAtEpochMs = now - 29L * MILLIS_PER_DAY),
+                        cloudItem(provider, "today", addedAtEpochMs = now),
+                    ),
+                ),
+            ),
+            windowProvider = { DebridCloudLibraryWindow.DAYS_30 },
+            nowEpochMs = { now },
+        )
+
+        val state = store.refresh()
+
+        // Newest first, and an item the provider gave no date for is kept but sorts last: a missing
+        // timestamp must never make a file unreachable.
+        assertEquals(listOf("today", "last-month", "undated"), state.items.map { it.id })
+    }
+
+    @Test
+    fun `unbounded window keeps every item and still orders newest first`() = runBlocking {
+        val provider = cloudProvider(id = "torbox", name = "TorBox")
+        val now = 100L * MILLIS_PER_DAY
+        val store = CloudLibraryStore(
+            credentialsProvider = { listOf(DebridServiceCredential(provider, "token")) },
+            providerApis = listOf(
+                FakeCloudProviderApi(
+                    provider = provider,
+                    items = listOf(
+                        cloudItem(provider, "ancient", addedAtEpochMs = now - 200L * MILLIS_PER_DAY),
+                        cloudItem(provider, "today", addedAtEpochMs = now),
+                    ),
+                ),
+            ),
+            windowProvider = { DebridCloudLibraryWindow.ALL },
+            nowEpochMs = { now },
+        )
+
+        assertEquals(listOf("today", "ancient"), store.refresh().items.map { it.id })
     }
 
     @Test
@@ -274,13 +326,18 @@ private fun cloudProvider(id: String, name: String): DebridProvider =
         capabilities = setOf(DebridProviderCapability.CloudLibrary),
     )
 
-private fun cloudItem(provider: DebridProvider, id: String): CloudLibraryItem =
+private fun cloudItem(
+    provider: DebridProvider,
+    id: String,
+    addedAtEpochMs: Long? = null,
+): CloudLibraryItem =
     CloudLibraryItem(
         providerId = provider.id,
         providerName = provider.displayName,
         id = id,
         type = CloudLibraryItemType.Torrent,
         name = id,
+        addedAtEpochMs = addedAtEpochMs,
         files = listOf(
             CloudLibraryFile(
                 id = "file-$id",
@@ -289,3 +346,5 @@ private fun cloudItem(provider: DebridProvider, id: String): CloudLibraryItem =
             ),
         ),
     )
+
+private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L

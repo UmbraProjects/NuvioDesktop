@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.Brush
 
 @Composable
 fun NuvioProgressBar(
@@ -18,7 +19,8 @@ fun NuvioProgressBar(
     modifier: Modifier = Modifier,
     height: Dp = NuvioTokens.Space.s4,
     trackColor: Color = MaterialTheme.nuvio.colors.playerTimelineTrack,
-    fillColor: Color = MaterialTheme.nuvio.colors.playerTimelineFill,
+    // Defaults to the theme's accent fill, so a gradient accent runs along the filled portion.
+    fillBrush: Brush = MaterialTheme.nuvio.colors.accentFill,
 ) {
     val tokens = MaterialTheme.nuvio
     val clampedProgress = progress.coerceIn(0f, 1f)
@@ -35,7 +37,7 @@ fun NuvioProgressBar(
                 .width(NuvioTokens.Space.none)
                 .height(height)
                 .clip(tokens.shapes.chip)
-                .background(fillColor),
+                .background(fillBrush),
         )
     }
 }

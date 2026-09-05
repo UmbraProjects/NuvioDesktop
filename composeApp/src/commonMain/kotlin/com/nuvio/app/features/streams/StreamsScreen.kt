@@ -43,8 +43,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderSpecial
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -115,8 +115,10 @@ import com.nuvio.app.features.librarypvr.SeasonPackGrabService
 import com.nuvio.app.features.librarypvr.SeasonPackInspectResult
 import com.nuvio.app.features.librarypvr.SeasonPackSelectionDialog
 import com.nuvio.app.features.librarypvr.StreamPackGrabService
+import com.nuvio.app.features.librarypvr.LibraryDestinationFolders
 import com.nuvio.app.features.librarypvr.LibraryFileNaming
 import com.nuvio.app.features.librarypvr.LibraryPvrRepository
+import com.nuvio.app.features.librarypvr.ReleaseYearResolver
 import com.nuvio.app.features.librarypvr.videoExtension
 import com.nuvio.app.features.locallibrary.LocalFolder
 import com.nuvio.app.features.locallibrary.LocalFolderType
@@ -127,11 +129,15 @@ import com.nuvio.app.features.player.PlaybackStartTrace
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.isDesktop
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material.icons.rounded.Refresh
+import com.nuvio.app.core.ui.accentBrush
 
 // ---------------------------------------------------------------------------
 // Streams Screen
@@ -146,14 +152,21 @@ internal fun manualLibraryRelativePath(
     episodeNumber: Int?,
     episodeTitle: String?,
     extension: String,
+    existingFolderNames: List<String> = emptyList(),
 ): String? = when {
-    !isEpisode -> LibraryFileNaming.movieRelativePath(title, releaseYear, extension)
+    !isEpisode -> LibraryFileNaming.movieRelativePath(
+        title,
+        releaseYear,
+        extension,
+        existingFolderNames,
+    )
     episodeNumber == null -> null
     isAnimeFolder -> LibraryFileNaming.animeEpisodeRelativePath(
         title,
         releaseYear,
         episodeNumber,
         extension,
+        existingFolderNames,
     )
     seasonNumber == null -> null
     else -> LibraryFileNaming.episodeRelativePath(
@@ -163,6 +176,7 @@ internal fun manualLibraryRelativePath(
         episode = episodeNumber,
         episodeTitle = episodeTitle,
         extension = extension,
+        existingFolderNames = existingFolderNames,
     )
 }
 
@@ -206,19 +220,21 @@ fun StreamsScreen(
         PlaybackStartTrace.markPendingOrActive("streamsScreen:firstFrame")
     }
 
+    val tracedStreamSelection: (StreamItem, Long?, Float?) -> Unit = { stream, position, fraction ->
+        PlaybackStartTrace.markPendingOrActive("sourceSelected")
+        onStreamSelected(stream, position, fraction)
+    }
     val uiState by StreamsRepository.uiState.collectAsStateWithLifecycle()
-    val playerSettings by remember {
-        PlayerSettingsRepository.ensureLoaded()
-        PlayerSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val debridSettings by remember {
-        DebridSettingsRepository.ensureLoaded()
-        DebridSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val watchProgressUiState by remember {
-        WatchProgressRepository.ensureLoaded()
-        WatchProgressRepository.uiState
-    }.collectAsStateWithLifecycle()
+    val playerSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val debridSettings by DebridSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val watchProgressUiState by WatchProgressRepository.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.Default) {
+            PlayerSettingsRepository.ensureLoaded()
+            DebridSettingsRepository.ensureLoaded()
+            WatchProgressRepository.ensureLoaded()
+        }
+    }
     val isEpisode = seasonNumber != null && episodeNumber != null
     val clipboardManager = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
@@ -420,12 +436,28 @@ fun StreamsScreen(
             .filter { it.type == typeForMedia }
             .sortedByDescending { it.isAnime == isAnimeContent }
     }
-    val libraryTarget = remember(parentMetaId, parentMetaType, type, title, releaseYear, poster, background) {
+    // The year the launching screen could see, topped up in the background.
+    //
+    // It arrives here from a synchronous cache read at click time, which is null for any title whose
+    // details screen has not been opened this session — after a restart, that is every title. The
+    // year only matters when the user reaches for Download, which is several seconds and at least
+    // one deliberate menu away, so resolving it properly behind the already-running stream search
+    // costs nothing and stops the first episode of a show landing in a yearless folder that every
+    // later one then has to be filed into. See ReleaseYearResolver.
+    var resolvedReleaseYear by remember(parentMetaId, releaseYear) { mutableStateOf(releaseYear) }
+    LaunchedEffect(parentMetaId, parentMetaType, type, releaseYear) {
+        if (releaseYear != null || !AppFeaturePolicy.downloadsEnabled) return@LaunchedEffect
+        val metaType = parentMetaType.takeIf { it.isNotBlank() } ?: type
+        ReleaseYearResolver.resolve(type = metaType, id = parentMetaId)
+            ?.let { resolved -> resolvedReleaseYear = resolved }
+    }
+
+    val libraryTarget = remember(parentMetaId, parentMetaType, type, title, resolvedReleaseYear, poster, background) {
         SeasonPackGrabService.Target(
             contentId = parentMetaId,
             contentType = parentMetaType.takeIf { it.isNotBlank() } ?: type,
             title = title,
-            year = releaseYear,
+            year = resolvedReleaseYear,
             poster = poster,
             background = background,
         )
@@ -544,13 +576,20 @@ fun StreamsScreen(
                 ?: "mkv"
             val relativePath = manualLibraryRelativePath(
                 title = title,
-                releaseYear = releaseYear,
+                releaseYear = resolvedReleaseYear,
                 isEpisode = isEpisode,
                 isAnimeFolder = folder.isAnime,
                 seasonNumber = seasonNumber,
                 episodeNumber = episodeNumber,
                 episodeTitle = episodeTitle,
                 extension = extension,
+                // Reuse whatever folder this show already occupies here. Even with the year
+                // resolved, an older download of the same show may sit under a differently shaped
+                // name, and that is the folder a new episode belongs in.
+                existingFolderNames = LibraryDestinationFolders.existingFolderNames(
+                    folder = folder,
+                    contentId = parentMetaId,
+                ),
             ) ?: return@resolvePlayableStreamThen
             SeasonPackGrabService.prepareLibraryMatch(folder, libraryTarget)
             val result = DownloadsRepository.enqueueFromStream(
@@ -689,7 +728,7 @@ fun StreamsScreen(
                                 }
                                 Key.Enter, Key.NumPadEnter -> {
                                     focusedStream?.let {
-                                        onStreamSelected(
+                                        tracedStreamSelection(
                                             it,
                                             effectiveResumePositionMs,
                                             effectiveResumeProgressFraction,
@@ -810,7 +849,7 @@ fun StreamsScreen(
                 streamListState = streamListState,
                 focusedStream = focusedStream,
                 onStreamSelected = { stream, positionMs, progressFraction ->
-                    onStreamSelected(stream, positionMs, progressFraction)
+                    tracedStreamSelection(stream, positionMs, progressFraction)
                 },
                 onStreamLongPress = { stream -> streamActionsTarget = stream },
             )
@@ -836,7 +875,7 @@ fun StreamsScreen(
                 streamListState = streamListState,
                 focusedStream = focusedStream,
                 onStreamSelected = { stream, positionMs, progressFraction ->
-                    onStreamSelected(stream, positionMs, progressFraction)
+                    tracedStreamSelection(stream, positionMs, progressFraction)
                 },
                 onStreamLongPress = { stream -> streamActionsTarget = stream },
             )
@@ -944,6 +983,17 @@ fun StreamsScreen(
         libraryFolderPrompt?.let { pending ->
             SeasonFolderPickerDialog(
                 folders = downloadFolderCandidates,
+                // Which of them this title has been downloaded into before. The picker sorts those
+                // to the top and marks them, so filing a newly released episode beside its
+                // predecessors does not depend on the user remembering where they went.
+                foldersHoldingTitle = remember(downloadFolderCandidates, parentMetaId, localLibraryState.items) {
+                    downloadFolderCandidates
+                        .filter { candidate ->
+                            LibraryDestinationFolders.holdsContent(candidate, parentMetaId)
+                        }
+                        .map(LocalFolder::id)
+                        .toSet()
+                },
                 onDismiss = { libraryFolderPrompt = null },
                 onSelect = { folder ->
                     libraryFolderPrompt = null
@@ -1014,16 +1064,24 @@ private data class PackSelectionPrompt(
 @Composable
 private fun SeasonFolderPickerDialog(
     folders: List<LocalFolder>,
+    foldersHoldingTitle: Set<String>,
     onDismiss: () -> Unit,
     onSelect: (LocalFolder) -> Unit,
 ) {
+    // A folder that already holds this title is almost always the intended answer, so it leads the
+    // list and says so. Ordering is stable within each group, so the candidate order the caller
+    // established (anime folders first for anime) still decides everything else.
+    val ordered = remember(folders, foldersHoldingTitle) {
+        folders.sortedByDescending { folder -> folder.id in foldersHoldingTitle }
+    }
     NuvioModalDialog(
         onDismissRequest = onDismiss,
         title = stringResource(Res.string.streams_download_season_folder_title),
         subtitle = stringResource(Res.string.streams_download_season_folder_subtitle),
         maxWidth = 460.dp,
     ) {
-        folders.forEach { folder ->
+        ordered.forEach { folder ->
+            val alreadyUsed = folder.id in foldersHoldingTitle
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1033,7 +1091,7 @@ private fun SeasonFolderPickerDialog(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Folder,
+                    imageVector = if (alreadyUsed) Icons.Rounded.FolderSpecial else Icons.Rounded.Folder,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = MaterialTheme.colorScheme.primary,
@@ -1046,9 +1104,17 @@ private fun SeasonFolderPickerDialog(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = folder.path,
+                        text = if (alreadyUsed) {
+                            stringResource(Res.string.streams_download_folder_already_used)
+                        } else {
+                            folder.path
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (alreadyUsed) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1382,7 +1448,7 @@ private fun EpisodeHeroBlock(
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                ),
+                ).accentBrush(),
                 color = MaterialTheme.colorScheme.primary,
             )
             Spacer(modifier = Modifier.height(2.dp))
@@ -1915,7 +1981,7 @@ private fun StreamSectionHeader(
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = stringResource(Res.string.streams_fetching),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp).accentBrush(),
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -1984,7 +2050,7 @@ private fun LoadingStateBlock(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodySmall.copy(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
-            ),
+            ).accentBrush(),
             color = MaterialTheme.colorScheme.primary,
         )
     }
@@ -2071,7 +2137,7 @@ private fun FooterLoadingBlock(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodySmall.copy(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
-            ),
+            ).accentBrush(),
             color = MaterialTheme.colorScheme.primary,
         )
     }

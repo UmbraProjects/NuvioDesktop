@@ -6,7 +6,9 @@ import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.metadata.toSimklIds
 import com.nuvio.app.features.tracking.TrackingCoordinateFamily
+import com.nuvio.app.features.tracking.TrackingScrobbleResult
 import com.nuvio.app.features.tracking.projectScrobbleCoordinates
+import com.nuvio.app.features.tracking.trackingScrobbleResponseConfirmsWatched
 import com.nuvio.app.features.trakt.TraktExternalIds
 import com.nuvio.app.features.trakt.parseTraktContentIds
 import kotlinx.coroutines.CancellationException
@@ -121,12 +123,12 @@ internal object SimklScrobbleRepository {
         }
     }
 
-    private suspend fun send(action: String, item: SimklScrobbleItem, progressPercent: Float) {
-        if (!SimklAuthRepository.isAuthenticated.value) return
-        val headers = SimklAuthRepository.authorizedHeaders() ?: return
+    private suspend fun send(action: String, item: SimklScrobbleItem, progressPercent: Float): TrackingScrobbleResult {
+        if (!SimklAuthRepository.isAuthenticated.value) return TrackingScrobbleResult.Declined
+        val headers = SimklAuthRepository.authorizedHeaders() ?: return TrackingScrobbleResult.Declined
         val progress = progressPercent.coerceIn(0f, 100f)
         val itemKey = item.itemKey
-        if (shouldSkip(action, itemKey, progress)) return
+        if (shouldSkip(action, itemKey, progress)) return TrackingScrobbleResult.Declined
 
         val body = buildBodyJson(item, progress)
         val url = SimklAuthRepository.appendParams("$BASE_URL/scrobble/$action")
@@ -144,7 +146,7 @@ internal object SimklScrobbleRepository {
 
             if (response == null) {
                 if (attempt < attempts) { delay(retryDelayMs * attempt); continue }
-                return
+                return TrackingScrobbleResult.Declined
             }
 
             log.d { "SIMKL scrobble $action response: ${response.status}" }
@@ -152,28 +154,35 @@ internal object SimklScrobbleRepository {
             when (response.status) {
                 in 200..299 -> {
                     lastStamp = ScrobbleStamp(action, itemKey, progress, System.currentTimeMillis())
-                    return
+                    return TrackingScrobbleResult(
+                        handled = true,
+                        confirmsWatched = trackingScrobbleResponseConfirmsWatched(response.body),
+                    )
                 }
                 429 -> {
                     if (attempt < attempts) { delay(overlapRetryDelayMs); continue }
                     log.w { "SIMKL scrobble $action: 429 overlap lock, giving up" }
-                    return
+                    return TrackingScrobbleResult.Handled
                 }
                 409 -> {
                     log.d { "SIMKL scrobble $action: 409 duplicate, ignoring" }
-                    return
+                    return TrackingScrobbleResult(
+                        handled = true,
+                        confirmsWatched = trackingScrobbleResponseConfirmsWatched(response.body),
+                    )
                 }
                 in 500..504 -> {
                     if (attempt < attempts) { delay(retryDelayMs * 3 * attempt); continue }
                     log.w { "SIMKL scrobble $action: server error ${response.status}" }
-                    return
+                    return TrackingScrobbleResult.Handled
                 }
                 else -> {
                     log.w { "SIMKL scrobble $action: unexpected ${response.status} ${response.body.take(200)}" }
-                    return
+                    return TrackingScrobbleResult.Handled
                 }
             }
         }
+        return TrackingScrobbleResult.Declined
     }
 
     private fun shouldSkip(action: String, itemKey: String, progress: Float): Boolean {

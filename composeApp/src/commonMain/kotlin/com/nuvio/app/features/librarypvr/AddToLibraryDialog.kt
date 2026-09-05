@@ -16,7 +16,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,7 +40,6 @@ import com.nuvio.app.features.locallibrary.LocalMatchState
 import com.nuvio.app.features.locallibrary.LocalMatcher
 import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.locallibrary.LocalMediaItem
-import com.nuvio.app.core.ui.trackTextInputFocus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
@@ -62,6 +60,7 @@ import nuvio.composeapp.generated.resources.library_downloads_mode_picker_hint
 import nuvio.composeapp.generated.resources.library_downloads_mode_selected_future
 import nuvio.composeapp.generated.resources.library_downloads_mode_selected_only
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.NuvioTextField
 
 /** A title whose ids are already known (from the details screen or a local item). */
 data class MonitorTarget(
@@ -219,12 +218,11 @@ fun SearchAddToLibraryDialog(
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     FolderPicker(folders, selectedFolderId) { selectedFolderId = it }
-                    OutlinedTextField(
+                    NuvioTextField(
                         value = query,
                         onValueChange = { query = it },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
-                        placeholder = { Text(stringResource(Res.string.library_add_search_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = stringResource(Res.string.library_add_search_hint),
                     )
                     when {
                         searching -> LoadingRow(stringResource(Res.string.library_add_searching))

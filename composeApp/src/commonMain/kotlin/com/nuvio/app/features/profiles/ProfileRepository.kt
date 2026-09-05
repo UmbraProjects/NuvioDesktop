@@ -16,6 +16,7 @@ import com.nuvio.app.features.home.RandomPlayCollectionPool
 import com.nuvio.app.core.ui.PosterCardStyleRepository
 import com.nuvio.app.features.library.LibraryDisplaySettingsRepository
 import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.metadata.AnimeIdPreferenceRepository
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
@@ -23,8 +24,10 @@ import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.search.SearchHistoryRepository
+import com.nuvio.app.features.settings.SettingsCategoryNamesRepository
 import com.nuvio.app.features.settings.SettingsCategoryOrderRepository
 import com.nuvio.app.features.settings.SettingsFavoritesRepository
+import com.nuvio.app.features.settings.SettingsHiddenCategoriesRepository
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.streams.StreamScoreRepository
@@ -119,7 +122,9 @@ object ProfileRepository {
         loadedCacheForUserId = stored.userId
         applyStoredPayload(stored)
         SettingsCategoryOrderRepository.onProfileChanged()
+        SettingsCategoryNamesRepository.onProfileChanged()
         SettingsFavoritesRepository.onProfileChanged()
+        SettingsHiddenCategoriesRepository.onProfileChanged()
         ThemeSettingsRepository.onProfileChanged()
         return _state.value.profiles.isNotEmpty()
     }
@@ -143,7 +148,9 @@ object ProfileRepository {
 
         applyStoredPayload(stored)
         SettingsCategoryOrderRepository.onProfileChanged()
+        SettingsCategoryNamesRepository.onProfileChanged()
         SettingsFavoritesRepository.onProfileChanged()
+        SettingsHiddenCategoriesRepository.onProfileChanged()
     }
 
     fun clearInMemory() {
@@ -213,7 +220,9 @@ object ProfileRepository {
         }
         ThemeSettingsRepository.onProfileChanged()
         SettingsCategoryOrderRepository.onProfileChanged()
+        SettingsCategoryNamesRepository.onProfileChanged()
         SettingsFavoritesRepository.onProfileChanged()
+        SettingsHiddenCategoriesRepository.onProfileChanged()
         PosterCardStyleRepository.onProfileChanged()
         LibraryDisplaySettingsRepository.onProfileChanged()
         PlayerSettingsRepository.onProfileChanged()
@@ -222,6 +231,7 @@ object ProfileRepository {
         StreamScoreRepository.reload()
         P2pSettingsRepository.onProfileChanged()
         HomeCatalogSettingsRepository.onProfileChanged()
+        com.nuvio.app.features.discover.DiscoverRecommendationsRepository.onProfileChanged(profileIndex)
         HomeRepository.clear()
         RandomPlayCollectionPool.onProfileChanged()
         com.nuvio.app.features.home.RandomPlayCandidatePool.onProfileChanged()
@@ -230,6 +240,7 @@ object ProfileRepository {
         EpisodeReleaseNotificationsRepository.onProfileChanged()
         TmdbSettingsRepository.onProfileChanged()
         MdbListSettingsRepository.onProfileChanged()
+        DiscoverAiSettingsRepository.onProfileChanged()
         CalendarSourceRepository.onProfileChanged()
         ContinueWatchingSourceRepository.onProfileChanged()
         LibrarySourceRepository.onProfileChanged()

@@ -130,6 +130,8 @@ data class PlayerControlsState(
      */
     val activeSubtitleLabel: String = "",
     val seekThumbnailsEnabled: Boolean = true,
+    /** Drives the HUD's seek button/command-palette labels so they name the real jump distance. */
+    val seekStepSeconds: Int = 10,
     val tapToUnlockLabel: String = "Tap to unlock",
     val playbackErrorTitle: String = "Playback error",
     val playbackErrorMessage: String = "",
@@ -184,6 +186,13 @@ data class PlayerControlsState(
     val boldLabel: String = "Bold",
     val italicLabel: String = "Italic",
     val bottomOffsetLabel: String = "Bottom Offset",
+    val assStyleModeLabel: String = "ASS/SSA Styling",
+    val assScaleLabel: String = "ASS/SSA Size",
+    // The *current* mode's name, not a caption: the context menu ticks whichever of its three
+    // entries matches this, the same way the HDR and colour-profile menus work. It is the enum's
+    // own English label rather than a localized string, because those menu entries are hardcoded
+    // English too and a mismatch would silently tick nothing.
+    val assStyleModeValueLabel: String = SubtitleAssStyleMode.Original.label,
     val colorLabel: String = "Color",
     val textOpacityLabel: String = "Text Opacity",
     val outlineColorLabel: String = "Outline Color",
@@ -191,8 +200,12 @@ data class PlayerControlsState(
     val resetDefaultsLabel: String = "Reset Defaults",
     val onLabel: String = "On",
     val offLabel: String = "Off",
+    val posterHighlightMode: String = "Off",
     val themeAccentColor: String = "#2f6fed",
     val themeAccentStrongColor: String = "#3c7bff",
+    // Paint for filled accent surfaces: a CSS gradient when the theme defines a second accent
+    // stop, otherwise the flat accent colour. Not a colour, so it never goes through setColor().
+    val themeAccentFill: String = "#2f6fed",
     val themeOnAccentColor: String = "#ffffff",
     val themeFocusColor: String = "#9ecaff",
     val themeSelectedSurfaceColor: String = "#26384f",
@@ -215,7 +228,10 @@ data class PlayerControlsState(
     val playbackSpeedToggleLow: Float = 1f,
     val playbackSpeedToggleHigh: Float = 2f,
     val uiScalePercent: Int = 0,
+    // The app font, as a CSS family name. "" leaves the HUD on the bundled JetBrains Sans.
+    val uiFontFamily: String = "",
     val sourceNotchPosition: String = "right",
+    val notificationPosition: String = "center",
     val parentalWarnings: List<ParentalWarning> = emptyList(),
     val showParentalGuide: Boolean = false,
     val showOpeningOverlay: Boolean = false,
@@ -249,6 +265,10 @@ data class PlayerControlsState(
     val sourceFilters: List<PlayerControlFilterItem> = emptyList(),
     val sourceItems: List<PlayerControlSourceItem> = emptyList(),
     val episodeItems: List<PlayerControlEpisodeItem> = emptyList(),
+    // Stand-in artwork for episode cards whose own still is missing (unaired episodes) or whose
+    // still fails to load. The details screen already falls back to the show's backdrop this way;
+    // without it the card is a flat void that reads as a broken panel.
+    val episodeFallbackThumbnail: String = "",
     val episodeSeasons: List<PlayerControlSeasonItem> = emptyList(),
     val episodeStreamsVisible: Boolean = false,
     val episodeStreamsIsLoading: Boolean = false,
@@ -424,9 +444,15 @@ data class PlayerControlBuiltInSubtitleItem(
     val isSelected: Boolean = false,
 )
 
+/**
+ * [languageLabel] is the track's own language spelled out ("Tamil"), shown as the row's subtext in
+ * the overlay's audio panel. It is pushed for every track, filtered list or not, because the native
+ * track list the overlay otherwise renders carries only the raw tag ("tam") and no way to name it.
+ */
 data class PlayerControlAudioTrackItem(
     val index: Int = 0,
     val label: String = "",
+    val languageLabel: String = "",
     val isSelected: Boolean = false,
 )
 

@@ -95,7 +95,17 @@ typedef enum mpv_format {
     MPV_FORMAT_FLAG = 3,
     MPV_FORMAT_INT64 = 4,
     MPV_FORMAT_DOUBLE = 5,
+    MPV_FORMAT_NODE = 6,
+    MPV_FORMAT_NODE_ARRAY = 7,
+    MPV_FORMAT_NODE_MAP = 8,
 } mpv_format;
+
+// ABI declarations from libmpv client.h; node contents are freed by libmpv.
+typedef struct mpv_node {
+    union { char *string; int flag; int64_t int64; double double_; struct mpv_node_list *list; void *ba; } u;
+    mpv_format format;
+} mpv_node;
+typedef struct mpv_node_list { int num; mpv_node *values; char **keys; } mpv_node_list;
 
 typedef enum mpv_event_id {
     MPV_EVENT_NONE = 0,
@@ -103,6 +113,9 @@ typedef enum mpv_event_id {
     MPV_EVENT_LOG_MESSAGE = 2,
     MPV_EVENT_END_FILE = 7,
     MPV_EVENT_FILE_LOADED = 8,
+    MPV_EVENT_START_FILE = 6,
+    MPV_EVENT_VIDEO_RECONFIG = 17,
+    MPV_EVENT_AUDIO_RECONFIG = 18,
     MPV_EVENT_PLAYBACK_RESTART = 21,
     MPV_EVENT_PROPERTY_CHANGE = 22,
 } mpv_event_id;
@@ -173,6 +186,11 @@ constexpr UINT_PTR NUVIO_TIMER_ID = 0x4E50;
 // mpv output requires RTX VSR/HDR to be active or the NUVIO_MPV_VERBOSE environment
 // variable (see the requestLogMessages call in startMpv).
 constexpr int NUVIO_MPV_LOG_COUNT = 5;
+std::mutex gPlaybackLogMutex;
+std::wstring gLatestMainPlaybackLog;
+std::atomic<unsigned long long> gPlaybackSessionSequence{0};
+thread_local std::wstring gPlaybackThreadLog;
+
 
 std::wstring nuvioMpvLogDirectory() {
     wchar_t localAppData[32768] = {};
@@ -205,7 +223,9 @@ std::wstring nuvioMpvLogPath(int backupIndex = 0) {
     return path;
 }
 
-void nuvioMpvLogReset() {
+void nuvioMpvLogReset(const std::wstring &sessionPath) {
+    std::lock_guard<std::mutex> lock(gPlaybackLogMutex);
+    gLatestMainPlaybackLog = sessionPath;
     // Rotate once per native player initialization. The session that just ended becomes .1,
     // which preserves its failure evidence even when autoplay immediately creates a new player.
     const std::wstring oldest = nuvioMpvLogPath(NUVIO_MPV_LOG_COUNT - 1);
@@ -222,8 +242,10 @@ void nuvioMpvLogReset() {
     if (_wfopen_s(&f, path.c_str(), L"w") == 0 && f) fclose(f);
 }
 
-void nuvioMpvLogAppend(const std::string &line) {
-    const std::wstring path = nuvioMpvLogPath();
+void nuvioMpvLogAppend(const std::string &line, const std::wstring &sessionPath = {}) {
+    std::lock_guard<std::mutex> lock(gPlaybackLogMutex);
+    const std::wstring explicitPath = sessionPath.empty() ? gPlaybackThreadLog : sessionPath;
+    const std::wstring path = explicitPath.empty() ? nuvioMpvLogPath() : explicitPath;
     if (path.empty()) return;
     // mpv includes complete media URLs in verbose open/seek messages. Provider URLs commonly
     // contain debrid tokens or signed paths, and this log directory is intended to be shared for
@@ -255,11 +277,16 @@ void nuvioMpvLogAppend(const std::string &line) {
         size_t urlEnd = line.find_first_of(" \t\r\n\"'<>[](){}", authorityEnd);
         cursor = urlEnd == std::string::npos ? line.size() : urlEnd;
     }
-    FILE *f = nullptr;
-    if (_wfopen_s(&f, path.c_str(), L"a") == 0 && f) {
-        fwrite(safeLine.data(), 1, safeLine.size(), f);
-        fclose(f);
-    }
+    auto append = [&](const std::wstring &target) {
+        FILE *f = nullptr;
+        if (_wfopen_s(&f, target.c_str(), L"a") == 0 && f) {
+            fwrite(safeLine.data(), 1, safeLine.size(), f);
+            fclose(f);
+        }
+    };
+    append(path);
+    // Keep the familiar current log, but trailers and outgoing sessions never write into it.
+    if (!explicitPath.empty() && explicitPath == gLatestMainPlaybackLog) append(nuvioMpvLogPath());
 }
 
 // Wall-clock HH:MM:SS.mmm so bridge markers can be correlated with the app's Kotlin-side
@@ -839,6 +866,7 @@ struct MpvApi {
     using mpv_command_fn = int (*)(mpv_handle *, const char **);
     using mpv_error_string_fn = const char *(*)(int);
     using mpv_free_fn = void (*)(void *);
+    using mpv_free_node_contents_fn = void (*)(mpv_node *);
     using mpv_wait_event_fn = mpv_event *(*)(mpv_handle *, double);
     using mpv_wakeup_fn = void (*)(mpv_handle *);
     using mpv_observe_property_fn = int (*)(mpv_handle *, uint64_t, const char *, mpv_format);
@@ -859,6 +887,7 @@ struct MpvApi {
     mpv_command_fn command = nullptr;
     mpv_error_string_fn errorString = nullptr;
     mpv_free_fn freeValue = nullptr;
+    mpv_free_node_contents_fn freeNodeContents = nullptr;
     mpv_wait_event_fn waitEvent = nullptr;
     mpv_wakeup_fn wakeup = nullptr;
     mpv_observe_property_fn observeProperty = nullptr;
@@ -945,6 +974,7 @@ struct MpvApi {
         command = loadSymbol<mpv_command_fn>("mpv_command");
         errorString = loadSymbol<mpv_error_string_fn>("mpv_error_string");
         freeValue = loadSymbol<mpv_free_fn>("mpv_free");
+        freeNodeContents = loadSymbol<mpv_free_node_contents_fn>("mpv_free_node_contents");
         waitEvent = loadSymbol<mpv_wait_event_fn>("mpv_wait_event");
         wakeup = loadSymbol<mpv_wakeup_fn>("mpv_wakeup");
         observeProperty = loadSymbol<mpv_observe_property_fn>("mpv_observe_property");
@@ -966,7 +996,9 @@ struct MpvApi {
 
 MpvApi &mpvApi() {
     static MpvApi api;
+#ifndef NUVIO_PLAYBACK_STARTUP_TEST
     api.ensureLoaded();
+#endif
     return api;
 }
 
@@ -1182,6 +1214,16 @@ class WindowsMpvWebPlayer : public std::enable_shared_from_this<WindowsMpvWebPla
     };
 
 public:
+    void nuvioMpvLogAppend(const std::string &line) {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - startupStartedAt).count();
+        ::nuvioMpvLogAppend("[session=" + playbackSessionId + " trace=" + appTraceId + " +" + std::to_string(elapsed) + "ms] " + line, playbackLogPath);
+    }
+
+    void nuvioBridgeLog(const std::string &line) {
+        nuvioMpvLogAppend("[nuvio-bridge " + nuvioLogTimestamp() + "] " + line + "\n");
+    }
+
     void initialize(
         HWND host,
         const std::string &sourceUrl,
@@ -1215,6 +1257,10 @@ public:
         // attached via the audio-add command once the main file has loaded.
         externalAudioUrl = audioUrl;
         extraMpvOptions = extraMpvOptionsIn;
+        for (const auto &option : extraMpvOptions) {
+            const std::string prefix = "@nuvio-trace-id=";
+            if (option.rfind(prefix, 0) == 0) appTraceId = option.substr(prefix.size());
+        }
         initialRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled;
         initialRtxHdrEnabled = nvidiaRtxHdrEnabled;
         initialAnimeContent = isAnimeContent;
@@ -1222,7 +1268,32 @@ public:
         // when FILE_LOADED arrives, before the first PLAYBACK_RESTART can reach the app.
         deferredAnimeSvpFilter = animeSvpFilter;
 
-        nuvioMpvLogReset();
+        startupStartedAt = std::chrono::steady_clock::now();
+        SYSTEMTIME sessionTime{};
+        GetLocalTime(&sessionTime);
+        char sessionBuffer[80];
+        std::snprintf(sessionBuffer, sizeof(sessionBuffer), "%04u%02u%02u-%02u%02u%02u-%03u-%lu-%llu",
+            sessionTime.wYear, sessionTime.wMonth, sessionTime.wDay, sessionTime.wHour,
+            sessionTime.wMinute, sessionTime.wSecond, sessionTime.wMilliseconds,
+            GetCurrentProcessId(), ++gPlaybackSessionSequence);
+        playbackSessionId = sessionBuffer;
+        const bool trailer = controlsUrl.find("heroTrailer=1") != std::string::npos;
+        const std::wstring prefix = trailer ? L"nuvio-trailer-" : L"nuvio-playback-";
+        const auto directory = nuvioMpvLogDirectory();
+        playbackLogPath = directory + L"\\" + prefix + toWide(playbackSessionId) + L".log";
+        // Separate bounded retention for complete main-player and trailer sessions.
+        WIN32_FIND_DATAW data{};
+        HANDLE search = FindFirstFileW((directory + L"\\" + prefix + L"*.log").c_str(), &data);
+        std::vector<std::wstring> oldLogs;
+        if (search != INVALID_HANDLE_VALUE) {
+            do { if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) oldLogs.emplace_back(data.cFileName); }
+            while (FindNextFileW(search, &data));
+            FindClose(search);
+        }
+        std::sort(oldLogs.begin(), oldLogs.end(), std::greater<std::wstring>());
+        const size_t keepPrevious = trailer ? 4 : 19;
+        for (size_t i = keepPrevious; i < oldLogs.size(); ++i) DeleteFileW((directory + L"\\" + oldLogs[i]).c_str());
+        if (!trailer) nuvioMpvLogReset(playbackLogPath);
         nuvioBridgeLog(
             "initialize requested source=" + redactedSourceSummary(sourceUrl) +
             " audio=" + (audioUrl.empty() ? "no" : "yes") +
@@ -1403,19 +1474,24 @@ public:
     void setPaused(bool paused) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
+        const bool requestedPlay = !paused;
         // A resume seek is a startup transaction: remember the caller's intent, but do not let
         // playback run until mpv reports a frame at the validated target. Otherwise a remote MKV
         // whose header probe leaves the demuxer at EOF can emit a genuine-looking EOF before the
         // FILE_LOADED seek settles and incorrectly trigger next-episode autoplay.
         if (initialResumeTransactionPending.load()) {
-            initialResumeShouldPlay.store(!paused);
+            initialResumeShouldPlay.store(requestedPlay);
+            paused = true;
+        }
+        if (profileOwnsPause) {
+            profileResumeRequested = requestedPlay;
             paused = true;
         }
         // While the initial SVP graph is realizing, keep mpv paused even if the common/UI layer
         // asks to play. Remember the latest intent and honour it as soon as filtered output is
         // confirmed. A user pause during pre-roll cancels the automatic resume.
         if (svpPrerollPending) {
-            svpPrerollResumeRequested = !paused;
+            svpPrerollResumeRequested = requestedPlay;
             paused = true;
         }
         int flag = paused ? 1 : 0;
@@ -1525,6 +1601,22 @@ public:
         return !looksLikeProviderWaitVideo();
     }
 
+    // Publishes the decoded source dimensions to Kotlin, which needs them to decide whether an
+    // upscaling shader chain (Anime4K) is worth running at all — a 4K source on a modest GPU can
+    // stall the whole app. Both values ride in one event so Kotlin never observes half a size:
+    // packed as w * 65536 + h, exact in a double for any dimension mpv can report.
+    //
+    // Must not be called while holding mpvMutex: the property helpers take it themselves.
+    void reportVideoSourceSize() {
+        const int64_t width = int64Property("video-params/w", 0);
+        const int64_t height = int64Property("video-params/h", 0);
+        if (width <= 0 || height <= 0 || width > 65535 || height > 65535) return;
+        const int64_t packed = width * 65536 + height;
+        if (packed == lastReportedVideoSizePacked) return;
+        lastReportedVideoSizePacked = packed;
+        sendPlayerEvent("videoSourceSize", static_cast<double>(packed));
+    }
+
     std::string describeVideoParameters() {
         double fps = doubleProperty("container-fps", 0.0);
         if (fps <= 0.0) fps = doubleProperty("estimated-vf-fps", 0.0);
@@ -1554,15 +1646,12 @@ public:
             return;
         }
 
-        preloadBundledVapourSynthRuntime();
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
+        videoPipelineManaged = true;
         requestedVideoFilters = deferredAnimeSvpFilter;
         double currentSpeed = 1.0;
         tryGetDoubleLocked("speed", currentSpeed);
-        if (currentSpeed < svpSpeedBypassThreshold) {
-            mpvApi().setPropertyString(mpv, "hwdec", "d3d11va-copy");
-        }
         applySpeedSensitiveVideoFiltersLocked(currentSpeed);
         nuvioMpvLogAppend(std::string("[nuvio] deferred anime SVP handled at ") + reason +
             " speed=" + std::to_string(currentSpeed) + " vf=" + appliedVideoFilters + "\n");
@@ -1581,7 +1670,13 @@ public:
     void tryApplyInitialResume(const char *reason) {
         if (initialResumeApplied) return;
         const bool parametersResolved = videoParametersLookResolved();
-        if (!parametersResolved) {
+        const double duration = doubleProperty("duration", 0.0);
+        const bool needsDuration = initialStartSeconds.load() <= 0.0 && initialStartProgressFraction > 0.0 && duration <= 0.0;
+        // Opening a remote file can outlast the parameter timeout. A percentage cannot be
+        // converted until duration exists: do not consume it as a zero-second resume while
+        // the demuxer is still opening. Start the bounded fallback only after FILE_LOADED.
+        if (needsDuration && !fileLoadedForCurrentSource) return;
+        if (!parametersResolved || needsDuration) {
             const auto now = std::chrono::steady_clock::now();
             if (initialResumeWaitDeadline == std::chrono::steady_clock::time_point{}) {
                 initialResumeWaitDeadline = now + initialResumeParameterWaitTimeout;
@@ -1593,7 +1688,10 @@ public:
         }
 
         initialResumeApplied = true;
-        const double duration = doubleProperty("duration", 0.0);
+        if (needsDuration) {
+            nuvioMpvLogAppend("[nuvio] initial percentage resume unavailable: loaded media has no duration\n");
+            initialStartProgressFraction = 0.0;
+        }
         double requestedStart = initialStartSeconds.load();
         if (requestedStart <= 0.0 && initialStartProgressFraction > 0.0 && duration > 0.0) {
             requestedStart = duration * initialStartProgressFraction;
@@ -1633,6 +1731,75 @@ public:
         }
     }
 
+    // Event-thread only. Poll settled output as well as PLAYBACK_RESTART: SVP can consume
+    // the restart while constructing its graph, and a paused output need not emit another.
+    // Polling never issues retry seeks or accepts an off-target position.
+    bool tryCompleteInitialResume(bool restartEvent) {
+        if (initialResumeTransactionPending.load() &&
+            (flagProperty("seeking", true) || (!restartEvent && !flagProperty("vo-configured", false)))) return false;
+        bool initialResumeReady = true;
+        if (initialResumeTransactionPending.load()) {
+            // A natural playback restart can arrive before the parameter gate has issued
+            // the initial resume seek. Validating that position as though it were the seek
+            // result caused an immediate retry, followed by the real apply a few seconds
+            // later: two remote range requests during startup. Ignore restarts until the
+            // resume transaction has actually been applied.
+            if (!initialResumeApplied || !fileLoadedForCurrentSource) {
+                initialResumeReady = false;
+            } else {
+                const double target = initialStartSeconds.load();
+                const double position = doubleProperty("time-pos", -1.0);
+                const bool rawEof = flagProperty("eof-reached", false);
+                const bool positionMatches = position >= 0.0 &&
+                    (target <= 0.0 ? position <= 2.0 : std::abs(position - target) <= 2.0);
+                initialResumeReady = positionMatches && !rawEof && !flagProperty("seeking", true);
+                if (restartEvent && !initialResumeReady && !rawEof && position >= 0.0 && target > 0.0) {
+                    // The resume seek settled at a real position but outside tolerance
+                    // (seen with sparse-keyframe encodes). Nothing else re-seeks during
+                    // the transaction, so "waiting" here would force-pause forever:
+                    // retry once with an exact seek, then accept whatever the retry
+                    // lands on rather than deadlock.
+                    if (!initialResumeSeekRetried.exchange(true)) {
+                        nuvioMpvLogAppend("[nuvio] initial resume off target; retrying exact seek target=" +
+                            std::to_string(target) + " position=" + std::to_string(position) + "\n");
+                        seekToMilliseconds((long long)std::llround(target * 1000.0), true);
+                    } else {
+                        initialResumeReady = true;
+                        nuvioMpvLogAppend("[nuvio] initial resume accepting off-target position target=" +
+                            std::to_string(target) + " position=" + std::to_string(position) + "\n");
+                    }
+                }
+                if (initialResumeReady) {
+                    startupPlaybackReady = true;
+                    initialResumeTransactionPending.store(false);
+                    eofSuppressedUntil.store(
+                        std::chrono::steady_clock::now() + std::chrono::seconds(3)
+                    );
+                    const bool shouldPlay = initialResumeShouldPlay.load();
+                    // Seeking and profile/SVP initialization can complete in either order.
+                    // Keep the remaining startup gates in control of the final unpause.
+                    setPaused(!shouldPlay);
+                    nuvioMpvLogAppend("[nuvio] initial resume transaction completed target=" +
+                        std::to_string(target) + " position=" + std::to_string(position) +
+                        " play=" + (shouldPlay ? std::string("yes") : std::string("no")) + "\n");
+                } else if (restartEvent) {
+                    nuvioMpvLogAppend("[nuvio] initial resume transaction waiting target=" +
+                        std::to_string(target) + " position=" + std::to_string(position) +
+                        " eof=" + (rawEof ? std::string("yes") : std::string("no")) + "\n");
+                }
+            }
+        }
+        return initialResumeReady;
+    }
+
+    void publishPlaybackRestartIfReady() {
+        if (!playbackRestartPendingForFile || !startupPlaybackReady ||
+            initialResumeTransactionPending.load() || svpPrerollPending ||
+            profileOwnsPause || profileRenderPending.load()) return;
+        playbackRestartPendingForFile = false;
+        sendPlayerEvent("playbackRestart", 1.0);
+    }
+
     // Releases the vf/hwdec writes held while the initial VapourSynth graph was building (see
     // setVideoFiltersPropertyLocked). Must not be called while holding mpvMutex.
     void releaseSvpGraphInitLatch(const char *reason) {
@@ -1650,6 +1817,12 @@ public:
             svpPendingVideoFiltersValid = false;
             svpPendingVideoFilters.clear();
             setVideoFiltersPropertyLocked(filters);
+        }
+        if (svpPendingPipelineUpdate) {
+            svpPendingPipelineUpdate = false;
+            double currentSpeed = 1.0;
+            tryGetDoubleLocked("speed", currentSpeed);
+            applySpeedSensitiveVideoFiltersLocked(currentSpeed);
         }
         if (hadPendingHwdec || hadPendingFilters) {
             nuvioMpvLogAppend(std::string("[nuvio] replayed held pipeline writes at ") + reason +
@@ -1697,26 +1870,91 @@ public:
         return joinVideoFilters(kept);
     }
 
+    void beginSvpPrerollLocked() {
+        if (svpPrerollPending) return;
+        // Late anime detection or a speed restore gets the same graph protection as startup.
+        svpPrerollPending = true;
+        svpPrerollResumeRequested = initialResumeTransactionPending.load() ? initialResumeShouldPlay.load()
+            : profileOwnsPause ? profileResumeRequested : !flagPropertyLocked("pause", true);
+        profileOwnsPause = false;
+        int paused = 1;
+        mpvApi().setProperty(mpv, "pause", MPV_FORMAT_FLAG, &paused);
+        svpPrerollUsesInitialPosition = initialResumeTransactionPending.load() || !fileLoadedForCurrentSource;
+        svpPrerollTargetSeconds = -1.0;
+        if (!svpPrerollUsesInitialPosition) tryGetDoubleLocked("time-pos", svpPrerollTargetSeconds);
+        svpPrerollRewindPending = false;
+        svpRuntimeReady = false;
+        svpFilteredOutputReady = false;
+        svpStartupProfileRequested = false;
+        svpStartupProfileApplied.store(false);
+        svpProfileSettleDeadline = {};
+        svpPrerollDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+        mpvApi().requestLogMessages(mpv, "v");
+    }
+
+    bool videoParametersLookSafeForSvpLocked() {
+        double width = 0, height = 0, fps = 0, duration = 0;
+        tryGetDoubleLocked("video-params/w", width);
+        tryGetDoubleLocked("video-params/h", height);
+        tryGetDoubleLocked("container-fps", fps);
+        if (fps <= 0) tryGetDoubleLocked("estimated-vf-fps", fps);
+        tryGetDoubleLocked("duration", duration);
+        return width >= minimumPlausibleVideoDimension && height >= minimumPlausibleVideoDimension &&
+            fps >= minimumPlausibleVideoFps && !(duration > 0 &&
+                std::abs(duration - providerWaitVideoDurationSeconds) <= providerWaitVideoDurationToleranceSeconds);
+    }
+
     void applySpeedSensitiveVideoFiltersLocked(double speed) {
-        if (requestedVideoFilters.empty() || !containsVapourSynthFilter(requestedVideoFilters)) {
-            svpBypassedForSpeed = false;
+        if (!videoPipelineManaged) return;
+        const bool requested = containsVapourSynthFilter(requestedVideoFilters);
+        const bool bypass = requested && (speed >= svpSpeedBypassThreshold ||
+            (svpBypassedForSpeed && speed > svpSpeedRestoreThreshold));
+        const std::string filters = bypass ? removeVapourSynthFilters(requestedVideoFilters) : requestedVideoFilters;
+        const bool enabled = containsVapourSynthFilter(filters);
+        if (svpGraphInitInFlight && filters != appliedVideoFilters) {
+            // Keep the complete transition pending, including decoder and timing options.
+            svpPendingPipelineUpdate = true;
             return;
         }
-
-        bool shouldBypass = speed >= svpSpeedBypassThreshold ||
-            (svpBypassedForSpeed && speed > svpSpeedRestoreThreshold);
-        std::string nextFilters = shouldBypass
-            ? removeVapourSynthFilters(requestedVideoFilters)
-            : requestedVideoFilters;
-
-        setVideoFiltersPropertyLocked(nextFilters);
-        if (shouldBypass != svpBypassedForSpeed) {
-            svpBypassedForSpeed = shouldBypass;
-            nuvioMpvLogAppend(std::string("[nuvio] anime SVP ") +
-                (shouldBypass ? "bypassed" : "restored") +
-                " for playback speed=" + std::to_string(speed) +
-                " vf=" + nextFilters + "\n");
+        const bool changed = enabled != effectiveSvpActive;
+        if (enabled && !effectiveSvpActive) {
+            beginSvpPrerollLocked();
+            if (!videoParametersLookSafeForSvpLocked()) {
+                deferredAnimeSvpFilter = requestedVideoFilters;
+                return;
+            }
+        } else if (!enabled) {
+            deferredAnimeSvpFilter.clear();
+            svpAwaitingVideoParameters = false;
         }
+        // hqdn3d also needs CPU frames when interpolation is bypassed.
+        const bool copyBack = enabled || filters.find("lavfi") != std::string::npos;
+        if (changed) {
+            setChangedPropertyLocked("vd-queue-enable", enabled ? "yes" : "no");
+            if (enabled) {
+                setChangedPropertyLocked("vd-queue-max-bytes", "512MiB");
+                setChangedPropertyLocked("vd-queue-max-samples", "35");
+                setChangedPropertyLocked("vd-queue-max-secs", "60");
+            } else {
+                // Effective immediately even if a remaining denoise filter keeps the decoder.
+                setChangedPropertyLocked("vd-queue-max-samples", "1");
+            }
+            setChangedPropertyLocked("hr-seek-framedrop", enabled ? "no" : "yes");
+            setChangedPropertyLocked("video-latency-hacks", enabled ? "yes" : "no");
+            setChangedPropertyLocked("mc", enabled ? "0" : "0.1");
+            setChangedPropertyLocked("autosync", enabled ? "30" : "0");
+        }
+        // Queue mode must be set before a decoder reinitialization can observe it.
+        setChangedPropertyLocked("hwdec", copyBack ? "d3d11va-copy" : "d3d11va");
+        setVideoFiltersPropertyLocked(filters);
+        effectiveSvpActive = containsVapourSynthFilter(appliedVideoFilters);
+        if (changed || bypass != svpBypassedForSpeed) {
+            nuvioBridgeLog("pipeline speed=" + std::to_string(speed) +
+                " svp=" + (effectiveSvpActive ? "active" : bypass ? "bypassed" : "off") +
+                " decoder=" + (copyBack ? "d3d11va-copy" : "d3d11va"));
+            sendPlayerEvent("svpState", effectiveSvpActive ? 1.0 : 0.0);
+        }
+        svpBypassedForSpeed = bypass;
     }
 
     void finishSvpPreroll(const std::string &reason) {
@@ -1725,6 +1963,7 @@ public:
             std::lock_guard<std::mutex> lock(mpvMutex);
             if (!svpPrerollPending) return;
             svpPrerollPending = false;
+            startupPlaybackReady = startupPlaybackReady || svpFilteredOutputReady;
             // Pre-roll is the whole budget SVP gets at startup. If it expired while still waiting
             // for usable video parameters, abandon the filter rather than inserting it later into
             // a running pipeline.
@@ -1733,7 +1972,7 @@ public:
                 deferredAnimeSvpFilter.clear();
                 svpAwaitingVideoParameters = false;
             }
-            if (mpv && svpPrerollResumeRequested) {
+            if (mpv && svpPrerollResumeRequested && !initialResumeTransactionPending.load() && !profileOwnsPause) {
                 int paused = 0;
                 mpvApi().setProperty(mpv, "pause", MPV_FORMAT_FLAG, &paused);
                 resumed = true;
@@ -1754,10 +1993,15 @@ public:
     bool ensureSvpPrerollStartPosition() {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return false;
-        double targetPosition = initialStartSeconds.load();
-        double currentPosition = targetPosition;
-        if (!tryGetDoubleLocked("time-pos", currentPosition)) return false;
-        if (targetPosition <= 0.0 && initialStartProgressFraction > 0.0) {
+        double currentPosition = -1.0;
+        if (!tryGetDoubleLocked("time-pos", currentPosition) || currentPosition < 0.0) return false;
+        // Startup uses the saved resume target. Restoring SVP during playback anchors to the
+        // position where the graph was paused, never the original start-of-session position.
+        if (!svpPrerollUsesInitialPosition && svpPrerollTargetSeconds < 0.0) {
+            svpPrerollTargetSeconds = currentPosition;
+        }
+        double targetPosition = svpPrerollUsesInitialPosition ? initialStartSeconds.load() : svpPrerollTargetSeconds;
+        if (svpPrerollUsesInitialPosition && targetPosition <= 0.0 && initialStartProgressFraction > 0.0) {
             double duration = 0.0;
             targetPosition = tryGetDoubleLocked("duration", duration) && duration > 0.0
                 ? duration * initialStartProgressFraction
@@ -1848,7 +2092,9 @@ public:
             return;
         }
         if (containsVapourSynthFilter(filters)) {
+#ifndef NUVIO_PLAYBACK_STARTUP_TEST
             preloadBundledVapourSynthRuntime();
+#endif
         }
         int result = mpvApi().setPropertyString(mpv, "vf", filters.c_str());
         if (result >= 0) {
@@ -1913,7 +2159,9 @@ public:
         const double target = deferredSeekTargetSeconds;
         // Cleared up front so a rejected seek command cannot re-arm the flush every tick.
         deferredSeekTargetSeconds = -1.0;
-        issueSeekLocked(target);
+        // seekByMilliseconds is the only producer of a deferred target, so this is always a
+        // relative step and takes the same exact-seek treatment — see the note there.
+        issueSeekLocked(target, true);
     }
 
     void seekToMilliseconds(long long positionMs, bool exact = false) {
@@ -1963,7 +2211,15 @@ public:
                 deferredSeekStartedAt + seekCoalesceMaxWait);
             return;
         }
-        issueSeekLocked(target);
+        // Exact, not keyframes: the step is user-configurable from 1s up, and a keyframe seek
+        // resolves to the index entry at or before the target. Whenever the step is shorter than
+        // the file's keyframe interval — 10s GOPs are routine for web/debrid encodes — that entry
+        // is the one the current position already sits in, so a "forward" press lands *behind*
+        // where playback was. Exact costs at most one extra GOP of decoding, bounded regardless of
+        // step size. Timeline scrubbing keeps keyframe seeks (see seekToMilliseconds): there the
+        // jump is large enough that a keyframe is always crossed, and the speed is worth more than
+        // sub-second accuracy.
+        issueSeekLocked(target, true);
     }
 
     void setSpeed(double speed) {
@@ -2166,6 +2422,19 @@ public:
         }
     }
 
+    // Sets the ASS/SSA override level and re-applies it to whatever track is selected right now, so
+    // changing the setting mid-playback takes effect on the frame the user is looking at rather
+    // than at the next track switch.
+    void setSubtitleAssStyleMode(const std::string &mode, double scale) {
+        if (mode != "no" && mode != "yes" && mode != "scale" && mode != "force") return;
+        double clampedScale = std::max(0.1, std::min(5.0, scale));
+        if (mode == requestedSubAssStyleMode && clampedScale == requestedSubAssScale) return;
+        requestedSubAssStyleMode = mode;
+        requestedSubAssScale = clampedScale;
+        refreshSubtitleAssOverrideMode(/*force=*/true);
+        forceVideoRedraw();
+    }
+
     void setSubtitleDelayMs(int delayMs) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
@@ -2212,14 +2481,148 @@ public:
         forceVideoRedraw();
     }
 
-    void setMpvPropertyString(const std::string &key, const std::string &value) {
-        if (key == "vf" && value.find("vapoursynth") != std::string::npos) {
-            preloadBundledVapourSynthRuntime();
-            wchar_t readback[4096] = {};
-            DWORD readbackLen = GetEnvironmentVariableW(L"PYTHONHOME", readback, 4096);
-            nuvioMpvLogAppend("[nuvio] about to set vf=vapoursynth; PYTHONHOME readback=" +
-                (readbackLen > 0 ? toUtf8(std::wstring(readback, readback + readbackLen)) : std::string("(unset)")) + "\n");
+    bool setChangedPropertyLocked(const std::string &key, const std::string &value) {
+        char *current = nullptr;
+        const int readResult = mpvApi().getProperty(mpv, key.c_str(), MPV_FORMAT_STRING, &current);
+        bool same = readResult >= 0 && current && value == current;
+        if (!same && readResult >= 0 && current && *current && !value.empty()) {
+            char *oldEnd = nullptr;
+            char *newEnd = nullptr;
+            const double oldNumber = std::strtod(current, &oldEnd);
+            const double newNumber = std::strtod(value.c_str(), &newEnd);
+            same = oldEnd != current && newEnd != value.c_str() && *oldEnd == '\0' && *newEnd == '\0' &&
+                std::isfinite(oldNumber) && std::isfinite(newNumber) && oldNumber == newNumber;
         }
+        if (current) mpvApi().freeValue(current);
+        if (same) return false;
+        const int result = mpvApi().setPropertyString(mpv, key.c_str(), value.c_str());
+        if (result < 0) {
+            nuvioBridgeLog("property rejected key=" + key + " error=" + mpvApi().errorText(result));
+            return false;
+        }
+        profileChanged = true;
+        return true;
+    }
+
+    // Canonicalize map order: libmpv makes no guarantee about the order of node-map keys.
+    static std::string renderNodeSignature(const mpv_node &node) {
+        if (node.format == MPV_FORMAT_INT64) return std::to_string(node.u.int64) + ";";
+        if (node.format == MPV_FORMAT_DOUBLE) return std::to_string(node.u.double_) + ";";
+        if (node.format == MPV_FORMAT_STRING) return node.u.string ? node.u.string : "";
+        if ((node.format != MPV_FORMAT_NODE_ARRAY && node.format != MPV_FORMAT_NODE_MAP) || !node.u.list) return "";
+        std::map<std::string, std::string> entries;
+        for (int i = 0; i < node.u.list->num; ++i) {
+            const std::string key = node.format == MPV_FORMAT_NODE_MAP ? node.u.list->keys[i] : std::to_string(i);
+            entries[key] = renderNodeSignature(node.u.list->values[i]);
+        }
+        std::string result;
+        for (const auto &entry : entries) result += entry.first + "=" + entry.second + "|";
+        return result;
+    }
+
+    static std::string renderTimingSignature(const mpv_node &node) {
+        if ((node.format != MPV_FORMAT_NODE_ARRAY && node.format != MPV_FORMAT_NODE_MAP) || !node.u.list) return "";
+        std::map<std::string, std::string> entries;
+        for (int i = 0; i < node.u.list->num; ++i) {
+            const std::string key = node.format == MPV_FORMAT_NODE_MAP ? node.u.list->keys[i] : std::to_string(i);
+            const mpv_node &child = node.u.list->values[i];
+            std::string value;
+            if (key == "samples" && child.format == MPV_FORMAT_NODE_ARRAY && child.u.list && child.u.list->num > 0) {
+                bool measured = false;
+                for (int j = 0; j < child.u.list->num; ++j) {
+                    const mpv_node &sample = child.u.list->values[j];
+                    measured |= sample.format == MPV_FORMAT_INT64 && sample.u.int64 > 0;
+                }
+                if (measured) value = renderNodeSignature(child);
+            } else {
+                value = renderTimingSignature(child);
+            }
+            if (!value.empty()) entries[key] = value;
+        }
+        std::string result;
+        for (const auto &entry : entries) result += entry.first + "=" + entry.second + "|";
+        return result;
+    }
+
+    std::string renderPassSignatureLocked() {
+        mpv_node passes{};
+        if (mpvApi().getProperty(mpv, "vo-passes", MPV_FORMAT_NODE, &passes) < 0) return "";
+        const std::string signature = renderTimingSignature(passes);
+        mpvApi().freeNodeContents(&passes);
+        return signature;
+    }
+
+    void beginVideoProfile() {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        profileChanged = false;
+        if (!firstProfileApplied && !svpPrerollPending) {
+            profileResumeRequested = initialResumeTransactionPending.load()
+                ? initialResumeShouldPlay.load() : !flagPropertyLocked("pause", true);
+            profileOwnsPause = true;
+            int paused = 1;
+            mpvApi().setProperty(mpv, "pause", MPV_FORMAT_FLAG, &paused);
+        }
+        profileTransactionActive.store(true);
+    }
+
+    void endVideoProfile() {
+        bool redraw = false;
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            if (!mpv) return;
+            if (profileChanged || !firstProfileApplied) {
+                firstProfileApplied = true;
+                profileRenderReady.store(false);
+                profileRenderBaseline = renderPassSignatureLocked();
+                profileRedrawIssued.store(false);
+                profileRenderPending.store(true);
+                char *shaders = nullptr;
+                mpvApi().getProperty(mpv, "glsl-shaders", MPV_FORMAT_STRING, &shaders);
+                const bool heavy = shaders && *shaders;
+                if (shaders) mpvApi().freeValue(shaders);
+                profileRenderBudget = std::chrono::milliseconds(heavy ? 1800 : 900);
+                profileRenderDeadline = std::chrono::steady_clock::now() + profileRenderBudget;
+                redraw = true;
+                nuvioBridgeLog("profile applied; awaiting render heavy=" + std::string(heavy ? "yes" : "no"));
+            }
+            profileTransactionActive.store(false);
+        }
+        if (redraw) forceVideoRedraw();
+        if (mpv) mpvApi().wakeup(mpv);
+    }
+
+    void pollProfileRender() {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv || !profileRenderPending.load() || profileTransactionActive.load()) return;
+        const auto now = std::chrono::steady_clock::now();
+        // The initial resume seek keeps the VO from drawing a fresh frame, so the render budget
+        // must not burn down while it is in flight: on a high-bitrate 4K remux the seek alone
+        // outlasts the deadline and every start reported fallback-timeout even though the render
+        // passes showed up a moment later. Holding here cannot delay startup, because
+        // publishPlaybackRestartIfReady() already waits on the same transaction.
+        if (initialResumeTransactionPending.load()) profileRenderDeadline = now + profileRenderBudget;
+        const bool expired = now >= profileRenderDeadline;
+        bool rendered = false;
+        if (profileRedrawIssued.load() && !flagPropertyLocked("seeking", false) && flagPropertyLocked("vo-configured", false)) {
+            const std::string signature = renderPassSignatureLocked();
+            rendered = !signature.empty() && signature != profileRenderBaseline;
+        }
+        if (!rendered && !expired) return;
+        profileRenderPending.store(false);
+        profileRenderReady.store(true);
+        if (profileOwnsPause) {
+            profileOwnsPause = false;
+            if (profileResumeRequested && !svpPrerollPending && !initialResumeTransactionPending.load()) {
+                int paused = 0;
+                mpvApi().setProperty(mpv, "pause", MPV_FORMAT_FLAG, &paused);
+            }
+        }
+        nuvioBridgeLog(std::string("profile ready evidence=") + (rendered ? "render-passes" : "fallback-timeout"));
+        sendPlayerEvent("profileReady", rendered ? 1.0 : 0.0);
+    }
+
+    void setMpvPropertyString(const std::string &key, const std::string &value) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
         // The runtime video profile (applyDesktopVideoProfile / applyDesktopAnimeProfile) owns these
@@ -2254,28 +2657,14 @@ public:
             return;
         }
         if (key == "vf") {
+            videoPipelineManaged = true;
             requestedVideoFilters = value;
-            if (!containsVapourSynthFilter(value)) {
-                svpBypassedForSpeed = false;
-                setVideoFiltersPropertyLocked(value);
-                return;
-            }
             double currentSpeed = 1.0;
             tryGetDoubleLocked("speed", currentSpeed);
-            bool shouldBypass = currentSpeed >= svpSpeedBypassThreshold ||
-                (svpBypassedForSpeed && currentSpeed > svpSpeedRestoreThreshold);
-            std::string effectiveValue = shouldBypass ? removeVapourSynthFilters(value) : value;
-            setVideoFiltersPropertyLocked(effectiveValue);
-            if (shouldBypass != svpBypassedForSpeed) {
-                svpBypassedForSpeed = shouldBypass;
-                nuvioMpvLogAppend(std::string("[nuvio] anime SVP ") +
-                    (shouldBypass ? "bypassed" : "restored") +
-                    " for playback speed=" + std::to_string(currentSpeed) +
-                    " vf=" + effectiveValue + "\n");
-            }
+            applySpeedSensitiveVideoFiltersLocked(currentSpeed);
             return;
         }
-        mpvApi().setPropertyString(mpv, key.c_str(), value.c_str());
+        setChangedPropertyLocked(key, value);
     }
 
     void toggleStatsOverlay() {
@@ -2295,9 +2684,17 @@ public:
     // container window size by 1px and back on the UI thread to force a VO reconfigure and
     // redraw immediately.
     void forceVideoRedraw() {
+        if (redrawQueued.exchange(true)) return;
         auto self = shared_from_this();
         postUiTask([self]() {
+            self->redrawQueued.store(false);
             if (!self->containerHwnd || !IsWindow(self->containerHwnd)) return;
+            if (!self->isPaused() && !self->svpPrerollPending) {
+                InvalidateRect(self->containerHwnd, nullptr, FALSE);
+                self->profileRedrawIssued.store(true);
+                return;
+            }
+            self->nuvioBridgeLog("paused video redraw");
             RECT rect{};
             GetClientRect(self->containerHwnd, &rect);
             LONG width = rect.right - rect.left;
@@ -2334,6 +2731,7 @@ public:
                 SendMessageW(topLevel, WM_NCACTIVATE, TRUE, 0);
                 SendMessageW(topLevel, WM_ACTIVATE, WA_ACTIVE, 0);
             }
+            self->profileRedrawIssued.store(true);
         });
     }
 
@@ -2581,11 +2979,22 @@ private:
     std::string requestedVideoFilters;
     std::string appliedVideoFilters;
     std::string deferredAnimeSvpFilter;
+    std::string appTraceId = "none";
+    std::string playbackSessionId;
+    std::wstring playbackLogPath;
+    std::chrono::steady_clock::time_point startupStartedAt{};
+    std::chrono::steady_clock::time_point startupMetricsDue{};
+    friend struct PlaybackStartupTest;
+    bool videoPipelineManaged = false;
+    std::atomic_bool effectiveSvpActive{false};
+    bool svpPendingPipelineUpdate = false;
     bool svpBypassedForSpeed = false;
     bool svpPrerollPending = false;
     bool svpPrerollResumeRequested = false;
     bool svpRuntimeReady = false;
     bool svpPrerollRewindPending = false;
+    bool svpPrerollUsesInitialPosition = true;
+    double svpPrerollTargetSeconds = -1.0;
     bool svpFilteredOutputReady = false;
     bool svpStartupProfileRequested = false;
     // Set once the deferred SVP filter has hit an unresolved-parameters bail, so the wait is
@@ -2597,6 +3006,18 @@ private:
     std::string svpPendingVideoFilters;
     std::string svpPendingHwdec;
     std::chrono::steady_clock::time_point initialResumeWaitDeadline{};
+    bool profileChanged = false; // mpvMutex
+    bool firstProfileApplied = false;
+    bool profileOwnsPause = false;
+    bool profileResumeRequested = false;
+    std::atomic_bool profileTransactionActive{false};
+    std::atomic_bool profileRenderPending{false};
+    std::atomic_bool profileRenderReady{false};
+    std::atomic_bool profileRedrawIssued{false};
+    std::string profileRenderBaseline; // mpvMutex
+    std::chrono::steady_clock::time_point profileRenderDeadline{};
+    std::chrono::milliseconds profileRenderBudget{0}; // mpvMutex
+    std::atomic_bool redrawQueued{false};
     std::atomic_bool svpStartupProfileApplied{false};
     std::chrono::steady_clock::time_point svpProfileSettleDeadline{};
     std::chrono::steady_clock::time_point svpPrerollDeadline{};
@@ -2609,10 +3030,14 @@ private:
     bool initialRtxHdrEnabled = false;
     bool initialAnimeContent = false;
     int lastReportedHdrState = -1;
+    // Last "videoSourceSize" value handed to Kotlin, so a re-observation of unchanged dimensions
+    // does not restart the video-profile pass. -1 means nothing reported for this source yet.
+    int64_t lastReportedVideoSizePacked = -1;
     // Arms the one-shot "playbackRestart" notification below: set on FILE_LOADED, cleared by
     // the first PLAYBACK_RESTART, so the app learns when the first frame of a load rendered
     // without hearing about every post-seek restart. Only touched on the mpv event thread.
     bool playbackRestartPendingForFile = false;
+    bool startupPlaybackReady = false;
     bool fileLoadedForCurrentSource = false;
     bool startupFailureReported = false;
     std::atomic<bool> playbackFailureDetected{false};
@@ -2631,6 +3056,18 @@ private:
     // Empty until the first refresh actually applies a mode, so it never matches and the
     // first call always sets sub-ass-override explicitly rather than assuming mpv's default.
     std::string appliedSubAssOverrideMode;
+    // What the user asked for on ASS/SSA tracks specifically: mpv's sub-ass-override value, one of
+    // "no" (default, the script decides everything), "scale" (script styling plus the user's
+    // sub-scale) or "force" (every sub-* option applied, which is what makes the size and position
+    // controls reach an ASS track at all). Plain-text tracks are unaffected and keep using "force"
+    // — there is no original styling there to lose.
+    std::string requestedSubAssStyleMode = "no";
+    // The ASS/SSA font-size factor (mpv sub-scale). It lives beside the mode rather than being
+    // written from Kotlin because sub-scale is not ASS-specific: plain-text tracks run at override
+    // level "force", where it scales them too. Applying it unconditionally would have made the
+    // ASS size control silently resize every SRT track as well, so it is applied only when the
+    // selected track actually is ASS/SSA, and reset to 1.0 otherwise.
+    double requestedSubAssScale = 1.0;
     // One-shot delayed check a few seconds after each file load, for whatever subtitle track
     // mpv auto-selects on its own (no explicit selectSubtitleTrackId/addSubtitleUrl call fires
     // for that). Deliberately not a recurring poll — continuous rechecking interfered with
@@ -2688,7 +3125,8 @@ private:
     ) {
         std::string failure;
         try {
-            nuvioBridgeLog("native ui thread entered");
+            gPlaybackThreadLog = playbackLogPath;
+        nuvioBridgeLog("native ui thread entered");
             initializeOnNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, initialProgressFraction, controlsUrl, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, animeSvpFilter);
         } catch (const std::exception &error) {
             failure = error.what();
@@ -3006,6 +3444,7 @@ private:
     ) {
         nuvioBridgeLog("mpv create");
         fileLoadedForCurrentSource = false;
+        startupPlaybackReady = false;
         {
             // A fresh load starts with no app-injected subtitles; mpv drops the previous file's
             // external tracks on loadfile, so forget the URLs that tracked them.
@@ -3032,8 +3471,11 @@ private:
         videoParamsPrimariesReceived = false;
         videoParamsGammaReceived = false;
         lastReportedHdrState = -1;
+        lastReportedVideoSizePacked = -1;
         svpPrerollPending = !deferredAnimeSvpFilter.empty();
-        svpPrerollResumeRequested = false;
+        svpPrerollResumeRequested = playWhenReady;
+        svpPrerollUsesInitialPosition = true;
+        svpPrerollTargetSeconds = -1.0;
         svpRuntimeReady = false;
         svpPrerollRewindPending = false;
         svpFilteredOutputReady = false;
@@ -3307,6 +3749,7 @@ private:
             // they override any of Nuvio's built-in options above. Each entry is "key=value";
             // a malformed line (no '=') is skipped rather than aborting playback.
             for (const std::string &option : extraMpvOptions) {
+                if (option.rfind("@nuvio-trace-id=", 0) == 0) continue;
                 if (option.rfind("@nuvio-config-mode=", 0) == 0) continue;
                 if (option.rfind("@nuvio-low-vram=", 0) == 0) continue;
                 const bool userOption = option.rfind("@nuvio-user:", 0) == 0;
@@ -3370,6 +3813,13 @@ private:
 
             api.observeProperty(mpv, 0, "video-params/primaries", MPV_FORMAT_STRING);
             api.observeProperty(mpv, 0, "video-params/gamma", MPV_FORMAT_STRING);
+            // An adaptive stream can switch resolution mid-file; the shader decision has to follow
+            // it, so the size is observed rather than only sampled at FILE_LOADED.
+            api.observeProperty(mpv, 0, "video-params/w", MPV_FORMAT_STRING);
+            api.observeProperty(mpv, 0, "video-params/h", MPV_FORMAT_STRING);
+            for (const char *property : {"hwdec-current", "paused-for-cache", "audio-params/format", "speed"}) {
+                api.observeProperty(mpv, 0, property, MPV_FORMAT_STRING);
+            }
 
             // Up/Down are reserved for app-level volume control; explicitly
             // disable mpv's built-in seek bindings for them so they can't
@@ -3765,6 +4215,7 @@ private:
     }
 
     void drainMpvEvents() {
+        gPlaybackThreadLog = playbackLogPath;
         while (!stopping.load()) {
             mpv_handle *current = nullptr;
             {
@@ -3778,7 +4229,7 @@ private:
             // While a coalesced seek is waiting on its deadline the loop needs a finer tick than
             // the idle 0.5s, which while paused (few spontaneous events) would otherwise let it
             // land hundreds of ms late.
-            mpv_event *event = mpvApi().waitEvent(current, deferredSeekPending() ? 0.05 : 0.5);
+            mpv_event *event = mpvApi().waitEvent(current, (deferredSeekPending() || initialResumeTransactionPending.load() || svpPrerollPending || profileRenderPending.load()) ? 0.05 : 0.5);
             // The deadline is driven by wall clock, not by events, so it must be serviced even on
             // a wait that produced nothing to dispatch.
             flushDeferredSeek();
@@ -3791,39 +4242,50 @@ private:
             // Poll the SVP filtered-output promotion here (not just on PLAYBACK_RESTART): at a
             // position-0 start the runtime-ready signal can arrive after the only restart event,
             // and this periodic tick is what then advances pre-roll instead of the worst-case timeout.
+            tryCompleteInitialResume(false);
             tryPromoteSvpFilteredOutput();
+            if (svpPrerollPending && !effectiveSvpActive && deferredAnimeSvpFilter.empty() && !svpGraphInitInFlight) {
+                finishSvpPreroll("svp-disabled-or-bypassed");
+                publishPlaybackRestartIfReady();
+            }
+            pollProfileRender();
+            if (startupMetricsDue != std::chrono::steady_clock::time_point{} &&
+                std::chrono::steady_clock::now() >= startupMetricsDue) {
+                startupMetricsDue = {};
+                nuvioBridgeLog("startup health pause=" + stringProperty("pause", "unknown") +
+                    " seeking=" + stringProperty("seeking", "unknown") +
+                    " resumePending=" + (initialResumeTransactionPending.load() ? "yes" : "no") +
+                    " svpPending=" + (svpPrerollPending ? "yes" : "no") +
+                    " position=" + std::to_string(doubleProperty("time-pos", -1.0)) +
+                    " avsync=" + std::to_string(doubleProperty("avsync", 0.0)) +
+                    " dropped=" + std::to_string(int64Property("frame-drop-count", 0)) +
+                    " decoderDropped=" + std::to_string(int64Property("decoder-frame-drop-count", 0)) +
+                    " cacheAhead=" + std::to_string(cacheAheadSeconds()));
+            }
             if (svpPrerollPending && svpFilteredOutputReady && svpStartupProfileApplied.load()) {
                 const auto now = std::chrono::steady_clock::now();
                 if (svpProfileSettleDeadline == std::chrono::steady_clock::time_point{}) {
-                    // Property setters return before gpu-next has necessarily compiled every
-                    // custom shader. Keep playback paused for one render-settle window so that
-                    // compile work cannot starve audio immediately after the hand-off (the A/V
-                    // desync seen on cold starts). An active glsl-shaders chain (Anime4K / custom
-                    // GLSL) compiles far more than the bare scaler/deband pipeline, so give it a
-                    // longer window; the persistent shader cache makes this a cold-start-only wait
-                    // (a new source resolution/format still triggers a partial recompile).
+                    // Render-pass samples release cached profiles as soon as final rendering is
+                    // observed. Retain the previous bounded wait only for VOs without usable
+                    // measurements; requesting a shader or receiving VIDEO_RECONFIG alone is
+                    // not evidence that its GPU work has completed.
                     const bool heavyShaders = !stringProperty("glsl-shaders", "").empty();
                     svpProfileSettleDeadline = now +
                         std::chrono::milliseconds(heavyShaders ? 1800 : 900);
                     svpPrerollDeadline = now + std::chrono::seconds(heavyShaders ? 5 : 3);
                     nuvioMpvLogAppend(std::string("[nuvio] SVP startup profile acknowledged; "
                         "settling shaders heavy=") + (heavyShaders ? "yes" : "no") + "\n");
-                } else if (now >= svpProfileSettleDeadline) {
+                } else if (profileRenderReady.load() || now >= svpProfileSettleDeadline) {
                     finishSvpPreroll("profile-applied-at-start-position");
-                    if (playbackRestartPendingForFile) {
-                        playbackRestartPendingForFile = false;
-                        sendPlayerEvent("playbackRestart", 1.0);
-                    }
+                    publishPlaybackRestartIfReady();
                 }
             }
             if (svpPrerollPending && svpPrerollDeadline != std::chrono::steady_clock::time_point{} &&
                 std::chrono::steady_clock::now() >= svpPrerollDeadline) {
                 finishSvpPreroll("timeout");
-                if (playbackRestartPendingForFile) {
-                    playbackRestartPendingForFile = false;
-                    sendPlayerEvent("playbackRestart", 1.0);
-                }
+                publishPlaybackRestartIfReady();
             }
+            publishPlaybackRestartIfReady();
             if (event->event_id == MPV_EVENT_SHUTDOWN) {
                 return;
             }
@@ -3955,61 +4417,8 @@ private:
                 }
             }
             if (event->event_id == MPV_EVENT_PLAYBACK_RESTART && playbackRestartPendingForFile) {
-                bool initialResumeReady = true;
-                if (initialResumeTransactionPending.load()) {
-                    // A natural playback restart can arrive before the parameter gate has issued
-                    // the initial resume seek. Validating that position as though it were the seek
-                    // result caused an immediate retry, followed by the real apply a few seconds
-                    // later: two remote range requests during startup. Ignore restarts until the
-                    // resume transaction has actually been applied.
-                    if (!initialResumeApplied) {
-                        initialResumeReady = false;
-                    } else {
-                        const double target = initialStartSeconds.load();
-                        const double position = doubleProperty("time-pos", -1.0);
-                        const bool rawEof = flagProperty("eof-reached", false);
-                        const bool positionMatches = position >= 0.0 &&
-                            (target <= 0.0 ? position <= 2.0 : std::abs(position - target) <= 2.0);
-                        initialResumeReady = positionMatches && !rawEof;
-                        if (!initialResumeReady && !rawEof && position >= 0.0 && target > 0.0) {
-                            // The resume seek settled at a real position but outside tolerance
-                            // (seen with sparse-keyframe encodes). Nothing else re-seeks during
-                            // the transaction, so "waiting" here would force-pause forever:
-                            // retry once with an exact seek, then accept whatever the retry
-                            // lands on rather than deadlock.
-                            if (!initialResumeSeekRetried.exchange(true)) {
-                                nuvioMpvLogAppend("[nuvio] initial resume off target; retrying exact seek target=" +
-                                    std::to_string(target) + " position=" + std::to_string(position) + "\n");
-                                seekToMilliseconds((long long)std::llround(target * 1000.0), true);
-                            } else {
-                                initialResumeReady = true;
-                                nuvioMpvLogAppend("[nuvio] initial resume accepting off-target position target=" +
-                                    std::to_string(target) + " position=" + std::to_string(position) + "\n");
-                            }
-                        }
-                        if (initialResumeReady) {
-                            initialResumeTransactionPending.store(false);
-                            eofSuppressedUntil.store(
-                                std::chrono::steady_clock::now() + std::chrono::seconds(3)
-                            );
-                            const bool shouldPlay = initialResumeShouldPlay.load();
-                            {
-                                std::lock_guard<std::mutex> lock(mpvMutex);
-                                if (mpv) {
-                                    int paused = shouldPlay ? 0 : 1;
-                                    mpvApi().setProperty(mpv, "pause", MPV_FORMAT_FLAG, &paused);
-                                }
-                            }
-                            nuvioMpvLogAppend("[nuvio] initial resume transaction completed target=" +
-                                std::to_string(target) + " position=" + std::to_string(position) +
-                                " play=" + (shouldPlay ? std::string("yes") : std::string("no")) + "\n");
-                        } else {
-                            nuvioMpvLogAppend("[nuvio] initial resume transaction waiting target=" +
-                                std::to_string(target) + " position=" + std::to_string(position) +
-                                " eof=" + (rawEof ? std::string("yes") : std::string("no")) + "\n");
-                        }
-                    }
-                }
+                startupPlaybackReady = true;
+                const bool initialResumeReady = tryCompleteInitialResume(true);
                 if (!initialResumeReady) {
                     // Ignore the pre-seek restart/EOF. A later PLAYBACK_RESTART at the validated
                     // target completes the transaction and is the only startup exposed to Kotlin.
@@ -4021,14 +4430,22 @@ private:
                             " output=" + stringProperty("video-out-params/pixelformat", "") + "\n");
                     }
                 } else {
-                    playbackRestartPendingForFile = false;
-                    sendPlayerEvent("playbackRestart", 1.0);
+                    publishPlaybackRestartIfReady();
                 }
             }
+            if (event->event_id == MPV_EVENT_START_FILE) nuvioBridgeLog("media open started");
+            if (event->event_id == MPV_EVENT_VIDEO_RECONFIG) nuvioBridgeLog("video reconfigured");
+            if (event->event_id == MPV_EVENT_AUDIO_RECONFIG) nuvioBridgeLog("audio reconfigured");
             if (event->event_id == MPV_EVENT_FILE_LOADED) {
+                startupMetricsDue = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+                nuvioBridgeLog("file loaded");
                 fileLoadedForCurrentSource = true;
                 playbackRestartPendingForFile = true;
                 tryApplyInitialResume("fileLoaded");
+                // Ahead of the HDR event on purpose: both land in the same burst, and Kotlin holds
+                // the anime shader chain back while the size is unknown, so reporting the size
+                // second would cost an extra full video-profile pass on every load.
+                reportVideoSourceSize();
                 const std::string resolvedPrimaries = stringProperty("video-params/primaries", "");
                 const std::string resolvedGamma = stringProperty("video-params/gamma", "");
                 const bool hdrStateKnown = !resolvedPrimaries.empty() && !resolvedGamma.empty();
@@ -4135,10 +4552,26 @@ private:
                 std::string propName(prop->name);
                 bool hasValue = prop->format == MPV_FORMAT_STRING && prop->data;
                 std::string propValue = hasValue ? std::string(*static_cast<char **>(prop->data)) : "";
+                if (hasValue && (propName == "hwdec-current" || propName == "paused-for-cache" ||
+                    propName == "audio-params/format" || propName == "speed")) {
+                    nuvioBridgeLog("property " + propName + "=" + propValue);
+                }
+
+                if (propName == "speed" && hasValue) {
+                    std::lock_guard<std::mutex> lock(mpvMutex);
+                    double currentSpeed = 1.0;
+                    if (mpv && tryGetDoubleLocked("speed", currentSpeed)) applySpeedSensitiveVideoFiltersLocked(currentSpeed);
+                }
 
                 // mpv first emits unavailable/empty observations for both properties. Those mean
                 // "not known yet", not SDR; treating them as a complete pair briefly enabled RTX
                 // Video HDR on native HDR/Dolby Vision content until the real values arrived.
+                if (propName == "video-params/w" || propName == "video-params/h") {
+                    // Read both back rather than trusting one observation: the pair is only
+                    // meaningful together, and reportVideoSourceSize dedups an unchanged size.
+                    reportVideoSourceSize();
+                }
+
                 if (propName == "video-params/primaries" && hasValue && !propValue.empty()) {
                     videoParamsPrimaries = propValue;
                     videoParamsPrimariesReceived = true;
@@ -4176,6 +4609,10 @@ private:
     }
 
     void sendPlayerEvent(const std::string &type, double value) {
+        if (type == "playbackRestart" || type == "svpPrerollReady" || type == "profileReady") {
+            nuvioBridgeLog("event " + type);
+        }
+
         std::lock_guard<std::mutex> eventLock(eventSinkMutex);
         if (!eventSink || !eventMethod) return;
         bool didAttach = false;
@@ -4684,15 +5121,24 @@ private:
     // check a few seconds after file load (see subtitleAssOverrideInitialCheckPending) catches
     // whatever track mpv auto-selected on its own. Deliberately NOT a recurring poll — that
     // interfered with seeking/playback start.
-    void refreshSubtitleAssOverrideMode() {
+    void refreshSubtitleAssOverrideMode(bool force = false) {
         std::string codec = selectedSubtitleCodec();
         bool isAssSubtitle = codec.find("ass") != std::string::npos || codec.find("ssa") != std::string::npos;
-        std::string mode = isAssSubtitle ? "no" : "force";
+        std::string mode = isAssSubtitle ? requestedSubAssStyleMode : "force";
+        // sub-scale belongs to the ASS control, so a plain-text track is always left at 1.0 and
+        // keeps being sized by sub-font-size alone, exactly as before this control existed.
+        double scale = isAssSubtitle ? requestedSubAssScale : 1.0;
         nuvioBridgeLog("refreshSubtitleAssOverrideMode: codec=\"" + codec + "\" mode=" + mode +
-            (mode == appliedSubAssOverrideMode ? " (unchanged)" : " (applying)"));
-        if (mode == appliedSubAssOverrideMode) return;
+            " scale=" + std::to_string(scale) +
+            (!force && mode == appliedSubAssOverrideMode ? " (unchanged)" : " (applying)"));
+        if (!force && mode == appliedSubAssOverrideMode) return;
         appliedSubAssOverrideMode = mode;
         setStringProperty("sub-ass-override", mode);
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            if (!mpv) return;
+            mpvApi().setProperty(mpv, "sub-scale", MPV_FORMAT_DOUBLE, &scale);
+        }
     }
 
     std::string formatTrackTitle(
@@ -5165,6 +5611,17 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_subtitleTracksJson
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_beginVideoProfile(JNIEnv *, jobject, jlong handle) {
+    auto player = playerFromHandle(handle);
+    if (player) player->beginVideoProfile();
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_endVideoProfile(JNIEnv *, jobject, jlong handle) {
+    auto player = playerFromHandle(handle);
+    if (player) player->endVideoProfile();
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_completeSvpStartupProfile(JNIEnv *, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
     if (player) player->acknowledgeSvpStartupProfile();
@@ -5258,6 +5715,19 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_updateCompactPlaye
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_endCompactPlayerWindowInteraction(JNIEnv *, jobject, jlong windowHwnd) {
     endCompactPlayerWindowInteraction((HWND)(intptr_t)windowHwnd);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSubtitleAssStyleMode(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring mode,
+    jdouble scale
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->setSubtitleAssStyleMode(mode ? jstringToUtf8(env, mode) : std::string("no"), scale);
 }
 
 extern "C" JNIEXPORT void JNICALL

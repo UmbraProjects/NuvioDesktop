@@ -74,6 +74,12 @@ internal fun premiumizeCloudItemsFromFiles(
                 .mapNotNull { it.sizeBytes }
                 .takeIf { it.isNotEmpty() }
                 ?.sum()
+            // A folder is as new as its newest file: Premiumize dates files, not the folder that
+            // groups them, and `created_at` is epoch seconds there rather than an ISO string.
+            val addedAtEpochMs = group
+                .mapNotNull { it.createdAtEpochSeconds }
+                .maxOrNull()
+                ?.times(1000L)
             CloudLibraryItem(
                 providerId = providerId,
                 providerName = providerName,
@@ -82,6 +88,7 @@ internal fun premiumizeCloudItemsFromFiles(
                 name = first.itemName,
                 status = "Ready",
                 sizeBytes = size,
+                addedAtEpochMs = addedAtEpochMs,
                 files = cloudFiles,
             )
         }
@@ -92,6 +99,7 @@ private data class PremiumizeMappedCloudFile(
     val groupKey: String,
     val itemId: String,
     val itemName: String,
+    val createdAtEpochSeconds: Long?,
     val file: CloudLibraryFile,
 )
 
@@ -120,6 +128,7 @@ private fun PremiumizeCloudFileDto.toPremiumizeCloudFile(): PremiumizeMappedClou
         groupKey = groupKey,
         itemId = itemId,
         itemName = itemName,
+        createdAtEpochSeconds = createdAt,
         file = CloudLibraryFile(
             id = fileId,
             name = fileName,

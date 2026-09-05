@@ -8,8 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudDownload
-import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Casino
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Favorite
@@ -21,6 +21,8 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Tune
@@ -43,6 +45,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_addons
 import nuvio.composeapp.generated.resources.compose_settings_page_advanced
 import nuvio.composeapp.generated.resources.compose_settings_page_appearance
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
+import nuvio.composeapp.generated.resources.compose_settings_page_games
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
@@ -62,6 +65,7 @@ import nuvio.composeapp.generated.resources.compose_settings_root_check_updates_
 import nuvio.composeapp.generated.resources.compose_settings_root_check_updates_title
 import nuvio.composeapp.generated.resources.compose_settings_root_downloads_description
 import nuvio.composeapp.generated.resources.compose_settings_root_downloads_title
+import nuvio.composeapp.generated.resources.compose_settings_root_games_description
 import nuvio.composeapp.generated.resources.compose_settings_root_general_section
 import nuvio.composeapp.generated.resources.compose_settings_root_integrations_description
 import nuvio.composeapp.generated.resources.compose_settings_root_notifications_description
@@ -86,17 +90,22 @@ import nuvio.composeapp.generated.resources.settings_content_discovery_meta_scre
 import nuvio.composeapp.generated.resources.settings_content_discovery_plugins_description
 import nuvio.composeapp.generated.resources.settings_playback_subtitle
 import nuvio.composeapp.generated.resources.random_play_title
+import nuvio.composeapp.generated.resources.compose_settings_page_discover
+import nuvio.composeapp.generated.resources.settings_discover_page_description
 import nuvio.composeapp.generated.resources.random_play_settings_description
 import nuvio.composeapp.generated.resources.about_supporters_contributors_subtitle
 import nuvio.composeapp.generated.resources.about_licenses_attributions_subtitle
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.accentBrush
 
 internal fun LazyListScope.settingsRootContent(
     isTablet: Boolean,
     onPlaybackClick: () -> Unit,
     onRandomPlayClick: () -> Unit,
+    onDiscoverClick: () -> Unit,
     onStreamsClick: () -> Unit,
     onLocalLibraryClick: () -> Unit,
+    onGamesClick: () -> Unit,
     onAutoDownloadsClick: () -> Unit,
     onAppearanceClick: () -> Unit,
     onAdvancedClick: () -> Unit,
@@ -161,7 +170,7 @@ internal fun LazyListScope.settingsRootContent(
                     SettingsNavigationRow(
                         title = stringResource(Res.string.compose_settings_page_simkl),
                         description = stringResource(Res.string.settings_simkl_description),
-                        icon = Icons.Rounded.Bookmarks,
+                        iconPainter = integrationLogoPainter(IntegrationLogo.Simkl),
                         isTablet = isTablet,
                         onClick = onSimklClick,
                     )
@@ -169,7 +178,7 @@ internal fun LazyListScope.settingsRootContent(
                     SettingsNavigationRow(
                         title = stringResource(Res.string.compose_settings_page_yamtrack),
                         description = stringResource(Res.string.settings_yamtrack_description),
-                        icon = Icons.Rounded.Bookmarks,
+                        icon = Icons.Rounded.Save,
                         isTablet = isTablet,
                         onClick = onYamtrackClick,
                     )
@@ -206,6 +215,14 @@ internal fun LazyListScope.settingsRootContent(
                         icon = Icons.Rounded.VideoLibrary,
                         isTablet = isTablet,
                         onClick = onLocalLibraryClick,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_games),
+                        description = stringResource(Res.string.compose_settings_root_games_description),
+                        icon = Icons.Rounded.SportsEsports,
+                        isTablet = isTablet,
+                        onClick = onGamesClick,
                     )
                     if (showDownloadsEntry) {
                         SettingsGroupDivider(isTablet = isTablet)
@@ -292,6 +309,14 @@ internal fun LazyListScope.settingsRootContent(
                         icon = Icons.Rounded.Casino,
                         isTablet = isTablet,
                         onClick = onRandomPlayClick,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_discover),
+                        description = stringResource(Res.string.settings_discover_page_description),
+                        icon = Icons.Rounded.Explore,
+                        isTablet = isTablet,
+                        onClick = onDiscoverClick,
                     )
                     if (showPluginsEntry) {
                         SettingsGroupDivider(isTablet = isTablet)
@@ -411,7 +436,7 @@ internal fun LazyListScope.settingsRootContent(
                     .align(Alignment.CenterHorizontally)
                     .clickable { platformOpenLogsDirectory() }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodySmall.accentBrush(),
                 color = MaterialTheme.colorScheme.primary,
                 textAlign = TextAlign.Center,
             )

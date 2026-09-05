@@ -54,6 +54,7 @@ import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.ExtraLargePosterCardWidthDp
 import com.nuvio.app.core.ui.landscapePosterHeightForWidth
 import com.nuvio.app.core.ui.landscapePosterWidth
+import com.nuvio.app.core.ui.nuvioPosterHighlight
 import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.core.ui.rememberHomePosterCardStyleUiState
 import com.nuvio.app.features.cloud.CloudLibraryContentType
@@ -62,11 +63,11 @@ import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingArtworkDiagnostics
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
-import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import com.nuvio.app.features.watchprogress.computeAirDateBadgeText
 import kotlin.math.roundToInt
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.nuvio
 
 private val ContinueWatchingStatusBadgeShape = RoundedCornerShape(4.dp)
 private val ContinueWatchingNewEpisodeBadgeColor = Color(0xFF1D4ED8)
@@ -716,9 +717,8 @@ private fun ContinueWatchingCard(
             cardWidthOverride = cardWidthOverride,
         )
     }
-    val todayIsoDate = CurrentDateProvider.todayIsoDate()
     val compactAirDateText = if (item.progressFraction <= 0f && item.seasonNumber != null && item.episodeNumber != null) {
-        computeAirDateBadgeText(item.released, todayIsoDate, compact = true)
+        computeAirDateBadgeText(item.released, compact = true)
     } else {
         null
     }
@@ -748,6 +748,7 @@ private fun ContinueWatchingCard(
         modifier = Modifier
             .width(cardMetrics.width)
             .aspectRatio(PosterLandscapeAspectRatio)
+            .nuvioPosterHighlight(cardMetrics.cornerRadius)
             .clip(RoundedCornerShape(cardMetrics.cornerRadius))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .nuvioCardDepth(RoundedCornerShape(cardMetrics.cornerRadius), NuvioCardDepthSurface.ContinueWatching)
@@ -869,7 +870,7 @@ private fun ContinueWatchingCard(
                         .fillMaxWidth(item.progressFraction.coerceIn(0f, 1f))
                         .fillMaxHeight()
                         .clip(RoundedCornerShape(999.dp))
-                        .background(MaterialTheme.colorScheme.primary),
+                        .background(MaterialTheme.nuvio.colors.accentFill),
                 )
             }
         }
@@ -935,6 +936,7 @@ private fun ContinueWatchingWideCard(
         modifier = Modifier
             .width(layout.wideCardWidth)
             .height(layout.wideCardHeight)
+            .nuvioPosterHighlight(layout.cardRadius)
             .clip(RoundedCornerShape(layout.cardRadius))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
             .border(
@@ -986,14 +988,13 @@ private fun ContinueWatchingWideCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (item.progressFraction <= 0f && item.seasonNumber != null && item.episodeNumber != null) {
-                        val todayIsoDate = CurrentDateProvider.todayIsoDate()
                         val badgeText = when {
                             item.isReleaseAlert -> {
                                 if (item.isNewSeasonRelease) stringResource(Res.string.cw_new_season)
                                 else stringResource(Res.string.cw_new_episode)
                             }
                             else -> {
-                                computeAirDateBadgeText(item.released, todayIsoDate, compact = isCompact)
+                                computeAirDateBadgeText(item.released, compact = isCompact)
                                     ?: stringResource(Res.string.home_continue_watching_up_next)
                             }
                         }
@@ -1070,6 +1071,7 @@ private fun ContinueWatchingPosterCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(layout.posterCardHeight)
+                .nuvioPosterHighlight(layout.cardRadius)
                 .clip(RoundedCornerShape(layout.cardRadius))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .nuvioCardDepth(RoundedCornerShape(layout.cardRadius), NuvioCardDepthSurface.ContinueWatching)
@@ -1102,14 +1104,13 @@ private fun ContinueWatchingPosterCard(
                         .align(Alignment.TopEnd)
                         .padding(8.dp),
                 ) {
-                    val todayIsoDate = CurrentDateProvider.todayIsoDate()
                     val badgeText = when {
                         item.isReleaseAlert -> {
                             if (item.isNewSeasonRelease) stringResource(Res.string.cw_new_season)
                             else stringResource(Res.string.cw_new_episode)
                         }
                         else -> {
-                            computeAirDateBadgeText(item.released, todayIsoDate, compact = true)
+                            computeAirDateBadgeText(item.released, compact = true)
                                 ?: stringResource(Res.string.home_continue_watching_up_next)
                         }
                     }
@@ -1219,7 +1220,7 @@ private fun UpNextBadge(
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(if (compact) 4.dp else 12.dp))
-            .background(chipColor)
+            .background(MaterialTheme.nuvio.colors.accentFill)
             .padding(
                 horizontal = if (compact) 6.dp else 8.dp,
                 vertical = if (compact) 3.dp else 4.dp,

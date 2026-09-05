@@ -10,43 +10,33 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.animateDpAsState
 import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.core.ui.NuvioSurfaceCard
-import com.nuvio.app.core.ui.trackTextInputFocus
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
-import sh.calvin.reorderable.ReorderableCollectionItemScope
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import sh.calvin.reorderable.ReorderableColumn
+import com.nuvio.app.core.ui.NuvioTextField
 
 @Composable
 internal fun CollectionReorderableList(
@@ -55,26 +45,30 @@ internal fun CollectionReorderableList(
     onDelete: (String) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val lazyListState = rememberLazyListState()
-    val reorderableLazyListState = rememberReorderableLazyListState(
-        lazyListState = lazyListState,
-    ) { from, to ->
-        CollectionRepository.moveByIndex(from.index, to.index)
-        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-    }
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 720.dp),
-        state = lazyListState,
+    // This list lives inside the settings page's own LazyColumn. A nested reorderable LazyColumn
+    // creates a second edge auto-scroller; dragging the first card enters both top zones and sends
+    // the page racing upward. A regular reorderable Column delegates all scrolling to the page.
+    ReorderableColumn(
+        list = collections,
+        onSettle = { fromIndex, toIndex ->
+            CollectionRepository.moveByIndex(fromIndex, toIndex)
+        },
+        onMove = {
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        },
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        itemsIndexed(collections, key = { _, collection -> collection.id }) { _, collection ->
-            ReorderableItem(reorderableLazyListState, key = collection.id) { isDragging ->
+    ) { _, collection, isDragging ->
+        key(collection.id) {
+            ReorderableItem {
                 val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
 
                 Surface(
+                    modifier = Modifier.draggableHandle(
+                        onDragStarted = {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        },
+                    ),
                     color = MaterialTheme.colorScheme.surface,
                     shape = MaterialTheme.shapes.extraLarge,
                     shadowElevation = elevation,
@@ -83,7 +77,6 @@ internal fun CollectionReorderableList(
                         collection = collection,
                         onEdit = { onEdit(collection.id) },
                         onDelete = { onDelete(collection.id) },
-                        dragHandleScope = this@ReorderableItem,
                     )
                 }
             }
@@ -96,10 +89,7 @@ private fun CollectionListItem(
     collection: Collection,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    dragHandleScope: ReorderableCollectionItemScope,
 ) {
-    val hapticFeedback = LocalHapticFeedback.current
-
     NuvioSurfaceCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -135,26 +125,6 @@ private fun CollectionListItem(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(
-                modifier = with(dragHandleScope) {
-                    Modifier.draggableHandle(
-                        onDragStarted = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        },
-                        onDragStopped = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        },
-                    ).size(36.dp)
-                },
-                onClick = {},
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Menu,
-                    contentDescription = stringResource(Res.string.action_reorder),
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             Spacer(modifier = Modifier.weight(1f))
             IconButton(
                 onClick = onEdit,
@@ -208,37 +178,18 @@ internal fun CollectionImportDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
+                NuvioTextField(
                     value = importText,
                     onValueChange = onTextChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .trackTextInputFocus(),
-                    placeholder = {
-                        Text(
-                            stringResource(Res.string.collections_import_json_placeholder),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = stringResource(Res.string.collections_import_json_placeholder),
                     isError = importError != null,
-                    supportingText = importError?.let {
-                        { Text(it, color = MaterialTheme.colorScheme.error) }
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { onConfirm() }),
+                    supportingText = importError,
+                    singleLine = false,
+                    minLines = 6,
                     maxLines = 10,
-                    shape = RoundedCornerShape(14.dp),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.outline,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        cursorColor = MaterialTheme.colorScheme.primary,
-                    ),
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    onImeAction = { onConfirm() },
                 )
                 Spacer(modifier = Modifier.height(18.dp))
                 Row(

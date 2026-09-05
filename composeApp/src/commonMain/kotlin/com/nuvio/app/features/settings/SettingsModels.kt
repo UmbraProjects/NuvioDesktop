@@ -18,15 +18,18 @@ import nuvio.composeapp.generated.resources.compose_settings_page_appearance
 import nuvio.composeapp.generated.resources.compose_settings_page_content_discovery
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
+import nuvio.composeapp.generated.resources.compose_settings_page_games
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
 import nuvio.composeapp.generated.resources.compose_settings_page_keyboard_shortcuts
 import nuvio.composeapp.generated.resources.compose_settings_page_local_library
 import nuvio.composeapp.generated.resources.compose_settings_page_auto_downloads
+import nuvio.composeapp.generated.resources.compose_settings_root_downloads_title
 import nuvio.composeapp.generated.resources.compose_settings_page_licenses_attributions
 import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_ratings
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
 import nuvio.composeapp.generated.resources.compose_settings_page_notifications
+import nuvio.composeapp.generated.resources.compose_settings_page_discover
 import nuvio.composeapp.generated.resources.compose_settings_page_playback
 import nuvio.composeapp.generated.resources.random_play_title
 import nuvio.composeapp.generated.resources.compose_settings_page_qualicache
@@ -88,6 +91,11 @@ internal enum class SettingsPage(
         category = SettingsCategory.General,
         parentPage = Root,
     ),
+    Discover(
+        titleRes = Res.string.compose_settings_page_discover,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
     Streams(
         titleRes = Res.string.compose_settings_page_streams,
         category = SettingsCategory.General,
@@ -98,8 +106,18 @@ internal enum class SettingsPage(
         category = SettingsCategory.General,
         parentPage = Root,
     ),
+    Games(
+        titleRes = Res.string.compose_settings_page_games,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
     AutoDownloads(
         titleRes = Res.string.compose_settings_page_auto_downloads,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
+    Downloads(
+        titleRes = Res.string.compose_settings_root_downloads_title,
         category = SettingsCategory.General,
         parentPage = Root,
     ),

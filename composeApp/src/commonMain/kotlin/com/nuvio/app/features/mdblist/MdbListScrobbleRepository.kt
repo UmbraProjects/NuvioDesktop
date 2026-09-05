@@ -5,8 +5,10 @@ import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.metadata.ResolvedMediaIds
 import com.nuvio.app.features.tracking.TrackingCoordinateFamily
+import com.nuvio.app.features.tracking.TrackingScrobbleResult
 import com.nuvio.app.features.tracking.hasFranchiseScrobbleId
 import com.nuvio.app.features.tracking.projectScrobbleCoordinates
+import com.nuvio.app.features.tracking.trackingScrobbleResponseConfirmsWatched
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
@@ -56,13 +58,13 @@ internal object MdbListScrobbleRepository {
     private const val MAX_STOP_RETRIES = 2
     private const val RETRY_DELAY_MS = 1_500L
 
-    suspend fun scrobbleStart(item: MdbListScrobbleItem, progressPercent: Float): Boolean =
+    suspend fun scrobbleStart(item: MdbListScrobbleItem, progressPercent: Float): TrackingScrobbleResult =
         send("start", item, progressPercent)
 
-    suspend fun scrobblePause(item: MdbListScrobbleItem, progressPercent: Float): Boolean =
+    suspend fun scrobblePause(item: MdbListScrobbleItem, progressPercent: Float): TrackingScrobbleResult =
         send("pause", item, progressPercent)
 
-    suspend fun scrobbleStop(item: MdbListScrobbleItem, progressPercent: Float): Boolean =
+    suspend fun scrobbleStop(item: MdbListScrobbleItem, progressPercent: Float): TrackingScrobbleResult =
         send("stop", item, progressPercent)
 
     /**
@@ -70,7 +72,7 @@ internal object MdbListScrobbleRepository {
      * the same item to `/scrobble/clear`. Sent at 0% because the position is being discarded.
      */
     suspend fun scrobbleClear(item: MdbListScrobbleItem): Boolean =
-        send("clear", item, progressPercent = 0f)
+        send("clear", item, progressPercent = 0f).handled
 
     suspend fun buildItem(
         contentType: String,
@@ -121,11 +123,11 @@ internal object MdbListScrobbleRepository {
         action: String,
         item: MdbListScrobbleItem,
         progressPercent: Float,
-    ): Boolean {
-        val apiKey = MdbListSettingsRepository.trackingApiKey() ?: return false
+    ): TrackingScrobbleResult {
+        val apiKey = MdbListSettingsRepository.trackingApiKey() ?: return TrackingScrobbleResult.Declined
         val progress = progressPercent.coerceIn(0f, 100f)
         val itemKey = item.itemKey
-        if (shouldSkip(action, itemKey, progress)) return false
+        if (shouldSkip(action, itemKey, progress)) return TrackingScrobbleResult.Declined
 
         val url = "$MDBLIST_BASE_URL/scrobble/$action?apikey=$apiKey"
         val body = buildBodyJson(item, progress)
@@ -150,7 +152,7 @@ internal object MdbListScrobbleRepository {
                     delay(RETRY_DELAY_MS * attempt)
                     continue
                 }
-                return false
+                return TrackingScrobbleResult.Declined
             }
 
             log.d { "MDBList scrobble $action response: ${response.status}" }
@@ -158,13 +160,16 @@ internal object MdbListScrobbleRepository {
             when (response.status) {
                 in 200..299 -> {
                     lastStamp = ScrobbleStamp(action, itemKey, progress, System.currentTimeMillis())
-                    return true
+                    return TrackingScrobbleResult(
+                        handled = true,
+                        confirmsWatched = trackingScrobbleResponseConfirmsWatched(response.body),
+                    )
                 }
                 // The daily request budget is shared with ratings lookups, so back off rather than
                 // burning the remainder on retries.
                 429 -> {
                     log.w { "MDBList scrobble $action: rate limited, giving up" }
-                    return true
+                    return TrackingScrobbleResult.Handled
                 }
                 in 500..599 -> {
                     if (attempt < attempts) {
@@ -172,15 +177,15 @@ internal object MdbListScrobbleRepository {
                         continue
                     }
                     log.w { "MDBList scrobble $action: server error ${response.status}" }
-                    return true
+                    return TrackingScrobbleResult.Handled
                 }
                 else -> {
                     log.w { "MDBList scrobble $action: unexpected ${response.status} ${response.body.take(200)}" }
-                    return true
+                    return TrackingScrobbleResult.Handled
                 }
             }
         }
-        return false
+        return TrackingScrobbleResult.Declined
     }
 
     /** Suppresses a repeat of the same action for the same item at effectively the same position. */

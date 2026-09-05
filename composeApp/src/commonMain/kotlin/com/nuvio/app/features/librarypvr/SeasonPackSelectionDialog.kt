@@ -43,6 +43,7 @@ import nuvio.composeapp.generated.resources.library_manual_selection
 import nuvio.composeapp.generated.resources.streams_download_pack_title
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.accentBrush
 
 /** Tight enough that the two buttons read as controls on the count line, not as dialog actions. */
 private val SelectionButtonPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
@@ -163,7 +164,7 @@ internal fun SeasonPackSelectionDialog(
                             formatBytes(selectedBytes),
                         ),
                         modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.labelLarge.accentBrush(),
                         color = MaterialTheme.colorScheme.primary,
                     )
                     if (entryRelative && onCountEntryEpisodes != null) {

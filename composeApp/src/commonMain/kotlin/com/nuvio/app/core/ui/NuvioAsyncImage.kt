@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImagePainter
+import coil3.request.ImageRequest
 
 internal enum class NuvioDesktopImageScaling {
     Auto,
@@ -34,3 +35,16 @@ internal expect fun NuvioAsyncImage(
     clipToBounds: Boolean = true,
     desktopImageScaling: NuvioDesktopImageScaling = NuvioDesktopImageScaling.Auto,
 )
+
+/**
+ * Applies the same request size [NuvioAsyncImage] will use when it displays this artwork.
+ *
+ * Prefetches exist to have the bitmap ready before the card asks for it, which only works if they
+ * warm the entry the card actually asks for. A builder left unsized falls back to
+ * `SizeResolver.ORIGINAL` at `Precision.EXACT`, so the prefetch decoded the source at full
+ * resolution — and because Coil validates a cached entry against the requested size rather than
+ * keying on it, that oversized bitmap is what the display request then found and kept. Sixteen
+ * prefetched posters could occupy a large share of the whole memory cache before the user had
+ * scrolled anywhere.
+ */
+internal expect fun ImageRequest.Builder.nuvioArtworkRequestSize(): ImageRequest.Builder

@@ -22,6 +22,8 @@ import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.streams.StreamContextStore
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.streams.StreamLaunchStore
+import com.nuvio.app.features.streams.StreamPrefetchCache
+import com.nuvio.app.features.streams.StreamPrefetchService
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktSettingsRepository
@@ -58,6 +60,8 @@ internal object LocalAccountDataCleaner {
         P2pSettingsRepository.clearLocalState()
         CatalogRepository.clear()
         StreamsRepository.clear()
+        StreamPrefetchCache.clear()
+        StreamPrefetchService.reset()
         MetaDetailsRepository.clear()
         SearchRepository.reset()
         SubtitleRepository.clear()

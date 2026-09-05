@@ -138,6 +138,7 @@ internal object TorboxApiClient {
             method = "GET",
             url = "$BASE_URL/v1/api/torrents/mylist",
             apiKey = apiKey,
+            allowLargeResponse = true,
         )
 
     suspend fun listCloudUsenet(apiKey: String): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> =
@@ -145,6 +146,7 @@ internal object TorboxApiClient {
             method = "GET",
             url = "$BASE_URL/v1/api/usenet/mylist",
             apiKey = apiKey,
+            allowLargeResponse = true,
         )
 
     suspend fun listCloudWebDownloads(apiKey: String): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> =
@@ -152,6 +154,7 @@ internal object TorboxApiClient {
             method = "GET",
             url = "$BASE_URL/v1/api/webdl/mylist",
             apiKey = apiKey,
+            allowLargeResponse = true,
         )
 
     suspend fun requestDownloadLink(
@@ -240,6 +243,7 @@ internal object TorboxApiClient {
         apiKey: String,
         body: String = "",
         contentType: String? = null,
+        allowLargeResponse: Boolean = false,
     ): DebridApiResponse<T> {
         val headers = authHeaders(apiKey) + listOfNotNull(
             contentType?.let { "Content-Type" to it },
@@ -250,6 +254,7 @@ internal object TorboxApiClient {
             url = url,
             headers = headers,
             body = body,
+            allowLargeResponse = allowLargeResponse,
         )
         return DebridApiResponse(
             status = response.status,

@@ -619,7 +619,9 @@ object LibraryRepository {
             imdbId = resolvedImdbId,
             metaLookupId = resolvedLookupId,
             metaLookupType = resolvedLookupType,
-            savedAtEpochMs = LibraryClock.nowEpochMs(),
+            // "Saved" for a cloud row is when the provider took delivery of it, so the library's
+            // date sorts match the newest-first order the cloud section is already listed in.
+            savedAtEpochMs = addedAtEpochMs ?: LibraryClock.nowEpochMs(),
         )
 
     private fun CloudLibraryItem.cloudLibraryDescription(): String =

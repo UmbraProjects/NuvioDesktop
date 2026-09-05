@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player.desktop
 
+import com.nuvio.app.features.player.PlaybackStartTrace
 import java.awt.Color
 import java.awt.KeyboardFocusManager
 import java.awt.Rectangle
@@ -61,6 +62,7 @@ internal object DesktopPlayerLaunchShield {
         val shield = shieldWindow ?: return
         if (shield.isVisible) {
             shield.isVisible = false
+            PlaybackStartTrace.markStartupDetail("launchShield:hidden")
         }
     }
 

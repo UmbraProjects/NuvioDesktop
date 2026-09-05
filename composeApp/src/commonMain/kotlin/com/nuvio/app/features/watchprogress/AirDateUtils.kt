@@ -1,65 +1,94 @@
 package com.nuvio.app.features.watchprogress
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.nuvio.app.core.format.formatReleaseDateWithoutYear
-import com.nuvio.app.features.watching.domain.daysUntilExplicitRelease
-import com.nuvio.app.features.watching.domain.isoCalendarDateOrNull
-import com.nuvio.app.features.trakt.parseTraktIsoDateTimeToEpochMs
+import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
+/**
+ * The countdown shown on an Up Next card, recomputed on a ticker so it stays true while the app
+ * sits open — this is an HTPC that runs for days, and the old text was fixed at whatever the date
+ * was when the card was first composed.
+ */
 @Composable
 fun computeAirDateBadgeText(
     releasedIso: String?,
-    todayIsoDate: String,
-    compact: Boolean
+    compact: Boolean,
 ): String? {
-    if (releasedIso.isNullOrBlank() || todayIsoDate.isBlank()) {
-        return null
-    }
+    val release = remember(releasedIso) { resolveReleaseInstant(releasedIso) } ?: return null
 
-    val releaseEpoch = parseTraktIsoDateTimeToEpochMs(releasedIso)
-    if (releaseEpoch != null && WatchProgressClock.nowEpochMs() >= releaseEpoch) {
-        return null
-    }
-
-    val daysUntil = daysUntilExplicitRelease(
-        todayIsoDate = todayIsoDate,
-        releasedDate = releasedIso,
-    ) ?: return null
-
-    return when {
-        daysUntil < 0 -> null
-        daysUntil == 0 -> {
+    return when (val countdown = rememberReleaseCountdown(release)) {
+        null -> null
+        is ReleaseCountdown.InMinutes ->
+            if (compact) stringResource(Res.string.cw_airs_in_minutes_short, countdown.minutes)
+            else pluralStringResource(Res.plurals.cw_airs_in_minutes, countdown.minutes, countdown.minutes)
+        is ReleaseCountdown.InHours ->
+            if (compact) stringResource(Res.string.cw_airs_in_hours_short, countdown.hours)
+            else pluralStringResource(Res.plurals.cw_airs_in_hours, countdown.hours, countdown.hours)
+        is ReleaseCountdown.InDays ->
+            if (compact) pluralStringResource(Res.plurals.cw_airs_in_days_short, countdown.days, countdown.days)
+            else pluralStringResource(Res.plurals.cw_airs_in_days, countdown.days, countdown.days)
+        ReleaseCountdown.Today ->
             if (compact) stringResource(Res.string.cw_airs_today_short)
             else stringResource(Res.string.cw_airs_today)
-        }
-        daysUntil == 1 -> {
+        ReleaseCountdown.Tomorrow ->
             if (compact) stringResource(Res.string.cw_airs_tomorrow_short)
             else stringResource(Res.string.cw_airs_tomorrow)
-        }
-        daysUntil in 2..7 -> {
-            if (compact) pluralStringResource(Res.plurals.cw_airs_in_days_short, daysUntil, daysUntil)
-            else pluralStringResource(Res.plurals.cw_airs_in_days, daysUntil, daysUntil)
-        }
-        else -> {
-            val formattedDate = formatReleaseDateWithoutYear(releasedIso)
+        is ReleaseCountdown.OnDate -> {
+            val formattedDate = formatReleaseDateWithoutYear(countdown.localIsoDate)
             if (compact) stringResource(Res.string.cw_airs_date_short, formattedDate)
             else stringResource(Res.string.cw_airs_date, formattedDate)
         }
     }
 }
 
-fun parseReleaseDateToEpochMs(raw: String?): Long? {
-    if (raw.isNullOrBlank()) return null
-    val trimmed = raw.trim()
-    val epochMs = parseTraktIsoDateTimeToEpochMs(trimmed)
-    if (epochMs != null) return epochMs
+/**
+ * Re-reads the clock on an interval that matches the unit on screen.
+ *
+ * The interval comes from the countdown itself rather than being fixed: a minutes badge has to
+ * move every few seconds, a "In 3 days" badge only has to survive midnight.
+ */
+@Composable
+private fun rememberReleaseCountdown(release: ReleaseInstant): ReleaseCountdown? {
+    var countdown by remember(release) {
+        mutableStateOf(
+            releaseCountdown(
+                release = release,
+                nowMs = WatchProgressClock.nowEpochMs(),
+                todayIsoDate = CurrentDateProvider.todayIsoDate(),
+            ),
+        )
+    }
 
-    val datePart = isoCalendarDateOrNull(trimmed) ?: return null
-    return parseTraktIsoDateTimeToEpochMs("${datePart}T00:00:00Z")
+    LaunchedEffect(release) {
+        while (true) {
+            val current = releaseCountdown(
+                release = release,
+                nowMs = WatchProgressClock.nowEpochMs(),
+                todayIsoDate = CurrentDateProvider.todayIsoDate(),
+            )
+            countdown = current
+            delay(countdownRefreshIntervalMs(current))
+        }
+    }
+
+    return countdown
 }
+
+/**
+ * The instant an episode becomes available, in the viewer's timezone.
+ *
+ * A date-only value resolves to that day's *local* midnight, not UTC midnight — the old behaviour
+ * fired "New Episode" five hours early in New York and an hour late in London.
+ */
+fun parseReleaseDateToEpochMs(raw: String?): Long? = resolveReleaseInstant(raw)?.epochMs
 
 class ReleaseAlertState(
     val isReleaseAlert: Boolean,

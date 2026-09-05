@@ -1,8 +1,12 @@
 package com.nuvio.app.features.simkl
 
+import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.watched.WatchedItem
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.Json
 
 /**
@@ -15,6 +19,7 @@ import kotlinx.serialization.json.Json
  */
 internal object SimklWatchedRepository {
     private const val BASE_URL = "https://api.simkl.com"
+    private val log = Logger.withTag("SimklWatched")
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun watchedItems(): List<WatchedItem> {
@@ -28,13 +33,53 @@ internal object SimklWatchedRepository {
         if (response.status !in 200..299) {
             error("SIMKL watched-history fetch failed: HTTP ${response.status}")
         }
-        return runCatching {
+        val payload = runCatching {
             json.decodeFromString<SimklAllItemsResponse>(response.body)
         }.getOrElse { failure ->
             if (failure is CancellationException) throw failure
             error("SIMKL watched-history payload could not be parsed: ${failure.message}")
-        }.toWatchedItems()
+        }
+        return payload.toWatchedItems() + backfillSeasonlessEntries(payload)
     }
+
+    /**
+     * Recovers the watch state of shows SIMKL reports as a bare count.
+     *
+     * See [SimklEpisodeCatalog] for why this is necessary at all. One extra request per affected
+     * show, so it is chunked rather than fanned out: an import touches every completed show at once,
+     * and 145 simultaneous requests is how an account earns a rate limit.
+     */
+    private suspend fun backfillSeasonlessEntries(
+        payload: SimklAllItemsResponse,
+    ): List<WatchedItem> {
+        val targets = payload.episodeBackfillTargets()
+        if (targets.isEmpty()) return emptyList()
+        log.i { "SIMKL: ${targets.size} shows arrived without episodes; recovering from the episode catalog" }
+
+        val recovered = mutableListOf<WatchedItem>()
+        var unresolved = 0
+        for (chunk in targets.chunked(BACKFILL_CONCURRENCY)) {
+            coroutineScope {
+                chunk.map { target ->
+                    async {
+                        target to SimklEpisodeCatalog.episodesFor(target.simklId)
+                    }
+                }.awaitAll()
+            }.forEach { (target, episodes) ->
+                val items = buildBackfilledWatchedItems(target, episodes)
+                if (items.isEmpty()) unresolved++
+                recovered += items
+            }
+        }
+        log.i {
+            "SIMKL: recovered ${recovered.size} episode rows from ${targets.size - unresolved} shows" +
+                if (unresolved > 0) " ($unresolved could not be resolved)" else ""
+        }
+        return recovered
+    }
+
+    /** Episode-list requests in flight at once. See [backfillSeasonlessEntries]. */
+    private const val BACKFILL_CONCURRENCY = 6
 }
 
 internal fun SimklAllItemsResponse.toWatchedItems(): List<WatchedItem> = buildList {

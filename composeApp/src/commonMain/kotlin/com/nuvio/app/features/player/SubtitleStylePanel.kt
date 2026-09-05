@@ -298,6 +298,75 @@ private fun StyleControlsCard(
             )
         }
 
+        // ASS/SSA tracks ignore everything above unless the user asks otherwise, because those
+        // scripts carry their own fonts, colours, placement and animation. The two rows here are
+        // how a size or position change reaches one at all.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(Res.string.player_subtitle_ass_mode),
+                color = colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            StepperControl(
+                value = subtitleAssStyleModeLabel(style.assStyleMode),
+                onMinus = {
+                    onStyleChanged(style.copy(assStyleMode = style.assStyleMode.cycled(-1)))
+                },
+                onPlus = {
+                    onStyleChanged(style.copy(assStyleMode = style.assStyleMode.cycled(1)))
+                },
+                buttonSize = btnSize,
+                buttonRadius = btnRadius,
+                minWidth = 96.dp,
+                minusIcon = Icons.Rounded.KeyboardArrowDown,
+                plusIcon = Icons.Rounded.KeyboardArrowUp,
+            )
+        }
+
+        if (style.assStyleMode != SubtitleAssStyleMode.Original) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(Res.string.player_subtitle_ass_scale),
+                    color = colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                StepperControl(
+                    value = "${style.assScalePercent}%",
+                    onMinus = {
+                        onStyleChanged(
+                            style.copy(
+                                assScalePercent = (style.assScalePercent - SUBTITLE_ASS_SCALE_STEP)
+                                    .coerceAtLeast(SUBTITLE_ASS_SCALE_MIN),
+                            ),
+                        )
+                    },
+                    onPlus = {
+                        onStyleChanged(
+                            style.copy(
+                                assScalePercent = (style.assScalePercent + SUBTITLE_ASS_SCALE_STEP)
+                                    .coerceAtMost(SUBTITLE_ASS_SCALE_MAX),
+                            ),
+                        )
+                    },
+                    buttonSize = btnSize,
+                    buttonRadius = btnRadius,
+                    minWidth = 58.dp,
+                    minusIcon = Icons.Rounded.KeyboardArrowDown,
+                    plusIcon = Icons.Rounded.KeyboardArrowUp,
+                )
+            }
+        }
+
         ColorPickerRow(
             label = stringResource(Res.string.compose_player_color),
             colors = SubtitleColorSwatches,
@@ -817,4 +886,18 @@ private fun formatCueTimestamp(timeMs: Long): String {
     val minutes = totalSeconds / 60L
     val seconds = totalSeconds % 60L
     return "${minutes}:${seconds.toString().padStart(2, '0')}"
+}
+
+/** Cycles the ASS/SSA override level, wrapping around — the panel's controls are steppers. */
+private fun SubtitleAssStyleMode.cycled(delta: Int): SubtitleAssStyleMode {
+    val values = SubtitleAssStyleMode.entries
+    val next = ((values.indexOf(this) + delta) % values.size + values.size) % values.size
+    return values[next]
+}
+
+@Composable
+private fun subtitleAssStyleModeLabel(mode: SubtitleAssStyleMode): String = when (mode) {
+    SubtitleAssStyleMode.Original -> stringResource(Res.string.player_subtitle_ass_mode_original)
+    SubtitleAssStyleMode.Resize -> stringResource(Res.string.player_subtitle_ass_mode_resize)
+    SubtitleAssStyleMode.Override -> stringResource(Res.string.player_subtitle_ass_mode_override)
 }

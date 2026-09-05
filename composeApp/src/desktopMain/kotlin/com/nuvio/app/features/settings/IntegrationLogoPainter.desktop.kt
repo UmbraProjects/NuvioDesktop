@@ -9,6 +9,7 @@ import nuvio.composeapp.generated.resources.mdblist_logo
 import nuvio.composeapp.generated.resources.nuvio_app_icon
 import nuvio.composeapp.generated.resources.rating_tmdb
 import nuvio.composeapp.generated.resources.simkl_logo
+import nuvio.composeapp.generated.resources.discord_logo
 import nuvio.composeapp.generated.resources.trakt_tv_favicon
 import nuvio.composeapp.generated.resources.tvdb_logo
 import org.jetbrains.compose.resources.painterResource
@@ -24,6 +25,7 @@ internal actual fun integrationLogoPainter(logo: IntegrationLogo): Painter =
             IntegrationLogo.IntroDb -> Res.drawable.introdb_favicon
             IntegrationLogo.Tvdb -> Res.drawable.tvdb_logo
             IntegrationLogo.Simkl -> Res.drawable.simkl_logo
+            IntegrationLogo.Discord -> Res.drawable.discord_logo
             IntegrationLogo.Kitsu -> Res.drawable.kitsu_logo
         },
     )

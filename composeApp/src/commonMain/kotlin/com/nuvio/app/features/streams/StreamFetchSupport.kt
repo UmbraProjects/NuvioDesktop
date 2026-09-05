@@ -136,6 +136,21 @@ internal fun PluginRuntimeResult.toStreamItem(
     )
 }
 
+/**
+ * Re-labels rows with the provider identity of the load that is about to publish them.
+ *
+ * A cached response outlives the labelling that produced it: an addon can be renamed between the
+ * prefetch and the play, and plugin results carry a group id that depends on the current
+ * group-by-repository setting. Re-stamping on hydrate keeps [StreamPrefetchCache] agnostic to both,
+ * rather than keying on them and losing the hit whenever either changes.
+ */
+internal fun List<StreamItem>.reStampedFor(addonName: String, addonId: String): List<StreamItem> =
+    if (all { it.addonName == addonName && it.addonId == addonId }) {
+        this
+    } else {
+        map { it.copy(addonName = addonName, addonId = addonId) }
+    }
+
 internal fun List<StreamItem>.sortedForGroupedDisplay(): List<StreamItem> =
     sortedWith(
         compareBy<StreamItem>(

@@ -1,6 +1,5 @@
 package com.nuvio.app.features.player.skip
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,8 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -43,10 +40,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.nuvio.app.core.ui.trackTextInputFocus
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -67,6 +62,9 @@ import nuvio.composeapp.generated.resources.submit_intro_start_time_label
 import nuvio.composeapp.generated.resources.submit_intro_title
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.floor
+import com.nuvio.app.core.ui.NuvioTextField
+import androidx.compose.ui.graphics.SolidColor
+import com.nuvio.app.core.ui.nuvio
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -217,7 +215,7 @@ fun SubmitIntroDialog(
                             .weight(2f)
                             .height(48.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.primary)
+                            .background(MaterialTheme.nuvio.colors.accentFill)
                             .clickable(enabled = !isSubmitting) {
                                 val start = parseTimeToSeconds(startTimeStr)
                                 val end = parseTimeToSeconds(endTimeStr)
@@ -284,7 +282,13 @@ private fun SegmentTypeButton(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+            .background(
+                if (selected) {
+                    MaterialTheme.nuvio.colors.accentFill
+                } else {
+                    SolidColor(MaterialTheme.colorScheme.surfaceVariant)
+                },
+            )
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center
@@ -331,26 +335,13 @@ private fun TimeInputRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold,
             )
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
-            ) {
-                BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp)
-                        .trackTextInputFocus(),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    singleLine = true,
-                )
-            }
+            NuvioTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = MaterialTheme.typography.bodyLarge,
+                keyboardType = KeyboardType.Decimal,
+            )
         }
         Box(
             modifier = Modifier

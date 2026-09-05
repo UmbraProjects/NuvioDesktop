@@ -132,10 +132,19 @@ object WatchingActions {
     fun onProgressEntryUpdated(entry: WatchProgressEntry, syncRemote: Boolean = true) {
         if (!entry.isCompleted) return
 
+        // A playback session that completed before its metadata resolved carries a blank title, and
+        // the watched row it writes is never revisited. Fall back to any name already known for the
+        // same title — a sibling episode's progress entry, or an existing watched row — so the row
+        // is not stored permanently nameless.
+        val resolvedName = entry.title.ifBlank {
+            WatchProgressRepository.knownTitleForParent(entry.parentMetaId)
+                ?: WatchedRepository.knownTitleFor(entry.parentMetaId, entry.parentMetaType)
+                ?: ""
+        }
         val watchedItem = WatchedItem(
             id = entry.parentMetaId,
             type = entry.parentMetaType,
-            name = entry.title,
+            name = resolvedName,
             poster = entry.poster,
             season = entry.seasonNumber,
             episode = entry.episodeNumber,

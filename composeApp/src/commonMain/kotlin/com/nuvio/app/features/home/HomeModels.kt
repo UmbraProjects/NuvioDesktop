@@ -28,6 +28,15 @@ data class MetaPreview(
     val popularity: Double? = null,
     val voteCount: Int? = null,
     val imdbRating: String? = null,
+    /**
+     * Why this title was recommended, in the words of whatever produced the row — today only
+     * Discover's AI rows, which are the only source that has a reason to give.
+     *
+     * Presentation, not identity: the poster card shows it as a hover tooltip and everything else
+     * ignores it. Null on every ordinary catalog item, which is what keeps the tooltip off the
+     * rows that would have nothing to say.
+     */
+    val recommendationReason: String? = null,
     val ageRating: String? = null,
     val runtime: String? = null,
     val genres: List<String> = emptyList(),
@@ -127,6 +136,30 @@ enum class PosterShape {
     Poster,
     Square,
     Landscape,
+}
+
+/**
+ * Folds one refresh batch over the live section cache, keeping whichever copy of a section holds
+ * more items.
+ *
+ * A refresh stages its results in a map snapshotted when it began, so pages appended by horizontal
+ * pagination while it ran are absent from that snapshot. Writing the snapshot back verbatim dropped
+ * them, and the affected row re-published its first page — which, with the scroll position still
+ * past the paging threshold, made it request the same page again and again for the whole refresh.
+ *
+ * A forced refresh clears the live cache before staging anything, so nothing is carried across; and
+ * a batch that genuinely returns more items than the cache holds still wins on item count.
+ */
+internal fun mergeHomeSectionBatch(
+    live: Map<String, HomeCatalogSection>,
+    staged: Map<String, HomeCatalogSection>,
+): Map<String, HomeCatalogSection> = staged.mapValues { (key, stagedSection) ->
+    val liveSection = live[key]
+    if (liveSection != null && liveSection.items.size > stagedSection.items.size) {
+        liveSection
+    } else {
+        stagedSection
+    }
 }
 
 data class HomeCatalogSection(

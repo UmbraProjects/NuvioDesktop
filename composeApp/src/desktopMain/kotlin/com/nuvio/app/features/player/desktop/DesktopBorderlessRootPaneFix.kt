@@ -5,6 +5,7 @@ import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.event.ComponentListener
 import javax.swing.RootPaneContainer
+import javax.swing.SwingUtilities
 
 /**
  * Keeps the root pane covering the whole window while borderless fullscreen is active.
@@ -29,6 +30,7 @@ import javax.swing.RootPaneContainer
 internal object DesktopBorderlessRootPaneFix {
 
     private val listeners = mutableMapOf<Window, ComponentListener>()
+    private val pinScheduled = mutableSetOf<Window>()
 
     fun setActive(window: Window, active: Boolean) {
         if (DesktopHostOs.current != DesktopHostOs.WINDOWS) return
@@ -38,7 +40,7 @@ internal object DesktopBorderlessRootPaneFix {
     private fun install(window: Window) {
         if (window !is RootPaneContainer) return
         if (listeners.containsKey(window)) {
-            pinRootPane(window)
+            schedulePinRootPane(window)
             return
         }
         val listener = object : ComponentAdapter() {
@@ -48,14 +50,52 @@ internal object DesktopBorderlessRootPaneFix {
         }
         window.addComponentListener(listener)
         listeners[window] = listener
-        pinRootPane(window)
+        schedulePinRootPane(window)
     }
 
     private fun uninstall(window: Window) {
         listeners.remove(window)?.let(window::removeComponentListener)
         // Hand the layout back to the frame, which reinstates the (now genuine) decorated insets.
-        window.invalidate()
-        window.validate()
+        // Deferred for the same reason as the pin below: validating re-enters Compose rendering,
+        // and setActive(false) is reached from Compose input handlers that are mid-render.
+        SwingUtilities.invokeLater {
+            if (listeners.containsKey(window)) return@invokeLater
+            window.invalidate()
+            window.validate()
+        }
+    }
+
+    /**
+     * Posts [pinRootPane] as its own EDT event instead of running it inside the caller's frame.
+     *
+     * [pinRootPane] validates the AWT hierarchy, and that reaches `SkiaLayer.reshape` ->
+     * `Direct3DRedrawer.renderImmediately` -> a full *synchronous* Compose render. Every
+     * [setActive] caller is already inside one: the startup path arrives on a continuation that
+     * Compose's own `FlushCoroutineDispatcher` is resuming, and the fullscreen toggles arrive
+     * from input handlers dispatched inside `BaseComposeScene.sendPointerEvent`. Rendering from
+     * inside a render is not allowed, and it fails in two different ways depending on what the
+     * enclosing flush was holding:
+     *
+     *  - the nested `performScheduledEffects()` drains the *outer* flush's task list and completes
+     *    continuations that the outer `DispatchedTask.run` is still resuming. When the outer frame
+     *    then calls `releaseIntercepted()` it finds a `CompletedContinuation` where a
+     *    `DispatchedContinuation` should be, and the `ClassCastException` surfaces as a
+     *    `CoroutinesInternalError` — one per continuation caught mid-resume, each of which Compose's
+     *    default `WindowExceptionHandler` turns into a modal "Error" dialog plus a WINDOW_CLOSING;
+     *  - or Compose trips its own `IllegalStateException: Reentry into ignoringRedrawRequests is
+     *    not allowed` guard, which aborts the caller and leaves borderless fullscreen half-applied.
+     *
+     * Deferring costs at most one frame of content sitting at the stale inset offset. The
+     * [ComponentListener] callbacks do not go through here: those are already delivered as their
+     * own EDT events, so a resize keeps correcting itself synchronously.
+     */
+    private fun schedulePinRootPane(window: Window) {
+        if (!pinScheduled.add(window)) return
+        SwingUtilities.invokeLater {
+            pinScheduled.remove(window)
+            // Dropped if borderless fullscreen was switched back off while this was queued.
+            if (listeners.containsKey(window)) pinRootPane(window)
+        }
     }
 
     private fun pinRootPane(window: Window) {

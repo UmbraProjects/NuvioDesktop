@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -19,7 +18,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.yamtrack.YamtrackConnectionState
 import com.nuvio.app.features.yamtrack.YamtrackSettings
 import com.nuvio.app.features.yamtrack.YamtrackSettingsRepository
@@ -50,6 +48,8 @@ import nuvio.composeapp.generated.resources.settings_yamtrack_url_description
 import nuvio.composeapp.generated.resources.settings_yamtrack_url_label
 import nuvio.composeapp.generated.resources.settings_yamtrack_url_title
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.NuvioTextField
+import androidx.compose.ui.text.input.KeyboardType
 
 internal fun LazyListScope.yamtrackSettingsContent(
     isTablet: Boolean,
@@ -104,78 +104,54 @@ private fun YamtrackConnectionRows(
     settings: YamtrackSettings,
 ) {
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
-    val verticalPadding = if (isTablet) 16.dp else 14.dp
     val scope = rememberCoroutineScope()
 
-    var urlDraft by rememberSaveable(settings.baseUrl) { mutableStateOf(settings.baseUrl) }
-    var tokenDraft by rememberSaveable(settings.apiToken) { mutableStateOf(settings.apiToken) }
-    val normalizedUrlDraft = normalizeBaseUrl(urlDraft)
-    val normalizedTokenDraft = tokenDraft.trim()
-    val hasPendingEdits =
-        normalizedUrlDraft != settings.baseUrl || normalizedTokenDraft != settings.apiToken
-
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        SettingsFieldLabel(
+        SettingsTextInputRow(
             title = stringResource(Res.string.settings_yamtrack_url_title),
             description = stringResource(Res.string.settings_yamtrack_url_description),
+            value = settings.baseUrl,
+            placeholder = stringResource(Res.string.settings_yamtrack_url_label),
+            keyboardType = KeyboardType.Uri,
+            normalize = ::normalizeBaseUrl,
+            isTablet = isTablet,
+            onSave = YamtrackSettingsRepository::setBaseUrl,
         )
-        OutlinedTextField(
-            value = urlDraft,
-            onValueChange = { urlDraft = it },
-            singleLine = true,
-            label = { Text(stringResource(Res.string.settings_yamtrack_url_label)) },
-            // Without this a URL containing "h" would fire the Home shortcut mid-typing, the same
-            // reason SettingsSecretTextField applies it internally.
-            modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
-        )
-
-        SettingsFieldLabel(
+        SettingsGroupDivider(isTablet = isTablet)
+        SettingsTextInputRow(
             title = stringResource(Res.string.settings_yamtrack_token_title),
             description = stringResource(Res.string.settings_yamtrack_token_description),
-        )
-        SettingsSecretTextField(
-            value = tokenDraft,
-            onValueChange = { tokenDraft = it },
-            label = stringResource(Res.string.settings_yamtrack_token_label),
-            modifier = Modifier.fillMaxWidth(),
+            value = settings.apiToken,
+            placeholder = stringResource(Res.string.settings_yamtrack_token_label),
+            secret = true,
+            isTablet = isTablet,
+            onSave = YamtrackSettingsRepository::setApiToken,
         )
 
-        if (isInsecureRemoteBaseUrl(settings.baseUrl)) {
+        Column(
+            modifier = Modifier.padding(horizontal = horizontalPadding, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (isInsecureRemoteBaseUrl(settings.baseUrl)) {
+                Text(
+                    text = stringResource(Res.string.settings_yamtrack_insecure_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
             Text(
-                text = stringResource(Res.string.settings_yamtrack_insecure_warning),
+                text = settings.connectionState.describe(),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-
-        Text(
-            text = settings.connectionState.describe(),
-            style = MaterialTheme.typography.bodySmall,
-            // The theme's primary is the brand red, which reads as a failure on a success message,
-            // so only genuine failures are coloured.
-            color = when (settings.connectionState) {
-                is YamtrackConnectionState.Unauthorized,
-                is YamtrackConnectionState.Unreachable,
-                -> MaterialTheme.colorScheme.error
-                else -> MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        )
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = {
-                    urlDraft = normalizedUrlDraft
-                    tokenDraft = normalizedTokenDraft
-                    YamtrackSettingsRepository.setBaseUrl(normalizedUrlDraft)
-                    YamtrackSettingsRepository.setApiToken(normalizedTokenDraft)
+                color = when (settings.connectionState) {
+                    is YamtrackConnectionState.Unauthorized,
+                    is YamtrackConnectionState.Unreachable,
+                    -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
-                enabled = hasPendingEdits,
-            ) { Text(stringResource(Res.string.action_save)) }
+            )
 
             Button(
                 onClick = {
@@ -186,9 +162,7 @@ private fun YamtrackConnectionRows(
                         )
                     }
                 },
-                // Testing the saved credentials, so unsaved edits would report a stale result.
                 enabled = settings.hasCredentials &&
-                    !hasPendingEdits &&
                     settings.connectionState !is YamtrackConnectionState.Testing,
             ) { Text(stringResource(Res.string.settings_yamtrack_test_connection)) }
         }

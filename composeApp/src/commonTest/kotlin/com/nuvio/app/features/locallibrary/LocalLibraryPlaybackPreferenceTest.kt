@@ -39,18 +39,6 @@ class LocalLibraryPlaybackPreferenceTest {
     }
 
     @Test
-    fun `source picker preference only offers local alternate when a file exists`() {
-        assertFalse(LocalLibraryPlaybackPreference.SOURCE_PICKER.canOfferAlternate(false))
-        assertTrue(LocalLibraryPlaybackPreference.SOURCE_PICKER.canOfferAlternate(true))
-    }
-
-    @Test
-    fun `local preference always offers source picker alternate`() {
-        assertTrue(LocalLibraryPlaybackPreference.LOCAL_LIBRARY.canOfferAlternate(false))
-        assertTrue(LocalLibraryPlaybackPreference.LOCAL_LIBRARY.canOfferAlternate(true))
-    }
-
-    @Test
     fun `local preference only overrides normal autoplay when a local file exists`() {
         assertFalse(
             LocalLibraryPlaybackPreference.SOURCE_PICKER.shouldUseManualStreamSelection(
@@ -104,6 +92,59 @@ class LocalLibraryPlaybackPreferenceTest {
                 hasLocalFile = true,
             ),
         )
+    }
+
+    @Test
+    fun `alternate label follows the action rather than the configured preference`() {
+        // No local file: whatever the preference, the alternate is the source picker — which is
+        // why the entry is offered even under SOURCE_PICKER, where it overrides stream auto-play.
+        assertTrue(LocalLibraryPlaybackPreference.SOURCE_PICKER.alternateOpensSourcePicker(false))
+        assertTrue(LocalLibraryPlaybackPreference.LOCAL_LIBRARY.alternateOpensSourcePicker(false))
+        // With a local file the alternate is whichever route the preference is not already taking.
+        assertFalse(LocalLibraryPlaybackPreference.SOURCE_PICKER.alternateOpensSourcePicker(true))
+        assertTrue(LocalLibraryPlaybackPreference.LOCAL_LIBRARY.alternateOpensSourcePicker(true))
+    }
+
+    @Test
+    fun `every choose-source entry point actually reaches the picker`() {
+        // The "Choose source" rows and the details Play button's secondary gesture all pass
+        // `alternateOpensSourcePicker(hasLocalFile)` as their useAlternate value. That is only
+        // correct if it lands on manual selection in every combination — including the one that
+        // caught this out, Source picker + a local file, where the picker is the NORMAL route and
+        // useAlternate=true would have played the local file instead.
+        for (preference in LocalLibraryPlaybackPreference.entries) {
+            for (hasLocalFile in listOf(false, true)) {
+                val useAlternate = preference.alternateOpensSourcePicker(hasLocalFile)
+                val decision = preference.resolvePlaybackRouting(
+                    useAlternate = useAlternate,
+                    hasDownloadedFile = hasLocalFile,
+                    hasLocalLibraryStream = false,
+                )
+
+                assertTrue(
+                    decision.manualSelection,
+                    "$preference with hasLocalFile=$hasLocalFile should open the picker",
+                )
+                assertFalse(
+                    decision.playDownloadedFileDirectly,
+                    "$preference with hasLocalFile=$hasLocalFile must not play the file instead",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `every play-local-file entry point actually plays the file`() {
+        // Its mirror: the local-file row passes useAlternate=true, and is only shown when the
+        // normal click is not already playing the file (Source picker + a local file).
+        val decision = LocalLibraryPlaybackPreference.SOURCE_PICKER.resolvePlaybackRouting(
+            useAlternate = true,
+            hasDownloadedFile = true,
+            hasLocalLibraryStream = false,
+        )
+
+        assertFalse(decision.manualSelection)
+        assertTrue(decision.preferLocalStreams)
     }
 
     @Test

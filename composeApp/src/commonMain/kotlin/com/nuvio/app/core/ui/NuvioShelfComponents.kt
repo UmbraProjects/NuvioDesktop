@@ -1,6 +1,12 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -44,6 +51,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -74,9 +82,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.zIndex
 import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.home_shuffle_row
 import nuvio.composeapp.generated.resources.home_view_all
 import nuvio.composeapp.generated.resources.poster_logo_content_description
 import org.jetbrains.compose.resources.stringResource
@@ -108,16 +118,53 @@ fun <T> NuvioShelfSection(
     // Optional content placed on the header's line, immediately after the title (TV Mode's
     // row-jump dots). Present only where a caller opts in, so ordinary shelves are unchanged.
     headerTrailingContent: (@Composable () -> Unit)? = null,
+    // Replaces the header's title text with caller-drawn content (Discover's clickable
+    // catalog/genre segments). [title] is still required and still carries the accessibility name.
+    titleContent: (@Composable () -> Unit)? = null,
+    // Body fade + overlay, used by Discover to swap the posters for a picker without tearing down
+    // the LazyRow (which would lose its scroll position). The row keeps composing at reduced alpha
+    // underneath; the overlay draws on top.
+    bodyAlpha: Float = 1f,
+    bodyOverlay: (@Composable BoxScope.() -> Unit)? = null,
     focusedItemIndex: Int? = null,
     onHoverItem: ((Int) -> Unit)? = null,
     onLoadMore: (() -> Unit)? = null,
     isLoadingMore: Boolean = false,
     isKeyboardNavigation: Boolean = false,
+    // Adds a shuffle control to the header. Null on every shelf that cannot re-deal itself, which
+    // is most of them — see HomeCatalogSection.canShuffleRow.
+    onShuffleClick: (() -> Unit)? = null,
+    // True while a shuffle is deepening the row's pool, which on a slow addon is several seconds.
+    isShuffling: Boolean = false,
+    // Bumped once per completed shuffle. Any change replays the deal animation; the value itself
+    // carries no meaning, and 0 means "never shuffled" so a first composition sits still.
+    shuffleGeneration: Int = 0,
     key: ((T) -> Any)? = null,
     rowState: LazyListState = rememberLazyListState(),
     itemContent: @Composable (T) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    // One row-level driver rather than an Animatable per card: every slot reads it from inside a
+    // graphicsLayer lambda, so the deal runs entirely on the animation pass without recomposing a
+    // single poster.
+    val dealDriver = remember { Animatable(ShuffleDealSettled) }
+    // Seeded with whatever generation the row already carries, so the deal plays only on a change
+    // that happens while the row is composed. Home rows live in a LazyColumn and are disposed as
+    // they scroll out of view; without this, a shuffled row would re-deal itself — and yank its
+    // scroll back to the start — every time it scrolled back on screen.
+    var lastDealtGeneration by remember { mutableStateOf(shuffleGeneration) }
+    LaunchedEffect(shuffleGeneration) {
+        if (shuffleGeneration <= 0 || shuffleGeneration == lastDealtGeneration) return@LaunchedEffect
+        lastDealtGeneration = shuffleGeneration
+        // The new order is meaningless if the row is scrolled twenty posters deep, so snap back
+        // first. Not animated: the scroll and the deal together read as the row lurching.
+        rowState.scrollToItem(0)
+        dealDriver.snapTo(0f)
+        dealDriver.animateTo(
+            targetValue = ShuffleDealSettled,
+            animationSpec = tween(durationMillis = ShuffleDealDurationMs, easing = LinearEasing),
+        )
+    }
     // Horizontal infinite scroll: request the next page when the row is scrolled within a few items
     // of the end. onLoadMore is idempotent, so repeated triggers while a page loads are harmless.
     if (onLoadMore != null) {
@@ -173,19 +220,24 @@ fun <T> NuvioShelfSection(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap + NuvioTokens.Space.s2),
     ) {
-        if (title.isNotBlank()) {
+        if (title.isNotBlank() || titleContent != null) {
             NuvioShelfSectionHeader(
                 title = title,
                 modifier = Modifier.padding(horizontal = headerHorizontalPadding),
                 showAccent = showHeaderAccent,
                 onViewAllClick = onViewAllClick,
                 viewAllPillSize = viewAllPillSize,
+                onShuffleClick = onShuffleClick,
+                isShuffling = isShuffling,
                 trailingContent = headerTrailingContent,
+                titleContent = titleContent,
             )
         }
+        Box(modifier = Modifier.fillMaxWidth()) {
         LazyRow(
             state = rowState,
             modifier = Modifier
+                .alpha(bodyAlpha)
                 .desktopShelfDragScroll(rowState)
                 .desktopShelfEdgeScroll(rowState, isMouseActive = !isKeyboardNavigation),
             contentPadding = rowContentPadding,
@@ -200,6 +252,11 @@ fun <T> NuvioShelfSection(
                     NuvioShelfItemSlot(
                         focused = index == focusedItemIndex,
                         onHover = onHoverItem?.let { { it(index) } },
+                        modifier = Modifier.animateItem(placementSpec = ShuffleDealPlacementSpec),
+                        // Only keyed rows animate the deal: without stable keys a reorder tears the
+                        // items down and rebuilds them, so there is nothing for the cards to slide
+                        // between and the stagger would fire on unrelated content changes.
+                        dealProgress = { shuffleDealProgressFor(dealDriver.value, index) },
                     ) {
                         itemContent(keyedEntry.value)
                     }
@@ -229,10 +286,54 @@ fun <T> NuvioShelfSection(
                 }
             }
         }
+        bodyOverlay?.invoke(this)
+        }
     }
 }
 
 private const val ShelfLoadMoreThreshold = 6
+
+// --- Shuffle deal animation -------------------------------------------------------------------
+//
+// The driver runs 0 -> ShuffleDealSettled over ShuffleDealDurationMs. Each card maps that to its
+// own 0..1 window, offset by its index, so the row deals left-to-right instead of every poster
+// popping at once. The driver's range extends past 1 by exactly the largest stagger, which is what
+// guarantees the last staggered card still reaches a full 1 before the animation ends.
+
+/** Per-card delay, as a fraction of the driver's range. */
+private const val ShuffleDealStagger = 0.05f
+
+/** Cap on the accumulated stagger, so a long row does not deal for its whole length. */
+internal const val ShuffleDealMaxStagger = 0.6f
+
+/** The driver's end value: 1 (a full window) plus the largest delay any card can be given. */
+internal const val ShuffleDealSettled = 1f + ShuffleDealMaxStagger
+
+/** How far the row title dims while its pool is being deepened. */
+private const val ShuffleTitleBusyAlpha = 0.45f
+
+private const val ShuffleDealDurationMs = 620
+private const val ShuffleDealStartScale = 0.88f
+private const val ShuffleDealStartAlpha = 0f
+private const val ShuffleDealStartRotation = -68f
+private const val ShuffleDealCameraDistance = 14f
+
+private val ShuffleDealPlacementSpec = spring<androidx.compose.ui.unit.IntOffset>(
+    dampingRatio = 0.78f,
+    stiffness = Spring.StiffnessMediumLow,
+)
+
+/**
+ * Maps the row-level deal driver onto one card's 0..1 progress, given its position in the row.
+ *
+ * Cards past [ShuffleDealMaxStagger]'s worth of delay all share the last slot rather than being
+ * pushed further out — off-screen posters do not need their own beat, and letting the stagger grow
+ * unbounded would leave the tail of a 70-item row still folded flat long after the animation ended.
+ */
+internal fun shuffleDealProgressFor(driver: Float, index: Int): Float {
+    val delay = (index * ShuffleDealStagger).coerceAtMost(ShuffleDealMaxStagger)
+    return (driver - delay).coerceIn(0f, 1f)
+}
 
 // How much of the header row the title may occupy when trailing content is present. Longer names
 // ellipsize rather than run under the centred trailing slot.
@@ -257,15 +358,35 @@ const val PosterLabelWidthFraction = 0.65f
 internal fun NuvioShelfItemSlot(
     focused: Boolean,
     onHover: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    // Read inside graphicsLayer so the deal animates without recomposing the card. Null on shelves
+    // that never shuffle, which skips the work entirely.
+    dealProgress: (() -> Float)? = null,
     content: @Composable () -> Unit,
 ) {
     val scale by animateFloatAsState(targetValue = if (focused) 1.04f else 1f)
     Box(
-        modifier = Modifier
+        modifier = modifier
             .zIndex(if (focused) 1f else 0f)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                // dealProgress is already clamped to 0..1 per card; 1 means "fully dealt", which is
+                // also what a shelf that never shuffles reports.
+                val deal = dealProgress?.invoke() ?: 1f
+                if (deal >= 1f) {
+                    scaleX = scale
+                    scaleY = scale
+                } else {
+                    val eased = FastOutSlowInEasing.transform(deal)
+                    // Cards turn edge-on and drop back before righting themselves — a riffle rather
+                    // than a crossfade. rotationY needs a camera distance or the perspective is so
+                    // extreme the poster folds through itself at the midpoint.
+                    cameraDistance = ShuffleDealCameraDistance * density
+                    rotationY = lerp(ShuffleDealStartRotation, 0f, eased)
+                    val dealScale = lerp(ShuffleDealStartScale, 1f, eased)
+                    scaleX = scale * dealScale
+                    scaleY = scale * dealScale
+                    alpha = lerp(ShuffleDealStartAlpha, 1f, eased)
+                }
             }
             .then(
                 if (onHover != null) {
@@ -275,7 +396,10 @@ internal fun NuvioShelfItemSlot(
                 },
             ),
     ) {
-        content()
+        // Poster cards read this to draw their highlight ring — see nuvioPosterHighlight.
+        CompositionLocalProvider(LocalNuvioShelfItemHighlighted provides focused) {
+            content()
+        }
     }
 }
 
@@ -431,6 +555,8 @@ fun NuvioPosterCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(shape.aspectRatio)
+                // Ahead of the clip on purpose — see nuvioPosterHighlight.
+                .nuvioPosterHighlight(posterCardStyle.cornerRadiusDp.dp)
                 .clip(cardShape)
                 .background(
                     if (!hasArtwork) {
@@ -607,13 +733,33 @@ private fun NuvioShelfSectionHeader(
     showAccent: Boolean = true,
     onViewAllClick: (() -> Unit)? = null,
     viewAllPillSize: NuvioViewAllPillSize = NuvioViewAllPillSize.Default,
+    onShuffleClick: (() -> Unit)? = null,
+    isShuffling: Boolean = false,
     trailingContent: (@Composable () -> Unit)? = null,
+    titleContent: (@Composable () -> Unit)? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     val viewAllPlaceholderModifier = if (onViewAllClick == null) {
         Modifier
             .alpha(0f)
             .clearAndSetSemantics { }
+    } else {
+        Modifier
+    }
+    // Shuffle has no control of its own: the row's own title is the button. No indication, because
+    // a ripple spreading across a heading reads as a mistake — the feedback is the title dimming
+    // while the pool loads and then the row visibly re-dealing.
+    val shuffleText = stringResource(Res.string.home_shuffle_row)
+    val shuffleInteractionSource = remember { MutableInteractionSource() }
+    val titleShuffleModifier = if (onShuffleClick != null) {
+        Modifier
+            .clickable(
+                interactionSource = shuffleInteractionSource,
+                indication = null,
+                onClickLabel = shuffleText,
+                onClick = onShuffleClick,
+            )
+            .alpha(if (isShuffling) ShuffleTitleBusyAlpha else 1f)
     } else {
         Modifier
     }
@@ -626,14 +772,20 @@ private fun NuvioShelfSectionHeader(
                 horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = title,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = tokens.colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (titleContent != null) {
+                    Box(modifier = Modifier.weight(1f)) { titleContent() }
+                } else {
+                    Text(
+                        text = title,
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(titleShuffleModifier),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = tokens.colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 NuvioViewAllPill(
                     onClick = onViewAllClick,
                     size = viewAllPillSize,
@@ -651,16 +803,27 @@ private fun NuvioShelfSectionHeader(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = title,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .widthIn(max = maxWidth * HeaderTitleMaxWidthFraction),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = tokens.colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (titleContent != null) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .widthIn(max = maxWidth * HeaderTitleMaxWidthFraction),
+                    ) {
+                        titleContent()
+                    }
+                } else {
+                    Text(
+                        text = title,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .widthIn(max = maxWidth * HeaderTitleMaxWidthFraction)
+                            .then(titleShuffleModifier),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = tokens.colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 trailingContent()
                 NuvioViewAllPill(
                     onClick = onViewAllClick,
@@ -676,7 +839,7 @@ private fun NuvioShelfSectionHeader(
                     .width(NuvioTokens.Space.s64 - NuvioTokens.Space.s4)
                     .height(NuvioTokens.Space.s4)
                     .background(
-                        color = tokens.colors.accent,
+                        brush = tokens.colors.accentFill,
                         shape = tokens.shapes.chip,
                     ),
             )
@@ -880,11 +1043,30 @@ internal fun Modifier.posterCardClickable(
             longClick()
         }
     }
-    return onGloballyPositioned { coordinates ->
+    // Material's hover state layer is black app-wide (see NuvioRippleConfiguration) and measures
+    // ~10% over the card. Under PosterHighlightMode.Shine that fights the effect head on: the
+    // pointer that turns the shine on also darkens the artwork underneath it, so a +25% gain lands
+    // at about +12% and the card looks duller the moment it is hovered. Suppress the indication for
+    // that mode only — the shine is its own feedback — and leave the ring modes untouched.
+    val shineHighlighted =
+        rememberPosterCardStyleUiState().posterHighlightMode == PosterHighlightMode.Shine
+    val shineInteractionSource = remember { MutableInteractionSource() }
+    val positioned = onGloballyPositioned { coordinates ->
         val position = coordinates.positionInRoot()
         bounds.value = Rect(position.x, position.y, position.x + coordinates.size.width, position.y + coordinates.size.height)
-    }.combinedClickable(
-        onClick = { onClick?.invoke() },
-        onLongClick = handleLongClick,
-    ).secondaryClick(handleLongClick)
+    }
+    val clickable = if (shineHighlighted) {
+        positioned.combinedClickable(
+            interactionSource = shineInteractionSource,
+            indication = null,
+            onClick = { onClick?.invoke() },
+            onLongClick = handleLongClick,
+        )
+    } else {
+        positioned.combinedClickable(
+            onClick = { onClick?.invoke() },
+            onLongClick = handleLongClick,
+        )
+    }
+    return clickable.secondaryClick(handleLongClick)
 }

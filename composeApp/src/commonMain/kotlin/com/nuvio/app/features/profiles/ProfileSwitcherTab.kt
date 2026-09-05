@@ -70,6 +70,7 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioTokens
+import com.nuvio.app.core.ui.accentFill
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.isIos
 import kotlinx.coroutines.delay
@@ -79,6 +80,7 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.max
 import kotlin.math.min
+import com.nuvio.app.core.ui.accentBrush
 
 @Composable
 fun ProfileSwitcherTab(
@@ -563,7 +565,7 @@ private fun SidebarCompactPinEntry(
                         .clip(tokens.shapes.avatar)
                         .then(
                             if (filled) {
-                                Modifier.background(tokens.colors.accent)
+                                Modifier.background(tokens.colors.accentFill)
                             } else {
                                 Modifier.border(tokens.borders.thin, tokens.colors.borderDefault, tokens.shapes.avatar)
                             },
@@ -625,7 +627,7 @@ private fun SidebarCompactPinEntry(
 
         Text(
             text = stringResource(Res.string.pin_cancel),
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.accentBrush(),
             color = tokens.colors.accent,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier
@@ -1066,7 +1068,7 @@ private fun InlinePinEntry(
 
         Text(
             text = stringResource(Res.string.pin_cancel),
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelMedium.accentBrush(),
             color = tokens.colors.accent,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier

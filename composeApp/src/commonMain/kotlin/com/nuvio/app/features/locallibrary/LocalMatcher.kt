@@ -5,6 +5,7 @@ import com.nuvio.app.features.kitsu.KitsuService
 import com.nuvio.app.features.metadata.AnimeIdMappingRepository
 import com.nuvio.app.features.metadata.AnimeIdPreference
 import com.nuvio.app.features.metadata.AnimeIdPreferenceRepository
+import com.nuvio.app.features.metadata.exactYearRank
 import com.nuvio.app.features.metadata.pickBestTmdbMatch
 import com.nuvio.app.features.metadata.titleSimilarity
 import com.nuvio.app.features.metadata.yearMismatchPenalty
@@ -260,7 +261,12 @@ internal object LocalMatcher {
             val typePenalty = if (result.isMovie == wantMovie) 0.0 else 0.15
             result to (similarity - yearPenalty - typePenalty)
         }
-        val best = scored.maxByOrNull { it.second } ?: return null
+        // An exact year only breaks ties: a sequel whose title differs from its predecessor by a
+        // character normalisation strips ("Love is War" vs "Love is War?") scores identically
+        // against both entries, and the ±1 year tolerance leaves consecutive seasons tied too.
+        val best = scored.maxWithOrNull(
+            compareBy({ it.second }, { exactYearRank(item.year, it.first.year) }),
+        ) ?: return null
         return best.first.takeIf { best.second >= 0.72 }
     }
 

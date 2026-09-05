@@ -1,11 +1,11 @@
 package com.nuvio.app.features.collection
 
 import co.touchlab.kermit.Logger
-import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.catalog.CatalogPage
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import com.nuvio.app.features.tmdb.TmdbHttp
 import com.nuvio.app.features.tmdb.buildTmdbUrl
 import com.nuvio.app.features.tmdb.normalizeTmdbLanguage
 import kotlinx.coroutines.Dispatchers
@@ -340,6 +340,14 @@ object TmdbCollectionSourceResolver {
             putIfNotBlank("with_original_language", filters.withOriginalLanguage)
             putIfNotBlank("with_origin_country", filters.withOriginCountry)
             putIfNotBlank("with_keywords", filters.withKeywords)
+            putIfNotBlank("with_runtime.gte", filters.withRuntimeGte?.toString())
+            putIfNotBlank("with_runtime.lte", filters.withRuntimeLte?.toString())
+            // Films only: /discover/tv has no people filter, and sending one there is a parameter
+            // TMDB ignores — which reads to the user as a filter that does nothing.
+            putIfNotBlank(
+                "with_people",
+                filters.withPeople?.takeIf { mediaType == TmdbCollectionMediaType.MOVIE },
+            )
             if (!filters.withWatchProviders.isNullOrBlank()) {
                 put("with_watch_providers", filters.withWatchProviders)
                 put("watch_region", filters.watchRegion?.takeIf { it.isNotBlank() } ?: "US")
@@ -365,7 +373,7 @@ object TmdbCollectionSourceResolver {
     ): T? {
         val url = buildTmdbUrl(endpoint = endpoint, apiKey = apiKey, query = query)
         return runCatching {
-            json.decodeFromString<T>(httpGetText(url))
+            json.decodeFromString<T>(TmdbHttp.getText(url))
         }.onFailure { error ->
             log.w(error) { "TMDB source request failed for $endpoint" }
         }.getOrNull()

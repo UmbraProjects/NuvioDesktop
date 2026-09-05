@@ -1,15 +1,16 @@
 package com.nuvio.app.features.settings
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material.icons.rounded.HighQuality
+import androidx.compose.material.icons.rounded.Save
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.discord.DiscordEpisodeArtwork
 import com.nuvio.app.features.discord.DiscordPresenceMode
 import com.nuvio.app.features.discord.DiscordPresenceSettings
 import com.nuvio.app.features.library.LibrarySourceMode
@@ -34,6 +35,10 @@ import nuvio.composeapp.generated.resources.compose_settings_root_trakt_descript
 import nuvio.composeapp.generated.resources.settings_integrations_mdblist_description
 import nuvio.composeapp.generated.resources.settings_integrations_debrid_description
 import nuvio.composeapp.generated.resources.settings_integrations_qualicache_description
+import nuvio.composeapp.generated.resources.settings_discord_episode_artwork
+import nuvio.composeapp.generated.resources.settings_discord_episode_artwork_description
+import nuvio.composeapp.generated.resources.settings_discord_episode_artwork_poster
+import nuvio.composeapp.generated.resources.settings_discord_episode_artwork_still
 import nuvio.composeapp.generated.resources.settings_integrations_section_title
 import nuvio.composeapp.generated.resources.settings_integrations_tmdb_description
 import nuvio.composeapp.generated.resources.settings_simkl_description
@@ -44,6 +49,7 @@ internal fun LazyListScope.integrationsContent(
     isTablet: Boolean,
     discordPresenceSettings: DiscordPresenceSettings,
     onDiscordPresenceModeChange: (DiscordPresenceMode) -> Unit,
+    onDiscordEpisodeArtworkChange: (DiscordEpisodeArtwork) -> Unit,
     onTmdbClick: () -> Unit,
     onMdbListClick: () -> Unit,
     onQualiCacheClick: () -> Unit,
@@ -137,7 +143,7 @@ internal fun LazyListScope.integrationsContent(
                 SettingsNavigationRow(
                     title = stringResource(Res.string.compose_settings_page_simkl),
                     description = stringResource(Res.string.settings_simkl_description),
-                    icon = Icons.Rounded.Bookmarks,
+                    iconPainter = integrationLogoPainter(IntegrationLogo.Simkl),
                     isTablet = isTablet,
                     onClick = onSimklClick,
                 )
@@ -145,7 +151,7 @@ internal fun LazyListScope.integrationsContent(
                 SettingsNavigationRow(
                     title = stringResource(Res.string.compose_settings_page_yamtrack),
                     description = stringResource(Res.string.settings_yamtrack_description),
-                    icon = Icons.Rounded.Bookmarks,
+                    icon = Icons.Rounded.Save,
                     isTablet = isTablet,
                     onClick = onYamtrackClick,
                 )
@@ -154,6 +160,7 @@ internal fun LazyListScope.integrationsContent(
                     SettingsChoiceRow(
                         title = stringResource(Res.string.settings_discord_presence),
                         description = stringResource(Res.string.settings_discord_presence_description),
+                        iconPainter = integrationLogoPainter(IntegrationLogo.Discord),
                         options = listOf(
                             SettingsChoiceOption(DiscordPresenceMode.Disabled, stringResource(Res.string.settings_discord_presence_disabled)),
                             SettingsChoiceOption(DiscordPresenceMode.Watching, stringResource(Res.string.settings_discord_presence_watching)),
@@ -164,6 +171,33 @@ internal fun LazyListScope.integrationsContent(
                         modifier = androidx.compose.ui.Modifier.settingsScrollAnchor(SettingsScrollAnchor.DiscordPresence),
                         onSelected = onDiscordPresenceModeChange,
                     )
+                    // Hidden while presence is off rather than disabled-but-visible: it is the only
+                    // control on this page whose subject does not exist yet when the mode above is
+                    // Disabled, and a greyed row invites a click that cannot do anything.
+                    if (discordPresenceSettings.mode != DiscordPresenceMode.Disabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_discord_episode_artwork),
+                            description = stringResource(Res.string.settings_discord_episode_artwork_description),
+                            iconPainter = integrationLogoPainter(IntegrationLogo.Discord),
+                            options = listOf(
+                                SettingsChoiceOption(
+                                    DiscordEpisodeArtwork.Poster,
+                                    stringResource(Res.string.settings_discord_episode_artwork_poster),
+                                ),
+                                SettingsChoiceOption(
+                                    DiscordEpisodeArtwork.EpisodeThumbnail,
+                                    stringResource(Res.string.settings_discord_episode_artwork_still),
+                                ),
+                            ),
+                            selectedValue = discordPresenceSettings.episodeArtwork,
+                            isTablet = isTablet,
+                            modifier = androidx.compose.ui.Modifier.settingsScrollAnchor(
+                                SettingsScrollAnchor.DiscordEpisodeArtwork,
+                            ),
+                            onSelected = onDiscordEpisodeArtworkChange,
+                        )
+                    }
                 }
             }
         }

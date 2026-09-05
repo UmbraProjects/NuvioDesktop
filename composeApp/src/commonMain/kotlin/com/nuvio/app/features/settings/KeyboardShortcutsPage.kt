@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.NuvioKeyCap
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.player.PlayerShortcutAction
@@ -43,6 +44,8 @@ import com.nuvio.app.features.player.resetAllAppShortcuts
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.accentBrush
+import androidx.compose.material3.LocalTextStyle
 
 /**
  * Read-only reference of every desktop keyboard shortcut, and the single authoritative inventory
@@ -180,6 +183,7 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
         Text(
             text = stringResource(Res.string.settings_shortcuts_reset_navigation),
             color = MaterialTheme.nuvio.colors.accent,
+            style = LocalTextStyle.current.accentBrush(),
             modifier = Modifier.clickable { resetAllAppShortcuts() }.padding(NuvioTokens.Space.s12),
         )
         rebindingApp?.let { action ->
@@ -246,7 +250,7 @@ private fun ShortcutRow(shortcut: Shortcut, isTablet: Boolean, onRebind: (() -> 
                         color = tokens.colors.textMuted,
                     )
                 }
-                slot.forEach { cap -> KeyCap(text = cap) }
+                slot.forEach { cap -> NuvioKeyCap(text = cap) }
             }
         }
         if (onRebind != null) {
@@ -265,7 +269,7 @@ private fun ResetAllShortcutsRow(isTablet: Boolean, onResetAll: () -> Unit) {
     val tokens = MaterialTheme.nuvio
     Text(
         text = stringResource(Res.string.settings_shortcuts_reset_player),
-        style = MaterialTheme.typography.bodyMedium,
+        style = MaterialTheme.typography.bodyMedium.accentBrush(),
         color = tokens.colors.accent,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier
@@ -277,24 +281,3 @@ private fun ResetAllShortcutsRow(isTablet: Boolean, onResetAll: () -> Unit) {
     )
 }
 
-@Composable
-private fun KeyCap(text: String) {
-    val tokens = MaterialTheme.nuvio
-    Surface(
-        color = tokens.colors.surface,
-        shape = RoundedCornerShape(NuvioTokens.Radius.sm),
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            color = tokens.colors.textSecondary,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .border(
-                    BorderStroke(tokens.borders.hairline, tokens.colors.borderSubtle),
-                    RoundedCornerShape(NuvioTokens.Radius.sm),
-                )
-                .padding(horizontal = NuvioTokens.Space.s8, vertical = NuvioTokens.Space.s4),
-        )
-    }
-}

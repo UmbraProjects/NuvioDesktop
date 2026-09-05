@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -42,6 +41,7 @@ import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.NuvioStatusModal
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material.icons.rounded.Refresh
 
 private sealed interface DownloadsDeleteTarget {
     val downloadIds: Set<String>
@@ -62,6 +62,7 @@ private sealed interface DownloadsDeleteTarget {
 fun DownloadsScreen(
     onBack: () -> Unit,
     onOpenDownload: (DownloadItem) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val uiState by remember {
         DownloadsRepository.ensureLoaded()
@@ -83,7 +84,10 @@ fun DownloadsScreen(
         }
     }
 
-    NuvioScreen {
+    NuvioScreen(
+        modifier = modifier,
+        topPadding = 0.dp,
+    ) {
         stickyHeader {
             NuvioScreenHeader(
                 title = if (selectedShowId == null) {
@@ -98,6 +102,7 @@ fun DownloadsScreen(
                         onBack()
                     }
                 },
+                includeStatusBarPadding = false,
             )
         }
 

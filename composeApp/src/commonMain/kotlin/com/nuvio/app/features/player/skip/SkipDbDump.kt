@@ -4,9 +4,12 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * SkipDB's full export of approved segments. Unknown fields are dropped on parse, so only what the
- * lookup actually needs is held in memory — the export also carries ids, vote tallies, timestamps
- * and (in the GitHub release variant) titles, none of which are read here.
+ * SkipDB's full export of approved segments. Unknown fields are dropped on parse, so only what
+ * indexing needs is even parsed — the export also carries ids, vote tallies, timestamps and (in the
+ * GitHub release variant) titles, none of which are read here.
+ *
+ * This is the parse shape, not the retained one: [SkipDbDumpIndex] compacts what it keeps and these
+ * become garbage as soon as it is built.
  */
 @Serializable
 data class SkipDbDump(
@@ -43,17 +46,44 @@ private const val CONFIDENCE_AGNOSTIC = 0.75
 private const val CONFIDENCE_OUT_OF_RANGE = 0.6
 
 /**
+ * Stands in for a submission that carries no runtime, so [Entry.durationMs] can be a primitive.
+ * No real duration can collide with it.
+ */
+private const val NO_DURATION_MS = Long.MIN_VALUE
+
+/**
  * A parsed export, arranged for lookup by title and episode.
  *
  * Built once per sync and then queried entirely in memory: the export is complete, so an episode
  * that is absent here is one SkipDB genuinely has nothing for, and no request needs to be made to
  * find that out.
+ *
+ * The whole export is held for the lifetime of the process, so it is stored compacted rather than
+ * as the parsed [SkipDbDumpSegment]s. Keeping those was mostly waste: every segment held its own
+ * copy of an imdb id that is already in the key it is filed under, of a status that is always
+ * "approved" by the time it is stored, and of a segment type drawn from four distinct values — a
+ * real export has 2,850 distinct ids and 4 distinct types across 101,650 segments — plus three
+ * boxed Longs. [Entry] keeps only the five fields [lookup] reads, shares one instance of each type
+ * string, and holds the times as primitives, which measured 23 MB smaller on that export.
  */
 class SkipDbDumpIndex private constructor(
-    private val byKey: Map<String, List<SkipDbDumpSegment>>,
+    private val byKey: Map<String, Array<Entry>>,
     val generatedAt: String?,
     val segmentCount: Int,
 ) {
+
+    /**
+     * One usable submission. The type stays a string rather than becoming an enum so that a kind
+     * this build has never heard of still round-trips through the index the way it used to — it
+     * simply matches no lookup, exactly as an unrecognised [SkipDbDumpSegment.segmentType] did.
+     */
+    private class Entry(
+        val segmentType: String,
+        val startMs: Long,
+        val endMs: Long,
+        val durationMs: Long,
+        val score: Int,
+    )
 
     val isEmpty: Boolean get() = byKey.isEmpty()
 
@@ -87,22 +117,34 @@ class SkipDbDumpIndex private constructor(
      * runtime wins over vote score, since a well-voted timing taken from a different release is
      * still the wrong timing.
      */
-    private fun List<SkipDbDumpSegment>.bestOfType(
+    private fun Array<Entry>.bestOfType(
         type: String,
         durationMs: Long?,
     ): SkipDbSegment? {
-        val matches = filter { it.segmentType.equals(type, ignoreCase = true) }
-        if (matches.isEmpty()) return null
-        val best = matches.minWithOrNull(
-            compareBy<SkipDbDumpSegment> { segment -> segment.offsetMagnitudeMs(durationMs) }
-                .thenByDescending { segment -> segment.score }
-        ) ?: return null
+        // Walked by hand rather than filtered-then-sorted: this runs over every kind on every
+        // lookup, and the comparator version allocated a list and a pair of lambdas each time.
+        // Ties keep the first entry seen, which is what minWithOrNull did.
+        var best: Entry? = null
+        var bestOffsetMagnitudeMs = 0L
+        for (entry in this) {
+            if (!entry.segmentType.equals(type, ignoreCase = true)) continue
+            val offsetMagnitudeMs = entry.offsetMagnitudeMs(durationMs)
+            val incumbent = best
+            val wins = incumbent == null ||
+                offsetMagnitudeMs < bestOffsetMagnitudeMs ||
+                (offsetMagnitudeMs == bestOffsetMagnitudeMs && entry.score > incumbent.score)
+            if (wins) {
+                best = entry
+                bestOffsetMagnitudeMs = offsetMagnitudeMs
+            }
+        }
+        if (best == null) return null
 
         val offsetMs = best.signedOffsetMs(durationMs)
         val match = when {
-            durationMs == null || best.durationMs == null -> SkipDbMatch.AGNOSTIC
-            best.offsetMagnitudeMs(durationMs) <= EXACT_MATCH_TOLERANCE_MS -> SkipDbMatch.EXACT
-            best.offsetMagnitudeMs(durationMs) <= SHIFTED_MATCH_TOLERANCE_MS -> SkipDbMatch.SHIFTED
+            durationMs == null || !best.hasDuration -> SkipDbMatch.AGNOSTIC
+            bestOffsetMagnitudeMs <= EXACT_MATCH_TOLERANCE_MS -> SkipDbMatch.EXACT
+            bestOffsetMagnitudeMs <= SHIFTED_MATCH_TOLERANCE_MS -> SkipDbMatch.SHIFTED
             else -> SkipDbMatch.OUT_OF_RANGE
         }
         return SkipDbSegment(
@@ -123,41 +165,69 @@ class SkipDbDumpIndex private constructor(
         )
     }
 
-    private fun SkipDbDumpSegment.signedOffsetMs(playedDurationMs: Long?): Long {
-        if (playedDurationMs == null || durationMs == null) return 0L
+    /** False for a submission whose export row carried no runtime to match against. */
+    private val Entry.hasDuration: Boolean get() = durationMs != NO_DURATION_MS
+
+    private fun Entry.signedOffsetMs(playedDurationMs: Long?): Long {
+        if (playedDurationMs == null || !hasDuration) return 0L
         return playedDurationMs - durationMs
     }
 
     /** Sorts unmatchable submissions last without letting them look like a perfect match. */
-    private fun SkipDbDumpSegment.offsetMagnitudeMs(playedDurationMs: Long?): Long {
+    private fun Entry.offsetMagnitudeMs(playedDurationMs: Long?): Long {
         if (playedDurationMs == null) return 0L
-        if (durationMs == null) return Long.MAX_VALUE
+        if (!hasDuration) return Long.MAX_VALUE
         val offset = playedDurationMs - durationMs
         return if (offset < 0L) -offset else offset
     }
 
     companion object {
         fun from(dump: SkipDbDump): SkipDbDumpIndex {
-            val usable = dump.segments.filter { segment ->
-                segment.imdbId.isNotBlank() &&
-                    segment.segmentType.isNotBlank() &&
-                    segment.startMs != null &&
-                    segment.endMs != null &&
-                    // A 0/0 row records that somebody confirmed this segment does not exist, so it
-                    // is not a candidate to rank — left in, it could out-rank a real submission on
-                    // runtime closeness and hide it. Dropping it here matches the API, which never
-                    // returns sentinels either.
-                    !(segment.startMs == 0L && segment.endMs == 0L) &&
-                    // Exports have carried non-approved rows before; only published data is used.
-                    (segment.status == null || segment.status.equals(STATUS_APPROVED, ignoreCase = true))
+            // Filtered, keyed and compacted in one pass. The parsed segments are still live in
+            // `dump` throughout, so the old filter-then-groupBy also held a full-length copy of the
+            // list on the way through — on a real export that is another 101,650 references at the
+            // exact moment the index is at its largest.
+            val canonicalTypes = HashMap<String, String>()
+            val grouped = HashMap<String, MutableList<Entry>>()
+            var usableCount = 0
+            for (segment in dump.segments) {
+                val startMs = segment.startMs ?: continue
+                val endMs = segment.endMs ?: continue
+                if (segment.imdbId.isBlank() || segment.segmentType.isBlank()) continue
+                // A 0/0 row records that somebody confirmed this segment does not exist, so it is
+                // not a candidate to rank — left in, it could out-rank a real submission on runtime
+                // closeness and hide it. Dropping it here matches the API, which never returns
+                // sentinels either.
+                if (startMs == 0L && endMs == 0L) continue
+                // Exports have carried non-approved rows before; only published data is used.
+                val status = segment.status
+                if (status != null && !status.equals(STATUS_APPROVED, ignoreCase = true)) continue
+
+                usableCount++
+                val entry = Entry(
+                    // One shared instance per distinct type, so the four values a real export uses
+                    // are not re-held 101,650 times.
+                    segmentType = canonicalTypes.getOrPut(segment.segmentType) { segment.segmentType },
+                    startMs = startMs,
+                    endMs = endMs,
+                    durationMs = segment.durationMs ?: NO_DURATION_MS,
+                    score = segment.score,
+                )
+                val key = indexKey(segment.imdbId, segment.season, segment.episode)
+                grouped.getOrPut(key) { ArrayList(2) }.add(entry)
             }
-            val byKey = usable.groupBy { segment ->
-                indexKey(segment.imdbId, segment.season, segment.episode)
+
+            // Fixed arrays rather than the growable lists used to build them: an export averages
+            // under two submissions per episode, so the list wrapper cost about as much as the
+            // entries it held.
+            val byKey = HashMap<String, Array<Entry>>(grouped.size * 4 / 3 + 1)
+            for ((key, entries) in grouped) {
+                byKey[key] = entries.toTypedArray()
             }
             return SkipDbDumpIndex(
                 byKey = byKey,
                 generatedAt = dump.generatedAt,
-                segmentCount = usable.size,
+                segmentCount = usableCount,
             )
         }
 

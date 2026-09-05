@@ -227,6 +227,24 @@ enum class DesktopSourceNotchPosition {
     }
 }
 
+/**
+ * Where the transient in-player pills (playback speed, volume, aspect ratio, UI scale...) appear.
+ *
+ * [TopCenter] lifts them out of the middle of the picture. It deliberately stays centred rather
+ * than tucking into a corner: the top-left corner already carries the title/episode block and the
+ * top-right one the header actions and playback info panel.
+ */
+enum class DesktopPlayerNotificationPosition(val webValue: String) {
+    Center("center"),
+    TopCenter("top-center"),
+    ;
+
+    companion object {
+        fun fromStorage(value: String?): DesktopPlayerNotificationPosition =
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: Center
+    }
+}
+
 enum class DesktopBufferPreset(val label: String, val description: String) {
     Metered(
         "Metered",
@@ -295,15 +313,96 @@ data class DesktopAnimeSessionOverride(
 )
 
 /**
- * Heuristic anime detection from metadata genres. Nuvio Desktop has no online anime database
- * (unlike Stremio-Kai), so this matches the "Anime" / "Animation" genre tags exposed by addons
- * and TMDB. It over-matches Western animation; the in-player F10 toggle overrides per session.
+ * Heuristic anime detection from metadata. Nuvio Desktop has no online anime database (unlike
+ * Stremio-Kai), so this reads the genre tags exposed by addons and TMDB, disambiguated by the
+ * title's provenance.
+ *
+ * An explicit "Anime" genre is decisive. A bare "Animation" tag is not: TMDB and Trakt use it for
+ * Western cartoons too, which is how South Park and Spider-Verse ended up having the anime shader
+ * chain and SVP interpolation applied to them automatically. [com.nuvio.app.features.collection]
+ * already refuses animation-alone for the same reason; this is that rule brought to the player.
+ *
+ * Deliberately lenient about missing metadata: animation is rejected only when [originalLanguage]
+ * or [originCountries] *positively* say the title is not Japanese. An unknown provenance still
+ * counts as anime, preserving the previous behaviour wherever the metadata is too thin to judge —
+ * quietly losing detection on a real anime with a sparse addon meta would be a worse failure than
+ * the over-match this fixes.
+ *
+ * Titles carrying an anime-native id (kitsu/mal/anilist/anidb) never reach here: [AnimeContentCache]
+ * answers those from the id itself. The in-player F10 toggle overrides whatever this decides.
+ *
+ * [treatAnimationAsAnime] is the "Include Western Animation" preference, which opts the rejected
+ * case back in for people who want the enhancement layer on Western cartoons too — the behaviour
+ * this function had before provenance was consulted at all.
  */
-fun isAnimeFromGenres(genres: List<String>): Boolean =
-    genres.any { genre ->
-        val normalized = genre.trim().lowercase()
-        normalized == "anime" || normalized == "animation"
+fun isAnimeFromGenres(
+    genres: List<String>,
+    originalLanguage: String? = null,
+    originCountries: Iterable<String> = emptyList(),
+    treatAnimationAsAnime: Boolean = false,
+): Boolean = classifyAnimeContent(genres, originalLanguage, originCountries)
+    .isAnime(treatAnimationAsAnime)
+
+/**
+ * What the metadata says a title is, before any preference is applied.
+ *
+ * Kept separate from the yes/no answer so [AnimeContentCache] can store a *fact* and let the
+ * "Include Western Animation" preference decide at read time — caching the verdict instead would
+ * leave every title already seen this session answering with the old setting.
+ */
+enum class AnimeContentKind {
+    /** An explicit anime tag, or animation whose provenance is not positively non-Japanese. */
+    Anime,
+
+    /** Animation positively identified as non-Japanese — a Western cartoon. */
+    WesternAnimation,
+
+    /** Not animation at all. */
+    NotAnimation,
+    ;
+
+    /** [treatAnimationAsAnime] is the user preference that opts Western animation back in. */
+    fun isAnime(treatAnimationAsAnime: Boolean): Boolean = when (this) {
+        Anime -> true
+        WesternAnimation -> treatAnimationAsAnime
+        NotAnimation -> false
     }
+}
+
+/** See [isAnimeFromGenres] for the rule and why provenance is read leniently. */
+fun classifyAnimeContent(
+    genres: List<String>,
+    originalLanguage: String? = null,
+    originCountries: Iterable<String> = emptyList(),
+): AnimeContentKind {
+    val normalized = genres.map { it.trim().lowercase() }
+    if (normalized.none { it == "anime" || it == "animation" }) return AnimeContentKind.NotAnimation
+    if (normalized.any { it == "anime" }) return AnimeContentKind.Anime
+    return if (hasNonJapaneseProvenance(originalLanguage, originCountries)) {
+        AnimeContentKind.WesternAnimation
+    } else {
+        AnimeContentKind.Anime
+    }
+}
+
+private fun hasNonJapaneseProvenance(
+    originalLanguage: String?,
+    originCountries: Iterable<String>,
+): Boolean {
+    val language = originalLanguage?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+    // MetaDetails.country is a comma-joined string of ISO codes ("JP, US"), not a list, so each
+    // entry is split rather than compared whole — otherwise a co-production never matches Japan.
+    val countries = originCountries
+        .flatMap { it.split(',', '/', '|') }
+        .mapNotNull { it.trim().lowercase().takeIf(String::isNotBlank) }
+    if (language == null && countries.isEmpty()) return false
+    if (language in JAPANESE_LANGUAGE_CODES) return false
+    if (countries.any { it in JAPAN_COUNTRY_CODES }) return false
+    return true
+}
+
+private val JAPANESE_LANGUAGE_CODES = setOf("ja", "jpn", "ja-jp")
+private val JAPAN_COUNTRY_CODES = setOf("jp", "jpn", "japan")
 
 @Composable
 fun IosVideoOutputPreset.localizedLabel(): String = when (this) {

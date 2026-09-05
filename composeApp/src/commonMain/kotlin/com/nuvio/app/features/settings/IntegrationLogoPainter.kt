@@ -11,6 +11,7 @@ internal enum class IntegrationLogo {
     IntroDb,
     Tvdb,
     Simkl,
+    Discord,
     Kitsu,
 }
 

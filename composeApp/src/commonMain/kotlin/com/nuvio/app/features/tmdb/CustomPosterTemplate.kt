@@ -74,17 +74,24 @@ internal fun customPosterUrl(
         .replace("{mdblist_key}", mdbListApiKey?.trim().orEmpty())
 }
 
-/** Applies the Library poster-service policy to a TMDB-backed catalog item. */
+/**
+ * Applies the Library poster-service policy to a catalog item.
+ *
+ * [tmdbId] is nullable because not every row is TMDB-addressed: a title taken from local watch
+ * progress carries whatever id its addon used (`tt…`, `kitsu:…`). The raw `{id}` placeholder can
+ * still identify it, and [customPosterUrl] already treats the other ids as supplemental once `{id}`
+ * is filled — so a missing TMDB id is a reason to send less, not a reason to send nothing.
+ */
 internal fun MetaPreview.withCustomLibraryPoster(
     settings: TmdbSettings,
     imdbId: String?,
-    tmdbId: Int,
+    tmdbId: Int?,
     mdbListApiKey: String? = null,
 ): MetaPreview {
     val custom = customPosterUrl(
         settings = settings,
         imdbId = imdbId,
-        tmdbId = tmdbId.toString(),
+        tmdbId = tmdbId?.toString(),
         type = type,
         stremioId = id,
         mdbListApiKey = mdbListApiKey,

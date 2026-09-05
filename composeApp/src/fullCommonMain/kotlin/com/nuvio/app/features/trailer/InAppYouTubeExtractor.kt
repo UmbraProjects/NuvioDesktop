@@ -1,7 +1,10 @@
 package com.nuvio.app.features.trailer
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.library.LibraryClock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -14,7 +17,15 @@ internal const val TRAILER_EXTRACTOR_TAG = "InAppYouTubeExtractor"
 internal const val TRAILER_REQUEST_TIMEOUT_MS = 20_000L
 
 private const val EXTRACTOR_TIMEOUT_MS = 30_000L
-private const val PREFERRED_SEPARATE_CLIENT = "android_vr"
+
+/**
+ * How long a cached watch config is trusted. `visitorData` is a session token that YouTube
+ * eventually retires; when it does, every client answers LOGIN_REQUIRED. Three hours keeps
+ * a browsing session on one fetch while staying well inside that lifetime, and a stale token
+ * is recovered by the one-shot refresh retry rather than by this bound.
+ */
+private const val WATCH_CONFIG_TTL_MS = 3L * 60L * 60L * 1000L
+private const val PREFERRED_SEPARATE_CLIENT = "visionos"
 
 private val VIDEO_ID_REGEX = Regex("^[a-zA-Z0-9_-]{11}$")
 private val API_KEY_REGEX = Regex("\"INNERTUBE_API_KEY\":\"([^\"]+)\"")
@@ -74,21 +85,28 @@ internal data class TrailerRequestResponse(
 private val JSON = Json { ignoreUnknownKeys = true }
 
 private val CLIENTS = listOf(
+    // VISIONOS must stay first: it is the only client whose media URLs are unrestricted.
+    // ANDROID and IOS below still return OK with a full format list, but their URLs 403 an
+    // open-ended `Range: bytes=<pos>-` (which is exactly what ffmpeg/mpv opens with) and serve
+    // only the first ~63 seconds of media before answering 403 to everything beyond. VISIONOS
+    // URLs answer 206 to an open-ended range, stream to their full `clen`, and come with an
+    // HLS manifest. The two below are kept purely as fallbacks.
+    //
+    // This replaced ANDROID_VR, which now returns `playabilityStatus=LOGIN_REQUIRED` with no
+    // `streamingData` at all. Matches NuvioTV, which made the same switch.
     YouTubeClient(
-        key = "android_vr",
-        id = "28",
-        version = "1.56.21",
-        userAgent = "com.google.android.apps.youtube.vr.oculus/1.56.21 " +
-            "(Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1) gzip",
+        key = "visionos",
+        id = "101",
+        version = "1.02",
+        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 " +
+            "(KHTML, like Gecko) Version/26.0 Safari/605.1.15",
         context = jsonObjectOf(
-            "clientName" to "ANDROID_VR",
-            "clientVersion" to "1.56.21",
-            "deviceMake" to "Oculus",
-            "deviceModel" to "Quest 3",
-            "osName" to "Android",
-            "osVersion" to "12",
-            "platform" to "MOBILE",
-            "androidSdkVersion" to 32,
+            "clientName" to "VISIONOS",
+            "clientVersion" to "1.02",
+            "deviceMake" to "Apple",
+            "deviceModel" to "RealityDevice17,1",
+            "osName" to "visionOS",
+            "osVersion" to "26.5.23O471",
             "hl" to "en",
             "gl" to "US",
         ),
@@ -133,37 +151,108 @@ private val CLIENTS = listOf(
 class InAppYouTubeExtractor {
     private val log = Logger.withTag(TRAILER_EXTRACTOR_TAG)
 
+    /**
+     * `INNERTUBE_API_KEY` and `visitorData` identify the *session*, not the video, so one watch
+     * page serves every later extraction. Caching it removes a full page fetch (~1.3MB) from
+     * each trailer resolve — which matters most while browsing, where hovering a row resolves
+     * one trailer per poster.
+     */
+    private var cachedConfig: CachedWatchConfig? = null
+    private val configMutex = Mutex()
+
+    private data class CachedWatchConfig(
+        val apiKey: String,
+        val visitorData: String?,
+        val fetchedAtMs: Long,
+    )
+
     suspend fun extractPlaybackSource(youtubeUrl: String): TrailerResolution = withContext(Dispatchers.Default) {
         if (youtubeUrl.isBlank()) return@withContext TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
 
+        val hadCachedConfig = configMutex.withLock { cachedConfig != null }
+        val first = attemptExtraction(youtubeUrl, forceRefreshConfig = false)
+
+        // A session that has expired server-side is indistinguishable from an unplayable video:
+        // every client answers LOGIN_REQUIRED with no `streamingData`. Retry once against a
+        // freshly fetched watch config before believing the verdict. Skipped when this attempt
+        // already fetched a config, and when YouTube gave a definitive reason a new session
+        // cannot change, so the common failure paths still cost a single pass.
+        if (first is TrailerResolution.Available || !hadCachedConfig || !first.warrantsFreshConfig()) {
+            return@withContext first
+        }
+        log.i { "Retrying extraction with a fresh watch config" }
+        attemptExtraction(youtubeUrl, forceRefreshConfig = true)
+    }
+
+    private suspend fun attemptExtraction(youtubeUrl: String, forceRefreshConfig: Boolean): TrailerResolution =
         runCatching {
             withTimeout(EXTRACTOR_TIMEOUT_MS) {
-                extractPlaybackSourceInternal(youtubeUrl)
+                extractPlaybackSourceInternal(youtubeUrl, forceRefreshConfig)
             }
         }.onFailure {
             log.w { "Trailer extractor failed for $youtubeUrl: ${it.message}" }
         }.getOrNull() ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
-    }
 
-    private suspend fun extractPlaybackSourceInternal(youtubeUrl: String): TrailerResolution {
+    private fun TrailerResolution.warrantsFreshConfig(): Boolean =
+        this is TrailerResolution.Unavailable &&
+            (reason == TrailerUnavailableReason.UNKNOWN || reason == TrailerUnavailableReason.AGE_RESTRICTED)
+
+    /**
+     * Returns the cached watch config, fetching one only when absent, older than
+     * [WATCH_CONFIG_TTL_MS], or when [forceRefresh] is set. The fetch happens under the mutex so
+     * a burst of concurrent resolves triggers a single page load rather than one each.
+     *
+     * The requested video's own watch page is used, so the first extraction costs exactly what
+     * it always did and no placeholder video ID is needed.
+     */
+    private suspend fun ensureWatchConfig(videoId: String, forceRefresh: Boolean): CachedWatchConfig =
+        configMutex.withLock {
+            if (!forceRefresh) {
+                cachedConfig?.takeIf { !it.isStale() }?.let { return@withLock it }
+            }
+
+            val watchResponse = TrailerExtractionPlatform.performRequest(
+                url = "https://www.youtube.com/watch?v=$videoId&hl=en",
+                method = "GET",
+                headers = TrailerExtractionPlatform.defaultHeaders,
+                body = null,
+                timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
+            )
+            if (!watchResponse.ok) {
+                // A stale config still usually works; failing outright would turn a transient
+                // network blip into an unplayable trailer.
+                cachedConfig?.let { stale ->
+                    log.w { "Watch page failed (${watchResponse.status}), reusing cached config" }
+                    return@withLock stale
+                }
+                throw IllegalStateException("Failed to fetch watch page (${watchResponse.status})")
+            }
+
+            val parsed = getWatchConfig(watchResponse.body)
+            val apiKey = parsed.apiKey
+                ?: throw IllegalStateException("Unable to extract INNERTUBE_API_KEY")
+            CachedWatchConfig(
+                apiKey = apiKey,
+                visitorData = parsed.visitorData,
+                fetchedAtMs = LibraryClock.nowEpochMs(),
+            ).also {
+                cachedConfig = it
+                log.i { "Watch config cached (visitorData=${!it.visitorData.isNullOrBlank()})" }
+            }
+        }
+
+    private fun CachedWatchConfig.isStale(): Boolean =
+        LibraryClock.nowEpochMs() - fetchedAtMs > WATCH_CONFIG_TTL_MS
+
+    private suspend fun extractPlaybackSourceInternal(
+        youtubeUrl: String,
+        forceRefreshConfig: Boolean,
+    ): TrailerResolution {
         val videoId = extractVideoId(youtubeUrl)
             ?: return TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
 
-        val watchUrl = "https://www.youtube.com/watch?v=$videoId&hl=en"
-        val watchResponse = TrailerExtractionPlatform.performRequest(
-            url = watchUrl,
-            method = "GET",
-            headers = TrailerExtractionPlatform.defaultHeaders,
-            body = null,
-            timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
-        )
-        if (!watchResponse.ok) {
-            throw IllegalStateException("Failed to fetch watch page (${watchResponse.status})")
-        }
-
-        val watchConfig = getWatchConfig(watchResponse.body)
+        val watchConfig = ensureWatchConfig(videoId, forceRefreshConfig)
         val apiKey = watchConfig.apiKey
-            ?: throw IllegalStateException("Unable to extract INNERTUBE_API_KEY")
 
         val progressive = mutableListOf<StreamCandidate>()
         val adaptiveVideo = mutableListOf<StreamCandidate>()

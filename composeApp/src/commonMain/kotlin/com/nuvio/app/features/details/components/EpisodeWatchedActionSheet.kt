@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAddCheckCircle
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,6 +46,10 @@ fun EpisodeWatchedActionSheet(
     onToggleSeasonWatched: () -> Unit,
     alternatePlayLabel: String? = null,
     onAlternatePlay: (() -> Unit)? = null,
+    // Separate from [onAlternatePlay] on purpose: the source picker is not the "other" of the two
+    // local-library routes, it is the one that overrides stream auto-play, so it is offered
+    // whether or not this episode has a local file to alternate to.
+    onChooseSource: (() -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
@@ -120,6 +125,19 @@ fun EpisodeWatchedActionSheet(
                     title = alternatePlayLabel,
                     onClick = {
                         onAlternatePlay()
+                        coroutineScope.launch {
+                            dismissNuvioBottomSheet(sheetState = sheetState, onDismiss = onDismiss)
+                        }
+                    },
+                )
+            }
+            if (onChooseSource != null) {
+                NuvioBottomSheetDivider()
+                NuvioBottomSheetActionRow(
+                    icon = Icons.AutoMirrored.Filled.PlaylistPlay,
+                    title = stringResource(Res.string.play_choose_source),
+                    onClick = {
+                        onChooseSource()
                         coroutineScope.launch {
                             dismissNuvioBottomSheet(sheetState = sheetState, onDismiss = onDismiss)
                         }

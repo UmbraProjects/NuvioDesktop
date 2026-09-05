@@ -1,6 +1,10 @@
 /* __NUVIO_PLAYER_FONT_FACES__ */
 
 :root {
+  /* The app font, set from JS (applyUiFontFamily in controls.js) when the user picks an installed
+   * system family in settings. The fallback list here is what the HUD uses on its own — the
+   * bundled face, then whatever the host calls its UI sans. */
+  --nuvio-ui-font: "Nuvio JetBrains Sans", "JetBrains Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   /* Combined HUD scale multiplier, set from JS (updateViewportUiScale in controls.js). It folds
    * two factors: the user's UI-scale knob (desktopUiScalePercent setting, -50%..+50%) and the
    * resolution auto-scale that anchors the authored sizes to a 1920x1080 CSS reference viewport
@@ -22,6 +26,8 @@
    * unit. JS derives this from the live viewport and the user's player UI scale. */
   --feedback-scale: 1;
   --feedback-hidden-scale: .85;
+  /* Top offset for the optional top-centre pill position; clears the header at any scale. */
+  --pill-top: calc(var(--user-scale) * 132px);
   --hp: 20px;
   --vp: 16px;
   --title: 18px;
@@ -47,6 +53,8 @@
   --ease-out: cubic-bezier(.2, .8, .2, 1);
   --theme-accent: #2f6fed;
   --theme-accent-strong: #3c7bff;
+  /* Paint for filled accent surfaces; a gradient when the theme defines a second accent stop. */
+  --theme-accent-fill: var(--theme-accent);
   --theme-on-accent: #fff;
   --theme-focus: #9ecaff;
   --theme-selected-surface: #26384f;
@@ -139,7 +147,7 @@ body {
   overflow: hidden;
   background: transparent;
   color: #fff;
-  font-family: "Nuvio JetBrains Sans", "JetBrains Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--nuvio-ui-font);
   letter-spacing: 0;
   user-select: none;
 }
@@ -633,7 +641,7 @@ button:disabled {
   width: 3px;
   height: 0;
   border-radius: 1px;
-  background: var(--theme-accent);
+  background: var(--theme-accent-fill);
   transform: scaleY(0);
   transform-origin: top;
   transition: transform 400ms var(--ease-out);
@@ -713,6 +721,19 @@ button:disabled {
 .gesture-pill.visible {
   opacity: 1;
   transform: translate(-50%, -50%) scale(var(--feedback-scale));
+}
+
+/* Top-centre pills (Playback > In-player notifications). Anchored below the header row rather
+   than into a top corner: the left corner holds the title/episode block and the right one the
+   header actions and the playback info panel. The translate drops its -50% Y so the pill hangs
+   from --pill-top instead of straddling it. */
+.player.notifications-top .gesture-pill {
+  top: var(--pill-top);
+  transform: translate(-50%, 0) scale(var(--feedback-hidden-scale));
+}
+
+.player.notifications-top .gesture-pill.visible {
+  transform: translate(-50%, 0) scale(var(--feedback-scale));
 }
 
 .gesture-pill svg {
@@ -1190,7 +1211,7 @@ button:disabled {
   margin-top: 2px;
   padding: 8px 14px;
   border-radius: 8px;
-  background: var(--theme-accent);
+  background: var(--theme-accent-fill);
   color: var(--theme-on-accent);
   font-size: 13px;
   line-height: 18px;
@@ -1769,6 +1790,12 @@ button:disabled {
 .timeline-time-current { text-align: left; }
 .timeline-time-duration { text-align: right; }
 
+/* Total <-> remaining toggle. Mouse-only by design: the HUD's keyboard handling belongs to the
+ * player's own shortcut layer, and putting a focusable element in the timeline row would give the
+ * seek bar a tab-stop neighbour that steals arrow keys mid-playback. */
+.timeline-time-toggle { cursor: pointer; }
+.timeline-time-toggle:hover { color: #fff; }
+
 /* Playback info panel -----------------------------------------------------
  * Opt-in "what is actually running" summary: a compact glass strip centred over the frame, one
  * self-describing line per fact, shown for a few seconds when playback starts. Deliberately
@@ -1793,6 +1820,8 @@ button:disabled {
   background:
     linear-gradient(148deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, .035) 48%, rgba(255, 255, 255, .015)),
     rgba(10, 10, 14, .68);
+  /* Sized to the border box so the 1px border strip does not repeat the ramp back in. */
+  background-origin: border-box;
   box-shadow:
     0 calc(var(--user-scale) * 16px) calc(var(--user-scale) * 40px) rgba(0, 0, 0, .52),
     inset 0 1px 0 rgba(255, 255, 255, .14);
@@ -2245,7 +2274,7 @@ button:disabled {
 .panel-button.primary,
 .filter-chip.selected,
 .segment-button.selected {
-  background: var(--theme-accent);
+  background: var(--theme-accent-fill);
   color: var(--theme-on-accent);
   border-color: rgba(255, 255, 255, .18);
 }
@@ -2289,7 +2318,7 @@ button:disabled {
 
 .subtitle-tab.selected {
   border-radius: 12px;
-  background: var(--theme-accent);
+  background: var(--theme-accent-fill);
   color: var(--theme-on-accent);
 }
 
@@ -2317,6 +2346,15 @@ button:disabled {
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
+}
+
+/*
+ * A row whose control currently does nothing. The ASS/SSA size factor is inert while the styling
+ * level is Original, where mpv applies no user options to the track at all — dimming it says so,
+ * where leaving it live would look like a control that had stopped working.
+ */
+.style-row-inert {
+  opacity: .42;
 }
 
 .style-label {
@@ -2586,6 +2624,28 @@ button:disabled {
   line-height: 1.25;
 }
 
+/* Two-line track rows (the audio panel names each track's language under its label — the list is
+   otherwise a wall of near-identical release names). */
+.track-row.detail-row {
+  align-items: center;
+}
+
+.detail-row .track-copy {
+  gap: 2px;
+}
+
+.track-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 500;
+  /* Inherit + fade rather than a fixed grey: selected rows draw on the accent surface. */
+  opacity: .62;
+}
+
 .track-copy,
 .episode-copy {
   min-width: 0;
@@ -2687,8 +2747,26 @@ button:disabled {
 }
 
 .status-chip {
-  background: var(--theme-accent);
+  background: var(--theme-accent-fill);
   color: var(--theme-on-accent);
+}
+
+/* The accent fill is a gradient whenever the theme defines a second stop, and a background image
+   is laid out in the padding box while being painted across the border box: the 1px border strip
+   is covered by *repeating* the ramp, which lays a sliver of the gradient's far end down the left
+   edge and a sliver of its near end down the right. Sizing the paint to the border box leaves
+   nothing to repeat.
+   This has to stay below every rule above that fills with --theme-accent-fill: they set it through
+   the `background` shorthand, which resets background-origin to padding-box. New accent-filled
+   rules belong in this list, and below it. */
+.panel-button.primary,
+.filter-chip.selected,
+.segment-button.selected,
+.subtitle-tab.selected,
+.playback-error-action,
+.status-chip,
+.parental-guide-line {
+  background-origin: border-box;
 }
 
 /* Stream scoring's diagnostic badge. Shares the status-chip geometry so a row carrying both
@@ -2838,6 +2916,59 @@ button:focus-visible,
   line-height: 1.35;
 }
 
+/* Custom subtitle colour prompt. Narrower than the timestamp form it borrows its markup from:
+   one field and two buttons do not need 420px. */
+.track-panel.narrow {
+  width: min(90vw, 340px);
+}
+
+.hex-field-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.hex-field-row .time-field-wrap {
+  flex: 1;
+}
+
+.hex-preview {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  background:
+    linear-gradient(var(--hex-preview, #fff), var(--hex-preview, #fff)),
+    /* Checkerboard behind the swatch so a translucent colour reads as translucent. */
+    linear-gradient(45deg, rgba(255,255,255,.16) 25%, transparent 25% 75%, rgba(255,255,255,.16) 75%) 0 0 / 12px 12px,
+    linear-gradient(45deg, rgba(255,255,255,.16) 25%, transparent 25% 75%, rgba(255,255,255,.16) 75%) 6px 6px / 12px 12px,
+    #16171d;
+}
+
+.hex-hint {
+  color: rgba(255, 255, 255, .54);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* The trailing swatch that opens that prompt: dashed until a custom colour is actually in use, at
+   which point it shows the colour like any other swatch. */
+.swatch.custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  color: rgba(255, 255, 255, .72);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.swatch.custom.has-color {
+  border-style: solid;
+}
+
 .consent-body {
   overflow: auto;
   padding: 0 20px 20px;
@@ -2955,7 +3086,7 @@ svg {
   padding: 0 0 8vh 4.2vw;
   pointer-events: none;
   z-index: 6;
-  font-family: "Nuvio JetBrains Sans", system-ui, sans-serif;
+  font-family: var(--nuvio-ui-font);
 }
 
 #heroTrailerLogo {
@@ -3258,6 +3389,37 @@ svg {
   transform: scale(1.025);
   box-shadow: inset 0 0 0 2px var(--theme-focus), 0 10px 28px rgba(0,0,0,.32);
 }
+
+/* Apply the app's Focused Poster Highlight preference to the native desktop episode rail. */
+#episodesModal .track-row.episode-row {
+  transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
+}
+#episodesModal .track-row.episode-row.keyboard-focused,
+#episodesModal .track-row.episode-row:hover:not(:disabled) {
+  transform: scale(1.04);
+}
+.poster-highlight-off #episodesModal .track-row.episode-row.keyboard-focused:not(.selected) {
+  box-shadow: 0 10px 28px rgba(0,0,0,.32);
+}
+.poster-highlight-white #episodesModal .track-row.episode-row.keyboard-focused,
+.poster-highlight-white #episodesModal .track-row.episode-row:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 3px rgba(255,255,255,.98), 0 10px 28px rgba(0,0,0,.32);
+}
+.poster-highlight-accent #episodesModal .track-row.episode-row.keyboard-focused,
+.poster-highlight-accent #episodesModal .track-row.episode-row:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 3px var(--theme-accent), 0 10px 28px rgba(0,0,0,.32);
+}
+.poster-highlight-shine #episodesModal .track-row.episode-row.keyboard-focused,
+.poster-highlight-shine #episodesModal .track-row.episode-row:hover:not(:disabled) {
+  filter: brightness(1.25);
+  box-shadow: 0 10px 28px rgba(0,0,0,.32);
+}
+.poster-highlight-off #episodesModal .track-row.episode-row.selected.keyboard-focused,
+.poster-highlight-off #episodesModal .track-row.episode-row.selected:hover:not(:disabled),
+.poster-highlight-shine #episodesModal .track-row.episode-row.selected.keyboard-focused,
+.poster-highlight-shine #episodesModal .track-row.episode-row.selected:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 2px var(--theme-focus), 0 10px 28px rgba(0,0,0,.32);
+}
 .seek-control svg { width: 32px; height: 32px; }
 
 /* Final player polish: glass episode rail, compact copy, and top-edge notch. */
@@ -3368,6 +3530,8 @@ svg {
   border-top: 0;
   border-radius: 0 0 8px 8px;
   background: linear-gradient(to bottom, rgba(255,255,255,.14), rgba(255,255,255,.045));
+  /* Sized to the border box so the 1px border strip does not repeat the ramp back in. */
+  background-origin: border-box;
   box-shadow: 0 4px 14px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.10);
   opacity: .72;
   backdrop-filter: blur(16px) saturate(1.2);
@@ -3449,6 +3613,8 @@ svg {
   border-right: 0;
   border-radius: 8px 0 0 8px;
   background: linear-gradient(to left, rgba(255,255,255,.14), rgba(255,255,255,.045));
+  /* Sized to the border box so the 1px border strip does not repeat the ramp back in. */
+  background-origin: border-box;
   box-shadow: -4px 0 14px rgba(0,0,0,.24), inset 1px 0 0 rgba(255,255,255,.10);
   opacity: .72;
   backdrop-filter: blur(16px) saturate(1.2);
@@ -3472,6 +3638,8 @@ svg {
   border-left: 0;
   border-radius: 0 8px 8px 0;
   background: linear-gradient(to right, rgba(255,255,255,.14), rgba(255,255,255,.045));
+  /* Sized to the border box so the 1px border strip does not repeat the ramp back in. */
+  background-origin: border-box;
   box-shadow: 4px 0 14px rgba(0,0,0,.24), inset -1px 0 0 rgba(255,255,255,.10);
 }
 .player.source-notch-left .source-notch:hover::after {
@@ -3866,6 +4034,8 @@ svg {
      the bottom); the seek bar is then pushed a further step up via .timeline-row margin below,
      opening a gap between the scrubber and the button row. */
   --slider-bottom: calc(var(--user-scale) * 20px);
+  /* The legacy HUD's header is 25% shorter, so its pills can sit correspondingly higher. */
+  --pill-top: calc(var(--user-scale) * 104px);
 }
 .player.legacy-hud .timeline-row {
   margin-bottom: calc(var(--user-scale) * 16px);

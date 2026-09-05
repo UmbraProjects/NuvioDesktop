@@ -5,8 +5,10 @@ import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.metadata.ResolvedMediaIds
 import com.nuvio.app.features.tracking.TrackingCoordinateFamily
+import com.nuvio.app.features.tracking.TrackingScrobbleResult
 import com.nuvio.app.features.tracking.hasFranchiseScrobbleId
 import com.nuvio.app.features.tracking.projectScrobbleCoordinates
+import com.nuvio.app.features.tracking.trackingScrobbleResponseConfirmsWatched
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
@@ -73,7 +75,7 @@ internal object YamtrackScrobbleRepository {
         progressPercent: Float,
         positionSeconds: Long?,
         durationSeconds: Long?,
-    ): Boolean = send(action, item, progressPercent, positionSeconds, durationSeconds)
+    ): TrackingScrobbleResult = send(action, item, progressPercent, positionSeconds, durationSeconds)
 
     suspend fun buildItem(
         contentType: String,
@@ -128,11 +130,11 @@ internal object YamtrackScrobbleRepository {
         progressPercent: Float,
         positionSeconds: Long?,
         durationSeconds: Long?,
-    ): Boolean {
-        val (baseUrl, token) = YamtrackSettingsRepository.activeCredentials() ?: return false
+    ): TrackingScrobbleResult {
+        val (baseUrl, token) = YamtrackSettingsRepository.activeCredentials() ?: return TrackingScrobbleResult.Declined
         val progress = progressPercent.coerceIn(0f, 100f)
         val itemKey = item.itemKey
-        if (shouldSkip(action, itemKey, progress)) return false
+        if (shouldSkip(action, itemKey, progress)) return TrackingScrobbleResult.Declined
 
         val url = "$baseUrl/api/v1/scrobble/"
         val body = buildBodyJson(action, item, progress, positionSeconds, durationSeconds)
@@ -159,7 +161,7 @@ internal object YamtrackScrobbleRepository {
                     delay(RETRY_DELAY_MS * attempt)
                     continue
                 }
-                return false
+                return TrackingScrobbleResult.Declined
             }
 
             log.d { "Yamtrack scrobble $action response: ${response.status}" }
@@ -167,18 +169,21 @@ internal object YamtrackScrobbleRepository {
             when (response.status) {
                 in 200..299 -> {
                     lastStamp = ScrobbleStamp(action, itemKey, progress, System.currentTimeMillis())
-                    return true
+                    return TrackingScrobbleResult(
+                        handled = true,
+                        confirmsWatched = trackingScrobbleResponseConfirmsWatched(response.body),
+                    )
                 }
                 401, 403 -> {
                     log.w { "Yamtrack scrobble $action: token rejected (${response.status})" }
                     YamtrackSettingsRepository.setConnectionState(YamtrackConnectionState.Unauthorized)
-                    return true
+                    return TrackingScrobbleResult.Handled
                 }
                 // 404 means the instance could not resolve the media through TMDB — a real outcome
                 // for obscure titles, not a transport problem, so there is nothing to retry.
                 404 -> {
                     log.w { "Yamtrack scrobble $action: media not resolved ${response.body.take(200)}" }
-                    return true
+                    return TrackingScrobbleResult.Handled
                 }
                 in 500..599 -> {
                     if (attempt < attempts) {
@@ -186,15 +191,15 @@ internal object YamtrackScrobbleRepository {
                         continue
                     }
                     log.w { "Yamtrack scrobble $action: server error ${response.status}" }
-                    return true
+                    return TrackingScrobbleResult.Handled
                 }
                 else -> {
                     log.w { "Yamtrack scrobble $action: unexpected ${response.status} ${response.body.take(200)}" }
-                    return true
+                    return TrackingScrobbleResult.Handled
                 }
             }
         }
-        return false
+        return TrackingScrobbleResult.Declined
     }
 
     private fun shouldSkip(action: String, itemKey: String, progress: Float): Boolean {

@@ -184,15 +184,43 @@ object WatchedRepository {
      */
     suspend fun pullConnectedProviderHistory(profileId: Int, force: Boolean = false) {
         ensureLoaded()
-        if (profileId != currentProfileId) return
-        providerHistoryPullLock.withLock {
+        // This path is silent unless it throws, which made "imported nothing" and "never ran"
+        // indistinguishable from the log. Every early return now says which gate closed.
+        if (profileId != currentProfileId) {
+            log.i { "Provider history import skipped: profile $profileId != active $currentProfileId" }
+            return
+        }
+        var claimedAtMs = 0L
+        val previousPullAtMs = providerHistoryPullLock.withLock {
             // A fresh sign-in reaches both this and the account sync within a second of each other,
             // and every provider read costs a request against a shared daily budget.
             val now = WatchedClock.nowEpochMs()
-            if (!force && now - lastProviderHistoryPullAtMs < providerHistoryPullMinIntervalMs) return
-            lastProviderHistoryPullAtMs = now
+            if (!force && now - lastProviderHistoryPullAtMs < providerHistoryPullMinIntervalMs) {
+                log.i {
+                    "Provider history import skipped: last pull ${now - lastProviderHistoryPullAtMs}ms ago " +
+                        "(min interval ${providerHistoryPullMinIntervalMs}ms, force=$force)"
+                }
+                return
+            }
+            // Claimed up front so a concurrent caller cannot start a second pull, then given back
+            // below if this attempt turned out to cost nothing.
+            claimedAtMs = now
+            lastProviderHistoryPullAtMs.also { lastProviderHistoryPullAtMs = now }
         }
-        pullConnectedProviderHistoryAdditively(profileId)
+        val requested = pullConnectedProviderHistoryAdditively(profileId)
+        if (!requested) {
+            // Nothing was spent, so nothing should be charged. The startup import runs before the
+            // tracking registry reports any connected provider, and charging that no-op used to
+            // suppress the source-change import two seconds later — which is the one that would
+            // have worked. Net effect: history was never imported at all.
+            providerHistoryPullLock.withLock {
+                // Only give back the slot we ourselves claimed; a later caller may have claimed it
+                // since, and that one's budget must stand.
+                if (lastProviderHistoryPullAtMs == claimedAtMs) {
+                    lastProviderHistoryPullAtMs = previousPullAtMs
+                }
+            }
+        }
     }
 
     /**
@@ -205,11 +233,24 @@ object WatchedRepository {
      * door, by the one provider read that never asked which source was selected. Trakt has always
      * followed the selection (see [activeRemoteWatchedAdapter]); the additive providers now do too.
      */
-    private suspend fun pullConnectedProviderHistoryAdditively(profileId: Int) {
+    private suspend fun pullConnectedProviderHistoryAdditively(profileId: Int): Boolean {
         val importProviderId = activeWatchedHistoryImportProviderId()
+        val connected = TrackingProviderRegistry.connectedWatchedProviders()
+        val provider = connected.firstOrNull { candidate -> candidate.providerId == importProviderId }
+        log.i {
+            "Provider history import: selected=${ContinueWatchingSourceRepository.selectedSource().storageId} " +
+                "resolvedImportProvider=${importProviderId?.storageId ?: "<none>"} " +
+                "connectedWatchedProviders=${connected.map { it.providerId.storageId }} " +
+                "match=${provider != null}"
+        }
+        // An empty registry means "not ready yet", not "nothing is connected" — the selected source
+        // resolves to LOCAL while auth is still loading. Withdrawing on that answer would delete a
+        // previous import on every cold start.
+        if (connected.isEmpty() && ContinueWatchingSourceRepository.selectedSource().providerId != null) {
+            log.i { "Provider history import deferred: tracking registry reports nothing connected yet" }
+            return false
+        }
         var changed = withdrawForeignImportedHistory(importProviderId)
-        val provider = TrackingProviderRegistry.connectedWatchedProviders()
-            .firstOrNull { candidate -> candidate.providerId == importProviderId }
         if (provider != null) {
             val remoteItems = try {
                 provider.pull(profileId = profileId, pageSize = watchedItemsPageSize)
@@ -219,10 +260,14 @@ object WatchedRepository {
                 log.w(error) { "Failed to pull watched history from ${provider.providerId.storageId}" }
                 null
             }
-            if (profileId != currentProfileId) return
+            if (profileId != currentProfileId) return false
             if (remoteItems != null) {
                 val imported = remoteItems.map { item ->
                     item.copy(importedFrom = provider.providerId.storageId)
+                }
+                log.i {
+                    "Provider history import: ${provider.providerId.storageId} returned ${imported.size} rows " +
+                        "(local before merge = ${itemsByKey.size})"
                 }
                 val merged = mergeWatchedItemsAdditively(itemsByKey.values, imported)
                 if (merged.size != itemsByKey.size || merged != itemsByKey) {
@@ -236,6 +281,7 @@ object WatchedRepository {
             publish()
             persist()
         }
+        return provider != null
     }
 
     /**
@@ -554,6 +600,22 @@ object WatchedRepository {
         return itemsByKey.containsKey(watchedItemKey(type, id, season, episode))
     }
 
+    /**
+     * When this exact item was marked watched, or null when it is not on the watched list.
+     *
+     * Exposed for callers that have to compare the watch against another event rather than just
+     * ask whether it happened — a paused playback is only stale if the watch came *after* it.
+     */
+    fun watchedAtEpochMs(
+        id: String,
+        type: String,
+        season: Int? = null,
+        episode: Int? = null,
+    ): Long? {
+        ensureLoaded()
+        return itemsByKey[watchedItemKey(type, id, season, episode)]?.markedAtEpochMs
+    }
+
     fun reconcileSeriesWatchedState(
         meta: MetaDetails,
         todayIsoDate: String,
@@ -621,6 +683,45 @@ object WatchedRepository {
                 log.e(e) { "Failed to push watched item delete" }
             }
         }
+    }
+
+    /**
+     * Fills in the display name of already-stored rows that were written without one.
+     *
+     * Watch-progress entries self-heal: when metadata finally resolves, the progress store replaces
+     * a blank title. Watched rows had no equivalent — the name is copied once at playback
+     * completion and frozen — so a session that completed before its metadata arrived left a
+     * permanently nameless row. That surfaced as a "Because you watched" header with no title.
+     *
+     * Purely local and name-only: no timestamp is touched and nothing is pushed to Trakt/Simkl/
+     * Nuvio, because the row's watched state has not changed — only how it is labelled.
+     */
+    fun backfillMissingTitle(id: String, type: String, name: String) {
+        val resolved = name.trim()
+        if (resolved.isBlank() || id.isBlank()) return
+        ensureLoaded()
+        var changed = false
+        itemsByKey.entries.forEach { (key, item) ->
+            if (item.name.isNotBlank()) return@forEach
+            if (!item.id.equals(id, ignoreCase = true)) return@forEach
+            if (!item.type.equals(type, ignoreCase = true)) return@forEach
+            itemsByKey[key] = item.copy(name = resolved)
+            changed = true
+        }
+        if (!changed) return
+        log.d { "Backfilled watched title for $type:$id -> $resolved" }
+        publish()
+        persist()
+    }
+
+    /** Best known display name for a title, from any stored row that has one. */
+    fun knownTitleFor(id: String, type: String): String? {
+        ensureLoaded()
+        return itemsByKey.values.firstOrNull {
+            it.name.isNotBlank() &&
+                it.id.equals(id, ignoreCase = true) &&
+                it.type.equals(type, ignoreCase = true)
+        }?.name
     }
 
     private fun publish() {

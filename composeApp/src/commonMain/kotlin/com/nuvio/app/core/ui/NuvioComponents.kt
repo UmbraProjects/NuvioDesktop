@@ -10,6 +10,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,8 +44,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -74,6 +75,8 @@ import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.accentBrush
 
 @Composable
 fun NuvioScreen(
@@ -228,14 +231,18 @@ fun NuvioActionLabel(
 ) {
     Text(
         text = text,
-        modifier = modifier.then(
-            if (onClick != null) {
-                Modifier.clickable(onClick = onClick)
-            } else {
-                Modifier
-            }
-        ),
-        style = MaterialTheme.typography.titleMedium,
+        // Masked so a gradient accent sweeps the label the way it sweeps a filled accent surface;
+        // a no-op on the built-in palettes, which paint accents flat.
+        modifier = modifier
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
+            .accentGradientMask(),
+        style = MaterialTheme.typography.titleMedium.accentBrush(),
         color = MaterialTheme.nuvio.colors.accent,
     )
 }
@@ -293,6 +300,15 @@ fun NuvioBackButton(
     }
 }
 
+/**
+ * The app's filled action button.
+ *
+ * Built on a plain clickable surface rather than a Material [Button] on purpose: Material paints a
+ * focus/hover state layer over the container, and because the accent fill here is a brush on the
+ * modifier rather than a container colour, that overlay landed on top of the gradient as an inset
+ * lighter rectangle — most visible on the button a modal focuses by default. Focus and hover are
+ * signalled instead with the same single pass of light the poster cards use.
+ */
 @Composable
 fun NuvioPrimaryButton(
     text: String,
@@ -301,19 +317,32 @@ fun NuvioPrimaryButton(
     onClick: () -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
-    Button(
-        onClick = onClick,
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(NuvioTokens.Space.s48 + NuvioTokens.Space.s4),
-        enabled = enabled,
-        shape = tokens.shapes.button,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = tokens.colors.accent,
-            contentColor = tokens.colors.onAccent,
-            disabledContainerColor = tokens.colors.accent.copy(alpha = tokens.opacity.disabled),
-            disabledContentColor = tokens.colors.onAccent.copy(alpha = tokens.opacity.disabled),
-        ),
+            .height(NuvioTokens.Space.s48 + NuvioTokens.Space.s4)
+            .nuvioSweepHighlight(
+                highlighted = enabled && (isFocused || isHovered),
+                cornerRadius = NuvioTokens.Radius.button,
+            )
+            .clip(tokens.shapes.button)
+            // The fill is painted here rather than through buttonColors so a gradient accent can
+            // be used; for flat themes accentFill is a SolidColor and this renders identically.
+            .background(
+                brush = tokens.colors.accentFill,
+                shape = tokens.shapes.button,
+                alpha = if (enabled) 1f else tokens.opacity.disabled,
+            )
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
     ) {
         AnimatedContent(
             targetState = text,
@@ -323,6 +352,9 @@ fun NuvioPrimaryButton(
             Text(
                 text = animatedText,
                 style = MaterialTheme.typography.titleMedium,
+                color = tokens.colors.onAccent.copy(
+                    alpha = if (enabled) 1f else tokens.opacity.disabled,
+                ),
                 textAlign = TextAlign.Center,
             )
         }
@@ -338,30 +370,14 @@ fun NuvioInputField(
     readOnly: Boolean = false,
     trailingContent: (@Composable (() -> Unit))? = null,
 ) {
-    val tokens = MaterialTheme.nuvio
-    OutlinedTextField(
+    NuvioTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier.fillMaxWidth(),
-        singleLine = true,
+        placeholder = placeholder,
         readOnly = readOnly,
-        shape = RoundedCornerShape(NuvioTokens.Radius.lg),
-        placeholder = {
-            Text(
-                text = placeholder,
-                color = tokens.colors.textMuted,
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        },
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = tokens.colors.textPrimary),
-        trailingIcon = trailingContent,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = tokens.colors.borderFocus,
-            unfocusedBorderColor = tokens.colors.borderDefault,
-            focusedContainerColor = tokens.colors.surfaceCard,
-            unfocusedContainerColor = tokens.colors.surfaceCard,
-            cursorColor = tokens.colors.accent,
-        ),
+        textStyle = MaterialTheme.typography.bodyLarge,
+        trailingContent = trailingContent?.let { content -> { content() } },
     )
 }
 

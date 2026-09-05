@@ -17,8 +17,26 @@ enum class DiscordPresenceMode {
     Full,
 }
 
+/**
+ * Which artwork an episode's presence should show.
+ *
+ * Only meaningful for episodic playback — a film has no episode still, so this changes nothing for
+ * one. The candidate list is a *preference*, not a requirement: whichever is picked, the other is
+ * still the fallback, because Discord fetches artwork from its own servers and a poster that only
+ * resolves on the user's LAN is unusable there (see [isExternallyFetchableArtworkUrl]). A user who
+ * asks for posters and gets stills anyway is looking at that, not at this setting.
+ */
+enum class DiscordEpisodeArtwork {
+    /** The series poster — portrait, letterboxed into Discord's square. */
+    Poster,
+
+    /** The episode still — landscape, and it fills the square without bars. */
+    EpisodeThumbnail,
+}
+
 data class DiscordPresenceSettings(
     val mode: DiscordPresenceMode = DiscordPresenceMode.Disabled,
+    val episodeArtwork: DiscordEpisodeArtwork = DiscordEpisodeArtwork.Poster,
 ) {
     /** Playback presence is shared in both Watching and Full. */
     val showPlaybackPresence: Boolean get() = mode != DiscordPresenceMode.Disabled
@@ -30,6 +48,8 @@ data class DiscordPresenceSettings(
 internal expect object DiscordPresenceSettingsStorage {
     fun loadMode(): DiscordPresenceMode
     fun saveMode(mode: DiscordPresenceMode)
+    fun loadEpisodeArtwork(): DiscordEpisodeArtwork
+    fun saveEpisodeArtwork(value: DiscordEpisodeArtwork)
 }
 
 object DiscordPresenceSettingsRepository {
@@ -38,11 +58,13 @@ object DiscordPresenceSettingsRepository {
 
     private var hasLoaded = false
     private var mode = DiscordPresenceMode.Disabled
+    private var episodeArtwork = DiscordEpisodeArtwork.Poster
 
     fun ensureLoaded() {
         if (hasLoaded) return
         hasLoaded = true
         mode = DiscordPresenceSettingsStorage.loadMode()
+        episodeArtwork = DiscordPresenceSettingsStorage.loadEpisodeArtwork()
         publish()
     }
 
@@ -54,9 +76,21 @@ object DiscordPresenceSettingsRepository {
         DiscordPresenceSettingsStorage.saveMode(value)
     }
 
+    fun setEpisodeArtwork(value: DiscordEpisodeArtwork) {
+        ensureLoaded()
+        if (episodeArtwork == value) return
+        episodeArtwork = value
+        publish()
+        DiscordPresenceSettingsStorage.saveEpisodeArtwork(value)
+        // Note the presence already on screen is rebuilt by the player's own effect, which reads
+        // this value as one of its keys. Republishing the stored activity here would not help:
+        // it was assembled under the old preference and still carries the old URL.
+    }
+
     private fun publish() {
         _uiState.value = DiscordPresenceSettings(
             mode = mode,
+            episodeArtwork = episodeArtwork,
         )
     }
 }

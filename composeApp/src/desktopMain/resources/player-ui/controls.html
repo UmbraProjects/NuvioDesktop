@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="controls.css?v=20260810-speed-toggle-single-owner-1">
+  <link rel="stylesheet" href="controls.css?v=20260903-episode-artwork">
 </head>
 <body>
   <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
@@ -271,7 +271,7 @@
             </div>
             <div class="chapter-tooltip" id="chapterTooltip" role="status" hidden></div>
           </div>
-          <span class="timeline-time timeline-time-duration" id="duration">00:00</span>
+          <span class="timeline-time timeline-time-duration timeline-time-toggle" id="duration" title="Click to show time remaining">00:00</span>
         </div>
         <div class="desktop-control-row">
           <div class="time-cluster"><span class="player-volume-control"><svg class="player-volume-icon" aria-hidden="true"><use id="playerVolumeIcon" href="#icon-volume-high"></use></svg><input id="playerVolumeSlider" class="hero-trailer-volume player-volume" type="range" min="0" max="200" step="1" value="100" aria-label="Player volume"></span></div>
@@ -413,6 +413,18 @@
                 </div>
               </div>
               <div class="style-row">
+                <span class="style-label" id="assStyleModeLabel">ASS/SSA Styling</span>
+                <select class="style-select" id="assStyleModeSelect"></select>
+              </div>
+              <div class="style-row" id="assScaleRow">
+                <span class="style-label" id="assScaleLabel">ASS/SSA Size</span>
+                <div class="stepper">
+                  <button class="round-step" id="assScaleMinus" type="button">-</button>
+                  <span class="stepper-value" id="assScaleValue">100%</span>
+                  <button class="round-step" id="assScalePlus" type="button">+</button>
+                </div>
+              </div>
+              <div class="style-row">
                 <span class="style-label" id="textOpacityLabel">Text Opacity</span>
                 <div class="stepper">
                   <button class="round-step" id="textOpacityMinus" type="button">-</button>
@@ -523,6 +535,33 @@
           </div>
         </div>
       </section>
+      <!-- Not registered in modalByName: it floats above the subtitle panel that opened it, so
+           closePlayerModal must not sweep it away with the modal underneath. -->
+      <section class="modal-layer" id="subtitleHexModal" aria-label="Custom subtitle color" hidden>
+        <div class="track-panel submit narrow">
+          <div class="track-header-row">
+            <div class="track-title" id="subtitleHexTitle">Custom Color</div>
+            <div class="panel-actions">
+              <button class="panel-button" id="subtitleHexCloseButton" type="button">Close</button>
+            </div>
+          </div>
+          <div class="intro-form">
+            <div class="hex-field-row">
+              <span class="hex-preview" id="subtitleHexPreview"></span>
+              <label class="time-field-wrap">
+                <span class="form-label" id="subtitleHexFieldLabel">HEX COLOR</span>
+                <input class="time-input" id="subtitleHexInput" value="#FFFFFF" spellcheck="false" autocomplete="off" autocapitalize="off">
+              </label>
+            </div>
+            <div class="hex-hint" id="subtitleHexHint">#RRGGBB, or #AARRGGBB to set opacity too.</div>
+            <div class="submit-status" id="subtitleHexStatus"></div>
+            <div class="modal-actions">
+              <button class="panel-button" id="subtitleHexCancelButton" type="button">Cancel</button>
+              <button class="panel-button primary" id="subtitleHexApplyButton" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </section>
       <section class="modal-layer" id="p2pConsentModal" aria-label="P2P streaming consent" hidden>
         <div class="track-panel submit">
           <div class="track-header-row">
@@ -558,6 +597,6 @@
     <div class="pip-resize-handle pip-resize-nw" data-pip-resize="8"></div>
   </div>
 
-  <script src="controls.js?v=20260812-addon-subtitle-download-1"></script>
+  <script src="controls.js?v=20260903-episode-artwork"></script>
 </body>
 </html>

@@ -76,6 +76,7 @@ import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioBottomSheetDivider
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.nuvioPanelBackdrop
 import com.nuvio.app.features.mdblist.MdbListCalendarRepository
 import com.nuvio.app.features.trakt.TraktCalendarEntry
 import com.nuvio.app.features.simkl.SimklCalendarRepository
@@ -667,9 +668,13 @@ private fun CalendarDayDialog(
                         }
                         else -> false
                     }
-                },
+                }
+                .nuvioPanelBackdrop(
+                    MaterialTheme.nuvio.colors.surfaceSheet,
+                    RoundedCornerShape(16.dp),
+                ),
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.nuvio.colors.surfaceSheet,
+            color = Color.Transparent,
         ) {
             Column {
                 Text(

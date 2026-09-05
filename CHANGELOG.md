@@ -1,5 +1,73 @@
 # Changelog
 
+## 1.14.0 - 2026-09-05
+
+### Added
+
+- **Discover** - a new section (and optional navigation-bar tab) that builds recommendation rows from what you have already watched, without needing another addon. Built-in rows include Because You Watched, Finish What You Started, More Like Your Favourites, Hidden Gems, and Trending In your most-watched genres, each with its own row count or on/off switch. Rows can be dragged into the order you want or hidden, watched titles can be left out, and whole genres can be excluded from both the rows and the taste profile behind them. Built rows are cached for an hour and persist across launches so the tab opens quickly.
+- **Discover Custom Rows** - build a row from your own TMDB search instead of an addon catalog: films, shows, or both, any combination of genres (matching any or all of them), sort order, minimum rating and vote count, release status, original language, US certification, runtime range, release-year range, production companies, cast, and crew. Custom rows live on Discover only, can be edited in place, and can be promoted onto Home as a normal live collection.
+- **Discover AI Rows** - optionally generate rows by asking a language model, using your own key for OpenAI, Anthropic, or any OpenAI-compatible endpoint such as OpenRouter, Groq, Ollama, or LM Studio. Presets cover hidden gems, comfort watches, acclaimed-but-missed, because-you-just-watched, and clustering your favourites, alongside free-form prompts, with suggested rows worked out from local watch history. Nothing is sent until you press Generate, a consent screen states exactly what leaves the machine (watched titles by name only), the key is stored locally and never synced, and suggestions are matched against TMDB so invented titles are dropped.
+- **Discover Export and Import** - any built row can be handed elsewhere: saved as a `nuvio-discover-catalog` file, published into an MDBList static list where AIOMetadata, BingeCat, and similar services can read it as an ordinary catalog, copied as IDs for BingeCat's Bulk Add, or exported as a Nuvio collection file for AIOMetadata. Importing a file with a query behind it produces a live custom row; a fixed list comes in frozen exactly as it was exported, and imported lists can be renamed or trimmed.
+- **Game Mode** - press `G` anywhere in the app to switch between your games and the rest of Nuvio. Games are matched against IGDB using a Twitch client ID and secret, with an optional SteamGridDB key for transparent clear logos, and the shelf can use a black-shelf or full-screen backdrop.
+- **First-Run Setup Wizard** - new installs are walked through display mode with full-size previews, TMDB and MDBList keys, trailer placement and start behavior, and keyboard controls, ending on a summary and the shortcuts page. It can be re-run at any time from Account settings, and new-install defaults were revised throughout.
+- **Update Channels** - Updates settings now carry a Stable/Nightly channel picker, a "switch build" action that replaces the current build with the latest one on the chosen channel, and an option to install updates automatically without a manual extraction step. Nightly builds are labelled as such in the build information line.
+- **Stream Preparation In Advance** - streams can be searched ahead of time when a details page is opened, and optionally when a Continue Watching item is highlighted, with a configurable expiry for prepared results and an option to resolve the debrid link for the top result as well, so playback starts without waiting on the provider. Series prepare the next-up episode. Off by default, since it costs extra provider requests and triggers AIOStreams preloading when that is enabled.
+- **App Font** - the whole application, including the player controls, can use any installed system font instead of the bundled JetBrains Sans, with a searchable picker and live preview.
+- **Accent Gradient** - custom themes can set a second accent stop and a gradient direction (horizontal, vertical, or either diagonal), applied across accent surfaces. Setting the second stop to the accent color keeps accents flat.
+- **Focused Poster Highlight** - the focused or hovered poster can be marked with a white border, an accent border, a brightness lift, or a light sweep, and the choice applies to Home, episode lists, Continue Watching, and Collections.
+- **Shuffle Rows On Title Click** - clicking a Home catalog row's title reshuffles it, pulling a few extra pages first so the row deals in titles you have not scrolled to. The order lasts until restart. Suggested by Tick; off by default.
+- **Configurable Seek Step** - the seek buttons, arrow keys, and double-tap gesture jump by a distance you choose, and the on-screen labels name that distance.
+- **In-Player Notification Position** - the transient player pills for playback speed, volume, and aspect ratio can sit in the centre or at top centre, clear of the existing corner information and of the notch.
+- **Always Show Top Bar** - an Appearance option keeps the navigation bar on screen instead of fading it out.
+- **Remaining Time Toggle** - clicking the duration to the right of the seek bar swaps it between total and remaining time.
+- **Poster Hover Preview** - upstream's hover card is merged in: resting the pointer on a poster opens a card with its backdrop, description, and quick actions. It is on by default in Basic, can be enabled in Adaptive, is remembered per display mode, and is deliberately unavailable in TV mode, where that information is already on screen.
+- **Basic Mode Trailers** - Basic mode can play hero trailers full screen.
+- **TV Mode Full Backdrop** - the backdrop can extend to the bottom of the screen with the rows floating over it, instead of ending above the shelf and fading to black.
+- **Automatic Skip Acceptance** - the skip prompt can be accepted for you at three levels: manual as before, chapter-based using the file's own chapter markers, or any source including community and API timings, whose accuracy varies. Outros always wait for a press.
+- **Custom Subtitle Colours** - subtitle colors accept a hex value (`#RRGGBB`, or `#AARRGGBB` to set opacity as well) alongside the presets.
+- **ASS/SSA Subtitle Control** - styled subtitles can be left exactly as authored, resized only, or fully overridden with your size, position, colour, and font. Override is the only mode that can move them, at the cost of misplacing signs and flattening karaoke effects.
+- **Settings Category Customization** - categories you do not use can be hidden and are still reachable from search, names can be changed by double-clicking them, and the Configure icon beside the heading can be hidden.
+- **Cloud Library Window and Episode Chooser** - the debrid cloud library lists newest first within a configurable "added within" period, and opening a season folder now offers a list of episodes instead of immediately playing S01E01.
+- **Western Animation and 4K Shader Controls** - anime enhancement can optionally treat anything tagged Animation as anime, and can be skipped automatically on sources that are already 4K, where the upscaling shaders gain little and can overwhelm the GPU. A manual force with `F10` still applies.
+- **QualiCache Release Trust** - a minimum release-group trust tier (High, Medium, Low) controls which releases QualiCache is allowed to use.
+- **Discord Episode Artwork Choice** - episodes can show the series poster or the episode still in Rich Presence, with the other used as a fallback when the first is missing.
+- **Search History Clearing** - recent searches can be cleared from the media search.
+- **Local Library Browser** - local library customization opens in its own modal with far less vertical scrolling, and Settings shows how many titles are unmatched.
+
+### Improved
+
+- **Image Caching** - Coil builds no disk cache on the JVM, so every image was re-fetched over the network on a cold start and animated collection art was re-downloaded whenever a card left the viewport. Nuvio now keeps its own on-disk image cache, and the in-memory decoded-artwork budget is a fraction of physical RAM (96-384 MB) instead of the fixed 76.8 MB that Coil's non-Android default worked out to, which a single 1440p Search or Library screen could evict within one row.
+- **Browsing and Startup Performance** - a broad optimization pass across catalog loading, row rendering, and image decoding, plus reduced RAM use, fewer API calls, idle heap trimming, and a separate pass on playback start-up time.
+- **TMDB Request Pacing** - TMDB traffic goes through a single client with its own lanes, shared rate-limit back-off, and single-flight deduplication, plus an on-disk external-ID cache, so large Discover builds and catalog resolution no longer starve each other.
+- **Download and Install Size** - the Windows player runtime was being packed into every download twice; only the copy beside `Nuvio.exe` is ever loaded, so the duplicate is gone and the download is over 100 MB smaller.
+- **Settings Presentation** - several rounds of visual work, a large cull of redundant explanatory text, sidebar icons 15% larger, and the first click on the settings panel no longer stalls.
+- **Next Up Accuracy** - upcoming-episode countdowns interpret release timestamps consistently across providers, so "airs in" times and new-episode badges land on the right day.
+- **Continue Watching Artwork** - a forced Continue Watching resync retries image URLs that failed earlier in the same session instead of leaving the card blank.
+- **Build Information** - the build line reports version, build code, channel, and build timestamp.
+- **Smooth Scrolling** - mouse-wheel scrolling is eased in Basic and Adaptive modes.
+- **Audio Track Labels** - the audio track list shows each track's language in its subtext.
+- **Marked-Watched Feedback** - marking something watched during playback now confirms it on screen.
+- **Source Selection Availability** - the select-source action is always offered on Home Continue Watching and in the episode selector, regardless of the local-library playback preference.
+- **System Tray** - the tray icon is drawn from a multi-resolution image and carries a modern tooltip and menu.
+- **SIMKL** - Continue Watching no longer filters out watched movies, so a rewatch does not vanish partway through, and rewatches can be started from the poster options menu on Home.
+
+### Fixed
+
+- **Next Episode With Certain Anime** - autoplay could pick the wrong next episode for some anime.
+- **Anime Intro Skip** - skip lookups for anime IDs reached no provider and returned nothing.
+- **Trailers** - hero and details trailers work again, and start faster than before.
+- **Discord Rich Presence Artwork** - posters and thumbnails now resolve, including titles identified by Kitsu ID, and custom poster services no longer break the image.
+- **Continue Watching Crash** - dismissing a Continue Watching item could crash the app.
+- **Player Context Menu** - the right-click menu no longer closes when using nested dynamic options.
+- **Player Episode Thumbnails** - in-player episode artwork occasionally failed to load.
+- **Volume Changes** - adjusting volume no longer brings the whole player UI back on screen.
+- **Catalog Row Scrolling** - horizontal scrolling over a large list of catalogs during initial load no longer misbehaves.
+- **Low Seek Values** - a custom seek distance set to a low value now works correctly.
+- **Right-Click Download Year** - the wrong release year could be used when downloading from the right-click menu.
+- **Local Library Parsing** - corrected a filename parsing failure during local library scans.
+- **Game Mode Launch Text** - launch text is drawn in white rather than black against the dark popup background.
+- **Miscellaneous** - fixed an intermittent crash reported by a user, and a possible TorBox failure that could not be reproduced locally.
+
 ## 1.13.0 - 2026-08-15
 
 ### Added

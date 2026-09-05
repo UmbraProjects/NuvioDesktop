@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -60,7 +59,6 @@ import com.nuvio.app.core.ui.AppIconResource
 import com.nuvio.app.core.ui.appIconPainter
 import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.core.ui.secondaryClick
-import com.nuvio.app.core.ui.trackTextInputFocus
 import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_play
@@ -68,6 +66,8 @@ import nuvio.composeapp.generated.resources.details_episode_search_close
 import nuvio.composeapp.generated.resources.details_episode_search_matches
 import nuvio.composeapp.generated.resources.details_episode_search_placeholder
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material.icons.rounded.Search
+import com.nuvio.app.core.ui.trackTextInputFocus
 
 data class DetailSecondaryAction(
     val label: String,
@@ -344,7 +344,7 @@ private fun DetailEpisodeSearchField(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DetailIconAction(
+internal fun DetailIconAction(
     label: String,
     icon: ImageVector,
     active: Boolean,

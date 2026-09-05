@@ -5,6 +5,7 @@ import com.nuvio.app.features.addons.RawHttpResponse
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -203,7 +204,14 @@ internal object SimklProgressRepository {
         val headers = SimklAuthRepository.authorizedHeaders() ?: return emptyList()
 
         // In-progress sessions (< 80% watched) — shown as resumable CW cards.
-        val playbackUrl = SimklAuthRepository.appendParams("$BASE_URL/sync/playback?hide_watched=true&limit=100")
+        //
+        // hide_watched is asked for as false and applied here instead. SIMKL's filter (default
+        // true) drops every session whose title is on the watched list at all, so restarting a
+        // film you have seen before produced a session the server stored and then refused to hand
+        // back — the title never reached Continue Watching. The documented intent is narrower:
+        // exclude items watched *after* the pause, i.e. sessions a later finish made stale. That
+        // is the rule applied below, against our own watched history.
+        val playbackUrl = SimklAuthRepository.appendParams("$BASE_URL/sync/playback?hide_watched=false&limit=100")
         val playbackResponse = httpRequestRaw(method = "GET", url = playbackUrl, headers = headers, body = "")
         if (playbackResponse.status !in 200..299) {
             error("SIMKL /sync/playback returned ${playbackResponse.status}")
@@ -217,9 +225,14 @@ internal object SimklProgressRepository {
         }
         sessionIdByVideoId.clear()
         val playbackEntries = sessions.mapNotNull { session ->
-            session.toWatchProgressEntry()?.also { entry ->
-                session.id?.let { sessionIdByVideoId[entry.videoId] = it }
+            val entry = session.toWatchProgressEntry() ?: return@mapNotNull null
+            val pausedAtMs = session.pausedAtTimestamp?.let { parseSimklTimestamp(it) } ?: 0L
+            if (entry.wasWatchedAfter(pausedAtMs)) {
+                log.d { "SIMKL playback session dropped as stale (watched after the pause): ${entry.videoId}" }
+                return@mapNotNull null
             }
+            session.id?.let { sessionIdByVideoId[entry.videoId] = it }
+            entry
         }
 
         // Shows in "watching" status with last_watched episode marker — used as completed seeds
@@ -260,6 +273,26 @@ internal object SimklProgressRepository {
             if (latestCwTs != null) SimklSettingsRepository.setLastCwActivitiesAt(latestCwTs)
         }
         return playbackEntries + if (hasLoadedWatchingSeeds) cachedWatchingSeeds else emptyList()
+    }
+
+    /**
+     * Whether the watched list says this title was finished after [pausedAtMs], which makes the
+     * saved session a leftover rather than something to resume.
+     *
+     * An unknown title (nothing on the watched list, or an id namespace the watched keys do not
+     * use) counts as not watched, so the session survives: showing a resumable card that could
+     * have been dropped is a smaller failure than silently hiding one, which is the bug this
+     * whole path exists to fix.
+     */
+    private fun WatchProgressEntry.wasWatchedAfter(pausedAtMs: Long): Boolean {
+        if (pausedAtMs <= 0L) return false
+        val watchedAtMs = WatchedRepository.watchedAtEpochMs(
+            id = parentMetaId,
+            type = parentMetaType,
+            season = seasonNumber,
+            episode = episodeNumber,
+        ) ?: return false
+        return watchedAtMs >= pausedAtMs
     }
 
     private fun List<WatchProgressEntry>.withoutSuppressedSeeds(): List<WatchProgressEntry> =
@@ -318,7 +351,8 @@ internal object SimklProgressRepository {
         val progress = progress ?: return null
         if (progress >= 80f) return null
 
-        val updatedMs = watchedAt?.let { com.nuvio.app.features.simkl.parseSimklTimestamp(it) } ?: System.currentTimeMillis()
+        val updatedMs = pausedAtTimestamp?.let { com.nuvio.app.features.simkl.parseSimklTimestamp(it) }
+            ?: System.currentTimeMillis()
 
         return when (type) {
             "movie" -> {

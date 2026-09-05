@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Lock
@@ -81,6 +83,7 @@ internal fun PlayerControlsShell(
     onTogglePlayback: () -> Unit,
     onSeekBack: () -> Unit,
     onSeekForward: () -> Unit,
+    seekStepSeconds: Int = DefaultSeekStepSeconds,
     onResizeModeClick: () -> Unit,
     onSpeedClick: () -> Unit,
     onSubtitleClick: () -> Unit,
@@ -168,6 +171,7 @@ internal fun PlayerControlsShell(
                     metrics = metrics,
                     onSeekBack = onSeekBack,
                     onSeekForward = onSeekForward,
+                    seekStepSeconds = seekStepSeconds,
                     onTogglePlayback = onTogglePlayback,
                     modifier = Modifier
                         .align(Alignment.Center)
@@ -384,15 +388,19 @@ private fun CenterControls(
     onSeekForward: () -> Unit,
     onTogglePlayback: () -> Unit,
     modifier: Modifier = Modifier,
+    seekStepSeconds: Int = DefaultSeekStepSeconds,
 ) {
+    // The Replay10/Forward10 glyphs draw a literal "10", so they can only stand in for the default
+    // step; any other step falls back to the unnumbered transport icons.
+    val usesDefaultStep = seekStepSeconds == DefaultSeekStepSeconds
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(metrics.centerGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SideControlButton(
-            icon = Icons.Rounded.Replay10,
-            contentDescription = stringResource(Res.string.compose_player_seek_back_10),
+            icon = if (usesDefaultStep) Icons.Rounded.Replay10 else Icons.Rounded.FastRewind,
+            contentDescription = stringResource(Res.string.compose_player_seek_back_seconds, seekStepSeconds),
             metrics = metrics,
             onClick = onSeekBack,
         )
@@ -403,8 +411,8 @@ private fun CenterControls(
             onClick = onTogglePlayback,
         )
         SideControlButton(
-            icon = Icons.Rounded.Forward10,
-            contentDescription = stringResource(Res.string.compose_player_seek_forward_10),
+            icon = if (usesDefaultStep) Icons.Rounded.Forward10 else Icons.Rounded.FastForward,
+            contentDescription = stringResource(Res.string.compose_player_seek_forward_seconds, seekStepSeconds),
             metrics = metrics,
             onClick = onSeekForward,
         )

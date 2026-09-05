@@ -17,11 +17,15 @@ import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.playbackEpisodeNumber
 import com.nuvio.app.features.details.playbackSeasonNumber
 import com.nuvio.app.features.details.resolveSeriesEpisodePosition
+import com.nuvio.app.features.discord.DiscordEpisodeArtwork
 import com.nuvio.app.features.discord.DiscordPresenceSettingsRepository
 import com.nuvio.app.features.discord.DiscordRichPresenceActivity
 import com.nuvio.app.features.discord.DiscordRichPresenceController
 import com.nuvio.app.features.discord.DiscordRichPresenceActivityType
 import com.nuvio.app.features.discord.DiscordRichPresenceImageFit
+import com.nuvio.app.features.discord.isExternallyFetchableArtworkUrl
+import com.nuvio.app.features.metadata.AnimeArtworkService
+import com.nuvio.app.features.metadata.hasAnimeNamespacePrefix
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.p2p.P2pStreamRequest
 import com.nuvio.app.features.p2p.P2pStreamingEngine
@@ -31,6 +35,10 @@ import com.nuvio.app.features.player.skip.ChapterSkipDetector
 import com.nuvio.app.features.player.skip.mergeCommunityAndChapterSkipIntervals
 import com.nuvio.app.features.player.skip.PlayerNextEpisodeRules
 import com.nuvio.app.features.player.skip.SkipIntroRepository
+import com.nuvio.app.features.player.skip.SkipLookupTarget
+import com.nuvio.app.features.player.skip.resolveSkipLookupTarget
+import com.nuvio.app.features.player.skip.identityKey
+import com.nuvio.app.features.streams.StreamPrefetchService
 import com.nuvio.app.features.streams.BingeGroupCacheRepository
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
 import com.nuvio.app.features.streams.StreamItem
@@ -409,7 +417,11 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     }
 
     DisposableEffect(Unit) {
+        // Speculative stream searching must not compete with the playback it exists to make feel
+        // instant, so it stays parked for as long as the player owns the screen.
+        StreamPrefetchService.setPlaybackActive(true)
         onDispose {
+            StreamPrefetchService.setPlaybackActive(false)
             P2pStreamingEngine.stopStream()
             PlayerStreamsRepository.clearAll()
         }
@@ -451,6 +463,60 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
         }
     }
 
+    // The poster playback was launched with is whichever one the launching surface happened to
+    // hold, and that is not always one Discord can fetch: a Library or Continue Watching row runs
+    // its poster through the user's poster service (`resolveLibraryPosterUrl`), which is often
+    // self-hosted, and some records simply carry no poster at all. Discord fetches artwork from its
+    // own servers, so either case used to fall straight past the poster to the episode still.
+    //
+    // The metadata record has one, and it is **the same response the episode still came from** —
+    // Cinemeta / Kitsu / the TMDB addon, a public CDN URL by construction. So ask it for the poster
+    // rather than settling for the still. `MetaDetailsRepository.fetch` is cached and
+    // single-flighted, and the details screen that launched playback has almost always warmed it,
+    // so this is usually free and never more than one request.
+    LaunchedEffect(parentMetaId, parentMetaType, poster, discordSettings.showPlaybackPresence) {
+        discordMetaPosterUrl = null
+        if (!discordSettings.showPlaybackPresence) return@LaunchedEffect
+        // Only when the poster in hand cannot serve. A reachable one is the user's own choice of
+        // art and must not be second-guessed — including a working poster-service URL.
+        if (isExternallyFetchableArtworkUrl(poster)) return@LaunchedEffect
+        val metaId = parentMetaId.trim().takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val metaType = parentMetaType.trim().takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        // Peek before fetch. Playback launched from the details screen leaves that meta in the
+        // repository's own state, so the common path costs nothing at all; the fetch is for the
+        // routes that skip the screen — Continue Watching resume, Random Play, a binge advance.
+        val peeked = MetaDetailsRepository.peek(type = metaType, id = metaId)?.poster
+        val resolved = peeked ?: runCatching {
+            // Default enrichment on purpose. `fetch` keys its cache on `enrich=<flag>`, so asking
+            // for an unenriched copy would open a third meta namespace for one field — which is
+            // precisely the redundant-fetch shape the Discover work spent §22-§25 removing.
+            MetaDetailsRepository.fetch(type = metaType, id = metaId)?.poster
+        }.getOrNull()
+        discordMetaPosterUrl = resolved?.takeIf { isExternallyFetchableArtworkUrl(it) }
+    }
+
+    // A poster the Discord image proxy is certain to be able to fetch, for native anime ids.
+    //
+    // Unlike `discordMetaPosterUrl` this runs even when the poster in hand looks perfectly fine,
+    // because it exists to be the *fallback*: the proxy that squares a portrait poster is handed a
+    // `default=` URL and serves it whenever the primary cannot be fetched, silently and with no
+    // error anywhere. With the poster preference selected that default was the episode still, so
+    // one unfetchable anime poster produced exactly the thing the user had switched off — and
+    // anime is where unfetchable posters concentrate, addon payloads carrying dead
+    // `media.kitsu.io` URLs being the common case.
+    //
+    // Kitsu/AniList are asked directly, which is how the app already resolves per-season anime
+    // banners; both are public CDNs, service-cached, and never more than one request per title.
+    LaunchedEffect(parentMetaId, activeVideoId, discordSettings.showPlaybackPresence) {
+        discordAnimePosterUrl = null
+        if (!discordSettings.showPlaybackPresence) return@LaunchedEffect
+        val animeId = listOfNotNull(parentMetaId, activeVideoId)
+            .firstOrNull { it.isNotBlank() && it.hasAnimeNamespacePrefix() }
+            ?: return@LaunchedEffect
+        val resolved = runCatching { AnimeArtworkService.seasonPoster(animeId) }.getOrNull()
+        discordAnimePosterUrl = resolved?.takeIf { isExternallyFetchableArtworkUrl(it) }
+    }
+
     // Metadata-less direct playback (a pasted stream URL / dropped file) carries no poster, so its
     // Discord presence would fall back to the Nuvio logo. Best-effort resolve real art from the
     // parsed title via the user's search addons so it matches how library playback presents.
@@ -472,6 +538,7 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
 
     LaunchedEffect(
         discordSettings.showPlaybackPresence,
+        discordSettings.episodeArtwork,
         title,
         activeVideoId,
         activeSeasonNumber,
@@ -481,6 +548,8 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
         presenceReconcileTick,
         pausedAnchorTick,
         poster,
+        discordMetaPosterUrl,
+        discordAnimePosterUrl,
         activeEpisodeThumbnail,
         background,
         adHocArtworkImageUrl,
@@ -509,8 +578,9 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
                 DiscordRichPresenceActivity(
                     title = "Starting stream",
                     subtitle = presenceTitle,
-                    imageUrl = discordPresenceImageUrl(),
-                    imageFit = discordPresenceImageFit(),
+                    imageUrl = discordPresenceImageUrl(discordSettings.episodeArtwork),
+                    fallbackImageUrl = discordPresenceFallbackImageUrl(discordSettings.episodeArtwork),
+                    imageFit = discordPresenceImageFit(discordSettings.episodeArtwork),
                     type = DiscordRichPresenceActivityType.Browsing,
                 ),
             )
@@ -528,8 +598,9 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
                 subtitle = discordPresenceSubtitle(presenceReleaseYear),
                 episodeLabel = discordPresenceEpisodeLabel(),
                 episodeTitle = activeEpisodeTitle?.trim()?.takeIf { it.isNotBlank() },
-                imageUrl = discordPresenceImageUrl(),
-                imageFit = discordPresenceImageFit(),
+                imageUrl = discordPresenceImageUrl(discordSettings.episodeArtwork),
+                fallbackImageUrl = discordPresenceFallbackImageUrl(discordSettings.episodeArtwork),
+                imageFit = discordPresenceImageFit(discordSettings.episodeArtwork),
                 type = DiscordRichPresenceActivityType.Playback,
                 isPlaying = playbackSnapshot.isPlaying,
                 positionMs = playbackSnapshot.positionMs.coerceAtLeast(0L),
@@ -673,7 +744,7 @@ private fun PlayerScreenRuntime.BindStreamFailoverWatchdogEffect() {
 private fun PlayerScreenRuntime.discordPresenceTitle(): String? =
     resolveDiscordPresenceTitle(
         argsTitle = title,
-        metaName = metaUiState.meta?.takeIf { it.id == parentMetaId }?.name,
+        metaName = discordPresenceMetadata()?.name,
         streamReleaseName = streamTitle,
         isEpisode = activeEpisodeNumber != null,
     )
@@ -697,19 +768,92 @@ internal fun resolveDiscordPresenceTitle(
         ?: FilenameParser.cleanTitle(releaseName).trim().takeIf { it.isNotBlank() }
 }
 
-private fun PlayerScreenRuntime.discordPresenceImageUrl(): String? =
-    listOf(poster, activeEpisodeThumbnail, background, adHocArtworkImageUrl)
-        .firstOrNull { url ->
-            url?.trim()?.let { it.startsWith("https://") || it.startsWith("http://") } == true
-        }
-        ?.trim()
+/**
+ * The artwork this playback can offer Discord, best first.
+ *
+ * Poster first by default, then the other posters, then backdrop, and the episode still last — but
+ * every candidate is checked for
+ * whether Discord can reach it rather than merely for looking like a URL. A custom poster service
+ * (PostersPlus / RPDB) is often self-hosted, and such a URL passed the old scheme-only test and then
+ * permanently shadowed the episode still and backdrop behind it, both of which are public CDN URLs
+ * that would have worked. That is why Rich Presence lost its image the moment a poster source was
+ * set.
+ *
+ * **[discordMetaPosterUrl] sits directly behind the poster, ahead of the still**, and is what stops
+ * an unreachable or missing poster from demoting the whole presence to an episode still. It is the
+ * poster off the title's own metadata record — the same response the still came from — so it is a
+ * public CDN URL by construction. Resolved lazily and only when needed; see the effect that fills
+ * it.
+ *
+ * **[DiscordEpisodeArtwork] moves the still to the front, and only for an episode.** It is a
+ * preference over an ordering, never a filter: whichever the user asks for, the others stay behind
+ * it, because an unreachable or absent first choice has to degrade to something rather than to the
+ * Nuvio logo.
+ *
+ * **With the poster preference the still goes last, behind every other artwork.** The tail of this
+ * list is not decoration: the second entry becomes the image proxy's `default=`, which it serves
+ * silently whenever the first cannot be fetched, and the RPC transport steps down to it when
+ * Discord rejects the first outright. Ordering the still second meant a single unfetchable poster
+ * put an episode thumbnail on screen for a user who had explicitly asked not to see one, with
+ * nothing anywhere reporting that a substitution had happened. A backdrop is at least the title's
+ * own art; the still is the one thing that preference rules out, so it degrades to that only when
+ * there is nothing else at all.
+ */
+private fun PlayerScreenRuntime.discordPresenceArtworkCandidates(
+    episodeArtwork: DiscordEpisodeArtwork,
+): List<String> {
+    val preferEpisodeStill = episodeArtwork == DiscordEpisodeArtwork.EpisodeThumbnail &&
+        activeEpisodeNumber != null
+    val ordered = if (preferEpisodeStill) {
+        listOf(
+            activeEpisodeThumbnail,
+            poster,
+            discordMetaPosterUrl,
+            discordAnimePosterUrl,
+            background,
+            adHocArtworkImageUrl,
+        )
+    } else {
+        listOf(
+            poster,
+            discordMetaPosterUrl,
+            discordAnimePosterUrl,
+            adHocArtworkImageUrl,
+            background,
+            activeEpisodeThumbnail,
+        )
+    }
+    return ordered
+        .mapNotNull { it?.trim() }
+        .filter { isExternallyFetchableArtworkUrl(it) }
+        .distinct()
+}
 
-private fun PlayerScreenRuntime.discordPresenceImageFit(): DiscordRichPresenceImageFit {
+private fun PlayerScreenRuntime.discordPresenceImageUrl(episodeArtwork: DiscordEpisodeArtwork): String? =
+    discordPresenceArtworkCandidates(episodeArtwork).firstOrNull()
+
+/**
+ * The artwork to fall back to when the chosen one is reachable but has nothing to serve — a poster
+ * service answering 404 for a title it has no art for, which no check here can predict.
+ */
+private fun PlayerScreenRuntime.discordPresenceFallbackImageUrl(
+    episodeArtwork: DiscordEpisodeArtwork,
+): String? = discordPresenceArtworkCandidates(episodeArtwork).drop(1).firstOrNull()
+
+private fun PlayerScreenRuntime.discordPresenceImageFit(
+    episodeArtwork: DiscordEpisodeArtwork,
+): DiscordRichPresenceImageFit {
     // Posters (args or resolved for ad-hoc playback) are portrait and must not be centre-cropped;
-    // episode thumbnails and backdrops are landscape and fill the square cleanly.
-    val chosen = discordPresenceImageUrl()
+    // episode thumbnails and backdrops are landscape and fill the square cleanly. Derived from
+    // what was actually chosen, so it follows the preference without being told about it.
+    val chosen = discordPresenceImageUrl(episodeArtwork)
     val isPortraitPoster = chosen != null &&
-        (chosen == poster?.trim() || chosen == adHocArtworkImageUrl?.trim())
+        (
+            chosen == poster?.trim() ||
+                chosen == discordMetaPosterUrl?.trim() ||
+                chosen == discordAnimePosterUrl?.trim() ||
+                chosen == adHocArtworkImageUrl?.trim()
+            )
     return if (isPortraitPoster) DiscordRichPresenceImageFit.Contain else DiscordRichPresenceImageFit.Cover
 }
 
@@ -732,11 +876,19 @@ private fun PlayerScreenRuntime.discordPresenceEpisodeLabel(): String? {
 
 /** Leading four-digit release year from the loaded meta (e.g. "2021" from "2021" or "2019–2023"). */
 private fun PlayerScreenRuntime.discordPresenceReleaseYear(): String? {
-    val matchingMeta = metaUiState.meta?.takeIf { meta ->
+    return extractDiscordReleaseYear(discordPresenceMetadata()?.releaseInfo)
+}
+
+/**
+ * Metadata for the active presence. Anime providers may answer a MAL request with a Kitsu/IMDb
+ * identity, so exact response-ID matching alone can discard the valid title. The repository cache
+ * retains that response under the original request key and is safe to consult without performing
+ * another fetch or changing the metadata route.
+ */
+private fun PlayerScreenRuntime.discordPresenceMetadata() =
+    metaUiState.meta?.takeIf { meta ->
         meta.id == parentMetaId && meta.type.equals(parentMetaType, ignoreCase = true)
     } ?: MetaDetailsRepository.peek(parentMetaType, parentMetaId)
-    return extractDiscordReleaseYear(matchingMeta?.releaseInfo)
-}
 
 internal fun extractDiscordReleaseYear(releaseInfo: String?): String? =
     releaseInfo
@@ -880,13 +1032,14 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         }
     }
 
-    LaunchedEffect(activeVideoId, activeSeasonNumber, activeEpisodeNumber) {
+    LaunchedEffect(activeVideoId, activeSeasonNumber, activeEpisodeNumber, parentMetaId, parentMetaType) {
         skipIntervals = emptyList()
         playerChapters = emptyList()
         communitySkipIntervals = emptyList()
         chapterSkipIntervals = emptyList()
         activeSkipInterval = null
         skipIntervalDismissed = false
+        autoAcceptedSkipIntervals.clear()
         showNextEpisodeCard = false
         nextEpisodeThresholdStableSamples = 0
         nextEpisodeAutoPlayJob?.cancel()
@@ -897,7 +1050,18 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         val vid = activeVideoId ?: return@LaunchedEffect
 
         launch {
-            val imdbId = vid.split(":").firstOrNull()?.takeIf { it.startsWith("tt") }
+            // Which provider chain this playback belongs to is decided by its id, before anything
+            // is fetched — an id that resolves to nothing stops here rather than waiting out the
+            // duration timeout only to look nothing up. Ids outside the namespaces the providers
+            // know (`tmdb:`, `tvdb:`, an addon's own scheme) are resolved rather than dropped, so
+            // the feature does not depend on which metadata addon the user happens to run.
+            val target = resolveSkipLookupTarget(
+                videoId = vid,
+                parentMetaId = parentMetaId,
+                contentType = contentType ?: parentMetaType,
+                season = season,
+                episode = episode,
+            ) ?: return@launch
             // SkipDB matches its timings against the runtime of the exact cut being played, so wait
             // for the player to report one instead of asking straight away. Without a runtime every
             // answer is duration-agnostic and a re-cut release is indistinguishable from the one the
@@ -906,18 +1070,28 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             val durationSeconds = withTimeoutOrNull(SKIP_LOOKUP_DURATION_TIMEOUT_MS) {
                 snapshotFlow { playbackSnapshot.durationMs }.first { it > 0L }
             }?.let { durationMs -> durationMs / 1000L }
-            // A film has no season or episode to look up by, and only SkipDB carries anything for
-            // one, so it takes a separate path rather than the episode chain.
-            val intervals = if (season != null && episode != null) {
-                SkipIntroRepository.getSkipIntervals(
-                    imdbId = imdbId,
-                    season = season,
-                    episode = episode,
+            val intervals = when (target) {
+                is SkipLookupTarget.Episode -> SkipIntroRepository.getSkipIntervals(
+                    imdbId = target.imdbId,
+                    season = target.season,
+                    episode = target.episode,
                     durationSeconds = durationSeconds,
                 )
-            } else {
-                SkipIntroRepository.getMovieSkipIntervals(
-                    imdbId = imdbId,
+                // A film has no season or episode to look up by, and only SkipDB carries anything
+                // for one, so it takes a separate path rather than the episode chain.
+                is SkipLookupTarget.Movie -> SkipIntroRepository.getMovieSkipIntervals(
+                    imdbId = target.imdbId,
+                    durationSeconds = durationSeconds,
+                )
+                is SkipLookupTarget.Anime -> SkipIntroRepository.getSkipIntervalsForAnime(
+                    namespace = target.namespace,
+                    id = target.id,
+                    episode = target.episode,
+                    durationSeconds = durationSeconds,
+                )
+                is SkipLookupTarget.AnimeMovie -> SkipIntroRepository.getMovieSkipIntervalsForAnime(
+                    namespace = target.namespace,
+                    id = target.id,
                     durationSeconds = durationSeconds,
                 )
             }
@@ -964,6 +1138,28 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             activeSkipInterval = current
             if (current != null) skipIntervalDismissed = false
         }
+    }
+
+    // Auto-accept. Deliberately keyed on the segment rather than on position: the prompt is
+    // accepted once, when playback first enters a segment this mode trusts, and rewinding back
+    // into an already-accepted one leaves the viewer where they aimed.
+    LaunchedEffect(
+        activeSkipInterval,
+        playerSettingsUiState.skipAutoAcceptMode,
+        initialLoadCompleted,
+        playbackSnapshot.isPlaying,
+        pausedOverlayVisible,
+    ) {
+        val interval = activeSkipInterval ?: return@LaunchedEffect
+        if (isProviderDiagnosticVideoPlayback) return@LaunchedEffect
+        // Mirrors the gates the prompt itself is shown behind — nothing is skipped silently in a
+        // state where the viewer would never have been offered the button.
+        if (!initialLoadCompleted || !playbackSnapshot.isPlaying || pausedOverlayVisible) {
+            return@LaunchedEffect
+        }
+        if (!playerSettingsUiState.skipAutoAcceptMode.accepts(interval)) return@LaunchedEffect
+        if (!autoAcceptedSkipIntervals.add(interval.identityKey())) return@LaunchedEffect
+        acceptSkipInterval(interval)
     }
 
     LaunchedEffect(playerMetaVideos, activeVideoId, activeSeasonNumber, activeEpisodeNumber) {

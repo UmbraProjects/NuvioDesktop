@@ -15,8 +15,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,7 +29,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioDialogSurface
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.simkl.SimklAuthRepository
 import com.nuvio.app.features.simkl.SimklAuthUiState
 import com.nuvio.app.features.simkl.SimklConnectionMode
@@ -42,10 +39,7 @@ import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.settings_simkl_connect
 import nuvio.composeapp.generated.resources.settings_simkl_connected_as
-import nuvio.composeapp.generated.resources.settings_simkl_credentials_clear
 import nuvio.composeapp.generated.resources.settings_simkl_credentials_description
-import nuvio.composeapp.generated.resources.settings_simkl_credentials_save
-import nuvio.composeapp.generated.resources.settings_simkl_credentials_title
 import nuvio.composeapp.generated.resources.settings_simkl_client_id
 import nuvio.composeapp.generated.resources.settings_simkl_description
 import nuvio.composeapp.generated.resources.settings_simkl_disconnect
@@ -58,6 +52,8 @@ import nuvio.composeapp.generated.resources.settings_simkl_daily_visit
 import nuvio.composeapp.generated.resources.settings_simkl_daily_visit_desc
 import nuvio.composeapp.generated.resources.settings_simkl_section_daily_visit
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.accentBrush
 
 internal fun LazyListScope.simklSettingsContent(
     isTablet: Boolean,
@@ -144,81 +140,19 @@ private fun SimklCredentialsCard(
     settingsUiState: SimklSettingsUiState,
     modifier: Modifier = Modifier,
 ) {
-    val horizontalPadding = if (isTablet) 20.dp else 16.dp
-    val verticalPadding = if (isTablet) 18.dp else 16.dp
-    var clientId by rememberSaveable { mutableStateOf(settingsUiState.simklClientId) }
-    var statusMessage by rememberSaveable { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(settingsUiState.simklClientId) {
-        clientId = settingsUiState.simklClientId
-    }
-
     Column(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .fillMaxWidth(),
     ) {
-        Text(
-            text = stringResource(Res.string.settings_simkl_credentials_title),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
+        SettingsTextInputRow(
+            title = stringResource(Res.string.settings_simkl_client_id),
+            description = stringResource(Res.string.settings_simkl_credentials_description),
+            value = settingsUiState.simklClientId,
+            placeholder = stringResource(Res.string.settings_simkl_client_id),
+            summarizeAsConfigured = true,
+            isTablet = isTablet,
+            onSave = { clientId -> SimklSettingsRepository.setClientId(clientId) },
         )
-        Text(
-            text = stringResource(Res.string.settings_simkl_credentials_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedTextField(
-            value = clientId,
-            onValueChange = { clientId = it },
-            modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
-            singleLine = true,
-            label = { Text(stringResource(Res.string.settings_simkl_client_id)) },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                disabledContainerColor = MaterialTheme.colorScheme.surface,
-            ),
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Button(
-                onClick = {
-                    SimklSettingsRepository.setClientId(clientId)
-                    statusMessage = "Saved."
-                },
-            ) {
-                Text(stringResource(Res.string.settings_simkl_credentials_save))
-            }
-            Button(
-                onClick = {
-                    clientId = ""
-                    SimklSettingsRepository.clearClientId()
-                    SimklAuthRepository.onDisconnectRequested()
-                    statusMessage = "Cleared."
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-            ) {
-                Text(stringResource(Res.string.settings_simkl_credentials_clear))
-            }
-        }
-        statusMessage?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
@@ -256,7 +190,7 @@ private fun SimklConnectionCard(
                 uiState.username?.let { name ->
                     Text(
                         text = stringResource(Res.string.settings_simkl_connected_as_format, name),
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold).accentBrush(),
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
@@ -313,7 +247,7 @@ private fun SimklConnectionCard(
                     )
                     Text(
                         text = uiState.pendingPin,
-                        style = MaterialTheme.typography.displaySmall,
+                        style = MaterialTheme.typography.displaySmall.accentBrush(),
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
                         letterSpacing = androidx.compose.ui.unit.TextUnit(

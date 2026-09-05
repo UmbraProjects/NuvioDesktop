@@ -31,25 +31,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FormatListNumbered
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -69,13 +64,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.LocalOpenMetaDetails
 import com.nuvio.app.core.ui.NuvioAlertDialog
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioToastController
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.librarypvr.LibraryPvrRepository
 import com.nuvio.app.features.librarypvr.LibraryPvrScheduler
 import com.nuvio.app.features.librarypvr.MonitorMode
@@ -96,13 +89,15 @@ import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_local_library_add_catalog
+import nuvio.composeapp.generated.resources.settings_local_library_browse_open
+import nuvio.composeapp.generated.resources.settings_local_library_browse_open_empty
+import nuvio.composeapp.generated.resources.settings_local_library_browse_section
+import nuvio.composeapp.generated.resources.settings_local_library_browse_unmatched
 import nuvio.composeapp.generated.resources.settings_local_library_cancel
 import nuvio.composeapp.generated.resources.settings_local_library_catalogs_empty
 import nuvio.composeapp.generated.resources.settings_local_library_catalogs_title
-import nuvio.composeapp.generated.resources.settings_local_library_catalog_search_hint
 import nuvio.composeapp.generated.resources.settings_local_library_clear_match
 import nuvio.composeapp.generated.resources.settings_local_library_current_match
-import nuvio.composeapp.generated.resources.settings_local_library_filter_all
 import nuvio.composeapp.generated.resources.settings_local_library_folders_empty
 import nuvio.composeapp.generated.resources.settings_local_library_folders_title
 import nuvio.composeapp.generated.resources.settings_local_library_playback_title
@@ -113,10 +108,6 @@ import nuvio.composeapp.generated.resources.settings_local_library_play_local_fi
 import nuvio.composeapp.generated.resources.settings_local_library_intro
 import nuvio.composeapp.generated.resources.settings_local_library_items_count
 import nuvio.composeapp.generated.resources.settings_local_library_match_dialog_title
-import nuvio.composeapp.generated.resources.settings_local_library_mode_advanced
-import nuvio.composeapp.generated.resources.settings_local_library_mode_basic
-import nuvio.composeapp.generated.resources.settings_local_library_mode_description
-import nuvio.composeapp.generated.resources.settings_local_library_mode_title
 import nuvio.composeapp.generated.resources.settings_local_library_new_catalog_hint
 import nuvio.composeapp.generated.resources.settings_local_library_no_results
 import nuvio.composeapp.generated.resources.settings_local_library_not_matched
@@ -133,17 +124,20 @@ import nuvio.composeapp.generated.resources.settings_local_library_search_kitsu_
 import nuvio.composeapp.generated.resources.settings_local_library_section_movies
 import nuvio.composeapp.generated.resources.settings_local_library_section_anime_movies
 import nuvio.composeapp.generated.resources.settings_local_library_section_anime_series
-import nuvio.composeapp.generated.resources.settings_local_library_section_tv
 import nuvio.composeapp.generated.resources.settings_local_library_type_anime
 import nuvio.composeapp.generated.resources.settings_local_library_type_movies
 import nuvio.composeapp.generated.resources.settings_local_library_type_tv
 import nuvio.composeapp.generated.resources.settings_local_library_toggle_empty_catalogs
 import nuvio.composeapp.generated.resources.settings_local_library_unsorted
-import nuvio.composeapp.generated.resources.library_add_toast_added
 import nuvio.composeapp.generated.resources.library_downloads_add_from_library
 import nuvio.composeapp.generated.resources.local_library_fix_action
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.NuvioFieldIconButton
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import com.nuvio.app.core.ui.accentBrush
 
 // Preset catalog colours (packed ARGB). Kept small and distinct so the poster icon reads at a glance.
 private val CATALOG_COLORS: List<Long> = listOf(
@@ -151,13 +145,27 @@ private val CATALOG_COLORS: List<Long> = listOf(
     0xFF26A69A, 0xFF9CCC65, 0xFFFFCA28, 0xFFFF7043,
 )
 
-// Filter sentinels for the Advanced catalog filter (distinct from any real catalog id).
-private const val FILTER_ALL = "*all*"
-private const val FILTER_UNSORTED = "*unsorted*"
+// Filter sentinels for the catalog tabs (distinct from any real catalog id).
+internal const val FILTER_ALL = "*all*"
+internal const val FILTER_UNSORTED = "*unsorted*"
 
 internal class LocalLibraryTitlesState {
     var filter by mutableStateOf(FILTER_ALL)
     var query by mutableStateOf("")
+
+    /** Whether the full-screen library browser is up. The settings page only links to it. */
+    var browserOpen by mutableStateOf(false)
+
+    /**
+     * Open the browser scoped to [scope]. The search box is cleared on the way in: this state
+     * outlives the browser (it is held per profile), and reopening onto a filter left over from
+     * last time reads as an empty library.
+     */
+    fun openBrowser(scope: String) {
+        filter = scope
+        query = ""
+        browserOpen = true
+    }
 }
 
 /** Keeps list controls alive while details temporarily replaces the Settings destination. */
@@ -192,14 +200,50 @@ internal fun LazyListScope.localLibraryContent(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
         )
     }
+    item { LocalLibraryBrowseSection(isTablet, state, titlesState) }
     item { LocalLibraryPlaybackSection(isTablet, state.playbackPreference) }
     item { LocalLibraryFoldersSection(isTablet) }
     item { LocalLibraryCatalogsSection(isTablet, titlesState) }
-    localLibraryTitlesContent(
+}
+
+/**
+ * The way into the library itself. The titles used to be laid out inline below these settings,
+ * which capped them at the settings column's width; they now live in a full-screen browser so a
+ * row fits far more posters, and this section is the link to it.
+ */
+@Composable
+private fun LocalLibraryBrowseSection(
+    isTablet: Boolean,
+    state: LocalLibraryUiState,
+    titlesState: LocalLibraryTitlesState,
+) {
+    SettingsSection(
+        title = stringResource(Res.string.settings_local_library_browse_section),
         isTablet = isTablet,
-        state = state,
-        titlesState = titlesState,
-    )
+    ) {
+        SettingsGroup(isTablet = isTablet) {
+            SettingsNavigationRow(
+                title = stringResource(Res.string.settings_local_library_browse_open),
+                description = if (state.items.isEmpty()) {
+                    stringResource(Res.string.settings_local_library_browse_open_empty)
+                } else {
+                    val titles = stringResource(Res.string.settings_local_library_items_count, state.items.size)
+                    val unmatched = state.unmatchedCount
+                    if (unmatched > 0) {
+                        titles + " · " + stringResource(
+                            Res.string.settings_local_library_browse_unmatched,
+                            unmatched,
+                        )
+                    } else {
+                        titles
+                    }
+                },
+                enabled = state.items.isNotEmpty(),
+                isTablet = isTablet,
+                onClick = { titlesState.openBrowser(FILTER_ALL) },
+            )
+        }
+    }
 }
 
 @Composable
@@ -426,7 +470,7 @@ private fun LocalFolderTileRow(folder: LocalFolder, itemCount: Int, onRemove: ()
             // fit a quarter-width tile.
             Text(
                 text = stringResource(Res.string.settings_local_library_remove),
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelMedium.accentBrush(),
                 color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 modifier = Modifier
@@ -448,11 +492,9 @@ private fun LocalLibraryCatalogsSection(isTablet: Boolean, titlesState: LocalLib
     var editName by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
 
-    // Clicking a catalog scopes the titles below to it; clicking the selected one again clears back
-    // to showing everything. This replaces the old row of filter chips under the search field.
-    fun toggleFilter(id: String) {
-        titlesState.filter = if (titlesState.filter == id) FILTER_ALL else id
-    }
+    // Clicking a catalog opens the library browser already scoped to it — the tile is the shortcut
+    // to that catalog's shelf, and the browser's own tabs take over from there.
+    fun openBrowser(id: String) = titlesState.openBrowser(id)
 
     SettingsSection(
         title = stringResource(Res.string.settings_local_library_catalogs_title),
@@ -488,12 +530,11 @@ private fun LocalLibraryCatalogsSection(isTablet: Boolean, titlesState: LocalLib
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                OutlinedTextField(
+                NuvioTextField(
                     value = newName,
                     onValueChange = { newName = it },
-                    label = { Text(stringResource(Res.string.settings_local_library_new_catalog_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f).trackTextInputFocus(),
+                    modifier = Modifier.weight(1f),
+                    placeholder = stringResource(Res.string.settings_local_library_new_catalog_hint),
                 )
                 OutlinedButton(
                     enabled = newName.isNotBlank(),
@@ -547,17 +588,15 @@ private fun LocalLibraryCatalogsSection(isTablet: Boolean, titlesState: LocalLib
                                     name = stringResource(Res.string.settings_local_library_unsorted),
                                     color = null,
                                     itemCount = unsortedCount,
-                                    selected = titlesState.filter == FILTER_UNSORTED,
-                                    onClick = { toggleFilter(FILTER_UNSORTED) },
+                                    onClick = { openBrowser(FILTER_UNSORTED) },
                                     modifier = tileModifier,
                                 )
                             } else {
                                 LocalCatalogTile(
                                     catalog = catalog,
                                     itemCount = counts[catalog.id] ?: 0,
-                                    selected = titlesState.filter == catalog.id,
                                     deletable = catalog.defaultBucket == null,
-                                    onClick = { toggleFilter(catalog.id) },
+                                    onClick = { openBrowser(catalog.id) },
                                     isEditing = editingId == catalog.id,
                                     editName = editName,
                                     onEditNameChange = { editName = it },
@@ -586,12 +625,11 @@ private fun LocalLibraryCatalogsSection(isTablet: Boolean, titlesState: LocalLib
 }
 
 /**
- * Shared shell for a catalog tile. Selection is carried by the fill and border rather than a
- * checkmark, since the tile's whole job is to scope the titles grid below.
+ * Shared shell for a catalog tile. The tile is a launcher now — clicking it opens the library
+ * browser scoped to that catalog — so it carries no selection state of its own.
  */
 @Composable
 private fun CatalogTileFrame(
-    selected: Boolean,
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
@@ -600,12 +638,8 @@ private fun CatalogTileFrame(
     Column(
         modifier = modifier
             .clip(shape)
-            .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
-            .border(
-                width = 1.dp,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                shape = shape,
-            )
+            .background(MaterialTheme.colorScheme.surface)
+            .border(width = 1.dp, color = MaterialTheme.colorScheme.outline, shape = shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
         content = content,
@@ -640,11 +674,10 @@ private fun CatalogFilterTile(
     name: String,
     color: Long?,
     itemCount: Int,
-    selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    CatalogTileFrame(selected = selected, onClick = onClick, modifier = modifier) {
+    CatalogTileFrame(onClick = onClick, modifier = modifier) {
         CatalogTileTitle(name = name, color = color, modifier = Modifier.fillMaxWidth().padding(end = 6.dp))
         Spacer(Modifier.height(8.dp))
         Text(
@@ -660,7 +693,6 @@ private fun CatalogFilterTile(
 private fun LocalCatalogTile(
     catalog: LocalCatalog,
     itemCount: Int,
-    selected: Boolean,
     deletable: Boolean,
     onClick: () -> Unit,
     isEditing: Boolean,
@@ -673,8 +705,7 @@ private fun LocalCatalogTile(
     modifier: Modifier = Modifier,
 ) {
     CatalogTileFrame(
-        selected = selected,
-        // Only the non-editing tile toggles the filter; while editing, taps belong to the field.
+        // Only the non-editing tile opens the browser; while editing, taps belong to the field.
         onClick = if (isEditing) null else onClick,
         modifier = modifier,
     ) {
@@ -683,11 +714,10 @@ private fun LocalCatalogTile(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedTextField(
+                NuvioTextField(
                     value = editName,
                     onValueChange = onEditNameChange,
-                    singleLine = true,
-                    modifier = Modifier.weight(1f).trackTextInputFocus(),
+                    modifier = Modifier.weight(1f),
                 )
                 IconButton(
                     onClick = onSaveEdit,
@@ -774,189 +804,39 @@ private fun ColorSwatch(color: Long, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-private fun LazyListScope.localLibraryTitlesContent(
-    isTablet: Boolean,
-    state: LocalLibraryUiState,
-    titlesState: LocalLibraryTitlesState,
-) {
-    if (state.items.isEmpty()) return
-
-    val cardWidth = if (isTablet) 150.dp else 120.dp
-    // Keep each poster row as its own outer LazyColumn item. The old FlowRow put the complete
-    // library in one item, forcing every card and image to compose at the catalog/title boundary.
-    val columns = if (isTablet) 4 else 2
-
-    // The catalog list above is the filter now: FILTER_ALL shows everything, FILTER_UNSORTED the
-    // unfiled items, otherwise scope to the selected catalog id.
-    val catalogVisible = when (titlesState.filter) {
-        FILTER_ALL -> state.items
-        FILTER_UNSORTED -> state.items.filter { it.catalogId == null }
-        else -> state.items.filter { it.catalogId == titlesState.filter }
-    }
-    val query = titlesState.query.trim()
-    val visible = if (query.isBlank()) {
-        catalogVisible
-    } else {
-        catalogVisible.filter { item ->
-            item.title.contains(query, ignoreCase = true) ||
-                item.displayYear?.toString()?.contains(query, ignoreCase = true) == true
-        }
-    }
-
-    item(key = "local-library-search") {
-        OutlinedTextField(
-            value = titlesState.query,
-            onValueChange = { titlesState.query = it },
-            placeholder = { Text(stringResource(Res.string.settings_local_library_catalog_search_hint)) },
-            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .trackTextInputFocus(),
-        )
-    }
-
-    if (visible.isEmpty() && query.isNotBlank()) {
-        item(key = "local-library-search-empty") {
-            Text(
-                text = stringResource(Res.string.settings_local_library_no_results),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-            )
-        }
-        return
-    }
-
-    localTitlesCategory(
-        key = "movies",
-        titleRes = Res.string.settings_local_library_section_movies,
-        items = visible.filter { it.type == LocalFolderType.MOVIES && !it.isAnime }.sortedBy { it.title.lowercase() },
-        state = state,
-        isTablet = isTablet,
-        cardWidth = cardWidth,
-        columns = columns,
+/**
+ * Queue a local title for the auto-downloader. Lives outside the card so the settings tiles and
+ * the library browser both add a title the same way.
+ */
+internal fun monitorLocalItem(item: LocalMediaItem, addedText: String) {
+    LibraryPvrRepository.newMonitoredItem(
+        contentId = item.contentId,
+        contentType = item.contentType,
+        title = item.title,
+        targetFolderId = item.folderId,
+        mode = if (item.type == LocalFolderType.SERIES) {
+            MonitorMode.SELECTED_PLUS_FUTURE
+        } else {
+            MonitorMode.MOVIE_WHEN_AVAILABLE
+        },
+        tmdbId = item.tmdbId,
+        imdbId = item.imdbId,
+        kitsuId = item.kitsuId,
+        malId = item.malId,
+        isAnime = item.isAnime,
+        year = item.year,
+        poster = item.poster,
+        background = item.background,
     )
-    localTitlesCategory(
-        key = "tv",
-        titleRes = Res.string.settings_local_library_section_tv,
-        items = visible.filter { it.type == LocalFolderType.SERIES && !it.isAnime }.sortedBy { it.title.lowercase() },
-        state = state,
-        isTablet = isTablet,
-        cardWidth = cardWidth,
-        columns = columns,
-    )
-    localTitlesCategory(
-        key = "anime-movies",
-        titleRes = Res.string.settings_local_library_section_anime_movies,
-        items = visible.filter { it.type == LocalFolderType.MOVIES && it.isAnime }.sortedBy { it.title.lowercase() },
-        state = state,
-        isTablet = isTablet,
-        cardWidth = cardWidth,
-        columns = columns,
-    )
-    localTitlesCategory(
-        key = "anime-series",
-        titleRes = Res.string.settings_local_library_section_anime_series,
-        items = visible.filter { it.type == LocalFolderType.SERIES && it.isAnime }.sortedBy { it.title.lowercase() },
-        state = state,
-        isTablet = isTablet,
-        cardWidth = cardWidth,
-        columns = columns,
-    )
-}
-
-private fun LazyListScope.localTitlesCategory(
-    key: String,
-    titleRes: org.jetbrains.compose.resources.StringResource,
-    items: List<LocalMediaItem>,
-    state: LocalLibraryUiState,
-    isTablet: Boolean,
-    cardWidth: Dp,
-    columns: Int,
-) {
-    if (items.isEmpty()) return
-    items.chunked(columns).forEachIndexed { rowIndex, rowItems ->
-        item(key = "local-library-$key-${rowItems.joinToString("-") { it.key }}") {
-            val cards: @Composable () -> Unit = {
-                LocalPosterRow(
-                    items = rowItems,
-                    state = state,
-                    cardWidth = cardWidth,
-                    topPadding = if (rowIndex == 0) 8.dp else 0.dp,
-                )
-            }
-            if (rowIndex == 0) {
-                SettingsSection(title = stringResource(titleRes), isTablet = isTablet) {
-                    cards()
-                }
-            } else {
-                cards()
-            }
-        }
-    }
+    NuvioToastController.show(addedText)
+    LibraryPvrScheduler.checkNow()
 }
 
 @Composable
-private fun LocalPosterRow(
-    items: List<LocalMediaItem>,
-    state: LocalLibraryUiState,
-    cardWidth: Dp,
-    topPadding: Dp,
-) {
-    val pvr by LibraryPvrRepository.uiState.collectAsState()
-    LaunchedEffect(Unit) { LibraryPvrRepository.ensureLoaded() }
-    val monitoredContentIds = remember(pvr.monitoredItems) {
-        pvr.monitoredItems.mapTo(mutableSetOf()) { it.contentId }
-    }
-    val addedText = stringResource(Res.string.library_add_toast_added)
-
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = topPadding, end = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
-    ) {
-        items.forEach { item ->
-            LocalPosterCard(
-                item = item,
-                state = state,
-                width = cardWidth,
-                onResetPoster = { LocalLibraryRepository.resetPoster(item) },
-                onAssign = { catalogId -> LocalLibraryRepository.assignToCatalog(item.key, catalogId) },
-                isMonitored = item.contentId in monitoredContentIds,
-                onMonitor = {
-                    LibraryPvrRepository.newMonitoredItem(
-                        contentId = item.contentId,
-                        contentType = item.contentType,
-                        title = item.title,
-                        targetFolderId = item.folderId,
-                        mode = if (item.type == LocalFolderType.SERIES) {
-                            MonitorMode.SELECTED_PLUS_FUTURE
-                        } else {
-                            MonitorMode.MOVIE_WHEN_AVAILABLE
-                        },
-                        tmdbId = item.tmdbId,
-                        imdbId = item.imdbId,
-                        kitsuId = item.kitsuId,
-                        malId = item.malId,
-                        isAnime = item.isAnime,
-                        year = item.year,
-                        poster = item.poster,
-                        background = item.background,
-                    )
-                    NuvioToastController.show(addedText)
-                    LibraryPvrScheduler.checkNow()
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun LocalPosterCard(
+internal fun LocalPosterCard(
     item: LocalMediaItem,
     state: LocalLibraryUiState,
-    width: Dp,
+    modifier: Modifier = Modifier,
     onResetPoster: () -> Unit,
     onAssign: (String?) -> Unit,
     isMonitored: Boolean,
@@ -978,10 +858,10 @@ private fun LocalPosterCard(
         ?.takeIf { item.isMatched }
         ?.let { open -> { open(item.contentType, item.contentId) } }
 
-    Column(modifier = Modifier.width(width)) {
+    Column(modifier = modifier) {
         Box(
             modifier = Modifier
-                .width(width)
+                .fillMaxWidth()
                 .aspectRatio(2f / 3f)
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
@@ -1252,16 +1132,18 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
                     )
                 }
                 Spacer(Modifier.size(8.dp))
-                OutlinedTextField(
+                NuvioTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text(searchHint) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
-                    trailingIcon = {
-                        IconButton(onClick = { runSearch() }) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = searchHint)
-                        }
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = searchHint,
+                    onImeAction = { runSearch() },
+                    trailingContent = {
+                        NuvioFieldIconButton(
+                            icon = Icons.Rounded.Refresh,
+                            contentDescription = searchHint,
+                            onClick = { runSearch() },
+                        )
                     },
                 )
                 Spacer(Modifier.size(8.dp))

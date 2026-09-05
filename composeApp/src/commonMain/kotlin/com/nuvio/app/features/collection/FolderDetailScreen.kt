@@ -94,6 +94,7 @@ import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.canOpenCatalog
 import com.nuvio.app.features.home.usesInfiniteHomeRow
 import com.nuvio.app.features.home.stableKey
+import com.nuvio.app.features.home.components.immersiveShelfScrimStops
 import com.nuvio.app.features.home.components.PAGE_ITEM_STEP
 import com.nuvio.app.features.home.components.PAGE_SECTION_STEP
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
@@ -675,6 +676,10 @@ private fun ImmersiveCollectionContent(
             heightOverride = maxHeight,
             roundedBottomCorners = false,
             immersiveMode = true,
+            // This folder view is the TV-style immersive layout wherever it is opened from, so it
+            // follows the same backdrop choice. The toggle only appears while the home display mode
+            // is TV Mode, so nobody who has not deliberately chosen this look ever sees it here.
+            immersiveFullBackdrop = homeSettings.tvFullBackdropEnabled,
             heroInfoLines = homeSettings.heroInfoLines,
             heroInfoPriority = homeSettings.heroInfoPriority,
             heroBadgePlacement = homeSettings.heroBadgePlacement,
@@ -694,11 +699,10 @@ private fun ImmersiveCollectionContent(
                 .align(Alignment.BottomStart)
                 .background(
                     Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0f to Color.Transparent,
-                            0.30f to MaterialTheme.colorScheme.background.copy(alpha = 0.28f),
-                            0.62f to MaterialTheme.colorScheme.background.copy(alpha = if (ambientBackgroundEnabled) 0.74f else 0.88f),
-                            1f to MaterialTheme.colorScheme.background.copy(alpha = if (ambientBackgroundEnabled) 0.82f else 1f),
+                        colorStops = immersiveShelfScrimStops(
+                            backgroundColor = MaterialTheme.colorScheme.background,
+                            fullBackdrop = homeSettings.tvFullBackdropEnabled,
+                            ambientBackgroundEnabled = ambientBackgroundEnabled,
                         ),
                     ),
                 )

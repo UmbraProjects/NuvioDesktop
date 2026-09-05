@@ -5,7 +5,6 @@ import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.streams.StreamItem
 
 internal const val PlaybackProgressPersistIntervalMs = 60_000L
-internal const val PlayerDoubleTapSeekStepMs = 10_000L
 internal const val PlayerDoubleTapSeekResetDelayMs = 800L
 internal const val PlayerLockedOverlayDurationMs = 2_000L
 internal const val PlayerLeftGestureBoundary = 0.4f
@@ -14,6 +13,14 @@ internal const val PlayerVolumeStepFraction = 0.05f
 internal const val PlayerSeekProgressSyncDebounceMs = 700L
 internal const val P2pInitialPreloadTargetBytes = 5_242_880L
 internal const val NEXT_EPISODE_HARD_TIMEOUT_MS = 120_000L
+
+/**
+ * User-configured jump distance for the seek buttons, the arrow-key shortcuts, and the double-tap
+ * gesture, in milliseconds. Read from the settings snapshot the runtime already holds so every seek
+ * entry point stays on one number.
+ */
+internal val PlayerScreenRuntime.seekStepMs: Long
+    get() = playerSettingsUiState.seekStepSeconds.toLong() * 1_000L
 
 internal val PlayerSliderOverlayGap = 12.dp
 internal val PlayerTimeRowHeight = 36.dp

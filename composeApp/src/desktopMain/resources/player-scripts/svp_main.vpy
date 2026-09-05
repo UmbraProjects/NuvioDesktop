@@ -352,25 +352,15 @@ def prepare_clip_svp(clip, params):
     """Memory-safe clip preparation with high-quality dithering."""
 
     if clip.format != params['format']:
-        first_frame = None
-        matrix_in = 1
-        range_in = 1
-        try:
-            first_frame = clip.get_frame(0)
-            matrix_in = first_frame.props.get('_Matrix', 1)
-            range_in = first_frame.props.get('_ColorRange', 1)
-        except Exception as e:
-            mp.msg.warn("Prop access error in prepare_clip_svp: " + str(e) + " - using defaults")
-        finally:
-            if first_frame is not None:
-                del first_frame
+        # Resize reads real frame color properties lazily; these are fallbacks only.
+        # Synchronous frame requests here make mpv return a dummy frame during init.
         
         if params['resize_kernel'] == 'Bicubic':
             # --- FINAL ENHANCEMENT: Added high-quality dithering ---
-            clip = core.resize.Bicubic(clip, format=params['format'], matrix_in=matrix_in, matrix_s="709", range_in=range_in, range_s="limited", chromaloc_in_s="left", chromaloc_s="left", dither_type="ordered")
+            clip = core.resize.Bicubic(clip, format=params['format'], matrix_in_s="709", matrix_s="709", range_in_s="limited", range_s="limited", chromaloc_in_s="left", chromaloc_s="left", dither_type="ordered")
         else:
             # --- OPTIMIZED: Switched to ordered dithering for i5-9300H performance ---
-            clip = core.resize.Spline36(clip, format=params['format'], matrix_in=matrix_in, matrix_s="709", range_in=range_in, range_s="limited", chromaloc_in_s="left", chromaloc_s="left", dither_type="ordered")
+            clip = core.resize.Spline36(clip, format=params['format'], matrix_in_s="709", matrix_s="709", range_in_s="limited", range_s="limited", chromaloc_in_s="left", chromaloc_s="left", dither_type="ordered")
 
     # Early prop locking for stability across reinits
     clip = core.std.SetFrameProp(clip, prop="_ColorRange", intval=1)
@@ -416,21 +406,11 @@ def interpolate_mvtools(clip, target_fps):
 
     params = get_mvtools_params(clip)
     if not is_yuv420p8(clip):
-        first_frame = None
-        matrix_in = 1
-        range_in = 1
-        try:
-            first_frame = clip.get_frame(0)
-            matrix_in = first_frame.props.get('_Matrix', 1)
-            range_in = first_frame.props.get('_ColorRange', 1)
-        except Exception as e:
-            mp.msg.warn("Prop access error in interpolate_mvtools: " + str(e) + " - using defaults")
-        finally:
-            if first_frame is not None:
-                del first_frame
+        # Resize reads real frame color properties lazily; these are fallbacks only.
+        # Synchronous frame requests here make mpv return a dummy frame during init.
 
         # --- FINAL ENHANCEMENT: Added high-quality dithering ---
-        clip = core.resize.Spline36(clip, format=YUV420P8_FORMAT, matrix_in=matrix_in, matrix_s="709", range_in=range_in, range_s="limited", chromaloc_in_s="left", chromaloc_s="left", dither_type="ordered")
+        clip = core.resize.Spline36(clip, format=YUV420P8_FORMAT, matrix_in_s="709", matrix_s="709", range_in_s="limited", range_s="limited", chromaloc_in_s="left", chromaloc_s="left", dither_type="ordered")
         clip = core.std.SetFrameProp(clip, prop="_ColorRange", intval=1)
         clip = core.std.SetFrameProp(clip, prop="_Matrix", intval=1)
         clip = core.std.SetFrameProp(clip, prop="_Transfer", intval=1)
@@ -517,22 +497,12 @@ def process_interpolation(clip):
             log_svp_diag(traceback.format_exc().strip())
             try:
                 log_svp_diag("mvtools_fallback_begin")
-                first_frame = None
-                matrix_in = 1
-                range_in = 1
-                try:
-                    first_frame = clip.get_frame(0)
-                    matrix_in = first_frame.props.get('_Matrix', 1)
-                    range_in = first_frame.props.get('_ColorRange', 1)
-                except Exception as e:
-                    mp.msg.warn("Prop access error in fallback: " + str(e) + " - using defaults")
-                finally:
-                    if first_frame is not None:
-                        del first_frame
+                # Resize reads real frame color properties lazily; these are fallbacks only.
+                # Synchronous frame requests here make mpv return a dummy frame during init.
                 
                 if not is_yuv420p8(clip):
                     # --- FINAL ENHANCEMENT: Added high-quality dithering ---
-                    mvtools_clip = core.resize.Spline36(clip, format=YUV420P8_FORMAT, matrix_in=matrix_in, matrix_s="709", range_in=range_in, range_s="limited", chromaloc_in_s="left", chromaloc_s="left", dither_type="ordered")
+                    mvtools_clip = core.resize.Spline36(clip, format=YUV420P8_FORMAT, matrix_in_s="709", matrix_s="709", range_in_s="limited", range_s="limited", chromaloc_in_s="left", chromaloc_s="left", dither_type="ordered")
                 else:
                     mvtools_clip = clip
                 
@@ -550,22 +520,12 @@ def process_interpolation(clip):
                 log_svp_diag(traceback.format_exc().strip())
                 try:
                     log_svp_diag("mvtools_safest_fallback_begin")
-                    first_frame = None
-                    matrix_in = 1
-                    range_in = 1
-                    try:
-                        first_frame = clip.get_frame(0)
-                        matrix_in = first_frame.props.get('_Matrix', 1)
-                        range_in = first_frame.props.get('_ColorRange', 1)
-                    except Exception as e:
-                        mp.msg.warn("Prop access error in safest fallback: " + str(e) + " - using defaults")
-                    finally:
-                        if first_frame is not None:
-                            del first_frame
+                    # Resize reads real frame color properties lazily; these are fallbacks only.
+                    # Synchronous frame requests here make mpv return a dummy frame during init.
                     
                     if not is_yuv420p8(clip):
                         # --- FINAL ENHANCEMENT: Added high-quality dithering ---
-                        safe_clip = core.resize.Bicubic(clip, format=YUV420P8_FORMAT, matrix_in=matrix_in, matrix_s="1", range_in=range_in, range_s="limited", chromaloc_in_s="left", chromaloc_s="left", dither_type="ordered")
+                        safe_clip = core.resize.Bicubic(clip, format=YUV420P8_FORMAT, matrix_in_s="709", matrix_s="1", range_in_s="limited", range_s="limited", chromaloc_in_s="left", chromaloc_s="left", dither_type="ordered")
                     else:
                         safe_clip = clip
                     

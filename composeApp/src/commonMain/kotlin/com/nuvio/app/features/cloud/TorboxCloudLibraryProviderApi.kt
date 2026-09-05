@@ -102,6 +102,11 @@ internal fun TorboxCloudItemDto.toCloudLibraryItem(
             .firstNonBlank(),
         sizeBytes = size ?: totalSize ?: filesSize,
         progressFraction = listOfNotNull(progress, downloadProgress).firstOrNull()?.toProgressFraction(),
+        // Torrents carry `created_at`; usenet and web downloads spell the same moment `cached_at`.
+        // `updated_at` moves when the download finishes, so it is only a last resort.
+        addedAtEpochMs = listOf(createdAt, cachedAt, updatedAt).firstNotNullOfOrNull { value ->
+            value?.let(CloudLibraryClock::parseIsoDateTimeToEpochMs)
+        },
         files = mappedFiles,
     )
 }

@@ -9,6 +9,7 @@ import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.playbackEpisodeNumber
 import com.nuvio.app.features.details.playbackSeasonNumber
 import com.nuvio.app.features.downloads.DownloadItem
+import com.nuvio.app.features.downloads.playbackLabels
 import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.p2p.P2pStreamingEngine
@@ -416,11 +417,17 @@ internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: Downloa
     activeSourceResponseHeaders = emptyMap()
     activeStreamType = null
     activeSourceIdentityKey = null
-    activeStreamTitle = downloadItem.streamTitle.ifBlank {
-        episode.title.ifBlank { title }
-    }
-    activeStreamSubtitle = downloadItem.streamSubtitle
-    activeProviderName = downloadItem.providerName.ifBlank { downloadedLabel }
+    // The registry answers before the local-library stream lookup in next-episode autoplay, so
+    // these labels decide what a binge advance *looks* like — resolve them from where the file
+    // plays from, not only from how it was acquired.
+    val labels = downloadItem.playbackLabels(
+        localPath = localFileUri,
+        fallbackTitle = episode.title.ifBlank { title },
+        downloadedLabel = downloadedLabel,
+    )
+    activeStreamTitle = labels.streamTitle
+    activeStreamSubtitle = labels.streamSubtitle
+    activeProviderName = labels.providerName
     activeProviderAddonId = downloadItem.providerAddonId
     currentStreamBingeGroup = null
     activeSeasonNumber = seasonNumber

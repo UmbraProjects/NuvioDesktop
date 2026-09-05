@@ -41,6 +41,25 @@ enum class PosterRatingBadgeScale {
     }
 }
 
+/**
+ * How the poster a row is currently highlighting is marked, on top of the magnification every
+ * highlighted card already gets. [White] and [Accent] ring the card; [Shine] instead lifts the
+ * artwork's own brightness. [Off] leaves the magnification alone.
+ */
+enum class PosterHighlightMode {
+    Off,
+    White,
+    Accent,
+    Shine,
+    Sweep,
+    ;
+
+    companion object {
+        fun fromStoredName(name: String?): PosterHighlightMode =
+            entries.firstOrNull { it.name == name } ?: Off
+    }
+}
+
 @Serializable
 private data class StoredPosterCardStylePreferences(
     val widthDp: Int = DefaultPosterCardWidthDp,
@@ -50,6 +69,7 @@ private data class StoredPosterCardStylePreferences(
     val collectionsPortraitPostersEnabled: Boolean = false,
     val landscapeTextTitlesEnabled: Boolean = false,
     val landscapeRatingBadgeScale: String = "OutOfTen",
+    val posterHighlightMode: String = "Off",
     val hideLabelsEnabled: Boolean = false,
     val depthEnabled: Boolean = false,
     val depthEdgeStrength: Int = 42,
@@ -73,6 +93,8 @@ data class PosterCardStyleUiState(
     val landscapeTextTitlesEnabled: Boolean = false,
     /** Corner rating badge on landscape cards, using whatever score the row's catalog supplied. */
     val landscapeRatingBadgeScale: PosterRatingBadgeScale = PosterRatingBadgeScale.OutOfTen,
+    /** Ring drawn around the highlighted poster in addition to its magnification. */
+    val posterHighlightMode: PosterHighlightMode = PosterHighlightMode.Off,
     val hideLabelsEnabled: Boolean = false,
     val depthEnabled: Boolean = false,
     val depthEdgeStrength: Int = 42,
@@ -165,6 +187,13 @@ object PosterCardStyleRepository {
         persist()
     }
 
+    fun setPosterHighlightMode(mode: PosterHighlightMode) {
+        ensureLoaded()
+        if (_uiState.value.posterHighlightMode == mode) return
+        _uiState.value = _uiState.value.copy(posterHighlightMode = mode)
+        persist()
+    }
+
     fun setDepthEnabled(enabled: Boolean) {
         ensureLoaded()
         if (_uiState.value.depthEnabled == enabled) return
@@ -250,6 +279,7 @@ object PosterCardStyleRepository {
                 landscapeRatingBadgeScale = PosterRatingBadgeScale.fromStoredName(
                     stored.landscapeRatingBadgeScale,
                 ),
+                posterHighlightMode = PosterHighlightMode.fromStoredName(stored.posterHighlightMode),
                 hideLabelsEnabled = stored.hideLabelsEnabled,
                 depthEnabled = stored.depthEnabled,
                 depthEdgeStrength = stored.depthEdgeStrength.coerceIn(0, 100),
@@ -278,6 +308,7 @@ object PosterCardStyleRepository {
                     collectionsPortraitPostersEnabled = _uiState.value.collectionsPortraitPostersEnabled,
                     landscapeTextTitlesEnabled = _uiState.value.landscapeTextTitlesEnabled,
                     landscapeRatingBadgeScale = _uiState.value.landscapeRatingBadgeScale.name,
+                    posterHighlightMode = _uiState.value.posterHighlightMode.name,
                     hideLabelsEnabled = _uiState.value.hideLabelsEnabled,
                     depthEnabled = _uiState.value.depthEnabled,
                     depthEdgeStrength = _uiState.value.depthEdgeStrength,

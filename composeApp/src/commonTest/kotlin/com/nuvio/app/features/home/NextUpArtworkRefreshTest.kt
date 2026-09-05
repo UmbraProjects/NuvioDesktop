@@ -31,6 +31,7 @@ class NextUpArtworkRefreshTest {
         background: String? = null,
         seedSeason: Int = 1,
         seedEpisode: Int = 4,
+        released: String? = null,
     ) = contentId to (
         1_000L to ContinueWatchingItem(
             parentMetaId = contentId,
@@ -44,6 +45,7 @@ class NextUpArtworkRefreshTest {
             seasonNumber = seedSeason,
             episodeNumber = seedEpisode + 1,
             episodeThumbnail = episodeThumbnail,
+            released = released,
             isNextUp = true,
             nextUpSeedSeasonNumber = seedSeason,
             nextUpSeedEpisodeNumber = seedEpisode,
@@ -347,5 +349,69 @@ class NextUpArtworkRefreshTest {
         // on disk and comes back blank after a restart.
         assertEquals("backdrop.jpg", merged.getValue("tt1").second.background)
         assertEquals(1_000L, merged.getValue("tt1").first)
+    }
+
+    @Test
+    fun `a date-only release near its air date is queued for re-resolution`() {
+        // Ted Lasso S4E5: cached as TMDB's `2026-09-01` while the addon knew the real drop as
+        // 2026-09-02T04:00:00.000Z, so the card claimed "New Episode" a day early and, with the
+        // seed unchanged, would never have been asked again.
+        val plan = planNextUpResolution(
+            completedSeriesCandidates = listOf(candidate("tt1")),
+            cachedNextUpItems = mapOf(
+                cachedCard("tt1", episodeThumbnail = "still.jpg", released = "2026-09-01"),
+            ),
+            todayIsoDate = "2026-09-01",
+        )
+
+        assertEquals(listOf("tt1"), plan.candidatesToResolve.map { it.content.id })
+        assertEquals(setOf("tt1"), plan.staleReleasePrecisionContentIds)
+        // It is not an artwork problem, so it must not claim the artwork path's LRU bypass.
+        assertTrue(plan.staleArtworkContentIds.isEmpty())
+    }
+
+    @Test
+    fun `a release already carrying a time of day is left alone`() {
+        val plan = planNextUpResolution(
+            completedSeriesCandidates = listOf(candidate("tt1")),
+            cachedNextUpItems = mapOf(
+                cachedCard(
+                    "tt1",
+                    episodeThumbnail = "still.jpg",
+                    released = "2026-09-02T04:00:00.000Z",
+                ),
+            ),
+            todayIsoDate = "2026-09-01",
+        )
+
+        assertTrue(plan.candidatesToResolve.isEmpty())
+        assertTrue(plan.staleReleasePrecisionContentIds.isEmpty())
+    }
+
+    @Test
+    fun `a date-only release far from its air date is not worth a fetch`() {
+        val plan = planNextUpResolution(
+            completedSeriesCandidates = listOf(candidate("tt1")),
+            cachedNextUpItems = mapOf(
+                cachedCard("tt1", episodeThumbnail = "still.jpg", released = "2026-09-20"),
+            ),
+            todayIsoDate = "2026-09-01",
+        )
+
+        assertTrue(plan.candidatesToResolve.isEmpty())
+        assertTrue(plan.staleReleasePrecisionContentIds.isEmpty())
+    }
+
+    @Test
+    fun `a card needing both artwork and release precision is only resolved once`() {
+        val plan = planNextUpResolution(
+            completedSeriesCandidates = listOf(candidate("tt1")),
+            cachedNextUpItems = mapOf(
+                cachedCard("tt1", episodeThumbnail = null, released = "2026-09-01"),
+            ),
+            todayIsoDate = "2026-09-01",
+        )
+
+        assertEquals(listOf("tt1"), plan.candidatesToResolve.map { it.content.id })
     }
 }

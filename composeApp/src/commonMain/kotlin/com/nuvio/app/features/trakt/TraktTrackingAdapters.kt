@@ -15,6 +15,7 @@ import com.nuvio.app.features.tracking.TrackingProviderId
 import com.nuvio.app.features.tracking.TrackingRefreshIntent
 import com.nuvio.app.features.tracking.TrackingScrobbleAction
 import com.nuvio.app.features.tracking.TrackingScrobbleEvent
+import com.nuvio.app.features.tracking.TrackingScrobbleResult
 import com.nuvio.app.features.tracking.TrackingScrobbler
 import com.nuvio.app.features.tracking.TrackingSeekScrobblePolicy
 import kotlinx.coroutines.flow.StateFlow
@@ -78,11 +79,11 @@ object TraktScrobbleAdapter : TrackingScrobbler {
         profileId: Int,
         action: TrackingScrobbleAction,
         event: TrackingScrobbleEvent,
-    ): Boolean {
+    ): TrackingScrobbleResult {
         // The coordinator already gates on the active profile, and the repository resolves the
         // active profile itself when building auth headers and dedupe stamps.
         val media = event.media
-        val catalog = media.catalog ?: return false
+        val catalog = media.catalog ?: return TrackingScrobbleResult.Declined
         // Null means no Trakt-supported id resolved; the repository refuses title-only matches
         // rather than risk scrobbling the wrong show.
         val item = TraktScrobbleRepository.buildItem(
@@ -93,21 +94,17 @@ object TraktScrobbleAdapter : TrackingScrobbler {
             seasonNumber = media.episode?.season,
             episodeNumber = media.episode?.number,
             episodeTitle = media.episode?.title,
-        ) ?: return false
+        ) ?: return TrackingScrobbleResult.Declined
         val progressPercent = event.progressPercent.toFloat()
 
         return when (action) {
-            TrackingScrobbleAction.START -> {
-                TraktScrobbleRepository.scrobbleStart(item = item, progressPercent = progressPercent)
-                true
-            }
-            TrackingScrobbleAction.STOP -> {
-                TraktScrobbleRepository.scrobbleStop(item = item, progressPercent = progressPercent)
-                true
-            }
+            TrackingScrobbleAction.START ->
+                TraktScrobbleRepository.scrobbleStart(item = item, progressPercent = progressPercent).copy(handled = true)
+            TrackingScrobbleAction.STOP ->
+                TraktScrobbleRepository.scrobbleStop(item = item, progressPercent = progressPercent).copy(handled = true)
             // Trakt has a pause endpoint, but nothing emits PAUSE yet and wiring it here would
             // change what this provider sends. It is added with the players that need it.
-            TrackingScrobbleAction.PAUSE -> false
+            TrackingScrobbleAction.PAUSE -> TrackingScrobbleResult.Declined
         }
     }
 }

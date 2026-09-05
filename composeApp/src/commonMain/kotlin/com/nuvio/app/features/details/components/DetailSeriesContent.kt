@@ -72,6 +72,7 @@ import com.nuvio.app.core.i18n.localizedSeasonEpisodeCode
 import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
 import com.nuvio.app.core.ui.NuvioCardDepthSurface
 import com.nuvio.app.core.ui.nuvioCardDepth
+import com.nuvio.app.core.ui.nuvioPosterHighlight
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.core.ui.NuvioShelfItemSlot
 import com.nuvio.app.core.ui.desktopHorizontalListNavigation
@@ -985,6 +986,7 @@ private fun EpisodeHorizontalRow(
     val rowMetrics = rememberEpisodeHorizontalCardMetrics(maxWidthDp, compactDesktopLayout)
     val listState = rememberLazyListState()
     var hasPositioned by remember(episodes) { mutableStateOf(false) }
+    var hoveredEpisodeIndex by remember(episodes) { mutableStateOf<Int?>(null) }
     val itemExtentPx = with(LocalDensity.current) { (rowMetrics.cardWidth + rowMetrics.itemSpacing).toPx() }
 
     LaunchedEffect(episodes, preferredEpisodeNumber) {
@@ -1048,7 +1050,10 @@ private fun EpisodeHorizontalRow(
                 fallbackVideoId = episode.id,
             )
             val episodeProgressEntry = progressByVideoId.progressForEpisodeVideo(episodeVideoId, episode.id)
-            NuvioShelfItemSlot(focused = index == focusedEpisodeIndex) {
+            NuvioShelfItemSlot(
+                focused = index == focusedEpisodeIndex || (focusedEpisodeIndex == null && index == hoveredEpisodeIndex),
+                onHover = { hoveredEpisodeIndex = index },
+            ) {
                 EpisodeHorizontalCard(
                     video = episode,
                     fallbackImage = fallbackImage,
@@ -1093,6 +1098,7 @@ private fun EpisodeHorizontalCard(
         modifier = Modifier
             .width(metrics.cardWidth)
             .height(metrics.cardHeight)
+            .nuvioPosterHighlight(metrics.cornerRadius)
             .clip(cardShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .nuvioCardDepth(cardShape, NuvioCardDepthSurface.Episodes)
@@ -1247,7 +1253,6 @@ private fun EpisodeHorizontalCard(
                         .padding(horizontal = metrics.contentPadding, vertical = 8.dp),
                     height = 4.dp,
                     trackColor = Color.White.copy(alpha = 0.22f),
-                    fillColor = MaterialTheme.colorScheme.primary,
                 )
             }
     }
@@ -1971,6 +1976,7 @@ private fun EpisodeListCard(
         modifier = modifier
             .fillMaxWidth()
             .height(sizing.cardHeight)
+            .nuvioPosterHighlight(sizing.cardRadius)
             .clip(cardShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .border(
@@ -2128,7 +2134,6 @@ private fun EpisodeListCard(
                         .padding(start = 12.dp, bottom = 10.dp),
                     height = 5.dp,
                     trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.14f),
-                    fillColor = MaterialTheme.colorScheme.primary,
                 )
             }
     }

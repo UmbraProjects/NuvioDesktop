@@ -1,7 +1,6 @@
 package com.nuvio.app.features.tmdb
 
 import co.touchlab.kermit.Logger
-import com.nuvio.app.features.addons.httpGetText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -11,6 +10,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+
+private const val EXTERNAL_ID_CACHE_WRITE_DELAY_MS = 5_000L
 
 object TmdbService {
     private val log = Logger.withTag("TmdbService")
@@ -27,6 +28,77 @@ object TmdbService {
      */
     private val unresolvedExternalIds = mutableSetOf<String>()
     private val cacheMutex = Mutex()
+
+    /**
+     * Disk hydration for the TMDB→IMDb half — plan §20.2.
+     *
+     * A title's IMDb id never changes, so re-fetching it every launch was pure waste: the
+     * hide-watched prune pass alone issued ~495 `external_ids` calls per Discover build and starved
+     * the row fetches of TMDB permits for 25 seconds. Loaded once, lazily, on the first external-id
+     * lookup rather than at startup — nothing may be added to the startup path (§8).
+     */
+    private var externalIdCacheHydrated = false
+
+    /** Set when a new mapping is learned, cleared by the writer. Guarded by [cacheMutex]. */
+    private var externalIdCacheDirty = false
+
+    /**
+     * Whether a debounced write is already pending.
+     *
+     * Without this, a prune pass learning several hundred mappings launches several hundred
+     * coroutines that each sleep five seconds to discover there is nothing left to do — piling
+     * scheduler work onto the exact burst this cache exists to make cheaper.
+     */
+    private var externalIdCacheWritePending = false
+
+    private val cacheScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private suspend fun hydrateExternalIdCache() {
+        cacheMutex.withLock {
+            if (externalIdCacheHydrated) return
+            externalIdCacheHydrated = true
+            val stored = runCatching { TmdbExternalIdCacheStorage.load() }.getOrNull().orEmpty()
+            if (stored.isEmpty()) return
+            stored.forEach { (key, imdbId) ->
+                // Anything already resolved this session wins: it came from the API just now.
+                if (key !in tmdbToImdbCache) tmdbToImdbCache[key] = imdbId
+                val type = key.substringAfterLast(':', "")
+                if (type.isNotBlank()) imdbToTmdbCache.getOrPut("$imdbId:$type") {
+                    key.substringBeforeLast(':')
+                }
+            }
+            log.d { "External-id cache restored: ${stored.size} mappings" }
+        }
+    }
+
+    /**
+     * Schedules a write.
+     *
+     * Debounced rather than written per resolution: a prune pass learns hundreds of mappings in a
+     * burst, and serialising the whole map each time would turn a fix for request pressure into
+     * disk pressure. Losing the last few seconds of learning to a crash costs one re-fetch each.
+     */
+    private suspend fun scheduleExternalIdCacheWrite() {
+        val alreadyPending = cacheMutex.withLock {
+            val pending = externalIdCacheWritePending
+            externalIdCacheWritePending = true
+            pending
+        }
+        if (alreadyPending) return
+        cacheScope.launch {
+            kotlinx.coroutines.delay(EXTERNAL_ID_CACHE_WRITE_DELAY_MS)
+            val snapshot = cacheMutex.withLock {
+                externalIdCacheWritePending = false
+                if (!externalIdCacheDirty) return@launch
+                externalIdCacheDirty = false
+                // Snapshotted under the lock: the writer serialises on another thread, and the map
+                // keeps being written to while it does.
+                tmdbToImdbCache.toMap()
+            }
+            runCatching { TmdbExternalIdCacheStorage.save(snapshot) }
+                .onFailure { log.w(it) { "External-id cache write failed" } }
+        }
+    }
 
     // One lock per external id being resolved. The cache alone doesn't help a fan-out, because it
     // is only populated once a lookup finishes: a plugin repository with 60+ scrapers resolves the
@@ -101,6 +173,7 @@ object TmdbService {
 
         val cacheKey = "$tmdbId:${normalizeMediaType(mediaType)}"
         val negativeKey = "tmdbToImdb:$cacheKey"
+        hydrateExternalIdCache()
         cacheMutex.withLock {
             tmdbToImdbCache[cacheKey]?.let { return it }
             if (negativeKey in unresolvedExternalIds) return null
@@ -127,10 +200,13 @@ object TmdbService {
                 return@withExternalIdLookupLock null
             }
 
-            cacheMutex.withLock {
-                tmdbToImdbCache[cacheKey] = imdbId
+            val learned = cacheMutex.withLock {
+                val isNew = tmdbToImdbCache.put(cacheKey, imdbId) != imdbId
                 imdbToTmdbCache["$imdbId:${normalizeMediaType(mediaType)}"] = tmdbId.toString()
+                if (isNew) externalIdCacheDirty = true
+                isNew
             }
+            if (learned) scheduleExternalIdCacheWrite()
             imdbId
         }
     }
@@ -232,9 +308,18 @@ object TmdbService {
         return body
     }
 
+    private val genreNamesMutex = Mutex()
+    private val genreNamesCache = mutableMapOf<String, Map<Int, String>>()
+
     private val trendingMutex = Mutex()
     private var trendingMovieIds: Set<Int> = emptySet()
     private var trendingTvIds: Set<Int> = emptySet()
+    // The same fetch the id sets are derived from, kept whole. The trending badge only ever needed
+    // the ids, but Discover's "Trending in <genre>" rows need each item's genre ids and artwork —
+    // and re-requesting the identical pages to get them would double the cost of a cache that
+    // already holds the answer.
+    private var trendingMovieResults: List<TmdbSearchResult> = emptyList()
+    private var trendingTvResults: List<TmdbSearchResult> = emptyList()
     private var trendingFetchedAtMs: Long = 0L
 
     /**
@@ -255,6 +340,24 @@ object TmdbService {
         }
     }
 
+    /**
+     * TMDB's trending-this-week list for one media type, as whole records rather than bare ids.
+     *
+     * Shares [ensureTrendingLoaded]'s 6-hour cache with the trending badge, so a caller that wants
+     * the items pays nothing extra once the badge has warmed it (and warms it for the badge if it
+     * gets there first).
+     */
+    suspend fun fetchTrending(mediaType: String): List<TmdbSearchResult> {
+        ensureTrendingLoaded()
+        return trendingMutex.withLock {
+            when (normalizeMediaType(mediaType)) {
+                "tv" -> trendingTvResults
+                "movie" -> trendingMovieResults
+                else -> trendingMovieResults + trendingTvResults
+            }
+        }
+    }
+
     private suspend fun ensureTrendingLoaded() {
         val now = com.nuvio.app.features.watchprogress.WatchProgressClock.nowEpochMs()
         trendingMutex.withLock {
@@ -262,16 +365,24 @@ object TmdbService {
             if (fresh && trendingMovieIds.isNotEmpty() && trendingTvIds.isNotEmpty()) return
         }
         val apiKey = currentApiKey() ?: return
-        val movies = fetchTrendingIds("trending/movie/week", apiKey)
-        val tv = fetchTrendingIds("trending/tv/week", apiKey)
+        val movieResults = fetchTrendingResults("trending/movie/week", apiKey, "movie")
+        val tvResults = fetchTrendingResults("trending/tv/week", apiKey, "tv")
+        val movies = movieResults.mapTo(mutableSetOf()) { it.id }
+        val tv = tvResults.mapTo(mutableSetOf()) { it.id }
         // The full id sets are logged so the in-memory cache can be inspected from nuvio.log —
         // there is no on-disk copy of this cache.
         log.i { "TMDB trending refreshed: ${movies.size} movies, ${tv.size} tv" }
         log.d { "TMDB trending movie ids: ${movies.sorted()}" }
         log.d { "TMDB trending tv ids: ${tv.sorted()}" }
         trendingMutex.withLock {
-            if (movies.isNotEmpty()) trendingMovieIds = movies
-            if (tv.isNotEmpty()) trendingTvIds = tv
+            if (movies.isNotEmpty()) {
+                trendingMovieIds = movies
+                trendingMovieResults = movieResults
+            }
+            if (tv.isNotEmpty()) {
+                trendingTvIds = tv
+                trendingTvResults = tvResults
+            }
             // Only a fully successful refresh earns the full TTL. Previously one endpoint
             // failing (timeout/rate limit) while the other succeeded still stamped the cache
             // fresh, freezing the failed side as empty for 6 hours — no TV title could badge
@@ -285,18 +396,26 @@ object TmdbService {
         }
     }
 
-    private suspend fun fetchTrendingIds(endpoint: String, apiKey: String): Set<Int> {
-        val ids = mutableSetOf<Int>()
+    /**
+     * [mediaType] is stamped onto every result because the per-type trending endpoints omit
+     * `media_type` — and an unstamped tv record would later be looked up in the movie id space.
+     */
+    private suspend fun fetchTrendingResults(
+        endpoint: String,
+        apiKey: String,
+        mediaType: String,
+    ): List<TmdbSearchResult> {
+        val collected = mutableListOf<TmdbSearchResult>()
         for (page in 1..TRENDING_PAGES) {
-            val results = fetch<TmdbTrendingResponse>(
+            val results = fetch<TmdbSearchResponse>(
                 endpoint = endpoint,
                 apiKey = apiKey,
                 query = mapOf("page" to page.toString()),
             )?.results ?: break
-            ids += results.mapNotNull { it.id }
+            collected += results.filter { it.id > 0 }.map { it.withMediaType(mediaType) }
             if (results.isEmpty()) break
         }
-        return ids
+        return collected.distinctBy { it.id }
     }
 
     private val unreleasedScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -376,7 +495,7 @@ object TmdbService {
     ): T? {
         val url = buildTmdbUrl(endpoint = endpoint, apiKey = apiKey, query = query)
         return runCatching {
-            json.decodeFromString<T>(httpGetText(url))
+            json.decodeFromString<T>(TmdbHttp.getText(url))
         }.onFailure { error ->
             log.w { "TMDB request failed for $endpoint: ${error.message}" }
         }.getOrNull()
@@ -438,8 +557,213 @@ object TmdbService {
             .sortedByDescending { it.popularity }
     }
 
+    /**
+     * People matching [query], most prominent first.
+     *
+     * [TmdbPersonResult.knownForDepartment] is carried through because it is the only thing that
+     * disambiguates a picker result: TMDB is full of same-named people, and "Directing" beside a
+     * name is the difference between picking the director and picking an extra who shares his name.
+     */
+    suspend fun searchPeople(query: String): List<TmdbPersonResult> {
+        val apiKey = currentApiKey() ?: return emptyList()
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return emptyList()
+        return fetch<TmdbPersonSearchResponse>(
+            endpoint = "search/person",
+            apiKey = apiKey,
+            query = mapOf("query" to trimmed, "include_adult" to "false"),
+        )?.results.orEmpty()
+            .filter { it.id > 0 && it.name.isNotBlank() }
+            .sortedByDescending { it.popularity }
+    }
+
+    /** Production companies matching [query]. Ordered as TMDB returns them — no popularity here. */
+    suspend fun searchCompanies(query: String): List<TmdbCompanyResult> {
+        val apiKey = currentApiKey() ?: return emptyList()
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return emptyList()
+        return fetch<TmdbCompanySearchResponse>(
+            endpoint = "search/company",
+            apiKey = apiKey,
+            query = mapOf("query" to trimmed),
+        )?.results.orEmpty()
+            .filter { it.id > 0 && it.name.isNotBlank() }
+    }
+
+    /**
+     * TMDB's own "people who watched this also watched" list for one title.
+     *
+     * One request per seed, so callers must cap how many seeds they fan out over. Results carry
+     * [TmdbSearchResult.mediaType] stamped from [mediaType], because the endpoint omits it — and
+     * without it a tv result would later be looked up in the movie id space.
+     */
+    suspend fun fetchRecommendations(
+        tmdbId: Int,
+        mediaType: String,
+        page: Int = 1,
+    ): List<TmdbSearchResult> {
+        val apiKey = currentApiKey() ?: return emptyList()
+        if (tmdbId <= 0) return emptyList()
+        val normalized = normalizeMediaType(mediaType)
+        return fetch<TmdbSearchResponse>(
+            endpoint = "$normalized/$tmdbId/recommendations",
+            apiKey = apiKey,
+            query = mapOf("page" to page.toString()),
+        )?.results.orEmpty()
+            .filter { it.id > 0 && it.displayTitle.isNotBlank() }
+            .map { it.withMediaType(normalized) }
+    }
+
+    /**
+     * TMDB `/discover`, the query-backed counterpart to [fetchRecommendations].
+     *
+     * [genreIds] are ANDed (TMDB reads a comma-separated `with_genres` as "all of these"), so a
+     * two-genre call is deliberately narrow — callers wanting breadth should pass one. The vote
+     * floors exist because `popularity.desc` with no floor surfaces a lot of barely-rated noise.
+     * [maxVoteCount] is the inverse knob, for "well rated but little seen".
+     */
+    suspend fun fetchDiscover(
+        mediaType: String,
+        genreIds: List<Int> = emptyList(),
+        /**
+         * How multiple [genreIds] combine: `true` ANDs them (TMDB's comma form), `false` ORs them
+         * (its `|` form). Defaults to AND because that is what every generated row wants — each
+         * passes one or two genres it chose deliberately — but a user-defined row ticking four
+         * boxes means "any of these", and ANDing four genres returns essentially nothing.
+         */
+        genreMatchAll: Boolean = true,
+        sortBy: String = "popularity.desc",
+        minVoteCount: Int? = null,
+        maxVoteCount: Int? = null,
+        minVoteAverage: Double? = null,
+        /** Genre ids to exclude outright. ANDed against [genreIds] by TMDB. */
+        withoutGenreIds: List<Int> = emptyList(),
+        /**
+         * ISO dates bounding the release window. The parameters TMDB wants differ by media type,
+         * which is why these are named arguments rather than something callers pass through.
+         */
+        releasedBefore: String? = null,
+        releasedAfter: String? = null,
+        /** ISO 639-1 original language. */
+        originalLanguage: String? = null,
+        /**
+         * `with_release_type` (films) and `with_status` (television) — different questions with no
+         * equivalent in the other namespace, so each is sent only where it means something.
+         */
+        movieReleaseTypes: String? = null,
+        tvStatuses: String? = null,
+        /**
+         * Film certification. TMDB rejects `certification` without a `certification_country`, so
+         * both travel together or neither does. Films only; the tv endpoint has no such parameter.
+         */
+        certification: String? = null,
+        certificationCountry: String? = null,
+        /** `with_runtime` bounds in minutes. */
+        minRuntime: Int? = null,
+        maxRuntime: Int? = null,
+        /**
+         * Id lists, already joined by the caller — `|` ORs, `,` ANDs. `with_companies` works in both
+         * namespaces; `with_cast` and `with_crew` are film-only and are not sent to the tv endpoint,
+         * which would ignore them silently and return an unfiltered list.
+         */
+        companyIds: String? = null,
+        castIds: String? = null,
+        crewIds: String? = null,
+        page: Int = 1,
+    ): List<TmdbSearchResult> {
+        val apiKey = currentApiKey() ?: return emptyList()
+        val normalized = normalizeMediaType(mediaType)
+        if (normalized != "movie" && normalized != "tv") return emptyList()
+        return fetch<TmdbSearchResponse>(
+            endpoint = "discover/$normalized",
+            apiKey = apiKey,
+            query = buildMap {
+                put("sort_by", sortBy)
+                put("include_adult", "false")
+                put("page", page.toString())
+                if (genreIds.isNotEmpty()) {
+                    put("with_genres", genreIds.joinToString(if (genreMatchAll) "," else "|"))
+                }
+                if (withoutGenreIds.isNotEmpty()) put("without_genres", withoutGenreIds.joinToString(","))
+                minVoteCount?.let { put("vote_count.gte", it.toString()) }
+                maxVoteCount?.let { put("vote_count.lte", it.toString()) }
+                minVoteAverage?.let { put("vote_average.gte", it.toString()) }
+                releasedBefore?.let {
+                    put(if (normalized == "tv") "first_air_date.lte" else "primary_release_date.lte", it)
+                }
+                releasedAfter?.let {
+                    put(if (normalized == "tv") "first_air_date.gte" else "primary_release_date.gte", it)
+                }
+                originalLanguage?.takeIf { it.isNotBlank() }?.let { put("with_original_language", it) }
+                minRuntime?.takeIf { it > 0 }?.let { put("with_runtime.gte", it.toString()) }
+                maxRuntime?.takeIf { it > 0 }?.let { put("with_runtime.lte", it.toString()) }
+                companyIds?.takeIf { it.isNotBlank() }?.let { put("with_companies", it) }
+                if (normalized == "tv") {
+                    tvStatuses?.takeIf { it.isNotBlank() }?.let { put("with_status", it) }
+                } else {
+                    castIds?.takeIf { it.isNotBlank() }?.let { put("with_cast", it) }
+                    crewIds?.takeIf { it.isNotBlank() }?.let { put("with_crew", it) }
+                    movieReleaseTypes?.takeIf { it.isNotBlank() }?.let { put("with_release_type", it) }
+                    val country = certificationCountry?.takeIf { it.isNotBlank() }
+                    val rating = certification?.takeIf { it.isNotBlank() }
+                    if (country != null && rating != null) {
+                        put("certification_country", country)
+                        put("certification", rating)
+                    }
+                }
+            },
+        )?.results.orEmpty()
+            .filter { it.id > 0 && it.displayTitle.isNotBlank() }
+            .map { it.withMediaType(normalized) }
+    }
+
+    /**
+     * Genre id → display name for one media type. TMDB's genre lists change about never, so this
+     * is cached for the process lifetime rather than on a TTL.
+     */
+    suspend fun fetchGenreNames(mediaType: String): Map<Int, String> {
+        val normalized = normalizeMediaType(mediaType)
+        if (normalized != "movie" && normalized != "tv") return emptyMap()
+        genreNamesMutex.withLock { genreNamesCache[normalized] }?.let { return it }
+        val apiKey = currentApiKey() ?: return emptyMap()
+        val body = fetch<TmdbGenreListResponse>(
+            endpoint = "genre/$normalized/list",
+            apiKey = apiKey,
+        ) ?: return emptyMap()
+        val names = body.genres
+            .filter { it.id > 0 && it.name.isNotBlank() }
+            .associate { it.id to it.name }
+        if (names.isEmpty()) return emptyMap()
+        genreNamesMutex.withLock { genreNamesCache[normalized] = names }
+        return names
+    }
+
+    /**
+     * Genre ids for one title, from its details record — the only place TMDB states them for a
+     * title you hold by id rather than one that arrived in a list response.
+     */
+    suspend fun fetchGenreIds(tmdbId: Int, mediaType: String): List<Int> {
+        val apiKey = currentApiKey() ?: return emptyList()
+        if (tmdbId <= 0) return emptyList()
+        val endpoint = if (normalizeMediaType(mediaType) == "tv") "tv/$tmdbId" else "movie/$tmdbId"
+        val body = fetch<TmdbPosterResponse>(endpoint = endpoint, apiKey = apiKey) ?: return emptyList()
+        return body.genres.map { it.id }.filter { it > 0 }
+    }
+
     fun tmdbImageUrl(path: String?, size: String = "w500"): String? =
         path?.takeIf { it.isNotBlank() }?.let { "https://image.tmdb.org/t/p/$size$it" }
+
+    /**
+     * Canonical title for a TMDB id. Used when local data knows *which* title something is but not
+     * what it is called — some watch-history rows carry an empty name.
+     */
+    suspend fun fetchTitle(tmdbId: Int, mediaType: String): String? {
+        val apiKey = currentApiKey() ?: return null
+        if (tmdbId <= 0) return null
+        val endpoint = if (normalizeMediaType(mediaType) == "tv") "tv/$tmdbId" else "movie/$tmdbId"
+        val body = fetch<TmdbPosterResponse>(endpoint = endpoint, apiKey = apiKey) ?: return null
+        return (body.title ?: body.name)?.trim()?.takeIf { it.isNotBlank() }
+    }
 
     /** Poster URL for a TMDB id, used when a match was made by id (no poster path in hand). */
     suspend fun fetchPosterUrl(tmdbId: Int, mediaType: String, size: String = "w500"): String? =
@@ -484,7 +808,11 @@ private const val TRENDING_CACHE_TTL_MS = 6 * 60 * 60 * 1000L
 
 // TMDB trending pages are 20 items each; 2 pages = top 40 per media type (movies and TV
 // each get their own 40 — the lists are independent).
-private const val TRENDING_PAGES = 2
+// Three, not two, since Discover's "Trending in <genre>" rows hold 50 items and take their
+// candidates from this shared pool by intersecting it with one genre — two pages left every such
+// row leaning on its discover top-up. Also widens the trending badge's window, which is harmless:
+// the badge asks whether a title is in the pool, and the pool is cached for six hours either way.
+private const val TRENDING_PAGES = 3
 
 // Retry delay after a failed/partial trending refresh (see ensureTrendingLoaded).
 private const val TRENDING_FAILURE_RETRY_MS = 15 * 60 * 1000L
@@ -526,19 +854,57 @@ private data class TmdbReleaseStatusDate(
 )
 
 @Serializable
-private data class TmdbTrendingResponse(
-    val results: List<TmdbTrendingItem> = emptyList(),
+private data class TmdbSearchResponse(
+    val results: List<TmdbSearchResult> = emptyList(),
 )
 
 @Serializable
-private data class TmdbSearchResponse(
-    val results: List<TmdbSearchResult> = emptyList(),
+private data class TmdbPersonSearchResponse(
+    val results: List<TmdbPersonResult> = emptyList(),
+)
+
+@Serializable
+data class TmdbPersonResult(
+    val id: Int = 0,
+    val name: String = "",
+    @SerialName("known_for_department") val knownForDepartment: String? = null,
+    val popularity: Double = 0.0,
+)
+
+@Serializable
+private data class TmdbCompanySearchResponse(
+    val results: List<TmdbCompanyResult> = emptyList(),
+)
+
+@Serializable
+data class TmdbCompanyResult(
+    val id: Int = 0,
+    val name: String = "",
+    /** Where the company is registered. Two studios share a name often enough for this to matter. */
+    @SerialName("origin_country") val originCountry: String? = null,
 )
 
 @Serializable
 private data class TmdbPosterResponse(
     @SerialName("poster_path") val posterPath: String? = null,
     @SerialName("backdrop_path") val backdropPath: String? = null,
+    // The same details request already carries the canonical title; `title` for films, `name` for
+    // shows. Read here so a caller needing only the name does not pay for a second endpoint.
+    val title: String? = null,
+    val name: String? = null,
+    // Details records spell genres out as objects, unlike the bare `genre_ids` of list responses.
+    val genres: List<TmdbGenre> = emptyList(),
+)
+
+@Serializable
+internal data class TmdbGenre(
+    val id: Int = 0,
+    val name: String = "",
+)
+
+@Serializable
+private data class TmdbGenreListResponse(
+    val genres: List<TmdbGenre> = emptyList(),
 )
 
 /** Ready-to-use image URLs for a TMDB title. */
@@ -559,6 +925,15 @@ data class TmdbSearchResult(
     @SerialName("first_air_date") val firstAirDate: String? = null,
     val popularity: Double = 0.0,
     @SerialName("media_type") val mediaType: String? = null,
+    /**
+     * TMDB genre ids, as the list endpoints return them. **Namespaced by media type**: 10759
+     * ("Action & Adventure") exists only for tv and 28 ("Action") only for movies, so an id is
+     * only meaningful alongside [mediaType]. Resolve names with [TmdbService.fetchGenreNames] for
+     * the *same* type the item came from.
+     */
+    @SerialName("genre_ids") val genreIds: List<Int> = emptyList(),
+    @SerialName("vote_average") val voteAverage: Double = 0.0,
+    @SerialName("vote_count") val voteCount: Int = 0,
 ) {
     val displayTitle: String
         get() = (title ?: name).orEmpty()
@@ -571,11 +946,6 @@ data class TmdbSearchResult(
 
     internal fun withMediaType(value: String): TmdbSearchResult = copy(mediaType = value)
 }
-
-@Serializable
-private data class TmdbTrendingItem(
-    val id: Int? = null,
-)
 
 internal fun buildTmdbUrl(
     endpoint: String,

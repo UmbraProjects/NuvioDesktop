@@ -1,6 +1,7 @@
 package com.nuvio.app.features.player.desktop
 
 import androidx.compose.ui.graphics.Color
+import co.touchlab.kermit.Logger
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.features.player.PlayerControlAddonSubtitleItem
 import com.nuvio.app.features.player.PlayerControlAudioTrackItem
@@ -33,6 +34,8 @@ import com.nuvio.app.features.player.PlayerResizeMode
 import com.nuvio.app.features.player.PlayerShortcutAction
 import com.nuvio.app.features.player.PlayerShortcutsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.player.SUBTITLE_ASS_SCALE_MAX
+import com.nuvio.app.features.player.SUBTITLE_ASS_SCALE_MIN
 import com.nuvio.app.features.player.SUBTITLE_BLUR_MAX
 import com.nuvio.app.features.player.SUBTITLE_BLUR_MIN
 import com.nuvio.app.features.player.SUBTITLE_DELAY_MAX_MS
@@ -40,6 +43,7 @@ import com.nuvio.app.features.player.SUBTITLE_DELAY_MIN_MS
 import com.nuvio.app.features.player.SubtitleColorSwatches
 import com.nuvio.app.features.player.SubtitleBackgroundColorSwatches
 import com.nuvio.app.features.player.SubtitleShadowColorSwatches
+import com.nuvio.app.features.player.SubtitleAssStyleMode
 import com.nuvio.app.features.player.SubtitleStyleState
 import com.nuvio.app.features.player.subtitleShadowOffsetLabel
 import com.nuvio.app.features.player.SubtitleTrack
@@ -190,6 +194,10 @@ internal class NativePlayerController(
             .takeIf { resumePositionMs <= 0L && it > 0f }
             ?.coerceIn(0f, 1f)
             ?: 0f
+        synchronized(pendingMpvProperties) {
+            // A previous source's rendering graph must never be replayed before the next probe.
+            pendingMpvProperties.clear()
+        }
         val pending = PendingSource(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl?.takeIf { it.isNotBlank() },
@@ -206,6 +214,9 @@ internal class NativePlayerController(
                 )
             } else null,
             extraMpvOptions = buildList {
+                if (tracePlaybackStart && DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+                    add("@nuvio-trace-id=${PlaybackStartTrace.currentId}")
+                }
                 if (isProviderPlaybackEndpoint(sourceUrl) || isExplicitProviderDiagnosticVideoUrl(sourceUrl)) {
                     add("ytdl=no")
                 }
@@ -397,15 +408,14 @@ internal class NativePlayerController(
         lastSentControlsStructureKey = structureKey
         AppShortcutsRepository.ensureLoaded()
         PlayerShortcutsRepository.ensureLoaded()
-        NativePlayerBridge.updateControls(
-            current,
-            state.toControlsJson(
-                appFullscreenKeyCode = AppShortcutsRepository.keyCode(AppShortcutAction.ToggleFullscreen),
-                playerShortcutKeyCodes = PlayerShortcutAction.entries.associate { action ->
-                    action.id to PlayerShortcutsRepository.keyCode(action)
-                },
-            ),
+        val controlsJson = state.toControlsJson(
+            appFullscreenKeyCode = AppShortcutsRepository.keyCode(AppShortcutAction.ToggleFullscreen),
+            playerShortcutKeyCodes = PlayerShortcutAction.entries.associate { action ->
+                action.id to PlayerShortcutsRepository.keyCode(action)
+            },
         )
+        if (!controlsJsonIsWellFormed(controlsJson)) return
+        NativePlayerBridge.updateControls(current, controlsJson)
     }
 
     fun setResizeMode(mode: PlayerResizeMode) {
@@ -423,7 +433,36 @@ internal class NativePlayerController(
         }
     }
 
+    private var videoProfileProperties: LinkedHashMap<String, String>? = null
+    private var videoProfileRedraw = false
+
+    /** Collect one final value per property before touching the decoder or rendering surface. */
+    fun <T> withVideoProfile(block: () -> T): T {
+        check(videoProfileProperties == null)
+        val properties = linkedMapOf<String, String>()
+        videoProfileProperties = properties
+        videoProfileRedraw = false
+        try {
+            val result = block()
+            videoProfileProperties = null
+            val current = handle
+            val windows = DesktopHostOs.current == DesktopHostOs.WINDOWS && current != 0L
+            if (windows) NativePlayerBridge.beginVideoProfile(current)
+            try {
+                properties.forEach { (key, value) -> setMpvProperty(key, value) }
+            } finally {
+                if (windows) NativePlayerBridge.endVideoProfile(current)
+                else if (videoProfileRedraw) forceVideoRedraw()
+            }
+            return result
+        } finally {
+            videoProfileProperties = null
+            videoProfileRedraw = false
+        }
+    }
+
     fun setMpvProperty(key: String, value: String) {
+        videoProfileProperties?.let { it[key] = value; return }
         synchronized(pendingMpvProperties) {
             pendingMpvProperties[key] = value
         }
@@ -436,6 +475,7 @@ internal class NativePlayerController(
 
     /** Forces mpv to repaint the embedded video surface (see native forceVideoRedraw). */
     fun forceVideoRedraw() {
+        if (videoProfileProperties != null) { videoProfileRedraw = true; return }
         val current = handle
         if (current == 0L) {
             pendingVideoRedraw = true
@@ -869,6 +909,21 @@ internal class NativePlayerController(
             showPlaybackSpeedPillFromNative()
             return
         }
+        // The overlay reports an episode card whose artwork never arrived, after its own retries
+        // and the fallback have both failed. Without this the failure is invisible from the app
+        // side: the card is simply blank, and nothing distinguishes "the payload carried no URL"
+        // (missing still upstream) from "the URL was there and the WebView could not fetch it".
+        if (type == "episodeArtworkFailed") {
+            val index = value.toInt()
+            val item = controlsState.episodeItems.firstOrNull { it.index == index }
+            episodeArtworkLog.w {
+                "Episode card artwork failed: " +
+                    "index=$index code=${item?.code.orEmpty()} title=${item?.title.orEmpty()} " +
+                    "thumbnail=${item?.thumbnail?.ifBlank { "<none>" } ?: "<unknown item>"} " +
+                    "fallback=${controlsState.episodeFallbackThumbnail.ifBlank { "<none>" }}"
+            }
+            return
+        }
         if (type == "keyboardPanelOpened") {
             keyboardPanelOpen = true
             return
@@ -958,12 +1013,21 @@ internal class NativePlayerController(
                 }
             }
             PlayerControlsAction.SeekBack,
-            PlayerControlsAction.KeyboardSeekBack -> fallbackSeekBy(-10_000L)
+            PlayerControlsAction.KeyboardSeekBack -> fallbackSeekBy(-configuredSeekStepMs())
             PlayerControlsAction.SeekForward,
-            PlayerControlsAction.KeyboardSeekForward -> fallbackSeekBy(10_000L)
+            PlayerControlsAction.KeyboardSeekForward -> fallbackSeekBy(configuredSeekStepMs())
             PlayerControlsAction.Speed -> cycleFallbackSpeed()
             else -> Unit
         }
+    }
+
+    /**
+     * The fallback path runs when Compose never saw the action, so it has no settings snapshot to
+     * read — go to the repository directly, the same way the HUD's own preset writes do.
+     */
+    private fun configuredSeekStepMs(): Long {
+        PlayerSettingsRepository.ensureLoaded()
+        return PlayerSettingsRepository.uiState.value.seekStepSeconds.toLong() * 1_000L
     }
 
     private fun fallbackSeekBy(offsetMs: Long) {
@@ -1329,6 +1393,14 @@ internal class NativePlayerController(
             style.blur.coerceIn(SUBTITLE_BLUR_MIN, SUBTITLE_BLUR_MAX).toString(),
         )
         NativePlayerBridge.setMpvProperty(current, "sub-italic", if (style.italic) "yes" else "no")
+        // ASS/SSA tracks: the override level decides how much of everything else below reaches
+        // them at all, and carries its own size factor. Both go through one native call because the
+        // bridge has to know which subtitle track is selected before it can apply either.
+        NativePlayerBridge.setSubtitleAssStyleMode(
+            current,
+            style.assStyleMode.mpvValue,
+            style.toMpvSubtitleAssScale(),
+        )
         NativePlayerBridge.applySubtitleStyle(
             handle = current,
             textColor = style.textColor.toMpvColorString(),
@@ -1513,6 +1585,12 @@ private fun Color.toMpvColorString(): String {
         append(blueInt.toHexByte())
     }
 }
+
+// mpv's sub-scale is a plain multiplier; the UI stores it as a percentage so it round-trips
+// through the integer settings store. Clamped to the UI's own range so a corrupt persisted value
+// cannot render subtitles invisibly small or absurdly large.
+private fun SubtitleStyleState.toMpvSubtitleAssScale(): Double =
+    assScalePercent.coerceIn(SUBTITLE_ASS_SCALE_MIN, SUBTITLE_ASS_SCALE_MAX) / 100.0
 
 private fun SubtitleStyleState.toMpvSubtitlePosition(): Int =
     (100 - (bottomOffset / 2)).coerceIn(0, 150)
@@ -1708,6 +1786,52 @@ private fun String.toPlayerControlsAction(): PlayerControlsAction? =
         else -> null
     }
 
+private val controlsJsonLog = Logger.withTag("PlayerControlsJson")
+
+private val episodeArtworkLog = Logger.withTag("PlayerEpisodeArtwork")
+
+/**
+ * Guards the hand-built controls payload, which is assembled by [toControlsJson] as a raw string
+ * with a manual `append(',')` between every field and injected as
+ * `window.playerControls(JSON.parse("…"))`.
+ *
+ * A single missed separator makes the whole document invalid, and the HUD's failure is total and
+ * silent: `JSON.parse` throws inside the WebView, `window.playerControls` never runs, and the
+ * overlay keeps whatever its initial render produced. What that looks like from the outside is
+ * every player setting reading as its compile-time default — scale 0, no media title, failover off,
+ * colour profile Neutral — while the settings screen and the playback engine show the real values,
+ * because those read the repository and never touch this JSON. There is no `window.onerror` in
+ * controls.js and no console bridge, so nothing is logged on the web side at all.
+ *
+ * That has now happened twice (`submitIntroSegmentPreviewLabel`, `themeAccentFill`), both times
+ * costing a long hunt through the wrong layer. Parsing here turns it into one log line naming the
+ * offending field. The payload is only rebuilt when the structure key actually changes, so this is
+ * not on the per-frame path.
+ */
+internal fun controlsJsonIsWellFormed(payload: String): Boolean {
+    val error = runCatching { Json.parseToJsonElement(payload) }.exceptionOrNull() ?: return true
+    controlsJsonLog.e(error) {
+        "Controls payload is not valid JSON, so the HUD would silently keep its defaults. " +
+            "Almost certainly a missing append(',') in toControlsJson near: " +
+            payloadExcerptAroundFailure(payload, error.message.orEmpty())
+    }
+    return false
+}
+
+/**
+ * kotlinx reports the byte offset it gave up at, which is the cheapest possible pointer at the
+ * field whose separator is missing — the name is a few characters to its left. Falls back to the
+ * head of the payload when the message carries no offset.
+ */
+internal fun payloadExcerptAroundFailure(payload: String, message: String): String {
+    val offset = Regex("offset (\\d+)").find(message)?.groupValues?.get(1)?.toIntOrNull()
+        ?: return payload.take(200)
+    return payload.substring(
+        (offset - 160).coerceAtLeast(0),
+        (offset + 40).coerceAtMost(payload.length),
+    )
+}
+
 private fun PlayerControlsState.toControlsJson(
     appFullscreenKeyCode: Int,
     playerShortcutKeyCodes: Map<String, Int>,
@@ -1779,6 +1903,8 @@ private fun PlayerControlsState.toControlsJson(
         appendJsonField("activeSubtitleLabel", activeSubtitleLabel)
         append(',')
         appendJsonField("seekThumbnailsEnabled", seekThumbnailsEnabled)
+        append(',')
+        appendJsonField("seekStepSeconds", seekStepSeconds)
         append(',')
         appendJsonField("tapToUnlockLabel", tapToUnlockLabel)
         append(',')
@@ -1888,6 +2014,22 @@ private fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("bottomOffsetLabel", bottomOffsetLabel)
         append(',')
+        appendJsonField("assStyleModeLabel", assStyleModeLabel)
+        append(',')
+        appendJsonField("assScaleLabel", assScaleLabel)
+        append(',')
+        appendJsonField("assStyleModeValueLabel", assStyleModeValueLabel)
+        append(',')
+        // The level list itself, so the panel's dropdown is built from the enum rather than from a
+        // copy of it kept in the overlay that could drift out of order.
+        appendJsonArrayField("subtitleAssStyleModes", SubtitleAssStyleMode.entries.toList()) { mode ->
+            append('{')
+            appendJsonField("value", mode.name)
+            append(',')
+            appendJsonField("label", mode.label)
+            append('}')
+        }
+        append(',')
         appendJsonField("colorLabel", colorLabel)
         append(',')
         appendJsonField("textOpacityLabel", textOpacityLabel)
@@ -1902,9 +2044,13 @@ private fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("offLabel", offLabel)
         append(',')
+        appendJsonField("posterHighlightMode", posterHighlightMode)
+        append(',')
         appendJsonField("themeAccentColor", themeAccentColor)
         append(',')
         appendJsonField("themeAccentStrongColor", themeAccentStrongColor)
+        append(',')
+        appendJsonField("themeAccentFill", themeAccentFill)
         append(',')
         appendJsonField("themeOnAccentColor", themeOnAccentColor)
         append(',')
@@ -1954,7 +2100,11 @@ private fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("uiScalePercent", uiScalePercent)
         append(',')
+        appendJsonField("uiFontFamily", uiFontFamily)
+        append(',')
         appendJsonField("sourceNotchPosition", sourceNotchPosition)
+        append(',')
+        appendJsonField("notificationPosition", notificationPosition)
         append(',')
         appendJsonArrayField("parentalWarnings", parentalWarnings) { appendParentalWarningJson(it) }
         append(',')
@@ -2021,6 +2171,8 @@ private fun PlayerControlsState.toControlsJson(
         appendJsonArrayField("sourceItems", sourceItems) { appendSourceItemJson(it) }
         append(',')
         appendJsonArrayField("episodeItems", episodeItems) { appendEpisodeItemJson(it) }
+        append(',')
+        appendJsonField("episodeFallbackThumbnail", episodeFallbackThumbnail)
         append(',')
         appendJsonArrayField("episodeSeasons", episodeSeasons) { appendSeasonItemJson(it) }
         append(',')
@@ -2298,6 +2450,8 @@ private fun StringBuilder.appendAudioTrackItemJson(item: PlayerControlAudioTrack
     append(',')
     appendJsonField("label", item.label)
     append(',')
+    appendJsonField("languageLabel", item.languageLabel)
+    append(',')
     appendJsonField("isSelected", item.isSelected)
     append('}')
 }
@@ -2359,6 +2513,12 @@ private fun StringBuilder.appendSubtitleStyleJson(style: SubtitleStyleState) {
     appendJsonField("bottomOffset", style.bottomOffset)
     append(',')
     appendJsonField("fontFamily", style.fontFamily)
+    append(',')
+    // The enum name, not its label: the panel resolves the display name through the mode list it
+    // was sent, and `assStyleModeValueLabel` at the top level carries the label for the menu tick.
+    appendJsonField("assStyleMode", style.assStyleMode.name)
+    append(',')
+    appendJsonField("assScalePercent", style.assScalePercent)
     append('}')
 }
 

@@ -169,6 +169,21 @@ object LocalLibraryRepository {
         return playbackPreference
     }
 
+    /**
+     * Whether [path] is a file this library owns, i.e. it sits under one of the configured roots.
+     *
+     * Deliberately a path test rather than a scan lookup: a download the PVR/manual grab just
+     * finished into a library folder is a library file the instant it lands, but does not become a
+     * scanned [LocalMediaItem] until the next rescan. Callers use this to decide what a local file
+     * is *called*, and a name that flips after a background rescan would be worse than either
+     * answer. Blank paths and folder-less setups answer false.
+     */
+    fun servesPath(path: String?): Boolean {
+        if (path.isNullOrBlank()) return false
+        ensureLoaded()
+        return folders.any { path.isInsideDirectory(it.path) }
+    }
+
     fun rescan() {
         ensureLoaded()
         if (folders.isEmpty()) {
@@ -809,10 +824,10 @@ object LocalLibraryRepository {
 
     private fun LocalMediaFile.toStreamItem(): StreamItem =
         StreamItem(
-            name = "Local File",
+            name = LOCAL_LIBRARY_STREAM_NAME,
             title = fileName,
             url = path,
-            addonName = "Local Library",
+            addonName = LOCAL_LIBRARY_PROVIDER_NAME,
             addonId = "locallibrary",
             streamType = "local",
         )

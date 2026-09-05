@@ -338,8 +338,11 @@ class WatchProgressRulesTest {
         val t1 = parseReleaseDateToEpochMs("2026-05-24T15:00:00Z")
         assertEquals(1779634800000L, t1)
 
+        // A bare date is that day's LOCAL midnight, not UTC midnight — asserting the constant here
+        // would only pass in London.
         val t2 = parseReleaseDateToEpochMs("2026-05-24")
-        assertEquals(1779580800000L, t2) // 2026-05-24T00:00:00Z is 1779580800 seconds
+        assertEquals(CurrentDateProvider.startOfLocalDayEpochMs("2026-05-24"), t2)
+        assertEquals("2026-05-24", CurrentDateProvider.localIsoDateAt(t2!!))
 
         assertNull(parseReleaseDateToEpochMs(null))
         assertNull(parseReleaseDateToEpochMs("   "))

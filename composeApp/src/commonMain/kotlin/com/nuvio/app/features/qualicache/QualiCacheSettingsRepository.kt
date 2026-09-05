@@ -13,6 +13,7 @@ object QualiCacheSettingsRepository {
     private var enabled = false
     private var baseUrl = ""
     private var accessKey = ""
+    private var minimumTrust = QualiCacheMinimumTrust.HIGH
     private var showResolution = true
     private var showDynamicRange = true
     private var showAudio = true
@@ -69,6 +70,16 @@ object QualiCacheSettingsRepository {
         QualiCacheQualityService.invalidate()
     }
 
+    fun setMinimumTrust(value: QualiCacheMinimumTrust) {
+        ensureLoaded()
+        if (minimumTrust == value) return
+        minimumTrust = value
+        publish()
+        QualiCacheSettingsStorage.saveMinimumTrust(value.apiValue)
+        // A cached empty/high-tier answer is not authoritative for a wider policy.
+        QualiCacheQualityService.invalidate()
+    }
+
     fun setCategoryEnabled(category: QualityBadgeCategory, value: Boolean) {
         ensureLoaded()
         when (category) {
@@ -90,8 +101,21 @@ object QualiCacheSettingsRepository {
 
     private fun loadFromDisk() {
         hasLoaded = true
-        baseUrl = normalizeBaseUrl(QualiCacheSettingsStorage.loadBaseUrl().orEmpty())
+        val storedBaseUrl = QualiCacheSettingsStorage.loadBaseUrl().orEmpty()
+        val legacyMinimumTrust = minimumTrustFromUrl(storedBaseUrl)
+        baseUrl = normalizeBaseUrl(storedBaseUrl)
+        if (storedBaseUrl.trim() != baseUrl) {
+            // Persist the canonical origin so a legacy query string cannot reappear next launch.
+            QualiCacheSettingsStorage.saveBaseUrl(baseUrl)
+        }
         accessKey = QualiCacheSettingsStorage.loadAccessKey().orEmpty().trim()
+        val storedMinimumTrust = QualiCacheSettingsStorage.loadMinimumTrust()
+        minimumTrust = QualiCacheMinimumTrust.fromStorage(storedMinimumTrust)
+            ?: legacyMinimumTrust
+            ?: QualiCacheMinimumTrust.HIGH
+        if (storedMinimumTrust.isNullOrBlank() && legacyMinimumTrust != null) {
+            QualiCacheSettingsStorage.saveMinimumTrust(minimumTrust.apiValue)
+        }
         enabled = (QualiCacheSettingsStorage.loadEnabled() ?: false) && baseUrl.isNotBlank()
         showResolution = QualiCacheSettingsStorage.loadShowResolution() ?: true
         showDynamicRange = QualiCacheSettingsStorage.loadShowDynamicRange() ?: true
@@ -104,6 +128,7 @@ object QualiCacheSettingsRepository {
             enabled = enabled,
             baseUrl = baseUrl,
             accessKey = accessKey,
+            minimumTrust = minimumTrust,
             showResolution = showResolution,
             showDynamicRange = showDynamicRange,
             showAudio = showAudio,
@@ -123,5 +148,28 @@ internal fun normalizeBaseUrl(value: String): String {
     val trimmed = value.trim()
     if (trimmed.isBlank()) return ""
     val withScheme = if (trimmed.contains("://")) trimmed else "http://$trimmed"
-    return withScheme.trimEnd('/')
+    var base = withScheme.substringBefore('?').substringBefore('#').trimEnd('/')
+    for (suffix in listOf("/v1/quality", "/v1")) {
+        if (base.endsWith(suffix)) {
+            base = base.removeSuffix(suffix).trimEnd('/')
+            break
+        }
+    }
+    return base
+}
+
+/** Reads the old URL-query workaround once so upgrading preserves the user's intended policy. */
+internal fun minimumTrustFromUrl(value: String): QualiCacheMinimumTrust? {
+    val query = value.substringAfter('?', missingDelimiterValue = "").substringBefore('#')
+    val rawValue = query
+        .split('&')
+        .mapNotNull { part ->
+            val separator = part.indexOf('=')
+            if (separator < 0) return@mapNotNull null
+            val key = part.substring(0, separator)
+            val candidate = part.substring(separator + 1)
+            candidate.takeIf { key.equals("min_trust", ignoreCase = true) }
+        }
+        .firstOrNull()
+    return QualiCacheMinimumTrust.fromStorage(rawValue)
 }

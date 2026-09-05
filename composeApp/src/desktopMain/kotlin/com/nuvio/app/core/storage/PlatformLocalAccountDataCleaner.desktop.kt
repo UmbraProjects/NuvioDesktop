@@ -22,6 +22,9 @@ internal actual object PlatformLocalAccountDataCleaner {
         "nuvio_simkl_settings",
         "nuvio_simkl_auth",
         "nuvio_api_keys_onboarding",
+        // Whether this machine has been through first-run setup. Device-level, like the API-key
+        // prompt above it: wiping it would replay the whole wizard after a sign-out.
+        "nuvio_first_run_wizard",
     )
 
     actual fun wipe() {

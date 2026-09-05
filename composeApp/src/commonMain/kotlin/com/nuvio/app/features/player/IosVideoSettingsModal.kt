@@ -58,6 +58,8 @@ import nuvio.composeapp.generated.resources.player_video_settings_title
 import nuvio.composeapp.generated.resources.player_video_settings_tone_mapping
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
+import com.nuvio.app.core.ui.accentBrush
+import androidx.compose.material3.LocalTextStyle
 
 @Composable
 internal fun IosVideoSettingsModal(
@@ -260,7 +262,11 @@ private fun PictureSlider(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
-            Text(text = value.toString(), color = MaterialTheme.colorScheme.primary)
+            Text(
+                text = value.toString(),
+                color = MaterialTheme.colorScheme.primary,
+                style = LocalTextStyle.current.accentBrush(),
+            )
         }
         Slider(
             value = value.toFloat(),

@@ -174,52 +174,15 @@ private fun MdbListApiKeyRow(
     value: String,
     onApiKeyCommitted: (String) -> Unit,
 ) {
-    val horizontalPadding = if (isTablet) 20.dp else 16.dp
-    val verticalPadding = if (isTablet) 16.dp else 14.dp
-    var draft by rememberSaveable(value) { mutableStateOf(value) }
-    val normalizedDraft = draft.trim()
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = stringResource(Res.string.settings_mdb_api_key_title),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = stringResource(Res.string.settings_mdb_api_key_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        SettingsSecretTextField(
-            value = draft,
-            onValueChange = {
-                draft = it
-            },
-            modifier = Modifier.fillMaxWidth(),
-            label = stringResource(Res.string.settings_mdb_api_key_label),
-        )
-
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = {
-                    draft = normalizedDraft
-                    onApiKeyCommitted(normalizedDraft)
-                },
-                enabled = normalizedDraft != value,
-            ) {
-                Text(stringResource(Res.string.action_save))
-            }
-        }
-    }
+    SettingsTextInputRow(
+        title = stringResource(Res.string.settings_mdb_api_key_title),
+        description = stringResource(Res.string.settings_mdb_api_key_description),
+        value = value,
+        placeholder = stringResource(Res.string.settings_mdb_api_key_label),
+        isTablet = isTablet,
+        secret = true,
+        onSave = onApiKeyCommitted,
+    )
 }
 
 @Composable

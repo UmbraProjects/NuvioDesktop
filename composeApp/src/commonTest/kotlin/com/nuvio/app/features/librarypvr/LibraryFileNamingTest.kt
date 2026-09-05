@@ -122,6 +122,82 @@ class LibraryFileNamingTest {
         assertTrue(parsed.title.isNotBlank())
     }
 
+    // --- Existing-folder reuse -------------------------------------------------------------
+    //
+    // The year reaching these builders depends on whether the metadata cache happened to be warm,
+    // so on its own it files consecutive episodes of one show into two folders. Every builder has
+    // to defer to what the destination already holds.
+
+    @Test
+    fun existingFolderWithYearWinsOverAYearlessName() {
+        val path = LibraryFileNaming.animeEpisodeRelativePath(
+            title = "Mushoku Tensei",
+            year = null,
+            absoluteEpisode = 5,
+            extension = "mkv",
+            existingFolderNames = listOf("Mushoku Tensei (2021)"),
+        )
+        assertEquals("Mushoku Tensei (2021)", path.substringBefore('/'))
+    }
+
+    @Test
+    fun existingYearlessFolderWinsOverAYearedName() {
+        val path = LibraryFileNaming.episodeRelativePath(
+            title = "Mushoku Tensei",
+            year = 2021,
+            season = 1,
+            episode = 5,
+            episodeTitle = null,
+            extension = "mkv",
+            existingFolderNames = listOf("Mushoku Tensei"),
+        )
+        assertEquals("Mushoku Tensei", path.substringBefore('/'))
+    }
+
+    @Test
+    fun anUnrelatedExistingFolderIsIgnored() {
+        val path = LibraryFileNaming.movieRelativePath(
+            title = "Dune",
+            year = 2021,
+            extension = "mkv",
+            existingFolderNames = listOf("Blade Runner 2049 (2017)", "Arrival (2016)"),
+        )
+        assertEquals("Dune (2021)", path.substringBefore('/'))
+    }
+
+    @Test
+    fun reusedFolderNameStillRoundTripsThroughTheScanner() {
+        // Reuse must not break the guarantee the rest of this file tests: whatever folder name is
+        // chosen, the generated file name still parses back to the coordinates it was built from.
+        val path = LibraryFileNaming.episodeRelativePath(
+            title = "Mushoku Tensei",
+            year = null,
+            season = 2,
+            episode = 7,
+            episodeTitle = "Turning Point",
+            extension = "mkv",
+            existingFolderNames = listOf("Mushoku Tensei (2021)"),
+        )
+        val parsed = FilenameParser.parseEpisode(lastComponent(path), isAnime = false)
+        assertEquals(2, parsed.season)
+        assertEquals(7, parsed.episode)
+    }
+
+    @Test
+    fun expectedItemKeyFollowsTheReusedFolder() {
+        // The pre-seeded match override is keyed on the folder name that will actually be written,
+        // so a reused folder must produce the same key the scanner will compute for it.
+        val folder = LocalFolder(id = "f1", path = "D:/Anime", type = LocalFolderType.SERIES)
+        val reused = LibraryFileNaming.expectedItemKey(
+            folder = folder,
+            title = "Mushoku Tensei",
+            year = null,
+            existingFolderNames = listOf("Mushoku Tensei (2021)"),
+        )
+        val direct = LibraryFileNaming.expectedItemKey(folder, "Mushoku Tensei", 2021)
+        assertEquals(direct, reused)
+    }
+
     @Test
     fun reservedDeviceNamesAreSuffixed() {
         assertEquals("NUL_", LibraryFileNaming.sanitizeComponent("NUL"))

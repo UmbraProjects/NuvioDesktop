@@ -1,7 +1,9 @@
 package com.nuvio.app.features.metadata
 
 import com.nuvio.app.features.locallibrary.normalizeLocalMatchTitle
+import com.nuvio.app.features.tmdb.TmdbSearchResult
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class TitleMatchScoringTest {
@@ -60,4 +62,33 @@ class TitleMatchScoringTest {
         assertTrue(yearMismatchPenalty(1994, 2004) >= 0.45)
         assertTrue(yearMismatchPenalty(null, 2004) == 0.0)
     }
+
+    @Test
+    fun exactYearWinsWhenTitlesTie() {
+        // A sequel whose only distinguishing mark is punctuation normalisation erases scores 1.0
+        // against both entries, and the free ±1 year gap leaves them tied on score as well.
+        val season1 = tvResult(id = 1, name = "Kaguya-sama: Love is War", firstAirDate = "2019-01-12")
+        val season2 = tvResult(id = 2, name = "Kaguya-sama: Love is War?", firstAirDate = "2020-04-11")
+
+        listOf(listOf(season1, season2), listOf(season2, season1)).forEach { results ->
+            assertEquals(
+                2,
+                pickBestTmdbMatch("Kaguya-sama Love is War", year = 2020, results = results)?.id,
+            )
+            assertEquals(
+                1,
+                pickBestTmdbMatch("Kaguya-sama Love is War", year = 2019, results = results)?.id,
+            )
+        }
+    }
+
+    @Test
+    fun exactYearNeverRescuesARejectedTitle() {
+        // The tie-break may reorder candidates but must not lift one over the accept threshold.
+        val wrongTitle = tvResult(id = 3, name = "Kaguya-sama: Love is War", firstAirDate = "2020-04-11")
+        assertEquals(null, pickBestTmdbMatch("Something Else Entirely", year = 2020, results = listOf(wrongTitle)))
+    }
+
+    private fun tvResult(id: Int, name: String, firstAirDate: String) =
+        TmdbSearchResult(id = id, name = name, firstAirDate = firstAirDate, mediaType = "tv")
 }

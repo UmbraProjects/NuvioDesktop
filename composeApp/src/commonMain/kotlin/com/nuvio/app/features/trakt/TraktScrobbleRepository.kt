@@ -6,8 +6,10 @@ import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.metadata.toTraktExternalIds
 import com.nuvio.app.features.tracking.TrackingCoordinateFamily
+import com.nuvio.app.features.tracking.TrackingScrobbleResult
 import com.nuvio.app.features.tracking.hasFranchiseScrobbleId
 import com.nuvio.app.features.tracking.projectScrobbleCoordinates
+import com.nuvio.app.features.tracking.trackingScrobbleResponseConfirmsWatched
 import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -67,13 +69,11 @@ internal object TraktScrobbleRepository {
     private val retryDelayMs = 1_500L
     private val serverOverloadedRetryDelayMs = 5_000L
 
-    suspend fun scrobbleStart(item: TraktScrobbleItem, progressPercent: Float) {
+    suspend fun scrobbleStart(item: TraktScrobbleItem, progressPercent: Float): TrackingScrobbleResult =
         sendScrobble(action = "start", item = item, progressPercent = progressPercent)
-    }
 
-    suspend fun scrobbleStop(item: TraktScrobbleItem, progressPercent: Float) {
+    suspend fun scrobbleStop(item: TraktScrobbleItem, progressPercent: Float): TrackingScrobbleResult =
         sendScrobble(action = "stop", item = item, progressPercent = progressPercent)
-    }
 
     suspend fun buildItem(
         contentType: String,
@@ -137,15 +137,15 @@ internal object TraktScrobbleRepository {
         action: String,
         item: TraktScrobbleItem,
         progressPercent: Float,
-    ) {
-        val headers = TraktAuthRepository.authorizedHeaders() ?: return
+    ): TrackingScrobbleResult {
+        val headers = TraktAuthRepository.authorizedHeaders() ?: return TrackingScrobbleResult.Declined
         val activeProfileId = ProfileRepository.activeProfileId
         val clampedProgress = progressPercent.coerceIn(0f, 100f)
         if (action == "stop" && clampedProgress < 1f) {
             log.d { "Skipping Trakt scrobble stop below 1%: ${"%.2f".format(clampedProgress)}%" }
-            return
+            return TrackingScrobbleResult.Declined
         }
-        if (shouldSkip(activeProfileId, action, item.itemKey, clampedProgress)) return
+        if (shouldSkip(activeProfileId, action, item.itemKey, clampedProgress)) return TrackingScrobbleResult.Declined
 
         val url = "$BASE_URL/scrobble/$action"
         val requestBody = json.encodeToString(buildRequestBody(item, clampedProgress))
@@ -172,7 +172,7 @@ internal object TraktScrobbleRepository {
         }
 
         val attempts = if (action == "stop") maxStopRetries + 1 else 1
-        var wasSent = false
+        var result = TrackingScrobbleResult.Declined
         for (attempt in 1..attempts) {
             val response = runCatching {
                 httpRequestRaw(
@@ -193,7 +193,7 @@ internal object TraktScrobbleRepository {
                     delay(retryDelayMs * attempt)
                     continue
                 }
-                return
+                return TrackingScrobbleResult.Declined
             }
 
             log.d {
@@ -219,7 +219,10 @@ internal object TraktScrobbleRepository {
             }
 
             if (response.status in 200..299 || response.status == 409) {
-                wasSent = true
+                result = TrackingScrobbleResult(
+                    handled = true,
+                    confirmsWatched = trackingScrobbleResponseConfirmsWatched(response.body),
+                )
                 break
             }
 
@@ -232,10 +235,10 @@ internal object TraktScrobbleRepository {
             log.w {
                 "Failed Trakt scrobble $action: HTTP ${response.status} ${response.statusText.ifBlank { "<no-status-text>" }}"
             }
-            return
+            return TrackingScrobbleResult.Handled
         }
 
-        if (!wasSent) return
+        if (!result.handled) return result
 
         lastScrobbleStamp = ScrobbleStamp(
             profileId = activeProfileId,
@@ -252,6 +255,7 @@ internal object TraktScrobbleRepository {
                     log.w { "Failed to refresh Trakt progress after stop: ${error.message}" }
                 }
         }
+        return result
     }
 
     private fun buildRequestBody(

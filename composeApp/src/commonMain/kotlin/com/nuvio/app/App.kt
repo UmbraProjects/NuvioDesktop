@@ -174,6 +174,7 @@ import com.nuvio.app.features.catalog.CatalogScreen
 import com.nuvio.app.features.catalog.CatalogTarget
 import com.nuvio.app.features.catalog.CatalogTargetKind
 import com.nuvio.app.features.cloud.CloudLibraryContentType
+import com.nuvio.app.features.cloud.CloudLibraryFileChooserDialog
 import com.nuvio.app.features.cloud.CloudLibraryFile
 import com.nuvio.app.features.cloud.CloudLibraryItem
 import com.nuvio.app.features.cloud.CloudLibraryPlaybackResult
@@ -189,18 +190,22 @@ import com.nuvio.app.features.discord.DiscordRichPresenceActivity
 import com.nuvio.app.features.discord.DiscordRichPresenceActivityType
 import com.nuvio.app.features.discord.DiscordRichPresenceImageFit
 import com.nuvio.app.features.discord.DiscordRichPresenceController
+import com.nuvio.app.features.downloads.DownloadItem
+import com.nuvio.app.features.downloads.playbackLabels
 import com.nuvio.app.features.downloads.DownloadsRepository
-import com.nuvio.app.features.downloads.DownloadsScreen
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaDetailsScreen
 import com.nuvio.app.features.details.MetaPerson
 import com.nuvio.app.features.details.PersonDetailScreen
+import com.nuvio.app.features.details.resolveSeriesEpisodePosition
 import com.nuvio.app.features.details.TmdbEntityBrowseScreen
 import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.tmdb.TmdbEntityKind
 import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
+import com.nuvio.app.features.games.GameModeController
+import com.nuvio.app.features.games.GameModeScreen
 import com.nuvio.app.features.home.components.HomeHeroTrailerGate
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.HomeRepository
@@ -218,6 +223,7 @@ import com.nuvio.app.features.library.LibraryNavMenuWidth
 import com.nuvio.app.features.library.LibrarySortMenuPanel
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.librarypvr.ReleaseYearResolver
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.LibrarySourceMode
 import com.nuvio.app.features.library.LibraryScreen
@@ -225,7 +231,6 @@ import com.nuvio.app.features.library.toLibraryItem
 import com.nuvio.app.features.library.toMetaPreview
 import com.nuvio.app.features.locallibrary.FilenameParser
 import com.nuvio.app.features.locallibrary.LocalLibraryRepository
-import com.nuvio.app.features.locallibrary.LocalLibraryPlaybackPreference
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
 import com.nuvio.app.features.p2p.P2pConsentDialog
 import com.nuvio.app.features.p2p.P2pSettingsRepository
@@ -265,17 +270,18 @@ import com.nuvio.app.features.search.SearchScreen
 import com.nuvio.app.features.search.SearchRepository
 import com.nuvio.app.features.search.discoverCatalogDisplayLabels
 import com.nuvio.app.features.settings.ApiKeysOnboardingHost
+import com.nuvio.app.features.setup.FirstRunWizardHost
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.features.settings.HomescreenSettingsScreen
 import com.nuvio.app.features.settings.MetaScreenSettingsScreen
 import com.nuvio.app.features.settings.ContinueWatchingSettingsScreen
 import com.nuvio.app.features.settings.AddonsSettingsScreen
 import com.nuvio.app.features.settings.PluginsSettingsScreen
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.settings.AccountSettingsScreen
 import com.nuvio.app.features.settings.SupportersContributorsSettingsScreen
 import com.nuvio.app.features.settings.LicensesAttributionsSettingsScreen
 import com.nuvio.app.features.settings.DesktopNavigationLayout
+import com.nuvio.app.features.settings.SettingsSearchIndex
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.collection.CollectionEditorScreen
 import com.nuvio.app.features.collection.CollectionEditorRepository
@@ -383,6 +389,7 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.trackTextInputFocus
 
 @Serializable
 object TabsRoute
@@ -428,9 +435,6 @@ object MetaScreenSettingsRoute
 
 @Serializable
 object ContinueWatchingSettingsRoute
-
-@Serializable
-object DownloadsSettingsRoute
 
 @Serializable
 object AddonsSettingsRoute
@@ -536,6 +540,7 @@ private data class PosterActionTarget(
 enum class AppScreenTab {
     Home,
     Search,
+    Discover,
     Library,
     Settings,
 }
@@ -549,6 +554,16 @@ internal fun rootTabHistoryAfterNavigation(
     return (history + current).takeLast(16)
 }
 
+// Width of the floating top bar pill *and* the picker panel that hangs off its bottom edge — the
+// two must stay identical or the panel's rounded top corners stop lining up with the bar. Sized so
+// the five nav quadrants keep the 80.dp rhythm they had when there were four. Quadrants divide the
+// bar by weight, so hiding Discover subtracts one quadrant instead of stretching the other four.
+private val FloatingTopBarQuadrantWidth = 80.dp
+private val FloatingTopBarWidth = 400.dp
+
+// The sidebar's nav glyphs sit alone in a wide rail rather than in a dense pill, so they carry
+// 15% more than the standard 20.dp icon step to stop them reading as undersized.
+private val DesktopSidebarIconSize = 23.dp
 private val DesktopSidebarCollapsedWidth = 76.dp
 private val DesktopSidebarExpandedContentWidth = 144.dp
 private val DesktopSidebarIconSlotSize = 36.dp
@@ -556,6 +571,9 @@ private val DesktopSidebarIconSlotSize = 36.dp
 private fun AppScreenTab.toNativeNavigationTab(): NativeNavigationTab = when (this) {
     AppScreenTab.Home -> NativeNavigationTab.Home
     AppScreenTab.Search -> NativeNavigationTab.Search
+    // The native tab bar is a fixed four-tab surface with no Discover slot, so Discover reports as
+    // Home rather than inventing a tab the native bar cannot render or select back.
+    AppScreenTab.Discover -> NativeNavigationTab.Home
     AppScreenTab.Library -> NativeNavigationTab.Library
     AppScreenTab.Settings -> NativeNavigationTab.Settings
 }
@@ -749,6 +767,13 @@ private suspend fun warmProfileDeferredRepositories() {
                 com.nuvio.app.features.librarypvr.LibraryPvrScheduler.start()
             }
         }
+        // Resolves the ~550 string resources behind settings search. Each one is a separate
+        // blocking read out of the packaged jar, so doing it here rather than during the settings
+        // screen's first composition is what keeps opening settings instant.
+        startupWarmStep("settings search index warm", rethrow = false) {
+            ThemeSettingsRepository.ensureLoaded()
+            SettingsSearchIndex.warm(ThemeSettingsRepository.selectedAppLanguage.value.code)
+        }
         startupWarmStep("home catalog sync observer start", rethrow = false) { HomeCatalogSettingsSyncService.startObserving() }
         startupWarmStep("profile settings sync observer start", rethrow = false) { ProfileSettingsSync.startObserving() }
         startupWarmStep("anime id mapping warm start", rethrow = false) {
@@ -828,7 +853,17 @@ fun App() {
     val desktopAppUiScalePercent by remember {
         ThemeSettingsRepository.desktopAppUiScalePercent
     }.collectAsStateWithLifecycle()
-    NuvioTheme(appTheme = selectedTheme, customThemePalette = customTheme.palette, amoled = amoledEnabled) {
+    val accentGradientDirection by remember {
+        ThemeSettingsRepository.accentGradientDirection
+    }.collectAsStateWithLifecycle()
+    val appFontFamily by remember { ThemeSettingsRepository.appFontFamily }.collectAsStateWithLifecycle()
+    NuvioTheme(
+        appTheme = selectedTheme,
+        customThemePalette = customTheme.palette,
+        amoled = amoledEnabled,
+        accentGradientDirection = accentGradientDirection,
+        appFontFamilyName = appFontFamily,
+    ) {
         LaunchedEffect(Unit) {
             AuthRepository.initialize()
         }
@@ -1163,12 +1198,11 @@ private fun MainAppContent(
         var searchQuery by rememberSaveable { mutableStateOf("") }
         var submittedSearchQuery by rememberSaveable { mutableStateOf("") }
         var searchOverlayActive by rememberSaveable { mutableStateOf(false) }
-        var searchDiscoverActive by rememberSaveable { mutableStateOf(false) }
-        var searchDiscoverPickerRequestCount by remember { mutableStateOf(0) }
         val searchSubmitRequests = remember { MutableSharedFlow<String>(extraBufferCapacity = 1) }
         val homeScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
         val searchScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
         val libraryScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+        val discoverScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
         val settingsRootActionRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
 
         LaunchedEffect(Unit) {
@@ -1185,7 +1219,11 @@ private fun MainAppContent(
             if (
                 destinationIsTabs &&
                 previousDestinationWasTabs == false &&
-                (selectedTab == AppScreenTab.Home || selectedTab == AppScreenTab.Library)
+                (
+                    selectedTab == AppScreenTab.Home ||
+                        selectedTab == AppScreenTab.Library ||
+                        selectedTab == AppScreenTab.Discover
+                    )
             ) {
                 // Pushed routes (notably Calendar) can retain focus during their exit transition.
                 // Tell the tab content to reclaim it once the Tabs destination becomes active.
@@ -1203,6 +1241,12 @@ private fun MainAppContent(
         )
         LaunchedEffect(navController, selectedTab, rootTabBackStack, searchOverlayActive) {
             DesktopNavigationGestureBridge.backRequests.collect { source ->
+                // Back leaves game mode rather than navigating the app hidden behind it. Read
+                // straight off the flow: this collector is not re-keyed on the toggle.
+                if (GameModeController.active.value) {
+                    GameModeController.setActive(false)
+                    return@collect
+                }
                 // The native player WebView handles Mouse Back itself. On some Windows setups the
                 // same physical click also reaches AWT; accepting both requests pops the player and
                 // then the screen behind it. Ignore the duplicate while the player owns the input,
@@ -1225,20 +1269,15 @@ private fun MainAppContent(
                     when {
                         searchOverlayActive -> {
                             searchOverlayActive = false
-                            searchDiscoverActive = false
                             navigateToContentCount++
                         }
                         rootTabBackStack.isNotEmpty() -> {
                             val target = rootTabBackStack.last()
                             rootTabBackStack = rootTabBackStack.dropLast(1)
                             selectedTab = target
-                            if (target != AppScreenTab.Search) {
-                                searchDiscoverActive = false
-                            }
                         }
                         selectedTab != AppScreenTab.Home -> {
                             selectedTab = AppScreenTab.Home
-                            searchDiscoverActive = false
                         }
                     }
                 } else if (navController.previousBackStackEntry != null) {
@@ -1252,6 +1291,12 @@ private fun MainAppContent(
         val desktopNavigationLayout by remember {
             ThemeSettingsRepository.desktopNavigationLayout
         }.collectAsStateWithLifecycle()
+        val desktopTopBarAlwaysVisible by remember {
+            ThemeSettingsRepository.desktopTopBarAlwaysVisible
+        }.collectAsStateWithLifecycle()
+        val discoverTabVisible by remember {
+            ThemeSettingsRepository.desktopDiscoverTabVisible
+        }.collectAsStateWithLifecycle()
         val desktopAppUiScaleAppliesToDetails by remember {
             ThemeSettingsRepository.desktopAppUiScaleAppliesToDetails
         }.collectAsStateWithLifecycle()
@@ -1263,6 +1308,7 @@ private fun MainAppContent(
         var selectedContinueWatchingForActions by remember { mutableStateOf<ContinueWatchingItem?>(null) }
         var selectedContinueWatchingAnchor by remember { mutableStateOf<PosterZoomAnchor?>(null) }
         var requestedSettingsPageName by rememberSaveable { mutableStateOf<String?>(null) }
+        val gameModeActive by GameModeController.active.collectAsStateWithLifecycle()
         var showLibraryListPicker by remember { mutableStateOf(false) }
         var pickerItem by remember { mutableStateOf<LibraryItem?>(null) }
         var pickerTitle by remember { mutableStateOf("") }
@@ -1307,9 +1353,11 @@ private fun MainAppContent(
     var lastNetworkToastCondition by rememberSaveable { mutableStateOf(NetworkCondition.Unknown.name) }
 
     fun handleRootTabClick(tab: AppScreenTab) {
+        // Discover is hidden from the navigation: nothing may select it, or the bar would show no
+        // active tab and leave no way back.
+        if (tab == AppScreenTab.Discover && !discoverTabVisible) return
         if (tab != AppScreenTab.Search) {
             searchOverlayActive = false
-            searchDiscoverActive = false
         }
         if (selectedTab != tab) {
             rootTabBackStack = rootTabHistoryAfterNavigation(
@@ -1329,8 +1377,17 @@ private fun MainAppContent(
                 searchScrollToTopRequests.tryEmit(Unit)
             }
             AppScreenTab.Library -> libraryScrollToTopRequests.tryEmit(Unit)
+            AppScreenTab.Discover -> discoverScrollToTopRequests.tryEmit(Unit)
             AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
         }
+    }
+
+    // Hiding the tab while it is open would leave an active tab with no entry in the bar, and its
+    // history entry would let Back walk right back into it.
+    LaunchedEffect(discoverTabVisible) {
+        if (discoverTabVisible) return@LaunchedEffect
+        rootTabBackStack = rootTabBackStack.filterNot { it == AppScreenTab.Discover }
+        if (selectedTab == AppScreenTab.Discover) selectedTab = AppScreenTab.Home
     }
 
     fun openSearchOverlay() {
@@ -1352,6 +1409,7 @@ private fun MainAppContent(
             when (action) {
                 AppShortcutAction.GoHome,
                 AppShortcutAction.OpenSearch,
+                AppShortcutAction.OpenDiscover,
                 AppShortcutAction.OpenLibrary -> {
                     navController.navigate(TabsRoute) {
                         popUpTo<TabsRoute> { inclusive = false }
@@ -1365,11 +1423,17 @@ private fun MainAppContent(
                         } else {
                             AppScreenTab.Library
                         }
+                        AppShortcutAction.OpenDiscover -> if (selectedTab == AppScreenTab.Discover) {
+                            AppScreenTab.Home
+                        } else {
+                            AppScreenTab.Discover
+                        }
                         else -> AppScreenTab.Home
                     }
                     handleRootTabClick(target)
                 }
                 AppShortcutAction.OpenCalendar -> navController.navigateIfResumed(CalendarRoute)
+                AppShortcutAction.ToggleGameMode -> GameModeController.toggle()
                 else -> Unit
             }
         }
@@ -1395,15 +1459,31 @@ private fun MainAppContent(
     // Search, Library, and a collection folder all render the same TV Mode / Adaptive Hero
     // hero as Home, so they count as "home" here too — otherwise their hero trailers could
     // never play.
-    LaunchedEffect(selectedTab, currentBackStackEntry) {
+    LaunchedEffect(selectedTab, currentBackStackEntry, gameModeActive) {
         val onTabsWithHomeStyleTab = (
             selectedTab == AppScreenTab.Home ||
                 selectedTab == AppScreenTab.Search ||
+                selectedTab == AppScreenTab.Discover ||
                 selectedTab == AppScreenTab.Library
             ) &&
             navController.currentDestination?.hasRoute<TabsRoute>() == true
         val onFolderDetail = navController.currentDestination?.hasRoute<FolderDetailRoute>() == true
-        HomeHeroTrailerGate.setHomeActive(onTabsWithHomeStyleTab || onFolderDetail)
+        // Game mode covers the home screen, and the desktop trailer surface is a native canvas
+        // that would paint straight over it — so the hero must count as "not home" while it is up.
+        HomeHeroTrailerGate.setHomeActive((onTabsWithHomeStyleTab || onFolderDetail) && !gameModeActive)
+    }
+
+    // Game mode's library takes keyboard focus while it is up, and Compose drops focus entirely
+    // when that focusable is removed on exit: with no focused node, key events never reach the
+    // window-level shortcut handler, so G (and every other global shortcut) is dead until
+    // something focusable is clicked. Hand focus back to the tab content the way a returning
+    // route does.
+    var gameModeWasActive by remember { mutableStateOf(gameModeActive) }
+    LaunchedEffect(gameModeActive) {
+        if (gameModeWasActive && !gameModeActive) {
+            navigateToContentCount++
+        }
+        gameModeWasActive = gameModeActive
     }
 
     DisposableEffect(
@@ -1605,10 +1685,8 @@ private fun MainAppContent(
 
                     AppDeepLink.Downloads -> {
                         if (AppFeaturePolicy.downloadsEnabled) {
+                            requestedSettingsPageName = "Downloads"
                             selectedTab = AppScreenTab.Settings
-                            navController.navigate(DownloadsSettingsRoute) {
-                                launchSingleTop = true
-                            }
                         }
                         AppDeepLinkRepository.markConsumed(deepLink)
                     }
@@ -1801,12 +1879,16 @@ private fun MainAppContent(
         ) {
             val targetResumePositionMs = if (startFromBeginning) 0L else (resumePositionMs ?: 0L)
             val targetResumeProgressFraction = if (startFromBeginning) null else resumeProgressFraction
-            val releaseInfo = MetaDetailsRepository.peek(parentMetaType, parentMetaId)?.releaseInfo
-                ?: MetaDetailsRepository.uiState.value.meta
-                    ?.takeIf { it.id == parentMetaId }
-                    ?.releaseInfo
-            val releaseYear = releaseInfo
-                ?.let { Regex("""\b(19|20)\d{2}\b""").find(it)?.value?.toIntOrNull() }
+            // Free, synchronous, and now reads every in-memory store that knows a year rather than
+            // only the details-screen cache — see ReleaseYearResolver. Still best-effort here: a
+            // genuinely cold title resolves to null and the stream screen fills it in behind
+            // playback, before the download menu can be opened.
+            val releaseYear = ReleaseYearResolver.peek(parentMetaType, parentMetaId)
+                ?: ReleaseYearResolver.parseReleaseYear(
+                    MetaDetailsRepository.uiState.value.meta
+                        ?.takeIf { it.id == parentMetaId }
+                        ?.releaseInfo,
+                )
 
             PlaybackStartTrace.beginPending("playClicked type=$type id=$videoId")
 
@@ -1842,6 +1924,11 @@ private fun MainAppContent(
 
             if (localRouting.playDownloadedFileDirectly && downloadedItem != null) {
                 if (!localSourceUrl.isNullOrBlank()) {
+                    val downloadedLabels = downloadedItem.playbackLabels(
+                        localPath = localSourceUrl,
+                        fallbackTitle = title,
+                        downloadedLabel = downloadedProviderLabel,
+                    )
                     val playerLaunch = PlayerLaunch(
                             title = title,
                             sourceUrl = localSourceUrl,
@@ -1855,10 +1942,10 @@ private fun MainAppContent(
                             episodeTitle = episodeTitle,
                             episodeThumbnail = episodeThumbnail,
                             releaseYear = releaseYear,
-                            streamTitle = downloadedItem.streamTitle.ifBlank { title },
-                            streamSubtitle = downloadedItem.streamSubtitle,
+                            streamTitle = downloadedLabels.streamTitle,
+                            streamSubtitle = downloadedLabels.streamSubtitle,
                             pauseDescription = pauseDescription,
-                            providerName = downloadedItem.providerName.ifBlank { downloadedProviderLabel },
+                            providerName = downloadedLabels.providerName,
                             providerAddonId = downloadedItem.providerAddonId,
                             contentType = type,
                             videoId = videoId,
@@ -2122,14 +2209,53 @@ private fun MainAppContent(
             openContinueWatching(item, false, true)
         }
 
-        val onContinueWatchingPlayAlternate: (ContinueWatchingItem) -> Unit = { item ->
-            openContinueWatching(item, true, false)
-        }
-
         val onContinueWatchingLongPress: (ContinueWatchingItem) -> Unit = { item ->
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
             selectedContinueWatchingAnchor = PosterZoomAnchorHolder.consume()
             selectedContinueWatchingForActions = item
+        }
+
+        val onOpenDownloadedItem: (DownloadItem) -> Unit = openDownload@ { item ->
+            val sourceUrl = DownloadsRepository.playableLocalFileUri(item) ?: return@openDownload
+            val labels = item.playbackLabels(
+                localPath = sourceUrl,
+                fallbackTitle = item.title,
+                downloadedLabel = downloadedProviderLabel,
+            )
+            val resumeEntry = item.videoId
+                .takeIf { it.isNotBlank() }
+                ?.let(WatchProgressRepository::progressForVideo)
+                ?.takeIf { it.isResumable }
+
+            val playerLaunch = PlayerLaunch(
+                title = item.title,
+                sourceUrl = sourceUrl,
+                sourceHeaders = emptyMap(),
+                sourceResponseHeaders = emptyMap(),
+                logo = item.logo,
+                poster = item.poster,
+                background = item.background,
+                seasonNumber = item.seasonNumber,
+                episodeNumber = item.episodeNumber,
+                episodeTitle = item.episodeTitle,
+                episodeThumbnail = item.episodeThumbnail,
+                streamTitle = labels.streamTitle,
+                streamSubtitle = labels.streamSubtitle,
+                providerName = labels.providerName,
+                providerAddonId = item.providerAddonId,
+                contentType = item.contentType,
+                videoId = item.videoId,
+                parentMetaId = item.parentMetaId,
+                parentMetaType = item.parentMetaType,
+                initialPositionMs = resumeEntry?.lastPositionMs?.takeIf { it > 0L } ?: 0L,
+                initialProgressFraction = resumeEntry?.progressFraction?.takeIf { it > 0f },
+            )
+            if (playerSettingsUiState.externalPlayerEnabled) {
+                coroutineScope.launch { openExternalPlayback(playerLaunch) }
+                return@openDownload
+            }
+            val launchId = PlayerLaunchStore.put(playerLaunch)
+            navController.navigate(PlayerRoute(launchId = launchId))
         }
 
         // In adaptive-hero / TV mode the resume prompt is owned by the home hero. When the user
@@ -2147,14 +2273,14 @@ private fun MainAppContent(
                 .background(MaterialTheme.nuvio.colors.background)
                 .onPreviewKeyEvent { event ->
                     val canOpenDiscovery =
-                        currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true &&
+                        discoverTabVisible &&
+                            currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true &&
                             selectedTab != AppScreenTab.Settings
                     if (event.key != Key.Tab || !canOpenDiscovery) return@onPreviewKeyEvent false
                     if (event.type == KeyEventType.KeyDown) {
-                        searchQuery = ""
-                        searchOverlayActive = true
-                        searchFocusRequestCount++
-                        searchDiscoverPickerRequestCount++
+                        // Tab used to open the search overlay parked on its catalog picker. Discover
+                        // owns catalog browsing now, so it goes straight there.
+                        handleRootTabClick(AppScreenTab.Discover)
                     }
                     true
                 },
@@ -2191,20 +2317,15 @@ private fun MainAppContent(
                             when {
                                 searchOverlayActive -> {
                                     searchOverlayActive = false
-                                    searchDiscoverActive = false
                                     navigateToContentCount++
                                 }
                                 rootTabBackStack.isNotEmpty() -> {
                                     val target = rootTabBackStack.last()
                                     rootTabBackStack = rootTabBackStack.dropLast(1)
                                     selectedTab = target
-                                    if (target != AppScreenTab.Search) {
-                                        searchDiscoverActive = false
-                                    }
                                 }
                                 selectedTab != AppScreenTab.Home -> {
                                     selectedTab = AppScreenTab.Home
-                                    searchDiscoverActive = false
                                 }
                                 else -> {
                                     showExitConfirmation = !showExitConfirmation
@@ -2308,13 +2429,13 @@ private fun MainAppContent(
                                         navigateToContentCount = navigateToContentCount,
                                         searchQuery = searchQuery,
                                         submittedSearchQuery = submittedSearchQuery,
-                                        searchDiscoverActive = searchDiscoverActive,
                                         onSearchQueryChange = { searchQuery = it },
                                         searchSubmitRequests = searchSubmitRequests,
                                         rootActionsEnabled = tabsRouteActive,
                                         homeScrollToTopRequests = homeScrollToTopRequests,
                                         searchScrollToTopRequests = searchScrollToTopRequests,
                                         libraryScrollToTopRequests = libraryScrollToTopRequests,
+                                        discoverScrollToTopRequests = discoverScrollToTopRequests,
                                         settingsRootActionRequests = settingsRootActionRequests,
                                         animateHomeCollectionGifs = tabsRouteActive,
                                         resumePromptItem = resumePromptItem.takeIf { resumePromptUsesHero },
@@ -2441,11 +2562,7 @@ private fun MainAppContent(
                                         onHomescreenSettingsClick = { navController.navigate(HomescreenSettingsRoute) },
                                         onMetaScreenSettingsClick = { navController.navigate(MetaScreenSettingsRoute) },
                                         onContinueWatchingSettingsClick = { navController.navigate(ContinueWatchingSettingsRoute) },
-                                        onDownloadsSettingsClick = {
-                                            if (AppFeaturePolicy.downloadsEnabled) {
-                                                navController.navigate(DownloadsSettingsRoute)
-                                            }
-                                        },
+                                        onOpenDownload = onOpenDownloadedItem,
                                         onAddonsSettingsClick = { navController.navigate(AddonsSettingsRoute) },
                                         onPluginsSettingsClick = {
                                             if (AppFeaturePolicy.pluginsEnabled) {
@@ -2488,6 +2605,7 @@ private fun MainAppContent(
                                         onNavigateToSearch = { openSearchOverlay() },
                                         onNavigateToSearchTab = { handleRootTabClick(AppScreenTab.Search) },
                                         onNavigateToLibrary = { handleRootTabClick(AppScreenTab.Library) },
+                                        onNavigateToDiscover = { handleRootTabClick(AppScreenTab.Discover) },
                                         onNavigateToHome = { handleRootTabClick(AppScreenTab.Home) },
                                         onNavigateToCalendar = { navController.navigateIfResumed(CalendarRoute) },
                                     )
@@ -2511,29 +2629,27 @@ private fun MainAppContent(
                                         onTabSelected = ::handleRootTabClick,
                                         onProfileSelected = onProfileSelected,
                                         onAddProfileRequested = onSwitchProfile,
-                                        dimUntilHovered = selectedTab == AppScreenTab.Home ||
-                                            selectedTab == AppScreenTab.Library ||
-                                            selectedTab == AppScreenTab.Search ||
-                                            selectedTab == AppScreenTab.Settings,
+                                        // Pinning the bar is a content-screen preference: Settings
+                                        // draws its own chrome, so it keeps the fade regardless.
+                                        dimUntilHovered = (
+                                            !desktopTopBarAlwaysVisible ||
+                                                selectedTab == AppScreenTab.Settings
+                                            ) && (
+                                            selectedTab == AppScreenTab.Home ||
+                                                selectedTab == AppScreenTab.Library ||
+                                                selectedTab == AppScreenTab.Discover ||
+                                                selectedTab == AppScreenTab.Search ||
+                                                selectedTab == AppScreenTab.Settings
+                                            ),
                                         searchOverlayActive = searchOverlayActive,
                                         onSearchOverlayOpen = { openSearchOverlay() },
                                         onSearchOverlayDismiss = { dismissSearchOverlay() },
                                         searchQuery = searchQuery,
                                         onSearchQueryChange = { searchQuery = it },
                                         searchFocusRequestCount = searchFocusRequestCount,
-                                        discoverPickerRequestCount = searchDiscoverPickerRequestCount,
                                         onSearchSubmit = { q ->
                                             val trimmed = q.trim()
-                                            searchDiscoverActive = false
                                             submittedSearchQuery = trimmed
-                                            searchOverlayActive = false
-                                            handleRootTabClick(AppScreenTab.Search)
-                                            navigateToContentCount++
-                                        },
-                                        onDiscoverSubmit = {
-                                            searchQuery = ""
-                                            submittedSearchQuery = ""
-                                            searchDiscoverActive = true
                                             searchOverlayActive = false
                                             handleRootTabClick(AppScreenTab.Search)
                                             navigateToContentCount++
@@ -2812,14 +2928,27 @@ private fun MainAppContent(
                         hasResolvedVideoId = false
                         val metaType = launch.parentMetaType ?: launch.type
                         val metaId = launch.parentMetaId
+                        // Resolve against the *canonical* (franchise) coordinates, never the
+                        // entry-local stream ones. Native anime ids carry no season, so
+                        // streamLookupSeasonNumber falls back to the franchise season and would
+                        // pair it with a cour-local episode: playing Dr. STONE S04E25
+                        // (kitsu:50187:1) matched the S04E01 row, and everything keyed off the
+                        // active video — the next/previous episode cards, autoplay, the sources
+                        // panel — then walked the franchise from there. Share the player's own
+                        // resolver so the two can't disagree: it matches the metadata row id
+                        // first (the strongest evidence, and what the details list handed us),
+                        // then the canonical coordinates.
                         val resolvedVideoId = runCatching {
                             MetaDetailsRepository.fetch(metaType, metaId)
                         }.getOrNull()
                             ?.videos
-                            ?.firstOrNull { video ->
-                                video.season == streamLookupSeasonNumber &&
-                                    video.episode == streamLookupEpisodeNumber
-                            }
+                            ?.resolveSeriesEpisodePosition(
+                                parentMetaId = metaId,
+                                videoId = launch.videoId,
+                                seasonNumber = canonicalSeasonNumber,
+                                episodeNumber = canonicalEpisodeNumber,
+                            )
+                            ?.video
                             ?.id
                             ?.takeIf { it.isNotBlank() }
 
@@ -3640,54 +3769,6 @@ private fun MainAppContent(
                         onBack = onBack,
                     )
                 }
-                if (AppFeaturePolicy.downloadsEnabled) {
-                    composable<DownloadsSettingsRoute> { backStackEntry ->
-                        val onBack = rememberGuardedPopBackStack(
-                            navController = navController,
-                            backStackEntry = backStackEntry,
-                        )
-                        DownloadsScreen(
-                            onBack = onBack,
-                            onOpenDownload = { item ->
-                                val sourceUrl = DownloadsRepository.playableLocalFileUri(item) ?: return@DownloadsScreen
-                                val resumeEntry = item.videoId
-                                    .takeIf { it.isNotBlank() }
-                                    ?.let(WatchProgressRepository::progressForVideo)
-                                    ?.takeIf { it.isResumable }
-
-                                val playerLaunch = PlayerLaunch(
-                                        title = item.title,
-                                        sourceUrl = sourceUrl,
-                                        sourceHeaders = emptyMap(),
-                                        sourceResponseHeaders = emptyMap(),
-                                        logo = item.logo,
-                                        poster = item.poster,
-                                        background = item.background,
-                                        seasonNumber = item.seasonNumber,
-                                        episodeNumber = item.episodeNumber,
-                                        episodeTitle = item.episodeTitle,
-                                        episodeThumbnail = item.episodeThumbnail,
-                                        streamTitle = item.streamTitle,
-                                        streamSubtitle = item.streamSubtitle,
-                                        providerName = item.providerName,
-                                        providerAddonId = item.providerAddonId,
-                                        contentType = item.contentType,
-                                        videoId = item.videoId,
-                                        parentMetaId = item.parentMetaId,
-                                        parentMetaType = item.parentMetaType,
-                                        initialPositionMs = resumeEntry?.lastPositionMs?.takeIf { it > 0L } ?: 0L,
-                                        initialProgressFraction = resumeEntry?.progressFraction?.takeIf { it > 0f },
-                                )
-                                if (playerSettingsUiState.externalPlayerEnabled) {
-                                    coroutineScope.launch { openExternalPlayback(playerLaunch) }
-                                    return@DownloadsScreen
-                                }
-                                val launchId = PlayerLaunchStore.put(playerLaunch)
-                                navController.navigate(PlayerRoute(launchId = launchId))
-                            },
-                        )
-                    }
-                }
                 composable<AddonsSettingsRoute> { backStackEntry ->
                     val onBack = rememberGuardedPopBackStack(
                         navController = navController,
@@ -3913,24 +3994,20 @@ private fun MainAppContent(
                             )
                 } == true
             }
-            val continueWatchingAlternatePlayLabel = selectedContinueWatching
-                ?.takeUnless { it.isCloudLibraryContinueWatchingItem() }
-                ?.takeIf {
-                    localLibraryUiState.playbackPreference.canOfferAlternate(
-                        selectedContinueWatchingHasLocalPlayback,
-                    )
-                }
-                ?.let {
-                    stringResource(
-                        if (
-                            localLibraryUiState.playbackPreference ==
-                                LocalLibraryPlaybackPreference.LOCAL_LIBRARY
-                        ) {
-                            Res.string.play_choose_source
-                        } else {
-                            Res.string.play_local_file
-                        },
-                    )
+            // Which of the two `useAlternate` values reaches the source picker depends on the
+            // configured preference, so it is resolved here rather than hardcoded per entry.
+            val continueWatchingAlternateOpensPicker = localLibraryUiState.playbackPreference
+                .alternateOpensSourcePicker(selectedContinueWatchingHasLocalPlayback)
+            val continueWatchingIsPlayable = selectedContinueWatching
+                ?.isCloudLibraryContinueWatchingItem() == false
+            // Only offered when there is a local file AND the default click is not already playing
+            // it — with no file, or under the Local library preference, this entry would say
+            // nothing the sheet does not already do.
+            val continueWatchingAlternatePlayLabel = stringResource(Res.string.play_local_file)
+                .takeIf {
+                    continueWatchingIsPlayable &&
+                        selectedContinueWatchingHasLocalPlayback &&
+                        !continueWatchingAlternateOpensPicker
                 }
 
             val continueWatchingUsesDetailsByDefault = selectedContinueWatching?.let { item ->
@@ -3967,7 +4044,14 @@ private fun MainAppContent(
                     ?.let { item -> { onContinueWatchingStartFromBeginning(item) } },
                 onAlternatePlay = selectedContinueWatchingForActions
                     ?.takeIf { continueWatchingAlternatePlayLabel != null }
-                    ?.let { item -> { onContinueWatchingPlayAlternate(item) } },
+                    ?.let { item -> { openContinueWatching(item, true, false) } },
+                // Always offered, whatever the local-library preference is: this entry is what
+                // overrides stream auto-play, which is not a local-library concern.
+                onChooseSource = selectedContinueWatchingForActions
+                    ?.takeIf { continueWatchingIsPlayable }
+                    ?.let { item ->
+                        { openContinueWatching(item, continueWatchingAlternateOpensPicker, false) }
+                    },
                 onResync = {
                     coroutineScope.launch {
                         runCatching {
@@ -4124,6 +4208,50 @@ private fun MainAppContent(
                     .align(Alignment.Center)
                     .zIndex(26f),
             )
+
+            // Above the other startup overlays, though StartupOverlayCoordinator means only one of
+            // the three is ever composed at a time.
+            FirstRunWizardHost(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .zIndex(27f),
+                onOpenKeyboardShortcuts = {
+                    requestedSettingsPageName = "KeyboardShortcuts"
+                    selectedTab = AppScreenTab.Settings
+                },
+            )
+
+            // Game mode sits on top of a still-composed app rather than replacing it, so toggling
+            // back lands on exactly the row and scroll position the user left. The wrapper is a
+            // pointer-input node covering the whole window: without it, clicks and wheel events
+            // over empty areas of the game library would fall through to the screen underneath.
+            if (gameModeActive) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(40f)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                        ),
+                ) {
+                    GameModeScreen(
+                        onExit = { GameModeController.setActive(false) },
+                        onOpenSettings = {
+                            GameModeController.setActive(false)
+                            requestedSettingsPageName = "Games"
+                            // The app behind game mode may be parked on a details route, so the
+                            // tab host has to be brought forward before selecting a tab in it.
+                            navController.navigate(TabsRoute) {
+                                popUpTo<TabsRoute> { inclusive = false }
+                                launchSingleTop = true
+                            }
+                            handleRootTabClick(AppScreenTab.Settings)
+                        },
+                    )
+                }
+            }
         }
 }
 
@@ -4259,7 +4387,6 @@ private fun NavBackStackEntry.toDiscordBrowsingActivity(
         destination.hasRoute<HomescreenSettingsRoute>() -> settingsBrowsingActivity("Home Screen")
         destination.hasRoute<MetaScreenSettingsRoute>() -> settingsBrowsingActivity("Meta Screen")
         destination.hasRoute<ContinueWatchingSettingsRoute>() -> settingsBrowsingActivity("Continue Watching")
-        destination.hasRoute<DownloadsSettingsRoute>() -> settingsBrowsingActivity("Downloads")
         destination.hasRoute<AddonsSettingsRoute>() -> settingsBrowsingActivity("Addons")
         destination.hasRoute<PluginsSettingsRoute>() -> settingsBrowsingActivity("Plugins")
         destination.hasRoute<AccountSettingsRoute>() -> settingsBrowsingActivity("Account")
@@ -4281,6 +4408,7 @@ private fun tabsDiscordBrowsingActivity(
             title = query.takeIf { it.isNotBlank() }?.let { "Searching for $it" } ?: "Searching",
         )
         selectedTab == AppScreenTab.Library -> browsingActivity("Viewing Library")
+        selectedTab == AppScreenTab.Discover -> browsingActivity("Browsing Discover")
         selectedTab == AppScreenTab.Settings -> settingsBrowsingActivity()
         else -> browsingActivity("Browsing Nuvio")
     }
@@ -4321,13 +4449,13 @@ private fun AppTabHost(
     navigateToContentCount: Int = 0,
     searchQuery: String = "",
     submittedSearchQuery: String = "",
-    searchDiscoverActive: Boolean = false,
     onSearchQueryChange: (String) -> Unit = {},
     searchSubmitRequests: Flow<String> = emptyFlow(),
     rootActionsEnabled: Boolean = true,
     homeScrollToTopRequests: Flow<Unit>,
     searchScrollToTopRequests: Flow<Unit>,
     libraryScrollToTopRequests: Flow<Unit>,
+    discoverScrollToTopRequests: Flow<Unit>,
     settingsRootActionRequests: Flow<Unit>,
     animateHomeCollectionGifs: Boolean = true,
     resumePromptItem: ContinueWatchingItem? = null,
@@ -4353,7 +4481,7 @@ private fun AppTabHost(
     onHomescreenSettingsClick: () -> Unit = {},
     onMetaScreenSettingsClick: () -> Unit = {},
     onContinueWatchingSettingsClick: () -> Unit = {},
-    onDownloadsSettingsClick: () -> Unit = {},
+    onOpenDownload: (DownloadItem) -> Unit = {},
     onAddonsSettingsClick: () -> Unit = {},
     onPluginsSettingsClick: () -> Unit = {},
     onAccountSettingsClick: () -> Unit = {},
@@ -4369,14 +4497,22 @@ private fun AppTabHost(
     onNavigateToSearch: (() -> Unit)? = null,
     onNavigateToSearchTab: (() -> Unit)? = null,
     onNavigateToLibrary: (() -> Unit)? = null,
+    onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToHome: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
 ) {
     val tabStateHolder = rememberSaveableStateHolder()
+    // A cloud item can be a folder (a season pack), so a poster click has to ask which file rather
+    // than start one. Held here because the poster grid is shared by Home, Search and Library.
+    var cloudFileChooserTarget by remember { mutableStateOf<CloudLibraryItem?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
         val stateKey = when (selectedTab) {
-            AppScreenTab.Home, AppScreenTab.Search, AppScreenTab.Library -> "HomeSearchLibrary"
+            AppScreenTab.Home,
+            AppScreenTab.Search,
+            AppScreenTab.Discover,
+            AppScreenTab.Library,
+            -> "HomeSearchLibrary"
             AppScreenTab.Settings -> AppScreenTab.Settings.name
         }
         tabStateHolder.SaveableStateProvider(stateKey) {
@@ -4386,7 +4522,11 @@ private fun AppTabHost(
                 // all three tabs — switching to Search never changes the visible UI
                 // until results arrive, and switching from Library to Search stays
                 // on the library view until the user types.
-                AppScreenTab.Home, AppScreenTab.Search, AppScreenTab.Library -> {
+                AppScreenTab.Home,
+                AppScreenTab.Search,
+                AppScreenTab.Discover,
+                AppScreenTab.Library,
+                -> {
                     // Keep one HomeScreen in the composition while its mode changes. AnimatedContent
                     // retained the outgoing screen for the fade, leaving two focusable HomeScreens
                     // and two HomeTvKeyboardBridge collectors alive at once. On Search -> Home the
@@ -4394,6 +4534,9 @@ private fun AppTabHost(
                     // the Continue Watching shelf until another navigation resynchronised it.
                     val isSearch = selectedTab == AppScreenTab.Search
                     val isLib = selectedTab == AppScreenTab.Library
+                    val isDiscover = selectedTab == AppScreenTab.Discover
+                    // Home-only surfaces: everything else about Discover is meant to match Home.
+                    val isHomeOnlySurface = !isSearch && !isLib && !isDiscover
                     HomeScreen(
                         modifier = Modifier.fillMaxSize(),
                         topChromePadding = topChromePadding,
@@ -4402,15 +4545,16 @@ private fun AppTabHost(
                                 autoFocusCount = searchFocusRequestCount,
                             )
                             isLib -> com.nuvio.app.features.home.HomeContentMode.Library
+                            isDiscover -> com.nuvio.app.features.home.HomeContentMode.Discover
                             else -> com.nuvio.app.features.home.HomeContentMode.Normal
                         },
                         searchQuery = if (isSearch) submittedSearchQuery else "",
-                        discoverModeActive = isSearch && searchDiscoverActive,
                         searchSubmitRequests = if (isSearch) searchSubmitRequests else emptyFlow(),
-                        animateCollectionGifs = animateHomeCollectionGifs && !isSearch && !isLib,
+                        animateCollectionGifs = animateHomeCollectionGifs && isHomeOnlySurface,
                         scrollToTopRequests = when {
                             isLib -> libraryScrollToTopRequests
                             isSearch -> searchScrollToTopRequests
+                            isDiscover -> discoverScrollToTopRequests
                             else -> homeScrollToTopRequests
                         },
                         // Search and Library need this too: with "See more arrows" on, their rows
@@ -4420,7 +4564,14 @@ private fun AppTabHost(
                         onPosterClick = { meta ->
                             if (meta.type.equals(CloudLibraryContentType, ignoreCase = true)) {
                                 meta.findCloudLibraryItemForPreview()?.let { item ->
-                                    item.playableFiles.firstOrNull()?.let { file -> onCloudFilePlay?.invoke(item, file) }
+                                    val playableFiles = item.playableFiles
+                                    // One file is unambiguous; anything else is a folder, and
+                                    // picking its first file silently played episode 1 of a season.
+                                    if (playableFiles.size == 1) {
+                                        onCloudFilePlay?.invoke(item, playableFiles.first())
+                                    } else if (playableFiles.size > 1) {
+                                        cloudFileChooserTarget = item
+                                    }
                                 }
                             } else {
                                 onPosterClick?.invoke(meta)
@@ -4428,21 +4579,22 @@ private fun AppTabHost(
                         },
                         onPosterLongClick = onPosterLongClick,
                         onLocalLibraryPosterClick = onLocalLibraryPosterClick,
-                        onContinueWatchingClick = if (!isSearch && !isLib) onContinueWatchingClick else null,
-                        onContinueWatchingPlay = if (!isSearch && !isLib) onContinueWatchingPlay else null,
-                        onContinueWatchingLongPress = if (!isSearch && !isLib) onContinueWatchingLongPress else null,
-                        onFolderClick = if (!isSearch && !isLib) onFolderClick else null,
-                        onFirstCatalogRendered = if (!isSearch && !isLib) onInitialHomeContentRendered else null,
+                        onContinueWatchingClick = if (isHomeOnlySurface) onContinueWatchingClick else null,
+                        onContinueWatchingPlay = if (isHomeOnlySurface) onContinueWatchingPlay else null,
+                        onContinueWatchingLongPress = if (isHomeOnlySurface) onContinueWatchingLongPress else null,
+                        onFolderClick = if (isHomeOnlySurface) onFolderClick else null,
+                        onFirstCatalogRendered = if (isHomeOnlySurface) onInitialHomeContentRendered else null,
                         onNavigateToSearch = onNavigateToSearch,
                         onNavigateToLibrary = if (!isLib) onNavigateToLibrary else null,
+                        onNavigateToDiscover = if (!isDiscover) onNavigateToDiscover else null,
                         onNavigateToCalendar = onNavigateToCalendar,
-                        onNavigateToHome = if (isSearch || isLib) onNavigateToHome else null,
+                        onNavigateToHome = if (!isHomeOnlySurface) onNavigateToHome else null,
                         navigateToContentCount = navigateToContentCount,
-                        resumePromptItem = if (!isSearch && !isLib) resumePromptItem else null,
+                        resumePromptItem = if (isHomeOnlySurface) resumePromptItem else null,
                         resumePromptLabel = resumePromptLabel,
                         onResumePromptAction = onResumePromptAction,
                         onResumePromptDismiss = onResumePromptDismiss,
-                        continueWatchingHeroDismissed = if (!isSearch && !isLib) continueWatchingHeroDismissed else false,
+                        continueWatchingHeroDismissed = if (isHomeOnlySurface) continueWatchingHeroDismissed else false,
                         onContinueWatchingHeroDismiss = onContinueWatchingHeroDismiss,
                     )
                 }
@@ -4458,7 +4610,7 @@ private fun AppTabHost(
                         onHomescreenClick = onHomescreenSettingsClick,
                         onMetaScreenClick = onMetaScreenSettingsClick,
                         onContinueWatchingClick = onContinueWatchingSettingsClick,
-                        onDownloadsClick = onDownloadsSettingsClick,
+                        onOpenDownload = onOpenDownload,
                         onAddonsClick = onAddonsSettingsClick,
                         onPluginsClick = onPluginsSettingsClick,
                         onAccountClick = onAccountSettingsClick,
@@ -4470,9 +4622,21 @@ private fun AppTabHost(
                         onNavigateToHome = onNavigateToHome,
                         onNavigateToSearch = onNavigateToSearchTab,
                         onNavigateToLibrary = onNavigateToLibrary,
+                        onNavigateToDiscover = onNavigateToDiscover,
                     )
                 }
             }
+        }
+
+        cloudFileChooserTarget?.let { item ->
+            CloudLibraryFileChooserDialog(
+                item = item,
+                onFileSelected = { file ->
+                    cloudFileChooserTarget = null
+                    onCloudFilePlay?.invoke(item, file)
+                },
+                onDismiss = { cloudFileChooserTarget = null },
+            )
         }
     }
 }
@@ -4532,6 +4696,9 @@ private fun DesktopHoverSidebar(
     val avatars by AvatarRepository.avatars.collectAsStateWithLifecycle()
     val activeProfile = profileState.activeProfile
     val activeProfileName = activeProfile?.name ?: stringResource(Res.string.compose_nav_profile)
+    val discoverTabVisible by remember {
+        ThemeSettingsRepository.desktopDiscoverTabVisible
+    }.collectAsStateWithLifecycle()
     var profileStackVisible by remember { mutableStateOf(false) }
     val profileTopPadding = statusBarPadding + 18.dp
     fun selectTab(tab: AppScreenTab) {
@@ -4599,7 +4766,7 @@ private fun DesktopHoverSidebar(
                     Icon(
                         imageVector = Icons.Filled.Home,
                         contentDescription = stringResource(Res.string.compose_nav_home),
-                        modifier = Modifier.size(NuvioTokens.Space.s20),
+                        modifier = Modifier.size(DesktopSidebarIconSize),
                         tint = color,
                     )
                 }
@@ -4612,9 +4779,24 @@ private fun DesktopHoverSidebar(
                     Icon(
                         painter = painterResource(Res.drawable.sidebar_search),
                         contentDescription = stringResource(Res.string.compose_nav_search),
-                        modifier = Modifier.size(NuvioTokens.Space.s20),
+                        modifier = Modifier.size(DesktopSidebarIconSize),
                         tint = color,
                     )
+                }
+                if (discoverTabVisible) {
+                    DesktopSidebarItem(
+                        label = stringResource(Res.string.compose_nav_discover),
+                        selected = selectedTab == AppScreenTab.Discover,
+                        expanded = false,
+                        onClick = { selectTab(AppScreenTab.Discover) },
+                    ) { color ->
+                        Icon(
+                            imageVector = Icons.Rounded.Explore,
+                            contentDescription = stringResource(Res.string.compose_nav_discover),
+                            modifier = Modifier.size(DesktopSidebarIconSize),
+                            tint = color,
+                        )
+                    }
                 }
                 LibraryNavigationContextMenu(modifier = Modifier.fillMaxWidth()) { contextModifier ->
                     DesktopSidebarItem(
@@ -4627,7 +4809,7 @@ private fun DesktopHoverSidebar(
                         Icon(
                             painter = painterResource(Res.drawable.sidebar_library),
                             contentDescription = stringResource(Res.string.compose_nav_library),
-                            modifier = Modifier.size(NuvioTokens.Space.s20),
+                            modifier = Modifier.size(DesktopSidebarIconSize),
                             tint = color,
                         )
                     }
@@ -4641,7 +4823,7 @@ private fun DesktopHoverSidebar(
                     Icon(
                         imageVector = Icons.Rounded.Settings,
                         contentDescription = stringResource(Res.string.compose_settings_page_root),
-                        modifier = Modifier.size(NuvioTokens.Space.s20),
+                        modifier = Modifier.size(DesktopSidebarIconSize),
                         tint = color,
                     )
                 }
@@ -4740,8 +4922,13 @@ private fun DesktopSidebarItem(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Surface(
-                    modifier = Modifier.size(DesktopSidebarIconSlotSize),
-                    color = if (selected) tokens.colors.accent else Color.Transparent,
+                    modifier = Modifier
+                        .size(DesktopSidebarIconSlotSize)
+                        .background(
+                            if (selected) tokens.colors.accentFill else SolidColor(Color.Transparent),
+                            RoundedCornerShape(14.dp),
+                        ),
+                    color = Color.Transparent,
                     shape = RoundedCornerShape(14.dp),
                 ) {
                     Box(
@@ -4767,34 +4954,13 @@ private fun DesktopSidebarItem(
     }
 }
 
-private enum class SearchPickerMode {
-    History,
-    Catalogs,
-    Genres,
-}
-
-private sealed interface SearchPickerEntry {
-    val key: String
-    val label: String
-
-    data class History(val query: String) : SearchPickerEntry {
-        override val key: String = "history:$query"
-        override val label: String = query
-    }
-
-    data class Catalog(
-        val catalogKey: String,
-        override val label: String,
-    ) : SearchPickerEntry {
-        override val key: String = "catalog:$catalogKey"
-    }
-
-    data class Genre(
-        val genre: String?,
-        override val label: String,
-    ) : SearchPickerEntry {
-        override val key: String = "genre:${genre ?: "<all>"}"
-    }
+/**
+ * The search bar's dropdown only offers recent queries now. Catalog and genre selection moved to
+ * the Discover tab's row-1 header, where it browses in place instead of hiding behind the bar.
+ */
+private data class SearchPickerEntry(val query: String) {
+    val key: String = "history:$query"
+    val label: String = query
 }
 
 @Composable
@@ -4811,9 +4977,7 @@ private fun TabletFloatingTopBar(
     searchQuery: String = "",
     onSearchQueryChange: (String) -> Unit = {},
     searchFocusRequestCount: Int = 0,
-    discoverPickerRequestCount: Int = 0,
     onSearchSubmit: (String) -> Unit = {},
-    onDiscoverSubmit: () -> Unit = {},
     onNavigateToContent: () -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
@@ -4821,6 +4985,14 @@ private fun TabletFloatingTopBar(
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var activationZoneHovered by remember { mutableStateOf(false) }
     val isSearchActive = searchOverlayActive || selectedTab == AppScreenTab.Search
+    val discoverTabVisible by remember {
+        ThemeSettingsRepository.desktopDiscoverTabVisible
+    }.collectAsStateWithLifecycle()
+    val topBarWidth = if (discoverTabVisible) {
+        FloatingTopBarWidth
+    } else {
+        FloatingTopBarWidth - FloatingTopBarQuadrantWidth
+    }
     // Right-clicking the Library quadrant hangs the sort menu off the bar the same way the
     // discover picker does. Only the nav row can open it, so entering search closes it.
     var librarySortMenuVisible by remember(isSearchActive) { mutableStateOf(false) }
@@ -4848,68 +5020,15 @@ private fun TabletFloatingTopBar(
     var searchBarHasFocus by remember { mutableStateOf(false) }
     val searchHistory by com.nuvio.app.features.search.SearchHistoryRepository.uiState.collectAsState()
     val discoverUiState by SearchRepository.discoverUiState.collectAsStateWithLifecycle()
-    val discoverAddonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
-    var pickerMode by remember(isSearchActive) { mutableStateOf(SearchPickerMode.History) }
     var pickerSelectedIndex by remember { mutableStateOf(-1) }
-    val allGenresLabel = stringResource(Res.string.discover_all_genres)
     val visibleHistory = searchHistory.take(5)
-    val pickerFilter = searchFieldState.text.trim()
-    val visibleCatalogs = remember(discoverUiState.availableCatalogs, pickerFilter) {
-        if (pickerFilter.isEmpty()) {
-            discoverUiState.availableCatalogs
-        } else {
-            discoverUiState.availableCatalogs.filter { catalog ->
-                catalog.catalogName.contains(pickerFilter, ignoreCase = true) ||
-                    catalog.addonName.contains(pickerFilter, ignoreCase = true)
-            }
-        }
-    }
-    val availableGenres = remember(discoverUiState.selectedCatalog) {
-        val catalog = discoverUiState.selectedCatalog
-        if (catalog == null) {
-            emptyList()
-        } else {
-            buildList<String?> {
-                if (!catalog.genreRequired || catalog.genreOptions.isEmpty()) add(null)
-                addAll(catalog.genreOptions)
-            }
-        }
-    }
-    val visibleGenres = remember(availableGenres, pickerFilter, allGenresLabel) {
-        if (pickerFilter.isEmpty()) {
-            availableGenres
-        } else {
-            availableGenres.filter { genre ->
-                (genre ?: allGenresLabel).contains(pickerFilter, ignoreCase = true)
-            }
-        }
-    }
     // Render and activate one immutable snapshot. A separate count plus live-list indexing allowed
-    // discovery refreshes and mode changes to invalidate an index while LazyColumn was measuring.
-    val pickerEntries = remember(
-        pickerMode,
-        visibleHistory,
-        visibleCatalogs,
-        visibleGenres,
-        allGenresLabel,
-    ) {
-        when (pickerMode) {
-            SearchPickerMode.History -> visibleHistory.map(SearchPickerEntry::History)
-            SearchPickerMode.Catalogs -> {
-                val labels = discoverCatalogDisplayLabels(visibleCatalogs)
-                visibleCatalogs.mapIndexed { index, catalog ->
-                    SearchPickerEntry.Catalog(catalogKey = catalog.key, label = labels[index])
-                }
-            }
-            SearchPickerMode.Genres -> visibleGenres.map { genre ->
-                SearchPickerEntry.Genre(genre = genre, label = genre ?: allGenresLabel)
-            }
-        }
+    // refreshes to invalidate an index while LazyColumn was measuring.
+    val pickerEntries = remember(visibleHistory) {
+        visibleHistory.map(::SearchPickerEntry)
     }
     val pickerItemCount = pickerEntries.size
-    val pickerVisible = isSearchActive &&
-        (pickerMode != SearchPickerMode.History || searchBarHasFocus) &&
-        (pickerMode != SearchPickerMode.History || visibleHistory.isNotEmpty())
+    val pickerVisible = isSearchActive && searchBarHasFocus && visibleHistory.isNotEmpty()
     var historyShapeVisible by remember { mutableStateOf(false) }
     val attachedPanelVisible = historyShapeVisible || librarySortMenuVisible
 
@@ -4931,8 +5050,6 @@ private fun TabletFloatingTopBar(
     LaunchedEffect(isSearchActive) {
         if (isSearchActive) {
             com.nuvio.app.features.search.SearchHistoryRepository.ensureLoaded()
-        } else {
-            pickerMode = SearchPickerMode.History
         }
     }
 
@@ -4945,24 +5062,15 @@ private fun TabletFloatingTopBar(
         }
     }
 
-    LaunchedEffect(discoverPickerRequestCount) {
-        if (discoverPickerRequestCount <= 0 || !isSearchActive) return@LaunchedEffect
-        SearchRepository.refreshDiscover(discoverAddonsUiState.addons)
-        pickerMode = SearchPickerMode.Catalogs
-        pickerSelectedIndex = -1
-        try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
-    }
-
     val pickerListState = rememberLazyListState()
-    LaunchedEffect(pickerSelectedIndex, pickerMode, pickerEntries) {
+    LaunchedEffect(pickerSelectedIndex, pickerEntries) {
         if (pickerSelectedIndex < 0) {
             if (pickerEntries.isNotEmpty()) {
                 pickerListState.scrollToItem(0)
             }
             return@LaunchedEffect
         }
-        val headerOffset = if (pickerMode == SearchPickerMode.History) 0 else 1
-        val targetIndex = pickerSelectedIndex.coerceIn(pickerEntries.indices) + headerOffset
+        val targetIndex = pickerSelectedIndex.coerceIn(pickerEntries.indices)
         val layoutInfo = pickerListState.layoutInfo
         val targetInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex }
         val fullyVisible = targetInfo != null &&
@@ -4973,37 +5081,10 @@ private fun TabletFloatingTopBar(
         }
     }
 
-    fun submitDiscovery() {
-        pickerMode = SearchPickerMode.History
-        pickerSelectedIndex = -1
-        focusManager.clearFocus()
-        onDiscoverSubmit()
-    }
-
     fun activatePickerItem(entry: SearchPickerEntry) {
-        when (entry) {
-            is SearchPickerEntry.History -> {
-                onSearchQueryChange(entry.query)
-                focusManager.clearFocus()
-                onSearchSubmit(entry.query)
-            }
-
-            is SearchPickerEntry.Catalog -> {
-                SearchRepository.selectDiscoverCatalog(entry.catalogKey)
-                // Always advance to a confirmation/filter level. Catalogs without genre filters
-                // expose one "All Genres" entry instead of closing the picker immediately.
-                searchFieldState = TextFieldValue("")
-                onSearchQueryChange("")
-                pickerMode = SearchPickerMode.Genres
-                pickerSelectedIndex = -1
-                try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
-            }
-
-            is SearchPickerEntry.Genre -> {
-                SearchRepository.selectDiscoverGenre(entry.genre)
-                submitDiscovery()
-            }
-        }
+        onSearchQueryChange(entry.query)
+        focusManager.clearFocus()
+        onSearchSubmit(entry.query)
     }
 
     val dividerColor = Color.White.copy(alpha = 0.13f)
@@ -5031,7 +5112,7 @@ private fun TabletFloatingTopBar(
             border = BorderStroke(0.5.dp, dividerColor),
             modifier = Modifier
                 .height(44.dp)
-                .width(320.dp)
+                .width(topBarWidth)
                 .onPointerEvent(PointerEventType.Enter) {
                     activationZoneHovered = true
                 }
@@ -5064,51 +5145,21 @@ private fun TabletFloatingTopBar(
                                 .weight(1f)
                                 .onPreviewKeyEvent { event ->
                                     when (event.key) {
-                                        Key.Tab -> {
-                                            if (event.type == KeyEventType.KeyDown) {
-                                                pickerMode = when (pickerMode) {
-                                                    SearchPickerMode.History -> {
-                                                        if (searchFieldState.text.isNotEmpty()) {
-                                                            searchFieldState = TextFieldValue("")
-                                                            onSearchQueryChange("")
-                                                        }
-                                                        SearchRepository.refreshDiscover(discoverAddonsUiState.addons)
-                                                        SearchPickerMode.Catalogs
-                                                    }
-                                                    SearchPickerMode.Catalogs,
-                                                    SearchPickerMode.Genres,
-                                                    -> SearchPickerMode.History
-                                                }
-                                                pickerSelectedIndex = -1
-                                            }
-                                            true
-                                        }
                                         Key.Enter -> {
                                             if (event.type == KeyEventType.KeyUp) {
                                                 if (pickerSelectedIndex in 0 until pickerItemCount) {
                                                     pickerEntries.getOrNull(pickerSelectedIndex)
                                                         ?.let(::activatePickerItem)
-                                                } else if (pickerMode == SearchPickerMode.History) {
+                                                } else {
                                                     focusManager.clearFocus()
                                                     onSearchSubmit(searchQuery)
-                                                } else {
-                                                    pickerSelectedIndex = 0.takeIf { pickerItemCount > 0 } ?: -1
                                                 }
                                             }
                                             true
                                         }
                                         Key.Escape -> {
                                             if (event.type == KeyEventType.KeyUp) {
-                                                when (pickerMode) {
-                                                    SearchPickerMode.Genres -> {
-                                                        searchFieldState = TextFieldValue("")
-                                                        onSearchQueryChange("")
-                                                        pickerMode = SearchPickerMode.Catalogs
-                                                        try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
-                                                    }
-                                                    SearchPickerMode.Catalogs -> pickerMode = SearchPickerMode.History
-                                                    SearchPickerMode.History -> onSearchOverlayDismiss()
-                                                }
+                                                onSearchOverlayDismiss()
                                                 pickerSelectedIndex = -1
                                             }
                                             true
@@ -5116,9 +5167,7 @@ private fun TabletFloatingTopBar(
                                         Key.DirectionDown -> {
                                             if (event.type == KeyEventType.KeyDown && isSearchActive && pickerItemCount > 0) {
                                                 pickerSelectedIndex = (pickerSelectedIndex + 1).coerceAtMost(pickerItemCount - 1)
-                                                val historyEntry = pickerEntries.getOrNull(pickerSelectedIndex)
-                                                    as? SearchPickerEntry.History
-                                                if (historyEntry != null) {
+                                                pickerEntries.getOrNull(pickerSelectedIndex)?.let { historyEntry ->
                                                     val query = historyEntry.query
                                                     searchFieldState = searchFieldState.copy(text = query, selection = TextRange(query.length))
                                                 }
@@ -5130,9 +5179,7 @@ private fun TabletFloatingTopBar(
                                             if (event.type == KeyEventType.KeyDown && isSearchActive && pickerItemCount > 0) {
                                                 if (pickerSelectedIndex > -1) {
                                                     pickerSelectedIndex--
-                                                    val historyEntry = pickerEntries.getOrNull(pickerSelectedIndex)
-                                                        as? SearchPickerEntry.History
-                                                    if (historyEntry != null) {
+                                                    pickerEntries.getOrNull(pickerSelectedIndex)?.let { historyEntry ->
                                                         val query = historyEntry.query
                                                         searchFieldState = searchFieldState.copy(text = query, selection = TextRange(query.length))
                                                     }
@@ -5190,33 +5237,22 @@ private fun TabletFloatingTopBar(
                     }
                         // Mirrors the Tab key inside the field: toggles the discover-catalog
                         // picker so discovery mode is reachable by mouse as well.
-                        IconButton(
-                            onClick = {
-                                pickerMode = when (pickerMode) {
-                                    SearchPickerMode.History -> {
-                                        if (searchFieldState.text.isNotEmpty()) {
-                                            searchFieldState = TextFieldValue("")
-                                            onSearchQueryChange("")
-                                        }
-                                        SearchRepository.refreshDiscover(discoverAddonsUiState.addons)
-                                        SearchPickerMode.Catalogs
-                                    }
-                                    SearchPickerMode.Catalogs,
-                                    SearchPickerMode.Genres,
-                                    -> SearchPickerMode.History
-                                }
-                                pickerSelectedIndex = -1
-                                // Keep keyboard navigation live in the picker after a mouse click.
-                                try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
-                            },
-                            modifier = Modifier.size(NuvioTokens.Space.s32),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Explore,
-                                contentDescription = stringResource(Res.string.cd_browse_catalogs),
-                                tint = if (pickerMode != SearchPickerMode.History) activeIconTint else inactiveIconTint,
-                                modifier = Modifier.size(16.dp),
-                            )
+                        if (discoverTabVisible) {
+                            IconButton(
+                                onClick = {
+                                    onTabSelected(AppScreenTab.Discover)
+                                    // Keep keyboard navigation live in the picker after a mouse click.
+                                    try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
+                                },
+                                modifier = Modifier.size(NuvioTokens.Space.s32),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Explore,
+                                    contentDescription = stringResource(Res.string.cd_browse_catalogs),
+                                    tint = inactiveIconTint,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
                         }
                         IconButton(
                             onClick = onSearchOverlayDismiss,
@@ -5256,6 +5292,25 @@ private fun TabletFloatingTopBar(
                                 modifier = Modifier.size(NuvioTokens.Space.s18),
                                 tint = if (isSearchActive) activeIconTint else inactiveIconTint,
                             )
+                        }
+                        if (discoverTabVisible) {
+                            Box(Modifier.width(0.5.dp).fillMaxHeight().background(dividerColor))
+                            NavQuadrant(
+                                selected = selectedTab == AppScreenTab.Discover,
+                                activeColor = activeQuadColor,
+                                onClick = { onTabSelected(AppScreenTab.Discover) },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Explore,
+                                    contentDescription = stringResource(Res.string.compose_nav_discover),
+                                    modifier = Modifier.size(NuvioTokens.Space.s18),
+                                    tint = if (selectedTab == AppScreenTab.Discover) {
+                                        activeIconTint
+                                    } else {
+                                        inactiveIconTint
+                                    },
+                                )
+                            }
                         }
                         Box(Modifier.width(0.5.dp).fillMaxHeight().background(dividerColor))
                         NavQuadrant(
@@ -5321,69 +5376,71 @@ private fun TabletFloatingTopBar(
                     tonalElevation = 0.dp,
                     shadowElevation = 0.dp,
                     border = androidx.compose.foundation.BorderStroke(0.5.dp, dividerColor),
-                    modifier = Modifier.width(320.dp).offset(y = (-0.5).dp),
+                    modifier = Modifier.width(topBarWidth).offset(y = (-0.5).dp),
                 ) {
-                    LazyColumn(
-                        state = pickerListState,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = pickerMaxHeight)
-                            .padding(vertical = 8.dp),
-                    ) {
-                        if (pickerMode != SearchPickerMode.History) {
-                            item(key = "picker_header_$pickerMode") {
-                                Text(
-                                    text = when (pickerMode) {
-                                        SearchPickerMode.Catalogs -> stringResource(Res.string.discover_catalog)
-                                        SearchPickerMode.Genres -> stringResource(Res.string.discover_select_genre)
-                                        SearchPickerMode.History -> ""
-                                    },
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = inactiveIconTint,
-                                )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        LazyColumn(
+                            state = pickerListState,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                // Leave the clear-history footer its own room inside the height the
+                                // panel was already budgeted.
+                                .heightIn(max = (pickerMaxHeight - 32.dp).coerceAtLeast(88.dp))
+                                .padding(vertical = 8.dp),
+                        ) {
+                            items(
+                                items = pickerEntries,
+                                key = SearchPickerEntry::key,
+                            ) { entry ->
+                                val index = pickerEntries.indexOf(entry)
+                                val isSelected = index == pickerSelectedIndex
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(if (isSelected) Color.White.copy(alpha = 0.1f) else Color.Transparent)
+                                        .clickable { activatePickerItem(entry) }
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Icon(
+                                        painter = painterResource(Res.drawable.sidebar_search),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(NuvioTokens.Space.s16),
+                                        tint = inactiveIconTint,
+                                    )
+                                    androidx.compose.material3.Text(
+                                        text = entry.label,
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = activeIconTint,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
                         }
-                        if (pickerEntries.isEmpty() && pickerMode != SearchPickerMode.History) {
-                            item(key = "picker_empty_$pickerMode") {
-                                Text(
-                                    text = stringResource(Res.string.discover_empty_no_catalogs_title),
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = activeIconTint,
-                                )
-                            }
-                        }
-                        items(
-                            items = pickerEntries,
-                            key = SearchPickerEntry::key,
-                        ) { entry ->
-                            val index = pickerEntries.indexOf(entry)
-                            val isSelected = index == pickerSelectedIndex
-                            Row(
+
+                        // Mouse-only footer: the arrow keys walk the history entries above, so this
+                        // stays out of pickerEntries and pickerSelectedIndex.
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 8.dp, end = 8.dp, bottom = 4.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.Text(
+                                text = stringResource(Res.string.compose_search_clear_history),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White.copy(alpha = 0.55f),
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(if (isSelected) Color.White.copy(alpha = 0.1f) else Color.Transparent)
-                                    .clickable { activatePickerItem(entry) }
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Icon(
-                                    painter = painterResource(Res.drawable.sidebar_search),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(NuvioTokens.Space.s16),
-                                    tint = inactiveIconTint,
-                                )
-                                androidx.compose.material3.Text(
-                                    text = entry.label,
-                                    modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = activeIconTint,
-                                    maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                )
-                            }
+                                    .clickable {
+                                        com.nuvio.app.features.search.SearchHistoryRepository.clearHistory()
+                                        pickerSelectedIndex = -1
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                            )
                         }
                     }
                 }

@@ -52,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioModalDialog
 import com.nuvio.app.core.ui.desktopHorizontalListNavigation
+import com.nuvio.app.core.ui.accentFill
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -75,6 +76,7 @@ import nuvio.composeapp.generated.resources.library_downloads_select_none
 import nuvio.composeapp.generated.resources.library_downloads_selected_count
 import nuvio.composeapp.generated.resources.library_downloads_specials_label
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.graphics.SolidColor
 
 /**
  * Per-season / per-episode monitoring editor, styled after the details-page episode selector.
@@ -348,7 +350,8 @@ private fun EpisodeSelectCard(
     owned: Boolean,
     onToggle: () -> Unit,
 ) {
-    val accent = MaterialTheme.nuvio.colors.accent
+    val accentFill = MaterialTheme.nuvio.colors.accentFill
+    val accentWash = MaterialTheme.nuvio.colors.accentFill(0.28f)
     val shape = RoundedCornerShape(8.dp)
     Box(
         modifier = Modifier
@@ -358,7 +361,7 @@ private fun EpisodeSelectCard(
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .border(
                 width = if (monitored) 2.dp else 1.dp,
-                color = if (monitored) accent else Color.White.copy(alpha = 0.12f),
+                brush = if (monitored) accentFill else SolidColor(Color.White.copy(alpha = 0.12f)),
                 shape = shape,
             )
             .clickable(onClick = onToggle),
@@ -387,7 +390,11 @@ private fun EpisodeSelectCard(
                 ),
         )
         if (monitored) {
-            Box(modifier = Modifier.fillMaxSize().background(accent.copy(alpha = 0.28f)))
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(accentWash),
+            )
         }
 
         Row(
@@ -431,7 +438,7 @@ private fun EpisodeSelectCard(
                     .padding(6.dp)
                     .size(18.dp)
                     .clip(CircleShape)
-                    .background(accent),
+                    .background(accentFill),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(

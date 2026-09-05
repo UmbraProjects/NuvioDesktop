@@ -495,6 +495,19 @@ fun languageLabelForCode(code: String?): String = when {
         ?: stringResource(Res.string.subtitle_language_unknown)
 }
 
+/**
+ * Display name of a track's own language tag ("tam" -> "Tamil"), or "" when it carries none. An
+ * unrecognised tag falls back to the tag itself: a row reading "qaa" says more than one reading
+ * "Unknown", which is what [languageLabelForCode] answers for anything outside the option list.
+ */
+@Composable
+fun trackLanguageDisplayLabel(code: String?): String {
+    val raw = code?.trim().orEmpty()
+    if (raw.isEmpty()) return ""
+    val label = languageLabelForCode(raw)
+    return if (label == stringResource(Res.string.subtitle_language_unknown)) raw else label
+}
+
 suspend fun getLanguageLabelForCode(code: String?): String = when {
     code.isNullOrBlank() || code.equals(SubtitleLanguageOption.NONE, ignoreCase = true) ->
         getString(Res.string.settings_playback_option_none)

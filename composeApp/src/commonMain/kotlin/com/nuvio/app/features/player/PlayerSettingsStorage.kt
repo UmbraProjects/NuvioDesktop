@@ -27,8 +27,12 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopVerboseMpvLoggingEnabled(enabled: Boolean)
     fun loadDesktopUiScalePercent(): Int?
     fun saveDesktopUiScalePercent(percent: Int)
+    fun loadSeekStepSeconds(): Int?
+    fun saveSeekStepSeconds(seconds: Int)
     fun loadDesktopSourceNotchPosition(): String?
     fun saveDesktopSourceNotchPosition(position: String)
+    fun loadDesktopPlayerNotificationPosition(): String?
+    fun saveDesktopPlayerNotificationPosition(position: String)
     fun loadExternalPlayerEnabled(): Boolean?
     fun saveExternalPlayerEnabled(enabled: Boolean)
     fun loadExternalPlayerForwardSubtitles(): Boolean?
@@ -75,6 +79,10 @@ internal expect object PlayerSettingsStorage {
     fun saveSubtitleBottomOffset(bottomOffset: Int)
     fun loadSubtitleFontFamily(): String?
     fun saveSubtitleFontFamily(fontFamily: String)
+    fun loadSubtitleAssStyleMode(): String?
+    fun saveSubtitleAssStyleMode(mode: String)
+    fun loadSubtitleAssScalePercent(): Int?
+    fun saveSubtitleAssScalePercent(percent: Int)
     fun loadSubtitleUseForcedSubtitles(): Boolean?
     fun saveSubtitleUseForcedSubtitles(enabled: Boolean)
     fun loadSubtitleShowOnlyPreferredLanguages(): Boolean?
@@ -89,6 +97,12 @@ internal expect object PlayerSettingsStorage {
     fun saveStreamReuseLastLinkEnabled(enabled: Boolean)
     fun loadStreamReuseLastLinkCacheHours(): Int?
     fun saveStreamReuseLastLinkCacheHours(hours: Int)
+    fun loadStreamPrefetchScope(): String?
+    fun saveStreamPrefetchScope(scope: String)
+    fun loadStreamPrefetchCacheMinutes(): Int?
+    fun saveStreamPrefetchCacheMinutes(minutes: Int)
+    fun loadStreamPrefetchResolveLinks(): Boolean?
+    fun saveStreamPrefetchResolveLinks(enabled: Boolean)
     fun loadDecoderPriority(): Int?
     fun saveDecoderPriority(priority: Int)
     fun loadNvidiaRtxSuperResolutionEnabled(): Boolean?
@@ -97,6 +111,10 @@ internal expect object PlayerSettingsStorage {
     fun saveNvidiaRtxHdrEnabled(enabled: Boolean)
     fun loadDesktopAnimeModeAutoEnabled(): Boolean?
     fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean)
+    fun loadDesktopAnimeTreatAnimationAsAnime(): Boolean?
+    fun saveDesktopAnimeTreatAnimationAsAnime(enabled: Boolean)
+    fun loadDesktopAnimeSkipUltraHdEnabled(): Boolean?
+    fun saveDesktopAnimeSkipUltraHdEnabled(enabled: Boolean)
     fun loadDesktopAnimeSvpEnabled(): Boolean?
     fun saveDesktopAnimeSvpEnabled(enabled: Boolean)
     fun loadDesktopAnimeSvpDebugOverlayEnabled(): Boolean?
@@ -144,6 +162,8 @@ internal expect object PlayerSettingsStorage {
     fun saveIntroDbApiKey(apiKey: String)
     fun loadSkipDbApiKey(): String?
     fun saveSkipDbApiKey(apiKey: String)
+    fun loadSkipAutoAcceptMode(): String?
+    fun saveSkipAutoAcceptMode(mode: String)
     fun loadIntroSubmitEnabled(): Boolean?
     fun saveIntroSubmitEnabled(enabled: Boolean)
     fun loadStreamAutoPlayNextEpisodeEnabled(): Boolean?

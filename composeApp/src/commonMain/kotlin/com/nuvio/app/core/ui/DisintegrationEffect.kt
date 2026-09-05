@@ -25,7 +25,10 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -48,12 +51,18 @@ fun DisintegratingContainer(
     val graphicsLayer = rememberGraphicsLayer()
     val progress = remember { Animatable(0f) }
     var field by remember { mutableStateOf<AshField?>(null) }
+    val layerRecorded = remember { MutableStateFlow(false) }
     val seed = remember { Random.nextLong() }
     val onDisintegratedState = rememberUpdatedState(onDisintegrated)
 
     LaunchedEffect(disintegrating) {
         if (!disintegrating) return@LaunchedEffect
-        val bitmap = runCatching { graphicsLayer.toImageBitmap() }.getOrNull()
+        // The layer only holds pixels once the draw pass has recorded into it, and the
+        // effect flush can beat that first draw. Snapshotting an unrecorded layer hands
+        // Skia an empty render node and kills the process natively, which runCatching
+        // cannot intercept -- so wait for the record instead of racing it.
+        val recorded = withTimeoutOrNull(LAYER_RECORD_TIMEOUT_MS) { layerRecorded.first { it } } != null
+        val bitmap = if (recorded) runCatching { graphicsLayer.toImageBitmap() }.getOrNull() else null
         if (bitmap == null) {
             onDisintegratedState.value()
             return@LaunchedEffect
@@ -73,6 +82,7 @@ fun DisintegratingContainer(
             if (activeField == null) {
                 graphicsLayer.record { this@drawWithContent.drawContent() }
                 drawLayer(graphicsLayer)
+                if (size.width >= 1f && size.height >= 1f) layerRecorded.value = true
             } else {
                 drawAsh(activeField, progress.value)
             }
@@ -109,6 +119,10 @@ private class AshField(
 private const val ASH_COLS = 130
 private const val TILE_LIFESPAN = 0.5f
 private const val TAU = 6.2831855f
+
+// One frame is enough to record the layer; if nothing draws by then (offscreen or
+// zero-sized container) fall through to the plain dismissal instead of hanging.
+private const val LAYER_RECORD_TIMEOUT_MS = 300L
 
 private fun frontWave(ny: Float, phase: Float): Float =
     sin(ny * TAU * 1.15f + phase) * 0.045f + sin(ny * TAU * 2.4f + phase * 1.7f) * 0.02f

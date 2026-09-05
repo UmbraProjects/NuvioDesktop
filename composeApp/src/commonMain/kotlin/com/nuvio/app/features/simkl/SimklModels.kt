@@ -475,10 +475,17 @@ internal fun parseSimklEpisodeMarker(marker: String): Pair<Int, Int>? {
 internal data class SimklPlaybackSession(
     val id: Int? = null,
     val progress: Float? = null,
+    // The live payload spells this "paused_at"; "watched_at" is kept only as a fallback for older
+    // responses. Reading the wrong one is silent — the field simply stays null and every session
+    // gets stamped with the current time, which makes all CW rows tie at "now".
+    @SerialName("paused_at") val pausedAt: String? = null,
     @SerialName("watched_at") val watchedAt: String? = null,
     val type: String? = null,
     val movie: SimklMovieMedia? = null,
     val show: SimklShowMedia? = null,
     val anime: SimklShowMedia? = null,
     val episode: SimklEpisodeRef? = null,
-)
+) {
+    /** When playback was paused, whichever spelling the payload used. */
+    val pausedAtTimestamp: String? get() = pausedAt?.takeIf { it.isNotBlank() } ?: watchedAt?.takeIf { it.isNotBlank() }
+}

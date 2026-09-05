@@ -35,7 +35,7 @@ internal object ChapterSkipDetector {
                 startTime = 0.0,
                 endTime = chapter.startTime,
                 type = "intro",
-                provider = "chapters",
+                provider = CHAPTER_SKIP_PROVIDER,
             )
         }
 
@@ -54,7 +54,7 @@ internal object ChapterSkipDetector {
                 startTime = chapter.startTime,
                 endTime = endTime,
                 type = "intro",
-                provider = "chapters",
+                provider = CHAPTER_SKIP_PROVIDER,
             )
         }
 
@@ -73,7 +73,7 @@ internal object ChapterSkipDetector {
                 startTime = chapter.startTime,
                 endTime = endTime,
                 type = "outro",
-                provider = "chapters",
+                provider = CHAPTER_SKIP_PROVIDER,
             )
         }
 

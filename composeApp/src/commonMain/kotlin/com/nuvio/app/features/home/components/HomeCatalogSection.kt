@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home.components
 
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,6 +36,10 @@ fun HomeCatalogRowSection(
     onViewAllClick: (() -> Unit)? = null,
     onLoadMore: (() -> Unit)? = null,
     isLoadingMore: Boolean = false,
+    // Row shuffle: null on rows that cannot re-deal, and on every surface that doesn't offer it.
+    onShuffleClick: (() -> Unit)? = null,
+    isShuffling: Boolean = false,
+    shuffleGeneration: Int = 0,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     // 1-based position of this row among the home content rows, appended to the header when the
@@ -42,6 +47,11 @@ fun HomeCatalogRowSection(
     rowNumber: Int? = null,
     // TV Mode's row-jump dots, rendered on the header line next to the title. Null everywhere else.
     headerTrailingContent: (@Composable () -> Unit)? = null,
+    // Discover's clickable catalog/genre segments replace the header title, and its picker panel
+    // draws over the faded posters. Null on every ordinary catalog row.
+    titleContent: (@Composable () -> Unit)? = null,
+    bodyAlpha: Float = 1f,
+    bodyOverlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val effectiveRowState = rowState ?: rememberLazyListState()
     if (sectionPadding != null) {
@@ -59,10 +69,16 @@ fun HomeCatalogRowSection(
             onViewAllClick = onViewAllClick,
             onLoadMore = onLoadMore,
             isLoadingMore = isLoadingMore,
+            onShuffleClick = onShuffleClick,
+            isShuffling = isShuffling,
+            shuffleGeneration = shuffleGeneration,
             onPosterClick = onPosterClick,
             onPosterLongClick = onPosterLongClick,
             rowNumber = rowNumber,
             headerTrailingContent = headerTrailingContent,
+            titleContent = titleContent,
+            bodyAlpha = bodyAlpha,
+            bodyOverlay = bodyOverlay,
         )
     } else {
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -79,11 +95,17 @@ fun HomeCatalogRowSection(
                 onViewAllClick = onViewAllClick,
                 onLoadMore = onLoadMore,
                 isLoadingMore = isLoadingMore,
+                onShuffleClick = onShuffleClick,
+                isShuffling = isShuffling,
+                shuffleGeneration = shuffleGeneration,
                 isKeyboardNavigation = isKeyboardNavigation,
                 onPosterClick = onPosterClick,
                 onPosterLongClick = onPosterLongClick,
                 rowNumber = rowNumber,
                 headerTrailingContent = headerTrailingContent,
+                titleContent = titleContent,
+                bodyAlpha = bodyAlpha,
+                bodyOverlay = bodyOverlay,
             )
         }
     }
@@ -103,11 +125,17 @@ private fun HomeCatalogRowSectionContent(
     onViewAllClick: (() -> Unit)?,
     onLoadMore: (() -> Unit)?,
     isLoadingMore: Boolean,
+    onShuffleClick: (() -> Unit)?,
+    isShuffling: Boolean,
+    shuffleGeneration: Int,
     isKeyboardNavigation: Boolean,
     onPosterClick: ((MetaPreview) -> Unit)?,
     onPosterLongClick: ((MetaPreview) -> Unit)?,
     rowNumber: Int?,
     headerTrailingContent: (@Composable () -> Unit)?,
+    titleContent: (@Composable () -> Unit)?,
+    bodyAlpha: Float,
+    bodyOverlay: (@Composable BoxScope.() -> Unit)?,
 ) {
     val posterCardStyle = rememberHomePosterCardStyleUiState()
     val homeCatalogSettings by remember {
@@ -133,9 +161,15 @@ private fun HomeCatalogRowSectionContent(
         onViewAllClick = onViewAllClick,
         onLoadMore = onLoadMore,
         isLoadingMore = isLoadingMore,
+        onShuffleClick = onShuffleClick,
+        isShuffling = isShuffling,
+        shuffleGeneration = shuffleGeneration,
         isKeyboardNavigation = isKeyboardNavigation,
         viewAllPillSize = NuvioViewAllPillSize.Compact,
         headerTrailingContent = headerTrailingContent,
+        titleContent = titleContent,
+        bodyAlpha = bodyAlpha,
+        bodyOverlay = bodyOverlay,
         key = { item -> item.stableKey() },
         rowState = rowState,
     ) { item ->

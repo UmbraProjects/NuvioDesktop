@@ -57,7 +57,7 @@ data class QualityLookup(
 object QualiCacheQualityService {
     // v2 stores the lookup status alongside the tokens. The bump also discards v1 entries, which
     // is wanted: those recorded "no quality" without recording that it was only provisional.
-    const val CACHE_VERSION = 2
+    const val CACHE_VERSION = 3
 
     private val log = Logger.withTag("QualiCache")
     private val json = Json { ignoreUnknownKeys = true }
@@ -106,7 +106,8 @@ object QualiCacheQualityService {
     fun cached(type: String, id: String?, settings: QualiCacheSettings): QualityLookup? {
         if (!shouldFetchFor(id, settings)) return null
         val imdbId = extractImdbId(id) ?: return null
-        val cacheKey = "v$CACHE_VERSION:${toQualiCacheMediaType(type)}:$imdbId"
+        val cacheKey =
+            "v$CACHE_VERSION:${settings.minimumTrust.apiValue}:${toQualiCacheMediaType(type)}:$imdbId"
         val entry = cacheSnapshot[cacheKey] ?: return null
         if (entry.expiresAtMs <= LibraryClock.nowEpochMs()) return null
         return QualityLookup(entry.tokens, entry.status)
@@ -128,7 +129,7 @@ object QualiCacheQualityService {
         if (!shouldFetchFor(id, settings)) return QualityLookup.Unavailable
         val imdbId = extractImdbId(id) ?: return QualityLookup.Unavailable
         val mediaType = toQualiCacheMediaType(type)
-        val cacheKey = "v$CACHE_VERSION:$mediaType:$imdbId"
+        val cacheKey = "v$CACHE_VERSION:${settings.minimumTrust.apiValue}:$mediaType:$imdbId"
         val now = LibraryClock.nowEpochMs()
 
         val pending = cacheMutex.withLock {
@@ -226,12 +227,13 @@ object QualiCacheQualityService {
         settings: QualiCacheSettings,
         releaseDate: String?,
     ): QualityResult {
-        val query = buildString {
-            append("?season=1&episode=1")
-            // Lets QualiCache pick a sensible refresh cadence even when it has no TMDB key set.
-            isoReleaseDate(releaseDate)?.let { date -> append("&release_date=").append(date) }
-        }
-        val url = "${settings.baseUrl}/v1/quality/$mediaType/$imdbId$query"
+        val url = buildQualiCacheQualityUrl(
+            baseUrl = settings.baseUrl,
+            mediaType = mediaType,
+            imdbId = imdbId,
+            minimumTrust = settings.minimumTrust,
+            releaseDate = isoReleaseDate(releaseDate),
+        )
         val headers = buildMap {
             put("Accept", "application/json")
             // Header rather than the supported access_key query parameter: a secret does not belong
@@ -332,6 +334,22 @@ object QualiCacheQualityService {
         if (value.isNullOrBlank()) return null
         return isoDateRegex.find(value.trim())?.value
     }
+}
+
+internal fun buildQualiCacheQualityUrl(
+    baseUrl: String,
+    mediaType: String,
+    imdbId: String,
+    minimumTrust: QualiCacheMinimumTrust,
+    releaseDate: String? = null,
+): String {
+    val parameters = mutableListOf(
+        "season=1",
+        "episode=1",
+        "min_trust=${minimumTrust.apiValue}",
+    )
+    releaseDate?.let { parameters += "release_date=$it" }
+    return "$baseUrl/v1/quality/$mediaType/$imdbId?${parameters.joinToString("&")}"
 }
 
 private class QualiCacheUnreachableException(cause: Throwable) : RuntimeException(cause.message, cause)

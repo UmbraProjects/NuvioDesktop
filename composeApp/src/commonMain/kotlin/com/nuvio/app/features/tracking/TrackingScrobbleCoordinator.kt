@@ -23,6 +23,7 @@ data class TrackingScrobbleFailure(
  */
 data class TrackingScrobbleDispatch(
     val sentCount: Int = 0,
+    val watchedProviderIds: List<TrackingProviderId> = emptyList(),
     val failures: List<TrackingScrobbleFailure> = emptyList(),
 ) {
     val handledNothing: Boolean
@@ -159,12 +160,18 @@ internal suspend fun dispatchTrackingScrobble(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                false to TrackingScrobbleFailure(providerId = scrobbler.providerId, cause = error)
+                TrackingScrobbleResult.Declined to TrackingScrobbleFailure(
+                    providerId = scrobbler.providerId,
+                    cause = error,
+                )
             }
         }
     }.awaitAll()
     TrackingScrobbleDispatch(
-        sentCount = results.count { (sent, _) -> sent },
+        sentCount = results.count { (result, _) -> result.handled },
+        watchedProviderIds = results.mapIndexedNotNull { index, (result, _) ->
+            scrobblers.elementAt(index).providerId.takeIf { result.confirmsWatched }
+        },
         failures = results.mapNotNull { (_, failure) -> failure },
     )
 }

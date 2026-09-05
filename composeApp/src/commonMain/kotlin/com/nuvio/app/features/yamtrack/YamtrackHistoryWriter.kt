@@ -62,7 +62,7 @@ internal object YamtrackHistoryWriter : TrackingHistoryWriter {
                         progressPercent = 100f,
                         positionSeconds = null,
                         durationSeconds = null,
-                    )
+                    ).handled
                 } else {
                     deleteMovieHistory(baseUrl, token, target.identity)
                 }

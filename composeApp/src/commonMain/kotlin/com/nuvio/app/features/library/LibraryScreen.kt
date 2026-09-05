@@ -37,7 +37,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -80,7 +79,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.nuvio.app.core.i18n.localizedByteUnit
 import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.ui.NuvioDropdownChip
@@ -98,7 +96,12 @@ import com.nuvio.app.features.cloud.CloudLibraryItem
 import com.nuvio.app.features.cloud.CloudLibraryItemType
 import com.nuvio.app.features.cloud.CloudLibraryRepository
 import com.nuvio.app.features.cloud.CloudLibraryUiState
+import com.nuvio.app.features.cloud.CloudLibraryFileEntry
+import com.nuvio.app.features.cloud.cloudLibraryWindowLabel
+import com.nuvio.app.features.cloud.formatCloudLibraryBytes
+import com.nuvio.app.features.cloud.playableFileEntries
 import com.nuvio.app.isDesktop
+import com.nuvio.app.features.debrid.DebridCloudLibraryWindow
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
@@ -112,6 +115,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material.icons.rounded.Refresh
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -220,7 +224,12 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(sourceMode, cloudSettings.cloudLibraryEnabled, cloudSettings.providerApiKeys) {
+    LaunchedEffect(
+        sourceMode,
+        cloudSettings.cloudLibraryEnabled,
+        cloudSettings.cloudLibraryWindow,
+        cloudSettings.providerApiKeys,
+    ) {
         if (sourceMode == LibraryViewMode.Cloud) {
             CloudLibraryRepository.ensureLoaded()
             selectedCloudItemKey = null
@@ -368,7 +377,12 @@ fun LibraryScreen(
                 uiState = cloudUiState,
                 selectedProviderId = selectedProviderId,
                 selectedType = selectedType,
+                selectedWindow = cloudSettings.cloudLibraryWindow,
                 selectedCloudItemKey = selectedCloudItemKey,
+                onWindowSelected = { window ->
+                    DebridSettingsRepository.setCloudLibraryWindow(window)
+                    selectedCloudItemKey = null
+                },
                 onProviderSelected = {
                     selectedProviderId = it
                     selectedTypeName = null
@@ -672,7 +686,9 @@ private fun LazyListScope.cloudLibraryContent(
     uiState: CloudLibraryUiState,
     selectedProviderId: String?,
     selectedType: CloudLibraryItemType?,
+    selectedWindow: DebridCloudLibraryWindow,
     selectedCloudItemKey: String?,
+    onWindowSelected: (DebridCloudLibraryWindow) -> Unit,
     onProviderSelected: (String?) -> Unit,
     onTypeSelected: (CloudLibraryItemType?) -> Unit,
     onItemSelected: (CloudLibraryItem) -> Unit,
@@ -736,7 +752,9 @@ private fun LazyListScope.cloudLibraryContent(
                         uiState = uiState,
                         selectedProviderId = selectedProviderId,
                         selectedType = effectiveSelectedType,
+                        selectedWindow = selectedWindow,
                         availableTypes = availableTypes,
+                        onWindowSelected = onWindowSelected,
                         onProviderSelected = onProviderSelected,
                         onTypeSelected = onTypeSelected,
                         onRefresh = onRefresh,
@@ -827,7 +845,9 @@ private fun CloudLibraryToolbar(
     uiState: CloudLibraryUiState,
     selectedProviderId: String?,
     selectedType: CloudLibraryItemType?,
+    selectedWindow: DebridCloudLibraryWindow,
     availableTypes: List<CloudLibraryItemType>,
+    onWindowSelected: (DebridCloudLibraryWindow) -> Unit,
     onProviderSelected: (String?) -> Unit,
     onTypeSelected: (CloudLibraryItemType?) -> Unit,
     onRefresh: () -> Unit,
@@ -861,6 +881,9 @@ private fun CloudLibraryToolbar(
         ?: stringResource(Res.string.cloud_library_provider_all)
     val selectedTypeLabel = selectedType?.let { type -> cloudLibraryTypeLabel(type) }
         ?: stringResource(Res.string.cloud_library_type_all)
+    val windowOptions = DebridCloudLibraryWindow.entries.map { window ->
+        NuvioDropdownOption(key = window.name, label = cloudLibraryWindowLabel(window))
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -886,6 +909,17 @@ private fun CloudLibraryToolbar(
                     enabled = providerOptions.size > 1,
                     onSelected = { option ->
                         onProviderSelected(option.key.ifBlank { null })
+                    },
+                )
+                NuvioDropdownChip(
+                    title = stringResource(Res.string.cloud_library_select_window),
+                    label = cloudLibraryWindowLabel(selectedWindow),
+                    selectedKey = selectedWindow.name,
+                    options = windowOptions,
+                    onSelected = { option ->
+                        runCatching { DebridCloudLibraryWindow.valueOf(option.key) }
+                            .getOrNull()
+                            ?.let(onWindowSelected)
                     },
                 )
                 NuvioDropdownChip(
@@ -1080,8 +1114,8 @@ private fun CloudLibraryFilePicker(
                 }
             }
 
-            val files = item.playableFiles
-            if (files.isEmpty()) {
+            val entries = item.playableFileEntries()
+            if (entries.isEmpty()) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -1097,10 +1131,10 @@ private fun CloudLibraryFilePicker(
                     )
                 }
             } else {
-                files.forEach { file ->
+                entries.forEach { entry ->
                     CloudLibraryFileRow(
-                        file = file,
-                        onClick = { onFileSelected(file) },
+                        entry = entry,
+                        onClick = { onFileSelected(entry.file) },
                     )
                 }
             }
@@ -1110,10 +1144,11 @@ private fun CloudLibraryFilePicker(
 
 @Composable
 private fun CloudLibraryFileRow(
-    file: CloudLibraryFile,
+    entry: CloudLibraryFileEntry,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val file = entry.file
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -1142,7 +1177,9 @@ private fun CloudLibraryFileRow(
                 )
                 Text(
                     modifier = Modifier.weight(1f),
-                    text = file.name,
+                    // Episode-marked files lead with their coordinates: twenty release names from
+                    // one season pack are otherwise indistinguishable at a glance.
+                    text = entry.episodeLabel?.let { label -> "$label • ${file.name}" } ?: file.name,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold,
@@ -1154,7 +1191,7 @@ private fun CloudLibraryFileRow(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = file.sizeBytes?.let { size -> formatCloudBytes(size) }.orEmpty(),
+                    text = file.sizeBytes?.let { size -> formatCloudLibraryBytes(size) }.orEmpty(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -1189,10 +1226,25 @@ private fun cloudLibraryStatusLine(item: CloudLibraryItem): String {
     }
     return listOfNotNull(
         item.status?.toDisplayStatus(),
-        item.sizeBytes?.let(::formatCloudBytes),
+        item.sizeBytes?.let(::formatCloudLibraryBytes),
         item.progressFraction?.let { "${(it * 100f).toInt()}%" },
+        cloudLibraryAddedLabel(item.addedAtEpochMs),
     ).joinToString(" • ").ifBlank { fallback }
 }
+
+/** How old the download is, so a date-ordered list reads as one. Null when the provider gave no date. */
+@Composable
+private fun cloudLibraryAddedLabel(addedAtEpochMs: Long?): String? {
+    val addedAt = addedAtEpochMs ?: return null
+    val days = ((LibraryClock.nowEpochMs() - addedAt) / MILLIS_PER_DAY).toInt()
+    return if (days <= 0) {
+        stringResource(Res.string.cloud_library_added_today)
+    } else {
+        stringResource(Res.string.cloud_library_added_days_ago, days)
+    }
+}
+
+private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L
 
 @Composable
 private fun cloudLibraryTypeLabel(type: CloudLibraryItemType): String =
@@ -1202,20 +1254,6 @@ private fun cloudLibraryTypeLabel(type: CloudLibraryItemType): String =
         CloudLibraryItemType.WebDownload -> stringResource(Res.string.cloud_library_type_web)
         CloudLibraryItemType.File -> stringResource(Res.string.cloud_library_type_files)
     }
-
-private fun formatCloudBytes(bytes: Long): String {
-    if (bytes <= 0L) return "0 ${localizedByteUnit("B")}"
-    val kib = 1024.0
-    val mib = kib * 1024.0
-    val gib = mib * 1024.0
-    val value = bytes.toDouble()
-    return when {
-        value >= gib -> "${((value / gib) * 10.0).toInt() / 10.0} ${localizedByteUnit("GB")}"
-        value >= mib -> "${((value / mib) * 10.0).toInt() / 10.0} ${localizedByteUnit("MB")}"
-        value >= kib -> "${((value / kib) * 10.0).toInt() / 10.0} ${localizedByteUnit("KB")}"
-        else -> "$bytes ${localizedByteUnit("B")}"
-    }
-}
 
 private fun String.toDisplayStatus(): String =
     replace('_', ' ')

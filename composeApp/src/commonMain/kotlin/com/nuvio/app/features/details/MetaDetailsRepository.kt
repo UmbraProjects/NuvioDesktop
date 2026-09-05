@@ -14,6 +14,7 @@ import com.nuvio.app.features.metadata.AnimeArtworkService
 import com.nuvio.app.features.metadata.animeMovieTmdbFallbackId
 import com.nuvio.app.features.metadata.hasAnimeNamespacePrefix
 import com.nuvio.app.features.tmdb.TmdbMetadataService
+import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.tmdb.HeroImageSource
 import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
@@ -58,11 +59,19 @@ object MetaDetailsRepository {
     private var activeRequestKey: String? = null
     // Bounded so a long session of browsing detail pages can't grow this map without limit.
     // Confined to the Main dispatcher (see `scope`), so a plain insertion-order LinkedHashMap that
-    // drops its eldest entry past the cap is safe — no synchronization needed. 80 entries is far
-    // more detail pages than a user revisits in a session while staying cheap to hold.
+    // drops its eldest entry past the cap is safe.
+    //
+    // Deliberately still insertion-ordered rather than access-ordered: accessOrder = true makes a
+    // read a structural modification, and this map is read from other dispatchers (see
+    // fetchLightweightMetaInternal), so LRU ordering would turn a benign stale read into a
+    // concurrent mutation.
+    //
+    // 80 was already tight - one measured session touched 107 distinct full-fetch keys, so it was
+    // evicting entries it would need again - and hero summaries now share it as a third key class.
+    // Entries are metadata records, so a few hundred is still cheap to hold.
     private val cachedMetaByRequestKey = object : LinkedHashMap<String, CachedMetaEntry>() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedMetaEntry>): Boolean =
-            size > 80
+            size > 300
     }
 
     fun load(type: String, id: String) {
@@ -170,7 +179,13 @@ object MetaDetailsRepository {
             var supplementalMeta: MetaDetails? = null
             for (manifest in manifests) {
                 val result = withContext(Dispatchers.Default) {
-                    tryFetchMeta(manifest, type, metaLookupId, includeMdbList = false)
+                    tryFetchMeta(
+                        manifest,
+                        type,
+                        metaLookupId,
+                        includeMdbList = false,
+                        origin = "supplemental:$type:$metaLookupId",
+                    )
                 }
                 if (result != null) {
                     if (type.isSeriesMetaType() && result.videos.isEmpty()) {
@@ -221,6 +236,30 @@ object MetaDetailsRepository {
             ?: cachedEntry.baseMeta
     }
 
+    /**
+     * [peek] widened to every cache this repository keeps, for callers that only want *a* record of
+     * the title rather than the one the details screen is showing.
+     *
+     * [peek] reads exactly the key `load()` writes (`"$type:$id"`), which means it answers null for
+     * a title that has only ever been through `fetch()` or `fetchLightweightMeta()` — they key on
+     * the *resolved* lookup id plus their own suffix, so their entries are invisible to it. That is
+     * correct for the details screen, which wants the enriched record or nothing, and wrong for
+     * everything that just wants a field: a title fetched for the home hero, an episode list or a
+     * library row is sitting right there and gets reported as unknown.
+     *
+     * The lookup id cannot be resolved here (it suspends), so this only tries the un-aliased keys.
+     * A `tt`-id title fetched under a `tmdb:` alias still misses; that costs a null, never a wrong
+     * answer.
+     */
+    fun peekAny(type: String, id: String): MetaDetails? {
+        peek(type, id)?.let { return it }
+        val fetchKeys = listOf("$type:$id:enrich=true", "$type:$id:enrich=false", "$type:$id:hero")
+        fetchKeys.firstNotNullOfOrNull { key -> cachedMetaByRequestKey[key]?.baseMeta }
+            ?.let { return it }
+        return listOf("$type:$id:addon", "$type:$id:tmdb")
+            .firstNotNullOfOrNull { key -> lightweightMetaCache[key] }
+    }
+
     /** Episode titles keyed by the displayed franchise coordinates. Stream addons sometimes
      * return a file whose numeric tag claims the requested episode while its title identifies a
      * different episode; this lets the picker reject that contradiction without show-specific data. */
@@ -245,20 +284,93 @@ object MetaDetailsRepository {
         _uiState.value = MetaDetailsUiState()
     }
 
-    suspend fun fetch(type: String, id: String, enrichTmdb: Boolean = true, forceRefresh: Boolean = false): MetaDetails? {
-        val requestKey = "$type:$id:enrich=$enrichTmdb"
-        // forceRefresh bypasses the LRU so a background sweep (library auto-download) sees newly
-        // aired episodes instead of a stale cached video list — same class of bug the binge
-        // terminal-empty-state fix addressed, so the force path exists from day one.
-        if (!forceRefresh) cachedMetaByRequestKey[requestKey]?.let { return it.baseMeta }
+    /**
+     * In-flight full fetches, so concurrent callers on one key share a request — plan §21.4.
+     *
+     * The lightweight path has had this for a while; this one did not, and the log showed the
+     * consequence plainly: pairs of identical `full:` fetches issued in the same instant, on top of
+     * the sequential repeats the timeout bug caused.
+     */
+    private val inFlightFullMeta = mutableMapOf<String, kotlinx.coroutines.Deferred<MetaDetails?>>()
+    private val fullMetaMutex = kotlinx.coroutines.sync.Mutex()
 
+    suspend fun fetch(type: String, id: String, enrichTmdb: Boolean = true, forceRefresh: Boolean = false): MetaDetails? {
+        // Keyed on the **resolved** lookup id, not the id the caller happened to hold — plan §23.3.
+        // `tt11561116` and `tmdb:860508` are the same title and produce the identical addon URL, so
+        // keying on the requested id made each alias pay for its own fetch. Resolving first is
+        // effectively free now: it goes through `TmdbService.tmdbToImdb`, which is disk-cached.
         val metaLookupId = resolveMetaLookupId(itemId = id, itemType = type)
+        val requestKey = "$type:$metaLookupId:enrich=$enrichTmdb"
+        if (!forceRefresh) {
+            cachedMetaByRequestKey[requestKey]?.let { return it.baseMeta }
+            val shared = fullMetaMutex.withLock {
+                inFlightFullMeta[requestKey] ?: scope.async {
+                    try {
+                        fetchUncached(type, id, enrichTmdb, requestKey, metaLookupId)
+                    } finally {
+                        fullMetaMutex.withLock { inFlightFullMeta.remove(requestKey) }
+                    }
+                }.also { inFlightFullMeta[requestKey] = it }
+            }
+            return shared.await()
+        }
+        return fetchUncached(type, id, enrichTmdb, requestKey, metaLookupId)
+    }
+
+    private suspend fun fetchUncached(
+        type: String,
+        id: String,
+        enrichTmdb: Boolean,
+        requestKey: String,
+        metaLookupId: String,
+    ): MetaDetails? = runMetaFetch(
+        type = type,
+        id = id,
+        metaLookupId = metaLookupId,
+        requestKey = requestKey,
+        enrichTmdb = enrichTmdb,
+        // The details screen is the one consumer that genuinely wants all of this.
+        trailerScope = TmdbMetadataService.TrailerScope.AllSeasons,
+        includeEpisodes = true,
+        origin = "full",
+    )
+
+    /**
+     * The manifest walk that [fetchUncached] and [fetchHeroSummary] share, minus the caching.
+     *
+     * They differ only in how much decoration they ask TMDB for and which key the answer lands
+     * under, so everything else - manifest order, the supplemental merge for a series whose addon
+     * returned no video list, the TMDB fallback - lives here once.
+     */
+    private suspend fun runMetaFetch(
+        type: String,
+        id: String,
+        metaLookupId: String,
+        requestKey: String,
+        enrichTmdb: Boolean,
+        trailerScope: TmdbMetadataService.TrailerScope,
+        includeEpisodes: Boolean,
+        origin: String,
+    ): MetaDetails? {
+        // forceRefresh bypasses the LRU so a background sweep (library auto-download) sees newly
+        // aired episodes instead of a stale cached video list. The non-forced read happens in
+        // fetch(), before the single-flight, and so does the id resolution - its result arrives as
+        // [metaLookupId] rather than being computed twice.
         val manifests = findMetaManifests(type = type, id = metaLookupId)
 
         var supplementalMeta: MetaDetails? = null
         for (manifest in manifests) {
             val result = withTimeoutOrNull(FETCH_TIMEOUT_MS) {
-                tryFetchMeta(manifest, type, metaLookupId, includeMdbList = false, enrichTmdb = enrichTmdb)
+                tryFetchMeta(
+                    manifest,
+                    type,
+                    metaLookupId,
+                    includeMdbList = false,
+                    enrichTmdb = enrichTmdb,
+                    trailerScope = trailerScope,
+                    includeEpisodes = includeEpisodes,
+                    origin = "$origin:$requestKey",
+                )
             }
             if (result != null) {
                 if (type.isSeriesMetaType() && result.videos.isEmpty()) {
@@ -276,6 +388,65 @@ object MetaDetailsRepository {
                 baseMeta = result.mergeSupplementalMeta(supplementalMeta),
             )
         }?.mergeSupplementalMeta(supplementalMeta)
+    }
+
+    /**
+     * What the hero needs, and nothing the hero cannot show.
+     *
+     * The hero's cast, discovery badges, production credits and trailer all used to fall through to
+     * [fetch], whose defaults are the details screen's: every episode of every season decorated, and
+     * trailers fetched per season. Measured over one session that was **529 of 1,028** queued TMDB
+     * requests - 51% of all TMDB traffic - spent on `tv/{id}/season/...` for heroes that display no
+     * episode at all. Those requests share the Interactive lane with hero artwork, so they also put
+     * 574 s of cumulative queue wait in front of the images the user is waiting to see.
+     *
+     * Two things make dropping them safe rather than merely cheaper:
+     *
+     * - `includeEpisodes` only controls *decoration* - TMDB titles, stills and season posters
+     *   applied over the addon's own video list. `applyEnrichment` leaves `videos` untouched when
+     *   that map is empty, so the season and episode counts the discovery badges compute from
+     *   `meta.videos` are identical either way.
+     * - `TrailerScope.AllSeasons` fetched a trailer list per season, and
+     *   `HeroTrailerMetadataService` then discarded every one above season 1 as a spoiler risk.
+     *   Asking for season 1 specifically is not a compromise here; it is the only season whose
+     *   trailers the hero was ever going to play.
+     *
+     * Cached under its own key so it can never stand in for the details screen's record: [peek]
+     * reads only the key `load()` writes and [fetch] reads only its own, so opening a title still
+     * performs the full fetch with its episodes.
+     */
+    suspend fun fetchHeroSummary(type: String, id: String): MetaDetails? {
+        // A record already in hand beats a summary and costs nothing - but only a *complete* one.
+        // Deliberately not peekAny(): that also answers from the lightweight artwork cache, whose
+        // records can be a name, a backdrop and a logo with no cast at all. Handing one of those to
+        // HeroCastMetadataService would have it cache "this title has no cast" for a day.
+        peek(type, id)?.let { return it }
+
+        val metaLookupId = resolveMetaLookupId(itemId = id, itemType = type)
+        cachedMetaByRequestKey["$type:$metaLookupId:enrich=true"]?.let { return it.baseMeta }
+
+        val requestKey = "$type:$metaLookupId:hero"
+        cachedMetaByRequestKey[requestKey]?.let { return it.baseMeta }
+
+        val shared = fullMetaMutex.withLock {
+            inFlightFullMeta[requestKey] ?: scope.async {
+                try {
+                    runMetaFetch(
+                        type = type,
+                        id = id,
+                        metaLookupId = metaLookupId,
+                        requestKey = requestKey,
+                        enrichTmdb = true,
+                        trailerScope = TmdbMetadataService.TrailerScope.SingleSeason(HERO_TRAILER_SEASON),
+                        includeEpisodes = false,
+                        origin = "hero",
+                    )
+                } finally {
+                    fullMetaMutex.withLock { inFlightFullMeta.remove(requestKey) }
+                }
+            }.also { inFlightFullMeta[requestKey] = it }
+        }
+        return shared.await()
     }
 
     // Separate lightweight cache: survives LaunchedEffect restarts without polluting the
@@ -307,12 +478,18 @@ object MetaDetailsRepository {
     }
 
     private suspend fun fetchLightweightMetaInternal(type: String, id: String, preferTmdbImages: Boolean): MetaDetails? {
-        val requestKey = "$type:$id:${if (preferTmdbImages) "tmdb" else "addon"}"
+        // Resolved id, same reasoning as fetch() — see plan §23.3. Two aliases of one title were
+        // each paying for their own lightweight fetch of the identical addon URL.
+        val lookupId = resolveMetaLookupId(itemId = id, itemType = type)
+        val requestKey = "$type:$lookupId:${if (preferTmdbImages) "tmdb" else "addon"}"
         // When preferTmdbImages is false: use the main detail-page cache (cachedMetaByRequestKey).
         // When preferTmdbImages is true: skip the main cache — it contains AIOMetadata responses
         // which have TMDB images baked in and would bypass TVDB completely. The lightweight
         // cache (lightweightMetaCache, keyed with ":tmdb") serves as our cache instead.
         if (!preferTmdbImages) {
+            // Keyed as `load()` writes it — `"$type:$id"`, the id the *caller* used. load() is not
+            // a suspend function so it cannot resolve before building its key, and reading this map
+            // under the resolved id would miss every entry load() put there.
             cachedMetaByRequestKey["$type:$id"]?.let { return it.baseMeta }
         }
 
@@ -376,7 +553,23 @@ object MetaDetailsRepository {
         var addonResult: MetaDetails? = null
         for (manifest in manifests) {
             val result = withTimeoutOrNull(FETCH_TIMEOUT_MS) {
-                tryFetchMeta(manifest, type, metaLookupId, includeMdbList = false)
+                // Home enriches a screenful of titles at once; the details page enriches the one
+                // the user opened. Only the second can afford a request per season.
+                tryFetchMeta(
+                    manifest,
+                    type,
+                    metaLookupId,
+                    includeMdbList = false,
+                    trailerScope = TmdbMetadataService.TrailerScope.SingleSeason(
+                        preferredTrailerSeason(id),
+                    ),
+                    // Nothing on this path reads the episode decoration — traced in plan §25 — and
+                    // it costs one TMDB request per season of the show. It was the single largest
+                    // block of TMDB traffic left: 474 season requests across 69 shows in one
+                    // browsing session, none of them redundant, none of them used.
+                    includeEpisodes = false,
+                    origin = "lightweight:$requestKey",
+                )
             }
             if (result != null) {
                 if (!preferTmdbImages) {
@@ -548,10 +741,44 @@ object MetaDetailsRepository {
             genres.any { it.isNotBlank() } ||
             !releaseInfo.isNullOrBlank()
 
-    private const val FETCH_TIMEOUT_MS = 5_000L
+    /**
+     * Budget for one addon meta fetch **including its enrichment** — plan §21.4.
+     *
+     * Must exceed what it wraps. `tryFetchMeta` downloads the payload, then spends up to
+     * [TMDB_ENRICH_TIMEOUT_MS] on TMDB and up to [MDBLIST_ENRICH_TIMEOUT_MS] on MDBList, each of
+     * which already degrades gracefully on its own timeout. At 5s this outer budget was shorter
+     * than the inner two combined, so under TMDB permit pressure it cancelled the whole thing —
+     * **357 payloads in one session were downloaded and then silently thrown away** (a rethrown
+     * `CancellationException` logs nothing), nothing was cached, and the caller refetched the same
+     * URL up to eighteen times.
+     *
+     * Sized to let both inner timeouts expire and degrade rather than take the payload with them.
+     */
+    /**
+     * The only season whose trailers the hero will play - `HeroTrailerMetadataService` filters to
+     * series-level or season 1, treating later-season trailers as a spoiler risk.
+     */
+    private const val HERO_TRAILER_SEASON = 1
+
+    private const val FETCH_TIMEOUT_MS = 12_000L
     private const val TMDB_ENRICH_TIMEOUT_MS = 5_000L
     private const val MDBLIST_ENRICH_TIMEOUT_MS = 5_000L
     private const val LOGO_FALLBACK_TIMEOUT_MS = 5_000L
+
+    /**
+     * The season whose trailers are worth fetching for a Home-side enrichment.
+     *
+     * Highest season the user has actually watched, from local history; null when they have not
+     * started it, which the trailer scope reads as "the first". Local data only — this must not add
+     * a request to a path whose whole purpose is to avoid them.
+     */
+    private fun preferredTrailerSeason(id: String): Int? =
+        WatchedRepository.uiState.value.items
+            .asSequence()
+            .filter { it.id == id }
+            .mapNotNull { it.season }
+            .filter { it > 0 }
+            .maxOrNull()
 
     private suspend fun tryFetchMeta(
         manifest: AddonManifest,
@@ -559,6 +786,18 @@ object MetaDetailsRepository {
         id: String,
         includeMdbList: Boolean,
         enrichTmdb: Boolean = true,
+        trailerScope: TmdbMetadataService.TrailerScope = TmdbMetadataService.TrailerScope.AllSeasons,
+        includeEpisodes: Boolean = true,
+        /**
+         * Which cache namespace asked for this — diagnostic only, plan §21.3.
+         *
+         * The same addon meta URL was measured being fetched 7-9 times in one session despite the
+         * single-flight below working as designed. Every line this logs is a cache *miss* by
+         * definition, so counting distinct origins against one repeated URL says whether the
+         * duplicates are separate namespaces legitimately each paying once (three of them exist:
+         * lightweight, full, supplemental) or one namespace failing to cache at all.
+         */
+        origin: String = "unknown",
     ): MetaDetails? {
         val url = buildAddonResourceUrl(
             manifestUrl = manifest.transportUrl,
@@ -569,7 +808,7 @@ object MetaDetailsRepository {
 
         return try {
             TmdbSettingsRepository.ensureLoaded()
-            log.d { "Fetching meta from: $url" }
+            log.d { "Fetching meta from: $url [origin=$origin]" }
             val payload = httpGetText(url)
             log.d { "Raw payload length=${payload.length}, first 500 chars: ${payload.take(500)}" }
             val result = MetaDetailsParser.parse(payload)
@@ -579,6 +818,8 @@ object MetaDetailsRepository {
                         meta = result,
                         fallbackItemId = id,
                         settings = TmdbSettingsRepository.snapshot(),
+                        trailerScope = trailerScope,
+                        includeEpisodes = includeEpisodes,
                     )
                 } ?: result
             } else {
@@ -603,7 +844,13 @@ object MetaDetailsRepository {
             }
             enriched
         } catch (e: Throwable) {
-            if (e is CancellationException) throw e
+            if (e is CancellationException) {
+                // Logged before rethrowing: cancellation after the payload arrived means a request
+                // was paid for and discarded, and the silence is what made that invisible for so
+                // long. Still rethrown — cancellation must propagate.
+                log.d { "Meta fetch cancelled after payload for $url [origin=$origin]" }
+                throw e
+            }
             log.e(e) { "Failed to fetch/parse meta from $url (manifest=${manifest.transportUrl})" }
             null
         }

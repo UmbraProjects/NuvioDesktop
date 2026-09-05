@@ -1,6 +1,7 @@
 package com.nuvio.app.features.mdblist
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.storage.CoalescingCachePersister
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.library.LibraryClock
@@ -47,8 +48,10 @@ object HeroCastMetadataService {
         if (!ownsRequest) return pending.await()
 
         val cast = try {
+            // Summary rather than the details-screen record: this needs names and faces, and the
+            // full fetch pulled every episode of every season to get them.
             val meta = MetaDetailsRepository.peek(type = type, id = id)
-                ?: MetaDetailsRepository.fetch(type = type, id = id)
+                ?: MetaDetailsRepository.fetchHeroSummary(type = type, id = id)
             val crewNames = meta?.let(::crewNameSet).orEmpty()
             meta?.cast.orEmpty().toHeroCast(crewNames)
         } catch (error: CancellationException) {
@@ -65,10 +68,24 @@ object HeroCastMetadataService {
         cacheMutex.withLock {
             val loaded = ensureCacheLoaded()
             loaded[cacheKey] = CachedCast(cast = cast, expiresAtMs = now + ttl)
-            persistCache(loaded)
+            persister.schedule()
             inFlightRequests.remove(cacheKey)?.complete(cast)
         }
         return cast
+    }
+
+    /**
+     * Hero enrichment adds one of these per title, and writing the whole cache each time cost ~23 ms
+     * on the UI thread. Batched instead; see [CoalescingCachePersister].
+     */
+    private val persister = CoalescingCachePersister(tag = "heroCast") {
+        val snapshot = cacheMutex.withLock { ensureCacheLoaded().toMap() }
+        persistCache(snapshot)
+    }
+
+    /** Writes any pending changes now. For the exit path. */
+    suspend fun flushPendingWrites() {
+        persister.flush()
     }
 
     private fun cacheKey(type: String, id: String): String = "$CACHE_VERSION:$type:$id"

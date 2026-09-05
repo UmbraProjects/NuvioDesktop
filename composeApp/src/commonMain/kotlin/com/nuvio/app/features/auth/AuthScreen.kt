@@ -24,20 +24,14 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,7 +42,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.nuvio.app.core.ui.trackTextInputFocus
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -61,8 +54,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -89,6 +80,8 @@ import nuvio.composeapp.generated.resources.compose_auth_tagline
 import nuvio.composeapp.generated.resources.compose_auth_welcome_back
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.accentBrush
 
 @Composable
 fun AuthScreen(
@@ -100,7 +93,6 @@ fun AuthScreen(
     var isSignUp by rememberSaveable { mutableStateOf(false) }
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
-    var passwordVisible by rememberSaveable { mutableStateOf(false) }
     var isLoading by rememberSaveable { mutableStateOf(false) }
     var emailFieldBounds by remember { mutableStateOf<Rect?>(null) }
     var passwordFieldBounds by remember { mutableStateOf<Rect?>(null) }
@@ -189,7 +181,7 @@ fun AuthScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                OutlinedTextField(
+                NuvioTextField(
                     value = email,
                     onValueChange = {
                         email = it
@@ -197,37 +189,18 @@ fun AuthScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .trackTextInputFocus()
                         .onGloballyPositioned { coordinates ->
                             emailFieldBounds = coordinates.boundsInRoot()
                         },
-                    singleLine = true,
-                    placeholder = {
-                        Text(
-                            text = stringResource(Res.string.compose_auth_email),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Next,
-                    ),
-                    shape = RoundedCornerShape(14.dp),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        cursorColor = MaterialTheme.colorScheme.primary,
-                    ),
+                    placeholder = stringResource(Res.string.compose_auth_email),
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    keyboardType = KeyboardType.Email,
+                    imeAction = ImeAction.Next,
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                OutlinedTextField(
+                NuvioTextField(
                     value = password,
                     onValueChange = {
                         password = it
@@ -235,56 +208,22 @@ fun AuthScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .trackTextInputFocus()
                         .onGloballyPositioned { coordinates ->
                             passwordFieldBounds = coordinates.boundsInRoot()
                         },
-                    singleLine = true,
-                    placeholder = {
-                        Text(
-                            text = stringResource(Res.string.compose_auth_password),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    visualTransformation = if (passwordVisible) VisualTransformation.None
-                    else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done,
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (email.isNotBlank() && password.isNotBlank() && !isLoading) {
-                                isLoading = true
-                                scope.launch {
-                                    if (isSignUp) AuthRepository.signUpWithEmail(email, password)
-                                    else AuthRepository.signInWithEmail(email, password)
-                                    isLoading = false
-                                }
+                    placeholder = stringResource(Res.string.compose_auth_password),
+                    secret = true,
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    onImeAction = {
+                        if (email.isNotBlank() && password.isNotBlank() && !isLoading) {
+                            isLoading = true
+                            scope.launch {
+                                if (isSignUp) AuthRepository.signUpWithEmail(email, password)
+                                else AuthRepository.signInWithEmail(email, password)
+                                isLoading = false
                             }
-                        },
-                    ),
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                imageVector = if (passwordVisible) Icons.Rounded.VisibilityOff
-                                else Icons.Rounded.Visibility,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
                         }
                     },
-                    shape = RoundedCornerShape(14.dp),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        cursorColor = MaterialTheme.colorScheme.primary,
-                    ),
                 )
 
                 authError?.let { errorText ->
@@ -358,7 +297,7 @@ fun AuthScreen(
                         Text(
                             text = if (signUp) stringResource(Res.string.compose_auth_sign_in)
                             else stringResource(Res.string.compose_auth_sign_up),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyMedium.accentBrush(),
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.clickable {

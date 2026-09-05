@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,8 +25,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -48,7 +45,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.streams.STREAM_BADGE_IMPORT_LIMIT
 import com.nuvio.app.features.streams.StreamBadgeChip
 import com.nuvio.app.features.streams.StreamBadgeChipSize
@@ -93,6 +89,9 @@ import nuvio.composeapp.generated.resources.settings_stream_addon_logo_title
 import nuvio.composeapp.generated.resources.settings_stream_addon_logo_description
 import nuvio.composeapp.generated.resources.settings_stream_display_section
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.NuvioTextField
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material.icons.rounded.Visibility
 
 internal fun LazyListScope.streamsSettingsContent(
     isTablet: Boolean,
@@ -235,25 +234,19 @@ private fun BadgeUrlManagerDialog(
                 style = MaterialTheme.typography.bodyMedium,
                 color = tokens.colors.textSecondary,
             )
-            OutlinedTextField(
+            NuvioTextField(
                 value = draftUrl,
                 onValueChange = {
                     draftUrl = it
                     errorMessage = null
                 },
-                modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
-                label = { Text(stringResource(Res.string.settings_fusion_badge_url_label)) },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = stringResource(Res.string.settings_fusion_badge_url_label),
+                enabled = !isImporting,
                 singleLine = false,
                 minLines = 2,
                 maxLines = 4,
-                enabled = !isImporting,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = tokens.colors.borderFocus.copy(alpha = tokens.opacity.strong),
-                    unfocusedBorderColor = tokens.colors.borderDefault.copy(alpha = tokens.opacity.medium),
-                    focusedContainerColor = tokens.colors.surface,
-                    unfocusedContainerColor = tokens.colors.surface,
-                    disabledContainerColor = tokens.colors.surface,
-                ),
+                keyboardType = KeyboardType.Uri,
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),

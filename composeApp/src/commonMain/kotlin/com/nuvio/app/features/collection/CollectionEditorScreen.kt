@@ -31,8 +31,6 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Menu
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -49,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,7 +63,6 @@ import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.NuvioSectionLabel
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.PlatformBackHandler
@@ -72,9 +70,13 @@ import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.trakt.TraktPublicListSearchResult
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
-import sh.calvin.reorderable.ReorderableCollectionItemScope
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import sh.calvin.reorderable.ReorderableColumn
+import androidx.compose.material.icons.rounded.Search
+import com.nuvio.app.core.ui.trackTextInputFocus
+import com.nuvio.app.core.ui.accentFill
+import com.nuvio.app.core.ui.nuvio
+import androidx.compose.ui.graphics.Color
+import com.nuvio.app.core.ui.accentBrush
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -426,26 +428,27 @@ private fun FolderReorderableList(
     onDelete: (String) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val lazyListState = rememberLazyListState()
-    val reorderableLazyListState = rememberReorderableLazyListState(
-        lazyListState = lazyListState,
-    ) { from, to ->
-        CollectionEditorRepository.moveFolderByIndex(from.index, to.index)
-        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-    }
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 720.dp),
-        state = lazyListState,
+    ReorderableColumn(
+        list = folders,
+        onSettle = { fromIndex, toIndex ->
+            CollectionEditorRepository.moveFolderByIndex(fromIndex, toIndex)
+        },
+        onMove = {
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        },
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        itemsIndexed(folders, key = { _, folder -> folder.id }) { _, folder ->
-            ReorderableItem(reorderableLazyListState, key = folder.id) { isDragging ->
+    ) { _, folder, isDragging ->
+        key(folder.id) {
+            ReorderableItem {
                 val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
 
                 Surface(
+                    modifier = Modifier.draggableHandle(
+                        onDragStarted = {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        },
+                    ),
                     color = MaterialTheme.colorScheme.surface,
                     shape = MaterialTheme.shapes.extraLarge,
                     shadowElevation = elevation,
@@ -454,7 +457,6 @@ private fun FolderReorderableList(
                         folder = folder,
                         onEdit = { onEdit(folder.id) },
                         onDelete = { onDelete(folder.id) },
-                        dragHandleScope = this@ReorderableItem,
                     )
                 }
             }
@@ -467,10 +469,7 @@ private fun FolderListItem(
     folder: CollectionFolder,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    dragHandleScope: ReorderableCollectionItemScope,
 ) {
-    val hapticFeedback = LocalHapticFeedback.current
-
     NuvioSurfaceCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -479,9 +478,14 @@ private fun FolderListItem(
             // Folder cover preview
             if (folder.coverEmoji != null) {
                 Surface(
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            MaterialTheme.nuvio.colors.accentFill(0.12f),
+                            RoundedCornerShape(8.dp),
+                        ),
                     shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    color = Color.Transparent,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(text = folder.coverEmoji, style = MaterialTheme.typography.titleLarge)
@@ -515,26 +519,6 @@ private fun FolderListItem(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(
-                modifier = with(dragHandleScope) {
-                    Modifier.draggableHandle(
-                        onDragStarted = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        },
-                        onDragStopped = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        },
-                    ).size(36.dp)
-                },
-                onClick = {},
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Menu,
-                    contentDescription = stringResource(Res.string.action_reorder),
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             Spacer(modifier = Modifier.weight(1f))
             IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
                 Icon(
@@ -865,7 +849,7 @@ private fun CatalogPickerScreen(
                     )
                     Text(
                         text = stringResource(Res.string.collections_editor_selected_count, selectedSources.size),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium.accentBrush(),
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
                     )

@@ -246,6 +246,11 @@ fun HomeHeroSection(
     heightOverride: Dp? = null,
     roundedBottomCorners: Boolean = true,
     immersiveMode: Boolean = false,
+    /**
+     * TV Mode only: run the backdrop to the bottom of the screen and let the shelf float over it,
+     * instead of confining it above the shelf and fading to black. Ignored outside [immersiveMode].
+     */
+    immersiveFullBackdrop: Boolean = false,
     adaptiveHeroMode: Boolean = false,
     heroEnabled: Boolean = true,
     heroInfoLines: Int = 2,
@@ -492,6 +497,7 @@ fun HomeHeroSection(
                     pageIndicatorCount = items.size,
                     coroutineScope = coroutineScope,
                     immersiveMode = immersiveMode,
+                    immersiveFullBackdrop = immersiveFullBackdrop,
                     adaptiveHeroMode = adaptiveHeroMode,
                     heroEnabled = heroEnabled,
                     heroInfoLines = heroInfoLines,
@@ -714,6 +720,7 @@ private fun DesktopHomeHeroFrame(
     pageIndicatorCount: Int = items.size,
     coroutineScope: CoroutineScope,
     immersiveMode: Boolean,
+    immersiveFullBackdrop: Boolean = false,
     adaptiveHeroMode: Boolean = false,
     heroEnabled: Boolean,
     heroInfoLines: Int,
@@ -741,11 +748,11 @@ private fun DesktopHomeHeroFrame(
     // on demand regardless of the auto-play setting.
     val tvHeroActive = trailersEnabledInCurrentMode && (adaptiveHeroMode || immersiveMode)
     val heroTrailerAutoplayEnabled = tvHeroActive && playerSettings.heroTvTrailerEnabled
+    val heroTrailerRequest by HomeHeroTrailerManualTrigger.requests.collectAsState(initial = null)
     val heroTrailerFocusKey = "${currentItem.type}:${currentItem.id}"
     // Resets the dwell timer on every focus move; false whenever home isn't the active screen.
     val heroTrailerFocusNonce by HomeHeroTrailerGate.focusNonce.collectAsState()
     val heroTrailerHomeActive by HomeHeroTrailerGate.homeActive.collectAsState()
-    val heroTrailerManualToken by HomeHeroTrailerManualTrigger.tokens.collectAsState(initial = 0)
     var heroTrailerSource by remember { mutableStateOf<TrailerPlaybackSource?>(null) }
     var heroTrailerSurfaceReady by remember { mutableStateOf(false) }
     var heroTrailerPlaybackRequested by remember { mutableStateOf(false) }
@@ -852,15 +859,22 @@ private fun DesktopHomeHeroFrame(
             heroTrailerPlaybackRequested = true
         }
     }
-    // Manual `T` shortcut: play the focused item's trailer immediately, even with auto-play off.
-    LaunchedEffect(heroTrailerManualToken) {
-        if (heroTrailerManualToken == 0 || !tvHeroActive || !heroTrailerHomeActive ||
+    // Manual `T` shortcut / hover-preview button: play a trailer immediately, even with auto-play
+    // off. The request names its own subject when the caller has one in mind.
+    LaunchedEffect(heroTrailerRequest?.token) {
+        val request = heroTrailerRequest
+        // Logged before the guards so a swallowed request names which guard swallowed it.
+        heroTrailerLog.i {
+            "manual token=${request?.token} tvHeroActive=$tvHeroActive " +
+                "homeActive=$heroTrailerHomeActive key=$heroTrailerFocusKey"
+        }
+        if (request == null || !tvHeroActive || !heroTrailerHomeActive ||
             currentItem.type == "collection"
         ) {
             return@LaunchedEffect
         }
-        // Toggle: if a trailer is already showing, `T` dismisses it (an explicit way out
-        // in addition to simply moving focus to another item).
+        // Toggle: if a trailer is already showing, the same input dismisses it (an explicit way
+        // out in addition to simply moving focus to another item).
         if (heroTrailerPlaybackRequested && heroTrailerSource != null && !heroTrailerFinished) {
             heroTrailerSurfaceReady = false
             heroTrailerPlaybackRequested = false
@@ -873,6 +887,7 @@ private fun DesktopHomeHeroFrame(
         heroTrailerLog.i { "resolving (manual) trailer for $heroTrailerFocusKey" }
         val resolved = HeroTrailerMetadataService.resolve(currentItem.type, currentItem.id)
         if (resolved == null) {
+            heroTrailerLog.i { "no trailer available for $heroTrailerFocusKey" }
             heroTrailerFinished = true
         } else {
             heroTrailerSource = resolved
@@ -918,16 +933,33 @@ private fun DesktopHomeHeroFrame(
     // a compact, resizable strip where the same fraction would swallow it, so keep it much tighter.
     val heroTrailerNavDismissBandFraction = if (immersiveMode) 0.22f else 0.12f
     // Expose visibility so the home key handler can map Escape to "dismiss trailer".
-    LaunchedEffect(heroTrailerVisible) {
-        HomeHeroTrailerManualTrigger.setActive(heroTrailerVisible)
+    // Only claim the shared "a trailer is showing" flag while this hero is actually hosting
+    // trailers. Basic's overlay owns the flag there, and a hero scrolling in and out of the rows
+    // list re-runs this effect on every remount — which would clear the overlay's claim.
+    LaunchedEffect(heroTrailerVisible, tvHeroActive) {
+        if (tvHeroActive) HomeHeroTrailerManualTrigger.setActive(heroTrailerVisible)
     }
-    DisposableEffect(Unit) {
-        onDispose { HomeHeroTrailerManualTrigger.setActive(false) }
+    DisposableEffect(tvHeroActive) {
+        onDispose { if (tvHeroActive) HomeHeroTrailerManualTrigger.setActive(false) }
     }
+    // Full backdrop runs the artwork the whole way down and the whole way across; the default
+    // stops it above the shelf and confines it to the right-hand region, which is what makes the
+    // shelf read as a black band rather than as something floating over the picture.
+    val immersiveFullBackdropActive = immersiveMode && immersiveFullBackdrop
+    // Where the shelf begins. Everything that has to stay *out* of the shelf keeps measuring
+    // against this in both layouts: the discovery badges, which would otherwise be buried under
+    // the rail, and the trailer surface, which is a heavyweight native window Compose cannot draw
+    // over — running that to the bottom edge would hide the rows outright rather than sit behind
+    // them.
     val immersiveBackdropHeight = immersiveHeroBackdropHeight(
         heroHeight = layout.heroHeight,
         immersiveContentBottomPadding = immersiveContentBottomPadding,
     )
+    // The still artwork, and only it, is what full backdrop extends.
+    val heroArtworkHeight =
+        if (immersiveFullBackdropActive) layout.heroHeight else immersiveBackdropHeight
+    val heroBackdropWidthFraction =
+        if (immersiveFullBackdropActive) 1f else HERO_BACKDROP_WIDTH_FRACTION
 
     Box(
         modifier = Modifier
@@ -939,18 +971,28 @@ private fun DesktopHomeHeroFrame(
                 .align(if (immersiveMode) Alignment.TopEnd else Alignment.CenterEnd)
                 .then(
                     if (immersiveMode) {
-                        Modifier.height(immersiveBackdropHeight)
+                        Modifier.height(heroArtworkHeight)
                     } else {
                         Modifier.fillMaxHeight()
                     },
                 )
-                .fillMaxWidth(HERO_BACKDROP_WIDTH_FRACTION)
+                .fillMaxWidth(heroBackdropWidthFraction)
                 // Clip the backdrop region: during a transition the layers are parallax-shifted
                 // and scaled, and without this they paint a cropped sliver outside the box (over
                 // the content panel, where the fade mask doesn't reach) — a stray vertical band.
                 .clipToBounds()
-                .heroBackdropFadeMask(backgroundColor)
-                .then(if (immersiveMode) Modifier.immersiveHeroExtraMask(backgroundColor) else Modifier)
+                // The left-hand fade stays in both layouts: it is what keeps the logo and metadata
+                // legible over the artwork. The immersive extra mask does not — its vertical half
+                // fades the picture out to solid black before the bottom of its own box, which is
+                // precisely the band full backdrop exists to remove.
+                .heroBackdropFadeMask(backgroundColor, immersiveFullBackdropActive)
+                .then(
+                    if (immersiveMode && !immersiveFullBackdropActive) {
+                        Modifier.immersiveHeroExtraMask(backgroundColor)
+                    } else {
+                        Modifier
+                    },
+                )
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -1057,11 +1099,9 @@ private fun DesktopHomeHeroFrame(
                 .background(
                     Brush.verticalGradient(
                         colorStops = if (immersiveMode) {
-                            arrayOf(
-                                0f to backgroundColor.copy(alpha = 0f),
-                                0.38f to backgroundColor.copy(alpha = 0.18f),
-                                0.68f to backgroundColor.copy(alpha = 0.72f),
-                                1f to backgroundColor,
+                            immersiveHeroBottomFadeStops(
+                                backgroundColor = backgroundColor,
+                                fullBackdrop = immersiveFullBackdropActive,
                             )
                         } else {
                             arrayOf(
@@ -1231,16 +1271,32 @@ private fun DesktopHomeHeroFrame(
     }
 }
 
-private fun Modifier.heroBackdropFadeMask(backgroundColor: Color): Modifier =
+/**
+ * Fades the backdrop's left edge into the background so the logo and metadata column stay legible.
+ *
+ * [fullWidth] is the full-backdrop TV layout, where the box spans the whole window rather than the
+ * right-hand [HERO_BACKDROP_WIDTH_FRACTION]. That case needs a different ramp entirely, not a
+ * rescaled one: this fade exists to blend the backdrop's own left edge into background the text is
+ * already sitting on, whereas there the text sits on artwork and the ramp is the only thing making
+ * it readable. See [immersiveHeroSideScrimStops].
+ */
+private fun Modifier.heroBackdropFadeMask(
+    backgroundColor: Color,
+    fullWidth: Boolean = false,
+): Modifier =
     drawWithContent {
         drawContent()
         drawRect(
             brush = Brush.horizontalGradient(
-                colorStops = arrayOf(
-                    0f to backgroundColor,
-                    HERO_BACKDROP_FADE_FRACTION to Color.Transparent,
-                    1f to Color.Transparent,
-                ),
+                colorStops = if (fullWidth) {
+                    immersiveHeroSideScrimStops(backgroundColor)
+                } else {
+                    arrayOf(
+                        0f to backgroundColor,
+                        HERO_BACKDROP_FADE_FRACTION to Color.Transparent,
+                        1f to Color.Transparent,
+                    )
+                },
             ),
         )
     }
@@ -2236,8 +2292,10 @@ private suspend fun fetchHeroProductionCredits(
     type: String,
     id: String,
 ): List<HeroProductionCredit> {
+    // Summary rather than the details-screen record: a director and a writer do not need every
+    // episode of every season fetched to find them.
     val meta = MetaDetailsRepository.peek(type = type, id = id)
-        ?: MetaDetailsRepository.fetch(type = type, id = id)
+        ?: MetaDetailsRepository.fetchHeroSummary(type = type, id = id)
         ?: return emptyList()
     return heroProductionCredits(meta)
 }

@@ -75,11 +75,54 @@ data class SubtitleStyleState(
     val fontFamily: String = "",
     val useForcedSubtitles: Boolean = false,
     val showOnlyPreferredLanguages: Boolean = false,
+    // How much of the above applies to ASS/SSA tracks, which carry their own styling. See
+    // [SubtitleAssStyleMode].
+    val assStyleMode: SubtitleAssStyleMode = SubtitleAssStyleMode.Original,
+    // ASS/SSA font-size factor as a percentage (mpv sub-scale × 100). Only reaches ASS tracks in
+    // the Resize and Override modes; plain-text tracks are sized by [fontSizeSp] as before.
+    val assScalePercent: Int = SUBTITLE_ASS_SCALE_DEFAULT,
 ) {
     companion object {
         val DEFAULT = SubtitleStyleState()
     }
 }
+
+/**
+ * How much of the user's subtitle styling reaches an ASS/SSA track.
+ *
+ * ASS/SSA scripts are not just text: they carry their own fonts, colours, per-line `\pos()`
+ * placement, signs typeset over the picture, and `	()`/`ad()` animations. Overriding them is a
+ * spectrum rather than a switch, and mpv exposes exactly that spectrum through `sub-ass-override`,
+ * so this maps onto it one-to-one instead of inventing its own vocabulary.
+ *
+ * [Original] is the default and is what the player has always done — the script decides
+ * everything, and none of the style controls apply. It is the only mode that cannot break a
+ * fansubbed release's typesetting, which is why nothing here is opt-out.
+ */
+enum class SubtitleAssStyleMode(val mpvValue: String, val label: String) {
+    /** `no` — the script's own styling, positioning and animation, untouched. */
+    Original("no", "Original"),
+
+    /**
+     * `scale` — the script keeps its fonts, colours, placement and animation; only
+     * [SubtitleStyleState.assScalePercent] is applied on top. The mode to reach for when the only
+     * complaint is that the subtitles are too small.
+     */
+    Resize("scale", "Resize"),
+
+    /**
+     * `force` — every `sub-*` option is forced onto the track, so the size, vertical position,
+     * colours, outline and font chosen above all apply. This is the only mode that can *move* ASS
+     * subtitles, and the cost is that a script's own placement goes with it: signs typeset over the
+     * picture and karaoke/transform effects can end up misplaced or static.
+     */
+    Override("force", "Override"),
+}
+
+const val SUBTITLE_ASS_SCALE_DEFAULT = 100
+const val SUBTITLE_ASS_SCALE_MIN = 50
+const val SUBTITLE_ASS_SCALE_MAX = 250
+const val SUBTITLE_ASS_SCALE_STEP = 5
 
 // Shadow offset is stored in tenths so it can round-trip through the integer settings store while
 // still expressing sub-pixel offsets. The default mirrors the long-standing hardcoded 1.5 px offset.
@@ -210,6 +253,15 @@ fun subtitleColorFromStorage(value: String?): Color? {
         alpha = ((parsed shr 24) and 0xFF).toFloat() / 255f,
     )
 }
+
+/**
+ * Rebuilds a colour from one packed 0xAARRGGBB integer.
+ *
+ * The native controls bridge only carries numbers, so the HUD's custom-colour prompt sends a colour
+ * this way rather than opening a string channel through the native player. Nothing is lost: a
+ * Double holds every 32-bit integer exactly.
+ */
+fun subtitleColorFromArgb(value: Double): Color = Color((value.toLong() and 0xFFFFFFFFL).toInt())
 
 data class SubtitleAudioUiState(
     val audioTracks: List<AudioTrack> = emptyList(),

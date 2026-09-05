@@ -87,9 +87,16 @@ object HomeRepository {
         cachedSections = cachedSections.filterKeys(requestKeys::contains)
         // Drop infinite-scroll state for catalogs that are no longer present.
         (loadMoreJobs.keys - requestKeys).toList().forEach { key ->
-            loadMoreJobs.remove(key)?.cancel()
+            val job = loadMoreJobs.remove(key)
+            if (job?.isActive == true) {
+                log.i { "loadMore cancelled ($key): catalog is no longer in the active set" }
+            }
+            job?.cancel()
             sectionDuplicatePageCounts.remove(key)
         }
+        // Shuffled orders are pruned on the same boundary as paging state: a row that has left the
+        // active set must not come back still holding a permutation from an earlier session.
+        HomeRowShuffleState.retain(requestKeys)
         if (force) sectionDuplicatePageCounts.clear()
         val requestKey = requests.joinToString(separator = "|") { request ->
             "${request.manifestUrl}:${request.type}:${request.catalogId}:${request.genre.orEmpty()}"
@@ -188,7 +195,7 @@ object HomeRepository {
                 if (firstErrorMessage == null) {
                     firstErrorMessage = results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
                 }
-                cachedSections = loadedSections.toMap()
+                mergeBatchIntoCache(loadedSections)
                 lastErrorMessage = firstErrorMessage
                 if (batchIndex == 0 || (batchIndex + 1) % HOME_CATALOG_PUBLISH_INTERVAL == 0) {
                     publishCurrentState(
@@ -207,7 +214,7 @@ object HomeRepository {
 
             if (activeRequestKey != requestKey) return@launch
 
-            cachedSections = loadedSections.toMap()
+            mergeBatchIntoCache(loadedSections)
             lastErrorMessage = firstErrorMessage
             publishCurrentState(
                 isLoading = false,
@@ -390,15 +397,40 @@ object HomeRepository {
      * Appends the next page to a horizontally infinite-scrolling catalog row. No-op for non-paginating
      * rows, exhausted rows, or while a page is already loading. New items carry their own metadata from
      * the addon response, so nothing extra needs enriching here.
+     *
+     * Returns the job doing the fetch, or null when the request was declined. A caller that needs to
+     * wait for the page — [deepenRowForShuffle] — can join it; scroll-driven callers ignore it. The
+     * "already in flight" case returns the *existing* job rather than null, so a waiter that raced
+     * an infinite-scroll trigger waits for that page instead of concluding the row is exhausted.
      */
-    fun loadMoreCatalogRow(sectionKey: String) {
-        val section = _uiState.value.sections.firstOrNull { it.key == sectionKey } ?: return
-        val target = section.target as? CatalogTarget.Addon ?: return
-        val skip = section.nextSkip ?: return
-        if (section.isLoadingMore || loadMoreJobs[sectionKey]?.isActive == true) return
+    fun loadMoreCatalogRow(sectionKey: String): Job? {
+        // Every refusal is named. Horizontal paging is driven by scroll position, so it is called
+        // constantly and declines most of the time — and while all four exits were silent there was
+        // no way to tell "correctly idle" from "wedged" in a log.
+        val section = _uiState.value.sections.firstOrNull { it.key == sectionKey }
+        if (section == null) {
+            log.d { "loadMore skipped ($sectionKey): section is not in the published state" }
+            return null
+        }
+        val target = section.target as? CatalogTarget.Addon
+        if (target == null) {
+            log.d { "loadMore skipped ($sectionKey): not an addon catalog" }
+            return null
+        }
+        val skip = section.nextSkip
+        if (skip == null) {
+            log.d { "loadMore skipped ($sectionKey): no further pages" }
+            return null
+        }
+        val inFlight = loadMoreJobs[sectionKey]?.takeIf(Job::isActive)
+        if (section.isLoadingMore || inFlight != null) {
+            log.d { "loadMore skipped ($sectionKey): a page is already in flight" }
+            return inFlight
+        }
 
+        log.i { "loadMore start ($sectionKey) skip=$skip have=${section.items.size}" }
         setSection(section.copy(isLoadingMore = true))
-        loadMoreJobs[sectionKey] = scope.launch {
+        val job = scope.launch {
             runCatching {
                 fetchCatalogPage(
                     manifestUrl = target.manifestUrl,
@@ -410,7 +442,12 @@ object HomeRepository {
             }.fold(
                 onSuccess = { page ->
                     val current = _uiState.value.sections.firstOrNull { it.key == sectionKey }
-                        ?: return@launch
+                    if (current == null) {
+                        // The section left the published state while its page was in flight — the
+                        // shape a refresh republishing over it would take.
+                        log.i { "loadMore dropped ($sectionKey): section vanished while paging" }
+                        return@launch
+                    }
                     val merged = mergeCatalogItems(current.items, page.items)
                     val pagination = nextCatalogPaginationState(
                         supportsPagination = true,
@@ -420,6 +457,11 @@ object HomeRepository {
                         consecutiveDuplicatePages = sectionDuplicatePageCounts[sectionKey] ?: 0,
                     )
                     sectionDuplicatePageCounts[sectionKey] = pagination.consecutiveDuplicatePages
+                    log.i {
+                        "loadMore done ($sectionKey) ${current.items.size} -> ${merged.size} " +
+                            "(page=${page.items.size}, new=${merged.size - current.items.size}, " +
+                            "nextSkip=${pagination.nextSkip}, dupPages=${pagination.consecutiveDuplicatePages})"
+                    }
                     setSection(
                         current.copy(
                             items = merged,
@@ -430,11 +472,84 @@ object HomeRepository {
                         ),
                     )
                 },
-                onFailure = {
+                onFailure = { error ->
+                    log.w(error) { "loadMore failed ($sectionKey) skip=$skip" }
                     _uiState.value.sections.firstOrNull { it.key == sectionKey }
                         ?.let { setSection(it.copy(isLoadingMore = false)) }
                 },
             )
+        }
+        loadMoreJobs[sectionKey] = job
+        return job
+    }
+
+    /**
+     * Pages a row until it holds [targetItems] entries, so a shuffle has a pool deeper than the
+     * slice already on screen to deal from. Returns the item count it managed to reach.
+     *
+     * Bounded three ways, because this runs on a user gesture rather than on scroll: [maxPages]
+     * caps the requests, the loop stops the moment a page adds nothing (an exhausted catalog, or
+     * the duplicate-page case [nextCatalogPaginationState] already detects), and a row that cannot
+     * page at all returns immediately with what it has. That last case is not a failure — a
+     * non-paginating row still shuffles, just within its single page.
+     */
+    suspend fun deepenRowForShuffle(sectionKey: String, targetItems: Int, maxPages: Int): Int {
+        fun itemCount(): Int =
+            _uiState.value.sections.firstOrNull { it.key == sectionKey }?.items?.size ?: 0
+
+        var pages = 0
+        while (pages < maxPages) {
+            val section = _uiState.value.sections.firstOrNull { it.key == sectionKey } ?: break
+            if (section.items.size >= targetItems) break
+            if (!section.canDeepenForShuffle()) {
+                log.d { "deepen stopped ($sectionKey): row cannot page further" }
+                break
+            }
+            val before = section.items.size
+            val job = loadMoreCatalogRow(sectionKey) ?: break
+            job.join()
+            pages++
+            if (itemCount() <= before) {
+                log.d { "deepen stopped ($sectionKey): page $pages added nothing" }
+                break
+            }
+        }
+        val reached = itemCount()
+        log.i { "deepen done ($sectionKey) pages=$pages items=$reached target=$targetItems" }
+        return reached
+    }
+
+    /**
+     * Folds a completed batch into the cache **without discarding pages appended while it ran**.
+     *
+     * `refresh` stages its results in a local map snapshotted from [cachedSections] when the refresh
+     * began, then writes that back after every batch. A page appended by [loadMoreCatalogRow] in the
+     * meantime reaches [cachedSections] via [setSection] but is absent from the snapshot, so a plain
+     * overwrite dropped it — and because [publishCurrentState] rebuilds every section from
+     * [cachedSections], the row re-published its first page.
+     *
+     * That was self-sustaining rather than a one-off: the row reset to page one while the scroll
+     * position was still past the paging threshold, so it immediately requested the same page again,
+     * and the next batch reset it again. A single startup refetched `skip=20` fifteen times and the
+     * row visibly snapped backwards on each cycle.
+     *
+     * Preferring whichever version holds more items is safe both ways round: a forced refresh clears
+     * [cachedSections] first so nothing is carried over, and a batch that legitimately returns more
+     * items than the cache holds still wins.
+     */
+    private fun mergeBatchIntoCache(staged: Map<String, HomeCatalogSection>) {
+        val live = cachedSections
+        cachedSections = mergeHomeSectionBatch(live = live, staged = staged)
+        val preserved = cachedSections.mapNotNull { (key, merged) ->
+            val stagedSection = staged[key] ?: return@mapNotNull null
+            if (merged.items.size > stagedSection.items.size) {
+                "$key ${stagedSection.items.size}->${merged.items.size}"
+            } else {
+                null
+            }
+        }
+        if (preserved.isNotEmpty()) {
+            log.d { "Home refresh preserved appended pages: ${preserved.joinToString()}" }
         }
     }
 

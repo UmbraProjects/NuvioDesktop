@@ -9,11 +9,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
+import kotlin.math.pow
 
 object NuvioTokens {
     object Space {
@@ -201,6 +206,15 @@ data class NuvioColorTokens(
     val textInverse: Color,
     val accent: Color,
     val accentStrong: Color,
+    /**
+     * Paint for filled accent surfaces. A gradient only when the theme defines a second accent
+     * stop (custom themes); otherwise a solid [accent], so built-in themes look unchanged.
+     */
+    val accentFill: Brush,
+    /** Second stop of [accentFill], or null when the theme paints accents flat. */
+    val accentGradientEnd: Color?,
+    /** Which way [accentFill] runs; ignored when [accentGradientEnd] is null. */
+    val accentGradientDirection: AccentGradientDirection,
     val onAccent: Color,
     val focusRing: Color,
     val focusBackground: Color,
@@ -360,6 +374,94 @@ internal val LocalNuvioThemeTokens = staticCompositionLocalOf {
     defaultNuvioThemeTokens(ThemeColors.White, amoled = false, colorScheme = null)
 }
 
+/**
+ * The colour that marks a selected item when the mark is the text itself rather than a fill behind
+ * it — the accent, or [onAccent] when the accent is too close to [textPrimary] to register.
+ *
+ * The White theme is the case that forces this: its accent is `#F5F5F5` against body text of
+ * `#F5F7F8`, so accent-coloured text is the same text. Its [onAccent] is near-black, which does
+ * differ. That is a low-contrast mark on a dark panel — deliberately so, since the alternative on
+ * that theme is no mark at all — and callers should pair it with a weight change so the row is
+ * still findable at a glance.
+ *
+ * Compared on luminance alone: on a dark panel that is the axis a selected label separates along,
+ * and a hue difference at matching luminance would not read as a highlight anyway.
+ */
+fun NuvioColorTokens.selectionTextColor(): Color =
+    if (abs(accent.relativeLuminance() - textPrimary.relativeLuminance()) < SELECTION_TEXT_MIN_GAP) {
+        onAccent
+    } else {
+        accent
+    }
+
+/**
+ * The brush a selected label should be painted with, or null when [selectionTextColor] alone says
+ * everything.
+ *
+ * `Text` takes a `Color`, which on a gradient theme can only carry the accent's first stop — so a
+ * highlight that should sweep arrives as one flat colour. `TextStyle.brush` is the way round it,
+ * and unlike [Modifier.accentGradientMask] it costs no offscreen layer, so it is safe on a label
+ * inside a list.
+ *
+ * Null whenever the accent is not what is being painted — a flat theme, or the near-white accent
+ * that sent [selectionTextColor] to [onAccent] instead.
+ */
+fun NuvioColorTokens.selectionTextBrush(): Brush? =
+    if (accentGradientEnd != null && selectionTextColor() == accent) accentFill else null
+
+/** Below this much luminance difference, an accent-coloured label reads as ordinary text. */
+private const val SELECTION_TEXT_MIN_GAP = 0.15f
+
+private fun Color.relativeLuminance(): Float =
+    0.2126f * red.linearised() + 0.7152f * green.linearised() + 0.0722f * blue.linearised()
+
+private fun Float.linearised(): Float =
+    if (this <= 0.04045f) this / 12.92f else ((this + 0.055f) / 1.055f).pow(2.4f)
+
+/**
+ * [NuvioColorTokens.accentFill] faded to [alpha] — the gradient-aware form of
+ * `accent.copy(alpha = ...)`, for accent surfaces that are painted at partial strength.
+ */
+fun NuvioColorTokens.accentFill(alpha: Float): Brush = when {
+    alpha >= 1f -> accentFill
+    accentGradientEnd != null -> accentGradientDirection.brush(
+        accent.copy(alpha = alpha),
+        accentGradientEnd.copy(alpha = alpha),
+    )
+    else -> SolidColor(accent.copy(alpha = alpha))
+}
+
+/**
+ * The single place the accent gradient's geometry is decided, so every accent-filled surface turns
+ * together when the direction changes.
+ *
+ * [Offset.Infinite] is resolved per-surface to that surface's width/height, which is what lets one
+ * brush read correctly on both a wide button and a tall panel. Compose substitutes each infinite
+ * component independently, so the two diagonals are expressed by mixing a zero and an infinity on
+ * opposite axes rather than needing a size to be passed in.
+ */
+fun AccentGradientDirection.brush(from: Color, to: Color): Brush {
+    // Perceptually spaced rather than the two endpoints alone — see accentGradientStops for why a
+    // straight two-stop ramp arrives early and then stops moving.
+    val colors = accentGradientStops(from, to)
+    return when (this) {
+        AccentGradientDirection.Horizontal -> Brush.horizontalGradient(colors)
+        AccentGradientDirection.Vertical -> Brush.verticalGradient(colors)
+        // Top-left to bottom-right.
+        AccentGradientDirection.Diagonal -> Brush.linearGradient(
+            colors = colors,
+            start = Offset.Zero,
+            end = Offset.Infinite,
+        )
+        // Bottom-left to top-right.
+        AccentGradientDirection.DiagonalReverse -> Brush.linearGradient(
+            colors = colors,
+            start = Offset(0f, Float.POSITIVE_INFINITY),
+            end = Offset(Float.POSITIVE_INFINITY, 0f),
+        )
+    }
+}
+
 val MaterialTheme.nuvio: NuvioThemeTokens
     @Composable
     @Stable
@@ -369,6 +471,7 @@ internal fun defaultNuvioThemeTokens(
     palette: ThemeColorPalette,
     amoled: Boolean,
     colorScheme: ColorScheme?,
+    accentGradientDirection: AccentGradientDirection = AccentGradientDirection.Default,
 ): NuvioThemeTokens {
     val background = if (amoled) Color.Black else palette.background
     val textPrimary = Color(0xFFF5F7F8)
@@ -400,6 +503,11 @@ internal fun defaultNuvioThemeTokens(
             textInverse = Color(0xFF111111),
             accent = accent,
             accentStrong = accentStrong,
+            accentFill = palette.accentGradientEnd
+                ?.let { accentGradientDirection.brush(accent, it) }
+                ?: SolidColor(accent),
+            accentGradientEnd = palette.accentGradientEnd,
+            accentGradientDirection = accentGradientDirection,
             onAccent = palette.onSecondary,
             focusRing = palette.focusRing,
             focusBackground = palette.focusBackground,

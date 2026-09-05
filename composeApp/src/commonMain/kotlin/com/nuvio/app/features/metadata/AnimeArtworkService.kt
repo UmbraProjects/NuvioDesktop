@@ -29,6 +29,10 @@ internal object AnimeArtworkService {
     private val cacheMutex = Mutex()
     private val cache = mutableMapOf<String, String?>()
 
+    // Same shape, for [seasonPoster]. Kept separate from the banner cache so a title that has one
+    // and not the other does not poison the lookup for the other.
+    private val posterCache = mutableMapOf<String, String?>()
+
     /**
      * Season-specific backdrop URL for [nativeId] (any native anime id shape — episode and
      * season segments are ignored), or null when the id isn't anime-native, the franchise
@@ -46,6 +50,32 @@ internal object AnimeArtworkService {
             ?: ids.anilist?.let { fetchAniListBanner(it) }
         cacheMutex.withLock { cache[cacheKey] = backdrop }
         return backdrop
+    }
+
+    /**
+     * Entry-specific **portrait poster** for [nativeId], straight from Kitsu/AniList.
+     *
+     * Unlike [seasonBackdrop] this does not skip franchise-anchor entries: the point here is not
+     * per-season accuracy but having a *second* poster that is certain to be a live, public CDN
+     * URL. Discord Rich Presence needs that — it fetches artwork from its own servers via an
+     * image proxy, and when the poster it was handed cannot be fetched the proxy silently serves
+     * the fallback instead. For anime that fallback used to be the episode still, so a user who
+     * asked for posters saw thumbnails and neither the app nor they could tell why. Common causes
+     * are addon payloads still carrying `media.kitsu.io` URLs (that host now answers 404 for every
+     * image; the live API returns `media.kitsu.app`) and self-hosted poster services.
+     *
+     * Preference: Kitsu `posterImage` (original, then large) → AniList `coverImage`
+     * (extraLarge, then large). Both public and keyless, same as the banner lookup.
+     */
+    suspend fun seasonPoster(nativeId: String): String? {
+        val ids = animeArtworkLookupIds(nativeId) ?: return null
+        val cacheKey = nativeId.nativeAnimeBase().lowercase()
+        cacheMutex.withLock { if (posterCache.containsKey(cacheKey)) return posterCache[cacheKey] }
+
+        val poster = ids.kitsu?.let { fetchKitsuPoster(it) }
+            ?: ids.anilist?.let { fetchAniListCover(it) }
+        cacheMutex.withLock { posterCache[cacheKey] = poster }
+        return poster
     }
 
     /**
@@ -145,6 +175,37 @@ internal object AnimeArtworkService {
             }
         }
 
+    private suspend fun fetchAniListCover(anilistId: Int): String? =
+        runCatchingNonCancellable {
+            withTimeoutOrNull(FETCH_TIMEOUT_MS) {
+                val body = """{"query":"query(${'$'}id:Int){Media(id:${'$'}id,type:ANIME){coverImage{extraLarge large}}}","variables":{"id":$anilistId}}"""
+                val response = httpRequestRaw(
+                    method = "POST",
+                    url = "https://graphql.anilist.co",
+                    headers = mapOf(
+                        "Content-Type" to "application/json",
+                        "Accept" to "application/json",
+                    ),
+                    body = body,
+                )
+                if (response.status !in 200..299) return@withTimeoutOrNull null
+                val cover = json.decodeFromString<AniListResponse>(response.body).data?.media?.coverImage
+                (cover?.extraLarge ?: cover?.large)?.takeIf { it.isNotBlank() }
+            }
+        }
+
+    private suspend fun fetchKitsuPoster(kitsuId: Int): String? =
+        runCatchingNonCancellable {
+            withTimeoutOrNull(FETCH_TIMEOUT_MS) {
+                val payload = httpGetTextWithHeaders(
+                    url = "https://kitsu.io/api/edge/anime/$kitsuId",
+                    headers = mapOf("Accept" to "application/vnd.api+json"),
+                )
+                val poster = json.decodeFromString<KitsuResponse>(payload).data?.attributes?.posterImage
+                (poster?.original ?: poster?.large)?.takeIf { it.isNotBlank() }
+            }
+        }
+
     private inline fun <T> runCatchingNonCancellable(block: () -> T?): T? =
         try {
             block()
@@ -166,7 +227,13 @@ private data class AniListResponse(val data: AniListData? = null)
 private data class AniListData(@SerialName("Media") val media: AniListMedia? = null)
 
 @Serializable
-private data class AniListMedia(val bannerImage: String? = null)
+private data class AniListMedia(
+    val bannerImage: String? = null,
+    val coverImage: AniListCoverImage? = null,
+)
+
+@Serializable
+private data class AniListCoverImage(val extraLarge: String? = null, val large: String? = null)
 
 @Serializable
 private data class KitsuResponse(val data: KitsuData? = null)
@@ -175,7 +242,13 @@ private data class KitsuResponse(val data: KitsuData? = null)
 private data class KitsuData(val attributes: KitsuAttributes? = null)
 
 @Serializable
-private data class KitsuAttributes(val coverImage: KitsuCoverImage? = null)
+private data class KitsuAttributes(
+    val coverImage: KitsuCoverImage? = null,
+    val posterImage: KitsuPosterImage? = null,
+)
+
+@Serializable
+private data class KitsuPosterImage(val original: String? = null, val large: String? = null)
 
 @Serializable
 private data class KitsuCoverImage(val original: String? = null, val large: String? = null)

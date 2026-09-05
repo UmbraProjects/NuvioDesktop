@@ -140,7 +140,15 @@ internal object SeasonPackGrabService {
         val id = target.contentId.trim()
         LocalLibraryRepository.preseedMatchOverride(
             LocalMatchOverride(
-                key = LibraryFileNaming.expectedItemKey(folder, target.title, target.year),
+                key = LibraryFileNaming.expectedItemKey(
+                    folder = folder,
+                    title = target.title,
+                    year = target.year,
+                    existingFolderNames = LibraryDestinationFolders.existingFolderNames(
+                        folder = folder,
+                        contentId = target.contentId,
+                    ),
+                ),
                 imdbId = id.takeIf { it.startsWith("tt", ignoreCase = true) },
                 tmdbId = id.removePrefixIgnoreCase("tmdb:")?.toIntOrNull(),
                 kitsuId = id.removePrefixIgnoreCase("kitsu:")?.substringBefore(':')?.toIntOrNull(),
@@ -177,8 +185,20 @@ internal object SeasonPackGrabService {
             ?: "mkv"
         // Same rule as the pack picker: numbering follows the opened structure, not the folder tag.
         // An anime-native id has no season to file under; a franchise meta keeps its real seasons.
+        // Reuse the folder this show already occupies, so a season grab lands beside the episodes
+        // an earlier grab placed even when the two saw different (or no) release years.
+        val existingFolderNames = LibraryDestinationFolders.existingFolderNames(
+            folder = folder,
+            contentId = target.contentId,
+        )
         val relativePath = if (target.contentId.isAnimeNativeId()) {
-            LibraryFileNaming.animeEpisodeRelativePath(target.title, target.year, episode, extension)
+            LibraryFileNaming.animeEpisodeRelativePath(
+                target.title,
+                target.year,
+                episode,
+                extension,
+                existingFolderNames,
+            )
         } else {
             LibraryFileNaming.episodeRelativePath(
                 title = target.title,
@@ -187,6 +207,7 @@ internal object SeasonPackGrabService {
                 episode = episode,
                 episodeTitle = row.video.title,
                 extension = extension,
+                existingFolderNames = existingFolderNames,
             )
         }
 

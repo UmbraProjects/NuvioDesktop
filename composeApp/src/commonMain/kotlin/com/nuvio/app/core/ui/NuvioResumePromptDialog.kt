@@ -113,7 +113,7 @@ fun NuvioResumePromptDialog(
                                 .fillMaxWidth(progressFraction.coerceIn(0f, 1f))
                                 .height(5.dp)
                                 .clip(tokens.shapes.chip)
-                                .background(tokens.colors.accent),
+                                .background(tokens.colors.accentFill),
                         )
                     }
                     Spacer(Modifier.weight(1f))

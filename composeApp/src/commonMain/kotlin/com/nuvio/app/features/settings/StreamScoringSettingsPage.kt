@@ -3,28 +3,17 @@ package com.nuvio.app.features.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,28 +22,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.nuvio
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.streams.AudioDeviceSupport
 import com.nuvio.app.features.streams.DebridCachedBoost
 import com.nuvio.app.features.streams.HdrPreference
@@ -145,6 +119,8 @@ import nuvio.composeapp.generated.resources.settings_stream_scoring_test_size
 import nuvio.composeapp.generated.resources.settings_stream_scoring_test_size_note
 import nuvio.composeapp.generated.resources.settings_stream_scoring_test_total
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.NuvioNumberStepper
 
 /**
  * The Stream scoring settings page.
@@ -516,7 +492,7 @@ private fun PointsStepper(
     onChange: (Int) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    NumberStepper(
+    NuvioNumberStepper(
         value = value.toDouble(),
         step = STEP.toDouble(),
         min = StreamScoreProfile.MIN_POINTS.toDouble(),
@@ -534,157 +510,6 @@ private fun PointsStepper(
         },
         onChange = { onChange(it.toInt()) },
     )
-}
-
-/**
- * The shared `−  [ value ]  +` control.
- *
- * Clicking the number turns it into an inline field so a value far outside step range can simply be
- * typed — stepping to 500 in fives is not a real option. Enter or clicking away commits, Escape
- * reverts. The field is deliberately styled identically to the static text, so the control looks the
- * same whether or not it is being edited.
- */
-@Composable
-private fun NumberStepper(
-    value: Double,
-    step: Double,
-    min: Double,
-    max: Double,
-    enabled: Boolean,
-    format: (Double) -> String,
-    valueColor: Color,
-    onChange: (Double) -> Unit,
-    editFormat: (Double) -> String = format,
-    fieldWidth: Dp = 58.dp,
-) {
-    var editing by remember { mutableStateOf(false) }
-    // TextFieldValue rather than String so the whole number can start out selected — typing then
-    // replaces it, which is what you want when swapping 40 for 500. A plain String field would put
-    // the caret at one end and force the user to clear it first.
-    var draft by remember { mutableStateOf(TextFieldValue("")) }
-    // A newly composed text field reports "not focused" once, before requestFocus() has had a
-    // chance to run. Without this latch that first report is read as "focus lost" and immediately
-    // ends the edit — the field appears for a single frame and closes again.
-    var hasGainedFocus by remember { mutableStateOf(false) }
-    val focusRequester = remember { FocusRequester() }
-    val focusManager = LocalFocusManager.current
-
-    fun commit() {
-        draft.text.trim().replace(",", ".").toDoubleOrNull()
-            ?.coerceIn(min, max)
-            ?.let(onChange)
-        editing = false
-    }
-
-    fun startEditing() {
-        val text = editFormat(value)
-        draft = TextFieldValue(text = text, selection = TextRange(0, text.length))
-        hasGainedFocus = false
-        editing = true
-    }
-
-    LaunchedEffect(editing) {
-        if (editing) runCatching { focusRequester.requestFocus() }
-    }
-
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        StepperButton(Icons.Rounded.Remove, enabled && !editing) {
-            onChange((value - step).coerceIn(min, max))
-        }
-        Box(
-            modifier = Modifier.width(fieldWidth),
-            contentAlignment = Alignment.Center,
-        ) {
-            val textStyle = MaterialTheme.typography.bodyLarge.copy(
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                color = valueColor,
-            )
-            if (editing) {
-                BasicTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    enabled = enabled,
-                    singleLine = true,
-                    textStyle = textStyle,
-                    cursorBrush = SolidColor(valueColor),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { commit(); focusManager.clearFocus() }),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester)
-                        // Clicking away is a commit, not a cancel — losing an edit because the
-                        // pointer moved would be worse than accepting what was typed. Only counts
-                        // once focus has actually arrived; see hasGainedFocus.
-                        .onFocusChanged { state ->
-                            if (state.isFocused) {
-                                hasGainedFocus = true
-                            } else if (hasGainedFocus && editing) {
-                                commit()
-                            }
-                        }
-                        .onPreviewKeyEvent { event ->
-                            when {
-                                event.type != KeyEventType.KeyDown -> false
-                                event.key == Key.Escape -> {
-                                    editing = false
-                                    focusManager.clearFocus()
-                                    true
-                                }
-                                event.key == Key.Enter || event.key == Key.NumPadEnter -> {
-                                    commit()
-                                    focusManager.clearFocus()
-                                    true
-                                }
-                                else -> false
-                            }
-                        }
-                        // Keeps app-wide keyboard shortcuts from firing on the digits being typed.
-                        .trackTextInputFocus(),
-                )
-            } else {
-                Text(
-                    text = format(value),
-                    style = textStyle,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = enabled) { startEditing() },
-                )
-            }
-        }
-        StepperButton(Icons.Rounded.Add, enabled && !editing) {
-            onChange((value + step).coerceIn(min, max))
-        }
-    }
-}
-
-@Composable
-private fun StepperButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val tokens = MaterialTheme.nuvio
-    Box(
-        modifier = Modifier
-            .size(30.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(tokens.colors.surfaceCard)
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = if (enabled) tokens.colors.textPrimary else tokens.colors.textDisabled,
-            modifier = Modifier.size(16.dp),
-        )
-    }
 }
 
 /**
@@ -833,14 +658,13 @@ private fun ScoreTestBench(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        OutlinedTextField(
+        NuvioTextField(
             value = name,
             onValueChange = onNameChange,
+            modifier = Modifier.fillMaxWidth(),
             enabled = enabled,
-            singleLine = true,
-            label = { Text(stringResource(Res.string.settings_stream_scoring_test_label)) },
-            placeholder = { Text(stringResource(Res.string.settings_stream_scoring_test_hint)) },
-            modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
+            placeholder = stringResource(Res.string.settings_stream_scoring_test_hint),
+            supportingText = stringResource(Res.string.settings_stream_scoring_test_label),
         )
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1029,7 +853,7 @@ private fun GigabyteStepper(
     enabled: Boolean,
     onChange: (Double) -> Unit,
 ) {
-    NumberStepper(
+    NuvioNumberStepper(
         value = value,
         step = 1.0,
         min = 0.0,

@@ -32,6 +32,9 @@ internal actual object PlayerSettingsStorage {
     private const val desktopVerboseMpvLoggingEnabledKey = "desktop_verbose_mpv_logging_enabled"
     private const val desktopUiScalePercentKey = "desktop_ui_scale_percent"
     private const val desktopSourceNotchPositionKey = "desktop_source_notch_position"
+    private const val desktopPlayerNotificationPositionKey =
+        "desktop_player_notification_position"
+    private const val seekStepSecondsKey = "seek_step_seconds"
     private const val externalPlayerEnabledKey = "external_player_enabled"
     private const val externalPlayerForwardSubtitlesKey = "external_player_forward_subtitles"
     private const val externalPlayerIdKey = "external_player_id"
@@ -55,6 +58,8 @@ internal actual object PlayerSettingsStorage {
     private const val subtitleFontSizeSpKey = "subtitle_font_size_sp"
     private const val subtitleBottomOffsetKey = "subtitle_bottom_offset"
     private const val subtitleFontFamilyKey = "subtitle_font_family"
+    private const val subtitleAssStyleModeKey = "subtitle_ass_style_mode"
+    private const val subtitleAssScalePercentKey = "subtitle_ass_scale_percent"
     private const val subtitleUseForcedSubtitlesKey = "subtitle_use_forced_subtitles"
     private const val subtitleShowOnlyPreferredLanguagesKey = "subtitle_show_only_preferred_languages"
     private const val addonSubtitleStartupModeKey = "addon_subtitle_startup_mode"
@@ -62,6 +67,9 @@ internal actual object PlayerSettingsStorage {
     private const val rejectedAudioKeywordsKey = "rejected_audio_keywords"
     private const val streamReuseLastLinkEnabledKey = "stream_reuse_last_link_enabled"
     private const val streamReuseLastLinkCacheHoursKey = "stream_reuse_last_link_cache_hours"
+    private const val streamPrefetchScopeKey = "stream_prefetch_scope"
+    private const val streamPrefetchCacheMinutesKey = "stream_prefetch_cache_minutes"
+    private const val streamPrefetchResolveLinksKey = "stream_prefetch_resolve_links"
     private const val decoderPriorityKey = "decoder_priority"
     private const val nvidiaRtxSuperResolutionEnabledKey = "nvidia_rtx_super_resolution_enabled"
     private const val mapDV7ToHevcKey = "map_dv7_to_hevc"
@@ -73,6 +81,7 @@ internal actual object PlayerSettingsStorage {
     private const val streamAutoPlayRegexKey = "stream_auto_play_regex"
     private const val streamAutoPlayTimeoutSecondsKey = "stream_auto_play_timeout_seconds"
     private const val skipIntroEnabledKey = "skip_intro_enabled"
+    private const val skipAutoAcceptModeKey = "skip_auto_accept_mode"
     private const val animeSkipEnabledKey = "animeskip_enabled"
     private const val animeSkipClientIdKey = "animeskip_client_id"
     private const val introDbApiKeyKey = "introdb_api_key"
@@ -110,6 +119,8 @@ internal actual object PlayerSettingsStorage {
     private const val desktopLowVramModeKey = "desktop_low_vram_mode"
     private const val desktopAnimeModeKey = "desktop_anime_mode"
     private const val desktopAnimeModeAutoEnabledKey = "desktop_anime_mode_auto_enabled"
+    private const val desktopAnimeSkipUltraHdEnabledKey = "desktop_anime_skip_ultra_hd_enabled"
+    private const val desktopAnimeTreatAnimationAsAnimeKey = "desktop_anime_treat_animation_as_anime"
     private const val desktopAnimeSvpEnabledKey = "desktop_anime_svp_enabled"
     private const val desktopPlaybackInfoPanelEnabledKey = "desktop_playback_info_panel_enabled"
     private const val desktopAnimeSvpDebugOverlayEnabledKey = "desktop_anime_svp_debug_overlay_enabled"
@@ -152,6 +163,8 @@ internal actual object PlayerSettingsStorage {
         subtitleFontSizeSpKey,
         subtitleBottomOffsetKey,
         subtitleFontFamilyKey,
+        subtitleAssStyleModeKey,
+        subtitleAssScalePercentKey,
         subtitleUseForcedSubtitlesKey,
         subtitleShowOnlyPreferredLanguagesKey,
         addonSubtitleStartupModeKey,
@@ -159,6 +172,9 @@ internal actual object PlayerSettingsStorage {
         rejectedAudioKeywordsKey,
         streamReuseLastLinkEnabledKey,
         streamReuseLastLinkCacheHoursKey,
+        streamPrefetchScopeKey,
+        streamPrefetchCacheMinutesKey,
+        streamPrefetchResolveLinksKey,
         decoderPriorityKey,
         nvidiaRtxSuperResolutionEnabledKey,
         mapDV7ToHevcKey,
@@ -170,6 +186,7 @@ internal actual object PlayerSettingsStorage {
         streamAutoPlayRegexKey,
         streamAutoPlayTimeoutSecondsKey,
         skipIntroEnabledKey,
+        skipAutoAcceptModeKey,
         animeSkipEnabledKey,
         animeSkipClientIdKey,
         streamAutoPlayNextEpisodeEnabledKey,
@@ -255,9 +272,16 @@ internal actual object PlayerSettingsStorage {
     }
 
     actual fun saveDesktopUiScalePercent(percent: Int) = saveInt(desktopUiScalePercentKey, percent)
+    actual fun loadSeekStepSeconds(): Int? = loadInt(seekStepSecondsKey)
+    actual fun saveSeekStepSeconds(seconds: Int) = saveInt(seekStepSecondsKey, seconds)
     actual fun loadDesktopSourceNotchPosition(): String? = loadString(desktopSourceNotchPositionKey)
     actual fun saveDesktopSourceNotchPosition(position: String) =
         saveString(desktopSourceNotchPositionKey, position)
+
+    actual fun loadDesktopPlayerNotificationPosition(): String? =
+        loadString(desktopPlayerNotificationPositionKey)
+    actual fun saveDesktopPlayerNotificationPosition(position: String) =
+        saveString(desktopPlayerNotificationPositionKey, position)
     actual fun loadExternalPlayerEnabled(): Boolean? = loadBoolean(externalPlayerEnabledKey)
     actual fun saveExternalPlayerEnabled(enabled: Boolean) = saveBoolean(externalPlayerEnabledKey, enabled)
     actual fun loadExternalPlayerForwardSubtitles(): Boolean? = loadBoolean(externalPlayerForwardSubtitlesKey)
@@ -305,6 +329,10 @@ internal actual object PlayerSettingsStorage {
     actual fun saveSubtitleBottomOffset(bottomOffset: Int) = saveInt(subtitleBottomOffsetKey, bottomOffset)
     actual fun loadSubtitleFontFamily(): String? = loadString(subtitleFontFamilyKey)
     actual fun saveSubtitleFontFamily(fontFamily: String) = saveString(subtitleFontFamilyKey, fontFamily)
+    actual fun loadSubtitleAssStyleMode(): String? = loadString(subtitleAssStyleModeKey)
+    actual fun saveSubtitleAssStyleMode(mode: String) = saveString(subtitleAssStyleModeKey, mode)
+    actual fun loadSubtitleAssScalePercent(): Int? = loadInt(subtitleAssScalePercentKey)
+    actual fun saveSubtitleAssScalePercent(percent: Int) = saveInt(subtitleAssScalePercentKey, percent)
     actual fun loadSubtitleUseForcedSubtitles(): Boolean? = loadBoolean(subtitleUseForcedSubtitlesKey)
     actual fun saveSubtitleUseForcedSubtitles(enabled: Boolean) = saveBoolean(subtitleUseForcedSubtitlesKey, enabled)
     actual fun loadSubtitleShowOnlyPreferredLanguages(): Boolean? = loadBoolean(subtitleShowOnlyPreferredLanguagesKey)
@@ -321,6 +349,12 @@ internal actual object PlayerSettingsStorage {
     actual fun saveStreamReuseLastLinkEnabled(enabled: Boolean) = saveBoolean(streamReuseLastLinkEnabledKey, enabled)
     actual fun loadStreamReuseLastLinkCacheHours(): Int? = loadInt(streamReuseLastLinkCacheHoursKey)
     actual fun saveStreamReuseLastLinkCacheHours(hours: Int) = saveInt(streamReuseLastLinkCacheHoursKey, hours)
+    actual fun loadStreamPrefetchScope(): String? = loadString(streamPrefetchScopeKey)
+    actual fun saveStreamPrefetchScope(scope: String) = saveString(streamPrefetchScopeKey, scope)
+    actual fun loadStreamPrefetchCacheMinutes(): Int? = loadInt(streamPrefetchCacheMinutesKey)
+    actual fun saveStreamPrefetchCacheMinutes(minutes: Int) = saveInt(streamPrefetchCacheMinutesKey, minutes)
+    actual fun loadStreamPrefetchResolveLinks(): Boolean? = loadBoolean(streamPrefetchResolveLinksKey)
+    actual fun saveStreamPrefetchResolveLinks(enabled: Boolean) = saveBoolean(streamPrefetchResolveLinksKey, enabled)
     actual fun loadDecoderPriority(): Int? = loadInt(decoderPriorityKey)
     actual fun saveDecoderPriority(priority: Int) = saveInt(decoderPriorityKey, priority)
 
@@ -346,6 +380,9 @@ internal actual object PlayerSettingsStorage {
     actual fun saveStreamAutoPlayTimeoutSeconds(seconds: Int) = saveInt(streamAutoPlayTimeoutSecondsKey, seconds)
     actual fun loadSkipIntroEnabled(): Boolean? = loadBoolean(skipIntroEnabledKey)
     actual fun saveSkipIntroEnabled(enabled: Boolean) = saveBoolean(skipIntroEnabledKey, enabled)
+
+    actual fun loadSkipAutoAcceptMode(): String? = loadString(skipAutoAcceptModeKey)
+    actual fun saveSkipAutoAcceptMode(mode: String) = saveString(skipAutoAcceptModeKey, mode)
     actual fun loadAnimeSkipEnabled(): Boolean? = loadBoolean(animeSkipEnabledKey)
     actual fun saveAnimeSkipEnabled(enabled: Boolean) = saveBoolean(animeSkipEnabledKey, enabled)
     actual fun loadAnimeSkipClientId(): String? = loadString(animeSkipClientIdKey)
@@ -421,6 +458,14 @@ internal actual object PlayerSettingsStorage {
     actual fun saveDesktopAnimeMode(mode: String) = saveString(desktopAnimeModeKey, mode)
     actual fun loadDesktopAnimeModeAutoEnabled(): Boolean? = loadBoolean(desktopAnimeModeAutoEnabledKey)
     actual fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean) = saveBoolean(desktopAnimeModeAutoEnabledKey, enabled)
+    actual fun loadDesktopAnimeTreatAnimationAsAnime(): Boolean? =
+        loadBoolean(desktopAnimeTreatAnimationAsAnimeKey)
+    actual fun saveDesktopAnimeTreatAnimationAsAnime(enabled: Boolean) =
+        saveBoolean(desktopAnimeTreatAnimationAsAnimeKey, enabled)
+    actual fun loadDesktopAnimeSkipUltraHdEnabled(): Boolean? =
+        loadBoolean(desktopAnimeSkipUltraHdEnabledKey)
+    actual fun saveDesktopAnimeSkipUltraHdEnabled(enabled: Boolean) =
+        saveBoolean(desktopAnimeSkipUltraHdEnabledKey, enabled)
     actual fun loadDesktopAnimeSvpEnabled(): Boolean? = loadBoolean(desktopAnimeSvpEnabledKey)
     actual fun saveDesktopAnimeSvpEnabled(enabled: Boolean) = saveBoolean(desktopAnimeSvpEnabledKey, enabled)
     actual fun loadDesktopAnimeSvpDebugOverlayEnabled(): Boolean? =
@@ -499,6 +544,8 @@ internal actual object PlayerSettingsStorage {
         loadSubtitleFontSizeSp()?.let { put(subtitleFontSizeSpKey, encodeSyncInt(it)) }
         loadSubtitleBottomOffset()?.let { put(subtitleBottomOffsetKey, encodeSyncInt(it)) }
         loadSubtitleFontFamily()?.let { put(subtitleFontFamilyKey, encodeSyncString(it)) }
+        loadSubtitleAssStyleMode()?.let { put(subtitleAssStyleModeKey, encodeSyncString(it)) }
+        loadSubtitleAssScalePercent()?.let { put(subtitleAssScalePercentKey, encodeSyncInt(it)) }
         loadSubtitleUseForcedSubtitles()?.let { put(subtitleUseForcedSubtitlesKey, encodeSyncBoolean(it)) }
         loadSubtitleShowOnlyPreferredLanguages()?.let { put(subtitleShowOnlyPreferredLanguagesKey, encodeSyncBoolean(it)) }
         loadAddonSubtitleStartupMode()?.let { put(addonSubtitleStartupModeKey, encodeSyncString(it)) }
@@ -506,6 +553,9 @@ internal actual object PlayerSettingsStorage {
         loadRejectedAudioKeywords()?.let { put(rejectedAudioKeywordsKey, encodeSyncStringSet(it)) }
         loadStreamReuseLastLinkEnabled()?.let { put(streamReuseLastLinkEnabledKey, encodeSyncBoolean(it)) }
         loadStreamReuseLastLinkCacheHours()?.let { put(streamReuseLastLinkCacheHoursKey, encodeSyncInt(it)) }
+        loadStreamPrefetchScope()?.let { put(streamPrefetchScopeKey, encodeSyncString(it)) }
+        loadStreamPrefetchCacheMinutes()?.let { put(streamPrefetchCacheMinutesKey, encodeSyncInt(it)) }
+        loadStreamPrefetchResolveLinks()?.let { put(streamPrefetchResolveLinksKey, encodeSyncBoolean(it)) }
         loadDecoderPriority()?.let { put(decoderPriorityKey, encodeSyncInt(it)) }
         loadNvidiaRtxSuperResolutionEnabled()?.let { put(nvidiaRtxSuperResolutionEnabledKey, encodeSyncBoolean(it)) }
         loadMapDV7ToHevc()?.let { put(mapDV7ToHevcKey, encodeSyncBoolean(it)) }
@@ -517,6 +567,7 @@ internal actual object PlayerSettingsStorage {
         loadStreamAutoPlayRegex()?.let { put(streamAutoPlayRegexKey, encodeSyncString(it)) }
         loadStreamAutoPlayTimeoutSeconds()?.let { put(streamAutoPlayTimeoutSecondsKey, encodeSyncInt(it)) }
         loadSkipIntroEnabled()?.let { put(skipIntroEnabledKey, encodeSyncBoolean(it)) }
+        loadSkipAutoAcceptMode()?.let { put(skipAutoAcceptModeKey, encodeSyncString(it)) }
         loadAnimeSkipEnabled()?.let { put(animeSkipEnabledKey, encodeSyncBoolean(it)) }
         loadAnimeSkipClientId()?.let { put(animeSkipClientIdKey, encodeSyncString(it)) }
         loadStreamAutoPlayNextEpisodeEnabled()?.let { put(streamAutoPlayNextEpisodeEnabledKey, encodeSyncBoolean(it)) }
@@ -581,6 +632,8 @@ internal actual object PlayerSettingsStorage {
         payload.decodeSyncInt(subtitleFontSizeSpKey)?.let(::saveSubtitleFontSizeSp)
         payload.decodeSyncInt(subtitleBottomOffsetKey)?.let(::saveSubtitleBottomOffset)
         payload.decodeSyncString(subtitleFontFamilyKey)?.let(::saveSubtitleFontFamily)
+        payload.decodeSyncString(subtitleAssStyleModeKey)?.let(::saveSubtitleAssStyleMode)
+        payload.decodeSyncInt(subtitleAssScalePercentKey)?.let(::saveSubtitleAssScalePercent)
         payload.decodeSyncBoolean(subtitleUseForcedSubtitlesKey)?.let(::saveSubtitleUseForcedSubtitles)
         payload.decodeSyncBoolean(subtitleShowOnlyPreferredLanguagesKey)?.let(::saveSubtitleShowOnlyPreferredLanguages)
         payload.decodeSyncString(addonSubtitleStartupModeKey)?.let(::saveAddonSubtitleStartupMode)
@@ -588,6 +641,9 @@ internal actual object PlayerSettingsStorage {
         payload.decodeSyncStringSet(rejectedAudioKeywordsKey)?.let(::saveRejectedAudioKeywords)
         payload.decodeSyncBoolean(streamReuseLastLinkEnabledKey)?.let(::saveStreamReuseLastLinkEnabled)
         payload.decodeSyncInt(streamReuseLastLinkCacheHoursKey)?.let(::saveStreamReuseLastLinkCacheHours)
+        payload.decodeSyncString(streamPrefetchScopeKey)?.let(::saveStreamPrefetchScope)
+        payload.decodeSyncInt(streamPrefetchCacheMinutesKey)?.let(::saveStreamPrefetchCacheMinutes)
+        payload.decodeSyncBoolean(streamPrefetchResolveLinksKey)?.let(::saveStreamPrefetchResolveLinks)
         payload.decodeSyncInt(decoderPriorityKey)?.let(::saveDecoderPriority)
         payload.decodeSyncBoolean(nvidiaRtxSuperResolutionEnabledKey)?.let(::saveNvidiaRtxSuperResolutionEnabled)
         payload.decodeSyncBoolean(mapDV7ToHevcKey)?.let(::saveMapDV7ToHevc)
@@ -599,6 +655,7 @@ internal actual object PlayerSettingsStorage {
         payload.decodeSyncString(streamAutoPlayRegexKey)?.let(::saveStreamAutoPlayRegex)
         payload.decodeSyncInt(streamAutoPlayTimeoutSecondsKey)?.let(::saveStreamAutoPlayTimeoutSeconds)
         payload.decodeSyncBoolean(skipIntroEnabledKey)?.let(::saveSkipIntroEnabled)
+        payload.decodeSyncString(skipAutoAcceptModeKey)?.let(::saveSkipAutoAcceptMode)
         payload.decodeSyncBoolean(animeSkipEnabledKey)?.let(::saveAnimeSkipEnabled)
         payload.decodeSyncString(animeSkipClientIdKey)?.let(::saveAnimeSkipClientId)
         payload.decodeSyncString(introDbApiKeyKey)?.let(::saveIntroDbApiKey)

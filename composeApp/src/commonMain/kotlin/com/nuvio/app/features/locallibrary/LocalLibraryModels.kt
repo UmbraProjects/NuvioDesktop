@@ -92,11 +92,15 @@ enum class LocalLibraryPlaybackPreference {
     }
 
     /**
-     * The source picker is always a valid alternate. Local playback is only offered when the
-     * selected movie/episode actually resolves to a file.
+     * Whether the alternate action opens the source picker rather than playing a local file — i.e.
+     * which of the two labels the alternate entry should carry.
+     *
+     * An item with no local file has no local alternate to offer, so its alternate is always the
+     * picker. That case is worth surfacing even under [SOURCE_PICKER]: the alternate is what
+     * overrides stream auto-play, which has nothing to do with the local library.
      */
-    fun canOfferAlternate(hasLocalFile: Boolean): Boolean =
-        this == LOCAL_LIBRARY || hasLocalFile
+    fun alternateOpensSourcePicker(hasLocalFile: Boolean): Boolean =
+        shouldUseManualStreamSelection(useAlternate = true, hasLocalFile = hasLocalFile)
 
     /**
      * Resolves the complete click-time route in one place.
@@ -428,5 +432,28 @@ private fun commonDirectoryPath(first: String, second: String): String {
 }
 
 internal const val LOCAL_ID_PREFIX = "local:"
+
+/**
+ * The two provenance strings a local file plays under. Every local file reaches the player through
+ * one of two representations of the same thing — a scanned [LocalMediaItem] stream, or a completed
+ * download whose file happens to live in a library folder — and the player HUD/pause overlay must
+ * name them identically, or bingeing from one into the other silently renames the source mid-show.
+ */
+const val LOCAL_LIBRARY_STREAM_NAME = "Local File"
+const val LOCAL_LIBRARY_PROVIDER_NAME = "Local Library"
+
+/**
+ * Whether [this] file path sits inside [root], comparing case-insensitively and treating '/' and
+ * backslash as the same separator (Windows-only build; a folder is spelled either way).
+ * A path equal to the root is not "inside" it — a library root is a directory, never a media file.
+ */
+internal fun String.isInsideDirectory(root: String): Boolean {
+    val normalizedRoot = root.trim().trimEnd('/', '\\').replace('\\', '/')
+    if (normalizedRoot.isBlank()) return false
+    val normalizedPath = trim().replace('\\', '/').trimEnd('/')
+    if (normalizedPath.length <= normalizedRoot.length) return false
+    if (normalizedPath[normalizedRoot.length] != '/') return false
+    return normalizedPath.regionMatches(0, normalizedRoot, 0, normalizedRoot.length, ignoreCase = true)
+}
 
 fun String.isLocalLibraryId(): Boolean = startsWith(LOCAL_ID_PREFIX)

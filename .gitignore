@@ -33,3 +33,6 @@ AGENTS.md
 
 # TorrServer P2P binary (bundled at build/package time, not committed)
 composeApp/src/desktopMain/resources/torrserver/windows-amd64/TorrServer.exe
+
+# Standalone Umbra prototype - the game launcher ships inside composeApp, this is scratch work
+Umbra/

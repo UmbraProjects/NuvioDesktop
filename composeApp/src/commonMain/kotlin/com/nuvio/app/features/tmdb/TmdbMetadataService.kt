@@ -1,7 +1,6 @@
 package com.nuvio.app.features.tmdb
 
 import co.touchlab.kermit.Logger
-import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.details.MetaCompany
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaPerson
@@ -13,10 +12,13 @@ import com.nuvio.app.features.details.PersonDetail
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
+import com.nuvio.app.features.watchprogress.preferPreciseReleaseDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -33,10 +35,64 @@ object TmdbMetadataService {
     private val titleCompareYearRegex = Regex("""\b(19|20)\d{2}\b""")
 
     private val enrichmentCache = mutableMapOf<String, TmdbEnrichment>()
+    /**
+     * Episode enrichment keyed **per season**, as `"<tmdbId>:<season>:<language>"`.
+     *
+     * Previously keyed on the whole requested season *set*, which meant asking for [1,2,3] and then
+     * [1,2,3,4] shared nothing and refetched the first three. Measured in a real log: **1928 season
+     * requests for 584 distinct seasons — 69% redundant**, one show refetching the same season
+     * twelve times. Per-season keys make a set request pay only for the seasons it has not seen.
+     */
     private val episodeCache = mutableMapOf<String, Map<Pair<Int, Int>, TmdbEpisodeEnrichment>>()
+
+    /**
+     * One lock per season being fetched, so concurrent callers wanting overlapping sets do not each
+     * issue the same request. The cache alone cannot help them: it is only populated once a fetch
+     * finishes, and a details screen opens several of these at once.
+     */
+    private val episodeFetchLocks = mutableMapOf<String, Mutex>()
+    private val episodeCacheMutex = Mutex()
+
+    private suspend fun episodeFetchLock(key: String): Mutex =
+        episodeCacheMutex.withLock { episodeFetchLocks.getOrPut(key) { Mutex() } }
     private val moreLikeThisCache = mutableMapOf<String, List<MetaPreview>>()
     private val collectionCache = mutableMapOf<String, Pair<String?, List<MetaPreview>>>()
     private val trailerCache = mutableMapOf<String, List<MetaTrailer>>()
+
+    /**
+     * One lock per trailer lookup.
+     *
+     * The cache key was already correct; what it lacked was single-flight. A show's trailers are
+     * wanted by the hero, the details screen and the trailer surface at roughly the same moment,
+     * and each miss fans out over **every season** — so three concurrent callers on a 50-season
+     * show issue 150 requests for the same answer. Measured: 548 season/videos calls for 313
+     * distinct seasons, one show fetched seven times over.
+     */
+    private val trailerFetchLocks = mutableMapOf<String, Mutex>()
+
+    /**
+     * How many seasons of trailers a caller actually needs.
+     *
+     * The trailer lookup fans out over **every** season a show has — 51 requests on a 51-season
+     * show. That is defensible on a details page, which is one title the user chose to open, and
+     * indefensible on Home, which enriches a screenful of them at once. Measured in one browsing
+     * session: 278 `season/videos` calls across 69 shows.
+     *
+     * [SingleSeason] asks for the show-level videos plus one season — the one the user is watching,
+     * or the first when that is unknown, which is where a show's trailer usually lives anyway.
+     */
+    sealed interface TrailerScope {
+        data object AllSeasons : TrailerScope
+
+        data class SingleSeason(val preferred: Int?) : TrailerScope
+
+        /** Part of both cache keys, so a Home fetch can never satisfy a details-page request. */
+        val cacheTag: String
+            get() = when (this) {
+                AllSeasons -> "all"
+                is SingleSeason -> "s${preferred ?: 1}"
+            }
+    }
     private val personCache = mutableMapOf<String, PersonDetail>()
     private val entityBrowseCache = mutableMapOf<String, TmdbEntityBrowseData>()
     private val entityHeaderCache = mutableMapOf<String, TmdbEntityHeader>()
@@ -588,6 +644,17 @@ object TmdbMetadataService {
         meta: MetaDetails,
         fallbackItemId: String,
         settings: TmdbSettings,
+        trailerScope: TrailerScope = TrailerScope.AllSeasons,
+        /**
+         * Whether to decorate the episode list from TMDB — plan §25.
+         *
+         * Costs **one request per season of the show**, and the traced consumers of the lightweight
+         * path do not read any of what it adds: the Home heroes take background/logo/ageRating/
+         * runtime/genres, `enrichForMetaScreen` takes only a fallback logo, and Random Play reads
+         * `videos.size`, which comes from the addon payload — this only decorates existing videos
+         * with titles, thumbnails and season posters, so the count is unaffected.
+         */
+        includeEpisodes: Boolean = true,
     ): MetaDetails {
         if (!settings.enabled || !settings.hasApiKey) return meta
         if (!meta.imdbTmdbIdentityTrusted) return meta
@@ -597,7 +664,9 @@ object TmdbMetadataService {
             ?: TmdbService.ensureTmdbId(fallbackItemId, tmdbType)
             ?: return meta
 
-        val needsEpisodes = (settings.useEpisodes || settings.useSeasonPosters) && tmdbType == "tv"
+        val needsEpisodes = includeEpisodes &&
+            (settings.useEpisodes || settings.useSeasonPosters) &&
+            tmdbType == "tv"
         val (enrichment, episodeMap) = coroutineScope {
             val enrichmentDeferred = async {
                 fetchEnrichment(
@@ -605,6 +674,7 @@ object TmdbMetadataService {
                     mediaType = tmdbType,
                     language = settings.language,
                     settings = settings,
+                    trailerScope = trailerScope,
                 )
             }
             val episodeDeferred = if (needsEpisodes) {
@@ -701,6 +771,8 @@ object TmdbMetadataService {
             mediaType = tmdbType,
             language = settings.language,
             settings = settings,
+            // A standalone meta stands in for a full details view, so it takes the full set.
+            trailerScope = TrailerScope.AllSeasons,
         ) ?: return null
 
         return buildStandaloneMeta(
@@ -831,7 +903,10 @@ object TmdbMetadataService {
                                 video.overview
                             },
                             released = if (settings.useEpisodes) {
-                                enrichmentForEpisode.airDate ?: video.released
+                                preferPreciseReleaseDate(
+                                    addonReleased = video.released,
+                                    tmdbAirDate = enrichmentForEpisode.airDate,
+                                )
                             } else {
                                 video.released
                             },
@@ -910,9 +985,12 @@ object TmdbMetadataService {
         mediaType: String,
         language: String,
         settings: TmdbSettings,
+        trailerScope: TrailerScope,
     ): TmdbEnrichment? = withContext(Dispatchers.Default) {
         val normalizedLanguage = normalizeTmdbLanguage(language)
-        val cacheKey = "$tmdbId:$mediaType:$normalizedLanguage"
+        // The scope is in the key because the payload differs: a Home entry holds one season's
+        // trailers, and serving that to a details page would silently hide the rest.
+        val cacheKey = "$tmdbId:$mediaType:$normalizedLanguage:${trailerScope.cacheTag}"
         enrichmentCache[cacheKey]?.let { return@withContext it }
 
         val numericId = tmdbId.toIntOrNull() ?: return@withContext null
@@ -969,6 +1047,7 @@ object TmdbMetadataService {
                         tmdbId = numericId,
                         mediaType = mediaType,
                         language = normalizedLanguage,
+                        scope = trailerScope,
                     )
                 } else {
                     emptyList()
@@ -1052,18 +1131,24 @@ object TmdbMetadataService {
         val normalizedSeasons = seasonNumbers.distinct().sorted()
         if (normalizedSeasons.isEmpty()) return@withContext emptyMap()
 
-        val cacheKey = "$numericId:${normalizedSeasons.joinToString(",")}:$normalizedLanguage"
-        episodeCache[cacheKey]?.let { return@withContext it }
-
         val pairs = coroutineScope {
             normalizedSeasons.map { season ->
                 async {
-                    val details = fetch<TmdbSeasonDetailsResponse>(
-                        endpoint = "tv/$numericId/season/$season",
-                        query = mapOf("language" to normalizedLanguage),
-                    ) ?: return@async emptyMap()
+                    val seasonKey = "$numericId:$season:$normalizedLanguage"
+                    episodeCacheMutex.withLock { episodeCache[seasonKey] }?.let { return@async it }
 
-                    details.episodes
+                    // Single-flighted per season: without this, two overlapping set requests both
+                    // miss and both fetch, which is half of what the old set-keyed cache cost.
+                    episodeFetchLock(seasonKey).withLock {
+                        episodeCacheMutex.withLock { episodeCache[seasonKey] }
+                            ?.let { return@async it }
+
+                        val details = fetch<TmdbSeasonDetailsResponse>(
+                            endpoint = "tv/$numericId/season/$season",
+                            query = mapOf("language" to normalizedLanguage),
+                        ) ?: return@async emptyMap()
+
+                        val parsed = details.episodes
                         .mapNotNull { episode ->
                             val episodeNumber = episode.episodeNumber ?: return@mapNotNull null
                             (season to episodeNumber) to TmdbEpisodeEnrichment(
@@ -1075,16 +1160,18 @@ object TmdbMetadataService {
                                 runtimeMinutes = episode.runtime,
                             )
                         }
-                        .toMap()
+                            .toMap()
+
+                        // Stored even when empty: a season that genuinely has no episode data is a
+                        // real answer, and re-asking for it on every visit is what the old key did.
+                        episodeCacheMutex.withLock { episodeCache[seasonKey] = parsed }
+                        parsed
+                    }
                 }
             }.awaitAll()
         }
 
-        val merged = pairs.fold(emptyMap<Pair<Int, Int>, TmdbEpisodeEnrichment>()) { acc, value -> acc + value }
-        if (merged.isNotEmpty()) {
-            episodeCache[cacheKey] = merged
-        }
-        merged
+        pairs.fold(emptyMap<Pair<Int, Int>, TmdbEpisodeEnrichment>()) { acc, value -> acc + value }
     }
 
     private suspend inline fun <reified T> fetch(
@@ -1094,7 +1181,7 @@ object TmdbMetadataService {
         val apiKey = TmdbSettingsRepository.snapshot().apiKey.trim().takeIf(String::isNotBlank) ?: return null
         val url = buildTmdbUrl(endpoint = endpoint, apiKey = apiKey, query = query)
         return runCatching {
-            json.decodeFromString<T>(httpGetText(url))
+            json.decodeFromString<T>(TmdbHttp.getText(url))
         }.onFailure { error ->
             log.w { "TMDB request failed for $endpoint: ${error.message}" }
         }.getOrNull()
@@ -1189,10 +1276,30 @@ object TmdbMetadataService {
         tmdbId: Int,
         mediaType: String,
         language: String,
+        scope: TrailerScope,
     ): List<MetaTrailer> {
-        val cacheKey = "$tmdbId:$mediaType:$language:trailers"
+        val cacheKey = "$tmdbId:$mediaType:$language:trailers:${scope.cacheTag}"
         trailerCache[cacheKey]?.let { return it }
+        // An all-seasons result is a superset, so it answers a single-season request too. The
+        // reverse is not true and must never be served the other way round.
+        if (scope is TrailerScope.SingleSeason) {
+            trailerCache["$tmdbId:$mediaType:$language:trailers:all"]?.let { return it }
+        }
 
+        val lock = episodeCacheMutex.withLock { trailerFetchLocks.getOrPut(cacheKey) { Mutex() } }
+        return lock.withLock {
+            trailerCache[cacheKey]?.let { return@withLock it }
+            fetchTrailersUncached(tmdbId, mediaType, language, cacheKey, scope)
+        }
+    }
+
+    private suspend fun fetchTrailersUncached(
+        tmdbId: Int,
+        mediaType: String,
+        language: String,
+        cacheKey: String,
+        scope: TrailerScope,
+    ): List<MetaTrailer> {
         val allVideos = mutableListOf<MetaTrailer>()
 
         val primaryVideos = fetchTmdbVideos(
@@ -1212,9 +1319,10 @@ object TmdbMetadataService {
                 query = mapOf("language" to language),
             )
             val seasonCount = (details?.numberOfSeasons ?: 0).coerceAtLeast(0)
+            val wantedSeasons = trailerSeasonsFor(scope, seasonCount)
             if (seasonCount > 0) {
                 val seasonVideos = coroutineScope {
-                    (1..seasonCount).map { seasonNumber ->
+                    wantedSeasons.map { seasonNumber ->
                         async {
                             seasonNumber to fetchTmdbVideos(
                                 endpoint = "tv/$tmdbId/season/$seasonNumber/videos",
@@ -1972,3 +2080,26 @@ private data class TmdbDiscoverResult(
     @SerialName("vote_average") val voteAverage: Double? = null,
     @SerialName("vote_count") val voteCount: Int? = null,
 )
+
+/**
+ * Which season numbers a trailer lookup should request.
+ *
+ * Pure and tested because the zero-seasons case broke production: `coerceIn(1, 0)` throws
+ * `IllegalArgumentException: Cannot coerce value to an empty range`, and since this runs inside the
+ * shared meta fetch, that exception failed the **whole** meta — nine series in one session lost
+ * their metadata to a trailer lookup they did not even need. TMDB reports 0 seasons for plenty of
+ * records, so it is an ordinary input, not an edge case.
+ */
+internal fun trailerSeasonsFor(
+    scope: TmdbMetadataService.TrailerScope,
+    seasonCount: Int,
+): List<Int> = when {
+    seasonCount <= 0 -> emptyList()
+    scope is TmdbMetadataService.TrailerScope.AllSeasons -> (1..seasonCount).toList()
+    // The season the user is on, clamped into range, or the first — one request instead of one
+    // per season, which is the whole point of the scope.
+    else -> listOf(
+        (scope as TmdbMetadataService.TrailerScope.SingleSeason).preferred?.coerceIn(1, seasonCount)
+            ?: 1,
+    )
+}

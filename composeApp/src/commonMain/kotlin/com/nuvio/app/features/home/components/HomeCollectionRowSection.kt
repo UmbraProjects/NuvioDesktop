@@ -31,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioShelfSection
 import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.landscapePosterWidth
+import com.nuvio.app.core.ui.nuvioPosterHighlight
 import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.core.ui.rememberHomePosterCardStyleUiState
 import com.nuvio.app.features.collection.Collection
@@ -179,11 +180,12 @@ private fun CollectionFolderCard(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         val shapeCorner = RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp)
-        val imageUrl = collectionFolderCardImageUrl(folder)
+        val imageUrl = collectionFolderCardImageUrl(folder, animateGifs)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(aspectRatio),
+                .aspectRatio(aspectRatio)
+                .nuvioPosterHighlight(posterCardStyle.cornerRadiusDp.dp),
             shape = shapeCorner,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -204,6 +206,9 @@ private fun CollectionFolderCard(
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
                             animateIfPossible = animateGifs && isAnimatedCollectionFolderImage(folder, imageUrl),
+                            // The still behind the animation. When the folder has no separate GIF
+                            // this is the same URL as [imageUrl] and the card skips the extra load.
+                            staticImageUrl = firstNonBlank(folder.coverImageUrl),
                         )
                     }
                     !folder.coverEmoji.isNullOrBlank() -> {
@@ -245,11 +250,22 @@ private fun CollectionFolderCard(
     }
 }
 
-private fun collectionFolderCardImageUrl(folder: CollectionFolder): String? {
-    return if (folder.mobileFocusGifEnabled) {
+/**
+ * Which artwork a folder card loads.
+ *
+ * [animateGifs] belongs here, not only at the decode: this used to prefer the GIF whenever the
+ * folder had one, so a surface that animates nothing (Search, Library, Discover) still downloaded
+ * and decoded multi-megabyte animations to display them as if they were stills. Choosing the cover
+ * instead avoids the transfer entirely.
+ *
+ * The GIF stays as a last resort so a folder whose only artwork is animated still shows something -
+ * the card asks the decoder for a still in that case rather than animating anyway.
+ */
+internal fun collectionFolderCardImageUrl(folder: CollectionFolder, animateGifs: Boolean): String? {
+    return if (folder.mobileFocusGifEnabled && animateGifs) {
         firstNonBlank(folder.focusGifUrl, folder.coverImageUrl)
     } else {
-        firstNonBlank(folder.coverImageUrl)
+        firstNonBlank(folder.coverImageUrl, folder.focusGifUrl.takeIf { folder.mobileFocusGifEnabled })
     }
 }
 

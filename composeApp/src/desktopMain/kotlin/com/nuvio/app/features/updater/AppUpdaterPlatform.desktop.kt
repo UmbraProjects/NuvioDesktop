@@ -1,5 +1,6 @@
 package com.nuvio.app.features.updater
 
+import com.nuvio.app.core.build.AppVersionPolicy
 import com.nuvio.app.core.storage.DesktopStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,6 +19,11 @@ import kotlin.system.exitProcess
 private const val updaterPreferencesName = "nuvio_updater"
 private const val ignoredTagKey = "ignored_release_tag"
 private const val inPlaceApplyKey = "in_place_apply"
+private const val updateChannelKey = "update_channel"
+private const val installedNightlyIdKey = "installed_nightly_id"
+private const val installedNightlyPublishedKey = "installed_nightly_published_at"
+private const val pendingNightlySwapKey = "pending_nightly_swap"
+private const val lastSeenBuildIdKey = "last_seen_build_id"
 
 private val updaterHttpClient: HttpClient = HttpClient.newBuilder()
     .connectTimeout(Duration.ofSeconds(60))
@@ -38,6 +44,62 @@ actual object AppUpdaterPlatform {
             arch.contains("64") -> listOf("x64", "x86_64", "amd64", "windows", "win")
             else -> listOf("windows", "win")
         }
+    }
+
+    // Stable unless explicitly opted in, so an unreadable or missing value never silently moves
+    // someone onto prerelease builds.
+    actual fun getUpdateChannel(): UpdateChannel =
+        if (UpdateChannel.Nightly.name.equals(store.getString(updateChannelKey), ignoreCase = true)) {
+            UpdateChannel.Nightly
+        } else {
+            UpdateChannel.Stable
+        }
+
+    actual fun setUpdateChannel(channel: UpdateChannel) {
+        store.putString(updateChannelKey, channel.name)
+    }
+
+    actual fun getInstalledNightlyBuild(): InstalledNightlyBuild? {
+        reconcileInstalledBuild()
+        val id = store.getString(installedNightlyIdKey)?.takeIf { it.isNotBlank() } ?: return null
+        return InstalledNightlyBuild(
+            id = id,
+            publishedAt = store.getString(installedNightlyPublishedKey)?.takeIf { it.isNotBlank() },
+        )
+    }
+
+    actual fun setInstalledNightlyBuild(build: InstalledNightlyBuild?) {
+        store.putString(installedNightlyIdKey, build?.id)
+        store.putString(installedNightlyPublishedKey, build?.publishedAt)
+        // The swap runs after this process exits, so the marker is a claim about a build that is
+        // not installed yet. Flag it, and let the next launch confirm it against the build stamp.
+        store.putString(pendingNightlySwapKey, if (build != null) "1" else null)
+    }
+
+    private var reconciledInstalledBuild = false
+
+    /**
+     * Checks the stored nightly marker against the build actually running, once per process.
+     *
+     * Driven from [getInstalledNightlyBuild] rather than from startup: everything that reads the
+     * marker goes through there, so no launch path can skip it.
+     */
+    @Synchronized
+    private fun reconcileInstalledBuild() {
+        if (reconciledInstalledBuild) return
+        reconciledInstalledBuild = true
+        val decision = decideNightlyMarker(
+            hasMarker = !store.getString(installedNightlyIdKey).isNullOrBlank(),
+            swapPending = store.getString(pendingNightlySwapKey) == "1",
+            runningBuildId = AppVersionPolicy.packagedBuild?.id,
+            lastSeenBuildId = store.getString(lastSeenBuildIdKey)?.takeIf { it.isNotBlank() },
+        )
+        if (!decision.keepMarker) {
+            store.putString(installedNightlyIdKey, null)
+            store.putString(installedNightlyPublishedKey, null)
+        }
+        if (decision.clearPending) store.putString(pendingNightlySwapKey, null)
+        decision.recordBuildId?.let { store.putString(lastSeenBuildIdKey, it) }
     }
 
     actual fun getIgnoredTag(): String? = store.getString(ignoredTagKey)

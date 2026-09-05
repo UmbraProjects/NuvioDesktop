@@ -923,6 +923,15 @@ object WatchProgressRepository {
                     if (updated == current) continue
                     entriesByVideoId[current.videoId] = updated
                     appliedEntries += 1
+                    // The same late metadata also repairs watched rows this entry wrote while it
+                    // was still nameless; they have no self-healing pass of their own.
+                    if (current.title.isBlank() && updated.title.isNotBlank()) {
+                        com.nuvio.app.features.watched.WatchedRepository.backfillMissingTitle(
+                            id = updated.parentMetaId,
+                            type = updated.parentMetaType,
+                            name = updated.title,
+                        )
+                    }
                 }
                 if (appliedEntries == 0) {
                     continue
@@ -968,6 +977,15 @@ object WatchProgressRepository {
             }.metadataProviderReadiness()
         }
         return settled?.takeIf { it.isReady }
+    }
+
+    /** Best known display name for a title, from any stored entry of the same parent. */
+    fun knownTitleForParent(parentMetaId: String): String? {
+        if (parentMetaId.isBlank()) return null
+        ensureLoaded()
+        return entriesByVideoId.values.firstOrNull {
+            it.title.isNotBlank() && it.parentMetaId.equals(parentMetaId, ignoreCase = true)
+        }?.title
     }
 
     fun upsertPlaybackProgress(
@@ -1475,6 +1493,20 @@ object WatchProgressRepository {
 
     private fun shouldUseYamtrackProgress(): Boolean =
         activeContinueWatchingSource() == ContinueWatchingSource.YAMTRACK
+
+    /**
+     * This machine's own playback progress, whatever service drives Continue Watching.
+     *
+     * [uiState] deliberately shows only the selected source's rows — picking SIMKL means seeing
+     * SIMKL and nothing else, which is the whole point of choosing one. But "where did I stop
+     * watching this" is a local fact recorded by the player, and it survives that choice: with a
+     * remote source selected, `uiState.entries` contains no local rows at all, so anything reading
+     * it for playback positions sees an empty store rather than a different view of the same one.
+     */
+    fun localPlaybackEntries(): List<WatchProgressEntry> {
+        ensureLoaded()
+        return entriesByVideoId.values.toList()
+    }
 
     private fun currentEntries(): List<WatchProgressEntry> {
         // A selected remote source shows that source's rows and nothing else.

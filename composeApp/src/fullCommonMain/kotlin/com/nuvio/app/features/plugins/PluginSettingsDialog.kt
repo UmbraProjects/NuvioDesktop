@@ -34,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.nuvio.app.core.ui.NuvioInputField
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -52,6 +51,7 @@ import nuvio.composeapp.generated.resources.action_save
 import nuvio.composeapp.generated.resources.plugins_provider_settings_title
 import nuvio.composeapp.generated.resources.plugins_select_option
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.trackTextInputFocus
 
 @Composable
 internal fun PluginSettingsDialog(

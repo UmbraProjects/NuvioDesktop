@@ -16,6 +16,9 @@ internal data class DiscordRichPresenceActivity(
     val episodeLabel: String? = null,
     val episodeTitle: String? = null,
     val imageUrl: String? = null,
+    // Served by the resizing proxy when [imageUrl] is reachable but has nothing to give — a poster
+    // service answering 404 for a title it holds no art for.
+    val fallbackImageUrl: String? = null,
     val imageFit: DiscordRichPresenceImageFit = DiscordRichPresenceImageFit.Cover,
     val type: DiscordRichPresenceActivityType = DiscordRichPresenceActivityType.Playback,
     val isPlaying: Boolean = false,

@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,6 +91,28 @@ object PosterZoomAnchorHolder {
     }
 
     fun consume(): PosterZoomAnchor? = pending.also { pending = null }
+}
+
+/**
+ * Whether the zoom action overlay is on screen, published so surfaces that also react to the
+ * pointer can stand down while it is. Today that is the poster hover preview: the overlay is
+ * launched from a right-click on the very card the preview is anchored to, and without this the
+ * preview card would sit on top of the zoomed poster it was invoked from.
+ *
+ * Set by the overlay's own composition rather than by whatever opens it, so a path that opens
+ * the bottom sheet instead cannot leave this stuck on.
+ */
+object PosterZoomOverlayCoordinator {
+    var isVisible by mutableStateOf(false)
+        private set
+
+    internal fun show() {
+        isVisible = true
+    }
+
+    internal fun hide() {
+        isVisible = false
+    }
 }
 
 class PosterZoomOverlayAction(
@@ -161,6 +184,11 @@ fun NuvioPosterZoomActionOverlay(
 
     var rootOrigin by remember { mutableStateOf(Offset.Zero) }
     var slotBounds by remember { mutableStateOf<Rect?>(null) }
+
+    DisposableEffect(Unit) {
+        PosterZoomOverlayCoordinator.show()
+        onDispose { PosterZoomOverlayCoordinator.hide() }
+    }
 
     LaunchedEffect(Unit) {
         launch { scrim.animateTo(1f, tween(durationMillis = 260, easing = NuvioTokens.Motion.standard)) }

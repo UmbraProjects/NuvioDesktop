@@ -69,6 +69,8 @@ internal object NativePlayerBridge {
      */
     external fun initializeAppIdentity()
 
+    external fun beginVideoProfile(handle: Long)
+    external fun endVideoProfile(handle: Long)
     external fun completeSvpStartupProfile(handle: Long)
     external fun seekTo(handle: Long, positionMs: Long)
     external fun seekBy(handle: Long, offsetMs: Long)
@@ -110,6 +112,18 @@ internal object NativePlayerBridge {
     external fun endCompactPlayerWindowInteraction(windowHwnd: Long)
 
     external fun setSubtitleDelayMs(handle: Long, delayMs: Int)
+
+    /**
+     * mpv's `sub-ass-override` level for ASS/SSA tracks ("no", "yes", "scale" or "force") plus the
+     * `sub-scale` factor that goes with it.
+     *
+     * Both are owned by the native side rather than written as plain properties. The bridge
+     * re-derives the level on every track selection (plain-text tracks always get "force") and
+     * would overwrite anything set from here on the next subtitle change; and `sub-scale` is not
+     * ASS-specific, so it has to be applied only when the selected track really is ASS/SSA or it
+     * resizes SRT tracks too.
+     */
+    external fun setSubtitleAssStyleMode(handle: Long, mode: String, scale: Double)
     external fun applySubtitleStyle(
         handle: Long,
         textColor: String,

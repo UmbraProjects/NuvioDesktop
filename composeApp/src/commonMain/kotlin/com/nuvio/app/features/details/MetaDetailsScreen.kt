@@ -40,7 +40,6 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,6 +86,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.games.GameModeController
+import com.nuvio.app.features.streams.StreamPrefetchService
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.build.TrailerPlaybackMode
@@ -134,7 +136,6 @@ import com.nuvio.app.isDesktop
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.LibrarySourceMode
 import com.nuvio.app.features.library.toLibraryItem
-import com.nuvio.app.features.locallibrary.LocalLibraryPlaybackPreference
 import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.player.AnimeContentCache
 import com.nuvio.app.features.player.OriginalLanguageCache
@@ -145,7 +146,6 @@ import com.nuvio.app.features.player.appShortcutMatches
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.tmdb.TmdbService
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktCommentReview
 import com.nuvio.app.features.trakt.TraktCommentsRepository
@@ -182,6 +182,8 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlin.random.Random
+import androidx.compose.material.icons.rounded.Search
+import com.nuvio.app.core.ui.trackTextInputFocus
 
 private fun dominantBackdropBlendColor(dominantColor: Color, backgroundColor: Color): Color =
     backgroundColor.blendTowards(dominantColor, fraction = 0.42f)
@@ -651,8 +653,13 @@ fun MetaDetailsScreen(
                 }
                 // Record genre-based anime detection so the desktop player can auto-apply the
                 // anime enhancement preset for this title (see AnimeContentCache).
-                LaunchedEffect(meta.id, meta.genres) {
-                    AnimeContentCache.record(meta.id, meta.genres)
+                LaunchedEffect(meta.id, meta.genres, meta.language, meta.country) {
+                    AnimeContentCache.record(
+                        metaId = meta.id,
+                        genres = meta.genres,
+                        originalLanguage = meta.language,
+                        originCountries = listOfNotNull(meta.country),
+                    )
                 }
                 // The title's own language, for the "Original" audio/subtitle preference. Recorded
                 // here because this is where a full (TMDB-backed) meta is already in hand — the
@@ -1071,14 +1078,56 @@ fun MetaDetailsScreen(
                         episodeNumber = primaryEpisodeNumber,
                     )
                 }
-                val canOfferPrimaryAlternate =
-                    localLibraryUiState.playbackPreference.canOfferAlternate(primaryHasLocalPlayback)
-                val showManualPlayOption =
-                    alternatePlayHandler != null && canOfferPrimaryAlternate
+                // Search ahead for the one episode the play button would start, so pressing it
+                // skips the scrape. Keyed on the resolved target rather than on `meta`, which
+                // changes for reasons that do not move the play button.
+                val primaryTargetIsSeries = meta.type == "series" || hasEpisodes
+                DisposableEffect(meta.id) {
+                    onDispose { StreamPrefetchService.cancel() }
+                }
+                LaunchedEffect(
+                    primaryPlaybackVideoId,
+                    primarySeasonNumber,
+                    primaryEpisodeNumber,
+                    primaryHasLocalPlayback,
+                    primaryTargetIsSeries && seriesAction == null,
+                    onPlay == null,
+                ) {
+                    // A series with no primary action has nothing to play, and `meta.id` would fall
+                    // through as the target — a bare show id, which is not a stream lookup.
+                    if (primaryTargetIsSeries && seriesAction == null) return@LaunchedEffect
+                    if (onPlay == null) return@LaunchedEffect
+                    if (primaryHasLocalPlayback) return@LaunchedEffect
+                    StreamPrefetchService.request(
+                        StreamPrefetchService.Target(
+                            trigger = StreamPrefetchService.Trigger.Details,
+                            type = meta.type,
+                            parentMetaId = meta.id,
+                            videoId = primaryPlaybackVideoId,
+                            title = meta.name,
+                            season = primarySeasonNumber,
+                            episode = primaryEpisodeNumber,
+                        ),
+                    )
+                }
+                // The secondary gesture always opens the source picker, never "whatever the
+                // primary click is not doing". Under the Source picker preference with a local file
+                // present, that other route is playing the local file — which starts playback
+                // immediately and is indistinguishable from an ordinary Resume, so the gesture read
+                // as doing nothing at all. Which `useAlternate` value actually reaches the picker
+                // depends on the preference, so it is resolved rather than hardcoded.
+                val primaryAlternateOpensPicker = localLibraryUiState.playbackPreference
+                    .alternateOpensSourcePicker(primaryHasLocalPlayback)
+                val showManualPlayOption = alternatePlayHandler != null
                 val onPrimaryPlayLongClick: (() -> Unit)? = alternatePlayHandler
-                    ?.takeIf { canOfferPrimaryAlternate }
                     ?.let { alternatePlay ->
-                        {
+                        playSecondary@{
+                            if (!primaryAlternateOpensPicker) {
+                                // The configured preference already routes a normal click to the
+                                // picker, so the normal handler is the one that opens it.
+                                onPrimaryPlayClick()
+                                return@playSecondary
+                            }
                             dropTrailerForPlaybackNavigation()
                             when {
                                 (meta.type == "series" || hasEpisodes) && seriesAction != null -> {
@@ -1542,9 +1591,13 @@ fun MetaDetailsScreen(
                     }
                 }
 
-                LaunchedEffect(detailsKeyboardNavigationEnabled) {
-                    if (detailsKeyboardNavigationEnabled) {
-                        tvFocusRequester.requestFocus()
+                // Also re-requested when game mode closes over the details screen: its library owns
+                // focus while up, and Compose leaves nothing focused when that focusable is removed,
+                // so the global single-key shortcuts stay dead until something is clicked.
+                val gameModeActive by GameModeController.active.collectAsStateWithLifecycle()
+                LaunchedEffect(detailsKeyboardNavigationEnabled, gameModeActive) {
+                    if (detailsKeyboardNavigationEnabled && !gameModeActive) {
+                        runCatching { tvFocusRequester.requestFocus() }
                     }
                 }
 
@@ -2384,25 +2437,17 @@ fun MetaDetailsScreen(
                                     episodeNumber = selectedEpisodeNumber,
                                 )
                             }
-                            val alternatePlayLabel =
-                                if (
-                                    localLibraryUiState.playbackPreference.canOfferAlternate(
-                                        selectedHasLocalPlayback,
-                                    )
-                                ) {
-                                    stringResource(
-                                        if (
-                                            localLibraryUiState.playbackPreference ==
-                                                LocalLibraryPlaybackPreference.LOCAL_LIBRARY
-                                        ) {
-                                            Res.string.play_choose_source
-                                        } else {
-                                            Res.string.play_local_file
-                                        },
-                                    )
-                                } else {
-                                    null
-                                }
+                            // Which of the two play callbacks reaches the source picker depends
+                            // on the configured preference, so it is resolved rather than assumed:
+                            // under SOURCE_PICKER with a local file present it is the *normal*
+                            // click that opens the picker, and the alternate that plays the file.
+                            val alternateOpensPicker = localLibraryUiState.playbackPreference
+                                .alternateOpensSourcePicker(selectedHasLocalPlayback)
+                            // Only offered when there is a local file AND a normal tap is not
+                            // already playing it — with none, or under the Local library
+                            // preference, this entry would duplicate the tap.
+                            val alternatePlayLabel = stringResource(Res.string.play_local_file)
+                                .takeIf { selectedHasLocalPlayback && !alternateOpensPicker }
                             val isSelectedEpisodeWatched = remember(meta, selectedEpisode, watchedUiState.watchedKeys, progressByVideoId) {
                                 isEpisodeWatchedForActions(
                                     meta = meta,
@@ -2473,6 +2518,16 @@ fun MetaDetailsScreen(
                                 alternatePlayLabel = alternatePlayLabel,
                                 onAlternatePlay = alternatePlayLabel?.let {
                                     { onEpisodeAlternatePlayClick(selectedEpisode) }
+                                },
+                                // Always offered, whatever the local-library preference is: this
+                                // entry is what overrides stream auto-play, which is not a
+                                // local-library concern.
+                                onChooseSource = {
+                                    if (alternateOpensPicker) {
+                                        onEpisodeAlternatePlayClick(selectedEpisode)
+                                    } else {
+                                        onEpisodePlayClick(selectedEpisode)
+                                    }
                                 },
                             )
                         }

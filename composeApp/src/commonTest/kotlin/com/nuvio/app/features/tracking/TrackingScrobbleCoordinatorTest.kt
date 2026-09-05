@@ -182,6 +182,25 @@ class TrackingScrobbleCoordinatorTest {
         assertEquals(1, dispatch.sentCount)
     }
 
+    @Test
+    fun `dispatch reports only providers whose response confirmed watched`() = runBlocking {
+        val dispatch = dispatchTrackingScrobble(
+            scrobblers = listOf(
+                FakeScrobbler(TrackingProviderId.TRAKT, confirmsWatched = true),
+                FakeScrobbler(TrackingProviderId.SIMKL),
+            ),
+            profileId = 2,
+            action = TrackingScrobbleAction.STOP,
+            event = movieEvent(progressPercent = 92.0),
+        )
+
+        assertEquals(
+            listOf(TrackingProviderId.TRAKT),
+            dispatch.watchedProviderIds,
+        )
+        assertEquals(2, dispatch.sentCount)
+    }
+
     private fun movieEvent(progressPercent: Double = 42.5) = TrackingScrobbleEvent(
         media = TrackingMediaReference(
             kind = TrackingMediaKind.MOVIE,
@@ -196,6 +215,7 @@ class TrackingScrobbleCoordinatorTest {
         private val failure: Throwable? = null,
         private val sends: Boolean = true,
         override val progressRefreshIntervalMs: Long? = null,
+        private val confirmsWatched: Boolean = false,
     ) : TrackingScrobbler {
         var callCount: Int = 0
 
@@ -203,10 +223,13 @@ class TrackingScrobbleCoordinatorTest {
             profileId: Int,
             action: TrackingScrobbleAction,
             event: TrackingScrobbleEvent,
-        ): Boolean {
+        ): TrackingScrobbleResult {
             callCount += 1
             failure?.let { throw it }
-            return sends
+            return TrackingScrobbleResult(
+                handled = sends,
+                confirmsWatched = confirmsWatched,
+            )
         }
     }
 }

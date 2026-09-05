@@ -141,6 +141,19 @@ internal class PlayerScreenRuntime(
     // Artwork resolved after launch for metadata-less direct playback (pasted URL / dropped file),
     // where args carry no poster. Feeds the Discord presence image so it matches library playback.
     var adHocArtworkImageUrl by mutableStateOf<String?>(null)
+
+    /**
+     * The poster from this title's own metadata record, resolved only when the one playback was
+     * launched with is unusable for Discord Rich Presence. See `BindDiscordRichPresenceEffect`.
+     */
+    var discordMetaPosterUrl by mutableStateOf<String?>(null)
+
+    /**
+     * The entry's own Kitsu/AniList poster, for native anime ids only. Resolved unconditionally
+     * rather than only on failure, because its job is to be the *fallback* the Discord image
+     * proxy falls back to. See `BindDiscordRichPresenceEffect`.
+     */
+    var discordAnimePosterUrl by mutableStateOf<String?>(null)
     var activePauseDescription by mutableStateOf(pauseDescription)
     var activeVideoId by mutableStateOf(videoId)
     var activeInitialPositionMs by mutableStateOf(initialPositionMs)
@@ -202,6 +215,7 @@ internal class PlayerScreenRuntime(
     var pendingScrobbleStartAfterSeek by mutableStateOf(false)
     var hasSentCompletionScrobbleForCurrentItem by mutableStateOf(false)
     var currentTrackingScrobbleMedia by mutableStateOf<TrackingMediaReference?>(null)
+    val shownWatchedProviderToastKeys = mutableSetOf<String>()
 
     var showSourcesPanel by mutableStateOf(false)
     var showEpisodesPanel by mutableStateOf(false)
@@ -223,6 +237,11 @@ internal class PlayerScreenRuntime(
     var chapterSkipIntervals by mutableStateOf<List<SkipInterval>>(emptyList())
     var activeSkipInterval by mutableStateOf<SkipInterval?>(null)
     var skipIntervalDismissed by mutableStateOf(false)
+    // Segments already auto-accepted for the loaded episode, so rewinding back into one lands where
+    // the viewer aimed instead of being bounced straight back out of it. Cleared on episode change.
+    // Not observable state: only the auto-accept effect touches it, and a recomposition on every
+    // accepted segment would buy nothing.
+    val autoAcceptedSkipIntervals: MutableSet<String> = mutableSetOf()
     var parentalWarnings by mutableStateOf<List<ParentalWarning>>(emptyList())
     var showParentalGuide by mutableStateOf(false)
     var parentalGuideHasShown by mutableStateOf(false)

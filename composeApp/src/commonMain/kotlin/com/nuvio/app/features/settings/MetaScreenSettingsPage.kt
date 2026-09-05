@@ -26,7 +26,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -58,7 +57,6 @@ import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsUiState
 import com.nuvio.app.features.player.HERO_TV_TRAILER_DELAY_VALUES
 import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.action_reorder
 import nuvio.composeapp.generated.resources.action_reset
 import nuvio.composeapp.generated.resources.settings_homescreen_hidden
 import nuvio.composeapp.generated.resources.settings_homescreen_visible
@@ -125,9 +123,9 @@ import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_backgroun
 import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_manual
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
-import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import com.nuvio.app.core.ui.accentBrush
 
 internal fun LazyListScope.metaScreenSettingsContent(
     isTablet: Boolean,
@@ -346,7 +344,19 @@ private fun MetaSectionReorderableList(
             ReorderableItem(reorderableLazyListState, key = item.key.name) { isDragging ->
                 val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
 
-                Surface(shadowElevation = elevation) {
+                Surface(
+                    modifier = with(this@ReorderableItem) {
+                        Modifier.draggableHandle(
+                            onDragStarted = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            },
+                            onDragStopped = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                        )
+                    },
+                    shadowElevation = elevation,
+                ) {
                     Column {
                         if (index > 0) {
                             SettingsGroupDivider(isTablet = isTablet)
@@ -359,7 +369,6 @@ private fun MetaSectionReorderableList(
                             modifier = Modifier.settingsScrollAnchor(item.key.settingsSearchAnchor),
                             onEnabledChange = { MetaScreenSettingsRepository.setEnabled(item.key, it) },
                             onTabGroupChange = { MetaScreenSettingsRepository.setTabGroup(item.key, it) },
-                            dragHandleScope = this@ReorderableItem,
                         )
                     }
                 }
@@ -378,11 +387,9 @@ private fun MetaSectionRow(
     modifier: Modifier = Modifier,
     onEnabledChange: (Boolean) -> Unit,
     onTabGroupChange: (Int?) -> Unit,
-    dragHandleScope: ReorderableCollectionItemScope,
 ) {
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
     val verticalPadding = if (isTablet) 18.dp else 16.dp
-    val hapticFeedback = LocalHapticFeedback.current
 
     Column(
         modifier = modifier
@@ -435,7 +442,7 @@ private fun MetaSectionRow(
                         )
                         Text(
                             text = stringResource(Res.string.settings_meta_tab_group_format, item.tabGroup ?: 0),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.accentBrush(),
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Medium,
                         )
@@ -446,25 +453,6 @@ private fun MetaSectionRow(
                 checked = item.enabled,
                 onCheckedChange = onEnabledChange,
             )
-            IconButton(
-                modifier = with(dragHandleScope) {
-                    Modifier.draggableHandle(
-                        onDragStarted = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        },
-                        onDragStopped = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        },
-                    )
-                },
-                onClick = {},
-            ) {
-                Icon(
-                    Icons.Rounded.Menu,
-                    contentDescription = stringResource(Res.string.action_reorder),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
 
         

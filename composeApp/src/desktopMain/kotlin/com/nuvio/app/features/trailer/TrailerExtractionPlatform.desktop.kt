@@ -23,7 +23,14 @@ internal object TrailerExtractionPlatform {
     // quality/performance sweet spot, then use 4K before falling back to 1080p.
     val preferredSeparateVideoHeights: List<Int> =
         if (isWindows) listOf(1440, 2160, 1080) else listOf(1080)
-    val preferSeparateVideoClient: Boolean = !isWindows
+
+    // Which client a format came from is now a correctness constraint rather than a quality
+    // preference: only VISIONOS media URLs are unrestricted, while ANDROID/IOS URLs 403 an
+    // open-ended range request and stop serving after ~63 seconds of media. Windows previously
+    // set this false to pick the highest-bitrate 1440p encode across all clients, which would
+    // now hand mpv a URL that dies a minute in. VISIONOS returns a full ladder including
+    // 1440p/2160p, so constraining to it costs effectively nothing.
+    val preferSeparateVideoClient: Boolean = true
 
     val defaultHeaders: Map<String, String> = mapOf(
         "accept-language" to "en-US,en;q=0.9",
@@ -81,9 +88,14 @@ internal object TrailerExtractionPlatform {
         bestVideo: StreamCandidate?,
         bestAudio: StreamCandidate?,
     ): TrailerPlaybackSource? {
-        // Prefer adaptive video/audio so trailers can use the selected 1080p rendition.
+        // Prefer adaptive video/audio so trailers can use the selected 1440p rendition.
         // The platform player combines these at initial load rather than attaching audio
         // after playback starts.
+        //
+        // This is only safe because the extractor prefers the VISIONOS client. ANDROID/IOS
+        // adaptive URLs 403 the open-ended `Range: bytes=<pos>-` that ffmpeg opens with, and
+        // stop serving after ~63 seconds of media; VISIONOS URLs have neither restriction.
+        // If that client preference is ever dropped, adaptive playback breaks again.
         if (bestVideo != null && bestAudio != null) {
             return TrailerPlaybackSource(videoUrl = bestVideo.url, audioUrl = bestAudio.url)
         }

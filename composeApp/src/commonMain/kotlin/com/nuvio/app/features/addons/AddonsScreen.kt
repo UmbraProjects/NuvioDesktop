@@ -26,8 +26,6 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -54,7 +52,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import com.nuvio.app.core.ui.trackTextInputFocus
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -74,11 +71,16 @@ import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.NuvioSectionLabel
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.NuvioSurfaceCard
+import com.nuvio.app.core.ui.accentFill
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.nuvioPanelBackdrop
 import com.nuvio.app.isDesktop
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import com.nuvio.app.core.ui.trackTextInputFocus
 
 @Composable
 fun AddonsScreen(
@@ -556,7 +558,9 @@ private fun DesktopSegmentedFilterSegment(
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(7.dp))
-            .background(if (selected) tokens.colors.accent.copy(alpha = 0.16f) else Color.Transparent)
+            .background(
+                if (selected) tokens.colors.accentFill(0.16f) else SolidColor(Color.Transparent),
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 7.dp),
         contentAlignment = Alignment.Center,
@@ -650,12 +654,20 @@ private fun DesktopAddAddonButton(
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val shape = RoundedCornerShape(12.dp)
     Surface(
         modifier = Modifier
             .height(44.dp)
+            // Painted as a brush rather than through Surface's colour so a gradient accent reaches
+            // this pill too; accentFill is a SolidColor on the flat themes and renders identically.
+            // The open state keeps its flat accentStrong, which is what distinguishes it.
+            .background(
+                brush = if (selected) SolidColor(tokens.colors.accentStrong) else tokens.colors.accentFill,
+                shape = shape,
+            )
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) tokens.colors.accentStrong else tokens.colors.accent,
+        shape = shape,
+        color = Color.Transparent,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 18.dp),
@@ -799,10 +811,11 @@ private fun DesktopAddonsTable(
     openConfigureUrl: (String) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val shape = RoundedCornerShape(10.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = tokens.colors.surface,
+        modifier = Modifier.fillMaxWidth().nuvioPanelBackdrop(tokens.colors.surface, shape),
+        shape = shape,
+        color = Color.Transparent,
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp)) {
             DesktopAddonTableHeader()

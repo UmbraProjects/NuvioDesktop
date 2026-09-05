@@ -19,6 +19,10 @@ import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.plugins.PluginsUiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
@@ -52,6 +56,9 @@ object StreamsRepository {
     private val _isEpisodeRequest = MutableStateFlow(false)
     val isEpisodeRequest: StateFlow<Boolean> = _isEpisodeRequest.asStateFlow()
 
+    private val preparationMutex = Mutex()
+    private var preparationJob: Job? = null
+    private var requestedInputKey: String? = null
     private var activeJob: Job? = null
     private var activeRequestKey: String? = null
 
@@ -105,6 +112,25 @@ object StreamsRepository {
     }
 
     private fun load(type: String, videoId: String, parentMetaId: String?, title: String?, season: Int?, episode: Int?, manualSelection: Boolean, forceRefresh: Boolean, preferLocalStreams: Boolean) {
+        // Repository initialization and local-library lookup must not block the first picker frame.
+        // Serialize preparation, and cancel an obsolete request before it can publish its result.
+        val inputKey = "$type::$videoId::$parentMetaId::$season::$episode::$manualSelection::$preferLocalStreams"
+        if (forceRefresh || requestedInputKey != inputKey) {
+            requestedInputKey = inputKey
+            activeJob?.cancel()
+            _uiState.value = StreamsUiState(isAnyLoading = true)
+        }
+        preparationJob?.cancel()
+        preparationJob = scope.launch {
+            preparationMutex.withLock {
+                currentCoroutineContext().ensureActive()
+                PlaybackStartTrace.markPendingOrActive("streamsPrepare:start")
+                prepareLoad(type, videoId, parentMetaId, title, season, episode, manualSelection, forceRefresh, preferLocalStreams)
+            }
+        }
+    }
+
+    private suspend fun prepareLoad(type: String, videoId: String, parentMetaId: String?, title: String?, season: Int?, episode: Int?, manualSelection: Boolean, forceRefresh: Boolean, preferLocalStreams: Boolean) {
         val resolvedEpisode = MediaIdResolver.resolveLocalEpisodeIdentity(
             contentType = type,
             parentMetaId = parentMetaId ?: videoId,
@@ -114,6 +140,8 @@ object StreamsRepository {
             episode = episode,
             isAnimeHint = type.equals("anime", ignoreCase = true),
         )
+        currentCoroutineContext().ensureActive()
+        PlaybackStartTrace.markPendingOrActive("streamsPrepare:identity")
         val effectiveVideoId = resolvedEpisode.videoId
         val effectiveSeason = resolvedEpisode.streamSeason
         val effectiveEpisode = resolvedEpisode.streamEpisode
@@ -132,6 +160,8 @@ object StreamsRepository {
             episode = effectiveEpisode,
             manualSelection = manualSelection,
         )
+        currentCoroutineContext().ensureActive()
+        PlaybackStartTrace.markPendingOrActive("streamsPrepare:plugins")
         val requestKey = "$requestToken::pluginsGrouped=${pluginUiState.groupStreamsByRepository}"
         val currentState = _uiState.value
         if (
@@ -151,9 +181,28 @@ object StreamsRepository {
         val playerSettings = PlayerSettingsRepository.uiState.value
         val debridSettings = DebridSettingsRepository.snapshot()
         val streamBadgeRules = StreamBadgeSettingsRepository.snapshot()
+        currentCoroutineContext().ensureActive()
+        PlaybackStartTrace.markPendingOrActive("streamsPrepare:settings")
         val localStreams = MetaDetailsRepository.findLocalStreams(effectiveVideoId)
+        currentCoroutineContext().ensureActive()
+        PlaybackStartTrace.markPendingOrActive("streamsPrepare:localSources")
         val includeLocalInPicker = localStreams.isNotEmpty() && !preferLocalStreams
         val scoreProfile = StreamScoreRepository.profile
+        // Prefetched provider responses are keyed on the *resolved* identity, the same one every
+        // fetch below uses, so a background search and this load agree on the key for anime ids
+        // that the resolver rewrote. A forced refresh never reads them: reload() exists precisely
+        // because the caller has reason to distrust what it already has.
+        val prefetchContentKey = StreamPrefetchCache.contentKey(
+            type = type,
+            videoId = effectiveVideoId,
+            season = effectiveSeason,
+            episode = effectiveEpisode,
+        )
+        val prefetchMaxAgeMs = if (forceRefresh) {
+            0L
+        } else {
+            playerSettings.streamPrefetchCacheMinutes * 60L * 1000L
+        }
         _isEpisodeRequest.value = effectiveEpisode != null
         val scoreContext = StreamScoreContexts.forPlayback(
             isEpisode = effectiveEpisode != null,
@@ -190,6 +239,7 @@ object StreamsRepository {
         // and is untouched by this); it just no longer starts playback by itself.
         val isDirectAutoPlayFlow = !includeLocalInPicker && isAutoPlayEnabled
 
+        currentCoroutineContext().ensureActive()
         if (isDirectAutoPlayFlow) {
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
@@ -204,6 +254,7 @@ object StreamsRepository {
             embeddedStreams.isNotEmpty() -> embeddedStreams
             else -> emptyList()
         }
+        currentCoroutineContext().ensureActive()
         if (directStreams.isNotEmpty()) {
             log.d { "Using ${directStreams.size} direct streams for type=$type id=$effectiveVideoId" }
             val group = AddonStreamGroup(
@@ -321,6 +372,7 @@ object StreamsRepository {
             },
             installedOrder = installedAddonOrder,
         )
+        currentCoroutineContext().ensureActive()
         val isInitiallyLoading = initialGroups.any { it.isLoading }
         _uiState.value = StreamsUiState(
             requestToken = requestToken,
@@ -332,6 +384,8 @@ object StreamsRepository {
             showDirectAutoPlayOverlay = isDirectAutoPlayFlow,
         )
 
+        currentCoroutineContext().ensureActive()
+        PlaybackStartTrace.markPendingOrActive("streamsPrepare:complete")
         PlaybackStartTrace.begin(
             "loadStreams type=$type id=$effectiveVideoId addons=${streamAddons.size} " +
                 "scrapers=${pluginProviderGroups.sumOf { it.scrapers.size }} direct=$isDirectAutoPlayFlow",
@@ -568,6 +622,33 @@ object StreamsRepository {
 
             streamAddons.forEach { addon ->
                 launch {
+                    val displayName = addon.addonName
+                    val prefetched = (
+                        StreamPrefetchCache
+                            .get(prefetchContentKey, addon.addonId, prefetchMaxAgeMs)
+                            ?.streams
+                            // Nothing cached, but a background sweep may already be waiting on this
+                            // very provider. Waiting for that costs the same time as our own request
+                            // and one fewer call; returns null the instant no sweep is running.
+                            ?: StreamPrefetchCache
+                                .awaitInFlight(prefetchContentKey, addon.addonId, prefetchMaxAgeMs)
+                        )?.reStampedFor(displayName, addon.addonId)
+                    if (prefetched != null) {
+                        PlaybackStartTrace.mark("prefetchHit:$displayName streams=${prefetched.size}")
+                        log.d { "Serving ${prefetched.size} prefetched streams from $displayName" }
+                        publishCompletion(
+                            StreamLoadCompletion.Addon(
+                                AddonStreamGroup(
+                                    addonName = displayName,
+                                    addonId = addon.addonId,
+                                    streams = prefetched,
+                                    isLoading = false,
+                                ),
+                            ),
+                        )
+                        return@launch
+                    }
+
                     val url = buildAddonResourceUrl(
                         manifestUrl = addon.manifest.transportUrl,
                         resource = "stream",
@@ -576,7 +657,6 @@ object StreamsRepository {
                     )
                     log.d { "Fetching streams from: $url" }
 
-                    val displayName = addon.addonName
                     val group = runCatchingUnlessCancelled {
                         val payload = httpGetTextWithHeaders(url, STREAM_METADATA_REQUEST_HEADERS)
                         val parsedStreams = StreamParser.parse(
@@ -631,6 +711,26 @@ object StreamsRepository {
                 val includeScraperNameInSubtitle = false
                 providerGroup.scrapers.forEach { scraper ->
                     launch {
+                        val scraperProviderId = StreamPrefetchCache.scraperProviderId(scraper.id)
+                        val prefetched = (
+                            StreamPrefetchCache
+                                .get(prefetchContentKey, scraperProviderId, prefetchMaxAgeMs)
+                                ?.streams
+                                ?: StreamPrefetchCache
+                                    .awaitInFlight(prefetchContentKey, scraperProviderId, prefetchMaxAgeMs)
+                            )?.reStampedFor(providerGroup.addonName, providerGroup.addonId)
+                        if (prefetched != null) {
+                            log.d { "Serving ${prefetched.size} prefetched streams from ${scraper.name}" }
+                            publishCompletion(
+                                StreamLoadCompletion.PluginScraper(
+                                    addonId = providerGroup.addonId,
+                                    streams = prefetched,
+                                    error = null,
+                                ),
+                            )
+                            return@launch
+                        }
+
                         val completion = PluginRepository.executeScraper(
                             scraper = scraper,
                             tmdbId = pluginContentId(
@@ -840,6 +940,8 @@ object StreamsRepository {
     }
 
     fun cancelLoading() {
+        preparationJob?.cancel()
+        preparationJob = null
         activeJob?.cancel()
         activeJob = null
         _uiState.update { current ->
@@ -886,6 +988,9 @@ object StreamsRepository {
     }
 
     fun clear() {
+        preparationJob?.cancel()
+        preparationJob = null
+        requestedInputKey = null
         activeJob?.cancel()
         activeJob = null
         activeRequestKey = null

@@ -15,6 +15,7 @@ import kotlinx.serialization.json.put
 internal actual object DebridSettingsStorage {
     private const val enabledKey = "debrid_enabled"
     private const val cloudLibraryEnabledKey = "debrid_cloud_library_enabled"
+    private const val cloudLibraryWindowKey = "debrid_cloud_library_window"
     private const val preferredResolverProviderIdKey = "debrid_preferred_resolver_provider_id"
     private const val torboxApiKeyKey = "debrid_torbox_api_key"
     private const val realDebridApiKeyKey = "debrid_real_debrid_api_key"
@@ -35,6 +36,8 @@ internal actual object DebridSettingsStorage {
     actual fun saveEnabled(enabled: Boolean) = saveBoolean(enabledKey, enabled)
     actual fun loadCloudLibraryEnabled(): Boolean? = loadBoolean(cloudLibraryEnabledKey)
     actual fun saveCloudLibraryEnabled(enabled: Boolean) = saveBoolean(cloudLibraryEnabledKey, enabled)
+    actual fun loadCloudLibraryWindow(): String? = loadString(cloudLibraryWindowKey)
+    actual fun saveCloudLibraryWindow(window: String) = saveString(cloudLibraryWindowKey, window)
     actual fun loadPreferredResolverProviderId(): String? = loadString(preferredResolverProviderIdKey)
     actual fun savePreferredResolverProviderId(providerId: String) = saveString(preferredResolverProviderIdKey, providerId)
     actual fun loadProviderApiKey(providerId: String): String? = loadString(providerApiKeyKey(providerId))
@@ -77,6 +80,7 @@ internal actual object DebridSettingsStorage {
     actual fun exportToSyncPayload(): JsonObject = buildJsonObject {
         loadEnabled()?.let { put(enabledKey, encodeSyncBoolean(it)) }
         loadCloudLibraryEnabled()?.let { put(cloudLibraryEnabledKey, encodeSyncBoolean(it)) }
+        loadCloudLibraryWindow()?.let { put(cloudLibraryWindowKey, encodeSyncString(it)) }
         loadPreferredResolverProviderId()?.let { put(preferredResolverProviderIdKey, encodeSyncString(it)) }
         DebridProviders.all().forEach { provider ->
             loadProviderApiKey(provider.id)?.let { put(providerApiKeyKey(provider.id), encodeSyncString(it)) }
@@ -97,6 +101,7 @@ internal actual object DebridSettingsStorage {
         store.removeAll(syncKeys().map(ProfileScopedKey::of))
         payload.decodeSyncBoolean(enabledKey)?.let(::saveEnabled)
         payload.decodeSyncBoolean(cloudLibraryEnabledKey)?.let(::saveCloudLibraryEnabled)
+        payload.decodeSyncString(cloudLibraryWindowKey)?.let(::saveCloudLibraryWindow)
         payload.decodeSyncString(preferredResolverProviderIdKey)?.let(::savePreferredResolverProviderId)
         DebridProviders.all().forEach { provider ->
             payload.decodeSyncString(providerApiKeyKey(provider.id))?.let { saveProviderApiKey(provider.id, it) }
@@ -117,6 +122,7 @@ internal actual object DebridSettingsStorage {
         listOf(
             enabledKey,
             cloudLibraryEnabledKey,
+            cloudLibraryWindowKey,
             preferredResolverProviderIdKey,
             instantPlaybackPreparationLimitKey,
             streamMaxResultsKey,

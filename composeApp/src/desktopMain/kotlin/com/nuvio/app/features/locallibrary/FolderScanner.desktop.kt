@@ -57,7 +57,7 @@ internal actual object FolderScanner {
             items += buildSeriesItem(folder, root, looseEpisodes)
         }
 
-        return items.dedupeByKey()
+        return items.qualifyCollidingYears().dedupeByKey()
     }
 
     private fun buildMovieItem(folder: LocalFolder, nameForTitle: String, file: File): LocalMediaItem {
@@ -118,6 +118,36 @@ internal actual object FolderScanner {
     private fun File.isUnmatchedFolder(): Boolean = name.equals(LOCAL_UNMATCHED_FOLDER, ignoreCase = true)
 
     private fun File.isVideo(): Boolean = extension.lowercase() in VIDEO_EXTENSIONS
+
+    /**
+     * Series keys deliberately omit the year so that `Show` and `Show (2019)` describe one show
+     * rather than two. A sequel whose only distinguishing mark is punctuation a filesystem forbids
+     * breaks that assumption: `Kaguya-sama: Love is War` and `Kaguya-sama: Love is War?` can only be
+     * told apart in a folder name by their year, and merging them puts both runs' files on one item
+     * pointing at one Kitsu entry. So when the same normalized title appears under *different*
+     * years, the year is promoted into the key.
+     *
+     * The earliest year keeps the bare key — along with any year-less folder, which could belong to
+     * either — so adding a sequel folder later never re-keys the show that was already there and
+     * drops its manual match, catalog assignment or episode renumbering. The cost of that choice is
+     * that a pre-seeded download override (LibraryFileNaming.expectedItemKey, which cannot know
+     * about a collision it hasn't scanned) misses the later entry; that item simply auto-matches
+     * instead.
+     */
+    private fun List<LocalMediaItem>.qualifyCollidingYears(): List<LocalMediaItem> {
+        val yearsByKey = HashMap<String, MutableSet<Int>>()
+        for (item in this) {
+            val year = item.year ?: continue
+            yearsByKey.getOrPut(item.key) { mutableSetOf() } += year
+        }
+        if (yearsByKey.values.none { it.size > 1 }) return this
+        return map { item ->
+            val years = yearsByKey[item.key] ?: return@map item
+            val year = item.year
+            if (years.size < 2 || year == null || year == years.min()) item
+            else item.copy(key = "${item.key}-$year")
+        }
+    }
 
     private fun List<LocalMediaItem>.dedupeByKey(): List<LocalMediaItem> {
         val byKey = LinkedHashMap<String, LocalMediaItem>()

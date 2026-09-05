@@ -1,5 +1,6 @@
 package com.nuvio.app.features.debrid
 
+import com.nuvio.app.features.streams.StreamPrefetchCache
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,8 +21,10 @@ object DebridSettingsRepository {
     }
 
     private var hasLoaded = false
+    private var hasPublishedOnce = false
     private var enabled = false
     private var cloudLibraryEnabled = true
+    private var cloudLibraryWindow = DebridCloudLibraryWindow.DEFAULT
     private var providerApiKeys = emptyMap<String, String>()
     private var preferredResolverProviderId = ""
     private var instantPlaybackPreparationLimit = 0
@@ -69,6 +72,14 @@ object DebridSettingsRepository {
         cloudLibraryEnabled = value
         publish()
         DebridSettingsStorage.saveCloudLibraryEnabled(value)
+    }
+
+    fun setCloudLibraryWindow(value: DebridCloudLibraryWindow) {
+        ensureLoaded()
+        if (cloudLibraryWindow == value) return
+        cloudLibraryWindow = value
+        publish()
+        DebridSettingsStorage.saveCloudLibraryWindow(value.name)
     }
 
     fun setProviderApiKey(providerId: String, value: String) {
@@ -289,6 +300,10 @@ object DebridSettingsRepository {
         normalizePreferredResolverProviderId(save = true)
         enabled = (DebridSettingsStorage.loadEnabled() ?: false) && hasResolverProvider()
         cloudLibraryEnabled = DebridSettingsStorage.loadCloudLibraryEnabled() ?: true
+        cloudLibraryWindow = enumValueOrDefault(
+            DebridSettingsStorage.loadCloudLibraryWindow(),
+            DebridCloudLibraryWindow.DEFAULT,
+        )
         instantPlaybackPreparationLimit = normalizeDebridInstantPlaybackPreparationLimit(
             DebridSettingsStorage.loadInstantPlaybackPreparationLimit() ?: 0,
         )
@@ -344,9 +359,20 @@ object DebridSettingsRepository {
     }
 
     private fun publish() {
+        // Prefetched rows carry debrid cache-availability annotations, and a resolved link's
+        // validity depends on the active provider and key. Rather than enumerate which of these
+        // settings can invalidate them, drop the lot on any change: the cache is speculative, so
+        // over-clearing costs one re-scrape while under-clearing serves a wrong verdict.
+        //
+        // Skipped on the very first publish, which is this object reading its own settings off disk
+        // rather than anything changing. That first read is lazy and can land *after* a background
+        // prefetch finished — clearing there would throw away a result nothing had invalidated.
+        if (hasPublishedOnce) StreamPrefetchCache.clear()
+        hasPublishedOnce = true
         _uiState.value = DebridSettings(
             enabled = enabled,
             cloudLibraryEnabled = cloudLibraryEnabled,
+            cloudLibraryWindow = cloudLibraryWindow,
             providerApiKeys = providerApiKeys,
             preferredResolverProviderId = preferredResolverProviderId,
             instantPlaybackPreparationLimit = instantPlaybackPreparationLimit,

@@ -2,7 +2,6 @@ package com.nuvio.app.features.watchprogress
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.home.CompletedSeriesCandidate
-import com.nuvio.app.features.watching.domain.daysUntilExplicitRelease
 
 /**
  * Traces why a Continue Watching row did — or did not — end up with a release badge.
@@ -139,6 +138,20 @@ object NextUpDiagnostics {
         )
     }
 
+    /**
+     * Cards being re-resolved because their cached `released` is a bare date and the air date is
+     * near enough for the missing time of day to be visible on the badge.
+     */
+    fun logReleasePrecisionRetry(contentIds: Collection<String>) {
+        if (!ENABLED || contentIds.isEmpty()) return
+        emit(
+            key = "release-precision-retry",
+            line = "RELEASE-PRECISION-RETRY ${contentIds.size} cached card(s) hold a date-only " +
+                "release near its air date: ${contentIds.sorted().joinToString()} " +
+                "(re-resolving to pick up the addon's timestamped value)",
+        )
+    }
+
     /** Stages 5-7: the resolved card, its air-date inputs and the badge verdict. */
     fun logResolvedCard(
         contentId: String,
@@ -155,25 +168,30 @@ object NextUpDiagnostics {
     ) {
         if (!ENABLED) return
         val nowMs = WatchProgressClock.nowEpochMs()
-        val releaseEpoch = parseReleaseDateToEpochMs(releasedIso)
-        val daysUntil = daysUntilExplicitRelease(
-            todayIsoDate = todayIsoDate,
-            releasedDate = releasedIso,
-        )
+        val release = resolveReleaseInstant(releasedIso)
+        val daysUntil = release?.let { isoDaysBetween(from = todayIsoDate, to = it.localIsoDate) }
         val airDateBadge = when {
             releasedIso.isNullOrBlank() -> "none (no release date)"
-            releaseEpoch != null && nowMs >= releaseEpoch -> "none (already aired)"
+            release == null -> "none (release date not a calendar date: $releasedIso)"
+            release.hasTimeOfDay && nowMs >= release.epochMs -> "none (already aired)"
             daysUntil == null -> "none (release date not a calendar date: $releasedIso)"
             daysUntil < 0 -> "none (release date in the past)"
             else -> "days-until=$daysUntil (0=today, 1=tomorrow, 2..7=countdown, >7=formatted date)"
         }
+        // The raw string and the local date it resolves to are both printed: the whole class of
+        // "the countdown is a day out" bug is the gap between those two.
+        val releaseDetail = release?.let {
+            "releaseEpoch=${it.epochMs} localAirDate=${it.localIsoDate} " +
+                "precision=${if (it.hasTimeOfDay) "timestamp" else "date-only"}"
+        } ?: "releaseEpoch=null"
+
         emit(
             key = "card:$contentId",
             line = "CARD [$origin] \"$title\" ($contentId) " +
                 "seed=S${seedSeasonNumber}E$seedEpisodeNumber " +
                 "markedAt=$seedMarkedAtEpochMs (${daysAgo(seedMarkedAtEpochMs, nowMs)}d ago) | " +
                 "next=S${nextSeasonNumber}E$nextEpisodeNumber released=${releasedIso ?: "null"} " +
-                "releaseEpoch=${releaseEpoch ?: "null"} | today=$todayIsoDate | " +
+                "$releaseDetail | today=$todayIsoDate | " +
                 "airDateBadge=$airDateBadge | " +
                 "releaseAlert=${alertState.isReleaseAlert} newSeason=${alertState.isNewSeasonRelease} " +
                 "reason=${alertState.reason}",

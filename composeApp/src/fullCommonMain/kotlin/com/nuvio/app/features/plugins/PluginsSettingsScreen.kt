@@ -22,8 +22,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Extension
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
@@ -60,10 +58,10 @@ import com.nuvio.app.core.ui.NuvioIconActionButton
 import com.nuvio.app.core.ui.NuvioInfoBadge
 import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioPrimaryButton
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.core.ui.NuvioSectionLabel
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.nuvioPanelBackdrop
 import com.nuvio.app.isDesktop
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import kotlinx.coroutines.launch
@@ -106,6 +104,11 @@ import nuvio.composeapp.generated.resources.plugins_test_failed
 import nuvio.composeapp.generated.resources.plugins_test_results_count
 import nuvio.composeapp.generated.resources.plugins_tmdb_required_message
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import com.nuvio.app.core.ui.trackTextInputFocus
+import com.nuvio.app.core.ui.accentFill
+import com.nuvio.app.core.ui.accentBrush
 
 @Composable
 fun PluginsSettingsPageContent(
@@ -456,7 +459,7 @@ fun PluginsSettingsPageContent(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = repositoryName,
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelMedium.accentBrush(),
                                     color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -770,7 +773,9 @@ private fun DesktopPluginFilterSegment(
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(7.dp))
-            .background(if (selected) tokens.colors.accent.copy(alpha = 0.16f) else Color.Transparent)
+            .background(
+                if (selected) tokens.colors.accentFill(0.16f) else SolidColor(Color.Transparent),
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 7.dp),
         contentAlignment = Alignment.Center,
@@ -857,12 +862,20 @@ private fun DesktopPluginAddButton(
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val shape = RoundedCornerShape(12.dp)
     Surface(
         modifier = Modifier
             .height(44.dp)
+            // Painted as a brush rather than through Surface's colour so a gradient accent reaches
+            // this pill too; accentFill is a SolidColor on the flat themes and renders identically.
+            // The open state keeps its flat accentStrong, which is what distinguishes it.
+            .background(
+                brush = if (selected) SolidColor(tokens.colors.accentStrong) else tokens.colors.accentFill,
+                shape = shape,
+            )
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) tokens.colors.accentStrong else tokens.colors.accent,
+        shape = shape,
+        color = Color.Transparent,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 18.dp),
@@ -895,10 +908,11 @@ private fun DesktopPluginAddRepositoryPopover(
     onInstallRepository: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val shape = RoundedCornerShape(10.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = tokens.colors.surface,
+        modifier = Modifier.fillMaxWidth().nuvioPanelBackdrop(tokens.colors.surface, shape),
+        shape = shape,
+        color = Color.Transparent,
         border = androidx.compose.foundation.BorderStroke(1.dp, tokens.colors.borderDefault),
     ) {
         Column(
@@ -944,10 +958,11 @@ private fun DesktopPluginRepositoriesTable(
     totalRepositoryCount: Int,
 ) {
     val tokens = MaterialTheme.nuvio
+    val shape = RoundedCornerShape(10.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = tokens.colors.surface,
+        modifier = Modifier.fillMaxWidth().nuvioPanelBackdrop(tokens.colors.surface, shape),
+        shape = shape,
+        color = Color.Transparent,
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp)) {
             DesktopPluginTableTitle(stringResource(Res.string.plugins_section_installed_repos))
@@ -984,10 +999,11 @@ private fun DesktopPluginProvidersTable(
     onConfigureScraper: (PluginScraper) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val shape = RoundedCornerShape(10.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = tokens.colors.surface,
+        modifier = Modifier.fillMaxWidth().nuvioPanelBackdrop(tokens.colors.surface, shape),
+        shape = shape,
+        color = Color.Transparent,
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp)) {
             DesktopPluginProvidersHeader(
@@ -1202,7 +1218,7 @@ private fun DesktopPluginProviderRow(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = repositoryName,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodySmall.accentBrush(),
                         color = tokens.colors.accent,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

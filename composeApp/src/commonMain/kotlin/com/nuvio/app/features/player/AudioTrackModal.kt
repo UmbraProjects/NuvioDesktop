@@ -151,12 +151,29 @@ private fun AudioTrackRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = localizedTrackDisplayName(track.label, track.language, track.index),
-            color = textColor,
-            fontSize = 15.sp,
-            fontWeight = weight,
-        )
+        val label = localizedTrackDisplayName(track.label, track.language, track.index)
+        // A release-name label ("www.1TamilMV.cards - [DD+5.1 - 640Kbps]") says nothing about the
+        // language, which on a multi-audio release is the only thing telling the rows apart. It is
+        // dropped when the label is already the language itself (a title-less track).
+        val languageLabel = trackLanguageDisplayLabel(track.language)
+            .takeIf { it.isNotBlank() && !it.equals(label, ignoreCase = true) }
+        Column(modifier = Modifier.weight(1f, fill = false)) {
+            Text(
+                text = label,
+                color = textColor,
+                fontSize = 15.sp,
+                fontWeight = weight,
+            )
+            if (languageLabel != null) {
+                Text(
+                    text = languageLabel,
+                    color = textColor.copy(alpha = 0.62f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
         if (isSelected) {
             Icon(
                 imageVector = Icons.Rounded.Check,

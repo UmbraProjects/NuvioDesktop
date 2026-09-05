@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -28,8 +27,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,8 +47,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioDialogSurface
-import com.nuvio.app.core.ui.trackTextInputFocus
+import com.nuvio.app.core.ui.accentGradientMask
 import com.nuvio.app.features.debrid.DEBRID_PREPARE_INSTANT_PLAYBACK_DEFAULT_LIMIT
+import com.nuvio.app.features.cloud.cloudLibraryWindowLabel
+import com.nuvio.app.features.debrid.DebridCloudLibraryWindow
 import com.nuvio.app.features.debrid.DebridCredentialValidator
 import com.nuvio.app.features.debrid.DebridDeviceAuthorization
 import com.nuvio.app.features.debrid.DebridDeviceAuthorizationTokenResult
@@ -91,6 +90,8 @@ import nuvio.composeapp.generated.resources.action_saving
 import nuvio.composeapp.generated.resources.settings_debrid_add_key_first
 import nuvio.composeapp.generated.resources.settings_debrid_cloud_library
 import nuvio.composeapp.generated.resources.settings_debrid_cloud_library_description
+import nuvio.composeapp.generated.resources.settings_debrid_cloud_library_window
+import nuvio.composeapp.generated.resources.settings_debrid_cloud_library_window_description
 import nuvio.composeapp.generated.resources.settings_debrid_connected
 import nuvio.composeapp.generated.resources.settings_debrid_connect_provider
 import nuvio.composeapp.generated.resources.settings_debrid_disconnect_provider
@@ -109,7 +110,6 @@ import nuvio.composeapp.generated.resources.settings_debrid_dialog_title
 import nuvio.composeapp.generated.resources.settings_debrid_disconnect
 import nuvio.composeapp.generated.resources.settings_debrid_enable
 import nuvio.composeapp.generated.resources.settings_debrid_enable_description
-import nuvio.composeapp.generated.resources.settings_debrid_experimental_notice
 import nuvio.composeapp.generated.resources.settings_debrid_description_template
 import nuvio.composeapp.generated.resources.settings_debrid_description_template_description
 import nuvio.composeapp.generated.resources.settings_debrid_formatter_reset_subtitle
@@ -209,6 +209,8 @@ import nuvio.composeapp.generated.resources.settings_debrid_rule_excluded_releas
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.runBlocking
+import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.accentBrush
 
 private const val CLOUD_SERVICES_FAQ_URL = "https://nuvioapp.space/faq#common-cloud-library-and-cloud-services"
 
@@ -225,11 +227,6 @@ internal fun LazyListScope.debridSettingsContent(
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
-                DebridInfoRow(
-                    isTablet = isTablet,
-                    text = stringResource(Res.string.settings_debrid_experimental_notice),
-                )
-                SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_debrid_cloud_library),
                     description = stringResource(Res.string.settings_debrid_cloud_library_description),
@@ -238,6 +235,19 @@ internal fun LazyListScope.debridSettingsContent(
                     isTablet = isTablet,
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("debrid-cloud-library")),
                     onCheckedChange = DebridSettingsRepository::setCloudLibraryEnabled,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsDropdownChoiceRow(
+                    title = stringResource(Res.string.settings_debrid_cloud_library_window),
+                    description = stringResource(Res.string.settings_debrid_cloud_library_window_description),
+                    options = DebridCloudLibraryWindow.entries.map { window ->
+                        SettingsChoiceOption(window, cloudLibraryWindowLabel(window))
+                    },
+                    selectedValue = settings.cloudLibraryWindow,
+                    enabled = settings.canUseCloudLibrary,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("debrid-cloud-library-window")),
+                    onSelected = DebridSettingsRepository::setCloudLibraryWindow,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
@@ -710,21 +720,12 @@ private fun DebridTemplateDialog(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedTextField(
+            NuvioTextField(
                 value = draft,
                 onValueChange = { draft = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .trackTextInputFocus()
-                    .heightIn(min = 140.dp, max = 280.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+                singleLine = false,
                 minLines = 5,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    disabledContainerColor = MaterialTheme.colorScheme.surface,
-                ),
             )
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -734,6 +735,7 @@ private fun DebridTemplateDialog(
                 TextButton(onClick = { draft = defaultValue }) {
                     Text(
                         text = stringResource(Res.string.action_reset),
+                        modifier = Modifier.accentGradientMask(),
                         maxLines = 1,
                     )
                 }
@@ -802,6 +804,9 @@ private fun DebridPreferenceRow(
         }
         Text(
             text = value,
+            // The enabled action reads in the accent, so it follows a gradient accent like every
+            // other accent-coloured label; a disabled one is muted and has nothing to sweep.
+            modifier = if (enabled) Modifier.accentGradientMask() else Modifier,
             style = MaterialTheme.typography.bodyMedium,
             color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Medium,
@@ -1170,21 +1175,12 @@ private fun DebridTextListDialog(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedTextField(
+            NuvioTextField(
                 value = value,
                 onValueChange = { value = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .trackTextInputFocus()
-                    .heightIn(min = 120.dp),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = false,
                 minLines = 4,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    disabledContainerColor = MaterialTheme.colorScheme.surface,
-                ),
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1611,7 +1607,7 @@ private fun DebridDeviceAuthDialog(
                             )
                             Text(
                                 text = activeSession.friendlyVerificationUrl,
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodyMedium.accentBrush(),
                                 color = MaterialTheme.colorScheme.primary,
                             )
                         }
@@ -1774,22 +1770,15 @@ private fun DebridApiKeyDialog(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedTextField(
+            NuvioTextField(
                 value = draft,
                 onValueChange = {
                     draft = it
                     validationMessage = null
                 },
-                modifier = Modifier.fillMaxWidth().trackTextInputFocus(),
-                singleLine = true,
-                placeholder = { Text(placeholder) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    disabledContainerColor = MaterialTheme.colorScheme.surface,
-                ),
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = placeholder,
+                isError = validationMessage != null,
             )
             validationMessage?.let { message ->
                 Text(

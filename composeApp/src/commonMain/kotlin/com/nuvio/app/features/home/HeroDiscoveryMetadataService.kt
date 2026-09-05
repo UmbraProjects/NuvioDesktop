@@ -62,8 +62,11 @@ object HeroDiscoveryMetadataService {
         if (!ownsRequest) return pending.await()
 
         val facts = try {
+            // Summary rather than the details-screen record. The badges that count seasons and
+            // episodes read `meta.videos`, which comes from the addon and is unaffected by dropping
+            // TMDB's per-episode decoration - see MetaDetailsRepository.fetchHeroSummary.
             val meta = MetaDetailsRepository.peek(type = type, id = id)
-                ?: MetaDetailsRepository.fetch(type = type, id = id)
+                ?: MetaDetailsRepository.fetchHeroSummary(type = type, id = id)
             if (meta != null) {
                 val enrichedMeta = enrichDiscoveryMeta(meta = meta, fallbackItemId = id)
                 computeFacts(enrichedMeta, priority, releaseStatusUnavailableOnly)

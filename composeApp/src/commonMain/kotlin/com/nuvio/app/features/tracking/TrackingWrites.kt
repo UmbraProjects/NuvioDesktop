@@ -160,5 +160,15 @@ interface TrackingScrobbler {
         profileId: Int,
         action: TrackingScrobbleAction,
         event: TrackingScrobbleEvent,
-    ): Boolean
+    ): TrackingScrobbleResult
+}
+
+data class TrackingScrobbleResult(
+    val handled: Boolean,
+    val confirmsWatched: Boolean = false,
+) {
+    companion object {
+        val Declined = TrackingScrobbleResult(handled = false)
+        val Handled = TrackingScrobbleResult(handled = true)
+    }
 }

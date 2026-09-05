@@ -9,6 +9,7 @@ import com.nuvio.app.features.tracking.TrackingProviderDescriptor
 import com.nuvio.app.features.tracking.TrackingProviderId
 import com.nuvio.app.features.tracking.TrackingScrobbleAction
 import com.nuvio.app.features.tracking.TrackingScrobbleEvent
+import com.nuvio.app.features.tracking.TrackingScrobbleResult
 import com.nuvio.app.features.tracking.TrackingScrobbler
 import com.nuvio.app.features.tracking.TrackingSeekScrobblePolicy
 import com.nuvio.app.features.tracking.TrackingWatchedProvider
@@ -139,9 +140,9 @@ internal object YamtrackScrobbleAdapter : TrackingScrobbler {
         profileId: Int,
         action: TrackingScrobbleAction,
         event: TrackingScrobbleEvent,
-    ): Boolean {
+    ): TrackingScrobbleResult {
         val media = event.media
-        val catalog = media.catalog ?: return false
+        val catalog = media.catalog ?: return TrackingScrobbleResult.Declined
         val item = YamtrackScrobbleRepository.buildItem(
             contentType = catalog.contentType,
             parentMetaId = catalog.contentId,
@@ -151,7 +152,7 @@ internal object YamtrackScrobbleAdapter : TrackingScrobbler {
             seasonNumber = media.episode?.season,
             episodeNumber = media.episode?.number,
             isAnime = media.kind == TrackingMediaKind.ANIME,
-        ) ?: return false
+        ) ?: return TrackingScrobbleResult.Declined
 
         // Only `stop` writes durable history here, so a pause must not be reported as one.
         val wireAction = if (

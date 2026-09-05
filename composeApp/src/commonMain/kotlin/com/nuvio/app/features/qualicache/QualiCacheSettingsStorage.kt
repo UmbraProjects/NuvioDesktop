@@ -7,6 +7,8 @@ internal expect object QualiCacheSettingsStorage {
     fun saveBaseUrl(baseUrl: String)
     fun loadAccessKey(): String?
     fun saveAccessKey(accessKey: String)
+    fun loadMinimumTrust(): String?
+    fun saveMinimumTrust(minimumTrust: String)
     fun loadShowResolution(): Boolean?
     fun saveShowResolution(enabled: Boolean)
     fun loadShowDynamicRange(): Boolean?

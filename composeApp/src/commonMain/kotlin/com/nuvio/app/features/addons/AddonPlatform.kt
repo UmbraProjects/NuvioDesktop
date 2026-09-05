@@ -39,12 +39,20 @@ expect suspend fun httpPostJsonWithHeaders(
  */
 const val RAW_HTTP_TRUNCATION_MARKER = "...[truncated]"
 
+/**
+ * Executes an HTTP request while retaining status and headers.
+ *
+ * [allowLargeResponse] is reserved for trusted bulk API endpoints whose valid JSON can exceed the
+ * platform's normal raw-response safety cap. Ordinary addon and plugin traffic should keep the
+ * default so an unexpectedly large response cannot consume unbounded memory.
+ */
 expect suspend fun httpRequestRaw(
     method: String,
     url: String,
     headers: Map<String, String>,
     body: String,
     followRedirects: Boolean = true,
+    allowLargeResponse: Boolean = false,
 ): RawHttpResponse
 
 /** True when this body was cut short by the response size cap; see [RAW_HTTP_TRUNCATION_MARKER]. */

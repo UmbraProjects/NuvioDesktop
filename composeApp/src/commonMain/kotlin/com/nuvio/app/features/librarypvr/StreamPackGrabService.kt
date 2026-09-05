@@ -223,8 +223,18 @@ internal object StreamPackGrabService {
         val episode = row.episode ?: return null
         val season = row.season
         val entryRelative = entryRelativeNumbering(target)
+        val existingFolderNames = LibraryDestinationFolders.existingFolderNames(
+            folder = folder,
+            contentId = target.contentId,
+        )
         val relativePath = if (entryRelative) {
-            LibraryFileNaming.animeEpisodeRelativePath(target.title, target.year, episode, extension)
+            LibraryFileNaming.animeEpisodeRelativePath(
+                target.title,
+                target.year,
+                episode,
+                extension,
+                existingFolderNames,
+            )
         } else {
             LibraryFileNaming.episodeRelativePath(
                 title = target.title,
@@ -233,6 +243,7 @@ internal object StreamPackGrabService {
                 episode = episode,
                 episodeTitle = row.episodeTitle,
                 extension = extension,
+                existingFolderNames = existingFolderNames,
             )
         }
         // Anime ids stay two-part (kitsu:id:ep); everything else addresses id:season:episode.

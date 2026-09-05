@@ -30,6 +30,9 @@ data class CloudLibraryItem(
     val status: String? = null,
     val sizeBytes: Long? = null,
     val progressFraction: Float? = null,
+    // When the provider says this landed in the account, if it says at all. Orders the library
+    // newest-first and decides whether it falls inside the user's "added within" window.
+    val addedAtEpochMs: Long? = null,
     val files: List<CloudLibraryFile> = emptyList(),
     // Display-only metadata recovered from the torrent name by FilenameMetaResolver — the provider
     // knows nothing about what the file contains, so without this a row is a raw release name.

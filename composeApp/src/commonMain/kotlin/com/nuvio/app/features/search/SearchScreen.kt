@@ -6,6 +6,7 @@ import com.nuvio.app.features.player.appShortcutMatches
 import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
+import com.nuvio.app.core.ui.nuvioArtworkRequestSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -75,7 +76,6 @@ import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
 import com.nuvio.app.features.home.components.HomeSkeletonRow
-import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.watched.WatchedRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -100,6 +100,7 @@ import nuvio.composeapp.generated.resources.compose_search_placeholder
 import nuvio.composeapp.generated.resources.compose_search_recent_searches
 import nuvio.composeapp.generated.resources.compose_search_remove_recent_search
 import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.ui.trackTextInputFocus
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -172,7 +173,12 @@ fun SearchScreen(
                 (preview.poster ?: preview.posterFallback)
                     ?.takeIf { it.isNotBlank() }
                     ?.let { url ->
-                        imageLoader.enqueue(ImageRequest.Builder(platformContext).data(url).build())
+                        imageLoader.enqueue(
+                            ImageRequest.Builder(platformContext)
+                                .data(url)
+                                .nuvioArtworkRequestSize()
+                                .build(),
+                        )
                     }
             }
         }

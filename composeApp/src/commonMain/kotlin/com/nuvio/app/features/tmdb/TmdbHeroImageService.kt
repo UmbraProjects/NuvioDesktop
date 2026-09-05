@@ -1,7 +1,6 @@
 package com.nuvio.app.features.tmdb
 
 import co.touchlab.kermit.Logger
-import com.nuvio.app.features.addons.httpGetText
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
@@ -80,7 +79,7 @@ object TmdbHeroImageService {
             query = mapOf("include_image_language" to "en,null"),
         )
         return runCatching {
-            json.decodeFromString<TmdbHeroImagesResponse>(httpGetText(url))
+            json.decodeFromString<TmdbHeroImagesResponse>(TmdbHttp.getText(url))
         }.onFailure { err ->
             log.w { "TMDB images fetch failed for $tmdbType/$tmdbId: ${err.message}" }
         }.getOrNull()

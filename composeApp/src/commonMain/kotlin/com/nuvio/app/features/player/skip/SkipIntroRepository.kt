@@ -6,6 +6,7 @@ object SkipIntroRepository {
 
     private val cache = HashMap<String, List<SkipInterval>>()
     private val imdbEntriesCache = HashMap<String, List<ArmEntry>>()
+    private val animeIdsCache = HashMap<String, AnimeIds>()
     private val animeSkipShowIdCache = HashMap<String, String>()
     private const val NO_ID = "__none__"
 
@@ -13,12 +14,11 @@ object SkipIntroRepository {
         get() = IntroDbConfig.URL.isNotBlank()
 
     suspend fun getSkipIntervals(
-        imdbId: String?,
+        imdbId: String,
         season: Int,
         episode: Int,
         durationSeconds: Long? = null,
     ): List<SkipInterval> {
-        if (imdbId == null) return emptyList()
         val settings = PlayerSettingsRepository.uiState.value
         if (!settings.skipIntroEnabled) return emptyList()
 
@@ -62,10 +62,9 @@ object SkipIntroRepository {
      * sequences and end credits.
      */
     suspend fun getMovieSkipIntervals(
-        imdbId: String?,
+        imdbId: String,
         durationSeconds: Long? = null,
     ): List<SkipInterval> {
-        if (imdbId == null) return emptyList()
         if (!PlayerSettingsRepository.uiState.value.skipIntroEnabled) return emptyList()
 
         val cacheKey = "$imdbId:movie:${durationSeconds ?: 0L}"
@@ -75,112 +74,151 @@ object SkipIntroRepository {
             .also { cache[cacheKey] = it }
     }
 
-    suspend fun getSkipIntervalsForMal(
-        malId: String,
+    /**
+     * Skip intervals for a playback addressed by an anime-list entry (`kitsu:`, `mal:`, `anilist:`,
+     * `anidb:`) rather than an IMDb id, with [episode] the entry-local absolute episode number.
+     *
+     * All four namespaces share one chain because they differ only in how the entry is named:
+     * ARM turns any of them into the same set of ids, and it is that set, not the namespace the
+     * user happened to arrive with, that decides which providers can answer.
+     */
+    internal suspend fun getSkipIntervalsForAnime(
+        namespace: AnimeIdNamespace,
+        id: String,
         episode: Int,
         durationSeconds: Long? = null,
     ): List<SkipInterval> {
-        val settings = PlayerSettingsRepository.uiState.value
-        if (!settings.skipIntroEnabled) return emptyList()
+        if (!PlayerSettingsRepository.uiState.value.skipIntroEnabled) return emptyList()
 
-        val cacheKey = "mal:$malId:$episode:${durationSeconds ?: 0L}"
+        val cacheKey = "${namespace.armSource}:$id:$episode:${durationSeconds ?: 0L}"
         cache[cacheKey]?.let { return it }
 
-        val aniSkipResult = fetchFromAniSkip(malId, episode)
-        if (aniSkipResult.isNotEmpty()) return aniSkipResult.also { cache[cacheKey] = it }
+        val ids = resolveAnimeIds(namespace, id)
+        val imdbId = ids.imdb
+        val placement = if (imdbId != null) resolveAnimeSeason(imdbId, ids) else null
 
-        val imdbId = try {
-            SkipIntroApi.resolveMalToImdb(malId)?.imdb
-        } catch (_: Exception) { null }
-
-        if (imdbId != null) {
-            val entries = resolveImdbEntries(imdbId)
-            val season = entries.indexOfFirst { it.myanimelist == malId.toIntOrNull() } + 1
-
-            val skipDbResult = fetchFromSkipDb(imdbId, season, episode, durationSeconds)
-            if (skipDbResult.isNotEmpty()) return skipDbResult.also { cache[cacheKey] = it }
-
+        // SkipDB and IntroDB are keyed on an IMDb season and episode, so reaching them means
+        // translating the entry into that numbering.
+        val imdbChain: suspend () -> List<SkipInterval> = chain@{
+            if (imdbId == null || placement == null) return@chain emptyList()
+            val skipDbResult = fetchFromSkipDb(imdbId, placement.season, episode, durationSeconds)
+            if (skipDbResult.isNotEmpty()) return@chain skipDbResult
             if (introDbConfigured) {
-                val result = fetchFromIntroDb(imdbId, season, episode)
-                if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
+                val introDbResult = fetchFromIntroDb(imdbId, placement.season, episode)
+                if (introDbResult.isNotEmpty()) return@chain introDbResult
             }
-            val seasonAnilistId = entries.getOrNull(season - 1)?.anilist?.toString()
-            val fallbackAnilistId = entries.firstOrNull()?.anilist?.toString()
-            for ((anilistId, seasonFilter) in listOfNotNull(
-                seasonAnilistId?.let { it to null },
-                if (fallbackAnilistId != null && fallbackAnilistId != seasonAnilistId) fallbackAnilistId to season else null
-            )) {
-                val result = fetchFromAnimeSkip(anilistId, episode, season = seasonFilter)
-                if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
+            emptyList()
+        }
+
+        // AniSkip and Anime-Skip are keyed on the anime-list entry and its own absolute episode —
+        // exactly what the id already carries, with nothing to translate.
+        val animeChain: suspend () -> List<SkipInterval> = chain@{
+            ids.myanimelist?.let { malId ->
+                val result = fetchFromAniSkip(malId, episode)
+                if (result.isNotEmpty()) return@chain result
             }
-        } else {
-            val anilistId = try {
-                SkipIntroApi.resolveMalToAnilist(malId)?.anilist?.toString()
-            } catch (_: Exception) { null }
-            if (anilistId != null) {
+            ids.anilist?.let { anilistId ->
                 val result = fetchFromAnimeSkip(anilistId, episode, season = null)
-                if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
+                if (result.isNotEmpty()) return@chain result
             }
+            emptyList()
+        }
+
+        // Which chain leads turns on whether the entry's episode numbering can disagree with the
+        // IMDb season's. A title ARM maps to a single entry numbers the same episodes as the IMDb
+        // season does, so there is no translation to get wrong and SkipDB leads — it is the only
+        // source that matches timings against the runtime of the cut being played, which is what
+        // tells two releases of an episode apart. Across a multi-entry franchise the two can
+        // disagree (an entry restarting at 1 while IMDb keeps counting, or the reverse), so the
+        // translation is unsafe there and the chain keyed on the id we already hold leads instead.
+        val ordered = if (placement?.sharesEpisodeNumbering == true) {
+            listOf(imdbChain, animeChain)
+        } else {
+            listOf(animeChain, imdbChain)
+        }
+        for (chain in ordered) {
+            val result = chain()
+            if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
         }
 
         return emptyList<SkipInterval>().also { cache[cacheKey] = it }
     }
 
-    suspend fun getSkipIntervalsForKitsu(
-        kitsuId: String,
-        episode: Int,
+    /**
+     * Skip intervals for an anime film addressed by an anime-list entry. Only SkipDB holds
+     * anything for a film and it is keyed on IMDb, so this is a lookup of that id followed by the
+     * ordinary film path.
+     */
+    internal suspend fun getMovieSkipIntervalsForAnime(
+        namespace: AnimeIdNamespace,
+        id: String,
         durationSeconds: Long? = null,
     ): List<SkipInterval> {
-        val settings = PlayerSettingsRepository.uiState.value
-        if (!settings.skipIntroEnabled) return emptyList()
+        if (!PlayerSettingsRepository.uiState.value.skipIntroEnabled) return emptyList()
+        val imdbId = resolveAnimeIds(namespace, id).imdb ?: return emptyList()
+        return getMovieSkipIntervals(imdbId, durationSeconds)
+    }
 
-        val cacheKey = "kitsu:$kitsuId:$episode:${durationSeconds ?: 0L}"
-        cache[cacheKey]?.let { return it }
+    /** Every id ARM holds for one anime-list entry, as the strings the providers are keyed on. */
+    private data class AnimeIds(
+        val myanimelist: String? = null,
+        val anilist: String? = null,
+        val kitsu: String? = null,
+        val imdb: String? = null,
+    )
 
-        val malId = try {
-            SkipIntroApi.resolveKitsuToMal(kitsuId)?.myanimelist?.toString()
-        } catch (_: Exception) { null }
+    private suspend fun resolveAnimeIds(namespace: AnimeIdNamespace, id: String): AnimeIds {
+        val cacheKey = "${namespace.armSource}:$id"
+        animeIdsCache[cacheKey]?.let { return it }
 
-        if (malId != null) {
-            val result = fetchFromAniSkip(malId, episode)
-            if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
+        val entry = try {
+            SkipIntroApi.resolveAnimeEntry(namespace.armSource, id)
+        } catch (_: Exception) {
+            null
         }
+        // ARM answers with the ids it was asked to map to and need not echo the one it was queried
+        // by, so the id already in hand is put back into the set rather than left null.
+        val ids = AnimeIds(
+            myanimelist = entry?.myanimelist?.toString()
+                ?: id.takeIf { namespace == AnimeIdNamespace.MAL },
+            anilist = entry?.anilist?.toString()
+                ?: id.takeIf { namespace == AnimeIdNamespace.ANILIST },
+            kitsu = entry?.kitsu?.toString()
+                ?: id.takeIf { namespace == AnimeIdNamespace.KITSU },
+            imdb = entry?.imdb?.takeIf { it.isNotBlank() },
+        )
+        return ids.also { animeIdsCache[cacheKey] = it }
+    }
 
-        val imdbId = try {
-            SkipIntroApi.resolveKitsuToImdb(kitsuId)?.imdb
-        } catch (_: Exception) { null }
+    /**
+     * Where an anime-list entry sits within an IMDb title.
+     *
+     * [sharesEpisodeNumbering] records that the title is a single entry, so its episode numbers and
+     * the IMDb season's are the same numbers and may be used interchangeably.
+     */
+    private data class AnimeSeasonPlacement(val season: Int, val sharesEpisodeNumbering: Boolean)
 
-        if (imdbId != null) {
-            val entries = resolveImdbEntries(imdbId)
-            val season = entries.indexOfFirst { it.kitsu == kitsuId.toIntOrNull() } + 1
-
-            val skipDbResult = fetchFromSkipDb(imdbId, season, episode, durationSeconds)
-            if (skipDbResult.isNotEmpty()) return skipDbResult.also { cache[cacheKey] = it }
-
-            if (introDbConfigured) {
-                val result = fetchFromIntroDb(imdbId, season, episode)
-                if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
-            }
-            val seasonAnilistId = entries.getOrNull(season - 1)?.anilist?.toString()
-            val fallbackAnilistId = entries.firstOrNull()?.anilist?.toString()
-            for ((anilistId, seasonFilter) in listOfNotNull(
-                seasonAnilistId?.let { it to null },
-                if (fallbackAnilistId != null && fallbackAnilistId != seasonAnilistId) fallbackAnilistId to season else null
-            )) {
-                val result = fetchFromAnimeSkip(anilistId, episode, season = seasonFilter)
-                if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
-            }
-        } else {
-            val anilistId = try {
-                SkipIntroApi.resolveKitsuToAnilist(kitsuId)?.anilist?.toString()
-            } catch (_: Exception) { null }
-            if (anilistId != null) {
-                val result = fetchFromAnimeSkip(anilistId, episode, season = null)
-                if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
-            }
+    /**
+     * Which season of [imdbId] an anime entry is, or null when that cannot be established.
+     *
+     * SkipDB and IntroDB number episodes per IMDb season, so an entry has to be placed within its
+     * franchise before either can be asked. ARM lists a title's entries in season order, making an
+     * entry's position in that list its season number.
+     */
+    private suspend fun resolveAnimeSeason(imdbId: String, ids: AnimeIds): AnimeSeasonPlacement? {
+        val entries = resolveImdbEntries(imdbId)
+        val singleEntry = entries.size <= 1
+        val index = entries.indexOfFirst { entry ->
+            (ids.myanimelist != null && entry.myanimelist?.toString() == ids.myanimelist) ||
+                (ids.anilist != null && entry.anilist?.toString() == ids.anilist) ||
+                (ids.kitsu != null && entry.kitsu?.toString() == ids.kitsu)
         }
-
-        return emptyList<SkipInterval>().also { cache[cacheKey] = it }
+        if (index >= 0) return AnimeSeasonPlacement(index + 1, sharesEpisodeNumbering = singleEntry)
+        // A miss used to fall through as season 0, which no provider holds anything for. A title
+        // ARM lists as a single entry is season 1 whatever ids it reports back; anything else is
+        // genuinely ambiguous, and asking about a guessed season risks skipping playback against
+        // another season's timings — worse than not offering to skip at all.
+        return if (singleEntry) AnimeSeasonPlacement(1, sharesEpisodeNumbering = true) else null
     }
 
     /**
@@ -436,6 +474,7 @@ object SkipIntroRepository {
     fun clearCache() {
         cache.clear()
         imdbEntriesCache.clear()
+        animeIdsCache.clear()
         animeSkipShowIdCache.clear()
     }
 }
