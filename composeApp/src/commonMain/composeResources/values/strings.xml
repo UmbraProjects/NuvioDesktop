@@ -2397,6 +2397,10 @@
     <string name="streams_download_season_folder_title">Download season to</string>
     <string name="streams_download_season_folder_subtitle">Choose which local library folder this season is filed into.</string>
     <string name="streams_download_folder_already_used">Already used for this title</string>
+    <string name="streams_download_folder_space">%1$s free of %2$s</string>
+    <string name="streams_download_folder_space_checking">Checking free space…</string>
+    <string name="streams_download_folder_sort_free_space">Most free space</string>
+    <string name="streams_download_folder_sort_library">Library order</string>
     <string name="streams_download_season_inspecting">Finding matching episode files from this addon…</string>
     <string name="streams_download_season_queued">Queued %1$d episodes to %2$s</string>
     <string name="streams_download_season_no_files">No episode files were found in this pack.</string>
