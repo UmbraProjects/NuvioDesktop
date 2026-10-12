@@ -56,9 +56,13 @@ import nuvio.composeapp.generated.resources.settings_account_not_signed_in
 import nuvio.composeapp.generated.resources.settings_account_sign_out
 import nuvio.composeapp.generated.resources.settings_account_sign_out_confirm_message
 import nuvio.composeapp.generated.resources.settings_account_sign_out_confirm_title
+import nuvio.composeapp.generated.resources.settings_account_sign_out_erase
 import nuvio.composeapp.generated.resources.settings_account_status
 import nuvio.composeapp.generated.resources.settings_account_status_anonymous
 import nuvio.composeapp.generated.resources.settings_account_status_signed_in
+import nuvio.composeapp.generated.resources.settings_backup_import
+import nuvio.composeapp.generated.resources.settings_backup_import_description
+import nuvio.composeapp.generated.resources.settings_backup_import_restart_manually
 import nuvio.composeapp.generated.resources.settings_backup_saved
 import nuvio.composeapp.generated.resources.settings_backup_section
 import nuvio.composeapp.generated.resources.settings_backup_with_credentials
@@ -365,6 +369,23 @@ private fun AccountSettingsBody(
                             }
                         },
                     )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    val restartManuallyMessage = stringResource(Res.string.settings_backup_import_restart_manually)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_backup_import),
+                        description = stringResource(Res.string.settings_backup_import_description),
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("import-settings")),
+                        onClick = {
+                            when (val result = DesktopSettingsBackup.import()) {
+                                is DesktopSettingsImportResult.Staged ->
+                                    if (!result.restarting) NuvioToastController.show(restartManuallyMessage)
+                                is DesktopSettingsImportResult.Failed ->
+                                    NuvioToastController.show(result.message)
+                                DesktopSettingsImportResult.Cancelled -> Unit
+                            }
+                        },
+                    )
                 }
             }
         }
@@ -453,6 +474,11 @@ private fun AccountSettingsBody(
             scope.launch { AuthRepository.signOut() }
         },
         onDismiss = { showSignOutConfirm = false },
+        secondaryText = stringResource(Res.string.settings_account_sign_out_erase),
+        onSecondary = {
+            showSignOutConfirm = false
+            scope.launch { AuthRepository.signOut(erase = true) }
+        },
     )
 }
 

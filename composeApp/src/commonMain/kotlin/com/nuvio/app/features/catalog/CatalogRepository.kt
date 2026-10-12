@@ -59,6 +59,10 @@ object CatalogRepository {
             // Already built and sitting in memory; there is no page to fetch, and the addon
             // failure path below would only turn "See all" on a generated row into an error.
             is CatalogTarget.DiscoverRow -> publishInMemoryItems(request) {
+                // Row 1's TMDB browser: what it has loaded so far.
+                if (target.rowKey == com.nuvio.app.features.home.DISCOVER_BROWSER_ROW_KEY) {
+                    return@publishInMemoryItems com.nuvio.app.features.search.SearchRepository.discoverUiState.value.items
+                }
                 DiscoverRecommendationsRepository.uiState.value.rows
                     .firstOrNull { it.key == target.rowKey }
                     ?.items

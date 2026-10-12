@@ -595,12 +595,17 @@ internal fun libraryNavMenuSurfaceColor(): Color {
     return tokens.colors.surface.copy(alpha = tokens.opacity.strong)
 }
 
-private val LibrarySortEntries: List<Pair<LibrarySortOption, String>> = listOf(
+internal val LibrarySortEntries: List<Pair<LibrarySortOption, String>> = listOf(
     LibrarySortOption.DEFAULT to "Default order",
     LibrarySortOption.ADDED_DESC to "Recently added",
     LibrarySortOption.ADDED_ASC to "Oldest added",
     LibrarySortOption.TITLE_ASC to "Title A–Z",
     LibrarySortOption.TITLE_DESC to "Title Z–A",
+    LibrarySortOption.POPULAR to "Popular",
+    LibrarySortOption.TOP_RATED to "Top rated",
+    LibrarySortOption.MOST_VOTED to "Most voted",
+    LibrarySortOption.NEWEST to "Newest",
+    LibrarySortOption.OLDEST to "Oldest",
 )
 
 /**
@@ -660,7 +665,9 @@ private fun LibrarySortMenuItems(onDismissRequest: () -> Unit) {
         style = MaterialTheme.typography.labelMedium,
         color = Color.White.copy(alpha = 0.55f),
     )
-    LibrarySortEntries.forEach { (option, label) ->
+    // The TMDB-backed orders need a TMDB key to look titles up with.
+    val tmdbAvailable = com.nuvio.app.features.discover.TmdbBrowse.isAvailable
+    LibrarySortEntries.filter { (option, _) -> tmdbAvailable || !option.needsFacts() }.forEach { (option, label) ->
         LibraryMenuItem(label = label, selected = settings.sortOption == option) {
             LibraryDisplaySettingsRepository.setSortOption(option)
             onDismissRequest()

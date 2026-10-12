@@ -1,0 +1,10 @@
+Models used for automatic hero backdrop framing.
+
+u2netp.onnx
+  U^2-Net (small variant), Xuebin Qin et al., https://github.com/xuebinqin/U-2-Net
+  Apache License 2.0. ONNX export as distributed by rembg (https://github.com/danielgatis/rembg).
+
+yunet.onnx
+  YuNet face detector (face_detection_yunet_2023mar), Shiqi Yu et al.,
+  https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
+  MIT License.

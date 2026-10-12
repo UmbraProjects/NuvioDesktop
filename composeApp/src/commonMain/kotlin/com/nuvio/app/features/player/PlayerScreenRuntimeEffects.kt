@@ -321,6 +321,16 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         subtitleAutoSyncState = SubtitleAutoSyncUiState()
     }
 
+    LaunchedEffect(activeSourceUrl, activeSourceHeaders, playerSettingsUiState.automaticSubtitleSyncEnabled) {
+        automaticallySyncedSubtitle = null
+        val sourceUrl = activeSourceUrl ?: return@LaunchedEffect
+        if (playerSettingsUiState.automaticSubtitleSyncEnabled &&
+            (sourceUrl.startsWith("http://", ignoreCase = true) || sourceUrl.startsWith("https://", ignoreCase = true))
+        ) {
+            prefetchAutomaticSubtitleSyncIndex(sourceUrl, activeSourceHeaders)
+        }
+    }
+
     LaunchedEffect(playerController, subtitleStyle) {
         playerController?.applySubtitleStyle(subtitleStyle)
     }

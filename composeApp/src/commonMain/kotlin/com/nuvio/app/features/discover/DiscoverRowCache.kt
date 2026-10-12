@@ -54,8 +54,12 @@ internal data class DiscoverRowCacheEntry(
          * default to null, so a version-3 file would deserialise cleanly and hydrate rows with no
          * rating badge and no AI reasons for the rest of the hour — readable, and wrong in exactly
          * the way nobody would report.
+         *
+         * 6: Top picks and the More from / More with rows rebuilt on the Nuvio Tracker's model, and
+         * "Because you watched" titled from the show instead of an episode. Settings unchanged, so
+         * without this a launch inside the hour kept restoring rows the old code built.
          */
-        const val VERSION = 5
+        const val VERSION = 6
 
         /** Stand-in for an entry written before [profileId] existed; never matches a real profile. */
         const val UNKNOWN_PROFILE = -1

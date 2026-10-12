@@ -3,11 +3,9 @@ package com.nuvio.app.features.setup
 import com.nuvio.app.core.storage.DesktopStorage
 
 /**
- * Device-level, never profile-scoped and never synced: whether *this machine* has been through
- * setup says nothing about the account signed in on it.
- *
- * The store name must stay out of `PlatformLocalAccountDataCleaner.accountStoreNames` — otherwise
- * signing out deletes the file and the wizard re-runs on the next launch.
+ * Per account (it lives in the account's settings folder, like everything the wizard sets), never
+ * profile-scoped and never synced: each new account on this PC gets the wizard and this fork's
+ * new-install defaults once.
  */
 private const val firstRunWizardPreferencesName = "nuvio_first_run_wizard"
 private const val eligibleKey = "eligible"
@@ -19,9 +17,9 @@ internal actual object FirstRunWizardStorage {
 
     actual fun isEligible(): Boolean {
         store.getBoolean(eligibleKey)?.let { return it }
-        // DesktopStorage.isFreshInstall is only true in the process that created the app data
-        // directory, so the answer has to be captured now rather than re-derived next launch.
-        val eligible = DesktopStorage.isFreshInstall
+        // DesktopStorage.isFreshAccount is only true in the process that opened the account's
+        // folder new, so the answer has to be captured now rather than re-derived next launch.
+        val eligible = DesktopStorage.isFreshAccount
         store.putBoolean(eligibleKey, eligible)
         return eligible
     }

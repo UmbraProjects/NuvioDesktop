@@ -83,4 +83,62 @@ class DesktopSettingsBackupTest {
         // Unparseable input cannot be cleared, so it is treated as configured.
         assertFalse(isCredentialFreeUrl("https://host.test/ not a url"))
     }
+
+    @Test
+    fun `credential-free import keeps local sign-ins and unchanged configured addons`() {
+        val configured = "https://cfg.test/tok3n/manifest.json"
+        val current = Properties().apply {
+            setProperty("theme", "light")
+            setProperty("profile_1|api_key", "local-secret")
+            setProperty("installed_addon_urls_1", """["https://public.test/manifest.json","$configured"]""")
+            setProperty("only_local", "x")
+        }
+        val backup = credentialFreeSettingsProperties(current).apply {
+            setProperty("theme", "dark")
+            remove("only_local")
+        }
+
+        val merged = mergeCredentialFreeStore(current, backup)
+
+        assertEquals("dark", merged.getProperty("theme"))
+        assertEquals("local-secret", merged.getProperty("profile_1|api_key"))
+        assertTrue(merged.getProperty("installed_addon_urls_1").contains(configured))
+        // Non-credential keys absent from the backup are not carried over.
+        assertFalse(merged.containsKey("only_local"))
+    }
+
+    @Test
+    fun `backup reader takes preference stores by bare name only`() {
+        val bytes = java.io.ByteArrayOutputStream().also { out ->
+            java.util.zip.ZipOutputStream(out).use { zip ->
+                fun put(name: String, text: String) {
+                    zip.putNextEntry(java.util.zip.ZipEntry(name))
+                    zip.write(text.encodeToByteArray())
+                    zip.closeEntry()
+                }
+                put("preferences/nuvio_theme_settings.properties", "theme=dark\n")
+                put("preferences/../escape.properties", "x=1\n")
+                put("preferences/sub/nested.properties", "x=1\n")
+                put("backup-info.txt", "Nuvio settings backup\nCredentials included: true\n")
+            }
+        }.toByteArray()
+
+        val contents = readSettingsBackup(bytes.inputStream())
+
+        assertEquals(setOf("nuvio_theme_settings.properties"), contents.stores.keys)
+        assertEquals("dark", contents.stores.getValue("nuvio_theme_settings.properties").getProperty("theme"))
+        assertTrue(contents.credentialsIncluded)
+    }
+
+    @Test
+    fun `a zip with no preference stores is rejected`() {
+        val bytes = java.io.ByteArrayOutputStream().also { out ->
+            java.util.zip.ZipOutputStream(out).use { zip ->
+                zip.putNextEntry(java.util.zip.ZipEntry("readme.txt"))
+                zip.closeEntry()
+            }
+        }.toByteArray()
+
+        kotlin.test.assertFailsWith<IllegalArgumentException> { readSettingsBackup(bytes.inputStream()) }
+    }
 }

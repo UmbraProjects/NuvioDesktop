@@ -369,23 +369,35 @@ private inline fun desktopStartupStep(name: String, block: () -> Unit) {
         }
 }
 
-fun main() {
+fun main(args: Array<String>) {
+    // A nuvio:// link the OS launched us with (see DesktopUrlScheme): handed to the running copy
+    // if there is one, else opened here once the app is up.
+    val launchUrl = args.map(String::trim).firstOrNull { it.startsWith("nuvio://", ignoreCase = true) }
     // Before the log file or any store is opened: a second copy of Nuvio sharing the data directory
     // corrupts the log rotation and the image disk cache (see DesktopSingleInstance). The player
     // smoke harness is exempt — it is a deliberate side-by-side dev launch with its own window.
     val smokeLaunch = !(System.getProperty("nuvio.desktop.smokePlayerUrl")
         ?: System.getenv("NUVIO_DESKTOP_SMOKE_PLAYER_URL")).isNullOrBlank()
     if (!smokeLaunch) {
-        val claim = DesktopSingleInstance.claim(com.nuvio.app.core.storage.DesktopStorage.rootDir)
+        val claim = DesktopSingleInstance.claim(com.nuvio.app.core.storage.DesktopStorage.rootDir, launchUrl)
         if (claim is DesktopSingleInstance.Outcome.Secondary) {
             System.err.println(
                 "Nuvio is already running; " +
-                    if (claim.signalled) "asked it to come forward and exiting." else "exiting."
+                    if (!claim.signalled) "exiting."
+                    else if (launchUrl != null) "passed it the link and exiting."
+                    else "asked it to come forward and exiting."
             )
             System.exit(0)
         }
     }
     configureDesktopFileLogging()
+    // Now that this copy owns the data directory and before any store is read: a settings import
+    // staged by the previous session lands here (see applyPendingSettingsImport).
+    com.nuvio.app.features.settings.applyPendingSettingsImport(com.nuvio.app.core.storage.DesktopStorage.rootDir)
+    DesktopUrlScheme.registerInBackground()
+    // Held as the pending link until the app's navigation is up to take it. Straight to the link
+    // queue rather than handleAppUrl, whose Trakt-callback check loads profile stores this early.
+    launchUrl?.let(com.nuvio.app.core.deeplink.AppDeepLinkRepository::handleUrl)
     // Opt-in: dumps raw addon stream payloads so unparsed fields are visible. See
     // StreamPayloadDiagnostics — off by default, since it logs whole stream objects.
     //
@@ -427,6 +439,8 @@ fun main() {
     desktopStartupStep("configure chrome") { configureDesktopChrome() }
     desktopStartupStep("subtitle font warm request") { com.nuvio.app.features.player.warmSubtitleFontCache() }
     desktopStartupStep("app font warm request") { com.nuvio.app.core.ui.warmSystemFontCache() }
+    // Idle until Home has rows and the user opted in; see ArtworkPrewarmer.
+    desktopStartupStep("artwork prewarm") { com.nuvio.app.core.ui.ArtworkPrewarmer.start() }
     System.out.println("Info: (DesktopStartup) entering Compose application")
 
     application {
@@ -934,6 +948,7 @@ fun main() {
                     com.nuvio.app.features.input.OnScreenKeyboardOverlay()
                     com.nuvio.app.core.ui.FrameCadenceTelemetry()
                     com.nuvio.app.core.ui.FrameBudgetTelemetry()
+                    com.nuvio.app.core.ui.SteadyFramePacingEffect(window)
                 }
             } else {
                 PlatformPlayerSurface(

@@ -146,6 +146,7 @@ data class PlayerSettingsUiState(
     val skipAutoAcceptMode: SkipAutoAcceptMode = SkipAutoAcceptMode.MANUAL,
     val skipMovieCreditsToPostCredits: Boolean = false,
     val stripSdhSubtitles: Boolean = false,
+    val automaticSubtitleSyncEnabled: Boolean = false,
     val animeSkipEnabled: Boolean = false,
     val animeSkipClientId: String = "",
     val introDbApiKey: String = "",
@@ -198,6 +199,8 @@ data class PlayerSettingsUiState(
     val desktopRendererApi: DesktopRendererApi = DesktopRendererApi.D3D11,
     /** Desktop diagnostics: frame-budget telemetry. Off unless someone is investigating. */
     val desktopPerformanceLoggingEnabled: Boolean = false,
+    /** Desktop: render the interface every vsync while focused, so VRR displays hold one refresh rate. */
+    val desktopSteadyFramePacingEnabled: Boolean = false,
     val desktopLowVramMode: DesktopLowVramMode = DesktopLowVramMode.Auto,
     val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Off,
     val desktopAnimeModeAutoEnabled: Boolean = false,
@@ -313,6 +316,7 @@ object PlayerSettingsRepository {
     private var skipAutoAcceptMode = SkipAutoAcceptMode.MANUAL
     private var skipMovieCreditsToPostCredits = false
     private var stripSdhSubtitles = false
+    private var automaticSubtitleSyncEnabled = false
     private var animeSkipEnabled = false
     private var animeSkipClientId = ""
     private var introDbApiKey = ""
@@ -354,6 +358,7 @@ object PlayerSettingsRepository {
     private var desktopBufferPreset = DesktopBufferPreset.Balanced
     private var desktopRendererApi = DesktopRendererApi.D3D11
     private var desktopPerformanceLoggingEnabled = false
+    private var desktopSteadyFramePacingEnabled = false
     private var desktopLowVramMode = DesktopLowVramMode.Auto
     private var desktopAnimeMode = DesktopAnimeMode.Off
     private var desktopAnimeModeAutoEnabled = false
@@ -453,6 +458,7 @@ object PlayerSettingsRepository {
         skipAutoAcceptMode = SkipAutoAcceptMode.MANUAL
         skipMovieCreditsToPostCredits = false
         stripSdhSubtitles = false
+        automaticSubtitleSyncEnabled = false
         animeSkipEnabled = false
         animeSkipClientId = ""
         introDbApiKey = ""
@@ -494,6 +500,7 @@ object PlayerSettingsRepository {
         desktopBufferPreset = DesktopBufferPreset.Balanced
         desktopRendererApi = DesktopRendererApi.D3D11
         desktopPerformanceLoggingEnabled = false
+        desktopSteadyFramePacingEnabled = false
         desktopLowVramMode = DesktopLowVramMode.Auto
         desktopAnimeMode = DesktopAnimeMode.Off
         desktopAnimeModeAutoEnabled = false
@@ -680,6 +687,7 @@ object PlayerSettingsRepository {
             ?: SkipAutoAcceptMode.MANUAL
         skipMovieCreditsToPostCredits = PlayerSettingsStorage.loadSkipMovieCreditsToPostCredits() ?: false
         stripSdhSubtitles = PlayerSettingsStorage.loadStripSdhSubtitles() ?: false
+        automaticSubtitleSyncEnabled = PlayerSettingsStorage.loadAutomaticSubtitleSyncEnabled() ?: false
         animeSkipEnabled = PlayerSettingsStorage.loadAnimeSkipEnabled() ?: false
         animeSkipClientId = PlayerSettingsStorage.loadAnimeSkipClientId() ?: ""
         introDbApiKey = PlayerSettingsStorage.loadIntroDbApiKey() ?: ""
@@ -746,6 +754,7 @@ object PlayerSettingsRepository {
             ?.let { runCatching { DesktopRendererApi.valueOf(it) }.getOrNull() }
             ?: DesktopRendererApi.D3D11
         desktopPerformanceLoggingEnabled = PlayerSettingsStorage.loadDesktopPerformanceLogging() ?: false
+        desktopSteadyFramePacingEnabled = PlayerSettingsStorage.loadDesktopSteadyFramePacing() ?: false
         desktopLowVramMode = PlayerSettingsStorage.loadDesktopLowVramMode()
             ?.let { runCatching { DesktopLowVramMode.valueOf(it) }.getOrNull() }
             ?: DesktopLowVramMode.Auto
@@ -1340,6 +1349,14 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveStripSdhSubtitles(enabled)
     }
 
+    fun setAutomaticSubtitleSyncEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (automaticSubtitleSyncEnabled == enabled) return
+        automaticSubtitleSyncEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveAutomaticSubtitleSyncEnabled(enabled)
+    }
+
     fun setAnimeSkipEnabled(enabled: Boolean) {
         ensureLoaded()
         if (animeSkipEnabled == enabled) return
@@ -1702,6 +1719,7 @@ object PlayerSettingsRepository {
             skipAutoAcceptMode = skipAutoAcceptMode,
             skipMovieCreditsToPostCredits = skipMovieCreditsToPostCredits,
             stripSdhSubtitles = stripSdhSubtitles,
+            automaticSubtitleSyncEnabled = automaticSubtitleSyncEnabled,
             animeSkipEnabled = animeSkipEnabled,
             animeSkipClientId = animeSkipClientId,
             introDbApiKey = introDbApiKey,
@@ -1743,6 +1761,7 @@ object PlayerSettingsRepository {
             desktopBufferPreset = desktopBufferPreset,
             desktopRendererApi = desktopRendererApi,
             desktopPerformanceLoggingEnabled = desktopPerformanceLoggingEnabled,
+            desktopSteadyFramePacingEnabled = desktopSteadyFramePacingEnabled,
             desktopLowVramMode = desktopLowVramMode,
             desktopAnimeMode = desktopAnimeMode,
             desktopAnimeModeAutoEnabled = desktopAnimeModeAutoEnabled,
@@ -1860,6 +1879,15 @@ object PlayerSettingsRepository {
         frameBudgetSetProbesEnabled(enabled)
         publish()
         PlayerSettingsStorage.saveDesktopPerformanceLogging(enabled)
+    }
+
+    /** Applies immediately: the window's pacing effect reads it from [uiState]. */
+    fun setDesktopSteadyFramePacing(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopSteadyFramePacingEnabled == enabled) return
+        desktopSteadyFramePacingEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopSteadyFramePacing(enabled)
     }
 
     fun setDesktopRendererApi(api: DesktopRendererApi) {

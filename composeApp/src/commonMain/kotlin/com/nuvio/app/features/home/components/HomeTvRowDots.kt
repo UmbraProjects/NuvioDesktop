@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.core.ui.NuvioShelfHeaderTrailingSideMarginFraction
@@ -94,6 +95,30 @@ private val HomeTvRowDotsAnchor.endMarginFraction: Float
     }
 
 /**
+ * How many dots the strip shows before it scrolls.
+ *
+ * Growth stops before the strip can reach the catalog title on its left or the view-all pill on its
+ * right; past that it scrolls within this width instead of widening, keeping the active dot in view.
+ * The two limits are measured from the anchor line independently, since an off-centre anchor has
+ * less room on one side than on the other. A short strip — Search and Library build one row per
+ * result section, so two or three is normal there — never widens past its own dots, so the floor
+ * gives way to the dot count.
+ */
+private fun visibleRowDotCount(headerWidth: Dp, dotCount: Int, anchor: HomeTvRowDotsAnchor): Int {
+    val centreX = headerWidth * anchor.centreFraction
+    val minDots = minOf(MinVisibleDots, dotCount)
+    val halfWidthBudget = minOf(
+        centreX - headerWidth * NuvioShelfHeaderTrailingSideMarginFraction,
+        headerWidth * (1f - anchor.endMarginFraction) - centreX,
+    ).coerceAtLeast(DotHitSize * minDots / 2f)
+    return (halfWidthBudget * 2f / DotHitSize).toInt().coerceIn(minDots, dotCount)
+}
+
+/** Where the strip's left end sits in a header [headerWidth] wide — the edge a title must stop at. */
+internal fun homeTvRowDotStripStart(headerWidth: Dp, dotCount: Int, anchor: HomeTvRowDotsAnchor): Dp =
+    headerWidth * anchor.centreFraction - DotHitSize * visibleRowDotCount(headerWidth, dotCount, anchor) / 2f
+
+/**
  * Clickable per-row dots rendered beside the shelf title in TV Mode.
  *
  * TV Mode shows one shelf at a time, so reaching row 30 otherwise costs 30 wheel steps or key
@@ -151,19 +176,7 @@ internal fun HomeTvRowDotStrip(
         contentAlignment = Alignment.Center,
     ) {
         val centreX = maxWidth * anchor.centreFraction
-        // Growth stops before the strip can reach the catalog title on its left or the view-all
-        // pill on its right; past that it scrolls within this width instead of widening, keeping
-        // the active dot in view. The two limits are measured from the anchor line independently,
-        // since an off-centre anchor has less room on one side than on the other.
-        // A short strip — Search and Library build one row per result section, so two or three is
-        // normal there — never widens past its own dots, so the floor gives way to the dot count.
-        val minDots = minOf(MinVisibleDots, dots.size)
-        val halfWidthBudget = minOf(
-            centreX - maxWidth * NuvioShelfHeaderTrailingSideMarginFraction,
-            maxWidth * (1f - anchor.endMarginFraction) - centreX,
-        ).coerceAtLeast(DotHitSize * minDots / 2f)
-        val visibleDotCount = (halfWidthBudget * 2f / DotHitSize).toInt()
-            .coerceIn(minDots, dots.size)
+        val visibleDotCount = visibleRowDotCount(maxWidth, dots.size, anchor)
         var hoveredDotIndex by remember { mutableIntStateOf(-1) }
 
         // One tooltip area owns the whole continuous strip. The initial entry still observes the

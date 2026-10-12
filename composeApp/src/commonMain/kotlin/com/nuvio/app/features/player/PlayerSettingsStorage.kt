@@ -199,6 +199,8 @@ internal expect object PlayerSettingsStorage {
     fun saveSkipMovieCreditsToPostCredits(enabled: Boolean)
     fun loadStripSdhSubtitles(): Boolean?
     fun saveStripSdhSubtitles(enabled: Boolean)
+    fun loadAutomaticSubtitleSyncEnabled(): Boolean?
+    fun saveAutomaticSubtitleSyncEnabled(enabled: Boolean)
     fun loadIntroSubmitEnabled(): Boolean?
     fun saveIntroSubmitEnabled(enabled: Boolean)
     fun loadStreamAutoPlayNextEpisodeEnabled(): Boolean?
@@ -271,6 +273,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopRendererApi(api: String)
     fun loadDesktopPerformanceLogging(): Boolean?
     fun saveDesktopPerformanceLogging(enabled: Boolean)
+    fun loadDesktopSteadyFramePacing(): Boolean?
+    fun saveDesktopSteadyFramePacing(enabled: Boolean)
     fun loadDesktopLowVramMode(): String?
     fun saveDesktopLowVramMode(mode: String)
     fun loadDesktopAnimeMode(): String?

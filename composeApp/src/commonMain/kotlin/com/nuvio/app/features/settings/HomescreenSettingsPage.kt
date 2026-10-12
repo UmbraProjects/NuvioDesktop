@@ -161,12 +161,30 @@ internal fun LazyListScope.homescreenSettingsContent(
                         currentMode == HomeDisplayMode.AdaptiveAmbient
                     ) {
                         SettingsGroupDivider(isTablet = isTablet)
-                        AdaptiveHeroVerticalBiasRow(
-                            bias = adaptiveHeroVerticalBias,
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_home_backdrop_auto_framing),
+                            description = stringResource(
+                                Res.string.settings_home_backdrop_auto_framing_description,
+                            ),
+                            checked = homeSettings.adaptiveHeroAutoFraming,
                             enabled = heroEnabled,
                             isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHeroPosition),
+                            modifier = Modifier.settingsScrollAnchor(
+                                SettingsScrollAnchor.searchKey("home-adaptive-hero-auto-framing"),
+                            ),
+                            onCheckedChange = HomeCatalogSettingsRepository::setAdaptiveHeroAutoFraming,
                         )
+                        // The manual position only applies with automatic framing off; showing it
+                        // alongside would read as a second control over the same crop.
+                        if (!homeSettings.adaptiveHeroAutoFraming) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                            AdaptiveHeroVerticalBiasRow(
+                                bias = adaptiveHeroVerticalBias,
+                                enabled = heroEnabled,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHeroPosition),
+                            )
+                        }
                         SettingsGroupDivider(isTablet = isTablet)
                         AdaptiveHeroHeightRow(
                             enabled = heroEnabled,

@@ -52,6 +52,8 @@ import com.nuvio.app.features.input.gamepadMappingRows
 import com.nuvio.app.features.input.gamepadRepeatIntervalRange
 import com.nuvio.app.features.input.gamepadRepeatIntervalState
 import com.nuvio.app.features.input.gamepadSupported
+import com.nuvio.app.features.input.mouseKeyboardState
+import com.nuvio.app.features.input.setMouseKeyboard
 import com.nuvio.app.features.input.resetGamepadSettings
 import com.nuvio.app.features.input.setGamepadDeadZone
 import com.nuvio.app.features.input.setGamepadEnabled
@@ -331,9 +333,25 @@ private fun GamepadSection(isTablet: Boolean) {
     val connected by gamepadConnectedState().collectAsState()
     val deadZone by gamepadDeadZoneState().collectAsState()
     val repeatInterval by gamepadRepeatIntervalState().collectAsState()
+    val mouseKeyboard by mouseKeyboardState().collectAsState()
     val rows = remember { gamepadMappingRows() }
 
     Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s18)) {
+        // Its own section rather than a Controller row: it works with no controller at all, and
+        // the Controller rows grey out while gamepad control is off.
+        SettingsSection(title = "On-screen keyboard", isTablet = isTablet) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Show for mouse",
+                    description = "Open the on-screen keyboard whenever a text box is clicked, so you can " +
+                        "search by clicking letters — for a wireless mouse on the couch with no keyboard.",
+                    checked = mouseKeyboard,
+                    isTablet = isTablet,
+                    onCheckedChange = { setMouseKeyboard(it) },
+                )
+            }
+        }
+
         SettingsSection(
             title = "Controller",
             isTablet = isTablet,

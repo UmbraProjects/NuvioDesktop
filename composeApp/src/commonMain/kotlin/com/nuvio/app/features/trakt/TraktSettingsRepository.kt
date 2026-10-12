@@ -13,7 +13,6 @@ const val TRAKT_CONTINUE_WATCHING_DAYS_CAP_ALL = 0
 const val TRAKT_DEFAULT_CONTINUE_WATCHING_DAYS_CAP = 60
 const val TRAKT_MIN_CONTINUE_WATCHING_DAYS_CAP = 7
 const val TRAKT_MAX_CONTINUE_WATCHING_DAYS_CAP = 365
-const val TRAKT_DEFAULT_REDIRECT_URI = "http://localhost:53682/callback"
 
 val TraktContinueWatchingDaysOptions: List<Int> = listOf(
     14,
@@ -61,20 +60,20 @@ data class TraktSettingsUiState(
     val librarySourceMode: LibrarySourceMode = DEFAULT_LIBRARY_SOURCE_MODE,
     val moreLikeThisSource: MoreLikeThisSourcePreference = DEFAULT_MORE_LIKE_THIS_SOURCE,
     val traktClientId: String = "",
-    val traktClientSecret: String = "",
-    val traktRedirectUri: String = TRAKT_DEFAULT_REDIRECT_URI,
 )
 
+/**
+ * Trakt sign-in needs only the app's Client ID: device-code auth carries no redirect, and Trakt
+ * deprecated the client secret for desktop apps (2026-10) — anything shipped to a PC is not secret.
+ */
 data class TraktCredentials(
     val clientId: String,
-    val clientSecret: String,
-    val redirectUri: String,
 ) {
     val hasClientId: Boolean
         get() = clientId.isNotBlank()
 
     val hasAuthCredentials: Boolean
-        get() = clientId.isNotBlank() && clientSecret.isNotBlank() && redirectUri.isNotBlank()
+        get() = hasClientId
 }
 
 @Serializable
@@ -84,8 +83,6 @@ private data class StoredTraktSettings(
     val librarySourceMode: String? = null,
     val moreLikeThisSource: String? = null,
     val traktClientId: String? = null,
-    val traktClientSecret: String? = null,
-    val traktRedirectUri: String? = null,
 )
 
 object TraktSettingsRepository {
@@ -142,18 +139,9 @@ object TraktSettingsRepository {
         persist()
     }
 
-    fun setCredentials(
-        clientId: String,
-        clientSecret: String,
-        redirectUri: String,
-    ) {
+    fun setClientId(clientId: String) {
         ensureLoaded()
-        val normalizedRedirectUri = redirectUri.trim().ifBlank { TRAKT_DEFAULT_REDIRECT_URI }
-        val next = _uiState.value.copy(
-            traktClientId = clientId.trim(),
-            traktClientSecret = clientSecret.trim(),
-            traktRedirectUri = normalizedRedirectUri,
-        )
+        val next = _uiState.value.copy(traktClientId = clientId.trim())
         if (_uiState.value == next) return
         _uiState.value = next
         persist()
@@ -161,27 +149,25 @@ object TraktSettingsRepository {
 
     fun clearCredentials() {
         ensureLoaded()
-        val next = _uiState.value.copy(
-            traktClientId = "",
-            traktClientSecret = "",
-            traktRedirectUri = TRAKT_DEFAULT_REDIRECT_URI,
-        )
+        val next = _uiState.value.copy(traktClientId = "")
         if (_uiState.value == next) return
         _uiState.value = next
         persist()
     }
 
+    /**
+     * The user's own Client ID when they entered one, else the app's built-in one
+     * (`TRAKT_CLIENT_ID` in local.properties, generated into [TraktConfig]). Shipping a shared ID
+     * is the intended model: it is public by design, and each user authorises it for their own
+     * account. An existing grant keeps the ID that minted it ([TraktAuthState.clientId]).
+     */
     fun effectiveCredentials(): TraktCredentials {
         ensureLoaded()
-        val state = _uiState.value
-        return TraktCredentials(
-            clientId = state.traktClientId.trim(),
-            clientSecret = state.traktClientSecret.trim(),
-            redirectUri = state.traktRedirectUri
-                .ifBlank { TRAKT_DEFAULT_REDIRECT_URI }
-                .trim(),
-        )
+        val override = _uiState.value.traktClientId.trim()
+        return TraktCredentials(clientId = override.ifBlank { TraktConfig.CLIENT_ID.trim() })
     }
+
+    fun hasBuiltInClientId(): Boolean = TraktConfig.CLIENT_ID.isNotBlank()
 
     /**
      * Exports only portable Trakt preferences for profile settings sync.
@@ -240,9 +226,6 @@ object TraktSettingsRepository {
                 librarySourceMode = librarySourceModeFromStorage(stored.librarySourceMode),
                 moreLikeThisSource = MoreLikeThisSourcePreference.fromStorage(stored.moreLikeThisSource),
                 traktClientId = stored.traktClientId.orEmpty(),
-                traktClientSecret = stored.traktClientSecret.orEmpty(),
-                traktRedirectUri = stored.traktRedirectUri?.trim()?.takeIf { it.isNotBlank() }
-                    ?: TRAKT_DEFAULT_REDIRECT_URI,
             )
         } else {
             TraktSettingsUiState()
@@ -257,9 +240,9 @@ object TraktSettingsRepository {
                     continueWatchingDaysCap = _uiState.value.continueWatchingDaysCap,
                     librarySourceMode = _uiState.value.librarySourceMode.name,
                     moreLikeThisSource = _uiState.value.moreLikeThisSource.name,
+                    // A stored secret / redirect URI from the pre-device-flow build is dropped on
+                    // the next save rather than kept on disk unused.
                     traktClientId = _uiState.value.traktClientId,
-                    traktClientSecret = _uiState.value.traktClientSecret,
-                    traktRedirectUri = _uiState.value.traktRedirectUri,
                 ),
             ),
         )

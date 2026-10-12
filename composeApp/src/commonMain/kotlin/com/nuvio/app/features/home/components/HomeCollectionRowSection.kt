@@ -321,7 +321,7 @@ private fun PrefetchCollectionArtwork(collection: Collection, animateGifs: Boole
 }
 
 /** Enough to cover a long row without turning one screen into a hundred queued requests. */
-private const val COLLECTION_ARTWORK_PREFETCH_LIMIT = 40
+internal const val COLLECTION_ARTWORK_PREFETCH_LIMIT = 40
 
 internal fun collectionFolderCardImageUrl(folder: CollectionFolder, animateGifs: Boolean): String? {
     return if (folder.mobileFocusGifEnabled && animateGifs) {

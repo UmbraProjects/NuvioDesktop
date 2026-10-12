@@ -208,6 +208,8 @@ data class HomeCatalogSettingsUiState(
     val discoverFinishIdleDays: Int = DISCOVER_FINISH_IDLE_DAYS_DEFAULT,
     val discoverMoreLikeFavouritesEnabled: Boolean = true,
     val discoverHiddenGemsEnabled: Boolean = true,
+    val discoverTopPicksEnabled: Boolean = true,
+    val discoverPeopleRowsEnabled: Boolean = true,
     val discoverTrendingGenreRows: Int = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT,
     val discoverExcludedGenres: Set<String> = emptySet(),
     /**
@@ -223,6 +225,7 @@ data class HomeCatalogSettingsUiState(
     val catalogRowShuffleEnabled: Boolean = false,
     val adaptiveHeroEnabled: Boolean = false,
     val adaptiveHeroVerticalBias: Float = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT,
+    val adaptiveHeroAutoFraming: Boolean = true,
     val adaptiveHeroHeightMultiplier: Float = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT,
     val heroAmbientBackgroundEnabled: Boolean = false,
     val tvModeEnabled: Boolean = false,
@@ -270,6 +273,8 @@ data class HomeCatalogSettingsUiState(
             append(adaptiveHeroEnabled)
             append('|')
             append(adaptiveHeroVerticalBias)
+            append('|')
+            append(adaptiveHeroAutoFraming)
             append('|')
             append(adaptiveHeroHeightMultiplier)
             append('|')
@@ -342,6 +347,8 @@ internal data class HomeCatalogSettingsSnapshot(
     val discoverFinishIdleDays: Int,
     val discoverMoreLikeFavouritesEnabled: Boolean,
     val discoverHiddenGemsEnabled: Boolean,
+    val discoverTopPicksEnabled: Boolean,
+    val discoverPeopleRowsEnabled: Boolean,
     val discoverTrendingGenreRows: Int,
     val discoverExcludedGenres: Set<String>,
     /** Already normalised — see [HomeCatalogSettingsUiState.discoverRowOrder]. */
@@ -353,6 +360,7 @@ internal data class HomeCatalogSettingsSnapshot(
     val catalogRowShuffleEnabled: Boolean,
     val adaptiveHeroEnabled: Boolean,
     val adaptiveHeroVerticalBias: Float,
+    val adaptiveHeroAutoFraming: Boolean,
     val adaptiveHeroHeightMultiplier: Float,
     val heroAmbientBackgroundEnabled: Boolean,
     val tvModeEnabled: Boolean,
@@ -521,6 +529,8 @@ private data class StoredHomeCatalogSettingsPayload(
     val discoverFinishIdleDays: Int = DISCOVER_FINISH_IDLE_DAYS_DEFAULT,
     val discoverMoreLikeFavouritesEnabled: Boolean = true,
     val discoverHiddenGemsEnabled: Boolean = true,
+    val discoverTopPicksEnabled: Boolean = true,
+    val discoverPeopleRowsEnabled: Boolean = true,
     val discoverTrendingGenreRows: Int = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT,
     val discoverExcludedGenres: Set<String> = emptySet(),
     /**
@@ -537,6 +547,7 @@ private data class StoredHomeCatalogSettingsPayload(
     @SerialName("tvModeEnabled")
     val adaptiveHeroEnabled: Boolean = false,
     val adaptiveHeroVerticalBias: Float = -0.58f,
+    val adaptiveHeroAutoFraming: Boolean = true,
     val adaptiveHeroHeightMultiplier: Float = 1.25f,
     val heroAmbientBackgroundEnabled: Boolean = false,
     @SerialName("immersiveCatalogModeEnabled")
@@ -595,6 +606,8 @@ object HomeCatalogSettingsRepository {
     private var discoverFinishIdleDays = DISCOVER_FINISH_IDLE_DAYS_DEFAULT
     private var discoverMoreLikeFavouritesEnabled = true
     private var discoverHiddenGemsEnabled = true
+    private var discoverTopPicksEnabled = true
+    private var discoverPeopleRowsEnabled = true
     private var discoverTrendingGenreRows = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT
     private var discoverExcludedGenres: Set<String> = emptySet()
     private var discoverRowOrder: List<String> = emptyList()
@@ -615,6 +628,7 @@ object HomeCatalogSettingsRepository {
     private var catalogRowShuffleEnabled = false
     private var adaptiveHeroEnabled = false
     private var adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+    private var adaptiveHeroAutoFraming = true
     private var adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
     private var heroAmbientBackgroundEnabled = false
     private var tvModeEnabled = false
@@ -656,6 +670,8 @@ object HomeCatalogSettingsRepository {
         discoverFinishIdleDays = DISCOVER_FINISH_IDLE_DAYS_DEFAULT
         discoverMoreLikeFavouritesEnabled = true
         discoverHiddenGemsEnabled = true
+        discoverTopPicksEnabled = true
+        discoverPeopleRowsEnabled = true
         discoverTrendingGenreRows = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT
         discoverExcludedGenres = emptySet()
         discoverRowOrder = emptyList()
@@ -667,6 +683,7 @@ object HomeCatalogSettingsRepository {
         catalogRowShuffleEnabled = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+        adaptiveHeroAutoFraming = true
         adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
@@ -711,6 +728,8 @@ object HomeCatalogSettingsRepository {
         discoverFinishIdleDays = DISCOVER_FINISH_IDLE_DAYS_DEFAULT
         discoverMoreLikeFavouritesEnabled = true
         discoverHiddenGemsEnabled = true
+        discoverTopPicksEnabled = true
+        discoverPeopleRowsEnabled = true
         discoverTrendingGenreRows = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT
         discoverExcludedGenres = emptySet()
         discoverRowOrder = emptyList()
@@ -722,6 +741,7 @@ object HomeCatalogSettingsRepository {
         catalogRowShuffleEnabled = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+        adaptiveHeroAutoFraming = true
         adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
@@ -795,6 +815,8 @@ object HomeCatalogSettingsRepository {
             discoverFinishIdleDays = discoverFinishIdleDays,
             discoverMoreLikeFavouritesEnabled = discoverMoreLikeFavouritesEnabled,
             discoverHiddenGemsEnabled = discoverHiddenGemsEnabled,
+            discoverTopPicksEnabled = discoverTopPicksEnabled,
+            discoverPeopleRowsEnabled = discoverPeopleRowsEnabled,
             discoverTrendingGenreRows = discoverTrendingGenreRows,
             discoverExcludedGenres = discoverExcludedGenres,
             discoverRowOrder = normalizeDiscoverRowOrder(
@@ -810,6 +832,7 @@ object HomeCatalogSettingsRepository {
             catalogRowShuffleEnabled = catalogRowShuffleEnabled,
             adaptiveHeroEnabled = adaptiveHeroEnabled,
             adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
+            adaptiveHeroAutoFraming = adaptiveHeroAutoFraming,
             adaptiveHeroHeightMultiplier = adaptiveHeroHeightMultiplier,
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
@@ -950,6 +973,22 @@ object HomeCatalogSettingsRepository {
         persist()
     }
 
+    fun setDiscoverTopPicksEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (discoverTopPicksEnabled == enabled) return
+        discoverTopPicksEnabled = enabled
+        publish()
+        persist()
+    }
+
+    fun setDiscoverPeopleRowsEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (discoverPeopleRowsEnabled == enabled) return
+        discoverPeopleRowsEnabled = enabled
+        publish()
+        persist()
+    }
+
     fun setDiscoverTrendingGenreRows(count: Int) {
         ensureLoaded()
         val clamped = count.coerceIn(
@@ -976,6 +1015,8 @@ object HomeCatalogSettingsRepository {
             DiscoverRowFamily.Finish -> setDiscoverFinishWhatYouStartedEnabled(enabled)
             DiscoverRowFamily.Favourites -> setDiscoverMoreLikeFavouritesEnabled(enabled)
             DiscoverRowFamily.Gems -> setDiscoverHiddenGemsEnabled(enabled)
+            DiscoverRowFamily.TopPicks -> setDiscoverTopPicksEnabled(enabled)
+            DiscoverRowFamily.People -> setDiscoverPeopleRowsEnabled(enabled)
             DiscoverRowFamily.Because -> setDiscoverBecauseYouWatchedRows(
                 countForFamilyToggle(family, enabled, discoverBecauseYouWatchedRows, DISCOVER_BECAUSE_ROWS_DEFAULT),
             )
@@ -1201,6 +1242,14 @@ object HomeCatalogSettingsRepository {
         val normalized = normalizeAdaptiveHeroVerticalBias(bias)
         if (adaptiveHeroVerticalBias == normalized) return
         adaptiveHeroVerticalBias = normalized
+        publish()
+        persist()
+    }
+
+    fun setAdaptiveHeroAutoFraming(enabled: Boolean) {
+        ensureLoaded()
+        if (adaptiveHeroAutoFraming == enabled) return
+        adaptiveHeroAutoFraming = enabled
         publish()
         persist()
     }
@@ -1481,6 +1530,8 @@ object HomeCatalogSettingsRepository {
         discoverFinishIdleDays = DISCOVER_FINISH_IDLE_DAYS_DEFAULT
         discoverMoreLikeFavouritesEnabled = true
         discoverHiddenGemsEnabled = true
+        discoverTopPicksEnabled = true
+        discoverPeopleRowsEnabled = true
         discoverTrendingGenreRows = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT
         discoverExcludedGenres = emptySet()
         discoverRowOrder = emptyList()
@@ -1492,6 +1543,7 @@ object HomeCatalogSettingsRepository {
         catalogRowShuffleEnabled = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+        adaptiveHeroAutoFraming = true
         adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
@@ -1595,6 +1647,8 @@ object HomeCatalogSettingsRepository {
                 .coerceIn(DISCOVER_FINISH_IDLE_DAYS_RANGE.first, DISCOVER_FINISH_IDLE_DAYS_RANGE.last)
             discoverMoreLikeFavouritesEnabled = parsedPayload.discoverMoreLikeFavouritesEnabled
             discoverHiddenGemsEnabled = parsedPayload.discoverHiddenGemsEnabled
+            discoverTopPicksEnabled = parsedPayload.discoverTopPicksEnabled
+            discoverPeopleRowsEnabled = parsedPayload.discoverPeopleRowsEnabled
             discoverTrendingGenreRows = parsedPayload.discoverTrendingGenreRows
                 .coerceIn(DISCOVER_TRENDING_GENRE_ROWS_RANGE.first, DISCOVER_TRENDING_GENRE_ROWS_RANGE.last)
             // Canonicalised on load so a stored name that no longer matches the list is dropped
@@ -1622,6 +1676,7 @@ object HomeCatalogSettingsRepository {
             catalogRowShuffleEnabled = parsedPayload.catalogRowShuffleEnabled
             adaptiveHeroEnabled = parsedPayload.adaptiveHeroEnabled
             adaptiveHeroVerticalBias = normalizeAdaptiveHeroVerticalBias(parsedPayload.adaptiveHeroVerticalBias)
+            adaptiveHeroAutoFraming = parsedPayload.adaptiveHeroAutoFraming
             adaptiveHeroHeightMultiplier = normalizeAdaptiveHeroHeightMultiplier(parsedPayload.adaptiveHeroHeightMultiplier)
             heroAmbientBackgroundEnabled = parsedPayload.heroAmbientBackgroundEnabled
             tvModeEnabled = parsedPayload.tvModeEnabled
@@ -1787,6 +1842,8 @@ object HomeCatalogSettingsRepository {
             discoverFinishIdleDays = discoverFinishIdleDays,
             discoverMoreLikeFavouritesEnabled = discoverMoreLikeFavouritesEnabled,
             discoverHiddenGemsEnabled = discoverHiddenGemsEnabled,
+            discoverTopPicksEnabled = discoverTopPicksEnabled,
+            discoverPeopleRowsEnabled = discoverPeopleRowsEnabled,
             discoverTrendingGenreRows = discoverTrendingGenreRows,
             discoverExcludedGenres = discoverExcludedGenres,
             discoverRowOrder = normalizeDiscoverRowOrder(
@@ -1805,6 +1862,7 @@ object HomeCatalogSettingsRepository {
             catalogRowShuffleEnabled = catalogRowShuffleEnabled,
             adaptiveHeroEnabled = adaptiveHeroEnabled,
             adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
+            adaptiveHeroAutoFraming = adaptiveHeroAutoFraming,
             adaptiveHeroHeightMultiplier = adaptiveHeroHeightMultiplier,
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
@@ -1905,6 +1963,8 @@ object HomeCatalogSettingsRepository {
                     discoverFinishIdleDays = discoverFinishIdleDays,
                     discoverMoreLikeFavouritesEnabled = discoverMoreLikeFavouritesEnabled,
                     discoverHiddenGemsEnabled = discoverHiddenGemsEnabled,
+                    discoverTopPicksEnabled = discoverTopPicksEnabled,
+                    discoverPeopleRowsEnabled = discoverPeopleRowsEnabled,
                     discoverTrendingGenreRows = discoverTrendingGenreRows,
                     discoverExcludedGenres = discoverExcludedGenres,
                     // Saved raw, not normalised — see HomeCatalogSettingsUiState.discoverRowOrder.
@@ -1916,6 +1976,7 @@ object HomeCatalogSettingsRepository {
                     catalogRowShuffleEnabled = catalogRowShuffleEnabled,
                     adaptiveHeroEnabled = adaptiveHeroEnabled,
                     adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
+                    adaptiveHeroAutoFraming = adaptiveHeroAutoFraming,
                     adaptiveHeroHeightMultiplier = adaptiveHeroHeightMultiplier,
                     heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
                     tvModeEnabled = tvModeEnabled,

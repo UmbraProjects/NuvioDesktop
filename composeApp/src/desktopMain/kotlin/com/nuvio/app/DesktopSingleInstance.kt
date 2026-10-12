@@ -31,6 +31,9 @@ import java.nio.file.StandardOpenOption
  * lock, sends `activate` to that port and exits; the primary brings its window back (from the tray
  * if need be). The lock, not the port file, is the authority: it is released by the OS the moment
  * the process dies, so a crash never leaves a stale claim behind.
+ *
+ * A launch carrying a `nuvio://` link (a click on "Open in Nuvio" while the app is already open)
+ * sends `open <link>` instead of `activate`: the primary takes the link, then comes forward.
  */
 object DesktopSingleInstance {
 
@@ -45,6 +48,7 @@ object DesktopSingleInstance {
     private const val LockFileName = "instance.lock"
     private const val PortFileName = "instance.port"
     private const val ActivateCommand = "activate"
+    private const val OpenCommandPrefix = "open "
     private const val AcknowledgeReply = "ok"
     private const val ConnectTimeoutMs = 1_000
     private const val ReplyTimeoutMs = 3_000
@@ -64,12 +68,12 @@ object DesktopSingleInstance {
      * Never throws: any I/O surprise resolves to [Outcome.Primary], because refusing to start over a
      * broken lock file would be worse than the duplicate it is guarding against.
      */
-    fun claim(dataDir: Path): Outcome = runCatching { claimOrThrow(dataDir) }.getOrElse { error ->
+    fun claim(dataDir: Path, launchUrl: String? = null): Outcome = runCatching { claimOrThrow(dataDir, launchUrl) }.getOrElse { error ->
         System.err.println("Warn: (SingleInstance) lock unavailable, starting anyway: $error")
         Outcome.Primary
     }
 
-    private fun claimOrThrow(dataDir: Path): Outcome {
+    private fun claimOrThrow(dataDir: Path, launchUrl: String?): Outcome {
         Files.createDirectories(dataDir)
         val lockPath = dataDir.resolve(LockFileName)
         val channel = FileChannel.open(
@@ -85,7 +89,7 @@ object DesktopSingleInstance {
         }
         if (acquired == null) {
             channel.close()
-            return Outcome.Secondary(signalled = signalPrimary(dataDir.resolve(PortFileName)))
+            return Outcome.Secondary(signalled = signalPrimary(dataDir.resolve(PortFileName), launchUrl))
         }
         lockChannel = channel
         lock = acquired
@@ -120,7 +124,12 @@ object DesktopSingleInstance {
             it.soTimeout = ReplyTimeoutMs
             val reader = BufferedReader(InputStreamReader(it.getInputStream(), StandardCharsets.UTF_8))
             val command = reader.readLine()?.trim()
-            if (command == ActivateCommand) {
+            if (command != null && command.startsWith(OpenCommandPrefix)) {
+                val url = command.removePrefix(OpenCommandPrefix).trim()
+                System.out.println("Info: (SingleInstance) second launch with a link; opening it here")
+                runCatching { com.nuvio.app.core.deeplink.handleAppUrl(url) }
+                runCatching { onActivate?.invoke() }
+            } else if (command == ActivateCommand) {
                 System.out.println("Info: (SingleInstance) second launch detected; bringing this window forward")
                 runCatching { onActivate?.invoke() }
             }
@@ -143,7 +152,9 @@ object DesktopSingleInstance {
      * Asks the owning process to show itself. The port file may not exist yet if the owner is itself
      * still starting up (lock taken, socket not yet bound), so this waits a few seconds for it.
      */
-    private fun signalPrimary(portFile: Path): Boolean {
+    private fun signalPrimary(portFile: Path, launchUrl: String?): Boolean {
+        // One line on the wire: a link can't contain a raw newline, but strip any to be sure.
+        val command = launchUrl?.replace(Regex("[\\r\\n]"), "")?.let { OpenCommandPrefix + it } ?: ActivateCommand
         repeat(PortFileRetries) { attempt ->
             val port = runCatching { Files.readString(portFile).trim().toInt() }.getOrNull()
             if (port != null) {
@@ -152,7 +163,7 @@ object DesktopSingleInstance {
                         socket.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), port), ConnectTimeoutMs)
                         socket.soTimeout = ReplyTimeoutMs
                         OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8).apply {
-                            write(ActivateCommand)
+                            write(command)
                             write("\n")
                             flush()
                         }

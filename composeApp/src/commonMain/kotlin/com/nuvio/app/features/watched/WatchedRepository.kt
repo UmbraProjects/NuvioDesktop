@@ -187,6 +187,36 @@ object WatchedRepository {
     }
 
     /**
+     * Reads what changed in the Nuvio Sync watched store since the last pull.
+     *
+     * For the foreground pull. Warm starts never run [pullFromServer] (only a fresh sign-in or a
+     * profile switch does), and the foreground pull used to refresh library and progress only, so
+     * ticks written by another client — the phone app, nuvio.tv, the tracker site — never arrived
+     * until the next sign-in. A delta read is one RPC that returns nothing when nothing changed.
+     *
+     * Skipped when Trakt owns watched history ([activeRemoteWatchedAdapter]): its full pull is
+     * the costly one and runs from the progress refresh. Provider history import is not done here
+     * either; that has its own request budget and its own foreground caller.
+     */
+    suspend fun pullNuvioSyncChanges(profileId: Int) {
+        ensureLoaded()
+        if (profileId != currentProfileId) return
+        if (activeRemoteWatchedAdapter() != null) return
+        val pullStartedEpochMs = WatchedClock.nowEpochMs()
+        runCatching {
+            pullSupabaseDeltaFromServer(
+                profileId = profileId,
+                localBeforePull = itemSnapshot().map(WatchedItem::normalizedMarkedAt),
+                lastPushEpochMs = lastSuccessfulPushEpochMs,
+                pullStartedEpochMs = pullStartedEpochMs,
+            )
+        }.onFailure { e ->
+            if (e is CancellationException) throw e
+            log.e(e) { "Failed to pull watched changes from server" }
+        }
+    }
+
+    /**
      * Imports the Continue Watching provider's history without touching the Nuvio Sync store.
      *
      * SIMKL, MDBList and Floppy are the user's own connections and have nothing to do with whether

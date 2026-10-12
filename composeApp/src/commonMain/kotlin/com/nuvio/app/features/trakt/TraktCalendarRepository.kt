@@ -38,6 +38,10 @@ data class TraktCalendarEntry(
     val seasonNumber: Int? = null,
     val episodeNumber: Int? = null,
     val episodeTitle: String? = null,
+    /** The exact airing instant as the source gives it (ISO-8601 with offset), when it has one. */
+    val airAt: String? = null,
+    /** A season, mid-season or series finale, where the source says so (Trakt's episode_type). */
+    val isFinale: Boolean = false,
 )
 
 data class TraktCalendarUiState(
@@ -239,6 +243,8 @@ object TraktCalendarRepository {
                 seasonNumber = item.episode?.season,
                 episodeNumber = item.episode?.number,
                 episodeTitle = item.episode?.title,
+                airAt = item.firstAired?.takeIf { it.length > 10 },
+                isFinale = item.episode?.episodeType?.contains("finale", ignoreCase = true) == true,
             )
         }
     }
@@ -374,6 +380,7 @@ private data class TraktCalendarEpisodeDto(
     @SerialName("season") val season: Int? = null,
     @SerialName("number") val number: Int? = null,
     @SerialName("title") val title: String? = null,
+    @SerialName("episode_type") val episodeType: String? = null,
 )
 
 @Serializable

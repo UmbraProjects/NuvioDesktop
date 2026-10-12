@@ -153,6 +153,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -755,6 +757,7 @@ private fun HeroBackdropImage(
     alignment: Alignment,
     contentScale: ContentScale,
     onImageLoaded: ((coil3.Image) -> Unit)? = null,
+    framingPriorBias: Float? = null,
 ) {
     // Addons that don't supply a backdrop (only a poster) would otherwise render a blank/black
     // hero — fall back to the poster like the rest of the hero pipeline (e.g. the ambient
@@ -778,11 +781,21 @@ private fun HeroBackdropImage(
                 contentScale = contentScale,
                 onImageLoaded = onImageLoaded,
                 onResolved = onResolved,
+                framingPriorBias = framingPriorBias,
+                heldUntilResolved = true,
             )
         }
         return
     }
-    HeroBackdropImageLayer(model, contentDescription, modifier, alignment, contentScale, onImageLoaded)
+    HeroBackdropImageLayer(
+        model = model,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        alignment = alignment,
+        contentScale = contentScale,
+        onImageLoaded = onImageLoaded,
+        framingPriorBias = framingPriorBias,
+    )
 }
 
 /**
@@ -931,11 +944,28 @@ private fun HeroBackdropImageLayer(
     contentScale: ContentScale,
     onImageLoaded: ((coil3.Image) -> Unit)?,
     onResolved: (hasArtwork: Boolean) -> Unit = {},
+    /** Non-null turns on automatic framing, falling back to (and pulled gently toward) this bias. */
+    framingPriorBias: Float? = null,
+    /** True under [HeroBackdropCrossfade], which keeps the layer invisible until [onResolved]. */
+    heldUntilResolved: Boolean = false,
 ) {
     // A backdrop with no url draws nothing and will never report, so it resolves the moment it is
     // asked for - otherwise the fade would wait on a load that is never going to run.
     LaunchedEffect(model) {
         if (model == null) onResolved(false)
+    }
+    if (framingPriorBias != null && model != null) {
+        FramedHeroBackdropImageLayer(
+            model = model,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            priorBias = framingPriorBias,
+            contentScale = contentScale,
+            onImageLoaded = onImageLoaded,
+            onResolved = onResolved,
+            heldUntilResolved = heldUntilResolved,
+        )
+        return
     }
     AsyncImage(
         model = model,
@@ -958,6 +988,104 @@ private fun HeroBackdropImageLayer(
         },
     )
 }
+
+/**
+ * [HeroBackdropImageLayer] with automatic framing: the crop follows this backdrop's own
+ * [HeroBackdropFramingProfile] instead of one bias for every backdrop.
+ *
+ * A backdrop seen before is framed from the first frame (memory, else the disk cache). A new one
+ * is analysed once its artwork loads, and its fade-in is held for up to
+ * [FramingResolveWaitMillis] so it usually arrives already framed; an analysis that outlasts that
+ * eases the crop into place instead of cutting.
+ */
+@Composable
+private fun FramedHeroBackdropImageLayer(
+    model: String,
+    contentDescription: String?,
+    modifier: Modifier,
+    priorBias: Float,
+    contentScale: ContentScale,
+    onImageLoaded: ((coil3.Image) -> Unit)?,
+    onResolved: (hasArtwork: Boolean) -> Unit,
+    heldUntilResolved: Boolean,
+) {
+    val scope = rememberCoroutineScope()
+    var profile by remember(model) { mutableStateOf(HeroBackdropFramer.peek(model)) }
+    // Whether the picture is on screen yet. Until it is, a crop change is a snap nobody sees.
+    var displayed by remember(model) { mutableStateOf(false) }
+    LaunchedEffect(model) {
+        if (profile == null) HeroBackdropFramer.profile(model, image = null)?.let { profile = it }
+    }
+    // Constraints rather than onSizeChanged: the hero's aspect is known in the first composition,
+    // so a cached backdrop never starts at the fallback and slides.
+    BoxWithConstraints(modifier) {
+        val heroAspect = if (constraints.hasBoundedHeight && constraints.maxHeight > 0) {
+            constraints.maxWidth.toFloat() / constraints.maxHeight
+        } else {
+            0f
+        }
+        val currentProfile = profile
+        val targetBias = remember(currentProfile, heroAspect, priorBias) {
+            currentProfile?.let { heroBackdropFramingBias(it, heroAspect, priorBias) } ?: priorBias
+        }
+        val bias = remember(model) { Animatable(targetBias) }
+        var framedProfile by remember(model) { mutableStateOf(currentProfile) }
+        LaunchedEffect(targetBias) {
+            val analysisLanded = framedProfile !== currentProfile
+            framedProfile = currentProfile
+            if (analysisLanded && displayed) {
+                // The analysis finished after the picture was up: ease into the new crop.
+                bias.animateTo(targetBias, tween(FramingSettleMillis))
+            } else {
+                // Not shown yet, or the hero itself changed size (window resize, Hero height):
+                // follow exactly.
+                bias.snapTo(targetBias)
+            }
+        }
+        AsyncImage(
+            model = model,
+            contentDescription = contentDescription,
+            modifier = Modifier.fillMaxSize(),
+            alignment = BiasAlignment(horizontalBias = 0f, verticalBias = bias.value),
+            contentScale = contentScale,
+            desktopImageScaling = NuvioDesktopImageScaling.Disabled,
+            onError = {
+                heroImageLog.w { "Hero artwork failed: ${model.safeImageUrlForLog()}" }
+                onResolved(false)
+            },
+            onSuccess = { state ->
+                val image = state.result.image
+                onImageLoaded?.invoke(image)
+                // Without the crossfade nothing waits on onResolved: the picture is up already.
+                if (!heldUntilResolved) displayed = true
+                if (profile != null) {
+                    displayed = true
+                    onResolved(true)
+                } else {
+                    scope.launch {
+                        val analysis = async { HeroBackdropFramer.profile(model, image) }
+                        withTimeoutOrNull(FramingResolveWaitMillis) { analysis.await() }?.let { landed ->
+                            profile = landed
+                            // Frame it before it shows, rather than letting the effect below see
+                            // a displayed picture and ease toward a crop nobody saw it leave.
+                            bias.snapTo(heroBackdropFramingBias(landed, heroAspect, priorBias))
+                        }
+                        displayed = true
+                        onResolved(true)
+                        analysis.await()?.let { profile = it }
+                    }
+                }
+            },
+        )
+    }
+}
+
+/**
+ * How long a new backdrop's fade-in may wait for its analysis (~100-200ms on a desktop CPU).
+ * Past this it fades in at the fallback crop and eases over when the analysis finishes.
+ */
+private const val FramingResolveWaitMillis = 450L
+private const val FramingSettleMillis = 350
 
 @Composable
 private fun DesktopHomeHeroFrame(
@@ -1018,11 +1146,12 @@ private fun DesktopHomeHeroFrame(
     var heroTrailerErrorToken by remember { mutableIntStateOf(0) }
     var heroTrailerRetriedKey by remember { mutableStateOf<String?>(null) }
     var peoplePanelTab by remember { mutableStateOf(HeroPeoplePanelTab.Starring) }
-    // Manual override: automatic saliency-based crop detection was removed (unreliable across a
-    // wide enough variety of backdrops that it wasn't worth the complexity) in favor of a single
-    // user-tunable vertical bias applied to every adaptive-hero backdrop. See Homescreen settings.
+    // Adaptive-hero crop: automatic framing per backdrop (HeroBackdropFraming.kt) by default,
+    // or one user-set vertical bias for every backdrop. The manual bias is also automatic
+    // framing's fallback while a backdrop is being analysed, and the position it leans toward.
     val homeCatalogSettings by HomeCatalogSettingsRepository.uiState.collectAsState()
     val adaptiveHeroVerticalBias = homeCatalogSettings.adaptiveHeroVerticalBias
+    val adaptiveHeroAutoFraming = homeCatalogSettings.adaptiveHeroAutoFraming
     val peoplePanelToggleToken by HomeHeroPeoplePanelToggleTrigger.tokens.collectAsState(initial = 0)
     LaunchedEffect(peoplePanelToggleToken) {
         if (peoplePanelToggleToken == 0) return@LaunchedEffect
@@ -1282,6 +1411,9 @@ private fun DesktopHomeHeroFrame(
                             else -> DesktopHeroBackdropAlignment
                         },
                         contentScale = ContentScale.Crop,
+                        framingPriorBias = adaptiveHeroVerticalBias.takeIf {
+                            adaptiveHeroMode && !immersiveMode && adaptiveHeroAutoFraming
+                        },
                     )
                 }
             }

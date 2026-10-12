@@ -17,8 +17,16 @@ enum class DiscoverRowFamily(val entryId: String) {
     @SerialName("finish")
     Finish("finish"),
 
+    /** Titles several of your seeds' recommendations agree on (ported from the Nuvio Tracker site). */
+    @SerialName("top_picks")
+    TopPicks("top_picks"),
+
     @SerialName("because")
     Because("because"),
+
+    /** "More from <director>" / "More with <actor>": people who recur across what you watched. */
+    @SerialName("people")
+    People("people"),
 
     @SerialName("favourites")
     Favourites("favourites"),

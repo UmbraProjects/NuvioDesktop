@@ -33,6 +33,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.LocalUriHandler
+import com.nuvio.app.features.mdblist.linkFor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -151,6 +156,7 @@ fun DetailMetaInfo(
         ) {
             RatingsRow(
                 ratings = meta.externalRatings,
+                linkFor = { it.linkFor(meta) },
             )
         }
 
@@ -210,7 +216,10 @@ internal fun RatingsRow(
     ratings: List<MetaExternalRating>,
     modifier: Modifier = Modifier,
     horizontalArrangement: Arrangement.Horizontal = Arrangement.spacedBy(14.dp),
+    /** When set, each badge with a link opens its site (the title page); the home hero leaves it off. */
+    linkFor: ((MetaExternalRating) -> String?)? = null,
 ) {
+    val uriHandler = LocalUriHandler.current
     val orderedRatings = remember(ratings) {
         val bySource = ratings.associateBy { it.source }
         ratingVisuals.mapNotNull { visuals ->
@@ -232,7 +241,16 @@ internal fun RatingsRow(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.sp,
             )
+            val link = linkFor?.invoke(rating)
             Row(
+                modifier = if (link != null) {
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .pointerHoverIcon(PointerIcon.Hand)
+                        .clickable(onClickLabel = visuals.displayName) { runCatching { uriHandler.openUri(link) } }
+                } else {
+                    Modifier
+                },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (visuals.source == PROVIDER_IMDB && !AppFeaturePolicy.imdbRatingLogoEnabled) {

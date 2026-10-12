@@ -349,6 +349,9 @@ internal class PlayerScreenRuntime(
     var trackPreferenceRestoreApplied by mutableStateOf(false)
     var subtitleDelayMs by mutableStateOf(0)
     var subtitleAutoSyncState by mutableStateOf(SubtitleAutoSyncUiState())
+    var automaticSubtitleSyncJob: Job? = null
+    /** The last automatic sync applied: the addon subtitle's URL and its retimed text. */
+    var automaticallySyncedSubtitle: Pair<String, String>? = null
 
     var lastSyncedSettingsResizeMode: PlayerResizeMode? = null
     var lastResetPlaybackIdentity: String? = null

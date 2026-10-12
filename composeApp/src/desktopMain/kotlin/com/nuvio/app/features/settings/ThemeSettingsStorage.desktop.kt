@@ -153,7 +153,7 @@ internal actual object ThemeSettingsStorage {
         store.getBoolean(ProfileScopedKey.of(desktopTopBarAlwaysVisibleKey))?.let { return it }
         // Opt in only genuine first-time installations. An absent key on an existing install means
         // the user had the old auto-hiding behavior and must not be changed by an upgrade.
-        if (!DesktopStorage.isFreshInstall) return null
+        if (!DesktopStorage.isFreshAccount) return null
         saveDesktopTopBarAlwaysVisible(true)
         return true
     }

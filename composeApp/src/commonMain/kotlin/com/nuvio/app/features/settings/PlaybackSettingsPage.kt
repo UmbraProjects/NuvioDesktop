@@ -1255,6 +1255,15 @@ private fun PlaybackSettingsSection(
                         onSelected = PlayerSettingsRepository::setDesktopRendererApi,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_desktop_steady_frame_pacing),
+                        description = stringResource(Res.string.settings_playback_desktop_steady_frame_pacing_description),
+                        checked = autoPlayPlayerSettings.desktopSteadyFramePacingEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("steady-frame-pacing")),
+                        onCheckedChange = PlayerSettingsRepository::setDesktopSteadyFramePacing,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
                     SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_desktop_low_vram),
                         description = autoPlayPlayerSettings.desktopLowVramMode.description,
@@ -1584,6 +1593,15 @@ private fun PlaybackSettingsSection(
                     isTablet = isTablet,
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("strip-sdh")),
                     onCheckedChange = PlayerSettingsRepository::setStripSdhSubtitles,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_playback_automatic_subtitle_sync),
+                    description = stringResource(Res.string.settings_playback_automatic_subtitle_sync_description),
+                    checked = autoPlayPlayerSettings.automaticSubtitleSyncEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("automatic-subtitle-sync")),
+                    onCheckedChange = PlayerSettingsRepository::setAutomaticSubtitleSyncEnabled,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(

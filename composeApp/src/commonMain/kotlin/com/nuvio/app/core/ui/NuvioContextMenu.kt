@@ -333,7 +333,7 @@ private fun ContextMenuRow(
  * Opens down-right of the cursor like a Windows menu, flipping to the other side of the cursor
  * rather than sliding over it when it would run off the window.
  */
-private class CursorMenuPositionProvider(
+internal class CursorMenuPositionProvider(
     private val cursor: IntOffset,
 ) : PopupPositionProvider {
     override fun calculatePosition(
@@ -360,10 +360,10 @@ private class CursorMenuPositionProvider(
     }
 }
 
-private val ContextMenuFill = Color(0xFA18191D)
+internal val ContextMenuFill = Color(0xFA18191D)
 private val ContextMenuMinWidth = 220.dp
 private val ContextMenuMaxWidth = 380.dp
-private val ContextMenuRowHeight = 38.dp
+internal val ContextMenuRowHeight = 38.dp
 
 /**
  * The bottom-sheet presentation of the same action list: [header] above, one row per action, and

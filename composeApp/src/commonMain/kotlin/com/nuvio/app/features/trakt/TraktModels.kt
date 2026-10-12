@@ -11,8 +11,14 @@ data class TraktAuthState(
     val expiresIn: Int? = null,
     val username: String? = null,
     val userSlug: String? = null,
-    val pendingAuthorizationState: String? = null,
-    val pendingAuthorizationStartedAtMillis: Long? = null,
+    /**
+     * The Client ID that minted this grant. A token only works with its own app, so pasting a new
+     * Client ID must not silently pair it with the old token. Null = minted before the 2026-10
+     * auth migration, whose refresh tokens Trakt no longer exchanges.
+     */
+    val clientId: String? = null,
+    /** Trakt stopped accepting the grant; history and lists stay, requests stop until reconnect. */
+    val needsReconnect: Boolean = false,
 ) {
     val isAuthenticated: Boolean
         get() = !accessToken.isNullOrBlank() && !refreshToken.isNullOrBlank()
@@ -30,7 +36,11 @@ data class TraktAuthUiState(
     val isLoading: Boolean = false,
     val username: String? = null,
     val tokenExpiresAtMillis: Long? = null,
-    val pendingAuthorizationStartedAtMillis: Long? = null,
+    val needsReconnect: Boolean = false,
+    /** Device-code sign-in in progress: the code the user types at [pendingVerificationUrl]. */
+    val pendingUserCode: String? = null,
+    val pendingVerificationUrl: String? = null,
+    val pendingExpiresAtMillis: Long? = null,
     val statusMessage: String? = null,
     val errorMessage: String? = null,
 )

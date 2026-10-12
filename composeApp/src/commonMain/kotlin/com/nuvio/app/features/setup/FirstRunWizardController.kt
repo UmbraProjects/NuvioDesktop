@@ -122,6 +122,7 @@ internal object FirstRunWizardController {
         HomeCatalogSettingsRepository.setSmoothScrollingEnabled(draft.smoothScrollingEnabled)
         when (draft.displayMode) {
             HomeDisplayMode.Adaptive, HomeDisplayMode.AdaptiveAmbient -> {
+                HomeCatalogSettingsRepository.setAdaptiveHeroAutoFraming(draft.adaptiveHeroAutoFraming)
                 HomeCatalogSettingsRepository.setAdaptiveHeroVerticalBias(draft.adaptiveHeroVerticalBias)
                 HomeCatalogSettingsRepository.setAdaptiveHeroHeightMultiplier(draft.adaptiveHeroHeightMultiplier)
             }
@@ -173,6 +174,7 @@ internal object FirstRunWizardController {
 
         return FirstRunWizardDraft(
             displayMode = homeDisplayModeOf(home),
+            adaptiveHeroAutoFraming = home.adaptiveHeroAutoFraming,
             adaptiveHeroVerticalBias = home.adaptiveHeroVerticalBias,
             adaptiveHeroHeightMultiplier = home.adaptiveHeroHeightMultiplier,
             smoothScrollingEnabled = home.smoothScrollingEnabled,

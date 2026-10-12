@@ -555,6 +555,42 @@ object FolderDetailRepository {
     }
 }
 
+/**
+ * The first page of each of [folder]'s sources, at most [perSourceLimit] items from each, for the
+ * artwork prewarm. Independent of [FolderDetailRepository]'s state, which belongs to the folder
+ * the user has open. Raw catalog items: no poster-service overlay, and no unreleased or watched
+ * filtering, since warming a card the screen later hides costs one image and nothing else. A
+ * source that fails is skipped.
+ */
+internal suspend fun loadFolderPrewarmItems(folder: CollectionFolder, perSourceLimit: Int): List<MetaPreview> {
+    val addons = AddonRepository.uiState.value.addons
+    return folder.resolvedSources.flatMap { source ->
+        runCatching {
+            val page = when {
+                source.isTmdb -> TmdbCollectionSourceResolver.resolve(source = source, page = 1)
+                source.isTrakt -> TraktPublicListSourceResolver.resolve(source = source, page = 1)
+                else -> {
+                    val catalogSource = source.addonCatalogSource() ?: return@runCatching emptyList<MetaPreview>()
+                    val manifestUrl = addons.findCollectionCatalog(catalogSource)?.addon?.manifestUrl
+                        ?: return@runCatching emptyList<MetaPreview>()
+                    fetchCatalogPage(
+                        manifestUrl = manifestUrl,
+                        type = catalogSource.type,
+                        catalogId = catalogSource.catalogId,
+                        genre = catalogSource.genre,
+                        skip = null,
+                    )
+                }
+            }
+            page.items.take(perSourceLimit)
+        }.getOrElse { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            Logger.withTag("FolderDetailRepository").d { "prewarm load failed for ${folder.id}: ${error.message}" }
+            emptyList()
+        }
+    }
+}
+
 private data class CatalogLoadResult(
     val page: CatalogPage,
     val supportsPagination: Boolean = false,

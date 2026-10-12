@@ -57,6 +57,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -158,6 +159,7 @@ import com.nuvio.app.features.player.appShortcutMatches
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.tmdb.TmdbService
+import com.nuvio.app.features.tmdb.TmdbMetadataService
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktCommentReview
 import com.nuvio.app.features.trakt.TraktCommentsRepository
@@ -790,6 +792,26 @@ fun MetaDetailsScreen(
                 val hasMoreLikeThisSection = remember(meta) {
                     meta.moreLikeThis.isNotEmpty()
                 }
+                // "Starring the same cast" (ported from the Nuvio Tracker site): loaded after the
+                // page, since it costs up to eleven TMDB calls, and only while related titles are on.
+                val sameCastEnabled = metaScreenSettingsUiState.items
+                    .any { it.key == MetaScreenSectionKey.MORE_LIKE_THIS && it.enabled }
+                // Not when the details page doubts its own IMDb/TMDB pairing (some anime): the cast
+                // would be another title's.
+                val sameCastTmdbId = (
+                    meta.tmdbId ?: meta.id.removePrefix("tmdb:").substringBefore(':').toIntOrNull()
+                        .takeIf { meta.id.startsWith("tmdb:") }
+                    ).takeIf { meta.imdbTmdbIdentityTrusted }
+                val sameCastRaw by produceState(emptyList<MetaPreview>(), sameCastTmdbId, meta.type, sameCastEnabled) {
+                    value = emptyList()
+                    if (!sameCastEnabled || sameCastTmdbId == null) return@produceState
+                    value = TmdbMetadataService.fetchSameCast(
+                        tmdbId = sameCastTmdbId,
+                        mediaType = if (meta.type.trim().lowercase() == "movie") "movie" else "tv",
+                    )
+                }
+                // Through the user's poster service, as More Like This and the collection already are.
+                val sameCast = rememberCustomPosters(sameCastRaw, CustomPosterScreen.Details)
                 val hasTrailersSection = remember(meta) {
                     meta.trailers.isNotEmpty()
                 }
@@ -1417,6 +1439,7 @@ fun MetaDetailsScreen(
                     meta.trailers,
                     meta.collectionItems,
                     meta.moreLikeThis,
+                    sameCast,
                 ) {
                     buildList {
                         if (MetaScreenSectionKey.TRAILERS in visibleSectionKeys && meta.trailers.isNotEmpty()) {
@@ -1430,6 +1453,9 @@ fun MetaDetailsScreen(
                         }
                         if (MetaScreenSectionKey.MORE_LIKE_THIS in visibleSectionKeys && meta.moreLikeThis.isNotEmpty()) {
                             add(DETAIL_MORE_LIKE_THIS_SELECTOR)
+                        }
+                        if (sameCast.isNotEmpty()) {
+                            add(DETAIL_SAME_CAST_SELECTOR)
                         }
                     }
                 }
@@ -1472,6 +1498,7 @@ fun MetaDetailsScreen(
                     mergedSelectorTabs,
                     meta.collectionItems,
                     meta.moreLikeThis,
+                    sameCast,
                     hasEpisodes,
                     mergedDetailKeyboardNavigation,
                 ) {
@@ -1527,6 +1554,16 @@ fun MetaDetailsScreen(
                                             lazyItemIndex = 0,
                                             itemCount = meta.moreLikeThis.size,
                                             onEnter = { idx -> meta.moreLikeThis.getOrNull(idx)?.let { onOpenMeta?.invoke(it) } },
+                                        ),
+                                    )
+                                }
+                                DETAIL_SAME_CAST_SELECTOR -> if (sameCast.isNotEmpty()) {
+                                    add(
+                                        MetaTvSection(
+                                            kind = MetaTvSectionKind.SAME_CAST,
+                                            lazyItemIndex = 0,
+                                            itemCount = sameCast.size,
+                                            onEnter = { idx -> sameCast.getOrNull(idx)?.let { onOpenMeta?.invoke(it) } },
                                         ),
                                     )
                                 }
@@ -1658,6 +1695,7 @@ fun MetaDetailsScreen(
                     focusedEpisodeIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.EPISODES },
                     focusedCollectionIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.COLLECTION },
                     focusedMoreLikeThisIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.MORE_LIKE_THIS },
+                    focusedSameCastIndex = tvFocus.itemIndex.takeIf { tvFocusedSection?.kind == MetaTvSectionKind.SAME_CAST },
                 )
 
                 LaunchedEffect(tvFocusInfo.focusedSeasonIndex, seasonsForTv, mergedSelectorTabs, mergedDetailKeyboardNavigation) {
@@ -2219,7 +2257,8 @@ fun MetaDetailsScreen(
                                         (
                                             MetaScreenSectionKey.TRAILERS in enabledHeroSections && meta.trailers.isNotEmpty() ||
                                                 MetaScreenSectionKey.COLLECTION in enabledHeroSections && meta.collectionItems.isNotEmpty() ||
-                                                MetaScreenSectionKey.MORE_LIKE_THIS in enabledHeroSections && meta.moreLikeThis.isNotEmpty()
+                                                MetaScreenSectionKey.MORE_LIKE_THIS in enabledHeroSections && meta.moreLikeThis.isNotEmpty() ||
+                                                sameCast.isNotEmpty()
                                             )
                                     if (showDesktopEpisodesOverlay) {
                                         DetailSeriesContent(
@@ -2273,6 +2312,10 @@ fun MetaDetailsScreen(
                                                 MetaScreenSectionKey.MORE_LIKE_THIS in enabledHeroSections
                                             }.orEmpty(),
                                             onMoreLikeThisClick = { preview -> onOpenMeta?.invoke(preview) },
+                                            sameCast = sameCast,
+                                            onSameCastClick = { preview -> onOpenMeta?.invoke(preview) },
+                                            focusedSameCastIndex = tvFocusInfo.focusedSameCastIndex,
+                                            sameCastLabelPlacement = metaScreenSettingsUiState.sameCastLabelPlacement,
                                             episodeSearchQuery = episodeSearchQuery,
                                         )
                                     } else if (showDesktopRelatedOverlay) {
@@ -2302,6 +2345,10 @@ fun MetaDetailsScreen(
                                             focusedTrailerIndex = tvFocusInfo.focusedTrailersIndex,
                                             focusedCollectionIndex = tvFocusInfo.focusedCollectionIndex,
                                             focusedMoreLikeThisIndex = tvFocusInfo.focusedMoreLikeThisIndex,
+                                            sameCast = sameCast,
+                                            onSameCastClick = { preview -> onOpenMeta?.invoke(preview) },
+                                            focusedSameCastIndex = tvFocusInfo.focusedSameCastIndex,
+                                            sameCastLabelPlacement = metaScreenSettingsUiState.sameCastLabelPlacement,
                                         )
                                     }
                                 }
@@ -3347,6 +3394,7 @@ private fun metaSectionHasContent(
 private const val DETAIL_TRAILER_SELECTOR = Int.MIN_VALUE
 private const val DETAIL_COLLECTION_SELECTOR = Int.MAX_VALUE - 1
 private const val DETAIL_MORE_LIKE_THIS_SELECTOR = Int.MAX_VALUE
+private const val DETAIL_SAME_CAST_SELECTOR = Int.MAX_VALUE - 2
 
 // Brief pause before a clicked hero trailer starts, so the native surface can attach and
 // decode its first frame while paused (mirrors the automatic path's longer wait). Without
@@ -3354,7 +3402,7 @@ private const val DETAIL_MORE_LIKE_THIS_SELECTOR = Int.MAX_VALUE
 private const val HERO_TRAILER_MANUAL_PREBUFFER_MS = 750L
 
 private enum class MetaTvSectionKind {
-    ACTIONS, COMMENTS, TRAILERS, SEASONS, EPISODES, COLLECTION, MORE_LIKE_THIS
+    ACTIONS, COMMENTS, TRAILERS, SEASONS, EPISODES, COLLECTION, MORE_LIKE_THIS, SAME_CAST
 }
 
 private data class MetaTvSection(
@@ -3374,6 +3422,7 @@ private data class MetaTvFocusInfo(
     val focusedEpisodeIndex: Int? = null,
     val focusedCollectionIndex: Int? = null,
     val focusedMoreLikeThisIndex: Int? = null,
+    val focusedSameCastIndex: Int? = null,
 )
 
 @Composable

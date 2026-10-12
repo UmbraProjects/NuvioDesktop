@@ -172,7 +172,7 @@ internal fun PlayerScreenRuntime.restorePersistedTrackPreferenceIfNeeded() {
                 selectedAddonSubtitleId = restoredSubtitle.id.ifBlank { restoredSubtitle.url }
                 selectedSubtitleIndex = -1
                 useCustomSubtitles = true
-                playerController?.setSubtitleUri(restoredSubtitle.url)
+                loadAddonSubtitle(restoredSubtitle)
                 preferredSubtitleSelectionApplied = true
             } else {
                 waitingForPersistedAddonSubtitle = fetchKey != null &&
@@ -402,7 +402,7 @@ internal fun PlayerScreenRuntime.applyPreferredAddonSubtitleIfReady() {
         selectedAddonSubtitleId = addon.id.ifBlank { addon.url }
         selectedSubtitleIndex = -1
         useCustomSubtitles = true
-        playerController?.setSubtitleUri(addon.url)
+        loadAddonSubtitle(addon, allowBetterMatch = true)
     }
     preferredSubtitleSelectionApplied = true
 }
@@ -516,7 +516,7 @@ internal fun PlayerScreenRuntime.cycleSubtitleTrackFromKeyboard() {
         useCustomSubtitles = true
         markSubtitleChosenByViewer()
         persistAddonSubtitlePreference(subtitle)
-        playerController?.setSubtitleUri(subtitle.url)
+        loadAddonSubtitle(subtitle)
         secondarySubtitleSelectionApplied = false
         applySecondarySubtitleSelectionIfNeeded()
         showGestureMessage("Subtitles: ${subtitle.display.ifBlank { subtitle.language }}")

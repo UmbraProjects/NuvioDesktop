@@ -97,6 +97,10 @@ internal class DesktopArtworkCacheCoordinator(
         update()
     }
 
+    /** Whether a full-player session is open; background artwork work waits it out. */
+    val isPlaybackActive: Boolean
+        @Synchronized get() = playbackSessions.isNotEmpty()
+
     @Synchronized
     fun onWindowVisibilityChanged(visible: Boolean) {
         windowVisible = visible

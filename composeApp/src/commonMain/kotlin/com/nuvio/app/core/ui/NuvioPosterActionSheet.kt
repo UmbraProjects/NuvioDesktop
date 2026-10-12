@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
@@ -76,6 +77,8 @@ fun NuvioPosterActionSheet(
     onOpenLibraryPicker: (() -> Unit)? = null,
     /** Opens the add-to-playlist dialog for this title. Null hides the row. */
     onAddToPlaylist: (() -> Unit)? = null,
+    /** Discover's "Not interested": hides the title from every Discover row for good. Null hides the row. */
+    onNotInterested: (() -> Unit)? = null,
     zoomAnchor: PosterZoomAnchor? = null,
     zoomHazeState: HazeState? = null,
     /**
@@ -117,6 +120,16 @@ fun NuvioPosterActionSheet(
                     label = "Add to playlist",
                     onSelected = addToPlaylist,
                     group = 1,
+                ),
+            )
+        }
+        onNotInterested?.let { notInterested ->
+            add(
+                PosterZoomOverlayAction(
+                    icon = Icons.Default.Block,
+                    label = "Not interested",
+                    onSelected = notInterested,
+                    group = 2,
                 ),
             )
         }

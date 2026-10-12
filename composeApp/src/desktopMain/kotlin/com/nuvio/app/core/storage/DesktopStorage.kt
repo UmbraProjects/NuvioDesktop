@@ -34,15 +34,37 @@ internal object DesktopStorage {
      * simply never changed a given setting. Touching this resolves [rootDir], so the answer is
      * captured before anything has had a chance to create the directory.
      */
+    /**
+     * True when this session's account folder has never been used: a fresh install, or a new
+     * account signing in on this PC. What decides new-user defaults and the first-run wizard now
+     * that settings live per account; [isFreshInstall] only says the data directory is new.
+     */
+    val isFreshAccount: Boolean
+        get() {
+            accountDir
+            return DesktopAccountSlots.isFreshSlot
+        }
+
     val isFreshInstall: Boolean
         get() {
             rootDir
             return freshInstall
         }
 
+    /**
+     * The signed-in account's own folder, `accounts/<slot>/`, holding every store not in
+     * [MACHINE_STORE_NAMES]. Fixed for the life of the process: switching account restarts the app
+     * (see DesktopAccountSlots), because nearly every repository caches its store in memory.
+     */
+    val accountDir: Path by lazy { DesktopAccountSlots.activeSlotDir() }
+
     fun store(name: String): Store = synchronized(stores) {
-        stores.getOrPut(name) { Store(rootDir.resolve("$name.properties")) }
+        stores.getOrPut(name) { Store(storeFile(name)) }
     }
+
+    /** Where [name]'s file lives: the data directory for machine stores, else [accountDir]. */
+    fun storeFile(name: String): Path =
+        if (name in MACHINE_STORE_NAMES) rootDir.resolve("$name.properties") else accountDir.resolve("$name.properties")
 
     /**
      * Deletes the named stores (memory, file, and `.bak`/`.tmp` siblings) and nothing else.
@@ -58,6 +80,10 @@ internal object DesktopStorage {
     }
 
     private fun resolveAppDataDir(): Path {
+        // Tests point this at a throwaway directory so they never touch the real install.
+        System.getProperty("nuvio.desktop.dataDir")?.takeIf(String::isNotBlank)?.let { override ->
+            return Paths.get(override).also { Files.createDirectories(it) }
+        }
         val osName = System.getProperty("os.name").orEmpty().lowercase(Locale.ROOT)
         val userHome = Paths.get(System.getProperty("user.home").orEmpty())
         if (!osName.contains("win")) {

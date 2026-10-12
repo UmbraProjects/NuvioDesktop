@@ -35,7 +35,11 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlin.math.absoluteValue
 import kotlin.random.Random
 
@@ -204,45 +208,71 @@ object HomeRepository {
                 putAll(cachedSections)
             }
             var firstErrorMessage: String? = null
-            var batchIndex = 0
 
-            pendingRequests.chunked(HOME_CATALOG_FETCH_BATCH_SIZE).forEach { batch ->
-                if (activeRequestKey != requestKey) return@launch
-                val batchStartedAt = System.currentTimeMillis()
-                val results = batch.map { request ->
-                    async { runCatching { request.toSection() } }
-                }.awaitAll()
-
-                if (activeRequestKey != requestKey) return@launch
-
-                results.mapNotNull { it.getOrNull() }.forEach { section ->
-                    loadedSections[section.key] = section
-                }
-                results.forEachIndexed { i, result ->
-                    result.exceptionOrNull()?.let { error ->
-                        log.w(error) {
-                            "Catalog fetch failed: ${batch.getOrNull(i)?.let { "${it.addonName} / ${it.catalogId}" } ?: "unknown"}"
+            // A pool, not fixed batches: a finished catalog frees its slot for the next one at once.
+            // With batches of four awaited in turn, one slow catalog held up every batch behind it —
+            // an addon retrying a dead upstream for ~12s (AIOMetadata's MAL rows during the Jikan
+            // shutdown, 2026-10) took a 43-row Home from ~2s to ~27s. Requests still *start* in
+            // priority order, so the hero's sources and the top rows go out first.
+            val gate = Semaphore(HOME_CATALOG_FETCH_BATCH_SIZE)
+            val completions = Channel<Pair<Int, Result<HomeCatalogSection>>>(Channel.UNLIMITED)
+            pendingRequests.forEachIndexed { index, request ->
+                launch {
+                    gate.withPermit {
+                        val startedAt = System.currentTimeMillis()
+                        val result = runCatching { request.toSection() }
+                        val elapsedMs = System.currentTimeMillis() - startedAt
+                        if (elapsedMs >= HOME_CATALOG_SLOW_LOG_MS) {
+                            log.i { "Slow catalog: ${request.addonName} / ${request.catalogId} took ${elapsedMs}ms" }
                         }
+                        completions.send(index to result)
                     }
                 }
-                if (firstErrorMessage == null) {
-                    firstErrorMessage = results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
+            }
+
+            // "First batch" keeps its old meaning — the first few requests in priority order — so the
+            // first publish still waits for the rows the hero draws from, not for whichever came back first.
+            val firstBatchSize = minOf(HOME_CATALOG_FETCH_BATCH_SIZE, pendingRequests.size)
+            var firstBatchDone = 0
+            var firstBatchLoaded = 0
+            var firstBatchPublished = false
+            var sincePublish = 0
+            repeat(pendingRequests.size) {
+                val (index, result) = completions.receive()
+                if (activeRequestKey != requestKey) {
+                    cancel()
+                    return@launch
+                }
+                result.getOrNull()?.let { section -> loadedSections[section.key] = section }
+                result.exceptionOrNull()?.let { error ->
+                    val request = pendingRequests[index]
+                    log.w(error) { "Catalog fetch failed: ${request.addonName} / ${request.catalogId}" }
+                    if (firstErrorMessage == null) firstErrorMessage = error.message
                 }
                 mergeBatchIntoCache(loadedSections)
                 lastErrorMessage = firstErrorMessage
-                if (batchIndex == 0 || (batchIndex + 1) % HOME_CATALOG_PUBLISH_INTERVAL == 0) {
+                sincePublish++
+                if (index < firstBatchSize) {
+                    firstBatchDone++
+                    if (result.isSuccess) firstBatchLoaded++
+                }
+                val firstBatchJustFinished = !firstBatchPublished && firstBatchDone == firstBatchSize
+                if (firstBatchJustFinished) {
+                    firstBatchPublished = true
+                    log.i {
+                        "Home refresh first batch loaded $firstBatchLoaded / $firstBatchSize in " +
+                            "${System.currentTimeMillis() - refreshStartedAt}ms"
+                    }
+                }
+                if (firstBatchJustFinished ||
+                    (firstBatchPublished && sincePublish >= HOME_CATALOG_FETCH_BATCH_SIZE * HOME_CATALOG_PUBLISH_INTERVAL)
+                ) {
                     publishCurrentState(
                         isLoading = true,
                         requestKey = requestKey,
                     )
+                    sincePublish = 0
                 }
-                val batchElapsedMs = System.currentTimeMillis() - batchStartedAt
-                if (batchIndex == 0) {
-                    log.i { "Home refresh first batch loaded ${results.count { it.isSuccess }} / ${batch.size} in ${batchElapsedMs}ms" }
-                } else {
-                    log.d { "Home refresh batch ${batchIndex + 1} loaded ${results.count { it.isSuccess }} / ${batch.size} in ${batchElapsedMs}ms" }
-                }
-                batchIndex++
             }
 
             if (activeRequestKey != requestKey) return@launch
@@ -787,6 +817,8 @@ private const val HOME_COLLECTION_HERO_SOURCE_ITEM_LIMIT = 8
 private const val HOME_CATALOG_FETCH_BATCH_SIZE = 4
 private const val HOME_CATALOG_PREVIEW_FETCH_LIMIT = 18
 private const val HOME_CATALOG_PUBLISH_INTERVAL = 2
+/** A catalog slower than this is named in the log at info level, so a slow addon is easy to find. */
+private const val HOME_CATALOG_SLOW_LOG_MS = 3_000L
 
 private fun prioritizeDefinitions(
     definitions: List<HomeCatalogDefinition>,

@@ -86,6 +86,10 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingArtworkFailures
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import com.nuvio.app.features.watchprogress.computeAirDateBadgeText
+import com.nuvio.app.features.watchprogress.CurrentDateProvider
+import com.nuvio.app.features.watchprogress.WatchProgressClock
+import com.nuvio.app.features.watchprogress.releaseCountdown
+import com.nuvio.app.features.watchprogress.resolveReleaseInstant
 import kotlin.math.roundToInt
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -118,6 +122,41 @@ private fun localizedContinueWatchingMetaLine(item: ContinueWatchingItem): Strin
 
 private fun ContinueWatchingItem.isCloudLibraryItem(): Boolean =
     parentMetaType.equals(CloudLibraryContentType, ignoreCase = true)
+
+/**
+ * Every image a card of [style] could show for this item, preferred first: the card shows the head
+ * and moves down the list only when an image fails to load. The cards and the artwork prewarm both
+ * call this, so what gets warmed is exactly what the card will ask for.
+ *
+ * [preferBackdropForNextUp] defaults to what the Card style decides on screen — a Next Up episode
+ * whose air date is still ahead leads with the backdrop. The card passes the value it derived from
+ * its live countdown; the prewarm takes the default, which asks the same question of the clock.
+ */
+internal fun ContinueWatchingItem.continueWatchingDisplayArtworkChain(
+    style: ContinueWatchingSectionStyle,
+    useEpisodeThumbnails: Boolean,
+    preferBackdropForNextUp: Boolean = isNextUp && !isReleaseAlert && hasUpcomingAirDate(),
+): List<String> = when (style) {
+    ContinueWatchingSectionStyle.Card -> continueWatchingCardArtworkUrls(
+        useEpisodeThumbnails = useEpisodeThumbnails,
+        preferBackdropForNextUp = preferBackdropForNextUp,
+    ).withCustomArtFirst(this, landscape = true)
+    ContinueWatchingSectionStyle.Wide ->
+        continueWatchingArtworkUrls(useEpisodeThumbnails).withCustomArtFirst(this, landscape = false)
+    ContinueWatchingSectionStyle.Poster ->
+        continueWatchingPosterArtworkUrls(useEpisodeThumbnails).withCustomArtFirst(this, landscape = false)
+}
+
+/** Whether the Card style would print an air-date countdown for this item: unstarted, and still to air. */
+private fun ContinueWatchingItem.hasUpcomingAirDate(): Boolean {
+    if (progressFraction > 0f || seasonNumber == null || episodeNumber == null) return false
+    val release = resolveReleaseInstant(released) ?: return false
+    return releaseCountdown(
+        release = release,
+        nowMs = WatchProgressClock.nowEpochMs(),
+        todayIsoDate = CurrentDateProvider.todayIsoDate(),
+    ) != null
+}
 
 private fun ContinueWatchingItem.continueWatchingArtworkUrls(
     useEpisodeThumbnails: Boolean,
@@ -932,10 +971,11 @@ private fun ContinueWatchingCard(
     }
     val preferBackdropForNextUp = item.isNextUp && compactAirDateText != null && !item.isReleaseAlert
     val (imageUrl, onArtworkLoadFailed) = rememberContinueWatchingArtwork(
-        item.continueWatchingCardArtworkUrls(
+        item.continueWatchingDisplayArtworkChain(
+            style = ContinueWatchingSectionStyle.Card,
             useEpisodeThumbnails = useEpisodeThumbnails,
             preferBackdropForNextUp = preferBackdropForNextUp,
-        ).withCustomArtFirst(item, landscape = true),
+        ),
     )
     val shouldBlurArtwork = blurNextUp && useEpisodeThumbnails && item.isNextUp &&
         !item.isShowingCustomArt(imageUrl)
@@ -1139,7 +1179,7 @@ private fun ContinueWatchingWideCard(
     onLongClick: (() -> Unit)?,
 ) {
     val (artworkUrl, onArtworkLoadFailed) = rememberContinueWatchingArtwork(
-        item.continueWatchingArtworkUrls(useEpisodeThumbnails).withCustomArtFirst(item, landscape = false),
+        item.continueWatchingDisplayArtworkChain(ContinueWatchingSectionStyle.Wide, useEpisodeThumbnails),
     )
     Row(
         modifier = Modifier
@@ -1271,7 +1311,7 @@ private fun ContinueWatchingPosterCard(
     onLongClick: (() -> Unit)?,
 ) {
     val (posterArtworkUrl, onArtworkLoadFailed) = rememberContinueWatchingArtwork(
-        item.continueWatchingPosterArtworkUrls(useEpisodeThumbnails).withCustomArtFirst(item, landscape = false),
+        item.continueWatchingDisplayArtworkChain(ContinueWatchingSectionStyle.Poster, useEpisodeThumbnails),
     )
     Column(
         modifier = Modifier.width(layout.posterCardWidth),

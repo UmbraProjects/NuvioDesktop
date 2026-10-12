@@ -55,6 +55,10 @@ fun DetailCastSection(
     // plain mouse wheel over this row can scroll it horizontally without requiring Shift.
     // False in the regular (tablet/mobile/tab-layout) vertically-scrolling section list.
     compactDesktopLayout: Boolean = false,
+    /** Characters view: TVDB's portrait and the character's name, the actor's name beneath. */
+    showCharacters: Boolean = false,
+    /** Keeps the episode-count line's space even before (or without) counts, so the row can't grow. */
+    reserveEpisodeLine: Boolean = false,
 ) {
     if (cast.isEmpty()) return
 
@@ -89,6 +93,8 @@ fun DetailCastSection(
                         ?.let { castAvatarSharedTransitionKey(it, occurrenceIndex = index) }
                     CastItem(
                         person = person,
+                        asCharacter = showCharacters && !person.characterImage.isNullOrBlank(),
+                        reserveEpisodeLine = reserveEpisodeLine,
                         sharedTransitionKey = sharedTransitionKey,
                         sizing = sizing,
                         sharedTransitionScope = sharedTransitionScope,
@@ -110,6 +116,8 @@ fun DetailCastSection(
 private fun CastItem(
     person: MetaPerson,
     modifier: Modifier = Modifier,
+    asCharacter: Boolean = false,
+    reserveEpisodeLine: Boolean = false,
     sharedTransitionKey: String? = null,
     sizing: CastSectionSizing,
     sharedTransitionScope: SharedTransitionScope? = null,
@@ -167,7 +175,14 @@ private fun CastItem(
                 .nuvioCardDepth(CircleShape, NuvioCardDepthSurface.Cast),
             contentAlignment = Alignment.Center,
         ) {
-            if (person.photo != null) {
+            if (asCharacter) {
+                AsyncImage(
+                    model = person.characterImage,
+                    contentDescription = person.role ?: person.name,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else if (person.photo != null) {
                 AsyncImage(
                     model = avatarRequest ?: person.photo,
                     contentDescription = person.name,
@@ -183,8 +198,10 @@ private fun CastItem(
                 )
             }
         }
+        val primaryName = if (asCharacter) person.role?.takeIf { it.isNotBlank() } ?: person.name else person.name
+        val secondaryName = if (asCharacter) person.name else person.role
         Text(
-            text = person.name,
+            text = primaryName,
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.bodyMedium.copy(
                 fontSize = sizing.nameLabelSize,
@@ -194,9 +211,9 @@ private fun CastItem(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (!person.role.isNullOrBlank()) {
+        if (!secondaryName.isNullOrBlank()) {
             Text(
-                text = person.role,
+                text = secondaryName,
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontSize = sizing.subLabelSize,
@@ -205,6 +222,23 @@ private fun CastItem(
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        val episodeCount = person.episodeCount?.takeIf { it > 0 }
+        if (episodeCount != null || reserveEpisodeLine) {
+            Text(
+                text = when (episodeCount) {
+                    null -> " "
+                    1 -> "1 episode"
+                    else -> "$episodeCount episodes"
+                },
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = sizing.subLabelSize,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
             )
         }
     }

@@ -31,6 +31,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
+import kotlin.math.ceil
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
@@ -1375,6 +1376,7 @@ object TmdbMetadataService {
                     role = basePerson.role ?: enriched.role,
                     photo = enriched.photo ?: basePerson.photo,
                     tmdbId = enriched.tmdbId ?: basePerson.tmdbId,
+                    episodeCount = enriched.episodeCount ?: basePerson.episodeCount,
                 )
             }
         }
@@ -1647,6 +1649,264 @@ object TmdbMetadataService {
 
         moreLikeThisCache[cacheKey] = items
         return items
+    }
+
+    private val sameCastCache = mutableMapOf<String, List<MetaPreview>>()
+    private val sameCastMutex = Mutex()
+
+    /**
+     * "Starring the same cast": the main cast's other films and shows, ported from the Nuvio
+     * Tracker site (`sameCast` in recommend.ts).
+     *
+     * A show's main cast is whoever is in 40% of its episodes or 50 of them, whichever is fewer
+     * (billed in the top 30, so a long-running extra isn't one); a film's is its top six billing.
+     * At most ten of them. Each of their other roles weighs by its size — a film's billing, a
+     * show's episodes. Titles two or more of them really starred in lead; then the rest go round
+     * the cast in billing order, each actor's biggest, best-known roles first, so everyone is
+     * represented. Talk/news/reality/documentary, "Self" appearances, guest spots, unreleased or
+     * barely-voted titles, and reunions (two or more of them reprising the same characters) are
+     * left out. Each card's description names who from the cast is in it.
+     *
+     * One credits call plus one combined_credits call per person (≤11), cached for the session.
+     */
+    suspend fun fetchSameCast(tmdbId: Int, mediaType: String): List<MetaPreview> = withContext(Dispatchers.Default) {
+        if (mediaType != "movie" && mediaType != "tv") return@withContext emptyList()
+        val settings = TmdbSettingsRepository.snapshot()
+        if (!settings.enabled || !settings.hasApiKey) return@withContext emptyList()
+        val language = normalizeTmdbLanguage(settings.language)
+        val cacheKey = "$tmdbId:$mediaType:$language"
+        sameCastMutex.withLock { sameCastCache[cacheKey] }?.let { return@withContext it }
+
+        val leads: List<SameCastLead> = if (mediaType == "tv") {
+            val details = fetch<TmdbSameCastShowDetails>(
+                endpoint = "tv/$tmdbId",
+                query = mapOf("language" to language, "append_to_response" to "aggregate_credits"),
+            ) ?: return@withContext emptyList()
+            val needed = ceil((details.numberOfEpisodes ?: 0) * 0.4).toInt().coerceIn(1, 50)
+            details.aggregateCredits?.cast.orEmpty()
+                .filter { (it.totalEpisodeCount ?: 0) >= needed && (it.order ?: 999) < 30 && it.id != null }
+                .map { SameCastLead(it.id!!, it.name.orEmpty(), it.roles.mapNotNull { role -> role.character }) }
+        } else {
+            fetch<TmdbSameCastMovieCredits>(
+                endpoint = "movie/$tmdbId/credits",
+                query = mapOf("language" to language),
+            )?.cast.orEmpty()
+                .filter { (it.order ?: 99) < SAME_CAST_MOVIE_BILLING && it.id != null }
+                .map { SameCastLead(it.id!!, it.name.orEmpty(), listOfNotNull(it.character)) }
+        }.take(SAME_CAST_PEOPLE)
+        if (leads.isEmpty()) return@withContext emptyList()
+
+        val today = CurrentDateProvider.todayIsoDate()
+        val credits = coroutineScope {
+            leads.map { lead ->
+                async {
+                    lead to fetch<TmdbSameCastPersonCredits>(
+                        endpoint = "person/${lead.id}/combined_credits",
+                        query = mapOf("language" to language),
+                    )?.cast.orEmpty()
+                }
+            }.map { it.await() }
+        }
+
+        val works = linkedMapOf<String, SameCastWork>()
+        val byPerson = mutableMapOf<Int, MutableList<SameCastRole>>()
+        credits.forEach { (lead, roles) ->
+            val seen = mutableSetOf<String>()
+            roles.forEach roles@{ r ->
+                val m = r.mediaType ?: return@roles
+                if ((m != "movie" && m != "tv") || r.adult == true || (m == mediaType && r.id == tmdbId)) return@roles
+                if (r.genreIds.any { it in SAME_CAST_SKIP_GENRES } || SAME_CAST_SELF.containsMatchIn(r.character.orEmpty())) return@roles
+                if (m == "tv" && (r.episodeCount ?: 0) < 3) return@roles
+                val date = r.releaseDate?.takeIf { it.isNotBlank() } ?: r.firstAirDate?.takeIf { it.isNotBlank() }
+                if (date == null || date > today || (r.voteCount ?: 0) < 20) return@roles
+                val key = "$m:${r.id}"
+                if (!seen.add(key)) return@roles
+                val work = works.getOrPut(key) { SameCastWork(key, m, r) }
+                val weight = if (m == "movie") {
+                    val order = r.order ?: 99
+                    if (order < 4) 1.0 else if (order < 10) 0.6 else 0.3
+                } else {
+                    if ((r.episodeCount ?: 0) >= 10) 1.0 else 0.3
+                }
+                val playing = sameCastCharacterName(r.character)
+                if (playing.isNotEmpty() && lead.characters.any { sameCastCharacterName(it) == playing }) work.reprised++
+                work.with += lead.name
+                work.score += weight
+                byPerson.getOrPut(lead.id) { mutableListOf() } += SameCastRole(work, weight)
+            }
+        }
+        works.values.filter { it.reprised >= 2 }.map { it.key }.forEach(works::remove)
+
+        val picked = mutableListOf<SameCastWork>()
+        val taken = mutableSetOf<String>()
+        fun take(w: SameCastWork) {
+            if (picked.size < SAME_CAST_MAX && taken.add(w.key)) picked += w
+        }
+        works.values
+            .filter { it.with.size > 1 && it.score >= 1.5 }
+            .sortedWith(compareByDescending<SameCastWork> { it.score }.thenByDescending { it.fame })
+            .forEach(::take)
+        val queues = leads.map { lead ->
+            ArrayDeque(
+                byPerson[lead.id].orEmpty()
+                    .sortedWith(compareByDescending<SameCastRole> { it.weight }.thenByDescending { it.work.fame }),
+            )
+        }
+        var more = true
+        while (more && picked.size < SAME_CAST_MAX) {
+            more = false
+            for (queue in queues) {
+                while (queue.isNotEmpty() && (queue.first().work.key in taken || queue.first().work.key !in works)) {
+                    queue.removeFirst()
+                }
+                queue.removeFirstOrNull()?.let {
+                    take(it.work)
+                    more = true
+                }
+            }
+        }
+
+        val items = picked.mapNotNull { w ->
+            val r = w.raw
+            val title = r.title?.trim()?.takeIf(String::isNotBlank)
+                ?: r.name?.trim()?.takeIf(String::isNotBlank)
+                ?: return@mapNotNull null
+            val surname = { name: String -> name.trim().substringAfterLast(' ') }
+            // Who from the cast is in it: "Hugh Laurie", "Laurie & Wilde", "Laurie, Wilde +2"
+            val withLabel = when (w.with.size) {
+                1 -> w.with[0]
+                2 -> w.with.joinToString(" & ", transform = surname)
+                else -> w.with.take(2).joinToString(", ", transform = surname) + " +${w.with.size - 2}"
+            }
+            val date = r.releaseDate?.takeIf { it.isNotBlank() } ?: r.firstAirDate
+            MetaPreview(
+                id = "tmdb:${r.id}",
+                type = if (w.media == "tv") "series" else "movie",
+                name = title,
+                poster = buildImageUrl(r.posterPath, "w500") ?: buildImageUrl(r.backdropPath, "w780"),
+                banner = buildImageUrl(r.backdropPath, "w1280"),
+                posterShape = PosterShape.Poster,
+                description = r.overview?.trim()?.takeIf(String::isNotBlank),
+                recommendationReason = "With $withLabel",
+                releaseInfo = date?.take(4),
+                rawReleaseDate = date,
+                imdbRating = r.voteAverage?.formatRating(),
+            )
+        }
+        sameCastMutex.withLock {
+            if (sameCastCache.size > 200) sameCastCache.clear()
+            sameCastCache[cacheKey] = items
+        }
+        items
+    }
+
+    private val titleProfileCache = mutableMapOf<String, TmdbTitleProfile>()
+    private val personWorksCache = mutableMapOf<String, List<TmdbSearchResult>>()
+    private val peopleCacheMutex = Mutex()
+
+    /**
+     * What Discover's taste rows need to know about a watched title (ported from the Nuvio Tracker
+     * site's recommend.ts): its episode count, to tell a finished show from a dropped one, and the
+     * people who lead it. A film's leads are its directors and top six billing; a show's are its
+     * main cast (in 40% of the episodes or 50 of them). A show's directors change per episode, so
+     * none are taken. One TMDB call per title, kept for the session.
+     */
+    suspend fun fetchTitleProfile(tmdbId: Int, mediaType: String): TmdbTitleProfile? = withContext(Dispatchers.Default) {
+        if (mediaType != "movie" && mediaType != "tv") return@withContext null
+        val settings = TmdbSettingsRepository.snapshot()
+        if (!settings.enabled || !settings.hasApiKey) return@withContext null
+        val key = "$mediaType:$tmdbId"
+        peopleCacheMutex.withLock { titleProfileCache[key] }?.let { return@withContext it }
+        val profile = if (mediaType == "movie") {
+            val credits = fetch<TmdbLeadsMovieCredits>(endpoint = "movie/$tmdbId/credits") ?: return@withContext null
+            TmdbTitleProfile(
+                numberOfEpisodes = null,
+                leads = (
+                    credits.crew.filter { it.job == "Director" && it.id != null }
+                        .map { TmdbLeadPerson(it.id!!, it.name.orEmpty(), isDirector = true) } +
+                        credits.cast.filter { (it.order ?: 99) < SAME_CAST_MOVIE_BILLING && it.id != null }
+                            .map { TmdbLeadPerson(it.id!!, it.name.orEmpty(), isDirector = false) }
+                    ).distinctBy { it.id to it.isDirector },
+            )
+        } else {
+            val details = fetch<TmdbLeadsShowDetails>(
+                endpoint = "tv/$tmdbId",
+                query = mapOf("append_to_response" to "aggregate_credits"),
+            ) ?: return@withContext null
+            val needed = ceil((details.numberOfEpisodes ?: 0) * 0.4).toInt().coerceIn(1, 50)
+            TmdbTitleProfile(
+                numberOfEpisodes = details.numberOfEpisodes,
+                leads = details.aggregateCredits?.cast.orEmpty()
+                    .filter { (it.totalEpisodeCount ?: 0) >= needed && (it.order ?: 999) < 30 && it.id != null }
+                    .take(SAME_CAST_PEOPLE)
+                    .map { TmdbLeadPerson(it.id!!, it.name.orEmpty(), isDirector = false) },
+            )
+        }
+        peopleCacheMutex.withLock {
+            if (titleProfileCache.size > 1000) titleProfileCache.clear()
+            titleProfileCache[key] = profile
+        }
+        profile
+    }
+
+    /**
+     * A person's other work as list results, most popular first: the films they directed, or the
+     * films and shows they starred in (a film's top ten billing, five or more episodes of a show).
+     * Talk/news/reality and documentary, "Self" appearances, unreleased titles and anything with
+     * under 50 votes are left out.
+     */
+    suspend fun fetchPersonWorks(personId: Int, asDirector: Boolean): List<TmdbSearchResult> = withContext(Dispatchers.Default) {
+        val settings = TmdbSettingsRepository.snapshot()
+        if (!settings.enabled || !settings.hasApiKey) return@withContext emptyList()
+        val language = normalizeTmdbLanguage(settings.language)
+        val key = "$personId:$asDirector:$language"
+        peopleCacheMutex.withLock { personWorksCache[key] }?.let { return@withContext it }
+        val credits = fetch<TmdbLeadsPersonCredits>(
+            endpoint = "person/$personId/combined_credits",
+            query = mapOf("language" to language),
+        ) ?: return@withContext emptyList()
+        val today = CurrentDateProvider.todayIsoDate()
+        val picked = if (asDirector) {
+            credits.crew.filter { it.job == "Director" && it.mediaType == "movie" }
+        } else {
+            credits.cast
+                .filter { c -> if (c.mediaType == "tv") (c.episodeCount ?: 0) >= 5 else (c.order ?: 99) < 10 }
+                .filterNot { SAME_CAST_SELF.containsMatchIn(it.character.orEmpty()) }
+        }
+        val works = picked
+            .asSequence()
+            .filter { (it.mediaType == "movie" || it.mediaType == "tv") && it.adult != true }
+            .filterNot { it.genreIds.any { genre -> genre in SAME_CAST_SKIP_GENRES } }
+            .filter { (it.voteCount ?: 0) >= 50 }
+            .filter { c ->
+                val date = c.releaseDate?.takeIf(String::isNotBlank) ?: c.firstAirDate?.takeIf(String::isNotBlank)
+                date != null && date <= today
+            }
+            .distinctBy { "${it.mediaType}:${it.id}" }
+            .sortedByDescending { it.popularity ?: 0.0 }
+            .map { c ->
+                TmdbSearchResult(
+                    id = c.id,
+                    title = c.title,
+                    name = c.name,
+                    overview = c.overview,
+                    posterPath = c.posterPath,
+                    backdropPath = c.backdropPath,
+                    releaseDate = c.releaseDate,
+                    firstAirDate = c.firstAirDate,
+                    popularity = c.popularity ?: 0.0,
+                    mediaType = c.mediaType,
+                    genreIds = c.genreIds,
+                    voteAverage = c.voteAverage ?: 0.0,
+                    voteCount = c.voteCount ?: 0,
+                )
+            }
+            .toList()
+        peopleCacheMutex.withLock {
+            if (personWorksCache.size > 200) personWorksCache.clear()
+            personWorksCache[key] = works
+        }
+        works
     }
 
     private suspend fun fetchCollection(
@@ -1966,6 +2226,7 @@ private fun buildPeople(
                 role = castMember.character?.trim()?.takeIf(String::isNotBlank),
                 photo = buildImageUrl(castMember.profilePath, "w500"),
                 tmdbId = castMember.id,
+                episodeCount = castMember.episodeCount.takeIf { mediaType == "tv" },
             )
         }
 
@@ -2254,6 +2515,7 @@ private data class TmdbAggregateCreditsResponse(
                     name = member.name,
                     character = member.roles.maxByOrNull { it.episodeCount ?: 0 }?.character,
                     profilePath = member.profilePath,
+                    episodeCount = member.totalEpisodeCount ?: member.roles.sumOf { role -> role.episodeCount ?: 0 }.takeIf { it > 0 },
                 )
             },
         crew = crew
@@ -2308,6 +2570,7 @@ private data class TmdbCastMember(
     val name: String? = null,
     val character: String? = null,
     @SerialName("profile_path") val profilePath: String? = null,
+    @SerialName("total_episode_count") val episodeCount: Int? = null,
 )
 
 @Serializable
@@ -2475,6 +2738,137 @@ private data class TmdbPersonCreditCrew(
     @SerialName("first_air_date") val firstAirDate: String? = null,
     @SerialName("vote_average") val voteAverage: Double? = null,
     val popularity: Double? = null,
+)
+
+// ─── Same cast ───
+
+private const val SAME_CAST_PEOPLE = 10
+private const val SAME_CAST_MOVIE_BILLING = 6
+private const val SAME_CAST_MAX = 20
+
+/** Talk, news, reality, documentary. */
+private val SAME_CAST_SKIP_GENRES = setOf(10767, 10763, 10764, 99)
+private val SAME_CAST_SELF = Regex("\\b(self|himself|herself|themselves|host|narrator)\\b", RegexOption.IGNORE_CASE)
+private val SAME_CAST_PARENTHETICAL = Regex("\\s*\\(.*?\\)\\s*")
+
+private fun sameCastCharacterName(value: String?): String =
+    value.orEmpty().lowercase().replace(SAME_CAST_PARENTHETICAL, " ").trim()
+
+private data class SameCastLead(val id: Int, val name: String, val characters: List<String>)
+
+private class SameCastWork(val key: String, val media: String, val raw: TmdbSameCastCredit) {
+    val with = mutableListOf<String>()
+    var score = 0.0
+    var reprised = 0
+    val fame: Int get() = raw.voteCount ?: 0
+}
+
+private class SameCastRole(val work: SameCastWork, val weight: Double)
+
+@Serializable
+private data class TmdbSameCastShowDetails(
+    @SerialName("number_of_episodes") val numberOfEpisodes: Int? = null,
+    @SerialName("aggregate_credits") val aggregateCredits: TmdbSameCastAggregate? = null,
+)
+
+@Serializable
+private data class TmdbSameCastAggregate(
+    val cast: List<TmdbSameCastAggregateMember> = emptyList(),
+)
+
+@Serializable
+private data class TmdbSameCastAggregateMember(
+    val id: Int? = null,
+    val name: String? = null,
+    val order: Int? = null,
+    val roles: List<TmdbAggregateRole> = emptyList(),
+    @SerialName("total_episode_count") val totalEpisodeCount: Int? = null,
+)
+
+@Serializable
+private data class TmdbSameCastMovieCredits(
+    val cast: List<TmdbSameCastMovieMember> = emptyList(),
+)
+
+@Serializable
+private data class TmdbSameCastMovieMember(
+    val id: Int? = null,
+    val name: String? = null,
+    val character: String? = null,
+    val order: Int? = null,
+)
+
+@Serializable
+private data class TmdbSameCastPersonCredits(
+    val cast: List<TmdbSameCastCredit> = emptyList(),
+)
+
+@Serializable
+private data class TmdbSameCastCredit(
+    val id: Int = 0,
+    @SerialName("media_type") val mediaType: String? = null,
+    val title: String? = null,
+    val name: String? = null,
+    val character: String? = null,
+    val adult: Boolean? = null,
+    val order: Int? = null,
+    val overview: String? = null,
+    @SerialName("episode_count") val episodeCount: Int? = null,
+    @SerialName("genre_ids") val genreIds: List<Int> = emptyList(),
+    @SerialName("vote_count") val voteCount: Int? = null,
+    @SerialName("vote_average") val voteAverage: Double? = null,
+    @SerialName("poster_path") val posterPath: String? = null,
+    @SerialName("backdrop_path") val backdropPath: String? = null,
+    @SerialName("release_date") val releaseDate: String? = null,
+    @SerialName("first_air_date") val firstAirDate: String? = null,
+)
+
+// ─── Discover people rows ───
+
+/** Someone who leads a title: a director/creator, or main cast. */
+data class TmdbLeadPerson(val id: Int, val name: String, val isDirector: Boolean)
+
+/** A watched title as Discover's taste rows see it. [numberOfEpisodes] is null for a film. */
+data class TmdbTitleProfile(val numberOfEpisodes: Int?, val leads: List<TmdbLeadPerson>)
+
+@Serializable
+private data class TmdbLeadsMovieCredits(
+    val cast: List<TmdbSameCastMovieMember> = emptyList(),
+    val crew: List<TmdbCrewMember> = emptyList(),
+)
+
+@Serializable
+private data class TmdbLeadsShowDetails(
+    @SerialName("number_of_episodes") val numberOfEpisodes: Int? = null,
+    @SerialName("aggregate_credits") val aggregateCredits: TmdbSameCastAggregate? = null,
+)
+
+@Serializable
+private data class TmdbLeadsPersonCredits(
+    val cast: List<TmdbLeadsCredit> = emptyList(),
+    val crew: List<TmdbLeadsCredit> = emptyList(),
+)
+
+@Serializable
+private data class TmdbLeadsCredit(
+    val id: Int = 0,
+    @SerialName("media_type") val mediaType: String? = null,
+    val title: String? = null,
+    val name: String? = null,
+    val character: String? = null,
+    val job: String? = null,
+    val adult: Boolean? = null,
+    val order: Int? = null,
+    val overview: String? = null,
+    @SerialName("episode_count") val episodeCount: Int? = null,
+    @SerialName("genre_ids") val genreIds: List<Int> = emptyList(),
+    @SerialName("vote_count") val voteCount: Int? = null,
+    @SerialName("vote_average") val voteAverage: Double? = null,
+    val popularity: Double? = null,
+    @SerialName("poster_path") val posterPath: String? = null,
+    @SerialName("backdrop_path") val backdropPath: String? = null,
+    @SerialName("release_date") val releaseDate: String? = null,
+    @SerialName("first_air_date") val firstAirDate: String? = null,
 )
 
 // ─── Entity Browse (Company / Network) Models ───

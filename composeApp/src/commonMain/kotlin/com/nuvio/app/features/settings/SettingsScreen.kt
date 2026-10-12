@@ -2022,6 +2022,11 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.KeyboardShortcuts,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.compose_settings_page_advanced),
+        icon = Icons.Rounded.Tune,
+        page = SettingsPage.Advanced,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_licenses_attributions),
         icon = Icons.Rounded.Info,
         page = SettingsPage.LicensesAttributions,

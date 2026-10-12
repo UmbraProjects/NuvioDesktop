@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.CollectionsBookmark
@@ -592,6 +593,15 @@ private fun settingsSearchEntries(
             section = "Controller",
             icon = Icons.Rounded.Keyboard,
         )
+        addRow(
+            page = SettingsPage.KeyboardShortcuts,
+            key = "osk-mouse",
+            title = "On-screen keyboard for mouse",
+            description = "Click letters to type in search, for a mouse-only couch setup.",
+            pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
+            section = "On-screen keyboard",
+            icon = Icons.Rounded.Keyboard,
+        )
     }
     if (isDesktop) {
         addRow(
@@ -882,6 +892,16 @@ private fun settingsSearchEntries(
             category = accountCategory,
             icon = Icons.Rounded.CloudDownload,
         )
+        addRow(
+            page = SettingsPage.Account,
+            key = "import-settings",
+            title = resolve(Res.string.settings_backup_import),
+            description = resolve(Res.string.settings_backup_import_description),
+            pageLabel = accountPage,
+            section = backupSection,
+            category = accountCategory,
+            icon = Icons.Rounded.CloudUpload,
+        )
     }
 
     addRow(
@@ -983,6 +1003,68 @@ private fun settingsSearchEntries(
             pageLabel = layoutPage,
             section = resolve(Res.string.settings_appearance_section_display),
             icon = Icons.Rounded.Palette,
+        )
+    }
+    if (isDesktop) {
+        addRow(
+            page = SettingsPage.Advanced,
+            key = "image-cache-size",
+            title = resolve(Res.string.settings_advanced_image_cache_size),
+            description = resolve(Res.string.settings_advanced_image_cache_size_description_unknown),
+            pageLabel = advancedPage,
+            section = resolve(Res.string.settings_advanced_section_cache),
+            category = advancedCategory,
+            icon = Icons.Rounded.Tune,
+        )
+        addRow(
+            page = SettingsPage.Advanced,
+            key = "image-prewarm",
+            title = resolve(Res.string.settings_advanced_image_prewarm),
+            description = resolve(Res.string.settings_advanced_image_prewarm_description),
+            pageLabel = advancedPage,
+            section = resolve(Res.string.settings_advanced_section_cache),
+            category = advancedCategory,
+            icon = Icons.Rounded.Tune,
+        )
+        addRow(
+            page = SettingsPage.Advanced,
+            key = "image-prewarm-posters",
+            title = resolve(Res.string.settings_advanced_image_prewarm_posters),
+            description = resolve(Res.string.settings_advanced_image_prewarm_posters_description),
+            pageLabel = advancedPage,
+            section = resolve(Res.string.settings_advanced_section_cache),
+            category = advancedCategory,
+            icon = Icons.Rounded.Tune,
+        )
+        addRow(
+            page = SettingsPage.Advanced,
+            key = "image-prewarm-logos",
+            title = resolve(Res.string.settings_advanced_image_prewarm_logos),
+            description = resolve(Res.string.settings_advanced_image_prewarm_logos_description),
+            pageLabel = advancedPage,
+            section = resolve(Res.string.settings_advanced_section_cache),
+            category = advancedCategory,
+            icon = Icons.Rounded.Tune,
+        )
+        addRow(
+            page = SettingsPage.Advanced,
+            key = "image-prewarm-backdrops",
+            title = resolve(Res.string.settings_advanced_image_prewarm_backdrops),
+            description = resolve(Res.string.settings_advanced_image_prewarm_backdrops_description),
+            pageLabel = advancedPage,
+            section = resolve(Res.string.settings_advanced_section_cache),
+            category = advancedCategory,
+            icon = Icons.Rounded.Tune,
+        )
+        addRow(
+            page = SettingsPage.Advanced,
+            key = "image-prewarm-collection-contents",
+            title = resolve(Res.string.settings_advanced_image_prewarm_collection_contents),
+            description = resolve(Res.string.settings_advanced_image_prewarm_collection_contents_description),
+            pageLabel = advancedPage,
+            section = resolve(Res.string.settings_advanced_section_cache),
+            category = advancedCategory,
+            icon = Icons.Rounded.Tune,
         )
     }
     addRow(
@@ -1314,6 +1396,11 @@ private fun settingsSearchEntries(
                 anchor = SettingsScrollAnchor.DesktopRenderer,
             ) else null,
             if (isDesktop) PlaybackSearchRow(
+                "steady-frame-pacing",
+                resolve(Res.string.settings_playback_desktop_steady_frame_pacing),
+                resolve(Res.string.settings_playback_desktop_steady_frame_pacing_description),
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
                 "desktop-buffer-preset",
                 resolve(Res.string.settings_playback_desktop_buffer_preset),
                 anchor = SettingsScrollAnchor.BufferPreset,
@@ -1406,6 +1493,11 @@ private fun settingsSearchEntries(
                 "strip-sdh",
                 resolve(Res.string.settings_playback_strip_sdh),
                 resolve(Res.string.settings_playback_strip_sdh_description),
+            ),
+            PlaybackSearchRow(
+                "automatic-subtitle-sync",
+                resolve(Res.string.settings_playback_automatic_subtitle_sync),
+                resolve(Res.string.settings_playback_automatic_subtitle_sync_description),
             ),
             PlaybackSearchRow(
                 "addon-subtitle-startup",
@@ -1685,6 +1777,7 @@ private fun settingsSearchEntries(
         PlaybackSearchRow("home-hero-trailer-delay", resolve(Res.string.settings_playback_hero_tv_trailer_delay), "Delay before focused hero trailers start playing.", anchor = SettingsScrollAnchor.TrailerDelay),
         PlaybackSearchRow("home-hero-trailer-sound", resolve(Res.string.settings_playback_hero_tv_trailer_sound), resolve(Res.string.settings_playback_hero_tv_trailer_sound_description), anchor = SettingsScrollAnchor.TrailerSound),
         PlaybackSearchRow("home-hero-trailer-search", "Trailers in Search", "Allow focused search results to play hero trailers.", anchor = SettingsScrollAnchor.TrailerSearch),
+        PlaybackSearchRow("home-adaptive-hero-auto-framing", resolve(Res.string.settings_home_backdrop_auto_framing), resolve(Res.string.settings_home_backdrop_auto_framing_description)),
         PlaybackSearchRow("home-adaptive-hero-position", "Backdrop vertical position", "Manually tune how adaptive hero backdrops crop vertically.", anchor = SettingsScrollAnchor.AdaptiveHeroPosition),
         PlaybackSearchRow("home-adaptive-hero-height", "Hero height", "Set how much of the window the adaptive hero occupies.", anchor = SettingsScrollAnchor.AdaptiveHeroHeight),
         PlaybackSearchRow("home-smooth-scrolling", resolve(Res.string.settings_home_smooth_scrolling), resolve(Res.string.settings_home_smooth_scrolling_description)),
@@ -1724,6 +1817,7 @@ private fun settingsSearchEntries(
         PlaybackSearchRow("meta-blur-episodes", resolve(Res.string.settings_meta_blur_unwatched_episodes), resolve(Res.string.settings_meta_blur_unwatched_episodes_description)),
         PlaybackSearchRow("meta-episode-ratings", resolve(Res.string.settings_meta_episode_ratings), resolve(Res.string.settings_meta_episode_ratings_description)),
         PlaybackSearchRow("meta-overall-ratings", resolve(Res.string.settings_meta_overall_ratings), resolve(Res.string.settings_meta_overall_ratings_description)),
+        PlaybackSearchRow("meta-same-cast-label", SAME_CAST_LABEL_TITLE, SAME_CAST_LABEL_DESCRIPTION),
         PlaybackSearchRow("meta-actions", resolve(Res.string.settings_meta_actions), resolve(Res.string.settings_meta_actions_description)),
         PlaybackSearchRow("meta-overview", resolve(Res.string.settings_meta_overview), resolve(Res.string.settings_meta_overview_description)),
         PlaybackSearchRow("meta-production", resolve(Res.string.settings_meta_production), resolve(Res.string.settings_meta_production_description)),

@@ -72,9 +72,7 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |package com.nuvio.app.features.trakt
                 |
                 |object TraktConfig {
-                |    const val CLIENT_ID = "" 
-                |    const val CLIENT_SECRET = "" 
-                |    const val REDIRECT_URI = "http://localhost:53682/callback" 
+                |    const val CLIENT_ID = "${props.getProperty("TRAKT_CLIENT_ID", "")}"
                 |}
                 """.trimMargin()
             )
@@ -1253,6 +1251,45 @@ fun trimMaterialIconsExtendedJar(appDir: File, logger: org.gradle.api.logging.Lo
     )
 }
 
+// The onnxruntime jar (hero backdrop framing) carries natives for five platforms, ~51MB; this
+// app only ever loads win-x64 (~6MB compressed). Drop the rest from the packaged copy.
+fun trimOnnxRuntimeJar(appDir: File, logger: org.gradle.api.logging.Logger) {
+    val ortJar = appDir
+        .listFiles { file -> file.isFile && file.name.startsWith("onnxruntime") && file.name.endsWith(".jar") }
+        ?.singleOrNull()
+        ?: return
+    val nativeRoot = "ai/onnxruntime/native/"
+    val keptNatives = "${nativeRoot}win-x64/"
+    val trimmed = File(ortJar.parentFile, "${ortJar.name}.trimmed")
+    var dropped = 0
+    ZipFile(ortJar).use { zip ->
+        check(zip.getEntry("${keptNatives}onnxruntime.dll") != null) {
+            "Refusing to trim ${ortJar.name}: it has no ${keptNatives}onnxruntime.dll, so its layout changed."
+        }
+        ZipOutputStream(trimmed.outputStream().buffered()).use { out ->
+            zip.entries().asSequence().forEach { entry ->
+                val keep = !entry.name.startsWith(nativeRoot) ||
+                    entry.name == nativeRoot ||
+                    entry.name.startsWith(keptNatives)
+                if (!keep) {
+                    dropped++
+                    return@forEach
+                }
+                out.putNextEntry(ZipEntry(entry.name))
+                zip.getInputStream(entry).use { it.copyTo(out) }
+                out.closeEntry()
+            }
+        }
+    }
+    val sizeBefore = ortJar.length()
+    check(ortJar.delete()) { "Could not replace ${ortJar.absolutePath} with its trimmed copy" }
+    check(trimmed.renameTo(ortJar)) { "Could not move ${trimmed.absolutePath} into place" }
+    logger.lifecycle(
+        "Trimmed ${ortJar.name} to win-x64 natives: dropped $dropped entries " +
+            "(${sizeBefore / 1024 / 1024}MB -> ${ortJar.length() / 1024 / 1024}MB)",
+    )
+}
+
 val repoRootDir = rootProject.layout.projectDirectory.asFile
 
 mapOf(
@@ -1260,7 +1297,7 @@ mapOf(
     "createReleaseDistributable" to "main-release",
 ).forEach { (taskName, imageFlavor) ->
     tasks.matching { it.name == taskName }.configureEach {
-        notCompatibleWithConfigurationCache("Rewrites the packaged material-icons-extended jar in the app image.")
+        notCompatibleWithConfigurationCache("Rewrites the packaged material-icons-extended and onnxruntime jars in the app image.")
         doLast {
             val binariesDir = layout.buildDirectory.dir("compose/binaries/$imageFlavor/app").get().asFile
             val appDir = listOf("Nuvio/app", "Nuvio.app/Contents/app", "nuvio/lib/app")
@@ -1268,6 +1305,7 @@ mapOf(
                 .firstOrNull(File::isDirectory)
             check(appDir != null) { "No packaged app directory found under $binariesDir" }
             trimMaterialIconsExtendedJar(appDir, logger)
+            trimOnnxRuntimeJar(appDir, logger)
             writeAppImageBuildInfo(
                 appDir = appDir,
                 versionName = desktopReleaseVersionName,
@@ -1322,6 +1360,9 @@ kotlin {
                 implementation("com.squareup.okhttp3:okhttp:4.12.0")
                 implementation(libs.quickjs.kt)
                 implementation(libs.ksoup)
+                // Automatic hero backdrop framing (U2-Netp saliency + YuNet faces). The packaged jar
+                // is trimmed to its win-x64 natives; see trimOnnxRuntimeJar.
+                implementation("com.microsoft.onnxruntime:onnxruntime:1.31.0")
             }
         }
         commonMain.dependencies {
@@ -1358,6 +1399,8 @@ kotlin {
                 implementation(compose.desktop.currentOs)
                 @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
                 implementation(compose.uiTest)
+                // Serves byte ranges to the AutoSync embedded-subtitle index loader tests.
+                implementation("com.squareup.okhttp3:mockwebserver:4.12.0")
             }
         }
     }
@@ -1368,6 +1411,11 @@ kotlin {
 // opt-in: run them with `-Pnuvio.focusTests` before shipping input changes, and on CI where nobody
 // is at the keyboard.
 tasks.withType<Test>().configureEach {
+    // DesktopStorage would otherwise read and write the real %LOCALAPPDATA%/NuvioHTPC, including
+    // moving its settings into account folders the first time a test opens a store.
+    val testDataDir = layout.buildDirectory.dir("test-data-dir").get().asFile
+    systemProperty("nuvio.desktop.dataDir", testDataDir.absolutePath)
+    doFirst { testDataDir.deleteRecursively() }
     systemProperty(
         "nuvio.focusTests",
         (providers.gradleProperty("nuvio.focusTests").orNull ?: "false").ifBlank { "true" },

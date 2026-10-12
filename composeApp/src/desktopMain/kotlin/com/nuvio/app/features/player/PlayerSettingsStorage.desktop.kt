@@ -95,6 +95,7 @@ internal actual object PlayerSettingsStorage {
     private const val skipAutoAcceptModeKey = "skip_auto_accept_mode"
     private const val skipMovieCreditsToPostCreditsKey = "skip_movie_credits_to_post_credits"
     private const val stripSdhSubtitlesKey = "strip_sdh_subtitles"
+    private const val automaticSubtitleSyncEnabledKey = "automatic_subtitle_sync_enabled"
     private const val animeSkipEnabledKey = "animeskip_enabled"
     private const val animeSkipClientIdKey = "animeskip_client_id"
     private const val introDbApiKeyKey = "introdb_api_key"
@@ -137,6 +138,7 @@ internal actual object PlayerSettingsStorage {
     private const val desktopBufferPresetKey = "desktop_buffer_preset"
     private const val desktopRendererApiKey = "desktop_renderer_api"
     private const val desktopPerformanceLoggingKey = "desktop_performance_logging"
+    private const val desktopSteadyFramePacingKey = "desktop_steady_frame_pacing"
     private const val desktopLowVramModeKey = "desktop_low_vram_mode"
     private const val desktopAnimeModeKey = "desktop_anime_mode"
     private const val desktopAnimeModeAutoEnabledKey = "desktop_anime_mode_auto_enabled"
@@ -217,6 +219,7 @@ internal actual object PlayerSettingsStorage {
         skipAutoAcceptModeKey,
         skipMovieCreditsToPostCreditsKey,
         stripSdhSubtitlesKey,
+        automaticSubtitleSyncEnabledKey,
         animeSkipEnabledKey,
         animeSkipClientIdKey,
         streamAutoPlayNextEpisodeEnabledKey,
@@ -252,7 +255,9 @@ internal actual object PlayerSettingsStorage {
         heroTvTrailerSearchEnabledKey,
     )
     private val store = DesktopStorage.store("nuvio_player_settings")
-    private val hadExistingDesktopPreferences = Files.list(DesktopStorage.rootDir).use { files ->
+    // This account's folder, not the data directory: a new account on a PC that already has
+    // machine settings should still get new-install defaults.
+    private val hadExistingDesktopPreferences = Files.list(DesktopStorage.accountDir).use { files ->
         files.findAny().isPresent
     }
 
@@ -305,7 +310,7 @@ internal actual object PlayerSettingsStorage {
     }
 
     private fun freshInstallDefaultUiScalePercent(): Int? {
-        if (!DesktopStorage.isFreshInstall) return null
+        if (!DesktopStorage.isFreshAccount) return null
         val height = desktopDisplayMetrics()?.sizePx?.height ?: return null
         return when {
             height >= 2000 -> -20
@@ -439,6 +444,8 @@ internal actual object PlayerSettingsStorage {
     actual fun saveSkipMovieCreditsToPostCredits(enabled: Boolean) = saveBoolean(skipMovieCreditsToPostCreditsKey, enabled)
     actual fun loadStripSdhSubtitles(): Boolean? = loadBoolean(stripSdhSubtitlesKey)
     actual fun saveStripSdhSubtitles(enabled: Boolean) = saveBoolean(stripSdhSubtitlesKey, enabled)
+    actual fun loadAutomaticSubtitleSyncEnabled(): Boolean? = loadBoolean(automaticSubtitleSyncEnabledKey)
+    actual fun saveAutomaticSubtitleSyncEnabled(enabled: Boolean) = saveBoolean(automaticSubtitleSyncEnabledKey, enabled)
     actual fun loadAnimeSkipEnabled(): Boolean? = loadBoolean(animeSkipEnabledKey)
     actual fun saveAnimeSkipEnabled(enabled: Boolean) = saveBoolean(animeSkipEnabledKey, enabled)
     actual fun loadAnimeSkipClientId(): String? = loadString(animeSkipClientIdKey)
@@ -523,6 +530,9 @@ internal actual object PlayerSettingsStorage {
     actual fun loadDesktopPerformanceLogging(): Boolean? = loadBoolean(desktopPerformanceLoggingKey)
     actual fun saveDesktopPerformanceLogging(enabled: Boolean) =
         saveBoolean(desktopPerformanceLoggingKey, enabled)
+    actual fun loadDesktopSteadyFramePacing(): Boolean? = loadBoolean(desktopSteadyFramePacingKey)
+    actual fun saveDesktopSteadyFramePacing(enabled: Boolean) =
+        saveBoolean(desktopSteadyFramePacingKey, enabled)
     actual fun loadDesktopLowVramMode(): String? = loadString(desktopLowVramModeKey)
     actual fun saveDesktopLowVramMode(mode: String) = saveString(desktopLowVramModeKey, mode)
     actual fun loadDesktopAnimeMode(): String? = loadString(desktopAnimeModeKey)
@@ -650,6 +660,7 @@ internal actual object PlayerSettingsStorage {
         loadSkipAutoAcceptMode()?.let { put(skipAutoAcceptModeKey, encodeSyncString(it)) }
         loadSkipMovieCreditsToPostCredits()?.let { put(skipMovieCreditsToPostCreditsKey, encodeSyncBoolean(it)) }
         loadStripSdhSubtitles()?.let { put(stripSdhSubtitlesKey, encodeSyncBoolean(it)) }
+        loadAutomaticSubtitleSyncEnabled()?.let { put(automaticSubtitleSyncEnabledKey, encodeSyncBoolean(it)) }
         loadAnimeSkipEnabled()?.let { put(animeSkipEnabledKey, encodeSyncBoolean(it)) }
         loadAnimeSkipClientId()?.let { put(animeSkipClientIdKey, encodeSyncString(it)) }
         loadStreamAutoPlayNextEpisodeEnabled()?.let { put(streamAutoPlayNextEpisodeEnabledKey, encodeSyncBoolean(it)) }
@@ -744,6 +755,7 @@ internal actual object PlayerSettingsStorage {
         payload.decodeSyncString(skipAutoAcceptModeKey)?.let(::saveSkipAutoAcceptMode)
         payload.decodeSyncBoolean(skipMovieCreditsToPostCreditsKey)?.let(::saveSkipMovieCreditsToPostCredits)
         payload.decodeSyncBoolean(stripSdhSubtitlesKey)?.let(::saveStripSdhSubtitles)
+        payload.decodeSyncBoolean(automaticSubtitleSyncEnabledKey)?.let(::saveAutomaticSubtitleSyncEnabled)
         payload.decodeSyncBoolean(animeSkipEnabledKey)?.let(::saveAnimeSkipEnabled)
         payload.decodeSyncString(animeSkipClientIdKey)?.let(::saveAnimeSkipClientId)
         payload.decodeSyncString(introDbApiKeyKey)?.let(::saveIntroDbApiKey)

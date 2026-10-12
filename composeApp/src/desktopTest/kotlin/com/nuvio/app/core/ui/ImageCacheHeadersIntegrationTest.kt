@@ -13,6 +13,8 @@ import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.size.Precision
 import com.sun.net.httpserver.HttpServer
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toOkioPath
 import java.awt.Color
@@ -170,6 +172,48 @@ class ImageCacheHeadersIntegrationTest {
         assertEquals(404, assertIs<HttpException>(error.throwable).response.code)
     }
 
+    @Test
+    fun `identical requests in flight at once share one download`() {
+        server.serve(RED, etag = "\"red\"", cacheControl = "public, max-age=86400")
+        server.delayMillis = 300
+
+        val results = loadConcurrently(3)
+
+        assertEquals(1, server.requests.size, "the second and third waited for the first")
+        results.forEach { assertEquals(RED_ARGB, assertIs<SuccessResult>(it).pixel()) }
+    }
+
+    @Test
+    fun `a no-store poster requested three times at once is downloaded once`() {
+        // Without the follower marker the disk strategy refuses the copy the first request just
+        // wrote, and each waiter downloads it again anyway.
+        server.serve(RED, etag = null, cacheControl = "no-store, no-cache, must-revalidate")
+        server.delayMillis = 300
+
+        val results = loadConcurrently(3)
+
+        assertEquals(1, server.requests.size)
+        results.forEach { assertEquals(RED_ARGB, assertIs<SuccessResult>(it).pixel()) }
+        assertEquals(0, SharedImageRequestCoalescing.inFlightCount())
+    }
+
+    @Test
+    fun `when the shared download fails each waiter asks for itself`() {
+        server.fail(404)
+        server.delayMillis = 300
+
+        val results = loadConcurrently(3)
+
+        assertEquals(3, server.requests.size, "a failure is not handed on to the waiters")
+        results.forEach { assertIs<ErrorResult>(it) }
+        assertEquals(0, SharedImageRequestCoalescing.inFlightCount())
+    }
+
+    /** Distinct sizes, so no request can be answered by another's memory-cache entry. */
+    private fun loadConcurrently(count: Int) = runBlocking {
+        (0 until count).map { index -> async { loader.execute(request(size = 2 + index)) } }.awaitAll()
+    }
+
     private fun request(size: Int): ImageRequest = ImageRequest.Builder(PlatformContext.INSTANCE)
         .data(server.url)
         .size(size)
@@ -199,11 +243,14 @@ class ImageCacheHeadersIntegrationTest {
         @Volatile private var etag: String? = null
         @Volatile private var cacheControl: String? = null
         @Volatile private var failureCode: Int? = null
+        /** How long each answer takes, so concurrent requests overlap. */
+        @Volatile var delayMillis = 0L
 
         init {
             http.createContext("/poster.png") { exchange ->
                 val ifNoneMatch = exchange.requestHeaders.getFirst("If-None-Match")
                 requests += Request(ifNoneMatch)
+                if (delayMillis > 0) Thread.sleep(delayMillis)
                 val failure = failureCode
                 val code = when {
                     failure != null -> failure
@@ -224,6 +271,9 @@ class ImageCacheHeadersIntegrationTest {
                     exchange.close()
                 }
             }
+            // One thread per exchange: the default executor would answer overlapping requests in
+            // turn, which still counts them but hides how long the waiters really waited.
+            http.executor = java.util.concurrent.Executors.newCachedThreadPool()
             http.start()
         }
 

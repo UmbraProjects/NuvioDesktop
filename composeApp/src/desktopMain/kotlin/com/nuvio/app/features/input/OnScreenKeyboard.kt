@@ -86,7 +86,7 @@ internal object OskLayout {
  *
  * Visibility follows [com.nuvio.app.core.ui.TextInputFocusTracker] — the app-wide signal that some
  * editable field holds focus — gated on a pad actually being connected, so a keyboard user never
- * sees it.
+ * sees it, or on the opt-in mouse setting for someone with only a mouse on the couch.
  */
 internal object OnScreenKeyboard {
 
@@ -112,8 +112,8 @@ internal object OnScreenKeyboard {
     private var isVisible = false
 
     /**
-     * Drives visibility from the app-wide text-focus signal. [padReady] keeps the panel away from
-     * anyone typing on a real keyboard.
+     * Drives visibility from the app-wide text-focus signal. [padReady] — a pad in use, or the
+     * mouse-keyboard setting on — keeps the panel away from anyone typing on a real keyboard.
      */
     fun onTextFocusChanged(textFieldFocused: Boolean, padReady: Boolean) {
         if (!textFieldFocused) {

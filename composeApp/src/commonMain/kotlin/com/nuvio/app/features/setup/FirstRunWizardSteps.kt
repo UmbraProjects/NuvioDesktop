@@ -45,6 +45,8 @@ import com.nuvio.app.features.settings.SettingsGroupDivider
 import com.nuvio.app.features.settings.SettingsModernSlider
 import com.nuvio.app.features.settings.SettingsSwitchRow
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.settings_home_backdrop_auto_framing
+import nuvio.composeapp.generated.resources.settings_home_backdrop_auto_framing_description
 import nuvio.composeapp.generated.resources.settings_home_backdrop_vertical_position
 import nuvio.composeapp.generated.resources.settings_home_backdrop_vertical_position_description
 import nuvio.composeapp.generated.resources.settings_home_display_mode_adaptive
@@ -321,14 +323,24 @@ private fun ModeTuning(
     SettingsGroup(isTablet = true) {
         when (draft.displayMode) {
             HomeDisplayMode.Adaptive, HomeDisplayMode.AdaptiveAmbient -> {
-                WizardSliderRow(
-                    title = stringResource(Res.string.settings_home_backdrop_vertical_position),
-                    description = stringResource(Res.string.settings_home_backdrop_vertical_position_description),
-                    value = draft.adaptiveHeroVerticalBias,
-                    valueRange = -1f..1f,
-                    onValueChange = { value -> onDraftChange { it.copy(adaptiveHeroVerticalBias = value) } },
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_home_backdrop_auto_framing),
+                    description = stringResource(Res.string.settings_home_backdrop_auto_framing_description),
+                    checked = draft.adaptiveHeroAutoFraming,
+                    isTablet = true,
+                    onCheckedChange = { value -> onDraftChange { it.copy(adaptiveHeroAutoFraming = value) } },
                 )
                 SettingsGroupDivider(isTablet = true)
+                if (!draft.adaptiveHeroAutoFraming) {
+                    WizardSliderRow(
+                        title = stringResource(Res.string.settings_home_backdrop_vertical_position),
+                        description = stringResource(Res.string.settings_home_backdrop_vertical_position_description),
+                        value = draft.adaptiveHeroVerticalBias,
+                        valueRange = -1f..1f,
+                        onValueChange = { value -> onDraftChange { it.copy(adaptiveHeroVerticalBias = value) } },
+                    )
+                    SettingsGroupDivider(isTablet = true)
+                }
                 WizardSliderRow(
                     title = stringResource(Res.string.settings_home_hero_height),
                     description = stringResource(Res.string.settings_home_hero_height_description),

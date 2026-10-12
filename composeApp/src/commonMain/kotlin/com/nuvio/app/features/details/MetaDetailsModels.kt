@@ -96,6 +96,8 @@ data class MetaExternalRating(
     val value: Double,
     /** Certified Fresh / Verified Hot, for the two Rotten Tomatoes sources. See rottenTomatoesStatus. */
     val isCertified: Boolean = false,
+    /** The title on the rating's own site, when known. See `linkFor` in MdbListRatingLinks.kt. */
+    val url: String? = null,
 )
 
 data class MetaTrailer(
@@ -116,6 +118,10 @@ data class MetaPerson(
     val role: String? = null,
     val photo: String? = null,
     val tmdbId: Int? = null,
+    /** Episodes a series' cast member appears in (TMDB aggregate credits), for "142 episodes". */
+    val episodeCount: Int? = null,
+    /** TVDB's portrait of the character in the role, for the cast's Characters view. */
+    val characterImage: String? = null,
 )
 
 data class MetaCompany(

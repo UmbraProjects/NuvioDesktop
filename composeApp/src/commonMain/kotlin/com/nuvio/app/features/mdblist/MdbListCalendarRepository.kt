@@ -227,6 +227,7 @@ private fun MdbListCalendarEvent.toCalendarEntry(): TraktCalendarEntry? {
         seasonNumber = seasonNumber.takeIf { isEpisode },
         episodeNumber = episodeNumber.takeIf { isEpisode },
         episodeTitle = episodeTitle?.trim()?.takeIf(String::isNotBlank).takeIf { isEpisode },
+        airAt = start?.trim()?.takeIf { it.length > 10 && 'T' in it },
     )
 }
 

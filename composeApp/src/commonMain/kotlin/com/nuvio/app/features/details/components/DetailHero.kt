@@ -1,5 +1,10 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.features.tvdb.TvdbCharacter
+import com.nuvio.app.features.tvdb.TvdbImageService
+import com.nuvio.app.features.details.CastViewStorage
+import com.nuvio.app.features.mdblist.linkFor
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -40,6 +45,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +56,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -487,6 +496,19 @@ private fun DetailDesktopHeroOverlay(
         }
         val canShowCast = showCast && starringPeople.isNotEmpty()
         val canShowProduction = showProduction && productionPeople.isNotEmpty()
+        // TVDB's portraits of the characters (ported from the Nuvio Tracker site), matched to the
+        // cast by actor name, else character name. Loaded after the page; a TVDB key is needed.
+        val tvdbCharacters by produceState(emptyList<TvdbCharacter>(), meta.id, canShowCast) {
+            value = emptyList()
+            if (!canShowCast) return@produceState
+            val imdb = meta.imdbId?.takeIf { it.startsWith("tt") } ?: meta.id.takeIf { it.startsWith("tt") }?.substringBefore(':')
+            value = TvdbImageService.fetchCharacters(meta.type, meta.id, imdb)
+        }
+        val starringWithCharacters = remember(starringPeople, tvdbCharacters) {
+            starringPeople.withCharacterImages(tvdbCharacters)
+        }
+        val hasCharacters = starringWithCharacters.any { !it.characterImage.isNullOrBlank() }
+        var showCharacters by remember { mutableStateOf(CastViewStorage.loadShowCharacters()) }
         var peopleTab by remember(meta.id, canShowCast, canShowProduction) {
             mutableStateOf(
                 if (canShowCast) DetailHeroPeopleTab.Starring else DetailHeroPeopleTab.Production,
@@ -548,6 +570,7 @@ private fun DetailDesktopHeroOverlay(
                             RatingsRow(
                                 ratings = meta.externalRatings,
                                 horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
+                                linkFor = { it.linkFor(meta) },
                             )
                         }
                     }
@@ -669,13 +692,26 @@ private fun DetailDesktopHeroOverlay(
                         showCast = canShowCast,
                         showProduction = canShowProduction,
                         onTabSelected = { peopleTab = it },
+                        showCharacters = showCharacters.takeIf {
+                            hasCharacters && activePeopleTab == DetailHeroPeopleTab.Starring
+                        },
+                        onShowCharacters = { value ->
+                            showCharacters = value
+                            CastViewStorage.saveShowCharacters(value)
+                        },
                     )
                     DetailCastSection(
                         cast = if (activePeopleTab == DetailHeroPeopleTab.Production) {
                             productionPeople
                         } else {
-                            starringPeople
+                            starringWithCharacters
                         },
+                        showCharacters = showCharacters && hasCharacters &&
+                            activePeopleTab == DetailHeroPeopleTab.Starring,
+                        // Series counts can land with TMDB enrichment after the cast is already
+                        // shown; keeping the line from the start stops the row growing then.
+                        reserveEpisodeLine = activePeopleTab == DetailHeroPeopleTab.Starring &&
+                            meta.type.trim().lowercase() in setOf("series", "show", "tv", "tvshow"),
                         showHeader = false,
                         visibleItemCount = 6,
                         onCastClick = if (activePeopleTab == DetailHeroPeopleTab.Starring) onCastClick else null,
@@ -777,6 +813,9 @@ private fun DetailHeroPeopleHeader(
     showCast: Boolean,
     showProduction: Boolean,
     onTabSelected: (DetailHeroPeopleTab) -> Unit,
+    /** Null hides the Actors / Characters switch (no portraits, or not on Starring). */
+    showCharacters: Boolean? = null,
+    onShowCharacters: (Boolean) -> Unit = {},
 ) {
     Row(
         modifier = Modifier.widthIn(max = 620.dp),
@@ -804,6 +843,61 @@ private fun DetailHeroPeopleHeader(
                 onClick = { onTabSelected(DetailHeroPeopleTab.Production) },
             )
         }
+        if (showCharacters != null) {
+            Spacer(modifier = Modifier.weight(1f))
+            // The switch only appears once TVDB's portraits arrive, after the page is up. It is
+            // laid out as zero height (drawn centred on the header line) and faded in, so its
+            // arrival can't grow the header and push the cast row down.
+            val switchAlpha = remember { Animatable(0f) }
+            LaunchedEffect(Unit) { switchAlpha.animateTo(1f, tween(220)) }
+            Row(
+                modifier = Modifier
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints.copy(minHeight = 0))
+                        layout(placeable.width, 0) {
+                            placeable.place(0, -placeable.height / 2)
+                        }
+                    }
+                    .graphicsLayer { alpha = switchAlpha.value }
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                listOf(false to "Actors", true to "Characters").forEach { (value, label) ->
+                    val on = showCharacters == value
+                    Text(
+                        text = label,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (on) Color.White.copy(alpha = 0.16f) else Color.Transparent)
+                            .pointerHoverIcon(PointerIcon.Hand)
+                            .clickable { onShowCharacters(value) }
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (on) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val characterNameNoise = Regex("[^\\p{L}\\p{N}]+")
+
+private fun String?.normalizedForCharacterMatch(): String =
+    orEmpty().lowercase().replace(characterNameNoise, "")
+
+/** Each cast member's TVDB character portrait: by actor name, else by character name. */
+private fun List<MetaPerson>.withCharacterImages(characters: List<TvdbCharacter>): List<MetaPerson> {
+    if (characters.isEmpty()) return this
+    // Blank names never match: an unnamed TVDB character must not land on a cast member with no role.
+    val byPerson = characters.associate { it.person.normalizedForCharacterMatch() to it.image } - ""
+    val byCharacter = characters.associate { it.character.normalizedForCharacterMatch() to it.image } - ""
+    return map { person ->
+        val image = byPerson[person.name.normalizedForCharacterMatch()]
+            ?: byCharacter[person.role?.substringBefore(" / ").normalizedForCharacterMatch()]
+        if (image == null) person else person.copy(characterImage = image)
     }
 }
 

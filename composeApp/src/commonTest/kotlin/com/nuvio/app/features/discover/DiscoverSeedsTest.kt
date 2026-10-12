@@ -138,7 +138,8 @@ class DiscoverSeedsTest {
         // Some watch-history rows are written with an empty name; the newest row being one of them
         // rendered a headless "Because you watched" row.
         val history = listOf(
-            episode("tt0121955", season = 1, episode = 1, daysAgo = 30, name = "South Park"),
+            WatchedItem(id = "tt0121955", type = "series", name = "South Park", markedAtEpochMs = NOW - 30 * DAY),
+            WatchedItem(id = "tt0121955", type = "series", name = "", markedAtEpochMs = NOW - 2 * DAY),
             episode("tt0121955", season = 26, episode = 4, daysAgo = 1, name = ""),
         )
 
@@ -147,6 +148,30 @@ class DiscoverSeedsTest {
         assertEquals("South Park", seeds.single().title)
         // The timestamp still comes from the genuinely newest row.
         assertEquals(NOW - DAY, seeds.single().lastWatchedAtEpochMs)
+    }
+
+    @Test
+    fun `an episode row's name never titles the show`() {
+        // SIMKL-imported history names episode rows after the episode, which made Friends a
+        // "Because you watched The Last One (2)" row. Blank sends the caller to TMDB for the title.
+        val history = listOf(
+            episode("tt0108778", season = 10, episode = 18, daysAgo = 1, name = "The Last One (2)"),
+            episode("tt0108778", season = 10, episode = 17, daysAgo = 1, name = "The Last One (1)"),
+        )
+
+        assertEquals("", collapseWatchedToSeedCandidates(history, now = NOW).single().title)
+    }
+
+    @Test
+    fun `a name the episode rows share is the show's`() {
+        // Local marks name every episode row after the show; the repeat is what gives it away.
+        val history = listOf(
+            episode("tt0411008", season = 1, episode = 1, daysAgo = 3, name = "Lost"),
+            episode("tt0411008", season = 1, episode = 2, daysAgo = 2, name = "Lost"),
+            episode("tt0411008", season = 1, episode = 3, daysAgo = 1, name = "Pilot (2)"),
+        )
+
+        assertEquals("Lost", collapseWatchedToSeedCandidates(history, now = NOW).single().title)
     }
 
     @Test

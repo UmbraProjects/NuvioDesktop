@@ -19,6 +19,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 object MdbListMetadataService {
     const val CACHE_VERSION = 4
@@ -144,7 +147,10 @@ object MdbListMetadataService {
         val pending = cacheMutex.withLock {
             val loaded = ensureCacheLoaded()
             loaded[cacheKey]?.let { entry ->
-                if (entry.expiresAtMs > now) {
+                // Ratings cached before they carried site links are fetched once more, so the title
+                // page's badges open the title itself rather than a site search.
+                val missingLinks = !entry.hasLinks && entry.ratings.isNotEmpty()
+                if (entry.expiresAtMs > now && !missingLinks) {
                     return MdbListEnrichmentData(
                         entry.ratings.withRottenTomatoesCertification(entry.keywords),
                         entry.keywords,
@@ -218,7 +224,12 @@ object MdbListMetadataService {
         cacheMutex.withLock {
             val loaded = ensureCacheLoaded()
             val ttl = if (enrichment.ratings.isNotEmpty() || enrichment.keywords.isNotEmpty()) FOUND_TTL_MS else NOT_FOUND_TTL_MS
-            loaded[cacheKey] = CachedRatings(ratings = enrichment.ratings, keywords = enrichment.keywords, expiresAtMs = requestedAtMs + ttl)
+            loaded[cacheKey] = CachedRatings(
+                ratings = enrichment.ratings,
+                keywords = enrichment.keywords,
+                expiresAtMs = requestedAtMs + ttl,
+                hasLinks = enrichment.hasLinks,
+            )
             persister.schedule()
             inFlightRequests.remove(cacheKey)
         }
@@ -248,14 +259,24 @@ object MdbListMetadataService {
             error("HTTP ${response.status}")
         }
         val payload = response.body.takeIf { it.isNotBlank() } ?: error("Empty response body")
+        return parseEnrichment(payload, mediaType)
+    }
+
+    /** One MDBList title response → ratings (with their site links) and keywords. */
+    internal fun parseEnrichment(payload: String, mediaType: String): MdbListEnrichmentData {
         val parsed = json.decodeFromString<MdbListRatingsResponse>(payload)
+        val ids = parsed.ids?.toIds()
         val ratings = parsed.ratings.mapNotNull { item ->
             val providerId = providerIdForSource(item.source) ?: return@mapNotNull null
             val value = item.value ?: return@mapNotNull null
-            MetaExternalRating(source = providerId, value = value)
+            MetaExternalRating(
+                source = providerId,
+                value = value,
+                url = ratingLinkFromMdbList(providerId, item.sitePath(), ids, isMovie = mediaType == "movie"),
+            )
         }
         val keywords = parsed.keywords.mapNotNull { it.name }.filter { it.isNotBlank() }
-        return MdbListEnrichmentData(ratings.withRottenTomatoesCertification(keywords), keywords)
+        return MdbListEnrichmentData(ratings.withRottenTomatoesCertification(keywords), keywords, hasLinks = true)
     }
 
     /**
@@ -289,9 +310,10 @@ object MdbListMetadataService {
             MdbListRatingsCacheStorage.load()?.let { raw ->
                 json.decodeFromString<Map<String, CachedRatingsDto>>(raw).forEach { (key, dto) ->
                     loaded[key] = CachedRatings(
-                        ratings = dto.ratings.map { MetaExternalRating(source = it.source, value = it.value) },
+                        ratings = dto.ratings.map { MetaExternalRating(source = it.source, value = it.value, url = it.url) },
                         keywords = dto.keywords,
                         expiresAtMs = dto.expiresAtMs,
+                        hasLinks = dto.hasLinks,
                     )
                 }
             }
@@ -313,9 +335,10 @@ object MdbListMetadataService {
     private fun persistCache(entries: Map<String, CachedRatings>) {
         val dto = entries.mapValues { (_, entry) ->
             CachedRatingsDto(
-                ratings = entry.ratings.map { MetaExternalRatingDto(source = it.source, value = it.value) },
+                ratings = entry.ratings.map { MetaExternalRatingDto(source = it.source, value = it.value, url = it.url) },
                 keywords = entry.keywords,
                 expiresAtMs = entry.expiresAtMs,
+                hasLinks = entry.hasLinks,
             )
         }
         runCatching { MdbListRatingsCacheStorage.save(json.encodeToString(dto)) }
@@ -396,12 +419,15 @@ private class MdbListRateLimitedException : RuntimeException()
 internal data class MdbListEnrichmentData(
     val ratings: List<MetaExternalRating> = emptyList(),
     val keywords: List<String> = emptyList(),
+    /** Fetched since ratings carried their site links. */
+    val hasLinks: Boolean = false,
 )
 
 private data class CachedRatings(
     val ratings: List<MetaExternalRating>,
     val keywords: List<String> = emptyList(),
     val expiresAtMs: Long,
+    val hasLinks: Boolean = false,
 )
 
 @Serializable
@@ -409,25 +435,58 @@ private data class CachedRatingsDto(
     val ratings: List<MetaExternalRatingDto>,
     val keywords: List<String> = emptyList(),
     val expiresAtMs: Long,
+    val hasLinks: Boolean = false,
 )
 
 @Serializable
 private data class MetaExternalRatingDto(
     val source: String,
     val value: Double,
+    val url: String? = null,
 )
 
 @Serializable
 private data class MdbListRatingsResponse(
     val ratings: List<MdbListRatingItem> = emptyList(),
     val keywords: List<MdbListKeywordItem> = emptyList(),
+    val ids: MdbListIdsDto? = null,
+)
+
+/** The title's ids on other sites; numbers or strings depending on the site, so read loosely. */
+@Serializable
+private data class MdbListIdsDto(
+    val imdb: JsonPrimitive? = null,
+    val tmdb: JsonPrimitive? = null,
+    val trakt: JsonPrimitive? = null,
+    val mal: JsonPrimitive? = null,
+) {
+    fun toIds() = MdbListIds(
+        imdb = imdb?.contentOrNull?.takeIf { it.startsWith("tt") },
+        tmdb = tmdb?.contentOrNull?.takeIf { it.isNotBlank() && it != "0" },
+        trakt = trakt?.contentOrNull?.takeIf { it.isNotBlank() && it != "0" },
+        mal = mal?.contentOrNull?.takeIf { it.isNotBlank() && it != "0" },
+    )
+}
+
+internal data class MdbListIds(
+    val imdb: String? = null,
+    val tmdb: String? = null,
+    val trakt: String? = null,
+    val mal: String? = null,
 )
 
 @Serializable
 private data class MdbListRatingItem(
     val source: String? = null,
     val value: Double? = null,
-)
+    /**
+     * The title's path on that site (`/tv/ted_lasso`) for the sites MDBList knows it for. Not always
+     * a string: IMDb's is a bare number, so it is read loosely and only a string is used.
+     */
+    val url: JsonElement? = null,
+) {
+    fun sitePath(): String? = (url as? JsonPrimitive)?.takeIf { it.isString }?.content
+}
 
 @Serializable
 private data class MdbListKeywordItem(

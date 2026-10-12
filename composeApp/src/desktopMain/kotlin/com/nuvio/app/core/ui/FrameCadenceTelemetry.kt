@@ -6,9 +6,10 @@ import androidx.compose.runtime.withFrameNanos
 import co.touchlab.kermit.Logger
 
 /**
- * Frame cadence, always measured - including when steady pacing is OFF.
+ * Frame cadence, measured whenever Performance logging is on - with steady pacing on or OFF.
  *
- * Whether the mitigation above actually does what it claims has to be checked, not assumed: if the
+ * Whether steady pacing ([SteadyFramePacingEffect]) actually does what it claims has to be checked,
+ * not assumed: if the
  * intervals are already even when it is on and the panel still flickers, the app cannot influence
  * the refresh rate and the cause is below it. If they are ragged, the mitigation is not working and
  * the theory is still untested. Reported as the distribution, because a mean hides exactly the

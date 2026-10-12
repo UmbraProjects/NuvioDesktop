@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -37,6 +38,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -49,6 +51,7 @@ import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -58,6 +61,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -89,7 +93,9 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.AnnotatedString
 import com.nuvio.app.core.build.AppFeaturePolicy
+import com.nuvio.app.core.i18n.localizedByteUnit
 import com.nuvio.app.core.ui.NuvioBackButton
+import com.nuvio.app.core.ui.NuvioDesktopVerticalScrollbar
 import com.nuvio.app.core.ui.KeepListAtTopWhileItemsArrive
 import com.nuvio.app.core.ui.navigationKey
 import com.nuvio.app.core.ui.NuvioBottomSheetActionRow
@@ -115,6 +121,7 @@ import com.nuvio.app.features.debrid.DebridSourceInspector
 import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.debrid.toastMessage
+import com.nuvio.app.features.downloads.DownloadsPlatformDownloader
 import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.downloads.isSafeVideoDownloadCandidate
 import com.nuvio.app.features.librarypvr.ManualGrabSession
@@ -127,6 +134,7 @@ import com.nuvio.app.features.librarypvr.LibraryDestinationFolders
 import com.nuvio.app.features.librarypvr.LibraryFileNaming
 import com.nuvio.app.features.librarypvr.LibraryPvrRepository
 import com.nuvio.app.features.librarypvr.ReleaseYearResolver
+import com.nuvio.app.features.librarypvr.formatBytes
 import com.nuvio.app.features.librarypvr.videoExtension
 import com.nuvio.app.features.locallibrary.LocalFolder
 import com.nuvio.app.features.locallibrary.LocalFolderType
@@ -138,7 +146,10 @@ import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.isDesktop
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import nuvio.composeapp.generated.resources.*
@@ -1009,6 +1020,7 @@ fun StreamsScreen(
                 // predecessors does not depend on the user remembering where they went.
                 // Season-scoped for episodes: a drive holding only an anime's earlier seasons is not
                 // where this season's episodes went, even though both answer to the franchise id.
+                preferAnimeFolders = isAnimeContent,
                 foldersHoldingTitle = remember(downloadFolderCandidates, parentMetaId, videoId, localLibraryState.items) {
                     downloadFolderCandidates
                         .filter { candidate ->
@@ -1092,14 +1104,61 @@ private data class PackSelectionPrompt(
 private fun SeasonFolderPickerDialog(
     folders: List<LocalFolder>,
     foldersHoldingTitle: Set<String>,
+    preferAnimeFolders: Boolean,
     onDismiss: () -> Unit,
     onSelect: (LocalFolder) -> Unit,
 ) {
+    // Each drive is probed once, all in parallel on IO: a sleeping disk or network share can take
+    // tens of seconds to answer and must not hold up the local drives, which answer near-instantly.
+    // A folder id present in the map means its drive has answered; a null value means it answered
+    // without usable numbers, so its row simply shows no space line.
+    val spaceByFolderId = remember(folders) { mutableStateMapOf<String, FolderDriveSpace?>() }
+    // The list waits briefly for the first answers, sorts once, and then never reorders on its own,
+    // so a late drive can't shuffle the rows under a click. Late answers only fill in their line.
+    var settled by remember(folders) { mutableStateOf(false) }
+    var sortSnapshot by remember(folders) { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    fun takeSortSnapshot() {
+        sortSnapshot = spaceByFolderId.mapNotNull { (id, space) -> space?.let { id to it.freeBytes } }.toMap()
+    }
+    LaunchedEffect(folders) {
+        val foldersByDrive = folders.groupBy { folder -> folder.driveLabel ?: folder.path }
+        val probes = foldersByDrive.values.map { driveFolders ->
+            launch {
+                val path = driveFolders.first().path
+                val space = withContext(Dispatchers.IO) {
+                    DownloadsPlatformDownloader.totalSpaceBytes(path)?.let { total ->
+                        // usableSpaceBytes reports a full drive as unknown; with the total in hand
+                        // the drive is clearly reachable, so read that as 0 free.
+                        FolderDriveSpace(
+                            freeBytes = DownloadsPlatformDownloader.usableSpaceBytes(path) ?: 0L,
+                            totalBytes = total,
+                        )
+                    }
+                }
+                driveFolders.forEach { folder -> spaceByFolderId[folder.id] = space }
+            }
+        }
+        withTimeoutOrNull(FOLDER_SPACE_SORT_WAIT_MS) { probes.joinAll() }
+        takeSortSnapshot()
+        settled = true
+    }
+    // Most free space first by default: the roomiest drive is the safest place for a new download.
+    var sortByFreeSpace by remember { mutableStateOf(true) }
     // A folder that already holds this title is almost always the intended answer, so it leads the
-    // list and says so. Ordering is stable within each group, so the candidate order the caller
-    // established (anime folders first for anime) still decides everything else.
-    val ordered = remember(folders, foldersHoldingTitle) {
-        folders.sortedByDescending { folder -> folder.id in foldersHoldingTitle }
+    // list and says so, whichever sort is chosen. Next come the folders matching the title's kind
+    // (anime folders for anime, the rest otherwise), as the caller ordered them. Free space only
+    // reorders within those groups, and drives yet to answer go last; ordering is stable, so
+    // library order keeps the caller's order.
+    val ordered = remember(folders, foldersHoldingTitle, preferAnimeFolders, sortByFreeSpace, sortSnapshot) {
+        val grouped = compareByDescending<LocalFolder> { folder -> folder.id in foldersHoldingTitle }
+            .thenByDescending { folder -> folder.isAnime == preferAnimeFolders }
+        folders.sortedWith(
+            if (sortByFreeSpace) {
+                grouped.thenByDescending { folder -> sortSnapshot[folder.id] ?: -1L }
+            } else {
+                grouped
+            },
+        )
     }
     NuvioModalDialog(
         onDismissRequest = onDismiss,
@@ -1107,48 +1166,118 @@ private fun SeasonFolderPickerDialog(
         subtitle = stringResource(Res.string.streams_download_season_folder_subtitle),
         maxWidth = 460.dp,
     ) {
-        ordered.forEach { folder ->
-            val alreadyUsed = folder.id in foldersHoldingTitle
-            Row(
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterChip(
+                selected = sortByFreeSpace,
+                // A deliberate click may reorder: it re-sorts with whatever has answered so far.
+                onClick = {
+                    takeSortSnapshot()
+                    sortByFreeSpace = true
+                },
+                label = { Text(stringResource(Res.string.streams_download_folder_sort_free_space)) },
+            )
+            FilterChip(
+                selected = !sortByFreeSpace,
+                onClick = { sortByFreeSpace = false },
+                label = { Text(stringResource(Res.string.streams_download_folder_sort_library)) },
+            )
+        }
+        val listScroll = rememberScrollState()
+        Box(modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp)) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelect(folder) }
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    .verticalScroll(listScroll)
+                    .padding(end = 12.dp),
             ) {
-                Icon(
-                    imageVector = if (alreadyUsed) Icons.Rounded.FolderSpecial else Icons.Rounded.Folder,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = folder.displayNameWithDrive,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = if (alreadyUsed) {
-                            stringResource(Res.string.streams_download_folder_already_used)
-                        } else {
-                            folder.path
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (alreadyUsed) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                if (!settled) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                }
+                if (settled) ordered.forEach { folder ->
+                    val alreadyUsed = folder.id in foldersHoldingTitle
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(folder) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (alreadyUsed) Icons.Rounded.FolderSpecial else Icons.Rounded.Folder,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = folder.displayNameWithDrive,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = if (alreadyUsed) {
+                                    stringResource(Res.string.streams_download_folder_already_used)
+                                } else {
+                                    folder.path
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (alreadyUsed) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            val space = spaceByFolderId[folder.id]
+                            if (space != null || folder.id !in spaceByFolderId) {
+                                Text(
+                                    text = if (space != null) {
+                                        stringResource(
+                                            Res.string.streams_download_folder_space,
+                                            formatDriveBytes(space.freeBytes),
+                                            formatDriveBytes(space.totalBytes),
+                                        )
+                                    } else {
+                                        stringResource(Res.string.streams_download_folder_space_checking)
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
                 }
             }
+            NuvioDesktopVerticalScrollbar(listScroll, Modifier.align(Alignment.CenterEnd))
         }
     }
+}
+
+private data class FolderDriveSpace(val freeBytes: Long, val totalBytes: Long)
+
+/** How long the folder picker waits for drive space before sorting once and showing the list. */
+private const val FOLDER_SPACE_SORT_WAIT_MS = 1_000L
+
+/** [formatBytes], except sizes of 1 TB and up read as TB with two decimals ("26.08 TB"). */
+private fun formatDriveBytes(bytes: Long): String {
+    val tib = 1024.0 * 1024.0 * 1024.0 * 1024.0
+    if (bytes < tib) return formatBytes(bytes)
+    val hundredths = (bytes / tib * 100.0).roundToInt()
+    return "${hundredths / 100}.${(hundredths % 100).toString().padStart(2, '0')} ${localizedByteUnit("TB")}"
 }
 
 /**

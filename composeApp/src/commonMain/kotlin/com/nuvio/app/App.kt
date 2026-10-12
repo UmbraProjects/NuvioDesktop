@@ -175,6 +175,7 @@ import com.nuvio.app.core.ui.localizedContinueWatchingSubtitle
 import com.nuvio.app.core.ui.nuvio
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import com.nuvio.app.features.discover.DiscoverRecommendationsRepository
 import com.nuvio.app.features.auth.AuthScreen
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.calendar.CalendarPrewarm
@@ -4377,6 +4378,9 @@ private fun MainAppContent(
                     }
                     target?.let { { PlaylistAddController.request(it) } }
                 },
+                onNotInterested = selectedPosterActionTarget?.preview
+                    ?.takeIf { preview -> DiscoverRecommendationsRepository.canMarkNotInterested(preview) }
+                    ?.let { preview -> { DiscoverRecommendationsRepository.markNotInterested(preview) } },
                 onOpenInLocalLibrary = selectedPosterActionTarget?.preview
                     ?.let { preview -> LocalLibraryRepository.itemForContentId(preview.id) }
                     ?.let {

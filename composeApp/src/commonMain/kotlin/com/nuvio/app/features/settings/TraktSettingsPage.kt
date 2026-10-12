@@ -28,22 +28,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktBrandAsset
 import com.nuvio.app.features.trakt.TraktAuthUiState
 import com.nuvio.app.features.trakt.TraktConnectionMode
-import com.nuvio.app.features.trakt.TRAKT_DEFAULT_REDIRECT_URI
 import com.nuvio.app.features.trakt.MoreLikeThisSourcePreference
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trakt.TraktSettingsUiState
@@ -52,30 +57,24 @@ import com.nuvio.app.features.trakt.traktBrandPainter
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
 import nuvio.composeapp.generated.resources.settings_playback_dialog_close
-import nuvio.composeapp.generated.resources.settings_trakt_approval_redirect
 import nuvio.composeapp.generated.resources.settings_trakt_authentication
-import nuvio.composeapp.generated.resources.settings_trakt_legacy_banner
 import nuvio.composeapp.generated.resources.settings_trakt_comments
 import nuvio.composeapp.generated.resources.settings_trakt_comments_description
 import nuvio.composeapp.generated.resources.settings_trakt_connect
 import nuvio.composeapp.generated.resources.settings_trakt_connected_as
 import nuvio.composeapp.generated.resources.settings_trakt_credentials_clear
 import nuvio.composeapp.generated.resources.settings_trakt_credentials_cleared
-import nuvio.composeapp.generated.resources.settings_trakt_credentials_description
 import nuvio.composeapp.generated.resources.settings_trakt_credentials_save
 import nuvio.composeapp.generated.resources.settings_trakt_credentials_saved
 import nuvio.composeapp.generated.resources.settings_trakt_credentials_title
 import nuvio.composeapp.generated.resources.settings_trakt_client_id
-import nuvio.composeapp.generated.resources.settings_trakt_client_secret
 import nuvio.composeapp.generated.resources.settings_trakt_default_user
 import nuvio.composeapp.generated.resources.settings_trakt_disconnect
 import nuvio.composeapp.generated.resources.settings_trakt_failed_open_browser
 import nuvio.composeapp.generated.resources.settings_trakt_features
-import nuvio.composeapp.generated.resources.settings_trakt_finish_sign_in
 import nuvio.composeapp.generated.resources.settings_trakt_intro_description
 import nuvio.composeapp.generated.resources.settings_trakt_missing_credentials
 import nuvio.composeapp.generated.resources.settings_trakt_open_login
-import nuvio.composeapp.generated.resources.settings_trakt_redirect_uri
 import nuvio.composeapp.generated.resources.settings_trakt_save_actions_description
 import nuvio.composeapp.generated.resources.settings_trakt_sign_in_description
 import nuvio.composeapp.generated.resources.trakt_more_like_this_source_dialog_subtitle
@@ -106,13 +105,6 @@ internal fun LazyListScope.traktSettingsContent(
     item {
         SettingsGroup(isTablet = isTablet) {
             TraktBrandIntro(isTablet = isTablet)
-            SettingsGroupDivider(isTablet = isTablet)
-            // Stated on the page itself rather than only in the docs: this integration cannot be
-            // tested any more, so a user hitting a problem here should know why before reporting it.
-            TraktInfoRow(
-                isTablet = isTablet,
-                text = stringResource(Res.string.settings_trakt_legacy_banner),
-            )
         }
     }
 
@@ -248,24 +240,6 @@ private fun TraktSettingsActionRow(
             overflow = TextOverflow.Ellipsis,
         )
     }
-}
-
-@Composable
-private fun TraktInfoRow(
-    isTablet: Boolean,
-    text: String,
-) {
-    val horizontalPadding = if (isTablet) 20.dp else 16.dp
-    val verticalPadding = if (isTablet) 14.dp else 12.dp
-
-    Text(
-        text = text,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
 }
 
 @Composable
@@ -467,55 +441,30 @@ private fun TraktCredentialsCard(
     settingsUiState: TraktSettingsUiState,
 ) {
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
-    val savedRedirectUri = settingsUiState.traktRedirectUri.ifBlank { TRAKT_DEFAULT_REDIRECT_URI }
-
-    fun saveCredentials(clientId: String, clientSecret: String, redirectUri: String) {
-        TraktSettingsRepository.setCredentials(
-            clientId = clientId,
-            clientSecret = clientSecret,
-            redirectUri = redirectUri,
-        )
-        TraktAuthRepository.onCredentialsChanged()
-    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
     ) {
+        // Literal string: newly added resource keys do not always resolve (see build notes).
         SettingsTextInputRow(
             title = stringResource(Res.string.settings_trakt_client_id),
-            description = stringResource(Res.string.settings_trakt_credentials_description),
+            description = if (TraktSettingsRepository.hasBuiltInClientId()) {
+                "Optional. Nuvio has its own Trakt app, so you can leave this empty. To use your own, " +
+                    "create an app at app.trakt.tv/settings/apps and paste its Client ID here."
+            } else {
+                "Create an app at app.trakt.tv/settings/apps and paste its Client ID here."
+            } + " Nuvio signs in with a device code, so no client secret is needed and the " +
+                "app's redirect URI is never used.",
             value = settingsUiState.traktClientId,
             placeholder = stringResource(Res.string.settings_trakt_client_id),
             summarizeAsConfigured = true,
             isTablet = isTablet,
             onSave = { value ->
-                saveCredentials(value, settingsUiState.traktClientSecret, savedRedirectUri)
+                TraktSettingsRepository.setClientId(value)
+                TraktAuthRepository.onCredentialsChanged()
             },
         )
-        SettingsGroupDivider(isTablet = isTablet)
-        SettingsTextInputRow(
-            title = stringResource(Res.string.settings_trakt_client_secret),
-            description = stringResource(Res.string.settings_trakt_credentials_description),
-            value = settingsUiState.traktClientSecret,
-            placeholder = stringResource(Res.string.settings_trakt_client_secret),
-            secret = true,
-            isTablet = isTablet,
-            onSave = { value ->
-                saveCredentials(settingsUiState.traktClientId, value, savedRedirectUri)
-            },
-        )
-        SettingsGroupDivider(isTablet = isTablet)
-        SettingsTextInputRow(
-            title = stringResource(Res.string.settings_trakt_redirect_uri),
-            description = stringResource(Res.string.settings_trakt_credentials_description),
-            value = savedRedirectUri,
-            placeholder = stringResource(Res.string.settings_trakt_redirect_uri),
-            isTablet = isTablet,
-            onSave = { value ->
-                saveCredentials(settingsUiState.traktClientId, settingsUiState.traktClientSecret, value)
-            },
-        )
-        if (settingsUiState.traktClientId.isNotBlank() || settingsUiState.traktClientSecret.isNotBlank()) {
+        if (settingsUiState.traktClientId.isNotBlank()) {
             Button(
                 modifier = Modifier.padding(horizontal = horizontalPadding, vertical = 8.dp),
                 onClick = {
@@ -538,10 +487,8 @@ private fun TraktConnectionCard(
     isTablet: Boolean,
     uiState: TraktAuthUiState,
 ) {
-    val uriHandler = LocalUriHandler.current
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
     val verticalPadding = if (isTablet) 18.dp else 16.dp
-    val failedOpenBrowserMessage = stringResource(Res.string.settings_trakt_failed_open_browser)
 
     Column(
         modifier = Modifier
@@ -560,71 +507,53 @@ private fun TraktConnectionCard(
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Medium,
                 )
-                Text(
-                    text = stringResource(Res.string.settings_trakt_save_actions_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(
-                    onClick = TraktAuthRepository::onDisconnectRequested,
-                    enabled = !uiState.isLoading,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
+                if (uiState.needsReconnect) {
+                    Text(
+                        text = "Trakt is no longer accepting this connection. Connections made before " +
+                            "Trakt's October 2026 sign-in change, or removed from your Trakt Connected " +
+                            "Apps, need one fresh sign-in. Your lists and history are kept.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    Text(
+                        text = stringResource(Res.string.settings_trakt_save_actions_description),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    if (uiState.needsReconnect) {
+                        Button(
+                            onClick = { TraktAuthRepository.onConnectRequested() },
+                            enabled = uiState.credentialsConfigured && !uiState.isLoading,
+                        ) {
+                            Text("Reconnect")
+                        }
+                    }
+                    Button(
+                        onClick = { TraktAuthRepository.onDisconnectRequested() },
+                        enabled = !uiState.isLoading,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                    ) {
+                        Text(stringResource(Res.string.settings_trakt_disconnect))
+                    }
                     if (uiState.isLoading) {
                         CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.onSurface,
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(18.dp),
                         )
-                    } else {
-                        Text(stringResource(Res.string.settings_trakt_disconnect))
                     }
                 }
             }
 
-            TraktConnectionMode.AWAITING_APPROVAL -> {
-                Text(
-                    text = stringResource(Res.string.settings_trakt_finish_sign_in),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Medium,
-                )
-                Text(
-                    text = stringResource(Res.string.settings_trakt_approval_redirect),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(
-                    onClick = {
-                        val authUrl = TraktAuthRepository.pendingAuthorizationUrl()
-                            ?: TraktAuthRepository.onConnectRequested()
-                        if (authUrl == null) return@Button
-                        runCatching { uriHandler.openUri(authUrl) }
-                            .onFailure {
-                                TraktAuthRepository.onAuthLaunchFailed(
-                                    it.message ?: failedOpenBrowserMessage,
-                                )
-                            }
-                    },
-                    enabled = !uiState.isLoading,
-                ) {
-                    Text(stringResource(Res.string.settings_trakt_open_login))
-                }
-                Button(
-                    onClick = TraktAuthRepository::onCancelAuthorization,
-                    enabled = !uiState.isLoading,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                ) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            }
-
+            TraktConnectionMode.AWAITING_APPROVAL,
             TraktConnectionMode.DISCONNECTED -> {
                 Text(
                     text = stringResource(Res.string.settings_trakt_sign_in_description),
@@ -632,15 +561,7 @@ private fun TraktConnectionCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Button(
-                    onClick = {
-                        val authUrl = TraktAuthRepository.onConnectRequested() ?: return@Button
-                        runCatching { uriHandler.openUri(authUrl) }
-                            .onFailure {
-                                TraktAuthRepository.onAuthLaunchFailed(
-                                    it.message ?: failedOpenBrowserMessage,
-                                )
-                            }
-                    },
+                    onClick = { TraktAuthRepository.onConnectRequested() },
                     enabled = uiState.credentialsConfigured && !uiState.isLoading,
                 ) {
                     if (uiState.isLoading) {
@@ -678,4 +599,117 @@ private fun TraktConnectionCard(
             )
         }
     }
+
+    val userCode = uiState.pendingUserCode
+    if (userCode != null) {
+        TraktDeviceCodeDialog(
+            userCode = userCode,
+            verificationUrl = uiState.pendingVerificationUrl ?: "https://auth.trakt.tv/activate",
+            expiresAtMillis = uiState.pendingExpiresAtMillis,
+        )
+    }
 }
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun TraktDeviceCodeDialog(
+    userCode: String,
+    verificationUrl: String,
+    expiresAtMillis: Long?,
+) {
+    val uriHandler = LocalUriHandler.current
+    val failedOpenBrowserMessage = stringResource(Res.string.settings_trakt_failed_open_browser)
+    val openActivationPage = {
+        runCatching { uriHandler.openUri(verificationUrl) }
+            .onFailure { TraktAuthRepository.onAuthLaunchFailed(it.message ?: failedOpenBrowserMessage) }
+        Unit
+    }
+    val clipboardManager = LocalClipboardManager.current
+    var copied by remember(userCode) { mutableStateOf(false) }
+    val copyCode = {
+        copied = runCatching { clipboardManager.setText(AnnotatedString(userCode)) }.isSuccess
+    }
+    // A desktop app copies the code and opens the activation page itself, so approving is a paste;
+    // the code stays on screen for anyone approving from a phone instead.
+    LaunchedEffect(userCode) {
+        copyCode()
+        openActivationPage()
+    }
+    var remainingSeconds by remember(expiresAtMillis) { mutableStateOf(secondsUntil(expiresAtMillis)) }
+    LaunchedEffect(expiresAtMillis) {
+        while (remainingSeconds > 0) {
+            delay(1_000)
+            remainingSeconds = secondsUntil(expiresAtMillis)
+        }
+    }
+
+    BasicAlertDialog(onDismissRequest = { TraktAuthRepository.onCancelDeviceFlow() }) {
+        NuvioDialogSurface {
+            Column(
+                modifier = Modifier.padding(24.dp).widthIn(max = 360.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                // Literal strings: newly added resource keys do not always resolve (see build notes).
+                Text(
+                    text = "Connect Trakt",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Enter this code at ${verificationUrl.removePrefix("https://")} and approve Nuvio.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = userCode,
+                    style = MaterialTheme.typography.displaySmall.accentBrush(),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 4.sp,
+                )
+                val expiryText = expiresAtMillis?.let {
+                    val minutes = remainingSeconds / 60
+                    val seconds = (remainingSeconds % 60).toString().padStart(2, '0')
+                    "Code expires in $minutes:$seconds"
+                }
+                val footer = listOfNotNull(
+                    "Copied to clipboard".takeIf { copied },
+                    expiryText,
+                ).joinToString(" · ")
+                if (footer.isNotEmpty()) {
+                    Text(
+                        text = footer,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = openActivationPage) {
+                        Text(stringResource(Res.string.settings_trakt_open_login))
+                    }
+                    Button(
+                        onClick = copyCode,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                    ) {
+                        Text("Copy code")
+                    }
+                }
+                CircularProgressIndicator()
+                Button(
+                    onClick = { TraktAuthRepository.onCancelDeviceFlow() },
+                    colors = ButtonDefaults.outlinedButtonColors(),
+                ) {
+                    Text(stringResource(Res.string.action_cancel))
+                }
+            }
+        }
+    }
+}
+
+private fun secondsUntil(epochMs: Long?): Long =
+    epochMs?.let { ((it - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L) } ?: 0L

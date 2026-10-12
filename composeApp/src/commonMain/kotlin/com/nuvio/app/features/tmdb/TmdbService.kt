@@ -810,12 +810,17 @@ object TmdbService {
      * Canonical title for a TMDB id. Used when local data knows *which* title something is but not
      * what it is called — some watch-history rows carry an empty name.
      */
+    /** Titles by `type:id`, for the session: Discover asks for every series seed on each build. */
+    private val titleCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     suspend fun fetchTitle(tmdbId: Int, mediaType: String): String? {
         val apiKey = currentApiKey() ?: return null
         if (tmdbId <= 0) return null
         val endpoint = if (normalizeMediaType(mediaType) == "tv") "tv/$tmdbId" else "movie/$tmdbId"
+        titleCache[endpoint]?.let { return it }
         val body = fetch<TmdbPosterResponse>(endpoint = endpoint, apiKey = apiKey) ?: return null
         return (body.title ?: body.name)?.trim()?.takeIf { it.isNotBlank() }
+            ?.also { titleCache[endpoint] = it }
     }
 
     /** Poster URL for a TMDB id, used when a match was made by id (no poster path in hand). */
