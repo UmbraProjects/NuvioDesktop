@@ -956,6 +956,19 @@ val leanDesktopJar = providers.gradleProperty("nuvio.desktop.leanJar")
     .map(String::toBoolean)
     .getOrElse(true)
 
+// Large desktop resources that rarely change. The app jar changes every release, so everything in
+// it is re-downloaded on every update; these ~30MB (compressed) instead ship as loose files under
+// <install>\resources\ with the same relative path, staged by the app-image step below, and only
+// download again when they actually change. Readers go through PackagedResources, which falls back
+// to the classpath — so with -Pnuvio.desktop.leanJar=false they simply stay in the jar.
+val externalDesktopResources = listOf(
+    "torrserver/**",
+    "backdrop-framing/**",
+    "anime-list-mini.json",
+    "setup/**",
+)
+val desktopResourcesSourceDir = layout.projectDirectory.dir("src/desktopMain/resources").asFile
+
 tasks.withType<Jar>().configureEach {
     if (isMacHost && name == "desktopJar") {
         dependsOn(buildMacosPlayerBridge)
@@ -982,6 +995,10 @@ tasks.withType<Jar>().configureEach {
         }
         from(windowsPythonLibOutput) {
             into("native/windows/pylib")
+        }
+        // Shipped as loose files under <install>\resources instead; see externalDesktopResources.
+        if (leanDesktopJar) {
+            exclude(externalDesktopResources)
         }
     }
 }
@@ -1038,6 +1055,9 @@ if (isWindowsHost) {
             // The engine DLL is staged beside Nuvio.exe only (not via the jar), so it must be an
             // input here or a rebuilt DLL never reaches an otherwise up-to-date app image.
             inputs.files(nuvioEngineOutput).optional()
+            inputs.files(
+                fileTree(desktopResourcesSourceDir) { include(externalDesktopResources) },
+            )
             doLast {
                 val imageDir = layout.buildDirectory.dir("compose/binaries/$relativeImagePath").get().asFile
                 check(imageDir.resolve("Nuvio.exe").isFile) {
@@ -1056,6 +1076,21 @@ if (isWindowsHost) {
                 copy {
                     from(windowsPythonLibOutput)
                     into(imageDir.resolve("lib/python3.14"))
+                }
+                if (leanDesktopJar) {
+                    // A previous build's copy would survive a resource that was since removed.
+                    delete(imageDir.resolve("resources"))
+                    copy {
+                        from(desktopResourcesSourceDir) {
+                            include(externalDesktopResources)
+                        }
+                        into(imageDir.resolve("resources"))
+                    }
+                    // TorrServer.exe is gitignored, so a checkout without it builds an image
+                    // without TorrServer exactly as the jar used to.
+                    if (!imageDir.resolve("resources/torrserver/windows-amd64/TorrServer.exe").isFile) {
+                        logger.warn("TorrServer.exe not found under $desktopResourcesSourceDir; the app image ships without it.")
+                    }
                 }
 
                 val requiredNativeFiles = listOf("player_bridge.dll") +

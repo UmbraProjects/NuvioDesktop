@@ -1396,6 +1396,11 @@ private fun settingsSearchEntries(
                 anchor = SettingsScrollAnchor.DesktopRenderer,
             ) else null,
             if (isDesktop) PlaybackSearchRow(
+                "hdr-ui-compensation",
+                resolve(Res.string.settings_playback_desktop_hdr_ui_compensation),
+                resolve(Res.string.settings_playback_desktop_hdr_ui_compensation_description),
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
                 "steady-frame-pacing",
                 resolve(Res.string.settings_playback_desktop_steady_frame_pacing),
                 resolve(Res.string.settings_playback_desktop_steady_frame_pacing_description),

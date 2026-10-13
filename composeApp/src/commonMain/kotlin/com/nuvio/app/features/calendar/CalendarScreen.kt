@@ -177,6 +177,10 @@ fun CalendarScreen(
                 TraktCalendarRepository.ensureLoaded()
                 TraktCalendarRepository.uiState
             }
+            CalendarSource.NUVIO -> {
+                NuvioCalendarRepository.ensureLoaded()
+                NuvioCalendarRepository.uiState
+            }
         }
     }.collectAsStateWithLifecycle()
     val watchedState by WatchedRepository.uiState.collectAsStateWithLifecycle()
@@ -278,6 +282,8 @@ fun CalendarScreen(
                 SimklCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
             CalendarSource.TRAKT ->
                 TraktCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
+            CalendarSource.NUVIO ->
+                NuvioCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
         }
     }
 
@@ -396,6 +402,8 @@ fun CalendarScreen(
                                 CalendarSource.MDBLIST -> stringResource(Res.string.calendar_connect_mdblist)
                                 CalendarSource.SIMKL -> "Connect your SIMKL account to see your calendar."
                                 CalendarSource.TRAKT -> stringResource(Res.string.calendar_connect_trakt)
+                                // The local calendar needs no account, so never reports one missing.
+                                CalendarSource.NUVIO -> ""
                             },
                         )
                         firstLoad -> Box(

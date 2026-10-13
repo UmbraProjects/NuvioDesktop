@@ -234,7 +234,7 @@ data class HomeCatalogSettingsUiState(
     val hoverPreviewAdaptiveEnabled: Boolean = false,
     val catalogSeeMoreEnabled: Boolean = false,
     val catalogRowNumbersEnabled: Boolean = false,
-    val collectionGifsOnFocusOnly: Boolean = false,
+    val collectionGifsOnFocusOnly: Boolean = true,
     val catalogProviderTagEnabled: Boolean = false,
     val tvRowDotsEnabled: Boolean = false,
     val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
@@ -557,7 +557,7 @@ private data class StoredHomeCatalogSettingsPayload(
     val hoverPreviewAdaptiveEnabled: Boolean = false,
     val catalogSeeMoreEnabled: Boolean = false,
     val catalogRowNumbersEnabled: Boolean = false,
-    val collectionGifsOnFocusOnly: Boolean = false,
+    val collectionGifsOnFocusOnly: Boolean = true,
     val catalogProviderTagEnabled: Boolean = false,
     val tvRowDotsEnabled: Boolean = false,
     val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
@@ -637,7 +637,7 @@ object HomeCatalogSettingsRepository {
     private var hoverPreviewAdaptiveEnabled = false
     private var catalogSeeMoreEnabled = false
     private var catalogRowNumbersEnabled = false
-    private var collectionGifsOnFocusOnly = false
+    private var collectionGifsOnFocusOnly = true
     private var catalogProviderTagEnabled = false
     private var tvRowDotsEnabled = false
     private var tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
@@ -692,7 +692,7 @@ object HomeCatalogSettingsRepository {
         hoverPreviewAdaptiveEnabled = false
         catalogSeeMoreEnabled = false
         catalogRowNumbersEnabled = false
-        collectionGifsOnFocusOnly = false
+        collectionGifsOnFocusOnly = true
         catalogProviderTagEnabled = false
         tvRowDotsEnabled = false
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
@@ -750,7 +750,7 @@ object HomeCatalogSettingsRepository {
         hoverPreviewAdaptiveEnabled = false
         catalogSeeMoreEnabled = false
         catalogRowNumbersEnabled = false
-        collectionGifsOnFocusOnly = false
+        collectionGifsOnFocusOnly = true
         catalogProviderTagEnabled = false
         tvRowDotsEnabled = false
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
@@ -1552,7 +1552,7 @@ object HomeCatalogSettingsRepository {
         hoverPreviewAdaptiveEnabled = false
         catalogSeeMoreEnabled = false
         catalogRowNumbersEnabled = false
-        collectionGifsOnFocusOnly = false
+        collectionGifsOnFocusOnly = true
         catalogProviderTagEnabled = false
         tvRowDotsEnabled = false
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle

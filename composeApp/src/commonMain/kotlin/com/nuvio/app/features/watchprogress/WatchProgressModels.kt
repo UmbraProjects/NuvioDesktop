@@ -219,8 +219,8 @@ data class ContinueWatchingPreferencesUiState(
     val upNextFromFurthestEpisode: Boolean = true,
     val useEpisodeThumbnails: Boolean = true,
     val showUnairedNextUp: Boolean = true,
-    val separateNextUpRow: Boolean = false,
-    val separateUpcomingRow: Boolean = false,
+    val separateNextUpRow: Boolean = true,
+    val separateUpcomingRow: Boolean = true,
     /**
      * Whether Up Next may also be seeded from the Nuvio Sync watched history when a *remote*
      * Continue Watching source is selected.

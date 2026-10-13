@@ -43,12 +43,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -59,6 +68,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
+import com.nuvio.app.core.ui.navigationKey
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
@@ -101,9 +111,108 @@ fun ProfileSelectionScreen(
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
+    // Keyboard / controller navigation. Targets are the profile cards, the add card, then the
+    // Manage button last. Nothing here is a lazy list, so a requester per target is cheap.
+    // The focus ring only shows once a navigation key has been pressed, so a mouse user never
+    // sees one parked on the first card.
+    val profiles = profileState.profiles
+    val cardCount = profiles.size + if (profiles.size < 4) 1 else 0
+    val manageIndex = cardCount
+    val focusRequesters = remember(cardCount) { List(cardCount + 1) { FocusRequester() } }
+    var focusedIndex by remember { mutableStateOf(-1) }
+    var keyboardActive by remember { mutableStateOf(false) }
+    var gridColumns by remember { mutableStateOf(cardCount.coerceAtLeast(1)) }
+
+    fun activateCard(index: Int) {
+        val profile = profiles.getOrNull(index)
+        when {
+            profile == null -> onAddProfile()
+            isEditMode -> onEditProfile(profile)
+            profile.pinEnabled -> pinDialogProfile = profile
+            else -> onProfileSelected(profile)
+        }
+    }
+
+    fun focusTarget(index: Int) {
+        runCatching { focusRequesters.getOrNull(index)?.requestFocus() }
+    }
+
+    // Park focus on the last-used profile (else the first card) so the first key press has
+    // somewhere to land: with no focused node, Compose delivers no key events to this screen,
+    // which is why arrows, Enter and Tab all used to do nothing here.
+    val initialFocusIndex = profiles.indexOfFirst {
+        it.profileIndex == profileState.activeProfile?.profileIndex
+    }.coerceAtLeast(0)
+    LaunchedEffect(cardCount, pinDialogProfile) {
+        if (pinDialogProfile != null) return@LaunchedEffect
+        withFrameNanos { }
+        focusTarget(focusedIndex.takeIf { it in focusRequesters.indices } ?: initialFocusIndex)
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown || pinDialogProfile != null) {
+                    return@onPreviewKeyEvent false
+                }
+                val navKey = event.navigationKey()
+                val isBack = navKey == Key.Escape || navKey == Key.Backspace
+                val isNavigation = isBack || navKey in setOf(
+                    Key.DirectionLeft, Key.DirectionRight, Key.DirectionUp, Key.DirectionDown,
+                    Key.Tab, Key.Enter,
+                )
+                if (!isNavigation) return@onPreviewKeyEvent false
+                if (isBack) {
+                    // Leave Manage mode first; otherwise the gate's own back handler decides
+                    // (a no-op at startup, where there is nowhere to go back to).
+                    if (!isEditMode) return@onPreviewKeyEvent false
+                    isEditMode = false
+                    return@onPreviewKeyEvent true
+                }
+                val current = focusedIndex.takeIf { it in focusRequesters.indices }
+                // The first direction press only reveals where focus is, rather than moving it
+                // off a card the user has not seen highlighted yet.
+                val revealOnly = !keyboardActive && navKey != Key.Enter
+                keyboardActive = true
+                if (current == null) {
+                    focusTarget(initialFocusIndex)
+                    return@onPreviewKeyEvent true
+                }
+                if (revealOnly) return@onPreviewKeyEvent true
+                val columns = gridColumns.coerceAtLeast(1)
+                val lastCard = cardCount - 1
+                val next: Int? = when (navKey) {
+                    Key.DirectionLeft ->
+                        (current - 1).takeIf { current != manageIndex && current % columns != 0 }
+                    Key.DirectionRight -> (current + 1).takeIf {
+                        current != manageIndex && it <= lastCard && current % columns != columns - 1
+                    }
+                    Key.DirectionUp -> if (current == manageIndex) {
+                        // Back onto the bottom row, under where Manage sits (centred).
+                        val bottomRowStart = (lastCard / columns) * columns
+                        bottomRowStart + (lastCard - bottomRowStart) / 2
+                    } else {
+                        (current - columns).takeIf { it >= 0 }
+                    }
+                    Key.DirectionDown -> when {
+                        current == manageIndex -> null
+                        current + columns <= lastCard -> current + columns
+                        else -> manageIndex
+                    }
+                    Key.Tab -> if (event.isShiftPressed) {
+                        if (current == 0) manageIndex else current - 1
+                    } else {
+                        if (current == manageIndex) 0 else current + 1
+                    }
+                    else -> {
+                        if (current == manageIndex) isEditMode = !isEditMode else activateCard(current)
+                        null
+                    }
+                }
+                next?.let(::focusTarget)
+                true
+            }
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
@@ -149,8 +258,8 @@ fun ProfileSelectionScreen(
 
             Spacer(modifier = Modifier.height(if (isTabletLayout) 28.dp else 48.dp))
 
-            val profiles = profileState.profiles
-            val items = profiles.size + if (profiles.size < 4) 1 else 0
+            val items = cardCount
+            gridColumns = if (isTabletLayout) items.coerceAtLeast(1) else 2
 
             if (isTabletLayout) {
                 Box(
@@ -170,19 +279,19 @@ fun ProfileSelectionScreen(
                                     profile = profile,
                                     isEditMode = isEditMode,
                                     animDelay = currentIndex * 80,
-                                    onClick = {
-                                        if (isEditMode) {
-                                            onEditProfile(profile)
-                                        } else if (profile.pinEnabled) {
-                                            pinDialogProfile = profile
-                                        } else {
-                                            onProfileSelected(profile)
-                                        }
-                                    },
+                                    focused = keyboardActive && focusedIndex == currentIndex,
+                                    modifier = Modifier
+                                        .focusRequester(focusRequesters[currentIndex])
+                                        .onFocusChanged { if (it.isFocused) focusedIndex = currentIndex },
+                                    onClick = { activateCard(currentIndex) },
                                 )
                             } else {
                                 AddProfileCard(
                                     animDelay = currentIndex * 80,
+                                    focused = keyboardActive && focusedIndex == currentIndex,
+                                    modifier = Modifier
+                                        .focusRequester(focusRequesters[currentIndex])
+                                        .onFocusChanged { if (it.isFocused) focusedIndex = currentIndex },
                                     onClick = onAddProfile,
                                 )
                             }
@@ -210,19 +319,19 @@ fun ProfileSelectionScreen(
                                             profile = profile,
                                             isEditMode = isEditMode,
                                             animDelay = currentIndex * 80,
-                                            onClick = {
-                                                if (isEditMode) {
-                                                    onEditProfile(profile)
-                                                } else if (profile.pinEnabled) {
-                                                    pinDialogProfile = profile
-                                                } else {
-                                                    onProfileSelected(profile)
-                                                }
-                                            },
+                                            focused = keyboardActive && focusedIndex == currentIndex,
+                                            modifier = Modifier
+                                                .focusRequester(focusRequesters[currentIndex])
+                                                .onFocusChanged { if (it.isFocused) focusedIndex = currentIndex },
+                                            onClick = { activateCard(currentIndex) },
                                         )
                                     } else {
                                         AddProfileCard(
                                             animDelay = currentIndex * 80,
+                                            focused = keyboardActive && focusedIndex == currentIndex,
+                                            modifier = Modifier
+                                                .focusRequester(focusRequesters[currentIndex])
+                                                .onFocusChanged { if (it.isFocused) focusedIndex = currentIndex },
                                             onClick = onAddProfile,
                                         )
                                     }
@@ -240,6 +349,7 @@ fun ProfileSelectionScreen(
 
             Spacer(modifier = Modifier.height(if (isTabletLayout) 28.dp else 48.dp))
 
+            val manageFocused = keyboardActive && focusedIndex == manageIndex
             Box(
                 modifier = Modifier
                     .graphicsLayer { alpha = manageAlpha.value }
@@ -249,11 +359,16 @@ fun ProfileSelectionScreen(
                         else Color.Transparent,
                     )
                     .border(
-                        width = 1.dp,
-                        color = if (isEditMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                        width = if (manageFocused) 2.dp else 1.dp,
+                        color = when {
+                            manageFocused -> MaterialTheme.colorScheme.primary
+                            isEditMode -> MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                        },
                         shape = RoundedCornerShape(24.dp),
                     )
+                    .focusRequester(focusRequesters[manageIndex])
+                    .onFocusChanged { if (it.isFocused) focusedIndex = manageIndex }
                     .clickable { isEditMode = !isEditMode }
                     .padding(horizontal = 24.dp, vertical = 10.dp),
             ) {
@@ -292,7 +407,9 @@ private fun ProfileAvatarCard(
     profile: NuvioProfile,
     isEditMode: Boolean,
     animDelay: Int,
+    focused: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val avatarColor = remember(profile.avatarColorHex) {
         parseHexColor(profile.avatarColorHex)
@@ -318,11 +435,15 @@ private fun ProfileAvatarCard(
 
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val pressScale = if (isPressed) 0.95f else 1f
+    val pressScale = when {
+        isPressed -> 0.95f
+        focused -> 1.06f
+        else -> 1f
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
+        modifier = modifier
             .width(150.dp)
             .graphicsLayer {
                 alpha = animAlpha.value
@@ -331,6 +452,11 @@ private fun ProfileAvatarCard(
                 translationY = animOffset.value
             }
             .clip(RoundedCornerShape(20.dp))
+            .border(
+                width = 2.dp,
+                color = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+                shape = RoundedCornerShape(20.dp),
+            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -451,7 +577,9 @@ private fun ProfileAvatarCard(
 @Composable
 private fun AddProfileCard(
     animDelay: Int,
+    focused: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val animAlpha = remember { Animatable(0f) }
     val animScale = remember { Animatable(0.85f) }
@@ -466,11 +594,15 @@ private fun AddProfileCard(
 
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val pressScale = if (isPressed) 0.95f else 1f
+    val pressScale = when {
+        isPressed -> 0.95f
+        focused -> 1.06f
+        else -> 1f
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
+        modifier = modifier
             .width(150.dp)
             .graphicsLayer {
                 alpha = animAlpha.value
@@ -479,6 +611,11 @@ private fun AddProfileCard(
                 translationY = animOffset.value
             }
             .clip(RoundedCornerShape(20.dp))
+            .border(
+                width = 2.dp,
+                color = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+                shape = RoundedCornerShape(20.dp),
+            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,

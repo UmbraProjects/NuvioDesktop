@@ -483,6 +483,7 @@ object WatchProgressRepository {
         TraktCalendarRepository.onProfileChanged()
         SimklCalendarRepository.onProfileChanged()
         MdbListCalendarRepository.onProfileChanged()
+        com.nuvio.app.features.calendar.NuvioCalendarRepository.onProfileChanged()
         MdbListProgressRepository.onProfileChanged()
         SimklProgressRepository.onProfileChanged()
         when {
@@ -503,6 +504,7 @@ object WatchProgressRepository {
         deltaInitialized = false
         MdbListProgressRepository.clearLocalState()
         MdbListCalendarRepository.clearLocalState()
+        com.nuvio.app.features.calendar.NuvioCalendarRepository.clearLocalState()
         TraktProgressRepository.clearLocalState()
         TraktCalendarRepository.clearLocalState()
         TraktSettingsRepository.clearLocalState()

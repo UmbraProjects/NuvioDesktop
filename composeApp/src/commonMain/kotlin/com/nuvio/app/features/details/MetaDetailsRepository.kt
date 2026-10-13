@@ -362,6 +362,8 @@ object MetaDetailsRepository {
         trailerScope: TmdbMetadataService.TrailerScope,
         includeEpisodes: Boolean,
         origin: String,
+        /** False for a background sweep that keeps its own cache — see [fetchForSchedule]. */
+        cacheResult: Boolean = true,
     ): MetaDetails? {
         // forceRefresh bypasses the LRU so a background sweep (library auto-download) sees newly
         // aired episodes instead of a stale cached video list. The non-forced read happens in
@@ -389,16 +391,45 @@ object MetaDetailsRepository {
                     continue
                 }
                 val merged = result.mergeSupplementalMeta(supplementalMeta)
-                cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = merged)
+                if (cacheResult) cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = merged)
                 return merged
             }
         }
 
         return tryFetchTmdbFallbackMeta(type = type, id = id)?.also { result ->
-            cachedMetaByRequestKey[requestKey] = CachedMetaEntry(
-                baseMeta = result.mergeSupplementalMeta(supplementalMeta),
-            )
+            if (cacheResult) {
+                cachedMetaByRequestKey[requestKey] = CachedMetaEntry(
+                    baseMeta = result.mergeSupplementalMeta(supplementalMeta),
+                )
+            }
         }?.mergeSupplementalMeta(supplementalMeta)
+    }
+
+    /**
+     * A title's episode list and air dates for a background sweep that keeps its own cache — the
+     * local calendar, which walks every followed show.
+     *
+     * A full record already held is reused, but the answer is never stored: a sweep over a few
+     * hundred shows would otherwise push out of the 300-entry LRU everything the details screens
+     * and Home just loaded. No TMDB decoration either; only the addon's dates are wanted, and the
+     * placeholder air-time repair still runs inside the addon fetch.
+     */
+    suspend fun fetchForSchedule(type: String, id: String): MetaDetails? {
+        val metaLookupId = resolveMetaLookupId(itemId = id, itemType = type)
+        listOf("$type:$metaLookupId:enrich=true", "$type:$metaLookupId:enrich=false")
+            .firstNotNullOfOrNull { key -> cachedMetaByRequestKey[key]?.baseMeta }
+            ?.let { return it }
+        return runMetaFetch(
+            type = type,
+            id = id,
+            metaLookupId = metaLookupId,
+            requestKey = "$type:$metaLookupId:schedule",
+            enrichTmdb = false,
+            trailerScope = TmdbMetadataService.TrailerScope.SingleSeason(HERO_TRAILER_SEASON),
+            includeEpisodes = false,
+            origin = "schedule",
+            cacheResult = false,
+        )
     }
 
     /**

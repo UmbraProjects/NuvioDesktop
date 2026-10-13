@@ -131,10 +131,7 @@ class HeroBackdropCrossfadeTest {
         var frame = 0L
         fun render(): Int {
             clock.value = frame
-            val image = scene.render(frame++ * frameMillis * 1_000_000L)
-            val bitmap = Bitmap().apply { allocN32Pixels(image.width, image.height) }
-            require(image.readPixels(bitmap, 0, 0))
-            return (bitmap.getColor(width / 2, height / 2) shr 8) and 0xFF
+            return renderSettled(scene, frame++)
         }
 
         // Settle on the first backdrop, which has nothing to fade over.
@@ -174,12 +171,7 @@ class HeroBackdropCrossfadeTest {
             }
         }
         var frame = 0L
-        fun render(): Int {
-            val image = scene.render(frame++ * frameMillis * 1_000_000L)
-            val bitmap = Bitmap().apply { allocN32Pixels(image.width, image.height) }
-            require(image.readPixels(bitmap, 0, 0))
-            return (bitmap.getColor(width / 2, height / 2) shr 8) and 0xFF
-        }
+        fun render(): Int = renderSettled(scene, frame++)
         repeat(3) { render() }
         model.value = "broken"
         val samples = IntArray(2 * framesPerFade) { render() }
@@ -192,6 +184,27 @@ class HeroBackdropCrossfadeTest {
             "the hero kept the previous backdrop after the new one failed: ${samples.toList()}",
         )
         assertTrue(worst <= 45, "the previous backdrop vanished in a $worst-level step: ${samples.toList()}")
+    }
+
+    /**
+     * The centre pixel's level for [frame], read from a second render at the same timestamp.
+     *
+     * A single render sometimes draws the layer alpha from before that frame's animation step, so
+     * one frame repeats the previous level and the next makes up both steps at once: the same
+     * curve, with a duplicate and a skip. Which frames it hits varies run to run (measured: 18 of 60
+     * runs of the slow-backdrop case crossed the jump limit, the steps all from the correct curve),
+     * and that made `a slow backdrop still fades once it arrives` flaky. The second render runs the
+     * frame callbacks at the same time, so the animation does not move, and draws the settled value:
+     * 0 of 60. A real hard cut is still a jump between settled frames.
+     */
+    private fun renderSettled(scene: ImageComposeScene, frame: Long): Int {
+        val nanos = frame * frameMillis * 1_000_000L
+        scene.render(nanos).close()
+        val image = scene.render(nanos)
+        val bitmap = Bitmap().apply { allocN32Pixels(image.width, image.height) }
+        require(image.readPixels(bitmap, 0, 0))
+        image.close()
+        return (bitmap.getColor(width / 2, height / 2) shr 8) and 0xFF
     }
 
     private fun frameReaching(samples: IntArray, level: Int): Int {

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.updater
 
+import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppVersionPolicy
 import com.nuvio.app.core.storage.DesktopStorage
 import kotlinx.coroutines.Dispatchers
@@ -132,6 +133,8 @@ actual object AppUpdaterPlatform {
             requireNotNull(expectedSha256?.takeIf { it.isNotBlank() }) {
                 "Update refused: GitHub published no SHA-256 checksum for this download, so it cannot be verified."
             }
+            tryDeltaDownload(assetUrl, onProgress)?.let { marker -> return@runCatching marker.absolutePath }
+
             val safeName = assetName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
             val updateDirectory = portableUpdatesDirectory().apply { mkdirs() }
             val destination = File(updateDirectory, safeName)
@@ -207,6 +210,19 @@ actual object AppUpdaterPlatform {
         val archive = File(path)
         check(archive.isFile) { "The downloaded update archive is missing." }
 
+        if (archive.name == deltaMarkerName) {
+            // Only the changed files were downloaded, so there is no archive to reveal: a delta is
+            // either swapped in or abandoned, and the retry downloads the whole zip.
+            val applied = runCatching { applyDeltaUpdateInPlace(archive) }.getOrElse { error ->
+                updaterLog.w(error) { "Delta update could not be applied" }
+                false
+            }
+            if (applied) return@runCatching UpdateInstallOutcome.RESTARTING
+            deltaDisabledThisSession = true
+            archive.delete()
+            error("The update could not be applied. Try again to download the full update.")
+        }
+
         if (isInPlaceUpdateEnabled()) {
             val applied = runCatching { applyPortableUpdateInPlace(archive) }.getOrElse { error ->
                 System.err.println("In-place update failed; falling back to manual: ${error.message}")
@@ -229,16 +245,8 @@ private const val launcherExeName = "Nuvio.exe"
  * can't be recovered) whenever a precondition isn't met, so the caller can fall back to manual.
  */
 private fun applyPortableUpdateInPlace(archive: File): Boolean {
-    val installRoot = resolveInstallRoot() ?: return false
-    val updatesDir = portableUpdatesDirectory()
-
-    // The helper is an ANSI .bat with the paths baked in; non-ASCII paths (e.g. a localized user
-    // folder) can't be represented reliably in a batch console, and `%`, `!` or `"` in a path would
-    // be expanded or break the quoting, so hand those off to manual.
-    if (!installRoot.absolutePath.isBatchSafe() || !updatesDir.absolutePath.isBatchSafe()) return false
-    if (!isWritable(installRoot)) return false
-
-    val stagingDir = File(updatesDir, "staged")
+    val target = inPlaceTarget() ?: return false
+    val stagingDir = File(target.updatesDir, "staged")
     deleteRecursively(stagingDir)
     stagingDir.mkdirs()
 
@@ -247,18 +255,47 @@ private fun applyPortableUpdateInPlace(archive: File): Boolean {
         deleteRecursively(stagingDir)
         return false
     }
+    val newFiles = sourceRoot.walkTopDown()
+        .filter(File::isFile)
+        .map { file -> file.relativeTo(sourceRoot).path.replace('/', '\\') }
+        .toList()
+    launchSwap(target, sourceRoot = sourceRoot, stagingDir = stagingDir, newFiles = newFiles)
+    return true
+}
 
-    val staleFiles = writeInstallManifest(sourceRoot = sourceRoot, installRoot = installRoot)
-    val staleList = File(updatesDir, "stale-files.txt").apply {
+/** Where an in-place swap would write, or null when one isn't possible from this run. */
+private class InPlaceTarget(val installRoot: File, val updatesDir: File)
+
+private fun inPlaceTarget(): InPlaceTarget? {
+    val installRoot = resolveInstallRoot() ?: return null
+    val updatesDir = portableUpdatesDirectory()
+
+    // The helper is an ANSI .bat with the paths baked in; non-ASCII paths (e.g. a localized user
+    // folder) can't be represented reliably in a batch console, and `%`, `!` or `"` in a path would
+    // be expanded or break the quoting, so hand those off to manual.
+    if (!installRoot.absolutePath.isBatchSafe() || !updatesDir.absolutePath.isBatchSafe()) return null
+    if (!isWritable(installRoot)) return null
+    return InPlaceTarget(installRoot, updatesDir)
+}
+
+/**
+ * Writes the manifest and helper for [sourceRoot] (a staged app image — complete for a zip, only
+ * the changed files for a delta), starts the helper and schedules this process's exit. [newFiles]
+ * is every file of the new build, which the stale-file computation needs even when the staged
+ * tree is partial.
+ */
+private fun launchSwap(target: InPlaceTarget, sourceRoot: File, stagingDir: File, newFiles: List<String>) {
+    val staleFiles = writeInstallManifest(sourceRoot = sourceRoot, installRoot = target.installRoot, newFiles = newFiles)
+    val staleList = File(target.updatesDir, "stale-files.txt").apply {
         writeText(staleFiles.joinToString("\r\n"), Charsets.US_ASCII)
     }
 
-    val launcherExe = resolveLauncherExe(installRoot)
+    val launcherExe = resolveLauncherExe(target.installRoot)
     val batFile = writeHelperScript(
-        updatesDir = updatesDir,
+        updatesDir = target.updatesDir,
         pid = ProcessHandle.current().pid(),
         sourceRoot = sourceRoot,
-        installRoot = installRoot,
+        installRoot = target.installRoot,
         launcherExe = launcherExe,
         stagingDir = stagingDir,
         staleList = staleList,
@@ -269,10 +306,71 @@ private fun applyPortableUpdateInPlace(archive: File): Boolean {
     // a non-/c shell that drops to an interactive prompt when the script self-deletes (a stuck
     // window) instead of terminating. Routing through an explicit /c guarantees a clean exit.
     ProcessBuilder("cmd.exe", "/c", "start", "Nuvio Update", "/min", "cmd.exe", "/c", batFile.absolutePath)
-        .directory(updatesDir)
+        .directory(target.updatesDir)
         .start()
 
     scheduleExit()
+}
+
+private val updaterLog = Logger.withTag("AppUpdater")
+
+/** Name of the file [AppUpdaterPlatform.downloadApk] returns for a staged delta. */
+private const val deltaMarkerName = "delta-update.txt"
+private const val deltaStagingName = "staged-delta"
+
+/** Above this share of the archive, a delta saves too little to give up the whole-zip SHA-256. */
+private const val deltaMaxShare = 0.75
+
+/** Set after a delta fails to apply, so the retry downloads the whole zip. */
+@Volatile
+private var deltaDisabledThisSession = false
+
+/**
+ * Downloads only the files that differ from the installed build (see DeltaUpdate.desktop.kt) and
+ * returns a marker listing the new build's files, or null to have the caller download the whole
+ * zip. Null whenever the in-place swap couldn't run anyway: the manual fallback needs a full zip.
+ */
+private fun tryDeltaDownload(
+    assetUrl: String,
+    onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit,
+): File? {
+    if (deltaDisabledThisSession || !AppUpdaterPlatform.isInPlaceUpdateEnabled()) return null
+    val target = inPlaceTarget() ?: return null
+    val stagingDir = File(target.updatesDir, deltaStagingName)
+    return runCatching {
+        val source = HttpZipRangeSource(updaterHttpClient, assetUrl)
+        val index = ZipDelta.readIndex(source)
+        val plan = checkNotNull(ZipDelta.plan(index.entries, target.installRoot, launcherExeName)) {
+            "No app image in the archive"
+        }
+        updaterLog.i {
+            "Delta update: ${plan.changed.size} of ${plan.newFiles.size} files changed, " +
+                "${plan.changedCompressedBytes} of ${source.length} bytes"
+        }
+        if (plan.changedCompressedBytes > source.length * deltaMaxShare) return null
+
+        deleteRecursively(stagingDir)
+        stagingDir.mkdirs()
+        ZipDelta.fetchChanged(source, index, plan, stagingDir) { downloaded, total ->
+            onProgress(downloaded, total.takeIf { it > 0L })
+        }
+        File(target.updatesDir, deltaMarkerName).apply {
+            writeText(plan.newFiles.joinToString("\r\n"), Charsets.UTF_8)
+        }
+    }.onFailure { error ->
+        updaterLog.w(error) { "Delta update unavailable; downloading the full archive" }
+        deleteRecursively(stagingDir)
+    }.getOrNull()
+}
+
+private fun applyDeltaUpdateInPlace(marker: File): Boolean {
+    val target = inPlaceTarget() ?: return false
+    val stagingDir = File(target.updatesDir, deltaStagingName)
+    if (!stagingDir.isDirectory) return false
+    val newFiles = marker.readLines(Charsets.UTF_8).map(String::trim).filter(String::isNotEmpty)
+    if (newFiles.none { it.equals(launcherExeName, ignoreCase = true) }) return false
+    marker.delete()
+    launchSwap(target, sourceRoot = stagingDir, stagingDir = stagingDir, newFiles = newFiles)
     return true
 }
 
@@ -285,10 +383,8 @@ private const val installManifestName = "install-manifest.txt"
  * user keeps in the install folder survives. The first update from a build without a manifest
  * removes nothing.
  */
-private fun writeInstallManifest(sourceRoot: File, installRoot: File): List<String> {
-    val newFiles = sourceRoot.walkTopDown()
-        .filter(File::isFile)
-        .map { file -> file.relativeTo(sourceRoot).path.replace('/', '\\') }
+private fun writeInstallManifest(sourceRoot: File, installRoot: File, newFiles: List<String>): List<String> {
+    val newFiles = newFiles
         .filterNot { it.equals(installManifestName, ignoreCase = true) }
         .toSortedSet(String.CASE_INSENSITIVE_ORDER)
     File(sourceRoot, installManifestName).writeText(newFiles.joinToString("\r\n"), Charsets.UTF_8)

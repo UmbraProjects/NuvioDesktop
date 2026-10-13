@@ -361,6 +361,15 @@ object LibraryRepository {
         }
     }
 
+    /**
+     * The profile's own Nuvio library, whichever service the Library screen is showing — the
+     * local calendar follows what is saved in Nuvio, not a provider's watchlist.
+     */
+    internal fun nuvioLibraryItems(): List<LibraryItem> {
+        ensureLoaded()
+        return itemsById.values.toList()
+    }
+
     fun savedItem(id: String): LibraryItem? {
         ensureLoaded()
 

@@ -178,14 +178,20 @@ internal fun SettingsSubtext(
 @Composable
 private fun settingsRowTitleAccentMask(title: String): Modifier {
     val highlight by SettingsScrollAnchor.titleHighlight.collectAsStateWithLifecycle()
-    return if (highlight?.title == title) Modifier.accentGradientMask() else Modifier
+    // No mask when the accent is near-white: the title is gold then, and the mask would repaint it.
+    return if (highlight?.title == title && MaterialTheme.nuvio.colors.selectionTextBrush() != null) {
+        Modifier.accentGradientMask()
+    } else {
+        Modifier
+    }
 }
 
 @Composable
 private fun settingsRowTitleColor(title: String): Color {
     val highlight by SettingsScrollAnchor.titleHighlight.collectAsStateWithLifecycle()
     return if (highlight?.title == title) {
-        MaterialTheme.nuvio.colors.accent
+        // Not the raw accent: on the White theme that is white on white text.
+        MaterialTheme.nuvio.colors.selectionTextColor()
     } else {
         MaterialTheme.nuvio.colors.textPrimary
     }
@@ -689,12 +695,17 @@ internal fun SettingsSection(
         // coloured because Text takes a Color and cannot express a Brush; at most one heading is
         // highlighted at a time, so the offscreen layer the mask costs is paid once.
         val titleHighlighted = highlight.highlighted || sectionHighlight.highlighted
+        // selectionTextColor, not accent: a white accent would mark a white heading with white.
         val titleColor = if (titleHighlighted) {
-            tokens.colors.accent
+            tokens.colors.selectionTextColor()
         } else {
             tokens.colors.textPrimary
         }
-        val titleAccentMask = if (titleHighlighted) Modifier.accentGradientMask() else Modifier
+        val titleAccentMask = if (titleHighlighted && tokens.colors.selectionTextBrush() != null) {
+            Modifier.accentGradientMask()
+        } else {
+            Modifier
+        }
         val cards = LocalSettingsSectionCards.current
         // Click the heading to collapse the section down to its heading; persisted per profile
         // under the same anchor id favourites use. Needs a page context for a stable id.

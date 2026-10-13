@@ -21,9 +21,9 @@ private data class StoredContinueWatchingPreferences(
     @SerialName("show_unaired_next_up")
     val showUnairedNextUp: Boolean = true,
     @SerialName("separate_next_up_row")
-    val separateNextUpRow: Boolean = false,
+    val separateNextUpRow: Boolean = true,
     @SerialName("separate_upcoming_row")
-    val separateUpcomingRow: Boolean = false,
+    val separateUpcomingRow: Boolean = true,
     val seedNextUpFromNuvioSync: Boolean = false,
     @SerialName("blur_continue_watching_next_up")
     val blurNextUp: Boolean = false,

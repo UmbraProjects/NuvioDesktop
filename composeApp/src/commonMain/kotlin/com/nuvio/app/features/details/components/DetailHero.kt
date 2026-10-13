@@ -1,5 +1,6 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.features.tmdb.fullSizeTmdbBackdrop
 import com.nuvio.app.features.tvdb.TvdbCharacter
 import com.nuvio.app.features.tvdb.TvdbImageService
 import com.nuvio.app.features.details.CastViewStorage
@@ -222,7 +223,8 @@ fun DetailHero(
                     .fillMaxSize(),
                 contentAlignment = Alignment.BottomCenter,
             ) {
-                val imageUrl = meta.background ?: meta.poster
+                // Full size: addon metadata often carries a w1280 TMDB backdrop (fullSizeTmdbBackdrop).
+                val imageUrl = fullSizeTmdbBackdrop(meta.background) ?: meta.poster
                 val backdropScale = when {
                     desktopOverlay -> 1.04f
                     isTablet -> 1f

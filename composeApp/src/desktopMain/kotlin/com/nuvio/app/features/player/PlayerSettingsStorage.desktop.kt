@@ -139,6 +139,7 @@ internal actual object PlayerSettingsStorage {
     private const val desktopRendererApiKey = "desktop_renderer_api"
     private const val desktopPerformanceLoggingKey = "desktop_performance_logging"
     private const val desktopSteadyFramePacingKey = "desktop_steady_frame_pacing"
+    private const val desktopHdrUiCompensationKey = "desktop_hdr_ui_compensation"
     private const val desktopLowVramModeKey = "desktop_low_vram_mode"
     private const val desktopAnimeModeKey = "desktop_anime_mode"
     private const val desktopAnimeModeAutoEnabledKey = "desktop_anime_mode_auto_enabled"
@@ -533,6 +534,9 @@ internal actual object PlayerSettingsStorage {
     actual fun loadDesktopSteadyFramePacing(): Boolean? = loadBoolean(desktopSteadyFramePacingKey)
     actual fun saveDesktopSteadyFramePacing(enabled: Boolean) =
         saveBoolean(desktopSteadyFramePacingKey, enabled)
+    actual fun loadDesktopHdrUiCompensation(): Boolean? = loadBoolean(desktopHdrUiCompensationKey)
+    actual fun saveDesktopHdrUiCompensation(enabled: Boolean) =
+        saveBoolean(desktopHdrUiCompensationKey, enabled)
     actual fun loadDesktopLowVramMode(): String? = loadString(desktopLowVramModeKey)
     actual fun saveDesktopLowVramMode(mode: String) = saveString(desktopLowVramModeKey, mode)
     actual fun loadDesktopAnimeMode(): String? = loadString(desktopAnimeModeKey)

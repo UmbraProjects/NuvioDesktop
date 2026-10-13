@@ -65,6 +65,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import com.nuvio.app.core.ui.nuvioDitheredVerticalGradient
+import com.nuvio.app.core.ui.LocalHdrFadeCorrected
+import com.nuvio.app.core.ui.nuvioHdrFadeCorrection
 import com.nuvio.app.core.ui.navigationKey
 import com.nuvio.app.core.ui.rememberHoldToSelectState
 import androidx.compose.ui.input.key.key
@@ -631,224 +634,235 @@ private fun ImmersiveCollectionContent(
         HomeTvKeyboardBridge.keys.collect { key -> latestTvKeyHandler.value(key) }
     }
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(if (ambientBackgroundEnabled) Color.Transparent else MaterialTheme.colorScheme.background)
-            .focusRequester(focusRequester)
-            .focusable()
-            .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
-                try { focusRequester.requestFocus() } catch (_: Exception) {}
-            }
-            .onPointerEvent(PointerEventType.Move, PointerEventPass.Initial) { event ->
-                mouseActivity.onMouseMoved(event.changes.first().position)
-            }
-            // Initial pass so isMouseActive is settled before the poster's own Enter handler runs.
-            .onPointerEvent(PointerEventType.Enter, PointerEventPass.Initial) { event ->
-                mouseActivity.onMouseMoved(event.changes.first().position)
-            }
-            .onPointerEvent(PointerEventType.Scroll) { event ->
-                val change = event.changes.firstOrNull() ?: return@onPointerEvent
-                val direction = change.scrollDelta.y.compareTo(0f)
-                if (direction != 0) {
-                    change.consume()
-                    if (!wheelLocked) {
-                        wheelLocked = true
-                        activeRowIndex = (activeRowIndex + direction).coerceIn(0, sections.lastIndex)
-                        activeItemIndex = activeItemIndex.coerceIn(
-                            0,
-                            (sections[activeRowIndex].items.size - 1).coerceAtLeast(0),
+    // Tells the hero inside that this view already corrects it; see HdrFadeCorrected.
+    CompositionLocalProvider(LocalHdrFadeCorrected provides true) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                // The TV-style view as one picture for Windows HDR; see HomeScreen's TV shelf.
+                .nuvioHdrFadeCorrection(Color.Black)
+                .background(if (ambientBackgroundEnabled) Color.Transparent else MaterialTheme.colorScheme.background)
+                .focusRequester(focusRequester)
+                .focusable()
+                .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
+                    try { focusRequester.requestFocus() } catch (_: Exception) {}
+                }
+                .onPointerEvent(PointerEventType.Move, PointerEventPass.Initial) { event ->
+                    mouseActivity.onMouseMoved(event.changes.first().position)
+                }
+                // Initial pass so isMouseActive is settled before the poster's own Enter handler runs.
+                .onPointerEvent(PointerEventType.Enter, PointerEventPass.Initial) { event ->
+                    mouseActivity.onMouseMoved(event.changes.first().position)
+                }
+                .onPointerEvent(PointerEventType.Scroll) { event ->
+                    val change = event.changes.firstOrNull() ?: return@onPointerEvent
+                    val direction = change.scrollDelta.y.compareTo(0f)
+                    if (direction != 0) {
+                        change.consume()
+                        if (!wheelLocked) {
+                            wheelLocked = true
+                            activeRowIndex = (activeRowIndex + direction).coerceIn(0, sections.lastIndex)
+                            activeItemIndex = activeItemIndex.coerceIn(
+                                0,
+                                (sections[activeRowIndex].items.size - 1).coerceAtLeast(0),
+                            )
+                            coroutineScope.launch {
+                                delay(220)
+                                wheelLocked = false
+                            }
+                        }
+                    }
+                }
+                .onPreviewKeyEvent { event ->
+                    val selectKey = event.navigationKey()
+                    if (selectKey == Key.Enter || selectKey == Key.NumPadEnter) {
+                        val item = focusedItem
+                        return@onPreviewKeyEvent selectHold.handle(
+                            event = event,
+                            onSelect = { handleTvKey(HomeTvKey.Select) },
+                            onHold = item?.let { focused ->
+                                onPosterLongClick?.let { longPress -> { longPress(focused) } }
+                            },
                         )
-                        coroutineScope.launch {
-                            delay(220)
-                            wheelLocked = false
+                    }
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.navigationKey()) {
+                        Key.Backspace -> {
+                            // Dismiss first, navigate second — see HomeScreen. A controller has one B
+                            // button where the keyboard has Escape and Backspace.
+                            if (!handleTvKey(HomeTvKey.Dismiss)) onBack()
+                            true
+                        }
+                        Key.DirectionDown -> handleTvKey(HomeTvKey.Down)
+                        Key.DirectionUp -> handleTvKey(HomeTvKey.Up)
+                        Key.DirectionRight -> handleTvKey(HomeTvKey.Right)
+                        Key.DirectionLeft -> handleTvKey(HomeTvKey.Left)
+                        Key.PageDown -> handleTvKey(HomeTvKey.PageDown)
+                        Key.PageUp -> handleTvKey(HomeTvKey.PageUp)
+                        Key.MoveHome -> handleTvKey(HomeTvKey.Home)
+                        Key.MoveEnd -> handleTvKey(HomeTvKey.End)
+                        Key.T -> handleTvKey(HomeTvKey.ToggleTrailer)
+                        Key.Escape -> handleTvKey(HomeTvKey.Dismiss)
+                        else -> false
+                    }
+                },
+        ) {
+            if (ambientBackgroundEnabled) {
+                HeroAmbientBackdrop(
+                    backdrop = activeHeroBackdrop,
+                    accent = activeHeroAccent,
+                    onAccentChanged = { activeHeroAccent = it },
+                    label = "collection_hero_ambient_background",
+                )
+            }
+
+            val posterCardStyle = rememberHomePosterCardStyleUiState()
+            val landscapeMode = posterCardStyle.catalogLandscapeModeEnabled
+            val shelfHeight = immersiveShelfHeightDp(
+                viewportHeightDp = maxHeight.value,
+                landscapeMode = landscapeMode,
+            ).dp
+            val shelfPosterBaseWidthDp = remember(maxWidth, shelfHeight, landscapeMode) {
+                immersiveCatalogPosterBaseWidthDp(
+                    maxWidthDp = maxWidth.value,
+                    shelfHeightDp = shelfHeight.value,
+                    sectionPaddingDp = homeSectionHorizontalPaddingForWidth(maxWidth.value).value,
+                    hideLabels = true,
+                    landscapeMode = landscapeMode,
+                )
+            }
+            HomeHeroSection(
+                items = activeEntries.take(FolderAdaptiveHeroItemLimit),
+                focusedItem = focusedItem,
+                metadataPrefetchItems = metadataPrefetchItems,
+                heightOverride = maxHeight,
+                roundedBottomCorners = false,
+                immersiveMode = true,
+                // This folder view is the TV-style immersive layout wherever it is opened from, so it
+                // follows the same backdrop choice. The toggle only appears while the home display mode
+                // is TV Mode, so nobody who has not deliberately chosen this look ever sees it here.
+                immersiveFullBackdrop = homeSettings.tvFullBackdropEnabled,
+                heroInfoLines = homeSettings.heroInfoLines,
+                heroInfoPriority = homeSettings.heroInfoPriority,
+                heroBadgePlacement = homeSettings.heroBadgePlacement,
+                heroReleaseStatusUnavailableOnly = homeSettings.heroReleaseStatusUnavailableOnly,
+                immersiveContentBottomPadding = shelfHeight - 20.dp,
+                onActiveItemChanged = { item ->
+                    activeHeroBackdrop = item.banner ?: item.poster
+                },
+                onCastClick = onCastClick,
+                onBadgeClick = onBadgeClick,
+                onItemClick = onPosterClick,
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(shelfHeight)
+                    .align(Alignment.BottomStart)
+                    .background(
+                        nuvioDitheredVerticalGradient(
+                            immersiveShelfScrimStops(
+                                // Black to match the hero's fade, as on Home's TV shelf; the
+                                // ambient background keeps the theme colour it was tuned against.
+                                backgroundColor = if (ambientBackgroundEnabled) {
+                                    MaterialTheme.colorScheme.background
+                                } else {
+                                    Color.Black
+                                },
+                                fullBackdrop = homeSettings.tvFullBackdropEnabled,
+                                ambientBackgroundEnabled = ambientBackgroundEnabled,
+                            ),
+                        ),
+                    )
+                    // Bottom padding lives inside each row; see immersiveRowFadeBounds.
+                    .padding(top = 68.dp),
+                contentAlignment = if (landscapeMode) Alignment.BottomStart else Alignment.TopStart,
+            ) {
+                // One composition per row, keyed by the row, as Home's TV shelf does. A single shared
+                // LazyRow fed each row in turn diffed the new row's posters against the old one's:
+                // animateItem slid and cross-faded them across each other on every row change, and
+                // the focused slot's per-item state (the depth border, the sweep) carried over from
+                // whatever poster last sat in it until it caught up a few frames later.
+                rowDirection.observe(activeRowIndex)
+                AnimatedContent(
+                    targetState = activeRowIndex,
+                    transitionSpec = { immersiveRowTransition(homeSettings.tvRowTransition) },
+                    contentAlignment = if (landscapeMode) Alignment.BottomStart else Alignment.TopStart,
+                    label = "collection_immersive_row",
+                ) { rowIndex ->
+                    val section = sections.getOrNull(rowIndex) ?: return@AnimatedContent
+                    val isActiveRow = rowIndex == activeRowIndex
+                    val usesInfiniteScroll = section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
+                    val rowEntries = if (usesInfiniteScroll) {
+                        section.items
+                    } else {
+                        section.items.take(FolderCatalogPreviewLimit)
+                    }
+                    val rowBodyModifier = if (homeSettings.tvRowTransition == HomeTvRowTransition.FadeNudge) {
+                        Modifier.animateEnterExit(
+                            enter = immersiveRowBodyEnter(rowDirection.forward),
+                            exit = immersiveRowBodyExit(rowDirection.forward),
+                            label = "collection_immersive_row_body",
+                        )
+                    } else {
+                        Modifier
+                    }
+                    Box(modifier = Modifier.immersiveRowFadeBounds()) {
+                        androidx.compose.runtime.key(section.key) {
+                            HomeCatalogRowSection(
+                                section = section,
+                                entries = rowEntries,
+                                watchedKeys = watchedKeys,
+                                basePosterWidthDpOverride = shelfPosterBaseWidthDp,
+                                focusedItemIndex = activeItemIndex,
+                                // Each row keeps its own horizontal position for this visit.
+                                rowState = remember { rowStates.getOrPut(section.key) { LazyListState() } },
+                                // Also stops the row's edge auto-scroll, which otherwise runs under a cursor
+                                // that happens to rest near the shelf's side and drags posters (and focus).
+                                isKeyboardNavigation = !mouseActivity.isMouseActive,
+                                onHoverItem = { itemIndex ->
+                                    // The outgoing row is still hoverable while it fades out.
+                                    if (isActiveRow && mouseActivity.isMouseActive) activeItemIndex = itemIndex
+                                },
+                                onViewAllClick = if (
+                                    !usesInfiniteScroll &&
+                                    section.canOpenCatalog(FolderCatalogPreviewLimit)
+                                ) {
+                                    { onCatalogClick(section) }
+                                } else {
+                                    null
+                                },
+                                onLoadMore = if (usesInfiniteScroll) {
+                                    { FolderDetailRepository.loadMoreCatalogRow(section) }
+                                } else {
+                                    null
+                                },
+                                isLoadingMore = section.isLoadingMore,
+                                rowNumber = rowNumbers[section.key],
+                                headerTrailingContent = rowDotsContent,
+                                bodyModifier = rowBodyModifier,
+                                onPosterClick = onPosterClick,
+                                onPosterLongClick = onPosterLongClick,
+                            )
                         }
                     }
                 }
             }
-            .onPreviewKeyEvent { event ->
-                val selectKey = event.navigationKey()
-                if (selectKey == Key.Enter || selectKey == Key.NumPadEnter) {
-                    val item = focusedItem
-                    return@onPreviewKeyEvent selectHold.handle(
-                        event = event,
-                        onSelect = { handleTvKey(HomeTvKey.Select) },
-                        onHold = item?.let { focused ->
-                            onPosterLongClick?.let { longPress -> { longPress(focused) } }
-                        },
-                    )
-                }
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.navigationKey()) {
-                    Key.Backspace -> {
-                        // Dismiss first, navigate second — see HomeScreen. A controller has one B
-                        // button where the keyboard has Escape and Backspace.
-                        if (!handleTvKey(HomeTvKey.Dismiss)) onBack()
-                        true
-                    }
-                    Key.DirectionDown -> handleTvKey(HomeTvKey.Down)
-                    Key.DirectionUp -> handleTvKey(HomeTvKey.Up)
-                    Key.DirectionRight -> handleTvKey(HomeTvKey.Right)
-                    Key.DirectionLeft -> handleTvKey(HomeTvKey.Left)
-                    Key.PageDown -> handleTvKey(HomeTvKey.PageDown)
-                    Key.PageUp -> handleTvKey(HomeTvKey.PageUp)
-                    Key.MoveHome -> handleTvKey(HomeTvKey.Home)
-                    Key.MoveEnd -> handleTvKey(HomeTvKey.End)
-                    Key.T -> handleTvKey(HomeTvKey.ToggleTrailer)
-                    Key.Escape -> handleTvKey(HomeTvKey.Dismiss)
-                    else -> false
-                }
-            },
-    ) {
-        if (ambientBackgroundEnabled) {
-            HeroAmbientBackdrop(
-                backdrop = activeHeroBackdrop,
-                accent = activeHeroAccent,
-                onAccentChanged = { activeHeroAccent = it },
-                label = "collection_hero_ambient_background",
+
+            NuvioBackButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 20.dp, top = 20.dp)
+                    .size(40.dp)
+                    .onPointerEvent(PointerEventType.Enter) { backButtonHovered = true }
+                    .onPointerEvent(PointerEventType.Exit) { backButtonHovered = false },
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f * backButtonAlpha),
+                contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = backButtonAlpha),
+                iconSize = 24.dp,
             )
         }
-
-        val posterCardStyle = rememberHomePosterCardStyleUiState()
-        val landscapeMode = posterCardStyle.catalogLandscapeModeEnabled
-        val shelfHeight = immersiveShelfHeightDp(
-            viewportHeightDp = maxHeight.value,
-            landscapeMode = landscapeMode,
-        ).dp
-        val shelfPosterBaseWidthDp = remember(maxWidth, shelfHeight, landscapeMode) {
-            immersiveCatalogPosterBaseWidthDp(
-                maxWidthDp = maxWidth.value,
-                shelfHeightDp = shelfHeight.value,
-                sectionPaddingDp = homeSectionHorizontalPaddingForWidth(maxWidth.value).value,
-                hideLabels = true,
-                landscapeMode = landscapeMode,
-            )
-        }
-        HomeHeroSection(
-            items = activeEntries.take(FolderAdaptiveHeroItemLimit),
-            focusedItem = focusedItem,
-            metadataPrefetchItems = metadataPrefetchItems,
-            heightOverride = maxHeight,
-            roundedBottomCorners = false,
-            immersiveMode = true,
-            // This folder view is the TV-style immersive layout wherever it is opened from, so it
-            // follows the same backdrop choice. The toggle only appears while the home display mode
-            // is TV Mode, so nobody who has not deliberately chosen this look ever sees it here.
-            immersiveFullBackdrop = homeSettings.tvFullBackdropEnabled,
-            heroInfoLines = homeSettings.heroInfoLines,
-            heroInfoPriority = homeSettings.heroInfoPriority,
-            heroBadgePlacement = homeSettings.heroBadgePlacement,
-            heroReleaseStatusUnavailableOnly = homeSettings.heroReleaseStatusUnavailableOnly,
-            immersiveContentBottomPadding = shelfHeight - 20.dp,
-            onActiveItemChanged = { item ->
-                activeHeroBackdrop = item.banner ?: item.poster
-            },
-            onCastClick = onCastClick,
-            onBadgeClick = onBadgeClick,
-            onItemClick = onPosterClick,
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(shelfHeight)
-                .align(Alignment.BottomStart)
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = immersiveShelfScrimStops(
-                            backgroundColor = MaterialTheme.colorScheme.background,
-                            fullBackdrop = homeSettings.tvFullBackdropEnabled,
-                            ambientBackgroundEnabled = ambientBackgroundEnabled,
-                        ),
-                    ),
-                )
-                // Bottom padding lives inside each row; see immersiveRowFadeBounds.
-                .padding(top = 68.dp),
-            contentAlignment = if (landscapeMode) Alignment.BottomStart else Alignment.TopStart,
-        ) {
-            // One composition per row, keyed by the row, as Home's TV shelf does. A single shared
-            // LazyRow fed each row in turn diffed the new row's posters against the old one's:
-            // animateItem slid and cross-faded them across each other on every row change, and
-            // the focused slot's per-item state (the depth border, the sweep) carried over from
-            // whatever poster last sat in it until it caught up a few frames later.
-            rowDirection.observe(activeRowIndex)
-            AnimatedContent(
-                targetState = activeRowIndex,
-                transitionSpec = { immersiveRowTransition(homeSettings.tvRowTransition) },
-                contentAlignment = if (landscapeMode) Alignment.BottomStart else Alignment.TopStart,
-                label = "collection_immersive_row",
-            ) { rowIndex ->
-                val section = sections.getOrNull(rowIndex) ?: return@AnimatedContent
-                val isActiveRow = rowIndex == activeRowIndex
-                val usesInfiniteScroll = section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
-                val rowEntries = if (usesInfiniteScroll) {
-                    section.items
-                } else {
-                    section.items.take(FolderCatalogPreviewLimit)
-                }
-                val rowBodyModifier = if (homeSettings.tvRowTransition == HomeTvRowTransition.FadeNudge) {
-                    Modifier.animateEnterExit(
-                        enter = immersiveRowBodyEnter(rowDirection.forward),
-                        exit = immersiveRowBodyExit(rowDirection.forward),
-                        label = "collection_immersive_row_body",
-                    )
-                } else {
-                    Modifier
-                }
-                Box(modifier = Modifier.immersiveRowFadeBounds()) {
-                    androidx.compose.runtime.key(section.key) {
-                        HomeCatalogRowSection(
-                            section = section,
-                            entries = rowEntries,
-                            watchedKeys = watchedKeys,
-                            basePosterWidthDpOverride = shelfPosterBaseWidthDp,
-                            focusedItemIndex = activeItemIndex,
-                            // Each row keeps its own horizontal position for this visit.
-                            rowState = remember { rowStates.getOrPut(section.key) { LazyListState() } },
-                            // Also stops the row's edge auto-scroll, which otherwise runs under a cursor
-                            // that happens to rest near the shelf's side and drags posters (and focus).
-                            isKeyboardNavigation = !mouseActivity.isMouseActive,
-                            onHoverItem = { itemIndex ->
-                                // The outgoing row is still hoverable while it fades out.
-                                if (isActiveRow && mouseActivity.isMouseActive) activeItemIndex = itemIndex
-                            },
-                            onViewAllClick = if (
-                                !usesInfiniteScroll &&
-                                section.canOpenCatalog(FolderCatalogPreviewLimit)
-                            ) {
-                                { onCatalogClick(section) }
-                            } else {
-                                null
-                            },
-                            onLoadMore = if (usesInfiniteScroll) {
-                                { FolderDetailRepository.loadMoreCatalogRow(section) }
-                            } else {
-                                null
-                            },
-                            isLoadingMore = section.isLoadingMore,
-                            rowNumber = rowNumbers[section.key],
-                            headerTrailingContent = rowDotsContent,
-                            bodyModifier = rowBodyModifier,
-                            onPosterClick = onPosterClick,
-                            onPosterLongClick = onPosterLongClick,
-                        )
-                    }
-                }
-            }
-        }
-
-        NuvioBackButton(
-            onClick = onBack,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 20.dp, top = 20.dp)
-                .size(40.dp)
-                .onPointerEvent(PointerEventType.Enter) { backButtonHovered = true }
-                .onPointerEvent(PointerEventType.Exit) { backButtonHovered = false },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f * backButtonAlpha),
-            contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = backButtonAlpha),
-            iconSize = 24.dp,
-        )
     }
 }
 

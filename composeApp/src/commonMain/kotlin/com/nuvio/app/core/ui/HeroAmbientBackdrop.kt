@@ -180,10 +180,12 @@ internal fun ambientWashStops(
             alpha = alpha,
         )
     }
+    // The accent holds most of the way down and the closing dim is light, so the wash carries
+    // well into the rows rather than being spent just under the hero.
     return arrayOf(
         0f to fold(accent, 0.46f),
-        0.42f to fold(accent, 0.32f),
-        1f to fold(background, 0.72f),
+        0.68f to fold(accent, 0.34f),
+        1f to fold(background, 0.55f),
     )
 }
 

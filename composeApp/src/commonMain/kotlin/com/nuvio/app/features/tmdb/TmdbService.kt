@@ -335,6 +335,30 @@ object TmdbService {
         return homeDate
     }
 
+    /**
+     * The one date a movie goes on the calendar, as ISO `yyyy-MM-dd`, past or future: the same
+     * order the SIMKL calendar picks in — digital in the US, then GB, then the earliest anywhere,
+     * then US theatrical, then the earliest theatrical. Null without a key or any such date.
+     */
+    suspend fun fetchMovieCalendarDate(tmdbId: Int): String? {
+        val apiKey = currentApiKey() ?: return null
+        val body = fetchReleaseDates(tmdbId, apiKey) ?: return null
+        fun releasesOfType(type: Int) = body.results.flatMap { country ->
+            country.releaseDates
+                .filter { it.type == type }
+                .mapNotNull { release ->
+                    release.releaseDate.take(10).takeIf(::isIsoDate)?.let { country.country.uppercase() to it }
+                }
+        }
+        val digital = releasesOfType(TMDB_RELEASE_TYPE_DIGITAL)
+        val theatrical = releasesOfType(TMDB_RELEASE_TYPE_THEATRICAL)
+        return digital.firstOrNull { it.first == "US" }?.second
+            ?: digital.firstOrNull { it.first == "GB" }?.second
+            ?: digital.minByOrNull { it.second }?.second
+            ?: theatrical.firstOrNull { it.first == "US" }?.second
+            ?: theatrical.minByOrNull { it.second }?.second
+    }
+
     private val releaseDatesMutex = Mutex()
     private val releaseDatesCache = mutableMapOf<Int, Pair<TmdbReleaseStatusDatesResponse, Long>>()
 
@@ -902,6 +926,7 @@ private data class TmdbReleaseStatusDatesResponse(
 
 @Serializable
 private data class TmdbReleaseStatusDatesCountry(
+    @SerialName("iso_3166_1") val country: String = "",
     @SerialName("release_dates") val releaseDates: List<TmdbReleaseStatusDate> = emptyList(),
 )
 

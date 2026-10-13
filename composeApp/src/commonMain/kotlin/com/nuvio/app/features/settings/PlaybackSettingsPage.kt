@@ -1256,6 +1256,15 @@ private fun PlaybackSettingsSection(
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_desktop_hdr_ui_compensation),
+                        description = stringResource(Res.string.settings_playback_desktop_hdr_ui_compensation_description),
+                        checked = autoPlayPlayerSettings.desktopHdrUiCompensationEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("hdr-ui-compensation")),
+                        onCheckedChange = PlayerSettingsRepository::setDesktopHdrUiCompensation,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_desktop_steady_frame_pacing),
                         description = stringResource(Res.string.settings_playback_desktop_steady_frame_pacing_description),
                         checked = autoPlayPlayerSettings.desktopSteadyFramePacingEnabled,

@@ -1347,6 +1347,9 @@ public:
         eventSink = sink;
         eventMethod = method;
         hostHwnd = host;
+        // Kept apart from hostHwnd: by the time a trailer is torn down its AWT canvas may already
+        // be gone, and the frame is what focus has to go back to (see cleanupUiResources).
+        hostTopLevelHwnd = host ? GetAncestor(host, GA_ROOT) : nullptr;
         thumbnailSourceUrl = sourceUrl;
         thumbnailHeaderLines = headerLines;
         // Set before spawning the UI/mpv thread so it is visible there. When present
@@ -2980,6 +2983,7 @@ public:
 
 private:
     HWND hostHwnd = nullptr;
+    HWND hostTopLevelHwnd = nullptr;
     HWND containerHwnd = nullptr;
     HWND messageHwnd = nullptr;
     DWORD uiThreadId = 0;
@@ -3348,6 +3352,19 @@ private:
 
     void cleanupUiResources() {
         nuvioBridgeLog("cleanup begin");
+        // Clicking the trailer's own X (the "back" command) focuses the WebView2's HWND and then
+        // tears the trailer down straight away, so the chrome's heroTrailerReclaimFocus message
+        // arrives after the message handler is gone. Focus was left on a destroyed window and the
+        // app took no clicks or keys until it was deactivated and reactivated (2026-10-13). Hand
+        // it back here, while the WebView still exists, and only if the app is what the user is
+        // in: a trailer ending behind another app must not pull focus.
+        if (passiveSurface) {
+            HWND topLevel = hostHwnd && IsWindow(hostHwnd) ? GetAncestor(hostHwnd, GA_ROOT) : hostTopLevelHwnd;
+            if (topLevel && GetForegroundWindow() == topLevel) {
+                nuvioBridgeLog("cleanup reclaim host focus");
+                reclaimHostKeyboardFocus();
+            }
+        }
         // Before OleUninitialize, and before the window this session is bound to goes away.
         teardownSystemMediaControls();
         if (cursorHidden) {
@@ -4154,7 +4171,7 @@ private:
     // WebView2/AWT thread boundary so SetFocus is honoured; Kotlin then routes focus to its
     // Compose node (see the "heroTrailerFocusEscaped" event below). Runs on the native UI thread.
     void reclaimHostKeyboardFocus() {
-        HWND topLevel = GetAncestor(hostHwnd, GA_ROOT);
+        HWND topLevel = hostHwnd && IsWindow(hostHwnd) ? GetAncestor(hostHwnd, GA_ROOT) : hostTopLevelHwnd;
         if (!topLevel || !IsWindow(topLevel)) return;
         DWORD thisThread = GetCurrentThreadId();
         DWORD targetThread = GetWindowThreadProcessId(topLevel, nullptr);
@@ -4163,6 +4180,9 @@ private:
             attached = AttachThreadInput(thisThread, targetThread, TRUE) != FALSE;
         }
         SetFocus(topLevel);
+        // A press on the WebView2 can leave it holding the shared mouse capture too; with the
+        // queues attached this releases it for the app's thread as well.
+        if (GetCapture()) ReleaseCapture();
         if (attached) {
             AttachThreadInput(thisThread, targetThread, FALSE);
         }
@@ -4292,8 +4312,12 @@ private:
      * driver that cannot answer, reports "not HDR" — the conservative direction, since the cost of
      * a false negative is one missing status line and the cost of a false positive is the exact
      * misinformation this exists to stop.
+     *
+     * Public because the UI asks too (see the `isWindowDisplayHdr` export), and it passes
+     * [requireWindowMonitor]: for it a guess from some other display is worse than no answer.
      */
-    static bool isDisplayHdrEnabled(HWND hwnd) {
+public:
+    static bool isDisplayHdrEnabled(HWND hwnd, bool requireWindowMonitor = false) {
         using CreateDXGIFactory1Fn = HRESULT(WINAPI *)(REFIID, void **);
         static CreateDXGIFactory1Fn createFactory = [] () -> CreateDXGIFactory1Fn {
             HMODULE dxgi = LoadLibraryW(L"dxgi.dll");
@@ -4327,8 +4351,9 @@ private:
         }
         // The window's monitor was never enumerated (no window yet, or a hybrid-GPU quirk); the
         // desktop-wide answer is the best remaining evidence.
-        return anyOutputIsHdr;
+        return !requireWindowMonitor && anyOutputIsHdr;
     }
+private:
 
     /**
      * Writes the largest dedicated video-memory pool reported by any hardware DXGI adapter, plus
@@ -6629,6 +6654,15 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_systemIdleMs(JNIEn
     // still right across the wrap.
     const DWORD idle = GetTickCount() - info.dwTime;
     return static_cast<jlong>(idle);
+}
+
+// Whether the monitor [windowHwnd] sits on has Windows HDR switched on. Only that monitor counts:
+// the UI uses this to pre-correct for DWM's SDR-in-HDR conversion, and a false yes darkens it.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_isWindowDisplayHdr(JNIEnv *, jobject, jlong windowHwnd) {
+    HWND hwnd = (HWND)(intptr_t)windowHwnd;
+    if (!hwnd) return JNI_FALSE;
+    return WindowsMpvWebPlayer::isDisplayHdrEnabled(hwnd, true) ? JNI_TRUE : JNI_FALSE;
 }
 
 // Whether the foreground window belongs to this process. The screensaver's shutdown wants "is

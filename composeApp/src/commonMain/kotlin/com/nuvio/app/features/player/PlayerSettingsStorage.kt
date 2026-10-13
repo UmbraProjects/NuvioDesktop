@@ -275,6 +275,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopPerformanceLogging(enabled: Boolean)
     fun loadDesktopSteadyFramePacing(): Boolean?
     fun saveDesktopSteadyFramePacing(enabled: Boolean)
+    fun loadDesktopHdrUiCompensation(): Boolean?
+    fun saveDesktopHdrUiCompensation(enabled: Boolean)
     fun loadDesktopLowVramMode(): String?
     fun saveDesktopLowVramMode(mode: String)
     fun loadDesktopAnimeMode(): String?

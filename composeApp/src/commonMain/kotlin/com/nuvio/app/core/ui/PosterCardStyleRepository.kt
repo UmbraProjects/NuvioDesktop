@@ -71,7 +71,7 @@ private data class StoredPosterCardStylePreferences(
     val landscapeRatingBadgeScale: String = "OutOfTen",
     val posterHighlightMode: String = "Off",
     val hideLabelsEnabled: Boolean = false,
-    val depthEnabled: Boolean = false,
+    val depthEnabled: Boolean = true,
     val depthEdgeStrength: Int = 42,
     val depthSheenStrength: Int = 10,
     val depthEdgeCoverage: Int = 64,
@@ -97,7 +97,7 @@ data class PosterCardStyleUiState(
     /** Ring drawn around the highlighted poster in addition to its magnification. */
     val posterHighlightMode: PosterHighlightMode = PosterHighlightMode.Off,
     val hideLabelsEnabled: Boolean = false,
-    val depthEnabled: Boolean = false,
+    val depthEnabled: Boolean = true,
     val depthEdgeStrength: Int = 42,
     val depthSheenStrength: Int = 10,
     val depthEdgeCoverage: Int = 64,

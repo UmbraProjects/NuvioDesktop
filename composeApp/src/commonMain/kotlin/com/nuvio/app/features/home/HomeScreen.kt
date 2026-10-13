@@ -4,6 +4,8 @@ import coil3.compose.LocalPlatformContext
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import com.nuvio.app.core.i18n.localizedMediaTypeLabel
+import com.nuvio.app.core.ui.nuvioDitheredVerticalGradient
+import com.nuvio.app.core.ui.HdrFadeCorrected
 import com.nuvio.app.core.ui.nuvioArtworkRequestSize
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
@@ -214,6 +216,7 @@ import com.nuvio.app.features.home.components.HomeTvRow
 import com.nuvio.app.features.home.components.HomeTvRowDot
 import com.nuvio.app.features.home.components.HomeTvRowDotStrip
 import com.nuvio.app.features.home.components.HomeTvContinueWatchingRowKey
+import com.nuvio.app.features.home.components.basicDesktopHeroHeight
 import com.nuvio.app.features.home.components.homeHeroLayout
 import com.nuvio.app.features.home.components.homeTvLazyScrollTarget
 import androidx.compose.foundation.lazy.LazyListState
@@ -3608,6 +3611,10 @@ fun HomeScreen(
             adaptiveHeroScrollClearancePx = adaptiveHeroHeightPx
         }
         val leadingOverlaySpacerHeight = adaptiveHeroLayout?.heroHeight ?: defaultChromeSpacerHeight
+        // Basic (desktop): the hero pages on its own and never follows focus, so it takes
+        // upstream's taller hero.
+        val pagedHomeHero = isDesktop && !heroFollowsFocusedItem
+        val basicHeroHeight = if (pagedHomeHero && showHeroSlot) basicDesktopHeroHeight(maxWidth.value) else null
 
         val renderHero: @Composable (LazyListState?) -> Unit = { heroListState ->
             when {
@@ -3616,7 +3623,7 @@ fun HomeScreen(
                     viewportHeight = maxHeight,
                     mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
                     sectionPadding = if (isDesktop) homeSectionPadding else null,
-                    heightOverride = adaptiveHeroLayout?.heroHeight,
+                    heightOverride = adaptiveHeroLayout?.heroHeight ?: basicHeroHeight,
                 )
 
                 effectiveHeroItems.isNotEmpty() -> HomeHeroSection(
@@ -3635,13 +3642,35 @@ fun HomeScreen(
                     heightOverride = when {
                         tvModeEnabled || heroTrailerFullscreenActive -> maxHeight
                         adaptiveHeroLayout != null -> adaptiveHeroLayout.heroHeight
-                        else -> null
+                        else -> basicHeroHeight
                     },
                     roundedBottomCorners =
                         !heroAmbientBackgroundEnabled && !tvModeEnabled,
                     immersiveMode = tvModeEnabled,
                     immersiveFullBackdrop = homeSettingsUiState.tvFullBackdropEnabled,
                     adaptiveHeroMode = adaptiveHeroEnabled,
+                    pagedHero = pagedHomeHero,
+                    ambientBackground = heroAmbientBackgroundEnabled && !tvModeEnabled,
+                    // Adaptive's hero overlays the scrolling rows, so it can't be see-through: it
+                    // carries its own copy of the wash instead. Basic's hero scrolls with the
+                    // rows, with only the wash behind it.
+                    ambientUnderlay = if (heroAmbientBackgroundEnabled && adaptiveHeroLayout != null) {
+                        {
+                            HeroAmbientBackdrop(
+                                backdrop = activeHeroBackdrop,
+                                accent = activeHeroAccent,
+                                onAccentChanged = {},
+                                label = "home_hero_ambient_underlay",
+                                // The wash is translucent (a 58% image under a tint): on its own it
+                                // lets the rows show through and stacks on the screen's wash at rest.
+                                // The app background under it makes it the same opaque composite
+                                // the rows are drawn over.
+                                modifier = Modifier.background(MaterialTheme.colorScheme.background),
+                            )
+                        }
+                    } else {
+                        null
+                    },
                     heroInfoLines = homeSettingsUiState.heroInfoLines,
                     heroInfoPriority = homeSettingsUiState.heroInfoPriority,
                     heroBadgePlacement = homeSettingsUiState.heroBadgePlacement,
@@ -3686,7 +3715,7 @@ fun HomeScreen(
                     modifier = Modifier,
                     viewportHeight = maxHeight,
                     mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
-                    heightOverride = if (tvModeEnabled) maxHeight else null,
+                    heightOverride = if (tvModeEnabled) maxHeight else basicHeroHeight,
                     roundedBottomCorners =
                         !heroAmbientBackgroundEnabled && !tvModeEnabled,
                 )
@@ -4182,7 +4211,10 @@ fun HomeScreen(
         }
 
         if (tvModeEnabled && tvRows.isNotEmpty()) {
-            Box(modifier = Modifier.fillMaxSize()) {
+            // Corrected for Windows HDR as one picture: the shelf scrim lies translucent over the
+            // hero's own fades, and the correction has to see the composite to get their tail
+            // right. Black, not the theme background, so it is exact; the screen is all in here.
+            HdrFadeCorrected(background = Color.Black, modifier = Modifier.fillMaxSize()) {
                 renderHero(null)
                 Box(
                     modifier = Modifier
@@ -4194,9 +4226,13 @@ fun HomeScreen(
                         // hero behind it is doing. Under full backdrop it stops short instead, so
                         // the artwork the hero now paints down here stays visible through it.
                         .background(
-                            Brush.verticalGradient(
-                                colorStops = immersiveShelfScrimStops(
-                                    backgroundColor = MaterialTheme.colorScheme.background,
+                            nuvioDitheredVerticalGradient(
+                                immersiveShelfScrimStops(
+                                    // Black, like the hero's own bottom fade. Ending on the theme
+                                    // background (#0D0D0D) left a dip to true black between the two
+                                    // and then a near-black grey ramp under the posters - the band
+                                    // OLED VRR gamma shift flickers most. True black is pixels off.
+                                    backgroundColor = Color.Black,
                                     fullBackdrop = homeSettingsUiState.tvFullBackdropEnabled,
                                 ),
                             ),
@@ -5754,7 +5790,8 @@ private fun upgradeMetahubBackdrop(url: String?): String? =
     url?.replace("/background/medium/", "/background/large/")
 
 // Pick the highest-quality backdrop from any number of candidate URLs.
-// Direct TMDB URLs (image.tmdb.org) are full-resolution originals.
+// Direct TMDB URLs (image.tmdb.org) win, at whatever size they came in: the hero and the details
+// page re-point them at `original` when drawing (fullSizeTmdbBackdrop), since addons often send w1280.
 // metahub.space CDN mirrors are lower quality regardless of size path.
 private fun bestBackdrop(vararg urls: String?): String? {
     for (url in urls) if (url?.contains("image.tmdb.org") == true) return url

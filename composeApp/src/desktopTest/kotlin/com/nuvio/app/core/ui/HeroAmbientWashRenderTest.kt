@@ -56,8 +56,8 @@ class HeroAmbientWashRenderTest {
                         Brush.verticalGradient(
                             colorStops = arrayOf(
                                 0f to accent.copy(alpha = 0.46f),
-                                0.42f to accent.copy(alpha = 0.32f),
-                                1f to background.copy(alpha = 0.72f),
+                                0.68f to accent.copy(alpha = 0.34f),
+                                1f to background.copy(alpha = 0.55f),
                             ),
                         ),
                     ),

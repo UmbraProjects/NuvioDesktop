@@ -69,7 +69,7 @@ data class PlayerSettingsUiState(
     val defaultPlaybackSpeed: Float = 1f,
     val mouseMoveRevealsControlsEnabled: Boolean = true,
     val desktopLegacyHudEnabled: Boolean = false,
-    val desktopMinimalHudEnabled: Boolean = false,
+    val desktopMinimalHudEnabled: Boolean = true,
     val desktopUltraHudEnabled: Boolean = false,
     val desktopOfficialHudEnabled: Boolean = false,
     // Minimal layout only: each control group sits on its own translucent pill.
@@ -111,7 +111,7 @@ data class PlayerSettingsUiState(
     val externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId(),
     val preferredAudioLanguage: String = AudioLanguageOption.DEVICE,
     val secondaryPreferredAudioLanguage: String? = null,
-    val preferredSubtitleLanguage: String = SubtitleLanguageOption.NONE,
+    val preferredSubtitleLanguage: String = SubtitleLanguageOption.DEVICE,
     val secondaryPreferredSubtitleLanguage: String? = null,
     val dualSubtitlesEnabled: Boolean = false,
     val preferredSubtitleTrackKind: SubtitleTrackKind = SubtitleTrackKind.DEFAULT,
@@ -146,7 +146,7 @@ data class PlayerSettingsUiState(
     val skipAutoAcceptMode: SkipAutoAcceptMode = SkipAutoAcceptMode.MANUAL,
     val skipMovieCreditsToPostCredits: Boolean = false,
     val stripSdhSubtitles: Boolean = false,
-    val automaticSubtitleSyncEnabled: Boolean = false,
+    val automaticSubtitleSyncEnabled: Boolean = true,
     val animeSkipEnabled: Boolean = false,
     val animeSkipClientId: String = "",
     val introDbApiKey: String = "",
@@ -201,6 +201,8 @@ data class PlayerSettingsUiState(
     val desktopPerformanceLoggingEnabled: Boolean = false,
     /** Desktop: render the interface every vsync while focused, so VRR displays hold one refresh rate. */
     val desktopSteadyFramePacingEnabled: Boolean = false,
+    /** Desktop: pre-correct the interface's fades for Windows HDR's SDR conversion while it is on. */
+    val desktopHdrUiCompensationEnabled: Boolean = true,
     val desktopLowVramMode: DesktopLowVramMode = DesktopLowVramMode.Auto,
     val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Off,
     val desktopAnimeModeAutoEnabled: Boolean = false,
@@ -264,7 +266,7 @@ object PlayerSettingsRepository {
     private var defaultPlaybackSpeed = 1f
     private var mouseMoveRevealsControlsEnabled = true
     private var desktopLegacyHudEnabled = false
-    private var desktopMinimalHudEnabled = false
+    private var desktopMinimalHudEnabled = true
     private var desktopUltraHudEnabled = false
     private var desktopOfficialHudEnabled = false
     private var desktopMinimalHudPillsEnabled = false
@@ -287,7 +289,7 @@ object PlayerSettingsRepository {
     private var externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId()
     private var preferredAudioLanguage = AudioLanguageOption.DEVICE
     private var secondaryPreferredAudioLanguage: String? = null
-    private var preferredSubtitleLanguage = SubtitleLanguageOption.NONE
+    private var preferredSubtitleLanguage = SubtitleLanguageOption.DEVICE
     private var secondaryPreferredSubtitleLanguage: String? = null
     private var dualSubtitlesEnabled = false
     private var preferredSubtitleTrackKind = SubtitleTrackKind.DEFAULT
@@ -316,7 +318,7 @@ object PlayerSettingsRepository {
     private var skipAutoAcceptMode = SkipAutoAcceptMode.MANUAL
     private var skipMovieCreditsToPostCredits = false
     private var stripSdhSubtitles = false
-    private var automaticSubtitleSyncEnabled = false
+    private var automaticSubtitleSyncEnabled = true
     private var animeSkipEnabled = false
     private var animeSkipClientId = ""
     private var introDbApiKey = ""
@@ -359,6 +361,7 @@ object PlayerSettingsRepository {
     private var desktopRendererApi = DesktopRendererApi.D3D11
     private var desktopPerformanceLoggingEnabled = false
     private var desktopSteadyFramePacingEnabled = false
+    private var desktopHdrUiCompensationEnabled = true
     private var desktopLowVramMode = DesktopLowVramMode.Auto
     private var desktopAnimeMode = DesktopAnimeMode.Off
     private var desktopAnimeModeAutoEnabled = false
@@ -406,7 +409,7 @@ object PlayerSettingsRepository {
         defaultPlaybackSpeed = 1f
         mouseMoveRevealsControlsEnabled = true
         desktopLegacyHudEnabled = false
-        desktopMinimalHudEnabled = false
+        desktopMinimalHudEnabled = true
         desktopUltraHudEnabled = false
         desktopOfficialHudEnabled = false
         desktopMinimalHudPillsEnabled = false
@@ -429,7 +432,7 @@ object PlayerSettingsRepository {
         externalPlayerId = ExternalPlayerPlatform.defaultPlayerId()
         preferredAudioLanguage = AudioLanguageOption.DEVICE
         secondaryPreferredAudioLanguage = null
-        preferredSubtitleLanguage = SubtitleLanguageOption.NONE
+        preferredSubtitleLanguage = SubtitleLanguageOption.DEVICE
         secondaryPreferredSubtitleLanguage = null
         dualSubtitlesEnabled = false
         preferredSubtitleTrackKind = SubtitleTrackKind.DEFAULT
@@ -458,7 +461,7 @@ object PlayerSettingsRepository {
         skipAutoAcceptMode = SkipAutoAcceptMode.MANUAL
         skipMovieCreditsToPostCredits = false
         stripSdhSubtitles = false
-        automaticSubtitleSyncEnabled = false
+        automaticSubtitleSyncEnabled = true
         animeSkipEnabled = false
         animeSkipClientId = ""
         introDbApiKey = ""
@@ -501,6 +504,7 @@ object PlayerSettingsRepository {
         desktopRendererApi = DesktopRendererApi.D3D11
         desktopPerformanceLoggingEnabled = false
         desktopSteadyFramePacingEnabled = false
+        desktopHdrUiCompensationEnabled = true
         desktopLowVramMode = DesktopLowVramMode.Auto
         desktopAnimeMode = DesktopAnimeMode.Off
         desktopAnimeModeAutoEnabled = false
@@ -537,10 +541,16 @@ object PlayerSettingsRepository {
             ?: PlayerResizeMode.Fit
         defaultPlaybackSpeed = PlayerSettingsStorage.loadDefaultPlaybackSpeed() ?: 1f
         mouseMoveRevealsControlsEnabled = PlayerSettingsStorage.loadMouseMoveRevealsControlsEnabled() ?: true
-        desktopLegacyHudEnabled = PlayerSettingsStorage.loadDesktopLegacyHudEnabled() ?: false
-        desktopMinimalHudEnabled = PlayerSettingsStorage.loadDesktopMinimalHudEnabled() ?: false
-        desktopUltraHudEnabled = PlayerSettingsStorage.loadDesktopUltraHudEnabled() ?: false
-        desktopOfficialHudEnabled = PlayerSettingsStorage.loadDesktopOfficialHudEnabled() ?: false
+        val storedLegacyHud = PlayerSettingsStorage.loadDesktopLegacyHudEnabled()
+        val storedUltraHud = PlayerSettingsStorage.loadDesktopUltraHudEnabled()
+        val storedOfficialHud = PlayerSettingsStorage.loadDesktopOfficialHudEnabled()
+        desktopLegacyHudEnabled = storedLegacyHud ?: false
+        // Minimal is the default layout, but only when no layout was ever stored: an install that
+        // predates the minimal flag and picked Legacy/Ultra/Official must keep that pick.
+        desktopMinimalHudEnabled = PlayerSettingsStorage.loadDesktopMinimalHudEnabled()
+            ?: (storedLegacyHud == null && storedUltraHud == null && storedOfficialHud == null)
+        desktopUltraHudEnabled = storedUltraHud ?: false
+        desktopOfficialHudEnabled = storedOfficialHud ?: false
         desktopMinimalHudPillsEnabled = PlayerSettingsStorage.loadDesktopMinimalHudPillsEnabled() ?: false
         desktopSeekHandleEnabled = PlayerSettingsStorage.loadDesktopSeekHandleEnabled() ?: true
         desktopHudVignetteEnabled = PlayerSettingsStorage.loadDesktopHudVignetteEnabled() ?: true
@@ -586,7 +596,7 @@ object PlayerSettingsRepository {
             normalizeLanguageCode(PlayerSettingsStorage.loadSecondaryPreferredAudioLanguage())
         preferredSubtitleLanguage =
             normalizeLanguageCode(PlayerSettingsStorage.loadPreferredSubtitleLanguage())
-                ?: SubtitleLanguageOption.NONE
+                ?: SubtitleLanguageOption.DEVICE
         secondaryPreferredSubtitleLanguage =
             normalizeLanguageCode(PlayerSettingsStorage.loadSecondaryPreferredSubtitleLanguage())
         dualSubtitlesEnabled = PlayerSettingsStorage.loadDualSubtitlesEnabled() ?: false
@@ -687,7 +697,7 @@ object PlayerSettingsRepository {
             ?: SkipAutoAcceptMode.MANUAL
         skipMovieCreditsToPostCredits = PlayerSettingsStorage.loadSkipMovieCreditsToPostCredits() ?: false
         stripSdhSubtitles = PlayerSettingsStorage.loadStripSdhSubtitles() ?: false
-        automaticSubtitleSyncEnabled = PlayerSettingsStorage.loadAutomaticSubtitleSyncEnabled() ?: false
+        automaticSubtitleSyncEnabled = PlayerSettingsStorage.loadAutomaticSubtitleSyncEnabled() ?: true
         animeSkipEnabled = PlayerSettingsStorage.loadAnimeSkipEnabled() ?: false
         animeSkipClientId = PlayerSettingsStorage.loadAnimeSkipClientId() ?: ""
         introDbApiKey = PlayerSettingsStorage.loadIntroDbApiKey() ?: ""
@@ -755,6 +765,7 @@ object PlayerSettingsRepository {
             ?: DesktopRendererApi.D3D11
         desktopPerformanceLoggingEnabled = PlayerSettingsStorage.loadDesktopPerformanceLogging() ?: false
         desktopSteadyFramePacingEnabled = PlayerSettingsStorage.loadDesktopSteadyFramePacing() ?: false
+        desktopHdrUiCompensationEnabled = PlayerSettingsStorage.loadDesktopHdrUiCompensation() ?: true
         desktopLowVramMode = PlayerSettingsStorage.loadDesktopLowVramMode()
             ?.let { runCatching { DesktopLowVramMode.valueOf(it) }.getOrNull() }
             ?: DesktopLowVramMode.Auto
@@ -1762,6 +1773,7 @@ object PlayerSettingsRepository {
             desktopRendererApi = desktopRendererApi,
             desktopPerformanceLoggingEnabled = desktopPerformanceLoggingEnabled,
             desktopSteadyFramePacingEnabled = desktopSteadyFramePacingEnabled,
+            desktopHdrUiCompensationEnabled = desktopHdrUiCompensationEnabled,
             desktopLowVramMode = desktopLowVramMode,
             desktopAnimeMode = desktopAnimeMode,
             desktopAnimeModeAutoEnabled = desktopAnimeModeAutoEnabled,
@@ -1888,6 +1900,14 @@ object PlayerSettingsRepository {
         desktopSteadyFramePacingEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopSteadyFramePacing(enabled)
+    }
+
+    fun setDesktopHdrUiCompensation(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopHdrUiCompensationEnabled == enabled) return
+        desktopHdrUiCompensationEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopHdrUiCompensation(enabled)
     }
 
     fun setDesktopRendererApi(api: DesktopRendererApi) {

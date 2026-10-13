@@ -1690,6 +1690,8 @@
     <string name="settings_playback_desktop_renderer">Interface Renderer</string>
     <string name="settings_playback_desktop_steady_frame_pacing">Steady frame pacing (VRR)</string>
     <string name="settings_playback_desktop_steady_frame_pacing_description">For G-Sync / FreeSync displays. The interface normally draws only when something changes, so the screen's refresh rate jumps around as you move between items - which OLED and VA panels show as flicker. This redraws every refresh while the window is focused so the rate holds steady. Uses more GPU while browsing; pauses during playback and after 5 minutes without input.</string>
+    <string name="settings_playback_desktop_hdr_ui_compensation">HDR display correction</string>
+    <string name="settings_playback_desktop_hdr_ui_compensation_description">Only applies while Windows HDR is on for this window's display. Windows brightens dark greys when it shows apps in HDR, so fades to black look grey and then cut off; this corrects the artwork fades for it. Turn off if you already use an sRGB-to-gamma-2.2 calibration profile.</string>
     <string name="settings_playback_desktop_renderer_dialog">Interface Renderer - restart to apply</string>
     <string name="settings_playback_desktop_anime_mode">Anime Enhancements</string>
     <string name="settings_playback_desktop_anime_mode_description">Anime4K shaders and anime-tuned scaling for sharper animation. Auto-applies to detected anime when enabled below; F10 in the player forces a preset for the current session only.</string>

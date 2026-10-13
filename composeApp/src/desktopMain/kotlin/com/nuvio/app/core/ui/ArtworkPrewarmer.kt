@@ -1,5 +1,6 @@
 package com.nuvio.app.core.ui
 
+import com.nuvio.app.features.tmdb.fullSizeTmdbBackdrop
 import co.touchlab.kermit.Logger
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -701,7 +702,8 @@ internal fun prewarmFocusedHeroes(
 
 /** The hero's backdrop (its poster when it has none) and its logo, as HomeHeroSection draws them. */
 internal fun heroArtwork(item: MetaPreview): List<PrewarmTarget> {
-    val backdrop = item.banner.httpUrlOrNull()
+    // The size HeroBackdropImage asks for, or the warm lands on a URL the hero never requests.
+    val backdrop = fullSizeTmdbBackdrop(item.banner.httpUrlOrNull())
     return listOfNotNull(
         (backdrop ?: item.poster.httpUrlOrNull())?.let {
             PrewarmTarget(it, if (backdrop != null) PrewarmArtworkKind.Backdrop else PrewarmArtworkKind.Poster)

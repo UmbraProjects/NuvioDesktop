@@ -6,6 +6,7 @@ import ai.onnxruntime.OrtSession
 import co.touchlab.kermit.Logger
 import coil3.BitmapImage
 import coil3.Image
+import com.nuvio.app.core.build.PackagedResources
 import com.nuvio.app.core.storage.DesktopStorage
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -299,7 +300,7 @@ private class FramingModels private constructor(
             OnnxRuntimeNatives.install()
             val environment = OrtEnvironment.getEnvironment()
             fun session(name: String): OrtSession {
-                val bytes = checkNotNull(FramingModels::class.java.getResourceAsStream("/backdrop-framing/$name")) {
+                val bytes = checkNotNull(PackagedResources.open("backdrop-framing/$name")) {
                     "Missing model resource $name"
                 }.use { it.readBytes() }
                 val options = OrtSession.SessionOptions().apply {

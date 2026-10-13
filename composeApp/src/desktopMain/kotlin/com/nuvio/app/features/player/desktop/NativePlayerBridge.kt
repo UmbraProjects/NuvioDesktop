@@ -165,6 +165,12 @@ internal object NativePlayerBridge {
      */
     external fun isForegroundProcess(): Boolean
 
+    /**
+     * Whether Windows HDR is on for the monitor [windowHwnd] sits on. False when that monitor
+     * cannot be matched, never a guess from another display. See `DesktopHdrUiCompensation`.
+     */
+    external fun isWindowDisplayHdr(windowHwnd: Long): Boolean
+
     val controlsPageUrl: String by lazy { controlsPageAssets.url }
     private val controlsPageAssets: ControlsPageAssets by lazy { exportControlsPageAssets() }
 
